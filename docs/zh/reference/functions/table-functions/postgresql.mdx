@@ -1,0 +1,169 @@
+---
+description: '允许对存储在远程 PostgreSQL 服务器上的数据执行 `SELECT` 和 `INSERT`
+  查询。'
+sidebarTitle: 'postgresql'
+slug: /sql-reference/table-functions/postgresql
+title: 'postgresql'
+doc_type: 'reference'
+---
+
+允许对存储在远程 PostgreSQL 服务器上的数据执行 `SELECT` 和 `INSERT` 查询。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数            | 描述                                     |
+| ------------- | -------------------------------------- |
+| `host:port`   | PostgreSQL 服务器地址。                      |
+| `database`    | 远程数据库名称。                               |
+| `table`       | 远程表名称。                                 |
+| `user`        | PostgreSQL 用户。                         |
+| `password`    | 用户密码。                                  |
+| `schema`      | 非默认的表 schema。可选。                       |
+| `on_conflict` | 冲突解决策略。示例：`ON CONFLICT DO NOTHING`。可选。 |
+
+参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。在这种情况下，需要分别指定 `host` 和 `port`。建议在生产环境中使用这种方式。
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个表对象，包含与原始 PostgreSQL 表相同的列。
+
+<Note>
+  在 `INSERT` 查询中，为了将表函数 `postgresql(...)` 与带列名列表的表名区分开，必须使用关键字 `FUNCTION` 或 `TABLE FUNCTION`。请参见下面的示例。
+</Note>
+
+<div id="implementation-details">
+  ## Implementation Details
+</div>
+
+PostgreSQL 端的 `SELECT` 查询会在只读 PostgreSQL 事务中以 `COPY (SELECT ...) TO STDOUT` 的形式运行，并在每个 `SELECT` 查询后提交。
+
+简单的 `WHERE` 子句 (如 `=`, `!=`, `>`, `>=`, `<`, `<=` 和 `IN`) 会在 PostgreSQL 服务器上执行。
+
+所有 join、聚合、排序、`IN [ array ]` 条件以及 `LIMIT` 采样约束，都只会在对 PostgreSQL 的查询完成后由 ClickHouse 执行。
+
+PostgreSQL 端的 `INSERT` 查询会在 PostgreSQL 事务中以 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 的形式运行，并在每个 `INSERT` 语句后自动提交。
+
+PostgreSQL 的 Array 类型会转换为 ClickHouse 数组。
+
+<Note>
+  请注意，在 PostgreSQL 中，像 Integer[] 这样的数组数据类型列在不同的行中可能包含维度不同的数组，但在 ClickHouse 中，只允许所有行中的多维数组具有相同的维度。
+</Note>
+
+支持多个副本，必须使用 `|` 分隔列出。例如：
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+或
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+支持为 PostgreSQL 字典源设置副本优先级。`map` 中的数值越大，优先级越低。最高优先级为 `0`。
+
+<div id="examples">
+  ## 示例
+</div>
+
+PostgreSQL 中的表：
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+(1 row)
+```
+
+使用普通参数从 ClickHouse 中查询数据：
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+```
+
+或者使用[命名集合](/zh/concepts/features/configuration/server-config/named-collections)：
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+        host = 'localhost',
+        port = 5432,
+        database = 'test',
+        user = 'postgresql_user',
+        password = 'password';
+SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+插入：
+
+```sql
+INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+使用非默认 schema：
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [PostgreSQL 表引擎](/zh/reference/engines/table-engines/integrations/postgresql)
+* [使用 PostgreSQL 作为字典源](/zh/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="replicating-or-migrating-postgres-data-with-peerdb">
+  ### 使用 PeerDB 复制或迁移 Postgres 数据
+</div>
+
+> 除了表函数之外，您也始终可以使用 ClickHouse 的 [PeerDB](https://docs.peerdb.io/introduction)，建立从 Postgres 到 ClickHouse 的持续数据管道。PeerDB 是一款专为通过 CDC (变更数据捕获) 将数据从 Postgres 复制到 ClickHouse 而设计的工具。

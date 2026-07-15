@@ -267,6 +267,12 @@
             gap: 0.25rem;
             position: sticky;
             left: 0;
+            /* Raise the whole bar above #controls (a later sibling that is also `position:
+               sticky`, hence its own stacking context). Without this the connection drop-down
+               — nested in this bar's stacking context — would render behind the query editor,
+               which paints later. The bar and the editor never overlap otherwise, so this only
+               affects the open drop-down. */
+            z-index: 2;
             margin: -0.5rem 0 0.5rem 0; /* negative top bleeds into #main's top padding */
             /* No left padding: the bar's content edge already sits at #main's content
                edge, so the first tab lines up with the query editor and result tables.
@@ -448,6 +454,115 @@
         {
             background: var(--button-color);
             color: var(--button-text-color);
+        }
+
+        /* Holds the 🔑 button and its drop-down; pushed to the far right of the tab bar
+           so the connection settings sit in the top-right corner of the main area.
+           `position: relative` is the containing block for the absolutely positioned
+           drop-down below. */
+        #connection-menu
+        {
+            margin-left: auto;
+            /* Cancel the tab bar's 0.5rem right padding so the key's right edge lines up with
+               the query editor and result tables (the right edge of #main's content). */
+            margin-right: -0.5rem;
+            align-self: flex-end;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        /* A borderless, background-less button: just the 🔑 glyph aligned to the right edge. */
+        #connection-key
+        {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            /* No right padding: the glyph sits flush at the right edge of the page. */
+            padding: 0.25rem 0 0.25rem 0.6rem;
+            cursor: pointer;
+            font-size: 100%;
+            line-height: 1;
+            background: none;
+            border: none;
+            /* On active, brighten the emoji itself rather than painting a button background. */
+            filter: brightness(0.85);
+            transition: filter 0.1s;
+        }
+
+        #connection-key[hidden]
+        {
+            display: none;
+        }
+
+        #connection-key:hover, #connection-key:focus
+        {
+            filter: brightness(1.15);
+        }
+
+        /* The drop-down panel with the connection parameters. Anchored to the right edge
+           of the 🔑 button and floating above the content below it. */
+        #connection-dropdown
+        {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            z-index: 3;
+            padding: 0.75rem;
+            width: min(90vw, 34rem);
+            /* The page background, so the inputs look exactly as they do in the inline top bar
+               (a field on the page color, delineated by its own border) rather than blending
+               into a same-colored panel. The border and shadow below set the panel apart from
+               the content it floats over. */
+            background: var(--background-color);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0.25rem 1rem var(--shadow-color);
+        }
+
+        #connection-dropdown[hidden]
+        {
+            display: none;
+        }
+
+        /* Inside the drop-down the same relocated `#inputs` element is laid out in two stories:
+           the url (host) fills the first row, user and password share the second. `flex-wrap`
+           plus a 100% basis on the url forces the wrap; the negative top margin on the second
+           row overlaps the url's bottom border so there is a single seam and no vertical gap
+           (mirroring the horizontal -1px overlap the inputs already use side by side).
+           `position: relative` makes `#inputs` the containing block for the status dot. */
+        #connection-dropdown #inputs
+        {
+            display: flex;
+            flex-wrap: wrap;
+            width: 100%;
+            position: relative;
+        }
+
+        #connection-dropdown #url
+        {
+            flex: 1 1 100%;
+            width: auto;
+        }
+
+        #connection-dropdown #user, #connection-dropdown #password
+        {
+            flex: 1 1 0;
+            width: auto;
+            margin-top: -1px; /* overlap the url's bottom border: one seam, no gap */
+        }
+
+        #connection-dropdown #user
+        {
+            margin-left: 0;
+        }
+
+        /* The connection-status dot sits at the right end of the url (first) row. The inline
+           layout relies on its static position after the url input; in the wrapped two-story
+           layout that position moves to the next row, so pin it explicitly instead. */
+        #connection-dropdown #url_status
+        {
+            top: 0;
+            right: 0;
+            transform: none;
         }
 
         .menu-icon
@@ -949,6 +1064,15 @@
         #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
         #query-backdrop .q-op  { color: var(--syntax-operator); }
         #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
+        /* The token where the server reported a syntax error is painted with a red
+           background. It is cleared as soon as the user returns focus to the editor. */
+        #query-backdrop .q-err-pos { background-color: color-mix(in srgb, var(--syntax-error) 40%, transparent); border-radius: 2px; }
+        /* An "(end of query)" error has no token to paint (the parser reached the end of the
+           statement or a `;` separator). Mark the statement boundary with a thin vertical bar
+           instead of filling the following separator/whitespace token. The bar is zero content
+           width (drawn by the border, offset by negative margins) so the backdrop still aligns
+           character-for-character with the textarea underneath it. */
+        #query-backdrop .q-err-pos-end { display: inline-block; width: 0; border-left: 2px solid var(--syntax-error); margin: 0 -1px; }
 
         /* Rainbow parentheses: brackets are colored by their nesting depth (cycling
            through the seven --syntax-bracket-* colors). */
@@ -1415,10 +1539,14 @@
         <div id="tab-bar" hidden>
             <div id="tabs"></div>
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+            <div id="connection-menu">
+                <button id="connection-key" type="button" title="Connection settings" aria-expanded="false" hidden>🔑</button>
+                <div id="connection-dropdown" hidden></div>
+            </div>
         </div>
         <form id="controls">
             <div id="inputs">
-                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
             <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
             <div id="query-params"></div>
@@ -1485,7 +1613,10 @@ class QueryProgressElement extends HTMLElement
                 :host
                 {
                     display: grid;
-                    grid-template-columns: auto 1fr auto;
+                    /* Progress and stats share the available width equally, and both can
+                       shrink below their content size (the zero minimum), so they resize
+                       uniformly when the row is narrow instead of one hogging the space. */
+                    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
                     gap: 1rem;
                     align-items: center;
                 }
@@ -1525,7 +1656,6 @@ class QueryProgressElement extends HTMLElement
                 #stats
                 {
                     color: var(--misc-text-color);
-                    white-space: nowrap;
                 }
 
                 #stats b
@@ -1636,6 +1766,9 @@ class QueryResultElement extends HTMLElement
     static _loadVizPromise = null;
     static _vizInstance = null;
     static _loadUplotPromise = null;
+
+    /// The glyph used to render SQL NULL values (superscript "NULL").
+    static _NULL_TEXT = 'ᴺᵁᴸᴸ';
 
     constructor()
     {
@@ -1857,6 +1990,18 @@ class QueryResultElement extends HTMLElement
                 .colorize-toggle:hover
                 {
                     opacity: 0.7;
+                }
+
+                /* Per-column color coding compares values across rows; with no more than a single
+                   row there is nothing to compare, so hide the toggles. A column already colorized
+                   with a non-default mode is exempted (its header carries the keep-colorize-toggle
+                   class), so that mode stays clearable. The exemption is per column: one colorized
+                   column must not reveal every other column's toggle. The extra selector specificity
+                   overrides the hover and coarse-pointer rules above. */
+                .hide-colorize-toggle th:not(.keep-colorize-toggle) .colorize-toggle,
+                .hide-colorize-toggle th:not(.keep-colorize-toggle):hover .colorize-toggle
+                {
+                    display: none;
                 }
 
                 /* Apply hover/selection filter per-cell, excluding the active cell,
@@ -2131,6 +2276,11 @@ class QueryResultElement extends HTMLElement
 
         this._dataTable.classList.remove('fixed');
         this._dataDiv.classList.remove('fixed');
+        /// Drop the stale single-row marker: it is recomputed in `applyColumnColors` once the new
+        /// result finishes rendering. Clearing it here means that while rows are still streaming in,
+        /// the toggles follow the default hover behavior instead of staying hidden because the
+        /// previous result had at most a single row.
+        this._dataTable.classList.remove('hide-colorize-toggle');
 
         this._extremes = {};
         this._totals = null;
@@ -2196,10 +2346,14 @@ class QueryResultElement extends HTMLElement
         let is_null = (value === null);
         let is_link = false;
 
+        /// Mark the cell from the original value, so categorical coloring can skip real NULLs
+        /// without relying on the rendered glyph (a string value equal to `_NULL_TEXT` is data).
+        if (is_null) { td.dataset.isNull = ''; }
+
         let text;
         if (is_null)
         {
-            text = '\u1D3A\u1D41\u1D38\u1D38';
+            text = QueryResultElement._NULL_TEXT;
         }
         else if (typeof(value) === 'object')
         {
@@ -2280,6 +2434,8 @@ class QueryResultElement extends HTMLElement
 
         meta.forEach(elem => {
             let th = document.createElement('th');
+            /// Full name and type in the tooltip, so a truncated header can be read in full on hover.
+            th.title = `${elem.name}\n${elem.type}`;
             const name = document.createTextNode(elem.name);
             const nameSpan = document.createElement('span');
             nameSpan.className = 'name';
@@ -2423,6 +2579,9 @@ class QueryResultElement extends HTMLElement
         if (col_idx < 0) { return; }
 
         this._applyColumnColor(name, col_idx);
+        /// The new mode can colorize (or de-colorize) a single-row table whose toggles were hidden,
+        /// so re-evaluate their visibility to keep an active mode reachable.
+        this._updateColorizeToggleVisibility();
         /// Keep the active-cell categorical emphasis consistent with the new mode.
         this._scheduleCategoricalEmphasis();
 
@@ -2590,7 +2749,13 @@ class QueryResultElement extends HTMLElement
             {
                 const cell = row.cells[col_idx];
                 if (!cell) { continue; }
-                const hue = this._hashHue((cell.querySelector('.cell-content') || cell).innerText);
+                /// Empty strings and NULLs carry no category, so leave them uncolored. NULL is
+                /// detected from the original value (marked in `_renderCell`), not the rendered
+                /// glyph, so a real string value equal to the NULL glyph still gets a color.
+                if (cell.dataset.isNull !== undefined) { continue; }
+                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                if (text === '') { continue; }
+                const hue = this._hashHue(text);
                 cell.style.background = `oklch(var(--viz-cell-lightness) var(--viz-cell-chroma) ${hue})`;
             }
             return;
@@ -2691,11 +2856,50 @@ class QueryResultElement extends HTMLElement
         }
     }
 
+    /// Whether a column is currently painted with color: it has an effective mode that both differs
+    /// from the per-type default and actually colorizes (anything other than `none`). Such a column
+    /// is "already colorized", so it keeps its toggle even on a single-row result — the modes are
+    /// shared by column name across tables, so a mode persisted from an earlier multi-row query
+    /// would otherwise have no visible control to switch it back off. A column explicitly set to
+    /// `none` (e.g. a numeric column whose default is `bar`) paints nothing, so it does not qualify.
+    _columnIsColorized(name)
+    {
+        const mode = this._effectiveColorMode(name);
+        return mode !== 'none' && mode !== this._defaultColorMode(name);
+    }
+
+    /// Show or hide the per-column colorize toggles for this result. Per-column color coding
+    /// compares values across rows; with no more than a single row there is nothing to compare, so
+    /// the toggles are hidden. A totals row (from `WITH TOTALS`) is a second comparable value per
+    /// column, so coloring stays meaningful there. The hiding is per column: a column already
+    /// colorized with a non-default mode is exempted (its header keeps `keep-colorize-toggle`), so
+    /// that mode stays clearable, while unrelated single-value columns still hide their toggle.
+    /// Recomputed on the final repaint and whenever a mode is cycled (a shared mode can colorize a
+    /// single-row table) — never per row.
+    _updateColorizeToggleVisibility()
+    {
+        const tbody = this._dataTable.tBodies[0];
+        this._dataTable.classList.toggle('hide-colorize-toggle',
+            !this._totals && (!tbody || tbody.rows.length <= 1));
+
+        /// Mark the header of every already-colorized column, so its toggle survives the table-wide
+        /// hiding above. Iterating the header (rather than one class for the whole table) keeps the
+        /// exemption per column: one colorized column must not reveal every other column's toggle.
+        const thead = this._dataTable.tHead;
+        if (!thead || !Array.isArray(this._header)) { return; }
+        for (const column of this._header)
+        {
+            const th = thead.children[this._columnIndex(column.name)];
+            if (th) { th.classList.toggle('keep-colorize-toggle', this._columnIsColorized(column.name)); }
+        }
+    }
+
     /// Re-apply color coding for every column (after rendering or restoring a result).
     applyColumnColors()
     {
         /// Only tabular results have a column header array; raw/chart/image results do not.
         if (!Array.isArray(this._header)) { return; }
+        this._updateColorizeToggleVisibility();
         /// Vertical (transposed) single-row results do not show per-column color coding.
         if (this._willTranspose()) { return; }
         let col_idx = 0;
@@ -2767,8 +2971,16 @@ class QueryResultElement extends HTMLElement
             const name = this._header[idx - 1]?.name;
             if (name !== undefined && this._effectiveColorMode(name) === 'categorical')
             {
-                col_idx = idx;
-                active_text = (cell.querySelector('.cell-content') || cell).innerText;
+                /// Empty strings and NULLs carry no category (mirroring `_applyColumnColor`), so
+                /// selecting one emphasizes nothing. NULL is detected from the original value marked
+                /// in `_renderCell`, not the rendered glyph, so a real string value equal to the NULL
+                /// glyph is still a category.
+                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                if (cell.dataset.isNull === undefined && text !== '')
+                {
+                    col_idx = idx;
+                    active_text = text;
+                }
             }
         }
 
@@ -2795,8 +3007,11 @@ class QueryResultElement extends HTMLElement
         {
             const c = row.cells[col_idx];
             if (!c) { continue; }
+            /// A real NULL peer must not match a real string equal to the NULL glyph, so exclude
+            /// NULL cells from grouping just like `_applyColumnColor` does. Empty cells never match
+            /// here because `active_text` is guaranteed non-empty above.
             const target = c.querySelector('.cell-content') || c;
-            this._setCellEmphasis(c, c !== cell && target.innerText === active_text);
+            this._setCellEmphasis(c, c !== cell && c.dataset.isNull === undefined && target.innerText === active_text);
         }
         this._emphasized_col_idx = col_idx;
         this._emphasized_value = active_text;
@@ -3860,6 +4075,57 @@ let load_tables_request_nums = new WeakMap();
 /// `a` and then `b` before `a` finishes loading, the highlight must end up on `b` regardless
 /// of which load's query returns first - otherwise a slower earlier open would steal it back.
 let current_selection_num = 0;
+
+/// Wire up a click-like activation on a table row or its addendum. Besides an ordinary left
+/// click, we also honor the gestures that conventionally open a link in a new tab: a middle
+/// click (which fires `auxclick`, not `click`), a Shift+click, or the platform's new-tab
+/// modifier click - Cmd on macOS, Ctrl elsewhere (on macOS `Ctrl+Click` is the secondary
+/// context-menu click, so it is not a new-tab gesture). The handler inspects the event to
+/// decide between replacing the current query and opening a new Web UI tab.
+///
+/// There is no browser-level test harness for `play.html`, so this gesture-routing and its
+/// paste guard are verified by hand. The committed manual matrix below is the behavior
+/// contract; re-run it when touching `set_query_or_run`, `openQueryInNewTab`/`activateTab`,
+/// or the `suppress_middleclick_paste` guard. Every case applies to a databases-panel table
+/// row and its bytes/rows/engine addenda alike, since they all route through the same
+/// `set_query_or_run` (below):
+///
+///   1. Plain left click on a not-yet-loaded query -> replaces the current tab's query
+///      (`query_area.value = value`); no new tab is created.
+///   2. Click the same row again while its query is already in the editor -> runs it
+///      (`postOne`), no new tab - and likewise for a second middle/modifier click, since
+///      opening an identical tab would be pointless.
+///   3. Middle click (button 1) -> opens the query in a new Web UI tab; on Linux/X11 the
+///      synthetic PRIMARY paste into the freshly focused editor is swallowed (the guard is
+///      armed around `query_area.focus()` in `activateTab`).
+///   4. Shift+click -> opens a new tab on every platform.
+///   5. Ctrl+click on Linux/Windows, or Cmd+click on macOS -> opens a new tab.
+///   6. Ctrl+click on macOS (the secondary/context-menu click) -> a no-op for query activation:
+///      it neither opens a new tab, replaces the editor, nor runs the query (not even the
+///      second-click `postOne`). The gesture is left entirely to the browser so the native
+///      context menu can appear. (Cmd+click is the macOS new-tab gesture; see case 5.)
+///   7. A real keyboard paste (Ctrl+V, Cmd+V, or Shift+Insert) into the editor immediately
+///      after a middle-click new-tab open -> the pasted text is kept: the paste-shortcut
+///      `keydown` disarms the guard before its `paste` fires, so only the mouse-driven
+///      PRIMARY paste (which carries no keystroke) is ever swallowed.
+///   8. Two middle clicks in quick succession (open table A, then table B within the guard's
+///      fallback window) -> B's PRIMARY paste is still swallowed: re-arming cancels A's pending
+///      fallback timer (`middleclick_paste_timeout`), so A's stale timeout cannot clear B's guard.
+function onTableActivate(elem, handler) {
+    elem.addEventListener('click', handler);
+    elem.addEventListener('auxclick', e => {
+        if (e.button !== 1) return;
+        /// Cancel the middle click's native paste at the click site. The X11 PRIMARY paste that
+        /// would otherwise land in the query editor is guarded separately, around the actual
+        /// `query_area.focus()` in the new-tab path (see `activateTab`), so the guard cannot
+        /// expire before a slow activation focuses the editor.
+        e.preventDefault();
+        handler(e);
+    });
+    /// Suppress the browser's middle-click autoscroll so the gesture only opens a new tab.
+    elem.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+}
+
 async function loadTables(server_address, user, password, database, container, set_current = true, is_current = null) {
     const request_num = (load_tables_request_nums.get(container) || 0) + 1;
     load_tables_request_nums.set(container, request_num);
@@ -3940,9 +4206,26 @@ async function loadTables(server_address, user, password, database, container, s
         table_addendum.className = 'table-addendum';
 
         const set_query_or_run = (e, value) => {
+            if (isMac && e.button !== 1 && e.ctrlKey) {
+                /// On macOS `Ctrl+Click` is the secondary (context-menu) click, not a query
+                /// activation or new-tab gesture. Leave it entirely to the browser (so the native
+                /// context menu can appear) and never activate, replace, or run the query - not
+                /// even the second-click `postOne` path below. The macOS new-tab modifier is Cmd
+                /// (`metaKey`), handled in the new-tab branch. A middle click (button 1) is a
+                /// genuine new-tab gesture even with Ctrl held, so it is excluded here.
+                return;
+            }
             if (query_area.value == value) {
-                /// Double click will run the query.
+                /// A second click on an already-loaded query runs it - regardless of whether it
+                /// was a plain, middle, or modifier click (opening yet another identical tab
+                /// would be pointless).
                 postOne();
+            } else if (e.button === 1 || e.shiftKey || (isMac ? e.metaKey : e.ctrlKey)) {
+                /// Middle click, Shift+click, or the platform's new-tab modifier click (Cmd on
+                /// macOS, Ctrl elsewhere) - the gestures that open a link in a new tab - open the
+                /// query in a new Web UI tab instead of replacing the current one. Only a genuine
+                /// middle click (button 1) needs the X11 PRIMARY paste guard.
+                openQueryInNewTab(value, e.button === 1);
             } else {
                 query_area.value = value;
                 query_area.dispatchEvent(new Event('input'));
@@ -3958,20 +4241,20 @@ async function loadTables(server_address, user, password, database, container, s
             let bytes_elem = document.createElement('span');
             bytes_elem.className = 'table-addendum-elem';
             bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
-            bytes_elem.addEventListener('click', show_table_properties);
+            onTableActivate(bytes_elem, show_table_properties);
             table_addendum.append(bytes_elem);
         }
         if (+elem.total_rows) {
             let rows_elem = document.createElement('span');
             rows_elem.className = 'table-addendum-elem';
             rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
-            rows_elem.addEventListener('click', show_table_properties);
+            onTableActivate(rows_elem, show_table_properties);
             table_addendum.append(rows_elem);
         }
         let engine_elem = document.createElement('span');
         engine_elem.textContent = elem.engine;
         engine_elem.className = 'table-addendum-elem';
-        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        onTableActivate(engine_elem, e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
         /// Make the balloon links reachable from the keyboard (Right arrow from the row).
@@ -3985,7 +4268,7 @@ async function loadTables(server_address, user, password, database, container, s
         /// selector works; it is position:fixed, so it is not clipped by the button overflow.
         table_link.appendChild(table_addendum);
         table.appendChild(table_link);
-        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        onTableActivate(table, e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
         tables_elem.appendChild(table);
     }
 
@@ -4173,6 +4456,32 @@ function formatUptime(t) {
     return days + " day" + (days > 1 ? 's' : '');
 }
 
+/// The version/uptime indicator (`#server_info`) floats over the right end of the url input.
+/// A short hostname leaves it clearly visible, but a long one would overlap it into an illegible
+/// mix. The hostname takes precedence: hide the indicator as soon as the hostname text reaches
+/// it. The connection-status dot (the rest of `#url_status`) is left untouched — `visibility`
+/// keeps the indicator's width, so hiding it does not shift the dot.
+function updateServerInfoVisibility() {
+    const server_info = document.getElementById('server_info');
+    if (!server_info.textContent) { return; } /// nothing shown yet
+    /// Skip while the input is not laid out (e.g. inside a closed drop-down); recomputed on open.
+    if (!url_elem.offsetWidth) { return; }
+
+    /// Width of the hostname text in the input's own font.
+    const style = getComputedStyle(url_elem);
+    const ctx = updateServerInfoVisibility.ctx ||
+        (updateServerInfoVisibility.ctx = document.createElement('canvas').getContext('2d'));
+    ctx.font = `${style.fontSize} ${style.fontFamily}`;
+    const text_width = ctx.measureText(url_elem.value).width;
+
+    const url_rect = url_elem.getBoundingClientRect();
+    const text_end = url_rect.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft) + text_width;
+    const indicator_left = document.getElementById('url_status').getBoundingClientRect().left;
+    /// A few pixels of breathing room before they would touch.
+    server_info.style.visibility = (text_end + 4 > indicator_left) ? 'hidden' : 'visible';
+}
+window.addEventListener('resize', updateServerInfoVisibility);
+
 let check_credentials_request_num = 0;
 function checkCredentials() {
     ++check_credentials_request_num;
@@ -4182,8 +4491,13 @@ function checkCredentials() {
             if (json) {
                 [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
                 document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
+                updateServerInfoVisibility();
             } else {
                 [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
+                /// The credentials didn't work — surface the connection settings so they can be
+                /// fixed. Only relevant when they live in the drop-down (tab bar shown); inline
+                /// (single tab) they are already visible, so there is nothing to open.
+                if (!connection_key_elem.hidden) { openConnectionDropdown(); }
             }
         }
     });
@@ -4238,7 +4552,7 @@ let controller = null;
 /// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `abortController` is an AbortController that can be used to cancel this query.
-async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
+async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, queryStart)
 {
     const user = user_elem.value;
     const password = password_elem.value;
@@ -4296,6 +4610,13 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             }
             if (!has_exception) {
                 targetResultEl.renderError(reply);
+            }
+
+            /// If the error message points at a position in the query (e.g. a syntax error),
+            /// highlight that position in the editor -- unless the user has returned to the editor
+            /// since this run started, in which case this response is stale and must not repaint.
+            if (editorInteractionGen === runEditorInteraction) {
+                highlightQueryError(reply, query, queryStart);
             }
 
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
@@ -4401,7 +4722,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text, params_restore_pending)
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart)
 {
     const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
@@ -4413,7 +4734,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     progressEl.start();
 
     controller = new AbortController();
-    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot);
+    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot, queryStart);
 
     if (result.cancelled) return;
 
@@ -4581,7 +4902,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
         const promises = group.indices.map(i => {
             const ac = new AbortController();
             multiQueryControllers.push(ac);
-            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot)
+            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot, parsed[i].queryStart)
                 .then(result => ({ index: i, result }));
         });
 
@@ -4970,6 +5291,45 @@ async function restoreFromHistory(state, token) {
 
 let query_area = document.getElementById('query');
 
+/// Opening a table in a new tab via a middle click focuses the query editor. On Linux/X11 the
+/// middle button additionally pastes the PRIMARY selection into the freshly-focused editor,
+/// appending clipboard junk after the query we just set. The new-tab activation (`activateTab`
+/// with `guard_paste`) arms this flag right around that `query_area.focus()`, so we swallow
+/// exactly that one paste.
+///
+/// The guard must never eat a real keyboard paste. The X11 PRIMARY paste is mouse-driven and
+/// carries no keystroke, whereas a real keyboard paste - Ctrl+V / Cmd+V, or Shift+Insert on
+/// Linux/Windows - is always preceded by its own paste-shortcut `keydown`; disarming on that
+/// `keydown` (which fires before the resulting `paste`) keeps the discrimination independent of
+/// timing. So even if the user middle-clicks and immediately presses a paste shortcut on a platform
+/// where no PRIMARY paste ever arrives, their paste is preserved; the short post-focus fallback in
+/// `activateTab` only bounds how long a never-consumed guard can linger.
+///
+/// The guard is a single shared bit, so we keep the handle of its one fallback timer and cancel
+/// it whenever the guard is re-armed or consumed. Otherwise two overlapping middle-click opens
+/// (open A, then open B within the fallback window) would share the bit but leave two pending
+/// timeouts: A's stale timeout could clear the bit that B re-armed, before B's PRIMARY paste
+/// arrives, letting that paste land in the editor. Cancelling the previous timer on re-arm means
+/// an older open's timeout can never clear a newer open's guard.
+let suppress_middleclick_paste = false;
+let middleclick_paste_timeout = null;
+function disarmMiddleclickPaste() {
+    suppress_middleclick_paste = false;
+    clearTimeout(middleclick_paste_timeout);
+    middleclick_paste_timeout = null;
+}
+query_area.addEventListener('keydown', e => {
+    const keyboard_paste = ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V'))
+        || (e.shiftKey && e.key === 'Insert');
+    if (keyboard_paste) disarmMiddleclickPaste();
+});
+query_area.addEventListener('paste', e => {
+    if (suppress_middleclick_paste) {
+        e.preventDefault();
+        disarmMiddleclickPaste();
+    }
+});
+
 appendTextareaResizer();
 
 /// ===== Tabs =====================================================================
@@ -4978,6 +5338,132 @@ appendTextareaResizer();
 
 const tab_bar_elem = document.getElementById('tab-bar');
 const tabs_elem = document.getElementById('tabs');
+
+/// The connection parameters (url/user/password) live in the `#inputs` element. When the tab
+/// bar is shown they clutter the top of every tab, so we relocate that same element into a
+/// drop-down behind a 🔑 button in the top-right corner. Relocating the existing element (rather
+/// than duplicating the inputs) keeps every reference and event listener bound to it valid. The
+/// three inputs carry `form="controls"`, so once moved out of the form's subtree they still count
+/// as its fields: pressing `Enter` in url/user/password keeps submitting `#controls` (running the
+/// query), matching the inline single-tab layout.
+const inputs_elem = document.getElementById('inputs');
+const controls_elem = document.getElementById('controls');
+const connection_menu_elem = document.getElementById('connection-menu');
+const connection_key_elem = document.getElementById('connection-key');
+const connection_dropdown_elem = document.getElementById('connection-dropdown');
+
+function openConnectionDropdown() {
+    connection_dropdown_elem.hidden = false;
+    connection_key_elem.setAttribute('aria-expanded', 'true');
+    /// The url input was unmeasurable while the drop-down was display:none; recompute now.
+    updateServerInfoVisibility();
+}
+
+function closeConnectionDropdown() {
+    connection_dropdown_elem.hidden = true;
+    connection_key_elem.setAttribute('aria-expanded', 'false');
+}
+
+/// Place the `#inputs` element either inline in `#controls` (no tab bar) or inside the
+/// drop-down behind the 🔑 button (tab bar shown). Called from `renderTabBar` whenever the
+/// tab bar's visibility is recomputed.
+function syncConnectionUI() {
+    const tabsShown = !tab_bar_elem.hidden;
+    /// Capture whether the 🔑 button owns focus before the next line may hide it: hiding a focused
+    /// element strands keyboard focus, so on the drop-down→inline transition we hand focus to a
+    /// visible control below (the mirror of the inline→drop-down handoff).
+    const keyHadFocus = document.activeElement === connection_key_elem;
+    connection_key_elem.hidden = !tabsShown;
+    if (tabsShown) {
+        if (inputs_elem.parentElement !== connection_dropdown_elem) {
+            /// If focus is inside `#inputs` when the tab bar first appears (e.g. the user pressed
+            /// Enter in url/user/password to run the first query — reachable because those fields
+            /// keep `form="controls"` and submit implicitly), moving the subtree into the hidden
+            /// drop-down would strand focus on a hidden element. Move focus to the now-visible 🔑
+            /// button first — as the Escape handler does — so keyboard users keep a visible focus
+            /// target and the inputs stay one key press away behind that button.
+            const refocus = inputs_elem.contains(document.activeElement);
+            connection_dropdown_elem.appendChild(inputs_elem);
+            if (refocus) connection_key_elem.focus();
+        }
+    } else {
+        /// Restore the inline position (first child of the form) and make sure the drop-down
+        /// is closed so a later reappearance of the tab bar starts collapsed.
+        if (inputs_elem.parentElement !== controls_elem) {
+            controls_elem.insertBefore(inputs_elem, controls_elem.firstChild);
+        }
+        closeConnectionDropdown();
+        /// The `#connection-key` button was just hidden; if it owned focus, hand focus to the
+        /// now-visible inline `url` input — the first connection field the button gated — so
+        /// keyboard focus stays visible and the next Tab continues from the connection row.
+        if (keyHadFocus) url_elem.focus();
+    }
+    /// The url input's width differs between the inline bar and the drop-down, so the point at
+    /// which the hostname reaches the version/uptime indicator changes: recompute its visibility.
+    updateServerInfoVisibility();
+}
+
+connection_key_elem.addEventListener('click', (e) => {
+    /// Keep the toggle click from reaching the result-selection handler on `document`.
+    e.stopPropagation();
+    if (connection_dropdown_elem.hidden) openConnectionDropdown(); else closeConnectionDropdown();
+});
+
+/// A click inside the drop-down (e.g. typing in the inputs) must neither close it nor clear the
+/// result selection, so keep it from bubbling to `document`.
+connection_dropdown_elem.addEventListener('click', (e) => e.stopPropagation());
+
+/// Close the drop-down on a click anywhere outside `#connection-menu` (which holds the 🔑 button
+/// and the drop-down). Test the target in the capture phase instead of relying on the click
+/// bubbling to `document`: several outside controls in this file (the download menu, the
+/// databases-panel toggles, the terminal toggle, the tab-close button, the per-column toggles)
+/// call `stopPropagation()` in their own bubble-phase click handlers, so a bubbling listener
+/// would never see those clicks and the popover would stay open. A capture-phase listener runs
+/// before all of them, so every outside interaction dismisses it.
+///
+/// A `click` fires on the nearest common ancestor of the `mousedown` and `mouseup` targets, so a
+/// text selection that starts inside an input (e.g. selecting the user name) and is dragged past
+/// the drop-down's border before release lands its `click` on an ancestor outside `#connection-menu`
+/// — which would wrongly dismiss the popover mid-selection. Remember where the pointer went down
+/// (capture phase, so it is unaffected by `stopPropagation()` on inner handlers) and only close
+/// when the interaction both started and ended outside the menu.
+let connection_pointerdown_inside = false;
+document.addEventListener('mousedown', (e) => {
+    connection_pointerdown_inside = connection_menu_elem.contains(e.target);
+}, true);
+document.addEventListener('click', (e) => {
+    /// The latch is meaningful only for the pointer press that produced this `click`, and a press
+    /// arms it only when it goes on to emit a `click` (`detail !== 0`). Two kinds of `click` must
+    /// therefore ignore it: a keyboard or synthetic activation (Space/Enter on a focused control, or
+    /// a programmatic `.click()`) reports `detail === 0` and has no preceding `mousedown`; and a
+    /// mouse interaction that ends without a `click` — a right-click's `contextmenu`, a middle-click,
+    /// or a drag released outside the window — leaves a stale latch that no `click` ever consumes.
+    /// In both cases a stale `true` would otherwise wrongly suppress the outside dismissal, so the
+    /// latch counts only for a real pointer `click`.
+    const started_inside = e.detail !== 0 && connection_pointerdown_inside;
+    if (!connection_menu_elem.contains(e.target) && !started_inside) closeConnectionDropdown();
+}, true);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !connection_dropdown_elem.hidden) {
+        /// Closing hides the subtree that may own focus (a connection input). Return focus to
+        /// the 🔑 button — as the download menu does with its trigger — so keyboard users keep a
+        /// visible focus target and the next Tab continues from the tab bar, not the page top.
+        const refocus = connection_dropdown_elem.contains(document.activeElement);
+        closeConnectionDropdown();
+        if (refocus) connection_key_elem.focus();
+    }
+});
+
+/// The connection inputs keep `form="controls"`, so native constraint validation (e.g. the
+/// `type="url"` check on `#url`) still runs on submit while they sit in the closed drop-down.
+/// A hidden invalid control blocks the submit with no visible bubble, leaving the Run button
+/// dead. Open the drop-down when a connection field reports invalid, so the browser shows its
+/// validation bubble on a now-visible control. `invalid` does not bubble, so listen in the
+/// capture phase. In the single-tab layout the 🔑 button is hidden and the inputs are already
+/// visible inline, so nothing is opened.
+inputs_elem.addEventListener('invalid', () => {
+    if (!connection_key_elem.hidden && connection_dropdown_elem.hidden) openConnectionDropdown();
+}, true);
 
 /// Generate the next default title: "Query A" .. "Query Z", "Query AA", ...
 /// Skips titles already in use so closing/reopening doesn't produce duplicates.
@@ -5051,7 +5537,7 @@ function invalidateInFlight() {
 /// Load a tab's content into the editor and re-render its stored result.
 /// Routed through `restoreFromHistory` so the syntax backdrop, params and run
 /// buttons resync (it dispatches an 'input' event), exactly like history navigation.
-async function activateTab(id) {
+async function activateTab(id, guard_paste = false) {
     const tab = tabs.find(t => t.id === id);
     if (!tab) return;
     activeTabId = id;
@@ -5066,7 +5552,20 @@ async function activateTab(id) {
     /// even when there is no result to render (restoreFromHistory skips this otherwise).
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
     renderTabBar();
+    /// A middle-click new-tab open arms the X11 PRIMARY paste guard right around this focus, so
+    /// the paste Linux delivers to the freshly-focused editor is swallowed - and only that one.
+    /// Anchoring the guard here, rather than at the original `auxclick`, means a slow activation
+    /// can never let it expire before focus. It is cleared by the swallowed paste, by a real
+    /// paste-shortcut keydown (which must never be eaten - see `suppress_middleclick_paste`), or by
+    /// the short fallback below in case no paste fires at all (non-Linux, empty selection), so the
+    /// flag can never linger. Re-arming here cancels any previous open's pending fallback timer, so
+    /// an overlapping middle-click open cannot have its guard cleared by an earlier open's timeout.
+    if (guard_paste) {
+        clearTimeout(middleclick_paste_timeout);
+        suppress_middleclick_paste = true;
+    }
     query_area.focus();
+    if (guard_paste) middleclick_paste_timeout = setTimeout(disarmMiddleclickPaste, 250);
 }
 
 /// Switch tabs in response to a user click: capture the current tab, activate the
@@ -5091,6 +5590,21 @@ function addTab() {
     activeTabId = tab.id;
     /// A brand new tab has no result; clear the editor and result area.
     activateTab(tab.id).then(syncHistory);
+    scheduleSave();
+}
+
+/// Like `addTab`, but the new tab starts pre-filled with `query` and becomes active.
+/// Used by the databases panel when a table is opened with a new-tab gesture (middle
+/// click or Shift/Ctrl/Cmd click). `guard_paste` is set for a genuine middle click, so
+/// the activation swallows the X11 PRIMARY paste that follows focusing the editor.
+function openQueryInNewTab(query, guard_paste = false) {
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
+    const tab = makeTab(undefined, query);
+    tabs.push(tab);
+    activeTabId = tab.id;
+    activateTab(tab.id, guard_paste).then(syncHistory);
     scheduleSave();
 }
 
@@ -5123,6 +5637,8 @@ function startTitleEdit(tab, titleEl) {
     titleEl.contentEditable = 'true';
     titleEl.spellcheck = false;
     titleEl.classList.add('editing');
+    /// Drop the hover tooltip while typing so it does not linger with the old title.
+    titleEl.removeAttribute('title');
     /// Mark the tab so it drops its max-width and flexes to fit the title being typed.
     titleEl.closest('.tab').classList.add('editing');
 
@@ -5166,6 +5682,7 @@ function renderTabBar() {
     /// (rather than merely `result != null`) also ignores any stale/fabricated result
     /// snapshot that an older build may have persisted to IndexedDB.
     tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran));
+    syncConnectionUI();
 
     tabs_elem.textContent = '';
     for (const tab of tabs) {
@@ -5179,6 +5696,8 @@ function renderTabBar() {
         const titleEl = document.createElement('span');
         titleEl.className = 'tab-title';
         titleEl.textContent = tab.title;
+        /// Native tooltip so a title truncated by the width cap can still be read in full on hover.
+        titleEl.title = tab.title;
         el.appendChild(titleEl);
 
         const closeEl = document.createElement('span');
@@ -5578,6 +6097,16 @@ function beginFlight() {
     document.getElementById('run-all').style.display = 'none';
     /// Hide any open autocompletion when a query starts running.
     closeCompletions();
+    /// Drop any previous syntax-error highlight; a fresh error (if any) will be set on failure.
+    clearQueryError();
+    /// New run: no statement has claimed the error marker yet. With this reset in place, the
+    /// arbitration in `highlightQueryError` is scoped to one run (see `queryErrorOwnerStart`).
+    queryErrorOwnerStart = -1;
+    /// Snapshot the editor-interaction generation. A late error response is only allowed to paint
+    /// a highlight if the user has not returned to the editor since this run started. The keystroke
+    /// or click that triggered the run has already bumped the generation (the textarea's own
+    /// handlers run before the document-level run trigger), so it is included in this snapshot.
+    runEditorInteraction = editorInteractionGen;
 }
 
 function endFlight() {
@@ -5625,14 +6154,14 @@ async function postOne()
         if (selected.length > 1) {
             await postMulti(my_request_num, selected, params_restore_pending);
         } else if (selected.length === 1) {
-            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart);
         }
     } else {
         const query = await getQueryUnderCursor();
         if (my_request_num !== request_num) return;
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined, params_restore_pending);
+        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined, params_restore_pending, queryUnderCursorStart);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -5660,7 +6189,7 @@ async function postAll()
     } else {
         const query = await getQueryUnderCursor();
         if (my_request_num !== request_num) return;
-        await postSingle(my_request_num, query, undefined, params_restore_pending);
+        await postSingle(my_request_num, query, undefined, params_restore_pending, queryUnderCursorStart);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -6008,6 +6537,12 @@ async function tokenize(query) {
     return result;
 }
 
+/// Absolute character offset (into the textarea) where the query most recently returned by
+/// `getQueryUnderCursor` begins. Callers thread it into `highlightQueryError` so a server-reported
+/// error position maps back to the statement that actually ran, even when the same query text
+/// appears more than once in the editor.
+let queryUnderCursorStart = 0;
+
 /// Regression coverage for this function lives in
 /// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
 /// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
@@ -6015,6 +6550,7 @@ async function getQueryUnderCursor() {
     const all_queries = query_area.value;
 
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        queryUnderCursorStart = 0;
         return all_queries;
     }
 
@@ -6046,7 +6582,8 @@ async function getQueryUnderCursor() {
             const has_content = current_query_start < offset_before_token;
             if (has_content && current_offset >= cursor_position) {
                 if (should_select_query) query_area.setSelectionRange(current_query_start, current_offset);
-                query_area.focus();
+                focusEditorForRun();
+                queryUnderCursorStart = current_query_start;
                 return all_queries.substring(current_query_start, current_offset);
             }
             if (has_content) {
@@ -6066,14 +6603,16 @@ async function getQueryUnderCursor() {
     /// with the cursor placed after it" case.
     if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
         if (should_select_query) query_area.setSelectionRange(last_query_start, last_query_end);
-        query_area.focus();
+        focusEditorForRun();
+        queryUnderCursorStart = last_query_start;
         return all_queries.substring(last_query_start, last_query_end);
     }
 
     /// Cursor is in the last query (no trailing semicolon).
     const tail = all_queries.substring(current_query_start);
     if (should_select_query) query_area.setSelectionRange(current_query_start, all_queries.length);
-    query_area.focus();
+    focusEditorForRun();
+    queryUnderCursorStart = current_query_start;
     return tail;
 }
 
@@ -6087,7 +6626,7 @@ const PARALLELIZABLE_KEYWORDS = new Set([
 /// (after skipping whitespace, comments, and opening brackets).
 async function splitAllQueries(text) {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length }];
+        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length, queryStart: 0 }];
     }
 
     const tokens = await tokenize(text);
@@ -6104,13 +6643,18 @@ async function splitAllQueries(text) {
 
         if (elem.token == ';') {
             if (has_significant) {
-                const q = text.substring(current_query_start, current_offset).trim();
+                const raw = text.substring(current_query_start, current_offset);
+                const q = raw.trim();
                 if (q && q !== ';') {
                     queries.push({
                         query: q,
                         is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
                         start: first_significant_offset,
                         end: last_significant_end,
+                        /// Exact character offset where the trimmed query text begins in `text`,
+                        /// so a server-reported error position can be mapped to this statement even
+                        /// when the same text appears more than once (e.g. `SELECT 1; SELECT 1`).
+                        queryStart: current_query_start + (raw.length - raw.trimStart().length),
                     });
                 }
             }
@@ -6133,13 +6677,15 @@ async function splitAllQueries(text) {
 
     /// Last query (no trailing semicolon)
     if (has_significant) {
-        const last = text.substring(current_query_start).trim();
+        const raw = text.substring(current_query_start);
+        const last = raw.trim();
         if (last && last !== ';') {
             queries.push({
                 query: last,
                 is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
                 start: first_significant_offset,
                 end: last_significant_end,
+                queryStart: current_query_start + (raw.length - raw.trimStart().length),
             });
         }
     }
@@ -6490,6 +7036,148 @@ function renderNumberContent(token) {
 let currentTokens = [];
 let currentBoundaries = [];
 let currentBackdropText = '';
+
+/// Absolute character offset (into the textarea) of the position the server reported a syntax
+/// error at, or -1 when there is no error to highlight. The token containing this offset is
+/// painted with a red background in the backdrop until the user returns focus to the editor.
+let queryErrorPos = -1;
+
+/// True when the error was reported at the end of the query — the server writes a "(end of query)"
+/// suffix for both an unexpected end of stream and a `;` separator (see `writeCommonErrorMessage`
+/// in `src/Parsers/parseQuery.cpp`). Such an error points at the statement *boundary*, not at a
+/// token, so `renderQueryBackdrop` draws a thin marker at `queryErrorPos` instead of filling the
+/// `;`/whitespace token that happens to start there.
+let queryErrorAtEnd = false;
+
+/// Start offset (in the textarea) of the statement whose error currently owns the marker, or -1
+/// when no statement has claimed it in the current run. Several statements of one run can fail
+/// concurrently (`postMulti` executes parallelizable groups with `Promise.all`), but the editor has
+/// a single marker; without arbitration whichever error response arrived last would win, so the
+/// highlight would depend on response timing. Instead the leftmost failing statement wins
+/// deterministically (see the arbitration in `highlightQueryError`). Reset by `beginFlight` at run
+/// start.
+let queryErrorOwnerStart = -1;
+
+/// Monotonic counter bumped whenever the user returns to the editor (refocus, typing, caret
+/// movement, or a click inside it). `beginFlight` snapshots it into `runEditorInteraction` at run
+/// start; if it advances before the error response arrives, `postImpl` suppresses the (now stale)
+/// syntax-error highlight. Without this, a late error response could repaint the marker after the
+/// user has already resumed editing, because the clear handlers only remove an already-visible
+/// marker and would not fire again on their own.
+let editorInteractionGen = 0;
+let runEditorInteraction = 0;
+
+/// True only while `getQueryUnderCursor` performs its internal `query_area.focus()` to run a query.
+/// That programmatic refocus happens *after* `beginFlight` has snapshotted the generation, so if it
+/// were counted as the user returning to the editor it would advance `editorInteractionGen` past the
+/// snapshot and suppress the syntax-error highlight for runs started from the "Run" / "Run all"
+/// buttons (where the textarea was not already focused, so `focus()` really does fire a `focus`
+/// event). Use `focusEditorForRun` to set this around that focus; `onReturnToEditor` then ignores it.
+let suppressReturnToEditor = false;
+
+/// Clear the syntax-error highlight and repaint. Called when the user returns to the editor
+/// (focus, typing, cursor movement) or when a new query run starts.
+function clearQueryError() {
+    if (queryErrorPos < 0) return;
+    queryErrorPos = -1;
+    queryErrorAtEnd = false;
+    renderQueryBackdrop();
+}
+
+/// Record that the user has interacted with the editor and clear any visible highlight. Bound to
+/// the same focus/keydown/pointerdown/input events; the generation bump is what lets a late error
+/// response know the user has already returned to editing (see `editorInteractionGen`).
+function onReturnToEditor() {
+    /// A programmatic refocus performed to start a run is not a user return to the editor; ignore it
+    /// so it does not suppress the very highlight the run is about to produce (see `suppressReturnToEditor`).
+    if (suppressReturnToEditor) return;
+    ++editorInteractionGen;
+    clearQueryError();
+}
+
+/// Focus the editor the way `getQueryUnderCursor` does when it selects the query to run, without
+/// letting the resulting `focus` event count as the user returning to the editor (see
+/// `suppressReturnToEditor`). Other `focus` listeners (e.g. the backdrop repaint) still run.
+function focusEditorForRun() {
+    suppressReturnToEditor = true;
+    try {
+        query_area.focus();
+    } finally {
+        suppressReturnToEditor = false;
+    }
+}
+
+/// Convert a 0-based UTF-8 byte offset into a JS (UTF-16) string index. ClickHouse reports the
+/// syntax-error position as a byte offset; for ASCII queries it coincides with the character
+/// index, but non-ASCII text needs this conversion so the highlight lands on the right token.
+function byteOffsetToCharIndex(str, byteOffset) {
+    if (byteOffset <= 0) return 0;
+    let bytes = 0;
+    let i = 0;
+    while (i < str.length) {
+        const cp = str.codePointAt(i);
+        const units = cp > 0xFFFF ? 2 : 1;
+        let b;
+        if (cp <= 0x7F) b = 1;
+        else if (cp <= 0x7FF) b = 2;
+        else if (cp <= 0xFFFF) b = 3;
+        else b = 4;
+        bytes += b;
+        i += units;
+        if (bytes >= byteOffset) return i;
+    }
+    return str.length;
+}
+
+/// Parse the server's error message for a "failed at position N" hint (see
+/// `writeCommonErrorMessage` in `src/Parsers/parseQuery.cpp`) and, if found, highlight that
+/// position in the editor. `query` is the exact text that was sent to the server; the reported
+/// position is a 1-based byte offset into it, which we map back to the full textarea contents.
+/// `queryStart` is the absolute character offset in the textarea where `query` began when the run
+/// started (the caller captured it), used to disambiguate identical statements.
+function highlightQueryError(errorText, query, queryStart) {
+    if (typeof errorText !== 'string' || typeof query !== 'string') return;
+
+    const match = errorText.match(/failed at position (\d+)/);
+    if (!match) return;
+
+    /// 1-based byte offset -> 0-based.
+    const byteOffset = parseInt(match[1], 10) - 1;
+    if (!(byteOffset >= 0)) return;
+
+    /// Locate the sent query within the textarea. Prefer the exact start offset the caller
+    /// captured when the run began, so duplicate statements (e.g. `SELECT 1; SELECT 1`) map to the
+    /// one that actually failed. If the editor changed while the request was in flight and the
+    /// query is no longer at that offset, fall back to its first occurrence; if it is gone
+    /// entirely, do not paint a stale position at all.
+    const text = query_area.value;
+    let base;
+    if (typeof queryStart === 'number' && queryStart >= 0
+        && text.substring(queryStart, queryStart + query.length) === query) {
+        base = queryStart;
+    } else {
+        base = text.indexOf(query);
+    }
+    if (base < 0) return;
+
+    /// Run-level arbitration for the single editor marker: several statements of one run can fail
+    /// concurrently (`postMulti` executes parallelizable groups with `Promise.all`), and their
+    /// error responses arrive in an arbitrary order. The leftmost failing statement wins
+    /// deterministically: a response may take the marker only if no statement has claimed it yet
+    /// in this run, or if its statement starts earlier in the editor than the current owner's.
+    if (queryErrorOwnerStart >= 0 && base >= queryErrorOwnerStart) return;
+    queryErrorOwnerStart = base;
+
+    const charIndex = byteOffsetToCharIndex(query, byteOffset);
+    const absolute = base + charIndex;
+
+    queryErrorPos = Math.min(absolute, text.length);
+    /// "(end of query)" means the parser reached the end of the statement or its `;` separator
+    /// (see `writeCommonErrorMessage`). The reported position then falls on the `;` (or on the
+    /// end of a trimmed statement); paint the statement boundary rather than the separator token.
+    queryErrorAtEnd = / \(end of query\)/.test(errorText);
+    renderQueryBackdrop();
+}
 /// Guard so that the backdrop re-renders triggered by the completion code (to update the
 /// reserved spacer) do not recurse back into `updateCompletions`.
 let inRenderBackdrop = false;
@@ -6549,12 +7237,23 @@ function renderQueryBackdrop() {
     let html = '';
     let offset = 0;
     let activeOpen = false;
+    /// Whether the "(end of query)" boundary marker has already been emitted (see below).
+    let errMarkerEmitted = false;
 
     for (let i = 0; i < tokens.length; ++i) {
         const elem = tokens[i];
         const tokStart = offset;
         const tokEnd = offset + elem.token.length;
         offset = tokEnd;
+
+        /// An "(end of query)" error points at a statement boundary, not a token. Draw a thin
+        /// marker at that boundary — right before the token that starts there — rather than
+        /// filling the following `;`/whitespace token. A boundary at the end of the text has no
+        /// following token and is emitted after the loop instead.
+        if (queryErrorAtEnd && !errMarkerEmitted && queryErrorPos <= tokStart) {
+            html += '<span class="q-err-pos-end"></span>';
+            errMarkerEmitted = true;
+        }
 
         const inActive = activeStart >= 0 && tokEnd > activeStart && tokStart < activeEnd;
         if (inActive && !activeOpen) {
@@ -6580,6 +7279,12 @@ function renderQueryBackdrop() {
         if (matchingIdentifiers.has(i)) {
             cls = cls ? cls + ' q-underline' : 'q-underline';
         }
+        /// The token at the reported syntax-error position gets a red background — except for an
+        /// "(end of query)" error, which marks the statement boundary above rather than a token.
+        const isErrPos = queryErrorPos >= 0 && !queryErrorAtEnd && queryErrorPos >= tokStart && queryErrorPos < tokEnd;
+        if (isErrPos) {
+            cls = cls ? cls + ' q-err-pos' : 'q-err-pos';
+        }
 
         /// Numbers get per-digit-group underlines; everything else is plain escaped text.
         const content = elem.type === TT.Number ? renderNumberContent(elem.token) : escapeHTML(elem.token);
@@ -6603,6 +7308,20 @@ function renderQueryBackdrop() {
     /// is shown with the error style.
     if (offset < text.length) {
         html += '<span class="q-err">' + escapeHTML(text.substring(offset)) + '</span>';
+    }
+
+    /// A statement-boundary ("(end of query)") error whose boundary falls at the very end of the
+    /// text has no following token, so emit its marker here. `errMarkerEmitted` guards against a
+    /// double marker when the boundary already matched a token inside the loop.
+    if (queryErrorAtEnd) {
+        if (!errMarkerEmitted) {
+            html += '<span class="q-err-pos-end"></span>';
+            errMarkerEmitted = true;
+        }
+    } else if (queryErrorPos >= 0 && queryErrorPos >= text.length) {
+        /// A non-boundary error past the last token (e.g. the lexer stopped early on an
+        /// incomplete tail): fall back to the trailing filled marker.
+        html += '<span class="q-err-pos"> </span>';
     }
 
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
@@ -6634,6 +7353,14 @@ query_area.addEventListener('focus', renderQueryBackdrop);
 query_area.addEventListener('blur', renderQueryBackdrop);
 /// Hide autocompletion when the textarea loses focus.
 query_area.addEventListener('blur', closeCompletions);
+
+/// Clear the syntax-error highlight as soon as the user returns to the editor: refocusing it,
+/// typing, moving the cursor with the keyboard, or clicking inside it. `onReturnToEditor` also
+/// bumps the interaction generation so a late error response will not repaint a stale highlight.
+query_area.addEventListener('focus', onReturnToEditor);
+query_area.addEventListener('keydown', onReturnToEditor);
+query_area.addEventListener('pointerdown', onReturnToEditor);
+query_area.addEventListener('input', onReturnToEditor);
 
 /// Keep backdrop scroll in sync with textarea.
 query_area.addEventListener('scroll', () => {
@@ -7183,6 +7910,22 @@ function indentSelection(elem, dedent) {
 /// Capture-phase key handling so it runs before the textarea's own `onkeydown` (which would
 /// otherwise treat Tab as "insert spaces").
 query_area.addEventListener('keydown', (e) => {
+    /// This handler runs in the capture phase and calls `stopImmediatePropagation` for the keys it
+    /// consumes (Tab, Enter, ArrowUp/ArrowDown, ArrowRight, Escape). At the event target, a
+    /// capture-phase listener fires before the bubble-phase one and its `stopImmediatePropagation`
+    /// prevents the bubble-phase `onReturnToEditor` (bound below) from firing at all. So record the
+    /// editor interaction here too: pressing a key to open, navigate, or dismiss completions is a
+    /// return to the editor, and without this a late error response for an in-flight query would
+    /// repaint a stale syntax-error highlight (see `editorInteractionGen`). Bump it before the
+    /// selection-indent early return below, which also `stopImmediatePropagation`s and returns.
+    ///
+    /// Also clear any *already visible* highlight here. Bumping the generation only suppresses a
+    /// future late response; because this handler `stopImmediatePropagation`s the keys it consumes
+    /// (Tab, Enter, arrows, Escape), the bubble-phase `onReturnToEditor` — which would clear the
+    /// marker — never runs for them, so a stale highlight would otherwise linger while the user
+    /// navigates completions. `clearQueryError` is idempotent when there is nothing to clear.
+    ++editorInteractionGen;
+    clearQueryError();
     /// Tab / Shift+Tab with a non-empty selection indents / unindents the selected lines by 4
     /// spaces. Handled here (before the completion logic and the space-insert `onkeydown`) so a
     /// selection takes priority.
@@ -7204,8 +7947,25 @@ query_area.addEventListener('keydown', (e) => {
         }
         return;
     }
+    /// The selected candidate whose full text equals the already-typed word (an "empty
+    /// completion" — same length as the prefix, since every candidate starts with it) would
+    /// accept to a no-op. In that case Right / Enter must keep their native meaning — move the
+    /// caret one character, or insert a newline — instead of being swallowed by a completion
+    /// that changes nothing. This matters e.g. after typing `f()` with the caret between `f`
+    /// and `(`: Right should step into the parens, not "accept" the already-complete `f`.
+    const selectedIsNoop = completionCandidates[completionSelected].length === completionPrefix.length;
+
     /// Plain Enter accepts the completion; Ctrl/Cmd+Enter is left alone so it still runs the query.
-    if (e.key === 'Tab' || e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+    if (e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+        if (selectedIsNoop) {
+            /// Nothing to accept — dismiss the list and let the key act natively.
+            closeCompletions();
+            return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        acceptCompletion(completionSelected);
+    } else if (e.key === 'Tab') {
         e.preventDefault();
         e.stopImmediatePropagation();
         acceptCompletion(completionSelected);

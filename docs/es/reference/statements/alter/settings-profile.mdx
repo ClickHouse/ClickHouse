@@ -1,0 +1,202 @@
+---
+description: 'Documentación de SETTINGS PROFILE'
+sidebarTitle: 'SETTINGS PROFILE'
+slug: /sql-reference/statements/alter/settings-profile
+title: 'ALTER SETTINGS PROFILE'
+doc_type: 'reference'
+---
+
+Modifica los perfiles de configuración.
+
+Sintaxis:
+
+```sql
+ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [DROP SETTINGS variable [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP ALL SETTINGS]
+    [DROP ALL PROFILES]
+    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
+```
+
+La cláusula `ON CLUSTER` permite modificar perfiles de configuración en un clúster; véase [DDL distribuido](/es/reference/statements/distributed-ddl).
+
+<div id="replacing-vs-modifying">
+  ## Reemplazar o modificar ajustes
+</div>
+
+`ALTER SETTINGS PROFILE` admite dos formas distintas de cambiar los ajustes y los perfiles padre (heredados) de un perfil. Su comportamiento es muy diferente, por lo que es importante elegir la correcta.
+
+<div id="replacing-form">
+  ### Forma de reemplazo: `SETTINGS` / `INHERIT` sin modificadores
+</div>
+
+Una cláusula `SETTINGS` sin modificadores (sin `ADD`, `MODIFY` ni `DROP`) **reemplaza por completo la lista de ajustes y todos los perfiles padre** del perfil por exactamente lo que enumeres. Todo lo que estuviera presente antes pero no figure en la lista se elimina silenciosamente; no hay ninguna advertencia.
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p
+    SETTINGS max_execution_time = 10, enable_lazy_columns_replication = 1;
+
+ALTER SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360;
+
+SHOW CREATE SETTINGS PROFILE p;
+-- → CREATE SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360
+-- max_execution_time and enable_lazy_columns_replication are gone.
+```
+
+<Warning>
+  Dado que la forma simple `SETTINGS` reemplaza todo por completo, usarla para &quot;sobrescribir una configuración&quot; sobre un perfil base ya poblado eliminará cualquier otra configuración (y cualquier perfil padre) de ese perfil. Si solo quieres cambiar una única configuración y conservar el resto, usa la forma incremental `MODIFY`/`ADD`/`DROP` que se describe a continuación.
+</Warning>
+
+Este es el mismo comportamiento que `SETTINGS` en [`CREATE SETTINGS PROFILE`](/es/reference/statements/create/settings-profile): la cláusula define la lista completa de configuraciones.
+
+<div id="incremental-form">
+  ### Forma incremental: `ADD` / `MODIFY` / `DROP`
+</div>
+
+Las palabras clave `ADD`, `MODIFY` y `DROP` cambian entradas individuales y dejan intacto todo lo demás del perfil:
+
+* `ADD SETTINGS variable = value [constraints]` — añade una configuración que todavía no está presente.
+* `MODIFY SETTINGS variable = value [constraints]` — reemplaza la entrada de una sola configuración. Se sobrescribe la entrada completa (valor y restricciones), así que vuelve a especificar `MIN`/`MAX`/`READONLY`/etc. si quieres conservarlos.
+* `DROP SETTINGS variable [,...]` — elimina las configuraciones indicadas.
+* `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — añade o elimina perfiles padre (heredados).
+* `DROP ALL SETTINGS` / `DROP ALL PROFILES` — elimina todas las configuraciones o todos los perfiles padre.
+
+Varias de estas cláusulas pueden combinarse en una sola sentencia; por ejemplo, `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Sobrescribe una sola configuración mientras conservas el resto de un perfil poblado:
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 16106127360;
+```
+
+Añada un nuevo ajuste restringido y elimine otro:
+
+```sql
+ALTER SETTINGS PROFILE my_profile
+    DROP SETTINGS readonly
+    ADD SETTINGS max_threads = 8 MIN 4 MAX 16 WRITABLE;
+```
+
+Gestione los perfiles principales de forma incremental:
+
+```sql
+ALTER SETTINGS PROFILE my_profile ADD PROFILES p1;
+ALTER SETTINGS PROFILE my_profile DROP PROFILES p1;
+```
+
+Compruebe siempre el resultado con [`SHOW CREATE SETTINGS PROFILE`](/es/reference/statements/show):
+
+```sql
+SHOW CREATE SETTINGS PROFILE my_profile;
+```
+
+<div id="incremental-vs-full-replacement">
+  ## Incremental vs reemplazo completo
+</div>
+
+<Warning>
+  Una cláusula `SETTINGS` por sí sola **elimina toda la configuración existente y todos los perfiles heredados (padre)** del perfil antes de aplicar la nueva.
+</Warning>
+
+Para cambiar una sola configuración y mantener el resto, usa `ADD SETTINGS` o `MODIFY SETTINGS` (consulta los ejemplos a continuación).
+
+<div id="add-vs-modify">
+  ## ADD vs MODIFY
+</div>
+
+Tanto `ADD SETTINGS` como `MODIFY SETTINGS` conservan los demás ajustes del perfil, pero tratan de forma distinta una entrada existente para el *mismo* ajuste:
+
+* `ADD SETTINGS variable = value ...` primero elimina cualquier entrada existente para `variable` y luego inserta la nueva. Por lo tanto, **reemplaza el valor junto con todas las restricciones** de ese ajuste. Cualquier `MIN`, `MAX` o permiso de escritura (`READONLY`/`WRITABLE`/`CONST`/`CHANGEABLE_IN_READONLY`) definido previamente para `variable` que no se repita se descarta.
+* `MODIFY SETTINGS variable = value ...` **fusiona campo por campo**: sobrescribe solo los campos que realmente se especifican (el valor, `MIN`, `MAX` o el permiso de escritura) y mantiene los demás campos de ese ajuste tal como estaban.
+
+<Tip>
+  En resumen, use `MODIFY SETTINGS` cuando solo quiera ajustar un aspecto de un ajuste (por ejemplo, solo el valor, manteniendo un `MAX` existente); use `ADD SETTINGS` cuando quiera redefinir un ajuste desde cero.
+</Tip>
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Cree un perfil para usarlo en los ejemplos siguientes:
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p SETTINGS max_execution_time = 60;
+```
+
+<div id="example-modify-settings">
+  ### MODIFY SETTINGS
+</div>
+
+Agregue o cambie un solo ajuste sin modificar los demás:
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- CREATE SETTINGS PROFILE p SETTINGS
+--     max_execution_time = 60,
+--     max_memory_usage = 20000000000
+```
+
+Como `MODIFY` combina los campos uno por uno, cambiar solo el valor de una configuración conserva sus restricciones existentes:
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000 MAX 30000000000;
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 25000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_memory_usage = 25000000000 MAX 30000000000  -- the MAX constraint is preserved
+```
+
+<div id="example-add-settings">
+  ### ADD SETTINGS
+</div>
+
+Añade una configuración (manteniendo las demás) y vuelve a definirla por completo si ya existe:
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 8 MAX 16 READONLY;
+```
+
+A diferencia de `MODIFY`, si se vuelve a ejecutar `ADD` solo con un valor, se eliminan las restricciones definidas previamente para ese parámetro:
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 4;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_threads = 4   -- the MAX and READONLY constraints are gone
+```
+
+<div id="example-drop-settings">
+  ### DROP SETTINGS
+</div>
+
+Elimina una o varias configuraciones con nombre:
+
+```sql
+ALTER SETTINGS PROFILE p DROP SETTINGS max_threads;
+```
+
+Elimine todos los parámetros de configuración de una vez:
+
+```sql
+ALTER SETTINGS PROFILE p DROP ALL SETTINGS;
+```
+
+<div id="example-profiles">
+  ### Trabajar con perfiles heredados
+</div>
+
+Agregue o elimine perfiles principales (heredados) sin afectar la configuración del propio perfil:
+
+```sql
+ALTER SETTINGS PROFILE p ADD PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP ALL PROFILES;
+```
