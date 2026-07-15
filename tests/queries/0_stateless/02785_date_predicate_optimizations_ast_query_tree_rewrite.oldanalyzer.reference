@@ -1,6 +1,4 @@
-SELECT value1
-FROM date_t
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -40,9 +38,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(or(less(date1, \'1993-01-01\'), greaterOrEquals(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(or(less(date1, \'1993-01-01\'), greaterOrEquals(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -82,9 +78,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(less(date1, \'1993-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(less(date1, \'1993-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -116,9 +110,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(greaterOrEquals(date1, \'1994-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(date1, \'1994-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -150,9 +142,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(less(date1, \'1994-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(less(date1, \'1994-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -184,9 +174,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(greaterOrEquals(date1, \'1993-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(date1, \'1993-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -218,9 +206,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1998-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1998-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -260,9 +246,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(or(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(date1, \'1994-01-01\'), less(date1, \'1995-01-01\'))), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(or(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(date1, \'1994-01-01\'), less(date1, \'1995-01-01\'))), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -318,11 +302,7 @@ QUERY id: 0
                       COLUMN id: 29, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 33, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT
-    value1,
-    toYear(date1) AS year1
-FROM date_t
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT\n    value1,\n    toYear(date1) AS year1\nFROM date_t\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -367,9 +347,7 @@ QUERY id: 0
                       COLUMN id: 21, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 25, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(less(date1, \'1993-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(less(date1, \'1993-01-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -401,10 +379,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-PREWHERE and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\'))
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nPREWHERE and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\'))\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -442,9 +417,7 @@ QUERY id: 0
                 COLUMN id: 17, column_name: id, result_type: UInt32, source_id: 3
                 CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(and(greaterOrEquals(id, 1), lessOrEquals(id, 3)), and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')))
+SELECT value1\nFROM date_t\nWHERE and(and(greaterOrEquals(id, 1), lessOrEquals(id, 3)), and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -482,9 +455,7 @@ QUERY id: 0
                 COLUMN id: 17, column_name: date1, result_type: Date, source_id: 3
                 CONSTANT id: 21, constant_value: \'1994-01-01\', constant_value_type: String
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(equals(toYYYYMM(date1), 199300), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(equals(toYYYYMM(date1), 199300), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -519,9 +490,7 @@ QUERY id: 0
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(equals(toYYYYMM(date1), 199313), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(equals(toYYYYMM(date1), 199313), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -556,9 +525,7 @@ QUERY id: 0
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(and(greaterOrEquals(date1, \'1993-12-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(and(greaterOrEquals(date1, \'1993-12-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -598,9 +565,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(and(greaterOrEquals(date1, \'1992-03-01\'), less(date1, \'1992-04-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(and(greaterOrEquals(date1, \'1992-03-01\'), less(date1, \'1992-04-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -640,9 +605,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(or(less(date1, \'1992-03-01\'), greaterOrEquals(date1, \'1992-04-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(or(less(date1, \'1992-03-01\'), greaterOrEquals(date1, \'1992-04-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -682,9 +645,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(less(date1, \'1992-03-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(less(date1, \'1992-03-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -716,9 +677,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(greaterOrEquals(date1, \'1992-04-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(date1, \'1992-04-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -750,9 +709,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(less(date1, \'1992-04-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(less(date1, \'1992-04-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -784,9 +741,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(greaterOrEquals(date1, \'1992-03-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(date1, \'1992-03-01\'), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -818,9 +773,7 @@ QUERY id: 0
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date_t
-WHERE and(or(greaterOrEquals(date1, \'1992-03-01\'), and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\'))), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date_t\nWHERE and(or(greaterOrEquals(date1, \'1992-03-01\'), and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\'))), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -868,9 +821,7 @@ QUERY id: 0
                       COLUMN id: 24, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 28, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM datetime_t
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM datetime_t\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -910,9 +861,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM datetime_t
-WHERE and(and(greaterOrEquals(date1, \'1993-12-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM datetime_t\nWHERE and(and(greaterOrEquals(date1, \'1993-12-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -952,9 +901,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date32_t
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date32_t\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -994,9 +941,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM date32_t
-WHERE and(and(greaterOrEquals(date1, \'1993-12-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM date32_t\nWHERE and(and(greaterOrEquals(date1, \'1993-12-01\'), less(date1, \'1994-01-01\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -1036,9 +981,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM datetime64_t
-WHERE and(and(greaterOrEquals(date1, \'1993-01-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM datetime64_t\nWHERE and(and(greaterOrEquals(date1, \'1993-01-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String
@@ -1078,9 +1021,7 @@ QUERY id: 0
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT value1
-FROM datetime64_t
-WHERE and(and(greaterOrEquals(date1, \'1993-12-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
+SELECT value1\nFROM datetime64_t\nWHERE and(and(greaterOrEquals(date1, \'1993-12-01 00:00:00\'), less(date1, \'1994-01-01 00:00:00\')), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String

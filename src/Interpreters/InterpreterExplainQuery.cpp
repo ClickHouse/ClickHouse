@@ -551,7 +551,7 @@ struct QuerySyntaxSettings
 {
     bool oneline = false;
     bool run_query_tree_passes = false;
-    bool single_record = false;
+    bool single_record = true;
     Int64 query_tree_passes = -1;
 
     constexpr static char name[] = "SYNTAX";
@@ -876,9 +876,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            /// EXPLAIN SYNTAX is a reformatted, copy-pasteable query. With single_record = 1 it is
-            /// returned as one multi-line record instead of one record per line (issue #80410).
-            /// Off by default to keep the historical row-per-line output.
+            /// EXPLAIN SYNTAX is a reformatted, copy-pasteable query, so by default it is returned
+            /// as one multi-line record instead of one record per line (issue #80410).
+            /// Set single_record = 0 to restore the historical row-per-line output.
             single_record = settings.single_record;
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,
