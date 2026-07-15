@@ -10285,6 +10285,31 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::checkDataNext");
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
+        /// REMOTE mode: lightweight existence check on remote storage.
+        if (check_task_list->remote)
+        {
+            try
+            {
+                const auto & storage = part->getDataPartStorage();
+
+                if (!storage.isStoredOnRemoteDisk())
+                    return CheckResult(part->name, true, "Skipped: not on remote disk.");
+
+                static constexpr auto probe_file = "checksums.txt";
+                if (storage.existsFile(probe_file))
+                    return CheckResult(part->name, true, "");
+
+                return CheckResult(part->name, false, "Remote object not found for file: " + String(probe_file));
+            }
+            catch (...)
+            {
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
+                return CheckResult(part->name, false, "Remote check failed: " + getCurrentExceptionMessage(false));
+            }
+        }
+
         try
         {
             fiu_do_on(FailPoints::check_table_inject_retryable_zk_error,
