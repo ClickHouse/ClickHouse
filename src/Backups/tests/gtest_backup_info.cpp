@@ -9,6 +9,8 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <base/scope_guard.h>
 
 #include <Poco/Util/MapConfiguration.h>
@@ -692,11 +694,13 @@ TEST(BackupInfo, NormalizedStringRejectsDuplicateNamedCollectionOverrides)
         "S3(" + collection_name + ", url='s3://bucket/b', url='s3://bucket/a')");
     auto malformed = BackupInfo::fromString("S3(" + collection_name + ", equals(url))");
 
-    auto runtime_collection = first.getNamedCollection(context);
-    auto runtime_malformed_collection = malformed.getNamedCollection(context);
+    ASTs default_args{make_intrusive<ASTIdentifier>(collection_name)};
+    default_args.insert(default_args.end(), first.kv_args.begin(), first.kv_args.end());
+    auto default_collection = tryGetNamedCollectionWithOverrides(default_args, context);
 
-    EXPECT_EQ(runtime_collection->get<String>("url"), "s3://bucket/b");
-    EXPECT_EQ(runtime_malformed_collection->get<String>("url"), "s3://bucket/base");
+    EXPECT_EQ(default_collection->get<String>("url"), "s3://bucket/b");
+    EXPECT_THROW((void)first.getNamedCollection(context), Exception);
+    EXPECT_THROW((void)malformed.getNamedCollection(context), Exception);
     EXPECT_THROW((void)first.toNormalizedString(), Exception);
     EXPECT_THROW((void)second.toNormalizedString(context), Exception);
     EXPECT_THROW((void)malformed.toNormalizedString(context), Exception);

@@ -996,7 +996,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
 
 NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
 {
-    return resolveNamedCollection(*this, context, /* strict_override_validation = */ false);
+    return resolveNamedCollection(*this, context, /* strict_override_validation = */ true);
 }
 
 BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
