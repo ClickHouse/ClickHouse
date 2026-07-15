@@ -51,7 +51,7 @@ public:
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
+    StepAnalysisReport getAnalysisReport() const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
     static bool isSupported(JoinKind kind, JoinStrictness strictness);
@@ -170,7 +170,7 @@ private:
     template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
-    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const RightBlockInfo & right_block_info,
+    bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows);
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);

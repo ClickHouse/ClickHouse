@@ -53,13 +53,15 @@ class GraceHashJoin final : public IJoin
     {
         size_t right_rows = 0;
         size_t unique_keys = 0;
-        size_t total_left_rows = 0;
-        size_t matched_left_rows = 0;
         size_t peak_in_memory_bytes = 0;
         size_t num_rehashes = 0;
         size_t num_buckets = 0;
         TemporaryDataBuffer::Stat left_spill;
         TemporaryDataBuffer::Stat right_spill;
+
+        UInt64 left_rows_total = 0;
+        UInt64 matched_left = 0;
+        UInt64 matched_right = 0;
 
         void foldIn(const HashJoin & in_memory_join);
     };
@@ -100,7 +102,7 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
+    StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }

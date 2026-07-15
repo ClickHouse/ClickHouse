@@ -265,6 +265,17 @@ public:
         return filter;
     }
 
+    /// Number of distinct right rows marked as used across all blocks.
+    /// Non-used blocks keep an empty bitmap and contribute 0.
+    size_t countUsed() const
+    {
+        size_t count = 0;
+        for (const auto & map : maps)
+            for (bool bit : map->bitmap)
+                count += bit;
+        return count;
+    }
+
 private:
     std::vector<std::unique_ptr<Bitmap>> maps;
 };
@@ -642,7 +653,7 @@ void MergeJoin::setTotals(const Block & totals_block)
     IJoin::setTotals(totals_block);
     mergeRightBlocks();
 
-    if (is_right || is_full)
+    if (is_right || is_full || collect_stats)
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
 }
 
@@ -906,7 +917,7 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
         starting_right_block = continuation.right_block;
         not_processed.reset();
     }
-    else
+    else 
     {
         /// Count the block rows only when we are processing it for the first time
         total_left_rows.fetch_add(block.rows(), std::memory_order_relaxed);
@@ -1053,7 +1064,12 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
             }
         }
         else
+        {
+            /// ANY LEFT emits a single right row (range.right_start) per equal range.
+            if (collect_stats)
+                right_block_info.setUsed(range.right_start, 1);
             joinEqualsAnyLeft(r_columns_to_add, right_columns, range);
+        }
 
         right_cursor.nextN(range.right_length);
 
@@ -1123,7 +1139,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
     return true;
 }
 
-bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const RightBlockInfo & right_block_info,
+bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                              MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows)
 {
     const Block & right_block = *right_block_info.block;
@@ -1139,6 +1155,10 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
             break;
 
         matched_rows += range.left_length;
+        /// ANY/SEMI emit a single right row (range.right_start) per equal range.
+        /// SEMI does not output right columns, so only ANY needs the right participation mark.
+        if (collect_stats && !is_semi_join)
+            right_block_info.setUsed(range.right_start, 1);
         joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
 
         right_cursor.nextN(range.right_length);
@@ -1299,33 +1319,36 @@ IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     return nullptr;
 }
 
-StepAnalyzeInfo MergeJoin::getAnalyzedInternalStats(size_t group) const
+StepAnalysisReport MergeJoin::getAnalysisReport() const
 {
-    StepAnalyzeInfo internal_stats;
-    switch (static_cast<JoinStage>(group))
-    {
-        case JoinStage::Build:
-        {
-            const bool in_memory = is_in_memory.load(std::memory_order_relaxed);
-            internal_stats.emplace_back("right rows", getTotalRowCount(), StepMetric::Format::Quantity);
-            internal_stats.emplace_back("memory", getTotalByteCount(), StepMetric::Format::Bytes);
-            internal_stats.emplace_back("right blocks", getRightBlocksCount(), StepMetric::Format::Quantity);
-            internal_stats.emplace_back("storage", std::string(in_memory ? "in-memory" : "external"), StepMetric::Format::Raw);
-            if (!in_memory)
-                internal_stats.emplace_back("right spilled", right_spilled_bytes, StepMetric::Format::Bytes);
-            internal_stats.emplace_back("sort time", build_sort_time_ns, StepMetric::Format::Time);
-            break;
-        }
-        case JoinStage::Probe:
-        {
-            internal_stats.emplace_back("sort time", probe_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
-            appendJoinMatchStats(internal_stats, {total_left_rows.load(std::memory_order_relaxed), matched_left_rows.load(std::memory_order_relaxed)});
-            break;
-        }
-        case JoinStage::Default:
-            break;
-    }
-    return internal_stats;
+    StepAnalysisReport report;
+
+    const UInt64 left_rows = total_left_rows.load(std::memory_order_relaxed);
+    const UInt64 matched_left = matched_left_rows.load(std::memory_order_relaxed);
+    report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
+
+    /// Distinct right rows that ended up in the output. For SEMI (right side not in the
+    /// output) no rows are marked, so it is a truthful 0.
+    const UInt64 matched_right = used_rows_bitmap ? used_rows_bitmap->countUsed() : 0;
+
+    const bool in_memory = is_in_memory.load(std::memory_order_relaxed);
+    MetricList right_metrics = joinSideMetrics(getTotalRowCount(), matched_right);
+    right_metrics.emplace_back("size", getTotalByteCount(), StepMetric::Format::Bytes);
+    right_metrics.emplace_back("blocks", getRightBlocksCount(), StepMetric::Format::Quantity);
+    right_metrics.emplace_back("storage", std::string(in_memory ? "in-memory" : "external"), StepMetric::Format::Raw);
+    if (!in_memory)
+        right_metrics.emplace_back("spilled", right_spilled_bytes, StepMetric::Format::Bytes);
+    report.push_back({"right", std::move(right_metrics)});
+
+    MetricList build_metrics;
+    build_metrics.emplace_back("sort time", build_sort_time_ns, StepMetric::Format::Time);
+    report.push_back({"build", std::move(build_metrics)});
+
+    MetricList probe_metrics;
+    probe_metrics.emplace_back("sort time", probe_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
+    report.push_back({"probe", std::move(probe_metrics)});
+
+    return report;
 }
 
 bool MergeJoin::needConditionJoinColumn() const

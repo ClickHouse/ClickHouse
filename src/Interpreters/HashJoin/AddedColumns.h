@@ -16,6 +16,8 @@ namespace ErrorCodes
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class MatchedRowsStats;
+
 struct JoinOnKeyColumns
 {
     Names key_names;
@@ -249,9 +251,6 @@ public:
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
     bool need_filter = false;
-    bool collect_stats = false;
-    /// Left rows with at least one match; filled by the probe loop only when collect_stats is set.
-    UInt64 matched_left_rows = 0;
     bool enable_prefetch = true;
 
     MutableColumns columns;
@@ -265,6 +264,10 @@ public:
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
     bool has_columns_to_add;
+
+    /// Non-owning; set only under EXPLAIN ANALYZE for RefsBitmap join kinds. When non-null,
+    /// appendFromBlock marks matched right rows in the participation bitmap.
+    MatchedRowsStats * match_stats = nullptr;
 
     void reserve(bool need_replicate)
     {

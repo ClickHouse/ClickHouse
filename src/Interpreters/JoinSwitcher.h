@@ -65,9 +65,9 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override
+    StepAnalysisReport getAnalysisReport() const override
     {
-        return join->getAnalyzedInternalStats(group);
+        return join->getAnalysisReport();
     }
 
     IBlocksStreamPtr

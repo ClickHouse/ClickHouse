@@ -81,7 +81,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> processors) const override;
+    StepAnalysisReport getAnalysisReport(const ProcessorsByGroup & processors_by_group) const override;
 
 private:
     bool optimized = false;
@@ -136,6 +136,8 @@ public:
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
+    StepAnalysisReport getAnalysisReport(const ProcessorsByGroup & processors_by_group) const override;
 
 private:
     void updateOutputHeader() override;

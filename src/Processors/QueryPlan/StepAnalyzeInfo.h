@@ -13,27 +13,42 @@ struct StepMetric
     std::string name;
     std::variant<Int64, UInt64, double, std::string> value;
 
-    enum class Format { Raw, Bytes, Quantity, Time, Percent };
+    enum class Format { Raw, Bytes, Quantity, Time, Percent, Ratio };
     Format format = Format::Raw;
 };
 
-using StepAnalyzeInfo = std::vector<StepMetric>;
+using MetricList = std::vector<StepMetric>;
 
-struct JoinMatchStats
+struct MetricGroup
 {
-    UInt64 total_left_rows = 0;
-    /// Left rows with at least one match on the right side.
-    UInt64 matched_left_rows = 0;
+    std::string label;
+    MetricList metrics;
 };
 
-inline void appendJoinMatchStats(StepAnalyzeInfo & info, const JoinMatchStats & stats)
+using StepAnalysisReport = std::vector<MetricGroup>;
+
+struct JoinAnalysisCounters
 {
-    info.emplace_back("left rows", stats.total_left_rows, StepMetric::Format::Quantity);
-    info.emplace_back("matched left rows", stats.matched_left_rows, StepMetric::Format::Quantity);
-    const double match_rate = stats.total_left_rows
-        ? 100.0 * static_cast<double>(stats.matched_left_rows) / static_cast<double>(stats.total_left_rows)
-        : 0.0;
-    info.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+    UInt64 left_rows = 0;
+    UInt64 matched_left = 0;
+    UInt64 right_rows = 0;
+    UInt64 matched_right = 0;
+};
+
+inline MetricList joinSideMetrics(UInt64 rows, UInt64 matched)
+{
+    MetricList metrics;
+    metrics.emplace_back("rows", rows, StepMetric::Format::Quantity);
+    metrics.emplace_back("matched", matched, StepMetric::Format::Quantity);
+    return metrics;
+}
+
+inline StepAnalysisReport buildMatchedRowsReport(const JoinAnalysisCounters & counters)
+{
+    StepAnalysisReport report;
+    report.push_back({"left", joinSideMetrics(counters.left_rows, counters.matched_left)});
+    report.push_back({"right", joinSideMetrics(counters.right_rows, counters.matched_right)});
+    return report;
 }
 
 }

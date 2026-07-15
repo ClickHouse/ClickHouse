@@ -64,8 +64,6 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
 
-    HashJoin::ProbeStats getProbeStats() const;
-
     size_t getRightRows() const;
 
     size_t getUniqueKeys() const;
@@ -73,7 +71,7 @@ public:
     /// Sum of the per-slot build peaks, snapshotted before the two-level merge (see onBuildPhaseFinish).
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
+    StepAnalysisReport getAnalysisReport() const override;
 
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }

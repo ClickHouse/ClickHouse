@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/RowRefs.h>
@@ -625,28 +626,31 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
-StepAnalyzeInfo HashJoin::getAnalyzedInternalStats(size_t group) const
+StepAnalysisReport HashJoin::getAnalysisReport() const
 {
-    StepAnalyzeInfo internal_stats;
-    switch (static_cast<JoinStage>(group))
+    StepAnalysisReport report;
+
+    if (matched_rows_stats)
     {
-        case JoinStage::Build:
-        {
-            internal_stats.emplace_back("right rows", getRightTableRowCount(), StepMetric::Format::Quantity);
-            internal_stats.emplace_back("unique keys", getTotalRowCount(), StepMetric::Format::Quantity);
-            internal_stats.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
-            break;
-        }
-        case JoinStage::Probe:
-        {
-            const ProbeStats stats = getProbeStats();
-            appendJoinMatchStats(internal_stats, {stats.total_left_rows, stats.matched_left_rows});
-            break;
-        }
-        case JoinStage::Default:
-            break;
+        report = buildMatchedRowsReport({
+            .left_rows = matched_rows_stats->getInputLeft(),
+            .matched_left = matched_rows_stats->getMatchedLeft(),
+            .right_rows = matched_rows_stats->getInputRight(),
+            .matched_right = matched_rows_stats->getMatchedRight()});
     }
-    return internal_stats;
+    else
+    {
+        MetricList right_metrics;
+        right_metrics.emplace_back("rows", getRightTableRowCount(), StepMetric::Format::Quantity);
+        report.push_back({"right", std::move(right_metrics)});
+    }
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back("unique keys", getTotalRowCount(), StepMetric::Format::Quantity);
+    hash_table_metrics.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
+    report.push_back({"hash table", std::move(hash_table_metrics)});
+
+    return report;
 }
 
 bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
@@ -1265,6 +1269,8 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
 JoinResultPtr HashJoin::joinBlockImplCross(Block block) const
 {
+    if (matched_rows_stats)
+        matched_rows_stats->collectProbeBlock(block.rows(), block.rows());
     return std::make_unique<CrossJoinResult>(*this, std::move(block));
 }
 
@@ -1423,9 +1429,6 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
     if (!joined)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
 
-    /// Fold the per-block match stats carried by the result into our counters.
-    const auto & hash_result = assert_cast<const HashJoinResult &>(*res);
-    addProbeStats(hash_result.getTotalLeftRows(), hash_result.getMatchedLeftRows());
     return res;
 }
 
@@ -1593,6 +1596,9 @@ public:
             fillNullsFromBlocks(columns_right, rows_added);
         }
 
+        if (auto * stats = parent.matched_rows_stats.get())
+            stats->collectNonJoined(rows_added);
+            
         return rows_added;
     }
 
@@ -2711,6 +2717,13 @@ void HashJoin::onBuildPhaseFinish()
     /// we take a peak snapshot
     size_t total_bytes = getTotalByteCount();
     peak_build_bytes = std::max(peak_build_bytes, getTotalByteCount());
+
+    if (table_join->collectAnalyzeStats())
+    {
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
+        if (rightMatchedSource(kind, strictness) == RightMatchedSource::RefsBitmap)
+            matched_rows_stats->prepareRightBitmap(data->columns);
+    }
 
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());
 }

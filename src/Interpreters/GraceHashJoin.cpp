@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
@@ -512,10 +513,14 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
 {
     right_rows += in_memory_join.getRightTableRowCount();
     unique_keys += in_memory_join.getTotalRowCount();
-    const auto probe = in_memory_join.getProbeStats();
-    total_left_rows += probe.total_left_rows;
-    matched_left_rows += probe.matched_left_rows;
     peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
+
+    if (const auto * match_stats = in_memory_join.getMatchStats())
+    {
+        left_rows_total += match_stats->getInputLeft();
+        matched_left += match_stats->getMatchedLeft();
+        matched_right += match_stats->getMatchedRight();
+    }
 }
 
 GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
@@ -539,33 +544,29 @@ GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
     return result;
 }
 
-StepAnalyzeInfo GraceHashJoin::getAnalyzedInternalStats(size_t group) const
+StepAnalysisReport GraceHashJoin::getAnalysisReport() const
 {
     const GraceHashJoinStats stats_snapshot = collectStats();
 
-    StepAnalyzeInfo internal_stats;
-    switch (static_cast<JoinStage>(group))
-    {
-        case JoinStage::Build:
-        {
-            internal_stats.emplace_back("right rows", stats_snapshot.right_rows, StepMetric::Format::Quantity);
-            internal_stats.emplace_back("unique keys", stats_snapshot.unique_keys, StepMetric::Format::Quantity);
-            internal_stats.emplace_back("memory", stats_snapshot.peak_in_memory_bytes, StepMetric::Format::Bytes);
-            internal_stats.emplace_back("buckets", stats_snapshot.num_buckets, StepMetric::Format::Quantity);
-            internal_stats.emplace_back("rehashes", stats_snapshot.num_rehashes, StepMetric::Format::Quantity);
-            internal_stats.emplace_back("right spilled", stats_snapshot.right_spill.compressed_size, StepMetric::Format::Bytes);
-            break;
-        }
-        case JoinStage::Probe:
-        {
-            appendJoinMatchStats(internal_stats, {stats_snapshot.total_left_rows, stats_snapshot.matched_left_rows});
-            internal_stats.emplace_back("left spilled", stats_snapshot.left_spill.compressed_size, StepMetric::Format::Bytes);
-            break;
-        }
-        case JoinStage::Default:
-            break;
-    }
-    return internal_stats;
+    StepAnalysisReport report = buildMatchedRowsReport({
+        .left_rows = stats_snapshot.left_rows_total,
+        .matched_left = stats_snapshot.matched_left,
+        .right_rows = stats_snapshot.right_rows,
+        .matched_right = stats_snapshot.matched_right});
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back("unique keys", stats_snapshot.unique_keys, StepMetric::Format::Quantity);
+    hash_table_metrics.emplace_back("memory", stats_snapshot.peak_in_memory_bytes, StepMetric::Format::Bytes);
+    hash_table_metrics.emplace_back("buckets", stats_snapshot.num_buckets, StepMetric::Format::Quantity);
+    hash_table_metrics.emplace_back("rehashes", stats_snapshot.num_rehashes, StepMetric::Format::Quantity);
+    report.push_back({"hash table", std::move(hash_table_metrics)});
+
+    MetricList spill_metrics;
+    spill_metrics.emplace_back("left spilled", stats_snapshot.left_spill.compressed_size, StepMetric::Format::Bytes);
+    spill_metrics.emplace_back("right spilled", stats_snapshot.right_spill.compressed_size, StepMetric::Format::Bytes);
+    report.push_back({"spill", std::move(spill_metrics)});
+
+    return report;
 }
 
 

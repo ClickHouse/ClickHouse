@@ -46,7 +46,7 @@ public:
 
     size_t getTotalByteCount() const override { return 0; }
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
+    StepAnalysisReport getAnalysisReport() const override;
 
     bool alwaysReturnsEmptySet() const override { return false; }
 

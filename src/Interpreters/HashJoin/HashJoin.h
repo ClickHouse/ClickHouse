@@ -30,6 +30,8 @@ class TableJoin;
 class ExpressionActions;
 using Sizes = std::vector<size_t>;
 
+class MatchedRowsStats;
+
 namespace JoinStuff
 {
 /// Flags needed to implement RIGHT and FULL JOINs.
@@ -202,7 +204,8 @@ public:
     /// Peak bytes the build occupied, captured during the build phase so it survives `data` release.
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
+    StepAnalysisReport getAnalysisReport() const override;
+    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     bool alwaysReturnsEmptySet() const final;
 
@@ -557,17 +560,6 @@ public:
         }
     };
 
-    void addProbeStats(size_t total, size_t matched)
-    {
-        left_rows_total.fetch_add(total, std::memory_order_relaxed);
-        left_rows_matched.fetch_add(matched, std::memory_order_relaxed);
-    }
-
-    ProbeStats getProbeStats() const
-    {
-        return {left_rows_total.load(std::memory_order_relaxed), left_rows_matched.load(std::memory_order_relaxed)};
-    }
-
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
@@ -599,6 +591,8 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+
+    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
     bool have_compressed = false;
 
@@ -625,10 +619,6 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
-    /// Per-row match counters. Updated only from the non-const probe entry point
-    /// (joinBlock), so no `mutable` is needed; read (load) from the const stats getter.
-    std::atomic<UInt64> left_rows_total{0};
-    std::atomic<UInt64> left_rows_matched{0};
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
     bool enable_lazy_columns_indexing = false;

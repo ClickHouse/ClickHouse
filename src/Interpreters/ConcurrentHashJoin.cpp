@@ -10,6 +10,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -479,14 +480,6 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     return res;
 }
 
-HashJoin::ProbeStats ConcurrentHashJoin::getProbeStats() const
-{
-    HashJoin::ProbeStats stats;
-    for (const auto & hash_join : hash_joins)
-        stats += hash_join->data->getProbeStats();
-    return stats;
-}
-
 size_t ConcurrentHashJoin::getRightRows() const
 {
     size_t res = 0;
@@ -509,28 +502,28 @@ size_t ConcurrentHashJoin::getUniqueKeys() const
     return res;
 }
 
-StepAnalyzeInfo ConcurrentHashJoin::getAnalyzedInternalStats(size_t group) const
+StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
 {
-    StepAnalyzeInfo internal_stats;
-    switch (static_cast<JoinStage>(group))
+    JoinAnalysisCounters counters;
+    counters.right_rows = getRightRows();
+    for (const auto & hash_join : hash_joins)
     {
-        case JoinStage::Build:
-        {
-            internal_stats.emplace_back("right rows", getRightRows(), StepMetric::Format::Quantity);
-            internal_stats.emplace_back("unique keys", getUniqueKeys(), StepMetric::Format::Quantity);
-            internal_stats.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
-            break;
-        }
-        case JoinStage::Probe:
-        {
-            const HashJoin::ProbeStats stats = getProbeStats();
-            appendJoinMatchStats(internal_stats, {stats.total_left_rows, stats.matched_left_rows});
-            break;
-        }
-        case JoinStage::Default:
-            break;
+        const auto * stats = hash_join->data->getMatchStats();
+        if (!stats)
+            continue;
+        counters.left_rows += stats->getInputLeft();
+        counters.matched_left += stats->getMatchedLeft();
+        counters.matched_right += stats->getMatchedRight();
     }
-    return internal_stats;
+
+    StepAnalysisReport report = buildMatchedRowsReport(counters);
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back("unique keys", getUniqueKeys(), StepMetric::Format::Quantity);
+    hash_table_metrics.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
+    report.push_back({"hash table", std::move(hash_table_metrics)});
+
+    return report;
 }
 
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const

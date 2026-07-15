@@ -226,9 +226,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
-StepAnalyzeInfo JoinStep::getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> /*processors*/) const
+StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const
 {
-    return join->getAnalyzedInternalStats(group);
+    return join->getAnalysisReport();
 }
 
 
@@ -262,8 +262,8 @@ String JoinStep::getStepGroupName(size_t group) const
     switch (static_cast<JoinStage>(group))
     {
         case JoinStage::Default: return {};
-        case JoinStage::Probe: return "probe";
         case JoinStage::Build: return "build";
+        case JoinStage::Probe: return "probe";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStageA group {}", group);
 }
@@ -442,6 +442,12 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 void FilledJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
+}
+
+
+StepAnalysisReport FilledJoinStep::getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const
+{
+    return join->getAnalysisReport();
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

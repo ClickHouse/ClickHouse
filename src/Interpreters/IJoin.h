@@ -132,7 +132,7 @@ public:
     /// Number of rows/bytes stored in memory
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
-    virtual StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const = 0;
+    virtual StepAnalysisReport getAnalysisReport() const = 0;
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;

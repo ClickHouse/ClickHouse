@@ -222,15 +222,13 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     return IJoinResult::createFromBlock(std::move(block));
 }
 
-StepAnalyzeInfo DirectKeyValueJoin::getAnalyzedInternalStats(size_t group) const
+StepAnalysisReport DirectKeyValueJoin::getAnalysisReport() const
 {
-    StepAnalyzeInfo internal_stats;
-    /// There is no build phase: the right side lives in the external key-value storage, so only
-    /// the probe (lookup) stage has meaningful statistics.
-    if (static_cast<JoinStage>(group) == JoinStage::Probe)
-        appendJoinMatchStats(internal_stats,
-            {left_rows_total.load(std::memory_order_relaxed), left_rows_matched.load(std::memory_order_relaxed)});
-    return internal_stats;
+    StepAnalysisReport report;
+    const UInt64 left_rows = left_rows_total.load(std::memory_order_relaxed);
+    const UInt64 matched_left = left_rows_matched.load(std::memory_order_relaxed);
+    report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
+    return report;
 }
 
 }

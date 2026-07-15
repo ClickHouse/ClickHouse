@@ -58,10 +58,97 @@ String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed
         }
         case StepMetric::Format::Percent:
             return fmt::format("{:.2f}%", numeric);
+        case StepMetric::Format::Ratio:
+            return fmt::format("{:.2f}", numeric);
         case StepMetric::Format::Raw:
             return {};
     }
     return {};
+}
+
+void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const std::string & prefix)
+{
+    if (metric_group.metrics.empty())
+        return;
+
+    out << prefix;
+    if (!metric_group.label.empty())
+        out << metric_group.label << ": ";
+
+    bool first = true;
+    for (const auto & metric : metric_group.metrics)
+    {
+        if (!first)
+            out << " · ";
+        first = false;
+        out << metric.name << " " << formatStepMetricValue(metric, 0);
+    }
+    out << "\n";
+}
+
+MetricGroup makeIOGroup(const StepStats & step_stats)
+{
+    MetricGroup io_group;
+    io_group.label = "I/O";
+    io_group.metrics.emplace_back("input rows", step_stats.input_rows, StepMetric::Format::Quantity);
+    io_group.metrics.emplace_back("output rows", step_stats.output_rows, StepMetric::Format::Quantity);
+    io_group.metrics.emplace_back("input bytes", step_stats.input_bytes, StepMetric::Format::Bytes);
+    io_group.metrics.emplace_back("output bytes", step_stats.output_bytes, StepMetric::Format::Bytes);
+    return io_group;
+}
+
+UInt64 findQuantity(const MetricGroup & metric_group, const std::string & name)
+{
+    for (const auto & metric : metric_group.metrics)
+        if (metric.name == name)
+            if (const auto * quantity = std::get_if<UInt64>(&metric.value))
+                return *quantity;
+    return 0;
+}
+
+void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::string & prefix)
+{
+    const UInt64 input_rows = findQuantity(io_group, "input rows");
+    const UInt64 output_rows = findQuantity(io_group, "output rows");
+    const UInt64 input_bytes = findQuantity(io_group, "input bytes");
+    const UInt64 output_bytes = findQuantity(io_group, "output bytes");
+
+    const UInt8 precision_rows_in = input_rows < 1000 ? 0 : 2;
+    const UInt8 precision_rows_out = output_rows < 1000 ? 0 : 2;
+
+    out << prefix << "I/O: rows "
+        << formatReadableQuantity(static_cast<double>(input_rows), precision_rows_in) << " → "
+        << formatReadableQuantity(static_cast<double>(output_rows), precision_rows_out);
+
+    if (input_rows != output_rows && input_rows != 0)
+        out << fmt::format(" ({:.2f}%)", 100.0 * static_cast<double>(output_rows) / static_cast<double>(input_rows));
+
+    if (input_bytes != 0 || output_bytes != 0)
+    {
+        const UInt8 precision_bytes_in = input_bytes < 1000 ? 0 : 2;
+        const UInt8 precision_bytes_out = output_bytes < 1000 ? 0 : 2;
+        out << " · " << formatReadableSizeWithDecimalSuffix(static_cast<double>(input_bytes), precision_bytes_in)
+            << " → " << formatReadableSizeWithDecimalSuffix(static_cast<double>(output_bytes), precision_bytes_out);
+    }
+    out << "\n";
+}
+
+void enrichJoinSides(StepAnalysisReport & report, UInt64 step_output_rows)
+{
+    for (auto & metric_group : report)
+    {
+        if (metric_group.label != "left" && metric_group.label != "right")
+            continue;
+
+        const UInt64 rows = findQuantity(metric_group, "rows");
+        const UInt64 matched = findQuantity(metric_group, "matched");
+
+        double selectivity_percent = rows ? 100.0 * static_cast<double>(matched) / static_cast<double>(rows) : 0.0;
+        metric_group.metrics.emplace_back("selectivity", selectivity_percent, StepMetric::Format::Percent);
+
+        const double fanout = rows ? static_cast<double>(step_output_rows) / static_cast<double>(matched) : 0.0;
+        metric_group.metrics.emplace_back("fanout", fanout, StepMetric::Format::Ratio);
+    }
 }
 
 }
@@ -187,28 +274,38 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
     if (const auto step_it = stats_by_step.find(step); step_it != stats_by_step.end())
         step_stats = step_it->second;
 
-    const bool empty_io = (step_stats.input_bytes == 0 && step_stats.output_bytes == 0);
-
-    UInt8 precision_rows_in = step_stats.input_rows < 1000 ? 0 : 2;
-    UInt8 precision_rows_out = step_stats.output_rows < 1000 ? 0 : 2;
-    UInt8 precision_bytes_in = step_stats.input_bytes < 1000 ? 0 : 2;
-    UInt8 precision_bytes_out = step_stats.output_bytes < 1000 ? 0 : 2;
-
-    out << prefix << "I/O: rows "
-        << formatReadableQuantity(static_cast<double>(step_stats.input_rows), precision_rows_in) << " → "
-        << formatReadableQuantity(static_cast<double>(step_stats.output_rows), precision_rows_out);
-
-    if (step_stats.input_rows != step_stats.output_rows && step_stats.input_rows != 0)
+    ProcessorsByGroup processors_by_group;
+    for (size_t group : step->getStepGroups())
     {
-        const double selectivity = 100.0 * static_cast<double>(step_stats.output_rows) / static_cast<double>(step_stats.input_rows);
-        out << fmt::format(" ({:.2f}%)", selectivity);
+        const auto group_it = processors_by_step_group.find(std::make_pair(step, group));
+        if (group_it != processors_by_step_group.end())
+            processors_by_group[group] = group_it->second;
     }
 
-    if (!empty_io)
-        out << " · " << formatReadableSizeWithDecimalSuffix(static_cast<double>(step_stats.input_bytes), precision_bytes_in)
-            << " → " << formatReadableSizeWithDecimalSuffix(static_cast<double>(step_stats.output_bytes), precision_bytes_out);
+    StepAnalysisReport report = step->getAnalysisReport(processors_by_group);
 
-    out << "\n";
+    if (step->getName() == "Join")
+        enrichJoinSides(report, step_stats.output_rows);
+
+    /// Groups labelled by an execution stage name are phase-scoped: they are merged into that
+    /// Stage line below. Everything else renders as a standalone line here.
+    std::set<std::string> stage_names;
+    for (size_t group : step->getStepGroups())
+    {
+        const std::string group_name = step->getStepGroupName(group);
+        if (!group_name.empty())
+            stage_names.insert(group_name);
+    }
+
+    std::unordered_map<std::string, MetricList> phase_metrics;
+
+    for (auto & metric_group : report)
+    {
+        if (stage_names.contains(metric_group.label))
+            phase_metrics.emplace(metric_group.label, std::move(metric_group.metrics));
+        else
+            printMetricGroup(metric_group, out, prefix);
+    }
 
     /// Collect the stages (step groups) that actually have timing stats.
     std::vector<std::pair<size_t, const StepGroupStats *>> stages;
@@ -219,9 +316,12 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
             stages.emplace_back(group, &group_it->second);
     }
 
-    /// A step that splits into several stages labels each one ("Stage (<name>): ..."); a step with a
-    /// single stage just reports that stage's time directly, since there is nothing to disambiguate.
-    const bool label_stages = stages.size() > 1;
+    printIOGroup(makeIOGroup(step_stats), out, prefix);
+
+    /// A step that splits into several stages labels each one ("Stage (<name>): ..."); a single
+    /// stage is also labeled when it carries a non-empty group name (e.g. a join's "probe").
+    const bool label_stages
+        = stages.size() > 1 || (!stages.empty() && !step->getStepGroupName(stages.front().first).empty());
 
     for (const auto & [group, group_stats_ptr] : stages)
     {
@@ -235,10 +335,11 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
             : 0.0;
         const UInt64 max_parallelism = std::min(max_num_threads_per_query, group_stats.total_num_processors);
 
+        const std::string group_name = step->getStepGroupName(group);
+
         out << prefix << "  ";
         if (label_stages)
         {
-            const std::string group_name = step->getStepGroupName(group);
             out << "Stage";
             if (!group_name.empty())
                 out << " (" << group_name << ")";
@@ -246,8 +347,13 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
         }
         out << "time " << formatReadableTime(static_cast<double>(group_stats.wall_clock_time_ns))
             << fmt::format(" ({:.1f}%)", share_of_query_time) << " · parallelism "
-            << (group_stats.wall_clock_time_ns ? fmt::format("{:.2f}/{}", parallelism, max_parallelism) : "Unknown")
-            << "\n";
+            << (group_stats.wall_clock_time_ns ? fmt::format("{:.2f}/{}", parallelism, max_parallelism) : "Unknown");
+
+        if (const auto phase_it = phase_metrics.find(group_name); phase_it != phase_metrics.end())
+            for (const auto & metric : phase_it->second)
+                out << " · " << metric.name << " " << formatStepMetricValue(metric, group_stats.sum_elapsed_ns);
+
+        out << "\n";
 
         if (processors_info)
             out << prefix << "    Time per processor (" << group_stats.total_num_processors << "): "
@@ -255,26 +361,6 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
                 << " · median " << formatReadableTime(static_cast<double>(group_stats.median_elapsed_ns))
                 << " · max " << formatReadableTime(static_cast<double>(group_stats.max_elapsed_ns))
                 << " · sum " << formatReadableTime(static_cast<double>(group_stats.sum_elapsed_ns)) << "\n";
-
-        const auto step_group_key = std::make_pair(step, group);
-        const auto group_processors_it = processors_by_step_group.find(step_group_key);
-
-        std::vector<IProcessor *> group_processors;
-        if (group_processors_it != processors_by_step_group.end())
-            group_processors = group_processors_it->second;
-
-        const StepAnalyzeInfo internal_stats = step->getAnalyzedInternalStats(group, group_processors);
-        if (!internal_stats.empty())
-        {
-            out << prefix << "    ";
-            for (size_t i = 0; i < internal_stats.size(); ++i)
-            {
-                if (i != 0)
-                    out << " · ";
-                out << internal_stats[i].name << " " << formatStepMetricValue(internal_stats[i], group_stats.sum_elapsed_ns);
-            }
-            out << "\n";
-        }
     }
 }
 
