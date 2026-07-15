@@ -1,0 +1,10 @@
+statistics of uniqExact(s) do not rewrite uniqExact(lc) on its first run
+0	3000
+1	3000
+2
+1
+a decision warmed by a wide execution does not apply to a single-threaded one
+1
+the rewritten runs refresh the gate: unfavorable data drift turns the rewrite back off
+0	3000
+1
