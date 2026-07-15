@@ -7,6 +7,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Assert that stdin contains an expected token and print it. If nothing matches
+# (the insert unexpectedly succeeded, or failed with a different message), print
+# a visible NO_MATCH marker so the reference diff fails instead of silently
+# passing on empty output (a plain `grep | head -1` would hide it).
+expect_match() {
+    local pattern="$1"
+    local input
+    input=$(cat)
+    local m
+    m=$(printf '%s' "$input" | grep -oE "$pattern" | head -1)
+    if [ -n "$m" ]; then
+        printf '%s\n' "$m"
+    else
+        printf 'NO_MATCH\n'
+    fi
+}
+
 # Helper: build mode-specific URL params and optional flush call.
 # Usage: insert_url <extra_params>
 # Side effect: sets $INSERT_EXTRA (URL params string) and defines flush()
@@ -55,7 +72,7 @@ do_basic_tests() {
         -H 'X-Event-Type: from-header' \
         "${CLICKHOUSE_URL}${CONFLICT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
         -d '{"event_type":"from-body","payload":"conflict-test","signature":"s"}' \
-        | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
+        | expect_match 'INCORRECT_DATA|Unknown field'
 
     echo "--- ${mode}: basic header-to-column mapping"
     ${CLICKHOUSE_CURL} -sS \
@@ -146,13 +163,13 @@ do_basic_tests() {
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Count: not-a-number' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+typed+(payload)+FORMAT+JSONEachRow&http_column_X-Count=count" \
-        -d '{"payload":"type-err"}' 2>&1 | grep -o 'CANNOT_PARSE_TEXT\|Cannot parse'
+        -d '{"payload":"type-err"}' 2>&1 | expect_match 'CANNOT_PARSE_TEXT|Cannot parse'
 
     echo "--- ${mode}: INSERT ... SELECT rejected"
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Event-Type: push' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(payload)+SELECT+%27x%27&http_column_X-Event-Type=event_type" \
-        2>&1 | grep -o 'NOT_IMPLEMENTED'
+        2>&1 | expect_match 'NOT_IMPLEMENTED'
 }
 
 # ── Typed table (for type-error test) ─────────────────────────────────────────
@@ -210,36 +227,36 @@ ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t_conflict+(payload)+FORMAT+CSVWithNames&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
     --data-binary $'event_type,payload\nfrom-body,conflict' \
-    | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
+    | expect_match 'INCORRECT_DATA|Unknown field'
 
 echo "--- error: case-insensitive body field matches http_column_* target"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t_conflict+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1&input_format_column_name_matching_mode=ignore_case" \
     -d '{"EVENT_TYPE":"from-body","payload":"conflict"}' \
-    | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
+    | expect_match 'INCORRECT_DATA|Unknown field'
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_conflict"
 
 echo "--- error: column listed in both INSERT list and http_column_*"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-E: push' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-E=payload" \
-    -d '{"payload":"conflict"}' 2>&1 | grep -o 'DUPLICATE_COLUMN'
+    -d '{"payload":"conflict"}' 2>&1 | expect_match 'DUPLICATE_COLUMN'
 
 echo "--- error: non-existent column"
 ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-E=no_col" \
-    -d '{"payload":"x"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
+    -d '{"payload":"x"}' 2>&1 | expect_match 'NO_SUCH_COLUMN_IN_TABLE'
 
 echo "--- error: MATERIALIZED column without insert_allow_materialized_columns"
 ${CLICKHOUSE_CURL} -sS -H 'X-V: 1' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-V=mat_col" \
-    -d '{"payload":"x"}' 2>&1 | grep -o 'ILLEGAL_COLUMN'
+    -d '{"payload":"x"}' 2>&1 | expect_match 'ILLEGAL_COLUMN'
 
 echo "--- error: ALIAS column is never insertable"
 ${CLICKHOUSE_CURL} -sS -H 'X-V: hi' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-V=alias_col" \
-    -d '{"payload":"x"}' 2>&1 | grep -o 'ILLEGAL_COLUMN'
+    -d '{"payload":"x"}' 2>&1 | expect_match 'ILLEGAL_COLUMN'
 
 do_materialized_tests() {
     echo "--- ${mode}: MATERIALIZED column allowed with insert_allow_materialized_columns=1"
@@ -461,7 +478,7 @@ wait "${drift_pid}"
 
 echo "--- async: schema drift with wait_for_async_insert=1, waiter receives error"
 # Waiter must have received an error (TYPE_MISMATCH or similar).
-echo "${drift_response}" | grep -oE 'TYPE_MISMATCH|type.mismatch' | head -1 || echo 'ERROR_RECEIVED'
+echo "${drift_response}" | expect_match 'TYPE_MISMATCH|type.mismatch'
 # No rows must have been inserted.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
