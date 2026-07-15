@@ -1655,22 +1655,79 @@ bool isStructuralTypeForJSON(const DataTypePtr & type)
     return has_structural;
 }
 
+/// Strips Nullable from src column/type where dst type is non-Nullable, so that CAST
+/// doesn't throw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN. Handles Nullable(T), Array(Nullable(T)),
+/// and LowCardinality(Nullable(T)) recursively. Returns nullopt for patterns it can't handle.
+/// Values under NULLs are type-defaults in typed JSON paths, so stripping is safe.
+std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    const DataTypePtr & dst_type)
+{
+    bool src_nullable = src_type->isNullable();
+    bool dst_nullable = dst_type->isNullable();
+
+    /// Top-level Nullable(T) -> non-Nullable: unwrap ColumnNullable.
+    if (src_nullable && !dst_nullable)
+    {
+        const auto & col_nullable = assert_cast<const ColumnNullable &>(*src_column);
+        auto nested_type = assert_cast<const DataTypeNullable &>(*src_type).getNestedType();
+        return std::make_pair(col_nullable.getNestedColumnPtr(), nested_type);
+    }
+
+    /// Top-level LowCardinality(Nullable(T)) -> non-LowCardinality-Nullable destination.
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_nullable)
+    {
+        const auto & col_lc = assert_cast<const ColumnLowCardinality &>(*src_column);
+        auto new_col = col_lc.cloneWithDefaultOnNull();
+        auto new_type = removeNullableOrLowCardinalityNullable(src_type);
+        return std::make_pair(std::move(new_col), new_type);
+    }
+
+    /// Array(X) -> Array(Y): recurse into nested type.
+    if (isArray(*src_type) && isArray(*dst_type))
+    {
+        const auto & src_array_type = assert_cast<const DataTypeArray &>(*src_type);
+        const auto & dst_array_type = assert_cast<const DataTypeArray &>(*dst_type);
+        const auto & col_array = assert_cast<const ColumnArray &>(*src_column);
+
+        auto nested_result = removeNullableForCast(
+            col_array.getDataPtr(), src_array_type.getNestedType(), dst_array_type.getNestedType());
+        if (!nested_result)
+            return std::nullopt;
+
+        auto new_array_col = ColumnArray::create(nested_result->first->assumeMutable(), col_array.getOffsetsPtr());
+        auto new_array_type = std::make_shared<DataTypeArray>(nested_result->second);
+        return std::make_pair(std::move(new_array_col), std::move(new_array_type));
+    }
+
+    /// No Nullable mismatch or unhandled pattern.
+    return std::nullopt;
+}
+
 /// Returns true if CAST and format+parse produce different results for the given type,
 /// meaning we must fall back to format+parse. Checks the type itself and all nested subtypes.
 /// Cases:
 /// - DateTime/DateTime64 with explicit timezone or non-default date_time_output_format
+///   or when date_time_input_format differs from cast_string_to_date_time_mode
+///   (CAST uses cast_string_to_date_time_mode, format+parse uses date_time_input_format)
 /// - String when try_infer_numbers_from_strings is enabled (CAST keeps as String,
 ///   but format+parse would infer "123" as Int64)
-bool needsFormatParseFallback(const DataTypePtr & type, const FormatSettings & format_settings)
+bool needsFormatParseFallback(
+    const DataTypePtr & type,
+    const FormatSettings & format_settings,
+    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
 {
     auto check = [&](const IDataType & t) -> bool
     {
         if (isDateTime(t))
             return assert_cast<const DataTypeDateTime &>(t).hasExplicitTimeZone()
-                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
+                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple
+                || format_settings.date_time_input_format != cast_string_to_date_time_mode;
         if (isDateTime64(t))
             return assert_cast<const DataTypeDateTime64 &>(t).hasExplicitTimeZone()
-                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
+                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple
+                || format_settings.date_time_input_format != cast_string_to_date_time_mode;
         if (isStringOrFixedString(t))
             return format_settings.json.try_infer_numbers_from_strings;
         return false;
@@ -2179,7 +2236,8 @@ ColumnPtr convertObjectColumns(
     const DataTypeObject & dst_type,
     const ObjectConversionPlan & plan,
     size_t rows,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
 {
     const auto & src = assert_cast<const ColumnObject &>(*src_col_ptr);
     const auto & src_typed_paths = src.getTypedPaths();
@@ -2283,10 +2341,25 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-            if (skip_invalid || needsFormatParseFallback(from_tp, format_settings))
+            if (skip_invalid || needsFormatParseFallback(from_tp, format_settings, cast_string_to_date_time_mode))
+            {
                 dst_typed_columns[path] = convertTypedColumnToTypedSafe(it->second, from_tp, to_tp, rows, format_settings);
+            }
             else
-                dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
+            {
+                auto src_col = it->second;
+                auto src_type = from_tp;
+
+                /// Strip Nullable where destination is non-Nullable to avoid
+                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST.
+                if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
+                {
+                    src_col = std::move(stripped->first);
+                    src_type = std::move(stripped->second);
+                }
+
+                dst_typed_columns[path] = castColumn({src_col, src_type, ""}, to_tp);
+            }
         }
     }
 
@@ -2367,7 +2440,7 @@ ColumnPtr convertObjectColumns(
         /// Produce a ColumnDynamic from the typed column.
         /// Check if settings require format+parse fallback before trying the fast CAST path.
         ColumnPtr dynamic_col;
-        auto promoted = needsFormatParseFallback(it_type->second, format_settings)
+        auto promoted = needsFormatParseFallback(it_type->second, format_settings, cast_string_to_date_time_mode)
             ? nullptr
             : getPromotedTypeForDynamic(it_type->second, format_settings);
         if (promoted)
@@ -2667,11 +2740,12 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             && cast_type != CastType::accurateOrNull)
         {
             auto captured_format_settings = settings.format_settings;
-            return [captured_plan = std::move(plan), captured_format_settings]
+            auto captured_cast_dt_mode = settings.cast_string_to_date_time_mode;
+            return [captured_plan = std::move(plan), captured_format_settings, captured_cast_dt_mode]
                 (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
             {
                 const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
-                return convertObjectColumns(arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings);
+                return convertObjectColumns(arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_cast_dt_mode);
             };
         }
 

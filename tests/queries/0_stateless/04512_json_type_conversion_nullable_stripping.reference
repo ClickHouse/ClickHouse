@@ -1,0 +1,17 @@
+-- Nullable(UInt32) -> UInt32
+{"a":null}	0
+{"a":42}	42
+-- Nullable(String) -> String
+{"a":null}	
+{"a":"hello"}	hello
+-- Nullable(Float64) -> Float64
+{"a":null}	0
+{"a":3.14}	3.14
+-- Array(Nullable(UInt32)) -> Array(UInt32)
+{"a":[1,null,3]}	[1,0,3]
+{"a":[10,20,30]}	[10,20,30]
+-- Array(Nullable(String)) -> Array(String)
+{"a":["hello",null,"world"]}	['hello','','world']
+-- Nullable(UInt32) -> Nullable(String) (both nullable, no stripping)
+{"a":null}	\N
+{"a":42}	42
