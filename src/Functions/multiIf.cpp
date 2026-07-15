@@ -128,6 +128,7 @@ public:
 
         size_t const_branches_count = 0;
         size_t string_branches_count = 0;
+        size_t nullable_string_branches_count = 0;
         size_t only_null_branches_count = 0;
 
         for_conditions([&](const ColumnWithTypeAndName & arg)
@@ -157,10 +158,18 @@ public:
 
         for_branches([&](const ColumnWithTypeAndName & arg)
         {
+            /// Compute the common type on LowCardinality-stripped branch types, restoring the contract
+            /// of the default LowCardinality implementation this function opted out of (see
+            /// `useDefaultImplementationForLowCardinalityColumns` above). Otherwise an explicit
+            /// `LowCardinality` branch would leak into the result type (e.g. as
+            /// `Variant(..., LowCardinality(String), ...)` with `use_variant_as_common_type`),
+            /// diverging from `if`, whose default implementation strips it.
+            const auto branch_type = removeLowCardinality(arg.type);
             const_branches_count += arg.column && isColumnConst(*arg.column);
-            string_branches_count += isString(arg.type);
-            only_null_branches_count += arg.type->onlyNull();
-            types_of_branches.emplace_back(arg.type);
+            string_branches_count += isString(branch_type);
+            nullable_string_branches_count += branch_type->isNullable() && isString(removeNullable(branch_type));
+            only_null_branches_count += branch_type->onlyNull();
+            types_of_branches.emplace_back(branch_type);
         });
 
         auto const num_branches = types_of_branches.size();
@@ -169,10 +178,13 @@ public:
         {
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            /// A mix of (possibly nullable) string branches and only-NULL branches.
             /// Require at least one actual string branch: a mix of only-NULL branches without any
             /// string (e.g. `CASE WHEN ... THEN NULL ... END`) must keep its `Nullable(Nothing)`
             /// common type instead of being turned into `LowCardinality(Nullable(String))`.
-            else if (string_branches_count > 0 && (only_null_branches_count + string_branches_count) == num_branches)
+            else if (
+                (string_branches_count + nullable_string_branches_count) > 0
+                && (only_null_branches_count + string_branches_count + nullable_string_branches_count) == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
         }
 
@@ -249,7 +261,17 @@ public:
                 }
             }
 
-            const ColumnWithTypeAndName & source_col = arguments[source_idx];
+            ColumnWithTypeAndName source_col = arguments[source_idx];
+            /// The common type is computed on LowCardinality-stripped branch types (see getReturnTypeImpl).
+            /// When it is not LowCardinality itself, convert a LowCardinality branch to its full column -
+            /// as the default LowCardinality implementation did before this function opted out of it -
+            /// since castColumn cannot cast e.g. LowCardinality(String) to a Variant that only
+            /// contains String.
+            if (source_col.type->lowCardinality() && !return_type->lowCardinality())
+            {
+                source_col.column = recursiveRemoveLowCardinality(source_col.column);
+                source_col.type = removeLowCardinality(source_col.type);
+            }
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column;
