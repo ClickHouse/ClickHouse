@@ -257,8 +257,10 @@ struct JoinAlgorithmParams
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 max_threads;
 
+    UInt64 max_bytes_before_external_join = 0;
+
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
 

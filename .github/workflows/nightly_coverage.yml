@@ -48,10 +48,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyCoverage" --ci --timestamp
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -86,10 +83,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyCoverage" --ci --timestamp
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -124,10 +118,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyCoverage" --ci --timestamp
 
   build_amd_llvm_coverage_per_test:
     runs-on: [self-hosted, amd-large]
@@ -162,10 +153,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_llvm_coverage_per_test)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_llvm_coverage_per_test)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8:
     runs-on: [self-hosted, amd-small]
@@ -200,10 +188,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 1/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 1/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8:
     runs-on: [self-hosted, amd-small]
@@ -238,10 +223,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 2/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 2/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8:
     runs-on: [self-hosted, amd-small]
@@ -276,10 +258,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 3/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 3/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8:
     runs-on: [self-hosted, amd-small]
@@ -314,10 +293,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 4/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 4/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8:
     runs-on: [self-hosted, amd-small]
@@ -352,10 +328,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 5/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 5/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8:
     runs-on: [self-hosted, amd-small]
@@ -390,10 +363,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 6/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 6/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8:
     runs-on: [self-hosted, amd-small]
@@ -428,10 +398,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 7/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 7/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8:
     runs-on: [self-hosted, amd-small]
@@ -466,10 +433,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 8/8)' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 8/8)' --workflow "NightlyCoverage" --ci --timestamp
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -504,7 +468,4 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "NightlyCoverage" --ci 2>&1 | python3 -u -c 'import sys,datetime
-          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "NightlyCoverage" --ci --timestamp

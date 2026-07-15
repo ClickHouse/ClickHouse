@@ -98,7 +98,7 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
                         "Unexpected message from library bridge: {}. "
                         "Check that bridge and server have the same version.", result);
 
-    UInt8 dictionary_id_exists;
+    UInt8 dictionary_id_exists = 0;
     auto parsed = tryParse<UInt8>(dictionary_id_exists, result);
     if (!parsed || (dictionary_id_exists != 0 && dictionary_id_exists != 1))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -261,7 +261,7 @@ bool ExternalDictionaryLibraryBridgeHelper::executeRequest(const Poco::URI & uri
                    .withOutCallback(std::move(out_stream_callback))
                    .create(credentials);
 
-    bool res;
+    bool res = false;
     readBoolText(res, *buf);
     return res;
 }

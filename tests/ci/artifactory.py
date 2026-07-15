@@ -1,7 +1,7 @@
 import argparse
 import time
 from pathlib import Path
-from shutil import copy2
+from shutil import copy2, rmtree
 from typing import Optional
 
 from ci_utils import Shell, WithIter
@@ -126,6 +126,10 @@ class DebianArtifactory:
             version=release_info.version,
         )
 
+    # Fingerprint of the GPG key used to sign the ClickHouse Debian repository.
+    _SIGN_KEY = "8919F6BD2B48D754"
+    _KEYRING_PATH = "/etc/apt/keyrings/clickhouse-keyring.gpg"
+
     def export_packages(self):
         assert self.pd.local_deb_packages_ready(), "BUG: Packages are not downloaded"
         print("Start adding packages")
@@ -138,6 +142,7 @@ class DebianArtifactory:
         Shell.check(cmd, strict=True, verbose=True)
         Shell.check("sync")
 
+        codenames_to_check = [self.codename]
         if self.codename == RepoCodenames.LTS:
             packages_with_version = [
                 package + "=" + self.version for package in self.pd.get_packages_names()
@@ -150,32 +155,54 @@ class DebianArtifactory:
             print(f"  {cmd}")
             Shell.check(cmd, strict=True, verbose=True)
             Shell.check("sync")
+            codenames_to_check.append(RepoCodenames.STABLE)
+
+        # Verify that reprepro signed the InRelease files. An unsigned repo would
+        # silently break installation for all clients; catch it here rather than
+        # at test time.
+        for codename in codenames_to_check:
+            inrelease = f"{R2MountPoint.MOUNT_POINT}/deb/dists/{codename}/InRelease"
+            Shell.check(
+                f"grep -q 'BEGIN PGP SIGNATURE' {inrelease}",
+                strict=True,
+                verbose=True,
+            )
+
         time.sleep(10)
         Shell.check(f"lsof +D {R2MountPoint.MOUNT_POINT}", verbose=True)
 
     def test_packages(self):
         Shell.check("docker pull ubuntu:latest", strict=True, verbose=True)
         print(f"Test packages installation, version [{self.version}]")
+        # `apt-key` was removed in Ubuntu 24.04. Use the modern approach:
+        # fetch the ASCII-armored key over HTTP (no dirmngr needed) and dearmor it
+        # into a dedicated keyring, then reference it with [signed-by=].
+        setup_key = (
+            f"mkdir -p /etc/apt/keyrings && "
+            f"curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{self._SIGN_KEY}' "
+            f"| gpg --dearmor -o {self._KEYRING_PATH}"
+        )
         debian_command = (
-            f"echo 'deb {self.repo_url} stable main' | "
+            f"echo 'deb [signed-by={self._KEYRING_PATH}] {self.repo_url} stable main' | "
             "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; "
             f"apt-get install -y clickhouse-common-static={self.version} clickhouse-client={self.version}"
         )
         cmd = (
             "docker run --rm ubuntu:latest bash -c "
-            f'"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
+            f'"apt update -y; apt install -y curl gnupg ca-certificates; {setup_key}; {debian_command}"'
         )
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd, verbose=True)
         print("Test packages installation, version [latest]")
         debian_command_2 = (
-            f"echo 'deb {self.repo_url} stable main' | "
-            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static clickhouse-client"
+            f"echo 'deb [signed-by={self._KEYRING_PATH}] {self.repo_url} stable main' | "
+            "tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; "
+            "apt-get install -y clickhouse-common-static clickhouse-client"
         )
         cmd = (
             "docker run --rm ubuntu:latest bash -c "
-            f'"apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command_2}"'
+            f'"apt update -y; apt install -y curl gnupg ca-certificates; {setup_key}; {debian_command_2}"'
         )
         print("Running test command:")
         print(f"  {cmd}")
@@ -229,6 +256,13 @@ class RpmArtifactory:
 
         for package in paths:
             _copy_if_not_exists(Path(package), dest_dir)
+
+        # Remove stale temp repodata directory left by a previous interrupted run; createrepo_c
+        # refuses to start when it already exists, mistaking it for a concurrent process.
+        stale_repodata = dest_dir / ".repodata"
+        if stale_repodata.exists():
+            print(f"Removing stale temp repodata directory: {stale_repodata}")
+            rmtree(stale_repodata)
 
         # switching between different fuse providers invalidates --update option (apparently some fuse(s) can mess around with mtime)
         #   add --skip-stat to skip mtime check

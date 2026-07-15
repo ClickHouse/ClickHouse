@@ -46,15 +46,15 @@ public:
 
     ~MergeTreeDataPartCompact() override;
 
-protected:
-     static void loadIndexGranularityImpl(
-         MergeTreeIndexGranularityPtr & index_granularity_,
-         const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t marks_per_granule,
-         const IDataPartStorage & data_part_storage_,
-         const MergeTreeSettings & storage_settings);
+    static void loadIndexGranularityImpl(
+        MergeTreeIndexGranularityPtr & index_granularity_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        size_t marks_per_granule,
+        const IDataPartStorage & data_part_storage_,
+        const MergeTreeSettings & storage_settings);
 
-     void doCheckConsistency(bool require_part_metadata) const override;
+protected:
+    void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
      /// Loads marks index granularity into memory

@@ -6,6 +6,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -105,6 +106,8 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
+    void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
+
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
                           UInt64 & version_major,
@@ -143,6 +146,8 @@ public:
     void sendExternalTablesData(ExternalTablesData &) override;
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -184,6 +189,9 @@ private:
     bool send_progress;
     bool send_profile_events;
     String server_display_name;
+    /// Optional callback to check if the query was cancelled (e.g. via Ctrl+C).
+    /// Set by the client application; used as `interactive_cancel_callback` on the query context.
+    std::function<bool()> is_cancelled_callback;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;

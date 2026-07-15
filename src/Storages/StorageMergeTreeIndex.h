@@ -2,12 +2,13 @@
 
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
 /// Internal temporary storage for table function mergeTreeIndex(...)
-class StorageMergeTreeIndex final : public IStorage
+class StorageMergeTreeIndex final : public StorageWithCommonVirtualColumns
 {
 public:
     static const ColumnWithTypeAndName part_name_column;
@@ -22,7 +23,7 @@ public:
         bool with_marks_,
         bool with_minmax_);
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -33,6 +34,8 @@ public:
         size_t num_streams) override;
 
     String getName() const override { return "MergeTreeIndex"; }
+
+    static VirtualColumnsDescription createVirtuals();
 
 private:
     friend class ReadFromMergeTreeIndex;

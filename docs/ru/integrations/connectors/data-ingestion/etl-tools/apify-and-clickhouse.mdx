@@ -1,0 +1,184 @@
+---
+sidebarTitle: 'Apify'
+keywords: ['apify', 'веб-скрейпинг', 'загрузка данных', 'Actors', 'датасеты', 'автоматизация', 'вебхуки']
+slug: /integrations/apify
+description: 'Загружайте в ClickHouse данные веб-скрейпинга и автоматизации из Apify'
+title: 'Подключите Apify к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://apify.com/'
+---
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+[Apify](https://apify.com/) — это платформа для веб-скрейпинга и автоматизации. Вы создаёте, запускаете и масштабируете бессерверные облачные программы под названием [**Actors**](https://docs.apify.com/platform/actors). Actors собирают данные с веб-сайтов, сканируют веб, обрабатывают данные или автоматизируют рабочие процессы. Каждый запуск Actor создаёт структурированный результат, который сохраняется в [**датасетах**](https://docs.apify.com/platform/storage/dataset) (коллекциях объектов JSON).
+
+Загружайте собранные или обработанные данные в ClickHouse для аналитики, мониторинга или конвейеров обогащения.
+
+<div id="key-concepts">
+  ## Ключевые понятия
+</div>
+
+| Понятие Apify                                                        | Что это                                                                                                                                                                                                              |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[Actor](https://docs.apify.com/platform/actors)**                  | Бессерверная облачная программа, работающая на платформе Apify. В [Apify Store](https://apify.com/store) доступны тысячи готовых Actor.                                                                              |
+| **[Dataset](https://docs.apify.com/platform/storage/dataset)**       | Результат выполнения Actor. Табличная коллекция объектов JSON, доступная в форматах JSON, CSV, XML и других через [Apify API](https://docs.apify.com/api/v2).                                                        |
+| **[Webhook](https://docs.apify.com/platform/integrations/webhooks)** | HTTP-вызов, запускаемый по событию, когда выполнение Actor завершается успешно, с ошибкой или достигает других этапов жизненного цикла. Используйте вебхуки, чтобы автоматизировать конвейер от Apify до ClickHouse. |
+
+<div id="setup-guide">
+  ## Руководство по настройке
+</div>
+
+<Steps>
+  <Step>
+    ### Подготовьте сведения о подключении к ClickHouse
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ### Необходимые условия для Apify
+
+    Также вам понадобятся:
+
+    * [Учетная запись Apify](https://console.apify.com/sign-up) (доступен бесплатный уровень).
+    * [API-токен Apify](https://docs.apify.com/platform/integrations/api#api-token), который можно найти в разделе **Settings &gt; Integrations** в [консоли Apify](https://console.apify.com/).
+    * Локально установленный Node.js 18+ (для примеров на JavaScript).
+  </Step>
+
+  <Step>
+    ### Установите зависимости
+
+    Установите JavaScript-клиент Apify и JavaScript-клиент ClickHouse:
+
+    ```bash
+    npm install apify-client @clickhouse/client
+    ```
+
+    <Note>
+      Apify также предоставляет [клиент Python](https://docs.apify.com/api/client/python). Если вы предпочитаете Python, установите `apify-client` через pip и используйте [clickhouse-connect](/ru/integrations/language-clients/python/index) для ClickHouse.
+    </Note>
+  </Step>
+
+  <Step>
+    ### Создайте целевую таблицу в ClickHouse
+
+    Создайте таблицу для хранения собранных данных. Схема зависит от используемого Actor. В этом примере для Actor, собирающего данные о товарах, используется [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree):
+
+    ```sql
+    CREATE TABLE apify_products
+    (
+        url        String,
+        title      String,
+        price      Float64,
+        currency   String,
+        scraped_at DateTime DEFAULT now()
+    )
+    ENGINE = MergeTree()
+    ORDER BY (scraped_at, url);
+    ```
+  </Step>
+
+  <Step>
+    ### Получите dataset Apify и загрузите его в ClickHouse
+
+    Следующий скрипт получает результаты запуска Actor в Apify и вставляет их в ClickHouse:
+
+    ```javascript
+    import { ApifyClient } from 'apify-client';
+    import { createClient } from '@clickhouse/client';
+
+    // Инициализация клиентов
+    const apify = new ApifyClient({ token: 'YOUR_APIFY_API_TOKEN' });
+    const clickhouse = createClient({
+        url: 'https://YOUR_CLICKHOUSE_HOST:8443',
+        username: 'default',
+        password: 'YOUR_CLICKHOUSE_PASSWORD',
+        database: 'default',
+    });
+
+    // Получение элементов dataset из последнего запуска Actor
+    const run = await apify.actor('YOUR_ACTOR_ID').call();
+    const { items } = await apify.dataset(run.defaultDatasetId).listItems();
+
+    console.log(`Fetched ${items.length} items from Apify dataset.`);
+
+    // Вставка в ClickHouse
+    await clickhouse.insert({
+        table: 'apify_products',
+        values: items,
+        format: 'JSONEachRow',
+    });
+
+    console.log(`Inserted ${items.length} rows into ClickHouse.`);
+    await clickhouse.close();
+    ```
+
+    <Tip>
+      Для больших dataset получайте результаты постранично с помощью параметров `limit` и `offset` конечной точки [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items). Также можно передать `clean=true`, чтобы получать только непустые дедуплицированные элементы.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### Автоматизируйте процесс с помощью вебхуков
+
+    Вместо ручного запуска скрипта автоматизируйте конвейер, чтобы данные загружались в ClickHouse каждый раз, когда Actor завершает работу:
+
+    1. В [консоли Apify](https://console.apify.com/) перейдите к нужному Actor и откройте вкладку **Integrations**.
+    2. Добавьте новый вебхук со следующими параметрами:
+       * **Тип события:** `ACTOR.RUN.SUCCEEDED`
+       * **Действие:** HTTP POST на конечную точку вашего загрузчика либо запуск другого Actor, который выполняет вставку в ClickHouse.
+    3. Полезная нагрузка вебхука включает `defaultDatasetId`, который можно использовать для получения результатов запуска.
+
+    Подробные сведения о полезной нагрузке и параметрах конфигурации см. в [документации Apify по вебхукам](https://docs.apify.com/platform/integrations/webhooks).
+
+    Альтернативный вариант — использовать [Apify Schedules](https://docs.apify.com/platform/schedules) для запуска Actors по cron-подобному расписанию в сочетании с вебхуками для этапа загрузки.
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## Рекомендации по лучшей практике
+</div>
+
+<div id="fetching-data-from-apify">
+  ### Получение данных из Apify
+</div>
+
+Используйте клиентскую библиотеку Apify (`apify-client` для [JavaScript](https://docs.apify.com/api/client/js) или [Python](https://docs.apify.com/api/client/python)) вместо прямых HTTP-запросов. Она сама обрабатывает пагинацию, повторные попытки и аутентификацию. Для больших датасетов постранично получайте результаты с помощью параметров `limit` и `offset` конечной точки [Список элементов датасета](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items).
+
+<div id="loading-into-clickhouse">
+  ### Загрузка данных в ClickHouse
+</div>
+
+При вставке данных в ClickHouse используйте формат [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow). Он напрямую соответствует JSON-выводу Apify, поэтому никакого преобразования не требуется.
+
+Схема таблицы ClickHouse должна соответствовать выходным полям Actor. Проверить выходную схему Actor можно на его странице в [Apify Store](https://apify.com/store) или на вкладке **Dataset** после выполнения.
+
+<div id="performance">
+  ### Производительность
+</div>
+
+Для высокопроизводительных вставок из JavaScript-клиента следуйте рекомендациям в разделе [Советы по оптимизации производительности](/ru/integrations/language-clients/js#tips-for-performance-optimizations). Собирайте строки в более крупные батчи для вставки вместо того, чтобы вставлять их по одной, и рассмотрите [асинхронные вставки](/ru/concepts/features/operations/insert/asyncinserts), если батчинг на стороне клиента непрактичен.
+
+<div id="security">
+  ### Безопасность
+</div>
+
+В примерах на этой странице для простоты используются пользователь и база данных `default`. В рабочей среде создайте отдельного пользователя с минимальными привилегиями, необходимыми для вставки данных в целевую таблицу, и храните учетные данные в безопасном месте (например, в переменных окружения или менеджере secrets, а не добавляйте их в исходный код). Рекомендации см. в разделе [Cloud access management](/ru/products/cloud/guides/security/cloud-access-management/index).
+
+<div id="related-resources">
+  ## Связанные ресурсы
+</div>
+
+* [Документация по платформе Apify](https://docs.apify.com)
+* [Справочник по API Apify](https://docs.apify.com/api/v2)
+* [JavaScript-клиент Apify](https://docs.apify.com/api/client/js)
+* [Клиент Python для Apify](https://docs.apify.com/api/client/python)
+* [Apify Store (готовые Actors)](https://apify.com/store)
+* [Обзор интеграций Apify](https://docs.apify.com/platform/integrations)
+* [JavaScript-клиент ClickHouse](/ru/integrations/language-clients/js)

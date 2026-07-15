@@ -1,0 +1,312 @@
+---
+slug: /migrations/postgresql/data-modeling-techniques
+title: '데이터 모델링 기법'
+description: 'PostgreSQL에서 ClickHouse로 마이그레이션하는 가이드 제3부'
+keywords: ['postgres', 'postgresql']
+show_related_blogs: true
+sidebarTitle: '제3부'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이는 PostgreSQL에서 ClickHouse로 마이그레이션하는 가이드의 **3부**입니다. 이 문서에서는 실용적인 예시를 통해 PostgreSQL에서 마이그레이션할 때 ClickHouse에서 데이터를 어떻게 모델링하는지 설명합니다.
+
+Postgres에서 마이그레이션하는 사용자는 [ClickHouse에서 데이터 모델링하는 방법에 대한 가이드](/ko/guides/clickhouse/data-modelling/schema-design)를 읽어보시기를 권장합니다. 이 가이드에서는 동일한 Stack Overflow 데이터셋을 사용하여 ClickHouse 기능을 활용한 여러 접근 방식을 살펴봅니다.
+
+<div id="primary-ordering-keys-in-clickhouse">
+  ## ClickHouse의 프라이머리(정렬) 키
+</div>
+
+OLTP 데이터베이스를 사용해 온 사용자는 ClickHouse에서 이에 해당하는 개념을 찾는 경우가 많습니다. ClickHouse가 `PRIMARY KEY` 구문을 지원하는 것을 보면, 원본 OLTP 데이터베이스와 동일한 키로 테이블 스키마를 정의하고 싶을 수 있습니다. 하지만 이는 적절하지 않습니다.
+
+<div id="how-are-clickhouse-primary-keys-different">
+  ### ClickHouse 프라이머리 키는 어떻게 다를까요?
+</div>
+
+ClickHouse에서 OLTP 프라이머리 키를 사용하는 것이 적절하지 않은 이유를 이해하려면 먼저 ClickHouse 인덱싱의 기본 개념을 이해해야 합니다. 여기서는 비교를 위해 Postgres를 예시로 사용하지만, 이러한 일반적인 개념은 다른 OLTP 데이터베이스에도 동일하게 적용됩니다.
+
+* Postgres 프라이머리 키는 정의상 각 행마다 고유합니다. [B-트리 구조](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales)를 사용하면 이 키를 통해 단일 행을 효율적으로 조회할 수 있습니다. ClickHouse 역시 단일 행 값 조회에 맞게 최적화할 수는 있지만, 분석 워크로드에서는 일반적으로 소수의 컬럼에 대해 많은 수의 행을 읽어야 합니다. 또한 filter는 대개 집계가 수행될 **일부 행 집합**을 식별해야 합니다.
+* 메모리와 디스크 효율성은 ClickHouse가 주로 사용되는 규모에서 매우 중요합니다. 데이터는 ClickHouse 테이블에 파트(parts)라는 청크 단위로 기록되며, 백그라운드에서는 이 파트들을 머지하는 규칙이 적용됩니다. ClickHouse에서는 각 파트가 자체 프라이머리 인덱스를 가집니다. 파트가 머지되면 병합된 파트의 프라이머리 인덱스도 함께 머지됩니다. Postgres와 달리 이러한 인덱스는 각 행마다 생성되지 않습니다. 대신 각 파트의 프라이머리 인덱스에는 여러 행으로 이루어진 각 그룹마다 하나의 인덱스 엔트리가 있습니다. 이 기법을 **희소 인덱싱**이라고 합니다.
+* **희소 인덱싱**이 가능한 이유는 ClickHouse가 지정된 키를 기준으로 정렬된 상태로 각 파트의 행을 디스크에 저장하기 때문입니다. 희소 프라이머리 인덱스는 B-트리 기반 인덱스처럼 단일 행을 직접 찾는 대신, 인덱스 엔트리에 대한 **이진 검색**을 통해 쿼리와 일치할 가능성이 있는 행 그룹을 빠르게 식별할 수 있게 해줍니다. 그런 다음 일치 가능성이 있는 행 그룹을 병렬로 ClickHouse engine에 스트리밍하여 실제로 일치하는 행을 찾습니다. 이러한 인덱스 설계 덕분에 프라이머리 인덱스를 작게 유지할 수 있으며(전체가 main memory에 완전히 적재됨), 동시에 특히 데이터 분석 사용 사례에서 흔한 범위 쿼리의 실행 시간을 크게 줄일 수 있습니다.
+
+자세한 내용은 이 [심층 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 참고하십시오.
+
+<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="PostgreSQL B-Tree 인덱스" />
+
+<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="PostgreSQL 희소 인덱스" />
+
+ClickHouse에서 선택한 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서도 결정합니다. 따라서 이는 압축 수준에 큰 영향을 줄 수 있고, 결과적으로 쿼리 성능에도 영향을 미칠 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 정렬 키를 사용하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
+
+> 테이블의 모든 컬럼은 키 자체에 포함되어 있는지 여부와 관계없이, 지정된 정렬 키 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`를 키로 사용하면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따르게 됩니다. 여러 개의 정렬 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.
+
+<div id="choosing-an-ordering-key">
+  ### 순서 지정 키 선택
+</div>
+
+순서 지정 키를 선택할 때 고려해야 할 사항과 단계는 posts 테이블을 예시로 설명한 [여기](/ko/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)를 참조하십시오.
+
+CDC를 사용한 실시간 복제에서는 추가 제약 사항을 고려해야 합니다. CDC와 함께 순서 지정 키를 사용자 지정하는 방법은 이 [문서](/ko/integrations/clickpipes/postgres/ordering-keys)를 참조하십시오.
+
+<div id="partitions">
+  ## 파티션
+</div>
+
+Postgres를 사용해 왔다면, 대규모 데이터베이스의 성능과 관리 편의성을 높이기 위해 테이블을 파티션이라고 하는 더 작고 관리하기 쉬운 단위로 나누는 테이블 파티셔닝 개념이 익숙할 것입니다. 이러한 파티셔닝은 지정한 컬럼의 범위(예: 날짜), 미리 정의한 목록, 또는 키의 해시를 사용해 구현할 수 있습니다. 이를 통해 관리자는 날짜 범위나 지리적 위치와 같은 특정 기준에 따라 데이터를 구성할 수 있습니다. 파티셔닝은 파티션 프루닝을 통해 더 빠르게 데이터에 접근하고 인덱싱을 더 효율적으로 수행할 수 있게 하여 쿼리 성능 향상에 도움이 됩니다. 또한 전체 테이블이 아니라 개별 파티션에 대해 작업할 수 있으므로 백업 및 데이터 정리와 같은 유지 관리 작업에도 유리합니다. 추가로, 파티셔닝은 여러 파티션에 부하를 분산하여 PostgreSQL 데이터베이스의 확장성을 크게 높일 수 있습니다.
+
+ClickHouse에서는 테이블을 처음 정의할 때 `PARTITION BY` 절을 통해 파티셔닝을 지정합니다. 이 절에는 임의의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 행이 어떤 파티션으로 전송될지가 결정됩니다.
+
+<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="PostgreSQL 파티션에서 ClickHouse 파티션으로" />
+
+데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며, 개별적으로 쿼리할 수 있습니다. 아래 예시에서는 `toYear(CreationDate)` 표현식을 사용해 `posts` 테이블을 연도별로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되고, 그 결과에 해당하는 파티션으로 전달됩니다(해당 연도의 첫 번째 행이면 파티션이 생성됩니다).
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+파티셔닝에 대한 자세한 설명은 [&quot;테이블 파티션&quot;](/ko/concepts/core-concepts/partitions)을 참조하십시오.
+
+<div id="applications-of-partitions">
+  ### 파티션의 활용
+</div>
+
+ClickHouse의 파티셔닝은 Postgres와 비슷한 용도로 사용되지만, 몇 가지 미묘한 차이가 있습니다. 구체적으로는 다음과 같습니다.
+
+* **데이터 관리** - ClickHouse에서는 파티셔닝을 쿼리 최적화 기법이 아니라 데이터 관리 기능으로 우선적으로 고려해야 합니다. 키를 기준으로 데이터를 논리적으로 분리하면 각 파티션을 독립적으로 처리할 수 있습니다. 예를 들어 삭제할 수 있습니다. 이를 통해 시점을 기준으로 파티션, 즉 데이터의 하위 집합을 [스토리지 계층](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) 간에 효율적으로 이동하거나 [데이터 만료/클러스터에서 효율적으로 삭제](/ko/reference/statements/alter/partition)할 수 있습니다. 아래 예시에서는 2008년의 게시물을 제거합니다.
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.103 sec.
+```
+
+* **쿼리 최적화** - 파티션은 쿼리 성능 향상에 도움이 될 수 있지만, 그 효과는 액세스 패턴에 크게 좌우됩니다. 쿼리가 소수의 파티션만 대상으로 하는 경우(이상적으로는 1개) 성능이 향상될 수 있습니다. 일반적으로 이는 파티셔닝 키가 프라이머리 키에 포함되어 있지 않고, 해당 키로 필터링할 때만 유용합니다. 반대로 많은 파티션을 대상으로 해야 하는 쿼리는 파티셔닝을 사용하지 않을 때보다 성능이 더 나빠질 수 있습니다(파티셔닝으로 인해 파트 수가 더 많아질 수 있기 때문입니다). 또한 파티셔닝 키가 이미 프라이머리 키의 앞부분에 있다면, 단일 파티션만 대상으로 할 때의 이점은 더욱 미미하거나 아예 없을 수 있습니다. 각 파티션 내 값이 고유하다면 파티셔닝을 [GROUP BY 쿼리 최적화](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)에 사용할 수도 있습니다. 그러나 일반적으로는 먼저 프라이머리 키가 최적화되어 있는지 확인하고, 파티셔닝은 액세스 패턴이 예측 가능한 특정 시점의 일부 데이터에만 접근하는 예외적인 경우에 한해 쿼리 최적화 기법으로 고려해야 합니다. 예를 들어 일(day) 단위로 파티셔닝하고 대부분의 쿼리가 최근 하루의 데이터를 대상으로 하는 경우가 여기에 해당합니다.
+
+<div id="recommendations-for-partitions">
+  ### 파티션에 대한 권장 사항
+</div>
+
+파티셔닝은 데이터 관리 기법의 하나로 고려해야 합니다. 특히 시계열 데이터를 운영할 때 클러스터에서 데이터를 만료 처리해야 하는 경우에 적합합니다. 예를 들어 가장 오래된 파티션은 [간단히 삭제할 수 있습니다](/ko/reference/statements/alter/partition#drop-partitionpart).
+
+**중요:** 파티셔닝 키 표현식이 높은 카디널리티를 만들지 않도록 하십시오. 즉, 100개가 넘는 파티션을 생성하는 것은 피해야 합니다. 예를 들어 클라이언트 식별자나 이름처럼 카디널리티가 높은 컬럼으로 데이터를 파티셔닝하지 마십시오. 대신 클라이언트 식별자나 이름을 ORDER BY 표현식의 첫 번째 컬럼으로 두십시오.
+
+> 내부적으로 ClickHouse는 삽입된 데이터에 대해 [파트를 생성합니다](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design). 더 많은 데이터가 삽입될수록 파트 수는 증가합니다. 지나치게 많은 파트로 인해 쿼리 성능이 저하되는 것(읽어야 할 파일 수 증가)을 방지하기 위해, 파트는 백그라운드 비동기 프로세스에서 머지됩니다. 파트 수가 미리 설정된 한도를 초과하면 ClickHouse는 삽입 시 &quot;too many parts&quot; 오류와 함께 예외를 발생시킵니다. 이는 정상적인 운영에서는 발생하지 않아야 하며, ClickHouse가 잘못 구성되었거나 잘못 사용된 경우(예: 작은 삽입을 많이 수행하는 경우)에만 발생합니다.
+
+> 파트는 각 파티션마다 독립적으로 생성되므로, 파티션 수가 늘어나면 파트 수도 증가합니다. 즉, 파티션 수의 배수로 늘어납니다. 따라서 카디널리티가 높은 파티셔닝 키는 이 오류를 유발할 수 있으므로 피해야 합니다.
+
+<div id="materialized-views-vs-projections">
+  ## materialized views와 프로젝션 비교
+</div>
+
+Postgres에서는 단일 테이블에 여러 인덱스를 생성할 수 있으므로, 다양한 액세스 패턴에 맞춰 최적화할 수 있습니다. 이러한 유연성 덕분에 관리자와 개발자는 특정 쿼리와 운영 요구 사항에 맞게 데이터베이스 성능을 조정할 수 있습니다. ClickHouse의 프로젝션 개념은 이것과 완전히 동일하지는 않지만, 하나의 테이블에 여러 `ORDER BY` 절을 지정할 수 있게 해줍니다.
+
+ClickHouse의 [데이터 모델링 문서](/ko/guides/clickhouse/data-modelling/schema-design)에서는 ClickHouse에서 materialized view를 사용해 집계를 사전 계산하고, 행을 변환하며, 다양한 액세스 패턴에 맞게 쿼리를 최적화하는 방법을 살펴봅니다.
+
+이 중 마지막 경우에 대해서는 materialized view가 원래 삽입을 받는 테이블과 다른 순서 지정 키를 가진 대상 테이블로 행을 보내는 [예시](/ko/concepts/features/materialized-views/incremental-materialized-view#lookup-table)를 소개했습니다.
+
+예를 들어, 다음 쿼리를 살펴보겠습니다.
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+
+1 row in set. Elapsed: 0.040 sec. Processed 90.38 million rows, 361.59 MB (2.25 billion rows/s., 9.01 GB/s.)
+Peak memory usage: 201.93 MiB.
+```
+
+이 쿼리는 `UserId`가 정렬 키가 아니므로 9,000만 개의 모든 행을 스캔해야 합니다(다행히 매우 빠르게 처리되기는 합니다).
+이전에는 `PostId`에 대한 lookup 역할을 하는 materialized view를 사용해 이 문제를 해결했습니다. 같은 문제는
+[프로젝션](/ko/concepts/features/projections/projections)으로도 해결할 수 있습니다. 아래 명령은
+`ORDER BY user_id`에 대한 프로젝션을 추가합니다.
+
+```sql
+ALTER TABLE comments ADD PROJECTION comments_user_id (
+SELECT * ORDER BY UserId
+)
+
+ALTER TABLE comments MATERIALIZE PROJECTION comments_user_id
+```
+
+먼저 프로젝션을 생성한 다음 이를 구체화해야 한다는 점에 유의하십시오. 두 번째 명령을 실행하면 데이터가 디스크에 서로 다른 두 가지 정렬 순서로 두 번 저장됩니다. 아래와 같이 데이터를 생성할 때 프로젝션을 함께 정의할 수도 있으며, 데이터가 삽입될 때 자동으로 유지됩니다.
+
+```sql
+CREATE TABLE comments
+(
+        `Id` UInt32,
+        `PostId` UInt32,
+        `Score` UInt16,
+        `Text` String,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `UserDisplayName` LowCardinality(String),
+        PROJECTION comments_user_id
+        (
+        SELECT *
+        ORDER BY UserId
+        )
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+프로젝션을 `ALTER`로 생성한 경우, `MATERIALIZE PROJECTION` 명령을 실행하면 생성 작업은 비동기적으로 진행됩니다. 다음 쿼리로 이 작업의 진행 상황을 확인하고 `is_done=1`이 될 때까지 기다릴 수 있습니다.
+
+```sql
+SELECT
+        parts_to_do,
+        is_done,
+        latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'comments') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+   ┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+1. │           1 │       0 │                    │
+   └─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+위 쿼리를 다시 실행하면, 저장소를 추가로 사용하는 대신 성능이 크게 향상된 것을 확인할 수 있습니다.
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 16.36 thousand rows, 98.17 KB (2.15 million rows/s., 12.92 MB/s.)
+Peak memory usage: 4.06 MiB.
+```
+
+`EXPLAIN` 명령으로 이 쿼리가 프로젝션을 사용해 처리되는지도 확인할 수 있습니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY))         │
+ 2. │   Aggregating                                       │
+ 3. │   Filter                                            │
+ 4. │           ReadFromMergeTree (comments_user_id)      │
+ 5. │           Indexes:                                  │
+ 6. │           PrimaryKey                                │
+ 7. │           Keys:                                     │
+ 8. │           UserId                                    │
+ 9. │           Condition: (UserId in [8592047, 8592047]) │
+10. │           Parts: 2/2                                │
+11. │           Granules: 2/11360                         │
+    └─────────────────────────────────────────────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="when-to-use-projections">
+  ### 프로젝션을 사용해야 하는 경우
+</div>
+
+프로젝션은 데이터가 삽입될 때 자동으로
+유지되므로, 새 사용자에게는 매력적인 기능입니다. 또한 쿼리를 단일
+테이블에만 보내면 되고, 가능할 때는 프로젝션이 활용되어 응답
+시간을 단축합니다.
+
+<Image img="/images/migrations/postgres-projections.webp" size="md" alt="ClickHouse의 PostgreSQL 프로젝션" />
+
+이는 필터에 따라 사용자가 적절히 최적화된 대상 테이블을 선택하거나
+쿼리를 재작성해야 하는 materialized view와는 대조적입니다.
+이 경우 사용자 애플리케이션의 부담이 커지고 클라이언트 측 복잡성도 증가합니다.
+
+이러한 장점에도 불구하고, 프로젝션에는 알아두어야 할 [고유한 제한 사항](/ko/concepts/features/projections/projections#when-to-use-projections)이
+있으므로 신중하게 사용해야 합니다.
+
+다음과 같은 경우에는 프로젝션 사용을 권장합니다.
+
+* 데이터의 완전한 재정렬이 필요한 경우입니다. 프로젝션의 표현식은
+  이론적으로 `GROUP BY,`를 사용할 수 있지만, 집계를 유지하는 데에는 materialized view가
+  더 효과적입니다. 또한 쿼리 최적화기는 단순한 재정렬을 사용하는 프로젝션, 즉 `SELECT * ORDER BY x`를
+  활용할 가능성이 더 높습니다.
+  저장 공간 사용량을 줄이기 위해 이 표현식에서 일부 컬럼만 선택할 수 있습니다.
+* 저장 공간 사용량 증가와
+  데이터를 두 번 기록하는 오버헤드를 감수할 수 있는 경우입니다. 삽입 속도에 미치는 영향을 테스트하고
+  [저장 공간 오버헤드를 평가하십시오](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<Note>
+  버전 25.5부터 ClickHouse는
+  프로젝션에서 가상 컬럼 `_part_offset`을 지원합니다. 이를 통해 프로젝션을 더 공간 효율적으로 저장할 수 있습니다.
+
+  자세한 내용은 [&quot;프로젝션&quot;](/ko/concepts/features/projections/projections)을 참조하십시오.
+</Note>
+
+<div id="denormalization">
+  ## 비정규화
+</div>
+
+Postgres는 관계형 데이터베이스이므로 데이터 모델이 대체로 [정규화](https://en.wikipedia.org/wiki/Database_normalization)되어 있으며, 이로 인해 수백 개의 테이블이 사용되는 경우가 많습니다. ClickHouse에서는 JOIN 성능을 최적화하기 위해 상황에 따라 비정규화가 유용할 수 있습니다.
+
+ClickHouse에서 Stack Overflow 데이터셋을 비정규화할 때의 이점을 보여주는 이 [가이드](/ko/guides/clickhouse/data-modelling/denormalization)를 참고할 수 있습니다.
+
+이로써 Postgres에서 ClickHouse로 마이그레이션할 때 도움이 되는 기본 가이드를 마칩니다. ClickHouse의 고급 기능을 더 자세히 알아보려면 [ClickHouse에서 데이터를 모델링하는 가이드](/ko/guides/clickhouse/data-modelling/schema-design)를 읽어보시기를 권장합니다.

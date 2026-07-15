@@ -3,8 +3,9 @@
 #include <google/cloud/kms/v1/key_management_client.h>
 #include <google/cloud/location.h>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
-int main(int argc, char* argv[]) try
+int mainEntryExampleGcloudKms(int argc, char* argv[]) try
 {
     if (argc != 3)
     {

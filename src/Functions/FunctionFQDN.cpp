@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -9,7 +10,7 @@
 namespace DB
 {
 
-class FunctionFQDN : public IFunction
+class FunctionFQDN final : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
@@ -60,9 +61,9 @@ Returns the fully qualified domain name of the ClickHouse server.
 SELECT fqdn()
         )",
         R"(
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
         )"
     }
     };

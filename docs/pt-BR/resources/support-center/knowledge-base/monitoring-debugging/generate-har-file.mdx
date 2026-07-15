@@ -1,0 +1,63 @@
+---
+date: 2025-11-11
+title: Como gerar um arquivo HAR para o suporte
+tags: ['Ferramentas e utilitários']
+keywords: ['arquivo HAR', 'HTTP Archive']
+description: 'Um arquivo HAR (HTTP Archive) registra a atividade de rede no seu navegador. Ele pode ajudar nossa equipe de suporte a diagnosticar lentidão no carregamento de páginas, falhas em solicitações ou outros problemas de rede.'
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="from-google-chrome">
+  ## No Google Chrome
+</div>
+
+1. Abra as Ferramentas do Desenvolvedor pressionando <kbd>F12</kbd> ou <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. Clique na aba &quot;Network&quot;.
+3. Recarregue a página e reproduza o problema.
+4. Nas Ferramentas do Desenvolvedor, clique no botão de download.
+
+<div id="from-mozilla-firefox">
+  ## No Mozilla Firefox
+</div>
+
+1. Abra as Ferramentas do Desenvolvedor pressionando <kbd>F12</kbd> ou <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd> (Mac).
+2. Clique na aba &quot;Network&quot;.
+3. Recarregue a página e reproduza o problema.
+4. Nas Ferramentas do Desenvolvedor, clique com o botão direito na lista de requisições e selecione &quot;Save All As HAR&quot;.
+
+<div id="from-microsoft-edge">
+  ## No Microsoft Edge
+</div>
+
+1. Abra as Ferramentas do Desenvolvedor pressionando <kbd>F12</kbd> ou <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. Clique na guia &quot;Network&quot;.
+3. Recarregue a página e reproduza o problema.
+4. Nas Ferramentas do Desenvolvedor, clique com o botão direito na lista de solicitações de rede e escolha &quot;Save all as HAR with content&quot;.
+
+<div id="from-safari">
+  ## No Safari
+</div>
+
+1. Ative as Ferramentas do Desenvolvedor (caso ainda não estejam ativadas):
+   * Vá para Safari &gt; Settings &gt; Advanced.
+   * Marque &quot;Show Develop menu in menu bar&quot; na parte inferior.
+2. Clique em Develop &gt; Show Web Inspector.
+3. Clique na guia &quot;Network&quot;.
+4. Recarregue a página e reproduza o problema.
+5. Nas Ferramentas do Desenvolvedor, clique no botão &quot;Export&quot;.
+
+<div id="sending-har-file">
+  ## Enviando o arquivo .HAR
+</div>
+
+1. Renomeie o arquivo com um nome curto e descritivo (por exemplo, login-issue.har).
+2. Compacte o arquivo (opcional, mas recomendado).
+3. Anexe-o ao seu chamado de suporte ou envie-o por e-mail para o contato de suporte responsável pelo seu caso.
+
+<Note>
+  Arquivos HAR podem conter cookies de sessão ou outros dados sensíveis.
+  Compartilhe-os apenas com a equipe de suporte autorizada.
+</Note>

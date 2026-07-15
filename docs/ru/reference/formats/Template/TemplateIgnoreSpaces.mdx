@@ -1,0 +1,55 @@
+---
+alias: []
+description: 'Документация по формату TemplateIgnoreSpaces'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
+doc_type: 'reference'
+---
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✗     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Похож на [`Template`], но пропускает пробельные символы между разделителями и значениями во входном потоке.
+Однако если строки формата содержат пробельные символы, эти символы должны присутствовать во входном потоке.
+Также позволяет указывать пустые плейсхолдеры (`${}` or `${:None}`), чтобы разбить разделитель на отдельные части и игнорировать пробелы между ними.
+Такие плейсхолдеры используются только для пропуска пробельных символов.
+С помощью этого формата можно считывать `JSON`, если значения столбцов идут в одинаковом порядке во всех строках.
+
+<Note>
+  Этот формат предназначен только для ввода.
+</Note>
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+Следующий запрос можно использовать для вставки данных, используя пример вывода в формате [JSON](/ru/reference/formats/JSON/JSON):
+
+```sql
+INSERT INTO table_name 
+SETTINGS
+    format_template_resultset = '/some/path/resultset.format',
+    format_template_row = '/some/path/row.format',
+    format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
+```
+
+```text title="/some/path/resultset.format"
+{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
+```
+
+```text title="/some/path/row.format"
+{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
+```
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

@@ -1,0 +1,70 @@
+---
+slug: /changelogs/24.8
+title: 'Журнал изменений v24.8 для Cloud'
+description: 'Журнал изменений быстрого релиза v24.8'
+keywords: ['журнал изменений', 'cloud']
+sidebarTitle: '24.8'
+doc_type: 'changelog'
+---
+
+Изменения, относящиеся к сервисам ClickHouse Cloud, в релизе v24.8.
+
+<div id="backward-incompatible-change">
+  ## Обратно несовместимое изменение
+</div>
+
+* Изменена бинарная сериализация типа данных Variant: добавлен компактный режим, чтобы избежать многократной записи одного и того же дискриминатора для гранул с одним вариантом или только со значениями NULL. Добавлена настройка MergeTree use&#95;compact&#95;variant&#95;discriminators&#95;serialization, включенная по умолчанию. Обратите внимание, что тип Variant по-прежнему экспериментальный, и это обратно несовместимое изменение сериализации не должно на вас повлиять, если только вы ранее не работали со службой поддержки, чтобы включить эту возможность. [#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel).
+
+* Запрещено использовать CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ... с базами данных Replicated. Это изменение касается только пользователей, которые по-прежнему используют ReplicatedMergeTree. [#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir).
+
+* Метрика KeeperOutstandingRequets была переименована в KeeperOutstandingRequests. Это исправляет опечатку, о которой сообщалось в [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
+
+* В clickhouse-client и clickhouse-local теперь по умолчанию используется режим multi-query (вместо режима single-query). Например, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; теперь работает, тогда как раньше пользователям нужно было добавлять --multiquery (или -n). Ключ --multiquery/-n устарел. Запросы INSERT в многооператорных запросах обрабатываются особым образом в зависимости от их предложения FORMAT: если FORMAT — VALUES (наиболее распространенный случай), конец оператора INSERT обозначается завершающей точкой с запятой ; в конце запроса. Для всех остальных форматов (например, CSV или JSONEachRow) конец оператора INSERT обозначается двумя символами новой строки \n\n в конце запроса. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+
+* В предыдущих версиях можно было использовать альтернативный синтаксис для типов данных LowCardinality, добавляя WithDictionary к имени типа данных. Это была первоначальная рабочая реализация, и она никогда не документировалась и не была доступна публично. Теперь она устарела. Если вы использовали этот синтаксис, вам нужно изменить свои таблицы с помощью ALTER и переименовать типы данных в LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
+
+* Исправлены логические ошибки в движке Buffer, используемом с распределенной целевой таблицей. Это обратно несовместимое изменение: запросы, использующие Buffer с распределенной целевой таблицей, могут перестать работать, если таблица встречается в запросе более одного раза (например, при самосоединении). [#67015](https://github.com/vdimir) (vdimir).
+
+* В предыдущих версиях вызов функций для случайных распределений на основе гамма-функции (таких как Chi-Squared, Student, Fisher) с отрицательными аргументами, близкими к нулю, приводил к долгим вычислениям или бесконечному циклу. В новой версии вызов этих функций с нулевыми или отрицательными аргументами будет приводить к исключению. Это закрывает [#67297](https://github.com/ClickHouse/ClickHouse/issues/67297). [#67326](https://github.com/ClickHouse/ClickHouse/pull/67326) (Alexey Milovidov).
+
+* В предыдущих версиях arrayWithConstant могла работать медленно, если ей нужно было создавать очень большие массивы. В новой версии действует ограничение в 1 ГБ на массив. Это закрывает [#32754](https://github.com/ClickHouse/ClickHouse/issues/32754). [#67741](https://github.com/ClickHouse/ClickHouse/pull/67741) (Alexey Milovidov).
+
+* Исправлено форматирование модификатора REPLACE (запрещен пропуск скобок). [#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin).
+
+<div id="new-feature">
+  ## Новая возможность
+</div>
+
+* Функция tuple расширена и теперь может создавать именованные кортежи в запросе. Добавлена функция tupleNames для извлечения имен из кортежей. [#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
+
+* Добавлена поддержка ASOF JOIN для алгоритма full&#95;sorting&#95;join. Закрывает [#54493](https://github.com/ClickHouse/ClickHouse/issues/54493). [#55051](https://github.com/ClickHouse/ClickHouse/pull/55051) (vdimir).
+
+* Добавлена новая табличная функция fuzzQuery. Эта функция позволяет вносить случайные изменения в заданную строку запроса. Пример: SELECT query FROM fuzzQuery(&#39;SELECT 1&#39;);. [#62103](https://github.com/ClickHouse/ClickHouse/pull/62103) (pufit).
+
+* Добавлена новая оконная функция percent&#95;rank. [#62747](https://github.com/ClickHouse/ClickHouse/pull/62747) (lgbo).
+
+* Добавлена поддержка JWT-аутентификации в clickhouse-client. [#62829](https://github.com/ClickHouse/ClickHouse/pull/62829) (Konstantin Bogdanov).
+
+* Добавлены SQL-функции changeYear, changeMonth, changeDay, changeHour, changeMinute, changeSecond. Например, SELECT changeMonth(toDate(&#39;2024-06-14&#39;), 7) возвращает дату 2024-07-14. [#63186](https://github.com/ClickHouse/ClickHouse/pull/63186) (cucumber95).
+
+* Добавлен system.error&#95;log, который содержит историю значений ошибок из таблицы system.errors; данные периодически сбрасываются на диск. [#65381](https://github.com/ClickHouse/ClickHouse/pull/65381) (Pablo Marcos).
+
+* Добавлена агрегатная функция groupConcat. Она почти эквивалентна arrayStringConcat( groupArray(column), &#39;,&#39;). Может принимать 2 параметра: строковый разделитель и количество обрабатываемых элементов. [#65451](https://github.com/ClickHouse/ClickHouse/pull/65451) (Yarik Briukhovetskyi).
+
+* Добавлено хранилище AzureQueue. [#65458](https://github.com/ClickHouse/ClickHouse/pull/65458) (Kseniia Sumarokova).
+
+* Добавлена новая настройка для отключения/включения записи индекса страниц в файлы Parquet. [#65475](https://github.com/ClickHouse/ClickHouse/pull/65475) (lgbo).
+
+* В конец пути каталога в табличной функции file теперь автоматически добавляется символ-шаблон *. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
+
+* Добавлена опция --memory-usage для клиента в неинтерактивном режиме. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+
+* Добавлен виртуальный столбец &#95;etag для движка таблицы S3. Исправляет [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
+
+* В этом pull request добавлено секционирование в стиле Hive для различных движков (File, URL, S3, AzureBlobStorage, HDFS). Секционирование в стиле Hive организует данные в секционированные подкаталоги, что повышает эффективность запросов и упрощает работу с большими датасетами. Сейчас оно только создает виртуальные столбцы с соответствующими именами и данными. В следующем PR будет добавлена соответствующая фильтрация данных (для повышения производительности). [#65997](https://github.com/ClickHouse/ClickHouse/pull/65997) (Yarik Briukhovetskyi).
+
+* Добавлена функция printf для совместимости со Spark. [#66257](https://github.com/ClickHouse/ClickHouse/pull/66257) (李扬).
+
+* Добавлена поддержка чтения геометрии MULTILINESTRING в формате WKT с помощью функции readWKTLineString. [#67647](https://github.com/ClickHouse/ClickHouse/pull/67647) (Jacob Reckhard).
+
+* Добавлен механизм тегирования (пространства имен) для кэша запросов. Одинаковые запросы с разными тегами теперь считаются в кэше запросов разными. Пример: SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;abc&#39; and SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;def&#39; теперь создают разные записи кэша запросов. [#68235](https://github.com/ClickHouse/ClickHouse/pull/68235)(sakulali).

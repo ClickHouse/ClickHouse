@@ -7,8 +7,6 @@ title: 'SimpleAggregateFunction Type'
 doc_type: 'reference'
 ---
 
-# SimpleAggregateFunction Type
-
 ## Description {#description}
 
 The `SimpleAggregateFunction` data type stores the intermediate state of an 

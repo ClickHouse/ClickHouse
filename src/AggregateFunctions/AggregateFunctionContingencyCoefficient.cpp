@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-struct ContingencyData : CrossTabData
+struct ContingencyData : CrossTabAggregateData
 {
     static const char * getName()
     {
@@ -43,8 +43,27 @@ struct ContingencyData : CrossTabData
     }
 };
 
+
+struct ContingencyWindowData : CrossTabPhiSquaredWindowData
+{
+    static const char * getName()
+    {
+        return ContingencyData::getName();
+    }
+
+    Float64 getResult() const
+    {
+        if (count < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        Float64 phi_sq = getPhiSquared();
+        return std::sqrt(phi_sq / (phi_sq + 1.0));
+    }
+};
+
 }
 
+void registerAggregateFunctionContingency(AggregateFunctionFactory & factory);
 void registerAggregateFunctionContingency(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -72,12 +91,12 @@ FROM
         number % 4 AS b
     FROM
         numbers(150)
-)
+);
         )",
         R"(
-┌──────cramersV(a, b)─┬───contingency(a, b)─┐
-│ 0.41171788506213564 │ 0.05812725261759165 │
-└─────────────────────┴─────────────────────┘
+┌─────cramersV(a, b)─┬──contingency(a, b)─┐
+│ 0.5798088336225178 │ 0.708607540104077  │
+└────────────────────┴────────────────────┘
         )"
     }
     };
@@ -92,7 +111,14 @@ FROM
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
         },
-        documentation
+        documentation,
+        {},
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<ContingencyWindowData>>(argument_types);
+        }
     });
 }
 

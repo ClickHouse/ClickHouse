@@ -1,0 +1,35 @@
+---
+description: '用于修改 SAMPLE BY 表达式的文档'
+sidebarTitle: 'SAMPLE BY'
+slug: /sql-reference/statements/alter/sample-by
+title: '修改采样键表达式'
+doc_type: 'reference'
+---
+
+可进行以下操作：
+
+<div id="modify">
+  ## 修改
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+```
+
+该命令会将表的[采样键](/zh/reference/engines/table-engines/mergetree-family/mergetree)更改为 `new_expression` (一个表达式或由多个表达式组成的元组) 。主键必须包含新的采样键。
+
+<div id="remove">
+  ## 删除
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+```
+
+该命令会移除表的[采样键](/zh/reference/engines/table-engines/mergetree-family/mergetree)。
+
+`MODIFY` 和 `REMOVE` 命令属于轻量级操作，因为它们只会更改元数据或删除文件。
+
+<Note>
+  它仅适用于 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族中的表 (包括[复制表](/zh/reference/engines/table-engines/mergetree-family/replication)) 。
+</Note>
