@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadBufferFromString.h>
+#include <Formats/parseColumnFromString.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -48,9 +48,7 @@ public:
                 auto it = http_header_columns.find(col_name);
                 const String & str_value = (it != http_header_columns.end()) ? it->second : "";
                 const auto & col_type = output_header.getByPosition(i).type;
-                auto parsed = col_type->createColumn();
-                ReadBufferFromString buf(str_value);
-                col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
+                auto parsed = parseColumnValueFromString(col_type, str_value, format_settings);
                 col_sources.push_back({true, 0, std::move(parsed), col_type});
             }
         }

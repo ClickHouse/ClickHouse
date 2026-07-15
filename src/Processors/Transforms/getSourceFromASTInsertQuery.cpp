@@ -9,7 +9,7 @@
 #include <IO/EmptyReadBuffer.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromString.h>
+#include <Formats/parseColumnFromString.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -117,9 +117,7 @@ Pipe getSourceFromInputFormat(
                     if (!columns->has(col_name))
                         continue;
                     const auto & col_type = columns->get(col_name).type;
-                    auto value = col_type->createColumn();
-                    ReadBufferFromString buf(str_value);
-                    col_type->getDefaultSerialization()->deserializeWholeText(*value, buf, format_settings);
+                    auto value = parseColumnValueFromString(col_type, str_value, format_settings);
                     injected_columns.push_back({std::move(value), col_type, col_name});
                 }
             }

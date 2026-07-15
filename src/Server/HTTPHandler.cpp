@@ -850,6 +850,18 @@ DynamicQueryHandler::DynamicQueryHandler(
 {
 }
 
+/// Resolve one header->column mapping from the request and register it on the
+/// context. Header values come from ClientInfo::http_headers (already filtered
+/// for sensitive headers); a missing header contributes an empty value. Shared by
+/// the dynamic http_column_* handler and the predefined header_column_mappings.
+static void addHTTPHeaderColumnFromRequest(
+    const ContextMutablePtr & context, const String & header_name, const String & column_name)
+{
+    const auto & http_headers = context->getClientInfo().http_headers;
+    auto it = http_headers.find(header_name);
+    context->addHTTPHeaderColumn(column_name, it != http_headers.end() ? it->second : "");
+}
+
 bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
@@ -873,11 +885,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
         const String header_name = key.substr(strlen(HTTP_COLUMN_PREFIX));
         const String & column_name = value;
         if (!header_name.empty() && !column_name.empty())
-        {
-            const auto & http_headers = context->getClientInfo().http_headers;
-            auto it = http_headers.find(header_name);
-            context->addHTTPHeaderColumn(column_name, it != http_headers.end() ? it->second : "");
-        }
+            addHTTPHeaderColumnFromRequest(context, header_name, column_name);
         return true;
     }
 
@@ -1009,12 +1017,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     /// First occurrence wins — same semantics as http_column_* in the dynamic handler.
     if (!header_column_mappings.empty())
     {
-        const auto & http_headers = context->getClientInfo().http_headers;
         for (const auto & [header_name, column_name] : header_column_mappings)
-        {
-            auto it = http_headers.find(header_name);
-            context->addHTTPHeaderColumn(column_name, it != http_headers.end() ? it->second : "");
-        }
+            addHTTPHeaderColumnFromRequest(context, header_name, column_name);
     }
 }
 

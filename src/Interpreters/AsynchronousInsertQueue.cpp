@@ -14,6 +14,7 @@
 #include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/parseColumnFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -610,11 +611,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             /// (e.g. "not-a-number" for UInt64) surface immediately to the client.
             /// We store only the raw string; flush time re-parses against the
             /// then-current column type, which handles schema drift naturally.
-            {
-                auto validate = col_type->createColumn();
-                ReadBufferFromString buf(str_value);
-                col_type->getDefaultSerialization()->deserializeWholeText(*validate, buf, format_settings);
-            }
+            parseColumnValueFromString(col_type, str_value, format_settings);
             entry->http_header_column_values.push_back({col_name, str_value});
         }
     }
@@ -1498,9 +1495,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 const auto & raw = entry->http_header_column_values[info.entry_parsed_idx].raw_value;
                 try
                 {
-                    auto col = info.type->createColumn();
-                    ReadBufferFromString buf(raw);
-                    info.type->getDefaultSerialization()->deserializeWholeText(*col, buf, fmt_settings);
+                    auto col = parseColumnValueFromString(info.type, raw, fmt_settings);
                     ep.injected.push_back({std::move(col), info.type, header.getByPosition(info.header_col_idx).name});
                 }
                 catch (...)
