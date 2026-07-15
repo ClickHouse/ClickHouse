@@ -278,7 +278,7 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        SubString cur_result;
+        SubString cur_result{};
         while (getNextIndices(cur_result))
         {
             if (min_cutoff_length && *min_cutoff_length > cur_result.symbols_between)
