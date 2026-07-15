@@ -361,12 +361,18 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
+        previous_data = data;
+        previous_len = length;
         sparse_grams_iterator.set(data, data + length);
+
         Pos token_begin = nullptr;
         Pos token_end = nullptr;
         while (sparse_grams_iterator.get(token_begin, token_end))
             if (callback(token_begin, static_cast<size_t>(token_end - token_begin)))
                 return;
+
+        previous_data = nullptr;
+        previous_len = 0;
     }
 private:
     size_t min_gram_length;
