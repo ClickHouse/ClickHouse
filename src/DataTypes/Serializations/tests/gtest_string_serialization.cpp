@@ -276,3 +276,59 @@ TEST(StringSerialization, WithSizeStreamCorruptSizeStreamThrows)
         ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 }
+
+/// The same corruption, but the corrupt length lands in the SKIPPED PREFIX of a seeked read
+/// (rows_offset > 0). deserializeBinaryBulkWithSizeStream first sums the skipped-prefix sizes into
+/// `bytes_to_skip` before it validates the requested rows; without a bound there, a bit-63 size (or a
+/// pair of them, whose sum wraps to 0 on 64-bit) would misalign the data stream and read the result
+/// from the wrong byte position instead of throwing. The skipped-prefix sizes must be validated (and
+/// accumulated with checked addition) with the same bound, so a corrupt part fails loudly here too.
+TEST(StringSerialization, WithSizeStreamCorruptSkippedPrefixSizeThrows)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    constexpr size_t rows_offset = 123;
+    auto src = makeVariedStringColumn(rows);
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    /// Corrupt a size that falls inside the skipped prefix (index < rows_offset). Use two bit-63
+    /// values so the naive skip sum would wrap to 0 rather than merely being large.
+    std::string sizes_bytes = sizes_out.str();
+    ASSERT_GE(sizes_bytes.size(), 2 * sizeof(UInt64));
+    const UInt64 corrupt_size = 0x8000000000000000ULL;
+    memcpy(sizes_bytes.data(), &corrupt_size, sizeof(UInt64));
+    memcpy(sizes_bytes.data() + sizeof(UInt64), &corrupt_size, sizeof(UInt64));
+
+    ReadBufferFromString sizes_in(sizes_bytes);
+    ReadBufferFromString data_in(data_out.str());
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, rows - rows_offset, settings, state, nullptr);
+        FAIL() << "deserialize accepted a corrupt size in the skipped prefix and produced offsets.back()="
+               << assert_cast<const ColumnString &>(*result).getOffsets().back()
+               << " vs chars.size()=" << assert_cast<const ColumnString &>(*result).getChars().size();
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
+}

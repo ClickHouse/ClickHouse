@@ -657,6 +657,21 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
+/// A per-row size read from the separate `.size` sub-stream is untrusted: a corrupt or desynced
+/// sizes stream would otherwise reach `data.resize()`/`ignore()` and abort in Allocator::checkSize.
+/// Same bound as the single-stream path (deserializeBinaryImpl).
+void checkStringSizeFromSizeStream(UInt64 size)
+{
+    static constexpr size_t max_string_size = 16_GiB;
+    if (size > max_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. The size and data sub-streams are "
+            "inconsistent; the part is likely truncated or corrupted.",
+            size,
+            max_string_size);
+}
+
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
@@ -667,19 +682,7 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
     for (size_t i = 0; i < rows; ++i)
     {
         const UInt64 size = sizes[start + i];
-
-        /// `size` comes from a separate sub-stream and is untrusted: a corrupt/desynced sizes stream
-        /// would otherwise reach `data.resize()` and abort in Allocator::checkSize. Same bound as the
-        /// single-stream path (deserializeBinaryImpl).
-        static constexpr size_t max_string_size = 16_GiB;
-        if (size > max_string_size)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Too large string size: {}. The maximum is: {}. The size and data sub-streams are "
-                "inconsistent; the part is likely truncated or corrupted.",
-                size,
-                max_string_size);
-
+        checkStringSizeFromSizeStream(size);
         prev_offset += size;
         offsets.push_back(prev_offset);
     }
@@ -862,8 +865,17 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
+    /// Validate the skipped-prefix sizes with the same bound (a bit-63 size would otherwise wrap
+    /// the skip sum and misalign the data stream instead of throwing) and use checked addition.
     for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
+    {
+        checkStringSizeFromSizeStream(sizes_data[i]);
+        if (__builtin_add_overflow(bytes_to_skip, sizes_data[i], &bytes_to_skip))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Overflow while computing the number of bytes to skip in the String data sub-stream. "
+                "The size and data sub-streams are inconsistent; the part is likely truncated or corrupted.");
+    }
 
     appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
     size_t bytes_to_read = offsets.back() - prev_last_offset;
