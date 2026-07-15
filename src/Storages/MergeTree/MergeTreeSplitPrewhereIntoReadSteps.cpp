@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -21,10 +22,29 @@ namespace
 struct NodeInfo
 {
     NameSet required_columns;
+    /// Column names resolved to their physical storage names (subcolumn suffix stripped).
+    /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
+    NameSet required_storage_columns;
 };
 
+/// Resolves a column name to its storage (physical) name.
+/// For subcolumns like `map.key_k0`, returns `map`.
+/// For regular columns, returns the name unchanged.
+String resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
+{
+    if (columns)
+    {
+        if (auto col = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            return col->getNameInStorage();
+    }
+    return column_name;
+}
+
 /// Fills the list of required columns for a node in the DAG.
-void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info)
+void fillRequiredColumns(
+    const ActionsDAG::Node * node,
+    std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
+    const ColumnsDescription * columns)
 {
     if (nodes_info.contains(node))
         return;
@@ -34,14 +54,16 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
         node_info.required_columns.insert(node->result_name);
+        node_info.required_storage_columns.insert(resolveStorageColumnName(node->result_name, columns));
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info);
+        fillRequiredColumns(child, nodes_info, columns);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
+        node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
     }
 }
 
@@ -203,7 +225,8 @@ bool tryBuildPrewhereSteps(
     PrewhereInfoPtr prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
-    bool force_short_circuit_execution)
+    bool force_short_circuit_execution,
+    const ColumnsDescription * columns)
 {
     if (!prewhere_info)
         return true;
@@ -219,21 +242,37 @@ bool tryBuildPrewhereSteps(
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info);
+        fillRequiredColumns(node, nodes_info, columns);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group conditions with the same set of columns into a single read/compute step
+    /// 4. Group adjacent conditions that read from the same set of physical storage columns into a single step.
+    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
+    /// when they appear next to each other in the condition list.
+    ///
+    /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
+    /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
+    /// may cause redundant reads, because the user may have intentionally interleaved a guard predicate
+    /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
+    /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
+    ///
+    /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
+    /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty() && nodes_info[condition_groups.back().back()].required_columns == node_info.required_columns)
-            condition_groups.back().push_back(node);    /// Add to the last group
+        if (!condition_groups.empty()
+            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
+        {
+            condition_groups.back().push_back(node);
+        }
         else
-            condition_groups.push_back({node}); /// Start new group
+        {
+            condition_groups.push_back({node});
+        }
     }
 
     /// 5. Build DAGs for each step

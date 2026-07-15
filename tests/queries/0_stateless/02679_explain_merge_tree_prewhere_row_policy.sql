@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas - because explain produced different plan
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (

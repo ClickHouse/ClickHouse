@@ -1,0 +1,71 @@
+---
+description: 'Документация по оптимизации LowCardinality для строковых столбцов'
+sidebarTitle: 'LowCardinality(T)'
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
+doc_type: 'reference'
+---
+
+Преобразует внутреннее представление других типов данных в словарно-кодированное.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+LowCardinality(data_type)
+```
+
+**Параметры**
+
+* `data_type` — [String](/ru/reference/data-types/string), [FixedString](/ru/reference/data-types/fixedstring), [Date](/ru/reference/data-types/date), [DateTime](/ru/reference/data-types/datetime) и числовые типы, кроме [Decimal](/ru/reference/data-types/decimal). Использование `LowCardinality` для некоторых типов данных неэффективно, см. описание настройки [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ru/reference/settings/session-settings#allow_suspicious_low_cardinality_types).
+
+<div id="description">
+  ## Описание
+</div>
+
+`LowCardinality` — это надстройка, которая изменяет способ хранения и правила обработки данных. ClickHouse применяет [словарное кодирование](https://en.wikipedia.org/wiki/Dictionary_coder) к столбцам `LowCardinality`. Работа с данными, закодированными с помощью словаря, существенно повышает производительность запросов [SELECT](/ru/reference/statements/select/index) во многих сценариях.
+
+Эффективность использования типа данных `LowCardinality` зависит от разнообразия данных. Если словарь содержит менее 10 000 уникальных значений, ClickHouse в большинстве случаев обеспечивает более высокую эффективность чтения и хранения данных. Если словарь содержит более 100 000 уникальных значений, ClickHouse может работать хуже по сравнению с обычными типами данных.
+
+Рекомендуется использовать `LowCardinality` вместо [Enum](/ru/reference/data-types/enum) при работе со строками. `LowCardinality` обеспечивает большую гибкость и часто дает такую же или более высокую эффективность.
+
+<div id="example">
+  ## Пример
+</div>
+
+Создайте таблицу со столбцом типа `LowCardinality`:
+
+```sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+```
+
+<div id="related-settings-and-functions">
+  ## Связанные настройки и функции
+</div>
+
+Настройки:
+
+* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/ru/reference/settings/session-settings#low_cardinality_max_dictionary_size)
+* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/ru/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
+* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/ru/reference/settings/session-settings#low_cardinality_allow_in_native_format)
+* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ru/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
+* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/ru/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+
+Функции:
+
+* [toLowCardinality](/ru/reference/functions/regular-functions/type-conversion-functions#toLowCardinality)
+
+<div id="related-content">
+  ## Похожие материалы
+</div>
+
+* Блог: [Оптимизация ClickHouse с помощью схем и кодеков](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* Блог: [Работа с данными временных рядов в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* [Оптимизация типа String (видеопрезентация на русском)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Слайды на английском языке](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)

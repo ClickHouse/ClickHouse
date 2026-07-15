@@ -1,0 +1,124 @@
+---
+slug: /integrations/marimo
+sidebarTitle: 'marimo'
+description: 'marimo は、データを扱うための次世代の Python ノートブックです'
+title: 'ClickHouse で marimo を使う'
+doc_type: 'guide'
+keywords: ['marimo', 'ノートブック', 'データ分析', 'python', '可視化']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[marimo](https://marimo.io/) は、SQL を標準搭載した、Python 向けのオープンソースのリアクティブノートブックです。セルを実行したり UI 要素を操作したりすると、marimo は影響を受けるセルを自動的に実行し (または古い状態としてマークし) 、コードと出力の整合性を保ちながら、不具合を未然に防ぎます。すべての marimo ノートブックは純粋な Python として保存され、スクリプトとして実行可能で、アプリとしてデプロイすることもできます。
+
+<Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="ClickHouse に接続" />
+
+<div id="install-marimo-sql">
+  ## 1. SQL サポート付きの marimo をインストールする
+</div>
+
+```shell
+pip install "marimo[sql]" clickhouse_connect
+marimo edit clickhouse_demo.py
+```
+
+これにより、localhost で動作しているウェブブラウザが開くはずです。
+
+<div id="connect-to-clickhouse">
+  ## 2. ClickHouse への接続
+</div>
+
+marimo エディタの左側にあるデータソースパネルを開き、[Add database] をクリックします。
+
+<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="新しいデータベースを追加" />
+
+データベースの詳細を入力するよう求められます。
+
+<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="データベースの詳細を入力" />
+
+続いて、接続を確立するためのセルが表示されるので、これを実行します。
+
+<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="ClickHouse に接続するためにセルを実行" />
+
+<div id="run-sql">
+  ## 3. SQL を実行する
+</div>
+
+接続を設定したら、新しい SQL セルを作成し、ClickHouse engine を選択できます。
+
+<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="SQL エンジンを選択" />
+
+このガイドでは、New York Taxi データセットを使用します。
+
+```sql
+CREATE TABLE trips (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+```sql
+INSERT INTO trips
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM gcs(
+    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+```sql
+SELECT * FROM trips LIMIT 1000;
+```
+
+<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="DataFrame 内の結果" />
+
+これで、結果を DataFrame で確認できるようになりました。次に、指定した乗車場所からの料金が最も高い降車地点を可視化してみましょう。marimo には、そのために役立つ UI コンポーネントがいくつか用意されています。ここでは、場所の選択にドロップダウンを使い、グラフの描画には altair を使います。
+
+<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="ドロップダウン、テーブル、グラフの組み合わせ" />
+
+marimo のリアクティブ実行モデルは SQL クエリにも適用されるため、SQL を変更すると、依存するセルの後続の計算が自動的にトリガーされます (計算コストが高い場合は、セルを古い状態としてマークすることもできます) 。そのため、クエリを更新するとグラフとテーブルも変わります。
+
+データをすっきりしたインターフェイスで探索できるよう、App View に切り替えることもできます。
+
+<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="App View の実行" />

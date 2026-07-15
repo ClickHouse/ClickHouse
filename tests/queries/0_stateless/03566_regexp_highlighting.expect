@@ -23,7 +23,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file"
 expect ":) "
 
 send -- "WITH '' AS test, '' AS str SELECT test LIKE '%test%' AND test LIKE 'te_st' AND exp(str = 'hello.world' AND match(str, 'goodbye.world'))\r"

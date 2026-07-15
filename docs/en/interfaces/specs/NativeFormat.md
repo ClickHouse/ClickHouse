@@ -140,9 +140,9 @@ A single byte. `0x00` is false; any non-zero value is true (canonically `0x01`).
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision*:
+Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision* (see [Protocol revision and the Native format](#protocol-revision) for the full treatment, including the output-only nature of `client_protocol_version`):
 
-- On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION` is `54485` in this release). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
+- On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION`, see `src/Core/ProtocolDefines.h`). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
 - The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0` *by default*. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns.
 
   Over HTTP this revision is not fixed: a client may raise it with the `?client_protocol_version=<n>` query parameter, and the server uses that value as the serialization revision for the response.
@@ -323,9 +323,79 @@ Through `FORMAT Native` (revision `0`), the same result block has no `BlockInfo`
 
 (A zero-row result, such as a header-only block, produces no bytes at all over `FORMAT Native`: the output format does not emit empty blocks.)
 
+## Protocol revision and the Native format {#protocol-revision}
+
+A Native byte stream is shaped above all by the **protocol revision** its writer and reader run at. The revision is nowhere in the bytes themselves — there is no revision field on the wire — but it still decides whether several features show up at all. Because of that, a decoder has to know which revision a payload was written at before it can parse it. Since the revision is not in the stream, the reader and writer must settle on it some other way.
+
+It is a single `UInt64`, and both `NativeWriter` and `NativeReader` take it as a constructor argument. The writer calls it `client_revision` and the reader calls it `server_revision`, but it is the same number. The newest revision this release knows about is `DBMS_TCP_PROTOCOL_VERSION` (see `src/Core/ProtocolDefines.h`).
+
+### What the revision gates {#what-the-revision-gates}
+
+Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emits the feature only once its revision reaches the threshold, and the reader looks for it under exactly the same rule, so the two stay in step — get the revision wrong on either side and they desynchronize. The gates that matter for the Native format are:
+
+| Feature | Threshold constant | Revision | Effect when below threshold |
+|---|---|---|---|
+| `BlockInfo` prefix | (any value `> 0`) | `1` | The [`BlockInfo`](#blockinfo) prefix is omitted entirely; a block is just `num_columns`, `num_rows`, columns. |
+| `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
+| `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
+| V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
+| Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
+| `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
+| Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
+| `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
+
+That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped.
+
+`LowCardinality` is the one exception, and an important one. The writer's check is `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`. The trick is the leading `client_revision &&`: when the revision is exactly `0`, the whole condition short-circuits to false.
+
+So at revision `0` — the default for `FORMAT Native` — `LowCardinality(T)` is **not** stripped. Its type string and per-block state prefix stay in the stream, and the revision-`0` reader reads them straight back. Stripping only kicks in at a non-zero revision below `54405`, or when it is forced regardless of revision.
+
+That forcing is the `remove_low_cardinality` flag. The `FORMAT Native` output never sets it, but the native TCP path does, when `low_cardinality_allow_in_native_format = 0` (default `1`). In other words, that setting changes native TCP output but does nothing for `FORMAT Native`.
+
+The practical takeaway: a default `FORMAT Native` stream may legitimately contain `LowCardinality`, so do not treat it as a feature that is absent at revision `0`.
+
+### Where the revision comes from, depending on how the data travels {#revision-per-channel}
+
+The same Native bytes can move over different paths: the native TCP protocol, an HTTP request, or a file on disk. Each path sets the revision its own way. One thing to watch: the read side and the write side are set up separately, so they can end up at different revisions.
+
+#### Native TCP protocol — negotiated, both directions {#revision-tcp}
+
+On the [native TCP protocol](/interfaces/specs/NativeProtocol) the revision comes out of the Hello handshake. The client sends `DBMS_TCP_PROTOCOL_VERSION`, the server sends its own back, and from then on each side serializes at the **revision the other side advertised**: the server builds its `NativeReader`/`NativeWriter` from `client_tcp_protocol_version`, while the client uses the `server_revision` it received. There is no explicit `min`, but neither side can emit a feature it has not implemented, so each direction is effectively capped by the older of the two peers.
+
+When both peers are the same modern build, the two directions land on the same revision (`DBMS_TCP_PROTOCOL_VERSION`, see `src/Core/ProtocolDefines.h`) and every gate is on. That is the common case, but it is not guaranteed. With mixed-version or third-party peers the two directions can sit at different revisions, so the gates have to be read per direction: `BlockInfo` is present for any non-zero revision, but the rest — `has_custom_serialization` included — only show up once that direction's effective revision reaches their thresholds. A peer advertising a revision below `54454`, for example, neither sends nor receives the `has_custom_serialization` byte.
+
+#### `FORMAT Native` output — revision 0 by default, raisable over HTTP {#revision-output}
+
+The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`.
+
+Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`. File exports and local `clickhouse-client` output have no such knob and stay at `0`.
+
+#### `FORMAT Native` input — always revision 0 {#revision-input}
+
+The `Native` *input* format goes the other way: it is **hardcoded to revision `0`** and pays no attention to `client_protocol_version` at all. Whether it is parsing the body of an `INSERT ... FORMAT Native` or reading a `Native` file, it builds its `NativeReader` with a literal `0`, so it never expects a `BlockInfo` prefix, never reads the `has_custom_serialization` byte, and always assumes default serialization.
+
+So `client_protocol_version` is output-only. Putting a high `?client_protocol_version=` (for example `DBMS_TCP_PROTOCOL_VERSION`) on an `INSERT ... FORMAT Native` request does nothing to how the body is read — the body still has to be revision `0`. Feed in a body that does carry a `BlockInfo` prefix or a `has_custom_serialization` byte and the reader loses sync, which comes back as a parse error (`INCORRECT_DATA` or `CANNOT_READ_ALL_DATA`) rather than a successful insert.
+
+### Round-trip implications {#revision-round-trip}
+
+For `FORMAT Native` the safe choice is revision `0` at both ends, which is what you get by default. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
+
+The trouble only starts if you raise the output revision on purpose. A `SELECT ... FORMAT Native` taken with `?client_protocol_version=<large>` produces a stream that carries `BlockInfo` and `has_custom_serialization` bytes, and the revision-`0` input path cannot read those back. If you need such data to round-trip, either leave `client_protocol_version` off the producing `SELECT`, or move the data over the native TCP protocol — where each direction uses the handshake-negotiated revision — instead of `FORMAT Native`.
+
+| Channel | Write revision | Read revision | `BlockInfo` / custom serialization |
+|---|---|---|---|
+| Native TCP Data packet | Peer's advertised revision (per direction) | Peer's advertised revision (per direction) | `BlockInfo` whenever revision `> 0`; `has_custom_serialization` at `≥ 54454` |
+| `SELECT ... FORMAT Native` over HTTP | `client_protocol_version` (default `0`) | n/a | Only if `client_protocol_version` raised |
+| `INSERT ... FORMAT Native` over HTTP | n/a | `0` (fixed, ignores `client_protocol_version`) | Never read |
+| `INTO OUTFILE` / file / `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
+
+:::note Protocol revision vs serialization version
+Do not confuse the protocol revision with the [serialization version](#serialization-version-concept). The revision here is connection- or request-wide and never appears in the bytes. The serialization version is per column, carried by [versioned types](#versioned-types), and is written into every non-empty block. The revision decides whether a feature is there at all; the serialization version, once you are inside a versioned column, picks which variant of that one type's encoding follows.
+:::
+
 ## Data types {#data-types}
 
-This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N)` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
+This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N[, stride])` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
 
 | Family                           | Section | Streams per column | Cross-block state |
 |----------------------------------|---------|--------------------|-------------------|
@@ -1000,7 +1070,7 @@ So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering a
 Two related types are **not** aliases. They are valid `Native` column types — a client can receive an `AggregateFunction` column from a `-State` combinator or distributed aggregation, for instance — but each carries its own specialized payload that is outside the scope of this page:
 
 - `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version.
-- `QBit(T, N)` stores a vector with its bit planes transposed for vector-search workloads.
+- `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/sql-reference/data-types/qbit) and in the [binary type encoding](/sql-reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 :::
 
 ### Versioned types {#versioned-types}
@@ -1362,11 +1432,31 @@ flowchart LR
 
 ### Method byte values {#method-byte-values}
 
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
+
+The method byte also encodes the [column-level codecs](/sql-reference/statements/create/table#column_compression_codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
+
+| Byte   | Method            |
+|--------|-------------------|
+| `0x91` | `Multiple` (a composite codec wrapping a sequence of nested codecs) |
+| `0x92` | `Delta`           |
+| `0x93` | `T64`             |
+| `0x94` | `DoubleDelta`     |
+| `0x95` | `Gorilla`         |
+| `0x96` | `AES_128_GCM_SIV` (encryption) |
+| `0x97` | `AES_256_GCM_SIV` (encryption) |
+| `0x98` | `FPC`             |
+| `0x9a` | `GCD`             |
+| `0x9c` | `ALP`             |
+| `0x9d` | `SZ3`             |
+
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 ### Checksum {#checksum}
 

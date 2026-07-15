@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Créer votre premier Kafka ClickPipe'
+description: 'Guide étape par étape pour créer votre premier Kafka ClickPipe.'
+slug: /integrations/clickpipes/kafka/create-your-first-kafka-clickpipe
+title: 'Créer votre premier Kafka ClickPipe'
+doc_type: 'guide'
+keywords: ['créer kafka ClickPipe', 'Kafka', 'ClickPipes', 'sources de données', 'guide de configuration']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Dans ce guide, nous vous expliquons comment créer votre premier Kafka ClickPipe.
+
+Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la ClickPipes UI, ainsi que de manière programmatique à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
+
+<Steps>
+  <Step>
+    ## Accédez aux sources de données
+
+    Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur &quot;Set up a ClickPipe&quot;.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Sélectionner les importations" size="md" />
+  </Step>
+
+  <Step>
+    ## Sélectionner une source de données
+
+    Sélectionnez votre source de données Kafka dans la liste.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Sélectionner le type de source de données" size="md" />
+  </Step>
+
+  <Step>
+    ## Configurer la source de données
+
+    Remplissez le formulaire en indiquant un nom pour votre ClickPipe, une description (facultative), vos identifiants et d&#39;autres informations de connexion.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="Renseignez les informations de connexion" size="md" />
+  </Step>
+
+  <Step>
+    ## Configurer un registre de schémas (facultatif)
+
+    Un schéma valide est nécessaire pour les topics Avro et Protobuf. Consultez [les registres de schémas](/fr/integrations/clickpipes/kafka/schema-registries) pour plus de détails sur la configuration d&#39;un registre de schémas.
+  </Step>
+
+  <Step>
+    ## Configurer un Reverse Private Endpoint (facultatif)
+
+    Configurez un Reverse Private Endpoint pour permettre à ClickPipes de se connecter à votre cluster Kafka via AWS PrivateLink.
+    Consultez notre [documentation sur AWS PrivateLink](/fr/integrations/clickpipes/aws-privatelink) pour plus d’informations.
+  </Step>
+
+  <Step>
+    ## Configurer le tunnel SSH (facultatif)
+
+    Vous pouvez utiliser un tunnel SSH si votre broker Kafka n’est pas accessible publiquement. Au lieu de se connecter directement, ClickPipes établit une connexion SSH vers un hôte bastion (un serveur de votre réseau accessible publiquement), puis y fait transiter le trafic jusqu’à votre broker Kafka sur votre réseau privé.
+
+    1. Activez l’option « SSH Tunnel ».
+    2. Renseignez les informations de connexion SSH :
+       * **SSH Host** : le nom d’hôte ou l’adresse IP de votre hôte bastion — il s’agit du serveur accessible publiquement qui sert de passerelle vers votre réseau privé.
+       * **SSH Port** : le port SSH de l’hôte bastion (par défaut `22`).
+       * **SSH User** : le nom d’utilisateur à utiliser pour l’authentification sur l’hôte bastion.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="Configuration du tunnel SSH" size="md" />
+
+    3. Pour utiliser l’authentification par clé, cliquez sur « Révoquer et régénérer la paire de clés » afin de générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
+    4. Cliquez sur « Verify Connection » pour vérifier la connexion.
+
+    <Note>
+      Assurez-vous d’autoriser les [ClickPipes IP addresses](/fr/integrations/clickpipes/home#list-of-static-ips) dans les règles de votre pare-feu pour l’hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Sélectionnez votre topic
+
+    Sélectionnez votre topic et l’UI affichera un exemple de document de ce topic.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Sélectionnez votre topic" size="md" />
+  </Step>
+
+  <Step>
+    ## Configurez votre table de destination
+
+    À l’étape suivante, vous pouvez choisir d’ingérer les données dans une nouvelle table ClickHouse ou de réutiliser une table existante. Suivez les instructions à l’écran pour modifier le nom de la table, son schéma et ses paramètres. Un aperçu en temps réel de vos modifications s’affiche dans le tableau d’exemple en haut de la page.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Définir la table, le schéma et les paramètres" size="md" />
+
+    Vous pouvez également personnaliser les paramètres avancés à l’aide des options proposées
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="Définir les options avancées" size="md" />
+  </Step>
+
+  <Step>
+    ## Configurer les autorisations
+
+    ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne en utilisant un rôle personnalisé ou l&#39;un des rôles prédéfinis :
+
+    * `Full access` : accorde un accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
+    * `Only destination table` : accorde uniquement les autorisations `INSERT` sur la table de destination.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" size="md" />
+  </Step>
+
+  <Step>
+    ## Configuration terminée
+
+    Cliquez sur &quot;Create ClickPipe&quot; pour créer et exécuter votre ClickPipe. Il sera alors répertorié dans la section Data Sources.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Voir l’aperçu" size="md" />
+  </Step>
+</Steps>

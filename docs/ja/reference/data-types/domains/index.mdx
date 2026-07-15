@@ -1,0 +1,33 @@
+---
+description: '基本型を拡張して追加機能を提供する ClickHouse のドメイン型の概要'
+sidebarTitle: 'ドメイン'
+slug: /sql-reference/data-types/domains/
+title: 'ドメイン'
+doc_type: 'reference'
+---
+
+ドメインは、既存の基本型に追加機能を加えるための特殊用途の型です。一方で、基になるデータ型の wire フォーマットおよびディスク上のフォーマットはそのまま維持されます。現在、ClickHouse はユーザー定義ドメインをサポートしていません。
+
+ドメインは、対応する基本型を使用できる場所ならどこでも使用できます。たとえば、次のような用途があります。
+
+* ドメイン型のカラムを作成する
+* ドメイン型のカラムの値を読み書きする
+* 基本型を索引として使用できる場合は、ドメイン型も索引として使用する
+* ドメイン型のカラムの値を使って関数を呼び出す
+
+<div id="extra-features-of-domains">
+  ### Domainの追加機能
+</div>
+
+* `SHOW CREATE TABLE` または `DESCRIBE TABLE` での明示的なカラムの型名
+* `INSERT INTO domain_table(domain_column) VALUES(...)` による、人間が読みやすいフォーマットからの入力
+* `SELECT domain_column FROM domain_table` に対する、人間が読みやすいフォーマットでの出力
+* 人間が読みやすいフォーマットで外部ソースからデータを読み込む機能: `INSERT INTO domain_table FORMAT CSV ...`
+
+<div id="limitations">
+  ### 制限事項
+</div>
+
+* `ALTER TABLE` では、基本型の索引カラムをドメイン型に変換できません。
+* 別のカラムまたはテーブルからデータを挿入する際、文字列値を暗黙的にドメイン値へ変換することはできません。
+* ドメインは保存される値に制約を課しません。

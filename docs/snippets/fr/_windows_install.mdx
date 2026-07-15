@@ -1,0 +1,109 @@
+---
+title: Installation sous Windows
+---
+
+<div id="install-clickhouse-on-windows-with-wsl">
+  # Installer ClickHouse sur Windows avec WSL
+</div>
+
+<div id="requirements">
+  ## Prérequis
+</div>
+
+<Note>
+  Pour installer ClickHouse sous Windows, vous aurez besoin de WSL (Windows Subsystem for Linux).
+</Note>
+
+<Steps>
+  <Step>
+    ## Installer WSL
+
+    Ouvrez Windows PowerShell en tant qu’administrateur et exécutez la commande suivante :
+
+    ```bash
+    wsl --install
+    ```
+
+    Vous serez invité à saisir un nouveau nom d’utilisateur et mot de passe UNIX. Après avoir
+    saisi le nom d’utilisateur et le mot de passe souhaités, vous devriez voir un message similaire à :
+
+    ```bash
+    Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 5.15.133.1-microsoft-WSL2 x86_64)
+    ```
+  </Step>
+
+  <Step>
+    ## Installer ClickHouse via un script avec curl
+
+    Exécutez la commande suivante pour installer ClickHouse à l’aide d’un script avec curl :
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    Si le script s’est exécuté correctement, vous verrez le message suivant :
+
+    ```bash
+    Successfully downloaded the ClickHouse binary, you can run it as:
+      ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## Démarrer clickhouse-local
+
+    `clickhouse-local` vous permet de traiter des fichiers locaux et distants à l’aide de la
+    puissante syntaxe SQL de ClickHouse, sans nécessiter de configuration. Les données des tables sont stockées
+    dans un emplacement temporaire, ce qui signifie qu’après le redémarrage de `clickhouse-local`,
+    les tables créées précédemment ne sont plus disponibles.
+
+    Exécutez la commande suivante pour démarrer [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) :
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## Démarrer clickhouse-server
+
+    Si vous souhaitez conserver les données, vous devrez exécuter `clickhouse-server`. Vous pouvez
+    démarrer le serveur ClickHouse à l’aide de la commande suivante :
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## Démarrer clickhouse-client
+
+    Une fois le serveur démarré, ouvrez une nouvelle fenêtre de terminal et exécutez la commande suivante
+    pour lancer `clickhouse-client` :
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    Vous verrez quelque chose comme ceci :
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    Les données des tables sont stockées dans le répertoire courant et restent disponibles après un redémarrage
+    du serveur ClickHouse. Si nécessaire, vous pouvez passer
+    `-C config.xml` comme argument de ligne de commande supplémentaire à `./clickhouse server`
+    et fournir une configuration supplémentaire dans un fichier de configuration.
+    Tous les paramètres de configuration disponibles sont documentés [ici](/fr/reference/settings/server-settings/settings), ainsi que dans le
+    [modèle de fichier de configuration
+    exemple](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
+
+    Vous êtes maintenant prêt à commencer à envoyer des commandes SQL à ClickHouse !
+  </Step>
+</Steps>

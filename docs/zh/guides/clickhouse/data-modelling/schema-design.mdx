@@ -1,0 +1,373 @@
+---
+slug: /data-modeling/schema-design
+title: 'Schema 设计'
+description: '优化 ClickHouse schema，提升查询性能'
+keywords: ['schema', 'schema 设计', '查询优化']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+理解高效的 schema 设计是优化 ClickHouse 性能的关键。这涉及一系列往往需要权衡取舍的选择，而最佳方案取决于所处理的查询，以及数据更新频率、延迟要求和数据量等因素。本指南概述了优化 ClickHouse 性能时在 schema 设计和数据建模方面的最佳实践。
+
+<div id="stack-overflow-dataset">
+  ## Stack Overflow dataset
+</div>
+
+在本指南的示例中，我们使用 Stack Overflow 数据集的一个子集。它包含 2008 年至 2024 年 4 月期间 Stack Overflow 上产生的所有帖子、投票、用户、注释和徽章。这些数据以 Parquet 格式存储在 S3 bucket `s3://datasets-documentation/stackoverflow/parquet/` 中，其 schema 如下所示：
+
+> 图中标出的主键和关系并未通过约束强制实施 (Parquet 是文件格式，不是表格式) ，仅用于说明数据之间的关联方式以及各自具备的唯一键。
+
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow Schema" />
+
+<br />
+
+Stack Overflow 数据集包含多个相互关联的表。在任何数据建模任务中，我们都建议用户先专注于加载主表。它不一定是最大的表，而更可能是你预计会承载大多数分析查询的那张表。这样可以帮助你熟悉 ClickHouse 的核心概念和类型；如果你主要来自 OLTP 背景，这一点尤其重要。随着加入更多表以充分利用 ClickHouse 功能并获得最佳性能，这张表可能需要重新建模。
+
+出于本指南的目的，上述 schema 是特意设计为非最优的。
+
+<div id="establish-initial-schema">
+  ## 建立初始 schema
+</div>
+
+由于 `posts` 表将是大多数分析查询的目标，因此我们重点为该表建立 schema。这些数据位于公共 S3 bucket `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet` 中，其中每个年份对应一个文件。
+
+> 从 S3 加载 Parquet 格式的数据，是将数据导入 ClickHouse 最常见且首选的方式。ClickHouse 针对 Parquet 处理做了优化，理论上每秒可从 S3 读取并插入数千万行数据。
+
+ClickHouse 提供了 schema 推断能力，可自动识别数据集的类型。所有数据格式 (包括 Parquet) 都支持这一功能。我们可以利用这一特性，通过 `s3` 表函数和 [`DESCRIBE`](/zh/reference/statements/describe-table) 命令识别该数据的 ClickHouse 类型。请注意，下面我们使用通配符模式 `*.parquet` 读取 `stackoverflow/parquet/posts` 文件夹中的所有文件。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name──────────────────┬─type───────────────────────────┐
+│ Id                    │ Nullable(Int64)               │
+│ PostTypeId            │ Nullable(Int64)               │
+│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ Score                 │ Nullable(Int64)               │
+│ ViewCount             │ Nullable(Int64)               │
+│ Body                  │ Nullable(String)              │
+│ OwnerUserId           │ Nullable(Int64)               │
+│ OwnerDisplayName      │ Nullable(String)              │
+│ LastEditorUserId      │ Nullable(Int64)               │
+│ LastEditorDisplayName │ Nullable(String)              │
+│ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
+│ Title                 │ Nullable(String)              │
+│ Tags                  │ Nullable(String)              │
+│ AnswerCount           │ Nullable(Int64)               │
+│ CommentCount          │ Nullable(Int64)               │
+│ FavoriteCount         │ Nullable(Int64)               │
+│ ContentLicense        │ Nullable(String)              │
+│ ParentId              │ Nullable(String)              │
+│ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
+│ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
+└───────────────────────┴────────────────────────────────┘
+```
+
+> [S3 表函数](/zh/reference/functions/table-functions/s3)支持直接从 ClickHouse 原位查询 S3 中的数据。该函数兼容 ClickHouse 支持的所有文件格式。
+
+这为我们提供了一个初始的、尚未优化的 schema。默认情况下，ClickHouse 会将这些映射为对应的 Nullable 类型。我们可以使用简单的 `CREATE EMPTY AS SELECT` 命令，基于这些类型创建一个 ClickHouse 表。
+
+```sql
+CREATE TABLE posts
+ENGINE = MergeTree
+ORDER BY () EMPTY AS
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+几点重要说明：
+
+运行此命令后，我们的 posts 表还是空的，尚未加载任何数据。
+我们已将 MergeTree 指定为表引擎。MergeTree 是你最可能会用到的 ClickHouse 表引擎，也是最常见的一种。它就像 ClickHouse 工具箱中的瑞士军刀，能够处理 PB 级数据，适用于大多数分析场景。也有其他表引擎，适用于 CDC (变更数据捕获) 等需要高效更新支持的场景。
+
+`ORDER BY ()` 子句表示我们没有索引；更准确地说，数据没有任何顺序。稍后会进一步介绍这一点。现在，你只需知道，所有查询都需要执行线性扫描。
+
+要确认表已创建：
+
+```sql
+SHOW CREATE TABLE posts
+
+CREATE TABLE posts
+(
+        `Id` Nullable(Int64),
+        `PostTypeId` Nullable(Int64),
+        `AcceptedAnswerId` Nullable(Int64),
+        `CreationDate` Nullable(DateTime64(3, 'UTC')),
+        `Score` Nullable(Int64),
+        `ViewCount` Nullable(Int64),
+        `Body` Nullable(String),
+        `OwnerUserId` Nullable(Int64),
+        `OwnerDisplayName` Nullable(String),
+        `LastEditorUserId` Nullable(Int64),
+        `LastEditorDisplayName` Nullable(String),
+        `LastEditDate` Nullable(DateTime64(3, 'UTC')),
+        `LastActivityDate` Nullable(DateTime64(3, 'UTC')),
+        `Title` Nullable(String),
+        `Tags` Nullable(String),
+        `AnswerCount` Nullable(Int64),
+        `CommentCount` Nullable(Int64),
+        `FavoriteCount` Nullable(Int64),
+        `ContentLicense` Nullable(String),
+        `ParentId` Nullable(String),
+        `CommunityOwnedDate` Nullable(DateTime64(3, 'UTC')),
+        `ClosedDate` Nullable(DateTime64(3, 'UTC'))
+)
+ENGINE = MergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY tuple()
+```
+
+定义好初始 schema 后，我们就可以通过 `INSERT INTO SELECT` 并结合 S3 表函数读取数据来填充数据。以下操作会在一台 8 核的 ClickHouse Cloud 实例上，在大约 2 分钟内加载 `posts` 数据。
+
+```sql
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 148.140 sec. Processed 59.82 million rows, 38.07 GB (403.80 thousand rows/s., 257.00 MB/s.)
+```
+
+> 上述查询会加载 6000 万行。虽然对于 ClickHouse 来说这不算大，但网速较慢的用户可能只想加载部分数据。只需通过通配符模式指定要加载的年份即可，例如 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` 或 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet`。有关如何使用通配符模式定位部分文件，请参见[此处](/zh/reference/functions/table-functions/file#globs-in-path)。
+
+<div id="optimizing-types">
+  ## 优化类型
+</div>
+
+ClickHouse 查询性能的关键之一在于压缩。
+
+磁盘上的数据越少，I/O 就越少，因此查询和写入也就越快。大多数情况下，压缩算法带来的 CPU 开销都会被 I/O 减少所带来的收益抵消。因此，在确保 ClickHouse 查询足够快时，首先应关注提升数据压缩效果。
+
+> 如果想了解 ClickHouse 为什么能如此高效地压缩数据，我们推荐阅读[这篇文章](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。简而言之，作为列式数据库，数据会按列顺序写入。如果这些值经过排序，相同的值就会彼此相邻。压缩算法正是利用了这种连续的数据模式。此外，ClickHouse 还提供编解码器和更细化的数据类型，让你可以进一步优化压缩方式。
+
+ClickHouse 中的压缩主要受 3 个因素影响：排序键、数据类型以及所使用的编解码器。所有这些都通过 schema 配置。
+
+通过简单的类型优化流程，往往就能在压缩率和查询性能上获得最明显的初始提升。优化 schema 时，可以遵循以下几条简单规则：
+
+* **使用严格类型** - 我们最初的 schema 在许多明显是数值的列上使用了 String。使用正确的类型，才能在过滤和聚合时获得符合预期的语义。日期类型也是如此，而这些类型在 Parquet 文件中已经正确给出。
+* **避免可空列** - 默认情况下，上述列都被假定为 Null。Nullable 类型允许查询区分空值和 Null 值。这会额外创建一个 UInt8 类型的列。每次用户处理可空列时，都必须同时处理这个附加列。这会占用额外存储空间，而且几乎总会对查询性能产生负面影响。只有在某种类型的默认空值与 Null 确实存在区别时，才应使用 Nullable。例如，对于 `ViewCount` 列，在大多数查询中，将空值视为 0 很可能已经足够，而且不会影响结果。如果确实需要区别对待空值，通常也可以在查询中通过过滤器将其排除。
+  对数值类型使用最小精度 - ClickHouse 提供了多种数值类型，以适配不同的数值范围和精度。应始终尽量减少表示某一列所需的位数。除了不同大小的整数类型 (例如 Int16) 外，ClickHouse 还提供最小值为 0 的无符号变体。这些类型可以让列使用更少的位，例如 UInt16 的最大值为 65535，是 Int16 的两倍。如果可以，应优先使用这些类型，而不是更大的有符号类型。
+* **日期类型也应使用最小精度** - ClickHouse 支持多种日期和日期时间类型。Date 和 Date32 可用于存储纯日期，后者支持更大的日期范围，但代价是占用更多位。DateTime 和 DateTime64 支持存储日期时间。DateTime 仅支持秒级粒度，并使用 32 位。顾名思义，DateTime64 使用 64 位，但支持最高纳秒级粒度。与其他情况一样，应选择能够满足查询需求的较粗粒度版本，以尽量减少所需位数。
+* **使用 LowCardinality** - 对于唯一值数量较少的 Number、字符串、Date 或 DateTime 列，可以考虑使用 LowCardinality 类型进行编码。它会通过字典对值进行编码，从而减少磁盘占用。对于唯一值少于 10k 的列，可以考虑这样做。
+  特殊情况下使用 FixedString - 固定长度的字符串可以使用 FixedString 类型编码，例如语言代码和货币代码。当数据长度恰好为 N 字节时，这种方式非常高效。其他情况下，它很可能反而会降低效率，此时更推荐使用 LowCardinality。
+* **使用 Enum 进行数据校验** - Enum 类型可用于高效编码枚举类型。根据需要存储的唯一值数量，Enum 可以是 8 位或 16 位。如果你需要在写入时进行相应校验 (未声明的值会被拒绝) ，或者希望执行能够利用 Enum 值自然顺序的查询，可以考虑使用它。例如，假设某个反馈列包含用户响应 `Enum(':(' = 1, ':|' = 2, ':)' = 3)`。
+
+> 提示：要找出所有列的取值范围以及不同值的数量，可以使用这个简单查询：`SELECT * APPLY min, * APPLY  max, * APPLY uniq FROM table FORMAT Vertical`。我们建议仅在较小的数据子集上执行，因为这可能开销较高。要得到准确结果，此查询要求数值列至少已被正确定义为数值类型，也就是说，不能是 String。
+
+将这些简单规则应用到我们的 posts 表后，我们就可以为每一列找出最优类型：
+
+| 列                       | 是否为数值型 | 最小值、最大值                                                      | 唯一值      | NULL 值 | 注释                                                  | 优化后类型                                                                                                                                                        |
+| ----------------------- | ------ | ------------------------------------------------------------ | -------- | ------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | 是      | 1, 8                                                         | 8        | 否      |                                                     | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | 是      | 0, 78285170                                                  | 12282094 | 是      | 将 Null 与 0 值区分开                                     | UInt32                                                                                                                                                       |
+| `CreationDate`          | 否      | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *        | 否      | 无需毫秒级粒度，使用 DateTime                                 | DateTime                                                                                                                                                     |
+| `得分`                    | 是      | -217, 34970                                                  | 3236     | 否      |                                                     | Int32                                                                                                                                                        |
+| `ViewCount`             | 是      | 2, 13962748                                                  | 170867   | 否      |                                                     | UInt32                                                                                                                                                       |
+| `Body`                  | 否      | -                                                            | *        | 否      |                                                     | String                                                                                                                                                       |
+| `OwnerUserId`           | 是      | -1, 4056915                                                  | 6256237  | 是      |                                                     | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | 否      | -                                                            | 181251   | 是      | 将 Null 视为空字符串                                       | String                                                                                                                                                       |
+| `LastEditorUserId`      | 是      | -1, 9999993                                                  | 1104694  | 是      | 0 是未使用的值，可用于表示 NULL 值                               | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | 否      | *                                                            | 70952    | 是      | 将 NULL 视为空字符串。已测试 LowCardinality，但无明显收益             | String                                                                                                                                                       |
+| `LastEditDate`          | 否      | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -        | 否      | 无需毫秒粒度，使用 DateTime 即可                               | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | 否      | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *        | 否      | 无需毫秒级粒度，使用 DateTime                                 | DateTime                                                                                                                                                     |
+| `Title`                 | 否      | -                                                            | *        | 否      | 将 NULL 视为空字符串                                       | String                                                                                                                                                       |
+| `Tags`                  | 否      | -                                                            | *        | 否      | 将 NULL 视为空字符串                                       | String                                                                                                                                                       |
+| `AnswerCount`           | 是      | 0, 518                                                       | 216      | 否      | 将 NULL 和 0 视为相同值                                    | UInt16                                                                                                                                                       |
+| `CommentCount`          | 是      | 0, 135                                                       | 100      | 否      | 将 NULL 和 0 视为相同                                     | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | 是      | 0, 225                                                       | 6        | 是      | 将 NULL 和 0 视为相同                                     | UInt8                                                                                                                                                        |
+| `ContentLicense`        | 否      | -                                                            | 3        | 否      | LowCardinality 的性能优于 FixedString                    | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | 否      | *                                                            | 20696028 | 是      | 将 NULL 视为空字符串                                       | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | 否      | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -        | 是      | 对于 NULL，可考虑默认使用 1970-01-01。不需要毫秒粒度，使用 DateTime 即可   | DateTime                                                                                                                                                     |
+| `ClosedDate`            | 否      | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *        | 是      | 对于 NULL，可考虑将默认值设为 1970-01-01。不需要毫秒粒度，使用 DateTime 即可 | DateTime                                                                                                                                                     |
+
+<br />
+
+以上内容对应的 schema 如下：
+
+```sql
+CREATE TABLE posts_v2
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+我们可以用一个简单的 `INSERT INTO SELECT` 来填充该表：从之前的表读取数据并插入到这张表中：
+
+```sql
+INSERT INTO posts_v2 SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+在新的 schema 中，我们不保留任何 null 值。上述插入会将这些值隐式转换为其各自类型的默认值——整数为 0，字符串为空值。ClickHouse 还会自动将所有数值转换为其目标精度。
+ClickHouse 中的主键 (排序键)
+从 OLTP 数据库迁移过来的用户，往往会在 ClickHouse 中寻找与之对应的概念。
+
+<div id="choosing-an-ordering-key">
+  ## 选择排序键
+</div>
+
+在 ClickHouse 常见的使用规模下，内存和磁盘效率至关重要。数据会以称为 parts 的块写入 ClickHouse 表，并按照既定规则在后台对这些 parts 进行合并。在 ClickHouse 中，每个 part 都有自己的主索引。当 parts 合并时，合并后 part 的主索引也会一并合并。对于一个 part，主索引中每组行对应一条索引项——这种技术称为稀疏索引。
+
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse 中的稀疏索引" />
+
+在 ClickHouse 中，所选的键不仅决定索引，还决定数据在磁盘上的写入顺序。因此，它会显著影响压缩效果，进而影响查询性能。如果某个排序键能让大多数列的值按连续方式存储，就能让所选的压缩算法 (以及编解码器) 更高效地压缩数据。
+
+> 表中的所有列都会根据指定排序键的值进行排序，无论这些列本身是否包含在该键中。例如，如果 `CreationDate` 被用作键，那么其他所有列中的值顺序都会与 `CreationDate` 列中的值顺序保持一致。也可以指定多个排序键——其排序语义与 `SELECT` 查询中的 `ORDER BY` 子句相同。
+
+可以通过一些简单规则来帮助选择排序键。以下规则有时会彼此冲突，因此请按顺序考虑。通过这一过程，你可以确定若干个键，通常 4-5 个就足够：
+
+* 选择与常用过滤条件一致的列。如果某列经常用于 `WHERE` 子句，相比使用频率较低的列，应优先将其纳入键中。
+  优先选择那些在过滤时能排除较大比例总行数的列，从而减少需要读取的数据量。
+* 优先选择与表中其他列高度关联的列。这有助于确保这些值也连续存储，从而提升压缩效果。
+  对于排序键中的列，`GROUP BY` 和 `ORDER BY` 操作的内存效率也会更高。
+
+在确定排序键的列子集时，还需要按特定顺序声明这些列。这个顺序会显著影响查询中过滤次级键列的效率，以及表数据文件的压缩率。一般来说，最好按照基数升序排列这些键。但这也需要权衡这样一个事实：对排序键中靠后的列进行过滤，其效率低于对靠前列进行过滤。请在这些因素之间做好平衡，并结合你的访问模式进行考虑 (最重要的是测试不同变体) 。
+
+<div id="example">
+  ### 示例
+</div>
+
+将上述准则应用到我们的 `posts` 表时，假设用户希望进行按日期和帖子类型过滤的分析，例如：
+
+&quot;过去 3 个月里哪些问题的评论最多&quot;。
+
+对于这个问题，如果使用我们前面那个类型已优化但没有排序键的 `posts_v2` 表，查询如下：
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v2
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
+│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
+│ 78183948 │ About memory barrier                                               │               52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+
+10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
+Peak memory usage: 429.38 MiB.
+```
+
+> 这里的查询非常快，尽管 6000 万行数据都被线性扫描了一遍——ClickHouse 就是这么快 :) 请相信我们，在 TB 和 PB 级别的数据规模下，排序键绝对是值得的！
+
+让我们选择列 `PostTypeId` 和 `CreationDate` 作为排序键。
+
+在我们的场景中，用户很可能总是会按 `PostTypeId` 进行过滤。它的基数是 8，因此很适合作为排序键中的第一个条目。考虑到按日期粒度过滤很可能就足够了 (同时仍然能让 datetime 过滤受益) ，我们使用 `toDate(CreationDate)` 作为键的第 2 个组成部分。这还会生成更小的索引，因为日期可用 16 位表示，从而加快过滤速度。键中的最后一个条目是 `CommentCount`，用于帮助查找评论最多的帖子 (即最终排序) 。
+
+```sql
+CREATE TABLE posts_v3
+(
+        `Id` Int32,
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime,
+        `Score` Int32,
+        `ViewCount` UInt32,
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime,
+        `LastActivityDate` DateTime,
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16,
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime,
+        `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+COMMENT 'Ordering Key'
+
+--从已有表中填充数据
+
+INSERT INTO posts_v3 SELECT * FROM posts_v2
+```
+
+```response
+0 rows in set. Elapsed: 158.074 sec. Processed 59.82 million rows, 76.21 GB (378.42 thousand rows/s., 482.14 MB/s.)
+峰值内存占用: 6.41 GiB.
+```
+
+我们前面的查询将查询响应时间缩短了 3 倍以上：
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v3
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+10 rows in set. Elapsed: 0.020 sec. Processed 290.09 thousand rows, 21.03 MB (14.65 million rows/s., 1.06 GB/s.)
+```
+
+对于想了解通过使用特定数据类型和合适排序键所带来的压缩提升的用户，请参阅[ClickHouse 中的压缩](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。如果您还需要进一步提升压缩效果，我们也建议阅读[选择合适的列压缩编解码器](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)一节。
+
+<div id="next-data-modeling-techniques">
+  ## 下一步：数据建模技术
+</div>
+
+到目前为止，我们只迁移了一个表。虽然这样便于我们介绍 ClickHouse 的一些核心概念，但遗憾的是，大多数 schema 并没有这么简单。
+
+在下面列出的其他指南中，我们将探讨多种技术，对更完整的 schema 进行重构，以获得最佳的 ClickHouse 查询性能。在整个过程中，我们的目标是让 `Posts` 始终作为中心表，大多数分析查询都围绕它展开。虽然其他表仍然可以单独查询，但我们假定大多数分析都希望在 `posts` 的上下文中进行。
+
+> 在本节中，我们会使用其他表的优化版本。虽然我们会提供这些表的 schema，但为了简洁起见，我们会省略背后的决策过程。这些决策基于前文介绍的规则，具体如何推导则留给读者自行判断。
+
+以下方法都旨在尽量减少对 JOIN 的依赖，从而优化读取并提升查询性能。虽然 ClickHouse 完全支持 JOIN，但我们仍建议尽量少用 (在一个 JOIN 查询中关联 2 到 3 个表通常没有问题) ，以获得最佳性能。
+
+> ClickHouse 没有外键的概念。这并不妨碍进行 JOIN，但这意味着引用完整性需要由用户在应用层自行管理。在 ClickHouse 这类 OLAP 系统中，数据完整性通常在应用层或数据摄取过程中管理，而不是由数据库本身强制保证，因为那样会带来显著的额外开销。这种方式能够提供更高的灵活性，并加快数据写入速度。这也符合 ClickHouse 对超大数据集上的读取查询和 insert 查询的速度与可扩展性的关注。
+
+为了尽量减少查询时使用 JOIN，用户可以采用以下几种工具/方法：
+
+* [**数据反规范化**](/zh/guides/clickhouse/data-modelling/denormalization) - 通过合并表，并针对非 1:1 关系使用复杂类型，对数据进行反规范化。这通常意味着将部分 JOIN 从查询时转移到写入时。
+* [**字典**](/zh/concepts/features/dictionaries/index) - ClickHouse 特有的一项功能，用于处理 direct joins 和键值查找。
+* [**增量 materialized views**](/zh/concepts/features/materialized-views/incremental-materialized-view) - ClickHouse 的一项功能，用于将计算成本从查询时转移到写入时，并支持以增量方式计算聚合值。
+* [**可刷新 materialized views**](/zh/concepts/features/materialized-views/refreshable-materialized-view) - 与其他 database 产品中的 materialized views 类似，它允许定期计算查询结果并缓存结果。
+
+我们将在各个指南中分别探讨这些方法，通过示例说明各自适用的场景，并展示如何将其应用于解决 Stack Overflow 数据集 中的问题。
