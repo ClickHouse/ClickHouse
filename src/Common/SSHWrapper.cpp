@@ -91,8 +91,10 @@ enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
     {
         contents = readFileContents(filename);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
+        /// Ok: best-effort detection. An unreadable file is reported as UNKNOWN and handed to
+        /// libssh, which surfaces the real error at import time.
         return SSH_KEYTYPE_UNKNOWN;
     }
 
@@ -116,8 +118,10 @@ enum ssh_keytypes_e detectPrivateKeyType(const String & filename)
     {
         blob = base64Decode(base64_body);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
+        /// Ok: best-effort detection. A malformed base64 body is reported as UNKNOWN and handed to
+        /// libssh, which surfaces the real error at import time.
         return SSH_KEYTYPE_UNKNOWN;
     }
 
@@ -155,8 +159,10 @@ enum ssh_keytypes_e detectPublicKeyType(const String & filename)
     {
         contents = readFileContents(filename);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
+        /// Ok: best-effort detection. An unreadable file is reported as UNKNOWN and handed to
+        /// libssh, which surfaces the real error at import time.
         return SSH_KEYTYPE_UNKNOWN;
     }
 
