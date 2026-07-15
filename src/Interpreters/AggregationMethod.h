@@ -120,7 +120,7 @@ struct AggregationMethodStringNoCache
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
 
-/// For the case where there is one string key.
+/// For the case where there is one string key, stored as `PackedStringRef`.
 template <typename TData>
 struct AggregationMethodPackedString
 {
@@ -140,7 +140,7 @@ struct AggregationMethodPackedString
     explicit AggregationMethodPackedString(size_t size_hint) : data(size_hint) { }
 
     template <bool use_cache>
-    using StateImpl = ColumnsHashing::HashMethodPackedString<typename Data::value_type, Mapped, /*place_string_to_arena=*/true, use_cache>;
+    using StateImpl = ColumnsHashing::HashMethodPackedString<typename Data::value_type, Mapped, use_cache>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;
@@ -351,5 +351,6 @@ using AggregationMethodPreallocSerialized = AggregationMethodSerialized<TData, f
 
 template <typename TData>
 using AggregationMethodNullablePreallocSerialized = AggregationMethodSerialized<TData, true, true>;
+
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <Common/Arena.h>
 #include <base/PackedStringRef.h>
 
@@ -140,11 +142,17 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 
 namespace DB
 {
+
+/** ArenaPackedStringHolder is a key holder for a PackedStringRef key. Persisting copies
+  * the out-of-line payload (medium / large encodings) into the arena and rebases the
+  * packed pointer; small and empty keys are self-contained and need no persistence.
+  */
 struct ArenaPackedStringHolder
 {
     PackedStringRef key;
     Arena & pool;
 };
+
 }
 
 inline PackedStringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaPackedStringHolder & holder)

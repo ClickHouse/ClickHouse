@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
-#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <bit>
 #include <Columns/ColumnFixedString.h>
@@ -217,25 +216,19 @@ protected:
 };
 
 /// For the case when there is one packed string key.
-template <
-    typename Value,
-    typename Mapped,
-    bool place_string_to_arena = true,
-    bool use_cache = true,
-    bool need_offset = false,
-    bool nullable = false>
+/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
+/// and the key is always persisted into the arena by `keyHolderPersistKey`.
+template <typename Value, typename Mapped, bool use_cache>
 struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
-                              HashMethodPackedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>,
+                              HashMethodPackedString<Value, Mapped, use_cache>,
                               Value,
                               Mapped,
                               use_cache,
-                              need_offset,
-                              nullable>
+                              /*need_offset=*/ false,
+                              /*nullable=*/ false>
 {
-    static_assert(!need_offset);
-    static_assert(!nullable);
-    using Self = HashMethodPackedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
 
@@ -310,22 +303,15 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     }
 #endif
 
-    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
+    ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
     {
         const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
         const size_t size = offsets[row] - offsets[row - 1];
-        if constexpr (place_string_to_arena)
-        {
-            return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
-        }
-        else
-        {
-            return PackedStringRef::build(data, size, Hash{});
-        }
+        return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
     }
 
 protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
 };
 
 /// For the case when there is one fixed-length string key.

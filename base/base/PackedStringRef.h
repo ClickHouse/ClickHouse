@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include <base/StringViewHash.h>
+#include <base/defines.h>
 
 /// PackedStringRef is a compact, 16-byte string representation that encodes
 /// payload and tag bits inside two 64-bit words.
@@ -45,7 +46,6 @@ struct PackedStringRef
     uint64_t low;
     uint64_t high;
 
-    // --- Layout Constants ---
     static constexpr size_t HASH_SIZE_BYTES = 4;
     static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
     static constexpr size_t MEDIUM_LENGTH_OFFSET = HASH_SIZE_BYTES;
@@ -59,6 +59,10 @@ struct PackedStringRef
     static constexpr uint8_t SMALL_LEN_NIBBLE_MASK = 0x78;
 
     /// Low 56 bits of `high`: the packed pointer of the medium / large encodings.
+    /// 56 bits fit any user-space pointer on the supported targets: Linux x86-64 keeps user
+    /// addresses below 2^56 even with 5-level paging, and AArch64 virtual addresses take at
+    /// most 52 bits. Pointer tagging that sets the top bits (e.g. HWASan) would make the
+    /// truncation lossy; the setters assert the invariant in debug builds.
     static constexpr uint64_t POINTER_MASK = (uint64_t(1) << (PACKED_POINTER_BYTES * 8)) - 1;
 
 private:
@@ -100,8 +104,6 @@ private:
     }
 
 public:
-    /// ---------- Kind checks ----------
-
     ALWAYS_INLINE bool isLarge() const
     {
         return (getTagByte() & LARGE_TAG_BYTE) != 0;
@@ -122,8 +124,6 @@ public:
         return !isLarge() && getSmallSize() != 0;
     }
 
-    /// ---------- Small string ----------
-
     ALWAYS_INLINE uint8_t getSmallSize() const
     {
         return static_cast<uint8_t>((getTagByte() & SMALL_LEN_NIBBLE_MASK) >> SMALL_LEN_SHIFT_IN_BYTE);
@@ -133,8 +133,6 @@ public:
     {
         return reinterpret_cast<const char *>(rawBytes() + SMALL_PAYLOAD_OFFSET);
     }
-
-    /// ---------- Medium string ----------
 
     ALWAYS_INLINE uint32_t getMediumSize() const
     {
@@ -148,8 +146,6 @@ public:
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
-    /// ---------- Large string ----------
-
     ALWAYS_INLINE uint64_t getLargeSize() const
     {
         return loadLE(rawBytes(), sizeof(uint64_t));
@@ -159,8 +155,6 @@ public:
     {
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
-
-    /// ---------- Common ----------
 
     ALWAYS_INLINE uint32_t getHash() const
     {
@@ -196,6 +190,7 @@ public:
     /// Used by `keyHolderPersistKey` to rebind the key to arena-owned memory.
     ALWAYS_INLINE void setMediumPointer(const char * ptr)
     {
+        chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
         storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
         rawBytes()[TAG_BYTE_OFFSET] = 0;
     }
@@ -203,11 +198,10 @@ public:
     /// Set the large-string pointer (low 56 bits) and set the LARGE tag byte.
     ALWAYS_INLINE void setLargePointer(const char * ptr)
     {
+        chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
         storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
         rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
     }
-
-    /// ---------- Builder ----------
 
     /// Build a packed value, computing the 32-bit content hash with `hash_fn(ptr, len)`.
     /// The functor is invoked only for the encodings that store a hash (small and medium,
@@ -225,7 +219,6 @@ public:
         if (len == 0)
             return r;
 
-        /// 1. Small String Inline
         if (len <= MAX_SMALL_LEN)
         {
             const uint32_t hash = hash_fn(ptr, len);
@@ -260,7 +253,6 @@ public:
             return r;
         }
 
-        /// 2. Medium String (32-bit hash + 32-bit length + packed pointer)
         if (len <= std::numeric_limits<uint32_t>::max())
         {
             const uint32_t hash = hash_fn(ptr, len);
@@ -279,7 +271,7 @@ public:
             return r;
         }
 
-        /// 3. Large String (64-bit length, packed pointer + LARGE tag)
+        /// Large string.
         if constexpr (std::endian::native == std::endian::little)
         {
             r.low = len;
@@ -294,8 +286,6 @@ public:
         return r;
     }
 };
-
-/// ---------- Equality ----------
 
 inline ALWAYS_INLINE bool operator==(PackedStringRef lhs, PackedStringRef rhs)
 {

@@ -1,7 +1,4 @@
 #include <Planner/Planner.h>
-
-#include <tuple>
-
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
@@ -1899,9 +1896,6 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
 
     const auto & client_info = mutable_context->getClientInfo();
 
-    /// Compare by protocol revision rather than major/minor version: the aggregation method can change
-    /// within a single release (same major.minor) and only the revision distinguishes a pre-change initiator
-    /// from a post-change one. This mirrors the initiator-side check in `MultiplexedConnections`/`HedgedConnections`.
     bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
         client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 

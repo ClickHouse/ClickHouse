@@ -66,7 +66,7 @@ struct HashMapCell
     using value_type = Pair;
     using mapped_type = Mapped;
     using key_type = Key;
-    using external_key_type = std::conditional_t<std::is_same_v<std::decay_t<Key>, PackedStringRef>, std::string_view, Key>;
+    using external_key_type = std::conditional_t<std::is_same_v<Key, PackedStringRef>, std::string_view, const Key &>;
 
     value_type value;
 
