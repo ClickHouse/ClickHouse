@@ -196,7 +196,7 @@ UInt32 CompressionCodecPco::doCompressData(const char * source, UInt32 source_si
     memcpy(&dest[2], source, bytes_to_skip);
 
     UInt64 n = (source_size - bytes_to_skip) / data_bytes_size;
-    UInt64 raw_payload_size = static_cast<UInt64>(n) * data_bytes_size;
+    UInt64 raw_payload_size = n * data_bytes_size;
     auto * payload = reinterpret_cast<uint8_t *>(dest) + 2 + bytes_to_skip;
 
     /// Give the encoder exactly the raw payload size as its budget. If the `.pco` stream would be

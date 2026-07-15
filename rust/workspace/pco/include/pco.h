@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 
 /// C FFI over the `pco` (pcodec) Rust crate, used by the ClickHouse `PCO`

@@ -22,6 +22,18 @@ CREATE TABLE t_pco_ttl (d Date, x UInt32)
 ENGINE = MergeTree ORDER BY tuple()
 TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
 
+-- The untyped MergeTree compression settings reject PCO (experimental, and marks/primary-key
+-- streams are also untyped), both directly and inside a chain, even with the switch on.
+CREATE TABLE t_pco_s (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_pco_s (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS marks_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_pco_s (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS primary_key_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_pco_s (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'PCO, ZSTD(1)'; -- { serverError BAD_ARGUMENTS }
+-- A normal codec in the same setting is still accepted.
+CREATE TABLE t_pco_s (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS marks_compression_codec = 'ZSTD(3)';
+INSERT INTO t_pco_s VALUES (1);
+SELECT 'normal_marks_codec', count() FROM t_pco_s;
+DROP TABLE t_pco_s;
+
 -- A codec-only ALTER MODIFY COLUMN (the type is not restated) can still add PCO: the existing
 -- column type is used for validation.
 DROP TABLE IF EXISTS t_pco_alter;
