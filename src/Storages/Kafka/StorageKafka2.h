@@ -168,8 +168,10 @@ private:
     const SettingsChanges settings_adjustments;
 
     /// Partition affinity: when both are > 0, only a deterministic subset of
-    /// partitions is consumed by this shard.
-    UInt64 partition_num = 0;
+    /// partitions is consumed by this shard. partition_shard_num is 1-based
+    /// (aligned with system.clusters); Kafka partition IDs are 0-based, so the
+    /// formula uses `partition_shard_num - 1` to bridge the gap.
+    UInt64 partition_shard_num = 0;
     UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.

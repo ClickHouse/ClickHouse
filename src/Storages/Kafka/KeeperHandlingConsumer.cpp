@@ -113,12 +113,12 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const String & replica_name_,
     size_t idx_,
     const LoggerPtr & log_,
-    UInt64 partition_num_,
+    UInt64 partition_shard_num_,
     UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
     , idx(idx_)
-    , partition_num(partition_num_)
+    , partition_shard_num(partition_shard_num_)
     , shard_count(shard_count_)
     , kafka_consumer(kafka_consumer_)
     , keeper(keeper_)
@@ -182,18 +182,16 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         return CannotPollReason::NoMetadata;
     }
 
-    /// Filter partitions by affinity: partition_id % shard_count == partition_num % shard_count.
-    /// The modulo on partition_num supports both 0-based and 1-based shard numbering.
+    /// Filter partitions by affinity: partition_id % shard_count == partition_shard_num - 1.
     if (shard_count > 0)
     {
-        const auto effective_shard_num = partition_num % shard_count;
         const auto total_before = all_topic_partitions.size();
         std::erase_if(all_topic_partitions, [&](const auto & tp)
         {
-            return static_cast<UInt64>(tp.partition_id) % shard_count != effective_shard_num;
+            return static_cast<UInt64>(tp.partition_id) % shard_count != partition_shard_num - 1;
         });
-        LOG_TRACE(log, "Partition affinity filter: {} -> {} partitions (partition_num={}, shard_count={})",
-            total_before, all_topic_partitions.size(), partition_num, shard_count);
+        LOG_TRACE(log, "Partition affinity filter: {} -> {} partitions (partition_shard_num={}, shard_count={})",
+            total_before, all_topic_partitions.size(), partition_shard_num, shard_count);
 
         if (all_topic_partitions.empty())
         {

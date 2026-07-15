@@ -81,7 +81,7 @@ public:
         const String & replica_name_,
         size_t idx_,
         const LoggerPtr & log_,
-        UInt64 partition_num_ = 0,
+        UInt64 partition_shard_num_ = 0,
         UInt64 shard_count_ = 0);
 
     /// It is important that the consumer is using the same Keeper session as the storage to make sure all ephemeral
@@ -155,7 +155,7 @@ private:
     size_t idx;
 
     /// Partition affinity settings (enabled when shard_count > 0)
-    UInt64 partition_num = 0;
+    UInt64 partition_shard_num = 0;
     UInt64 shard_count = 0;
 
     KafkaConsumer2Ptr kafka_consumer;
