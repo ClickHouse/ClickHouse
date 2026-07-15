@@ -1,0 +1,134 @@
+---
+sidebarTitle: 'Amazon RDS MariaDB'
+description: 'Amazon RDS MariaDB를 ClickPipes의 소스로 설정하는 단계별 가이드'
+slug: /integrations/clickpipes/mysql/source/rds_maria
+title: 'RDS MariaDB 소스 설정 가이드'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 RDS MariaDB 인스턴스를 구성하는 방법을 단계별로 안내합니다.
+
+<br />
+
+<Info>
+  또한 [여기](/ko/integrations/clickpipes/mysql/faq)에서 MySQL FAQ를 확인할 것을 권장합니다. FAQ 페이지는 지속적으로 업데이트되고 있습니다.
+</Info>
+
+<div id="enable-binlog-retention-rds">
+  ## 바이너리 로그 보존 활성화
+</div>
+
+바이너리 로그는 MySQL server 인스턴스에서 수행된 데이터 변경 정보를 담고 있는 로그 파일의 집합입니다. 바이너리 로그 파일은 복제에 필요합니다. 아래 2단계를 모두 따라야 합니다:
+
+<div id="enable-binlog-logging-rds">
+  ### 1. 자동 백업을 통해 바이너리 로깅 활성화
+</div>
+
+자동 백업 기능은 MySQL에서 바이너리 로깅의 활성화 여부를 결정합니다. 이 설정은 AWS 콘솔에서 지정할 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
+
+복제 사용 사례에 따라 백업 보존 기간을 충분히 길게 설정하는 것이 좋습니다.
+
+<div id="binlog-retention-hours-rds">
+  ### 2. binlog 보존 시간
+</div>
+
+Amazon RDS for MariaDB에서는 변경 내용이 포함된 binlog 파일을 얼마 동안 보관할지 나타내는 binlog 보존 기간을 다른 방식으로 설정합니다. binlog 파일이 삭제되기 전에 일부 변경 내용을 읽지 못하면 복제를 계속할 수 없습니다. binlog 보존 시간의 기본값은 NULL이며, 이는 바이너리 로그가 보존되지 않음을 의미합니다.
+
+DB 인스턴스에서 바이너리 로그를 보존할 시간을 지정하려면, 복제가 수행될 수 있을 만큼 충분히 긴 binlog 보존 주기로 mysql.rds&#95;set&#95;configuration 함수를 사용하십시오. 권장되는 최소값은 `24 hours`입니다.
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+```
+
+<div id="binlog-parameter-group-rds">
+  ## 파라미터 그룹에서 binlog 설정 구성
+</div>
+
+RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭으로 이동하면 파라미터 그룹을 찾을 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="RDS에서 파라미터 그룹을 찾는 위치" size="lg" border />
+
+파라미터 그룹 링크를 클릭하면 해당 파라미터 그룹 페이지로 이동합니다. 오른쪽 상단에 Edit 버튼이 표시됩니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="파라미터 그룹 편집" size="lg" border />
+
+설정 `binlog_format`, `binlog_row_metadata`, `binlog_row_image`는 다음과 같이 지정해야 합니다:
+
+1. `binlog_format`을 `ROW`로 설정합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format을 ROW로 설정" size="lg" border />
+
+2. `binlog_row_metadata`를 `FULL`로 설정합니다
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata를 FULL로 설정" size="lg" border />
+
+3. `binlog_row_image`를 `FULL`로 설정합니다
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image를 FULL로 설정" size="lg" border />
+
+다음으로, 오른쪽 상단의 `Save Changes`를 클릭합니다. 변경 사항을 적용하려면 인스턴스를 재부팅해야 할 수 있습니다. RDS 인스턴스의 `Configurations` 탭에서 파라미터 그룹 링크 옆에 `Pending reboot`가 표시되면, 인스턴스 재부팅이 필요하다는 의미입니다.
+
+<br />
+
+<Tip>
+  MariaDB 클러스터를 사용하는 경우 위 매개변수는 DB 인스턴스 그룹이 아니라 [DB Cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) 파라미터 그룹에서 찾을 수 있습니다.
+</Tip>
+
+<div id="gtid-mode-rds">
+  ## GTID 모드 활성화
+</div>
+
+전역 트랜잭션 식별자(GTID)는 MySQL/MariaDB에서 커밋된 각 트랜잭션에 할당되는 고유 ID입니다. GTID를 사용하면 binlog 복제가 간소화되고 문제 해결도 더 쉬워집니다. MariaDB에서는 GTID 모드가 기본적으로 활성화되어 있으므로, 이를 사용하기 위해 별도의 작업을 수행할 필요가 없습니다.
+
+<div id="configure-database-user-rds">
+  ## 데이터베이스 사용자 구성
+</div>
+
+관리자 권한이 있는 사용자로 RDS MariaDB 인스턴스에 연결한 다음, 다음 명령을 실행하십시오:
+
+1. ClickPipes 전용 사용자를 생성합니다:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+   ```
+
+2. 스키마 권한을 부여합니다. 다음 예시는 `mysql` 데이터베이스에 대한 권한을 보여줍니다. 복제하려는 각 데이터베이스와 호스트에 대해 이 명령을 반복하십시오:
+
+   ```sql
+   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+   ```
+
+3. 사용자에게 복제 권한을 부여합니다:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<div id="configure-network-access">
+  ## 네트워크 액세스 구성
+</div>
+
+<div id="ip-based-access-control">
+  ### IP 기반 액세스 제어
+</div>
+
+RDS 인스턴스로 들어오는 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS에서 보안 그룹을 찾는 위치" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="위 보안 그룹의 인바운드 규칙 편집" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### AWS PrivateLink를 통한 비공개 액세스
+</div>
+
+비공개 네트워크를 통해 RDS 인스턴스에 연결하려면 AWS PrivateLink를 사용할 수 있습니다. 연결을 설정하려면 [ClickPipes용 AWS PrivateLink 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)를 따르십시오.

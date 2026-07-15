@@ -1,0 +1,118 @@
+---
+slug: /use-cases/AI_ML/AIChat
+sidebarTitle: 'Usa el chat de ClickHouse Assistant en ClickHouse Cloud'
+title: 'Usa el chat de ClickHouse Assistant en ClickHouse Cloud'
+description: 'Guía para habilitar y usar la función AI Chat en la Consola de ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+> Esta guía explica cómo habilitar y usar la función AI Chat en la ClickHouse Cloud Console.
+
+<Steps>
+  <Step>
+    ## Requisitos previos
+
+    1. Debes tener acceso a una organización de ClickHouse Cloud con las funciones de IA habilitadas (contacta con el administrador de tu organización o con el soporte si no están disponibles).
+  </Step>
+
+  <Step>
+    ## Abre el panel de AI Chat
+
+    1. Ve a un servicio de ClickHouse Cloud.
+    2. En la barra lateral izquierda, haz clic en el icono de destellos con la etiqueta “ClickHouse Assistant”.
+    3. (Atajo) Pulsa <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) o <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) para mostrar u ocultar el panel.
+
+    <Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="Abrir el panel lateral de AI Chat" size="md" />
+  </Step>
+
+  <Step>
+    ## Acepta el consentimiento de uso de datos (primer uso)
+
+    1. La primera vez que lo uses, aparecerá un cuadro de diálogo de consentimiento que describe el tratamiento de los datos y los subencargados de tratamiento de LLM de terceros.
+    2. Revísalo y acéptalo para continuar. Si lo rechazas, el panel no se abrirá.
+
+    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="Cuadro de diálogo de consentimiento" size="md" />
+  </Step>
+
+  <Step>
+    ## Elige un modo de chat
+
+    Actualmente, AI Chat admite:
+
+    * **Agent**: Razonamiento de varios pasos sobre el esquema y los metadatos (el servicio debe estar activo).
+    * **Docs AI (Ask)**: Preguntas y respuestas centradas en la documentación oficial de ClickHouse y en referencias de buenas prácticas.
+
+    Usa el selector de modo, en la parte inferior izquierda del panel lateral, para cambiar.
+
+    <Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="Selección de modo" size="sm" />
+  </Step>
+
+  <Step>
+    ## Redacta y envía un mensaje
+
+    1. Escribe tu pregunta (p. ej., “Crea una vista materializada para agregar eventos diarios por usuario”).
+    2. Pulsa <kbd>Enter</kbd> para enviar (usa <kbd>Shift</kbd> + <kbd>Enter</kbd> para insertar una nueva línea).
+    3. Mientras el modelo está procesando, puedes hacer clic en “Stop” para interrumpirlo.
+  </Step>
+
+  <Step>
+    ## Comprender los pasos de Thinking de “Agent”
+
+    En el modo Agent, puede que veas pasos intermedios expandibles de “Thinking” o planificación. Estos aportan transparencia sobre cómo el asistente elabora su respuesta. Colápsalos o expándelos según lo necesites.
+
+    <Image img="/images/use-cases/AI_ML/AIChat/4_thinking.webp" alt="Pasos de Thinking" size="md" />
+  </Step>
+
+  <Step>
+    ## Iniciar chats nuevos
+
+    Haz clic en el botón “New Chat” para borrar el contexto y comenzar una nueva sesión.
+  </Step>
+
+  <Step>
+    ## Ver el historial del chat
+
+    1. La sección inferior muestra tus chats recientes.
+    2. Selecciona un chat anterior para cargar sus mensajes.
+    3. Elimina una conversación con el icono de la papelera.
+
+    <Image img="/images/use-cases/AI_ML/AIChat/5_history.webp" alt="Lista del historial del chat" size="md" />
+  </Step>
+
+  <Step>
+    ## Trabajar con SQL generado
+
+    Cuando el asistente devuelve SQL:
+
+    * Revísalo para comprobar que sea correcto.
+    * Haz clic en “Open in editor” para cargar la consulta en una nueva pestaña de SQL.
+    * Modifícala y ejecútala en la Console.
+
+    <Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="Acciones de resultado" size="md" />
+
+    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="Abrir la consulta generada en el editor" size="md" />
+  </Step>
+
+  <Step>
+    ## Detener o interrumpir una respuesta
+
+    Si una respuesta tarda demasiado o empieza a desviarse:
+
+    1. Haz clic en el botón “Stop” (visible mientras se procesa).
+    2. El mensaje se marca como interrumpido; puedes perfeccionar tu prompt y volver a enviarlo.
+  </Step>
+
+  <Step>
+    ## Atajos de teclado
+
+    | Acción         | Atajo                |
+    | -------------- | -------------------- |
+    | Abrir AI Chat  | `⌘ + '` / `Ctrl + '` |
+    | Enviar mensaje | `Enter`              |
+    | Nueva línea    | `Shift + Enter`      |
+  </Step>
+</Steps>

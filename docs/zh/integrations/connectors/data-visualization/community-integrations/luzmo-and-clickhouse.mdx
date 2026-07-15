@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Luzmo'
+slug: /integrations/luzmo
+keywords: ['clickhouse', 'Luzmo', '连接', '集成', 'UI', '嵌入式']
+description: 'Luzmo 是一个嵌入式分析平台，原生集成 ClickHouse，专为软件和 SaaS 应用而设计。'
+title: '将 Luzmo 与 ClickHouse 集成'
+sidebar: 'integrations'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="1-setup-a-clickhouse-connection">
+  ## 1. 设置 ClickHouse 连接
+</div>
+
+要连接到 ClickHouse，请前往 **Connections 页面**，选择 **New Connection**，然后在 New Connection 连接弹窗中选择 ClickHouse。
+
+<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Luzmo 界面显示“Create a New Connection”对话框，且已选中 ClickHouse" border />
+
+系统会要求你提供 **host**、**username** 和 **password**：
+
+<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Luzmo 连接配置表单，显示 ClickHouse host、username 和 password 字段" border />
+
+* **Host**：这是暴露你的 ClickHouse 数据库的主机地址。请注意，为了通过网络安全传输数据，这里仅允许使用 `https`。host URL 的格式应为：`https://url-to-clickhouse-db:port/database`
+  默认情况下，插件会连接到 `default` 数据库和 443 端口。你也可以在 `/` 后指定数据库，以配置要连接的数据库。
+* **Username**：用于连接到你的 ClickHouse 集群的用户名。
+* **Password**：用于连接到你的 ClickHouse 集群的密码
+
+请参阅我们开发者文档中的示例，了解如何通过 API [创建到 ClickHouse 的连接](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody)。
+
+<div id="2-add-datasets">
+  ## 2. 添加数据集
+</div>
+
+连接 ClickHouse 后，你可以按照[这里](https://academy.luzmo.com/article/ldx3iltg)的说明添加数据集。你可以选择 ClickHouse 中可用的一个或多个数据集，并在 Luzmo 中将它们[关联](https://academy.luzmo.com/article/gkrx48x5)，确保它们能够在同一个仪表盘中一起使用。此外，也建议阅读这篇关于[为分析准备数据](https://academy.luzmo.com/article/u492qov0)的文章。
+
+如需了解如何使用我们的 API 添加数据集，请参阅[开发者文档中的这个示例](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody)。
+
+现在，你可以使用这些数据集构建精美的 (嵌入式) 仪表盘，甚至为能够回答客户问题的 AI 数据分析师 ([Luzmo IQ](https://luzmo.com/iq)) 提供支持。
+
+<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Luzmo 仪表盘示例，展示来自 ClickHouse 数据的多个可视化图表" border />
+
+<div id="usage-notes">
+  ## 使用说明
+</div>
+
+1. Luzmo ClickHouse 连接器使用 HTTP API 接口 (通常运行在 8123 端口) 进行连接。
+2. 如果您使用采用 `Distributed` 表引擎的表，且 `distributed_product_mode` 设置为 `deny`，某些 Luzmo 图表 可能无法正常工作。不过，这通常只会在您将该表关联到另一张表，并在图表中使用该关联时发生。在这种情况下，请确保将 `distributed_product_mode` 设置为 ClickHouse 集群中其他适合您的选项。如果您使用的是 ClickHouse Cloud，则可以放心忽略此设置。
+3. 例如，为确保只有 Luzmo 应用能够访问您的 ClickHouse 实例，强烈建议您将 [Luzmo 的静态 IP 地址范围](https://academy.luzmo.com/article/u9on8gbm) 加入**白名单**。我们还建议使用技术用途的只读用户。
+4. ClickHouse 连接器当前支持以下数据类型：
+
+   | ClickHouse 类型 | Luzmo 类型  |
+   | ------------- | --------- |
+   | UInt          | numeric   |
+   | Int           | numeric   |
+   | Float         | numeric   |
+   | Decimal       | numeric   |
+   | Date          | datetime  |
+   | DateTime      | datetime  |
+   | String        | hierarchy |
+   | Enum          | hierarchy |
+   | FixedString   | hierarchy |
+   | UUID          | hierarchy |
+   | Bool          | hierarchy |

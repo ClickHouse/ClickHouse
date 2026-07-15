@@ -1,0 +1,88 @@
+---
+slug: /use-cases/observability/clickstack/deployment/hyperdx-only
+title: '仅部署 HyperDX'
+description: '仅部署 HyperDX'
+doc_type: 'guide'
+keywords: ['HyperDX 独立部署', 'HyperDX ClickHouse 集成', '仅部署 HyperDX', 'HyperDX Docker 安装', 'ClickHouse 可视化工具']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+
+如果您已经有一个正在运行、并且已包含可观测性或事件数据的 ClickHouse 实例，此选项就是为这种情况设计的。
+
+HyperDX 可以脱离其余技术栈独立使用，并且兼容任何数据 schema，而不仅限于 OpenTelemetry (OTel) 。因此，它非常适合那些已经基于 ClickHouse 构建了自定义可观测性管道的场景。
+
+要启用完整功能，您必须提供一个 MongoDB 实例来存储应用状态，包括仪表盘、保存的搜索、用户设置和告警。
+
+在此模式下，数据摄取完全由用户自行负责。您可以通过自托管的 OpenTelemetry collector、客户端库直接摄取、ClickHouse 原生表引擎 (如 Kafka 或 S3) 、ETL 管道，或 ClickPipes 等托管摄取服务将数据摄取到 ClickHouse 中。这种方式提供了最大的灵活性，适合已经在运营 ClickHouse，并希望在其之上叠加 HyperDX 来实现可视化、搜索和告警的团队。
+
+<div id="suitable-for">
+  ### 适用场景
+</div>
+
+* 现有 ClickHouse 用户
+* 自定义事件管道
+
+<div id="deployment-steps">
+  ## 部署步骤
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 使用 Docker 部署
+
+    运行以下命令，并按需修改 `YOUR_MONGODB_URI`。
+
+    ```shell
+    docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
+    ```
+  </Step>
+
+  <Step>
+    ### 访问 HyperDX UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 打开 HyperDX UI。
+
+    创建用户，并填写符合要求的用户名和密码。
+
+    点击 `Create` 后，系统会提示你填写连接信息。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+  </Step>
+
+  <Step>
+    ### 完善连接信息
+
+    连接到你自己的外部 ClickHouse 集群，例如 ClickHouse Cloud。
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX 登录" size="md" />
+
+    如果系统提示创建数据源，请保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其余设置应会自动检测，你可以直接点击 `Save New Source`。
+
+    <Info>
+      **创建数据源**
+
+      创建数据源要求 ClickHouse 中已存在相关表。如果你还没有数据，建议部署 ClickStack OpenTelemetry collector 来创建这些表。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="using-docker-compose">
+  ## 使用 Docker Compose
+</div>
+
+你可以修改 [Docker Compose 配置](/zh/clickstack/deployment/docker-compose)，实现与本指南相同的效果，即从清单中移除 OTel collector 和 ClickHouse 实例。
+
+<div id="otel-collector">
+  ## ClickStack OpenTelemetry collector
+</div>
+
+即使你独立于该技术栈中的其他组件，自行管理 OpenTelemetry collector，我们仍建议使用 ClickStack 提供的 collector 版本。这样可以确保使用默认 schema，并遵循摄取的最佳实践。
+
+有关部署和配置独立 collector 的详细信息，请参阅[“使用 OpenTelemetry 进行摄取”](/zh/clickstack/ingesting-data/collector#modifying-otel-collector-configuration)。
+
+<JSONSupport />

@@ -1,0 +1,235 @@
+---
+description: 'يختلف عن MergeTree في أنه يزيل الإدخالات المكررة التي لها القيمة نفسها
+  لـ مفتاح الفرز (قسم الجدول `ORDER BY`، وليس `PRIMARY KEY`).'
+sidebarTitle: 'ReplacingMergeTree'
+slug: /engines/table-engines/mergetree-family/replacingmergetree
+title: 'محرك الجدول ReplacingMergeTree'
+doc_type: 'reference'
+---
+
+يختلف هذا المحرك عن [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) في أنه يزيل الإدخالات المكررة التي لها القيمة نفسها لـ [مفتاح الفرز](/ar/reference/engines/table-engines/mergetree-family/mergetree) (قسم الجدول `ORDER BY`، وليس `PRIMARY KEY`).
+
+لا تحدث إزالة البيانات المكررة إلا أثناء عملية دمج. وتحدث عملية الدمج في الخلفية في وقت غير معروف، لذلك لا يمكنك التخطيط لها. وقد تظل بعض البيانات غير مُعالَجة. ورغم أنه يمكنك تشغيل عملية دمج غير مجدولة باستخدام الاستعلام `OPTIMIZE`، فلا تعوّل على ذلك، لأن الاستعلام `OPTIMIZE` سيقرأ كمية كبيرة من البيانات ويكتبها.
+
+لذلك، يُعد `ReplacingMergeTree` مناسبًا لإزالة البيانات المكررة في الخلفية لتوفير المساحة، لكنه لا يضمن خلو البيانات من التكرار.
+
+<Note>
+  يتوفر [هنا](/ar/concepts/features/operations/update/replacing-merge-tree) دليل مفصل حول ReplacingMergeTree، بما في ذلك أفضل الممارسات وكيفية تحسين الأداء.
+</Note>
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
+[PARTITION BY expr]
+[ORDER BY expr]
+[PRIMARY KEY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+للاطلاع على وصف مَعلمات الطلب، راجع [وصف التعليمة](/ar/reference/statements/create/table).
+
+<Note>
+  يُحدَّد تفرّد الصفوف بواسطة قسم `ORDER BY` في الجدول، وليس بواسطة `PRIMARY KEY`.
+</Note>
+
+<div id="replacingmergetree-parameters">
+  ## معلمات ReplacingMergeTree
+</div>
+
+<div id="ver">
+  ### `ver`
+</div>
+
+`ver` — عمود يحتوي على رقم الإصدار. النوع `UInt*` أو `Date` أو `DateTime` أو `DateTime64`. مُعامِل اختياري.
+
+عند الدمج، يحتفظ `ReplacingMergeTree` بصف واحد فقط من بين جميع الصفوف التي لها مفتاح الفرز نفسه:
+
+* الصف الأخير في التحديد، إذا لم يتم تعيين `ver`. والتحديد هو مجموعة من الصفوف ضمن مجموعة من الأجزاء المشاركة في عملية الدمج. ويكون الجزء الذي أُنشئ مؤخرًا (آخر عملية insert) هو الأخير في التحديد. لذلك، بعد إزالة التكرار، يبقى آخر صف أُدرج من أحدث عملية insert لكل مفتاح فرز فريد.
+* الصف ذو أكبر إصدار، إذا تم تحديد `ver`. وإذا كانت قيمة `ver` متطابقة في عدة صفوف، فستُطبَّق عليها قاعدة &quot;إذا لم يتم تحديد `ver`&quot;، أي سيبقى الصف المُدرَج الأحدث.
+
+مثال:
+
+```sql
+-- without ver - the last inserted 'wins'
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM myFirstReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ second  │ 2020-01-01 00:00:00 │
+└─────┴─────────┴─────────────────────┘
+
+-- with ver - the row with the biggest ver 'wins'
+CREATE TABLE mySecondReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree(eventTime)
+ORDER BY key;
+
+INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM mySecondReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ first   │ 2020-01-01 01:01:01 │
+└─────┴─────────┴─────────────────────┘
+```
+
+<div id="is_deleted">
+  ### `is_deleted`
+</div>
+
+`is_deleted` — اسم عمود يُستخدم أثناء عملية الدمج لتحديد ما إذا كانت البيانات في هذا الصف تمثل الحالة أم يجب حذفها؛ `1` يشير إلى صف &quot;محذوف&quot;، و`0` يشير إلى صف &quot;حالة&quot;.
+
+نوع بيانات العمود — `UInt8`.
+
+<Note>
+  لا يمكن تمكين `is_deleted` إلا عند استخدام `ver`.
+
+  بغض النظر عن العملية التي تُجرى على البيانات، يجب زيادة رقم الإصدار. إذا كان لصفّين مُدرجين رقم الإصدار نفسه، فسيُحتفَظ بالصف الذي أُدرج أخيرًا.
+
+  يحتفظ ClickHouse افتراضيًا بالصف الأخير للمفتاح حتى إذا كان هذا الصف صف حذف. وذلك حتى يمكن
+  إدراج أي صفوف لاحقة ذات أرقام إصدارات أقل بأمان، مع استمرار تطبيق صف الحذف.
+
+  لحذف صفوف الحذف هذه نهائيًا، فعِّل إعداد الجدول `allow_experimental_replacing_merge_with_cleanup` ثم نفِّذ أحد الخيارين التاليين:
+
+  1. اضبط إعدادات الجدول `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge` و`min_age_to_force_merge_on_partition_only` و`min_age_to_force_merge_seconds`. إذا كانت جميع الأجزاء في القسم أقدم من `min_age_to_force_merge_seconds`، فسيُجري ClickHouse دمجها
+     كلها في جزء واحد ويزيل أي صفوف حذف.
+
+  2. شغِّل يدويًا `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
+</Note>
+
+مثال:
+
+```sql
+-- with ver and is_deleted
+CREATE OR REPLACE TABLE myThirdReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime,
+    `is_deleted` UInt8
+)
+ENGINE = ReplacingMergeTree(eventTime, is_deleted)
+ORDER BY key
+SETTINGS allow_experimental_replacing_merge_with_cleanup = 1;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1);
+
+select * from myThirdReplacingMT final;
+
+0 rows in set. Elapsed: 0.003 sec.
+
+-- delete rows with is_deleted
+OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
+
+select * from myThirdReplacingMT final;
+
+┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
+│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
+└─────┴─────────┴─────────────────────┴────────────┘
+```
+
+<div id="query-clauses">
+  ## عبارات الاستعلام
+</div>
+
+عند إنشاء جدول `ReplacingMergeTree`، تكون [العبارات](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسها مطلوبة، كما هو الحال عند إنشاء جدول `MergeTree`.
+
+<details markdown="1">
+  <summary>الطريقة المتقادمة لإنشاء جدول</summary>
+
+  <Note>
+    لا تستخدم هذه الطريقة في المشاريع الجديدة، وإذا أمكن، انقل المشاريع القديمة إلى الطريقة الموضحة أعلاه.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] ReplacingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [ver])
+  ```
+
+  جميع المَعلمات، باستثناء `ver`، لها المعنى نفسه كما في `MergeTree`.
+
+  * `ver` - العمود الذي يحتوي على الإصدار. مَعلمة اختيارية. للاطلاع على الوصف، راجع النص أعلاه.
+</details>
+
+<div id="query-time-de-duplication--final">
+  ## إزالة التكرار وقت الاستعلام &amp; FINAL
+</div>
+
+عند وقت الدمج، يحدّد محرك ReplacingMergeTree الصفوف المكررة باستخدام قيم أعمدة `ORDER BY` (المستخدمة في إنشاء الجدول) بوصفها معرّفًا فريدًا، ولا يحتفظ إلا بأعلى إصدار. لكن هذا لا يوفّر سوى صحة نهائية بمرور الوقت، إذ لا يضمن إزالة تكرار الصفوف، لذا ينبغي عدم الاعتماد عليه. ولذلك قد تُنتج الاستعلامات نتائج غير صحيحة بسبب احتساب صفوف التحديث والحذف ضمن الاستعلامات.
+
+وللحصول على نتائج صحيحة، سيحتاج المستخدمون إلى استكمال عمليات الدمج في الخلفية بإزالة التكرار وحذف الصفوف المحذوفة وقت الاستعلام. ويمكن تحقيق ذلك باستخدام العامل `FINAL`. على سبيل المثال، تأمل المثال التالي:
+
+```sql
+CREATE TABLE rmt_example
+(
+    `number` UInt16
+)
+ENGINE = ReplacingMergeTree
+ORDER BY number
+
+INSERT INTO rmt_example SELECT floor(randUniform(0, 100)) AS number
+FROM numbers(1000000000)
+
+0 rows in set. Elapsed: 19.958 sec. Processed 1.00 billion rows, 8.00 GB (50.11 million rows/s., 400.84 MB/s.)
+```
+
+يعطي الاستعلام بدون `FINAL` عددًا غير صحيح (تختلف النتيجة الدقيقة بحسب عمليات الدمج):
+
+```sql
+SELECT count()
+FROM rmt_example
+
+┌─count()─┐
+│     200 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+تؤدي إضافة FINAL إلى نتيجة صحيحة:
+
+```sql
+SELECT count()
+FROM rmt_example
+FINAL
+
+┌─count()─┐
+│     100 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+لمزيد من التفاصيل حول `FINAL`، بما في ذلك كيفية تحسين أداء `FINAL`، نوصي بقراءة [دليلنا التفصيلي حول ReplacingMergeTree](/ar/concepts/features/operations/update/replacing-merge-tree).

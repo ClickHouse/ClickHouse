@@ -1,0 +1,152 @@
+---
+slug: /cloud/managed-postgres/pricing
+sidebarTitle: '料金'
+title: '料金'
+description: 'ClickHouse が管理する Postgres の料金体系、ティア、インスタンスタイプ、およびベータ期間中の料金の詳細'
+keywords: ['postgres 料金', 'managed postgres 費用', 'postgres ベータ料金', 'postgres 料金計算ツール', 'nvme 料金', 'postgres ティア料金']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
+
+ClickHouse が管理する Postgres はローカル NVMe ストレージを基盤としており、従来のネットワーク接続型ストレージアーキテクチャに伴うコスト増なしで、本番運用に耐える性能とネイティブな ClickHouse 連携を提供します。このページでは、このサービスの料金モデル、利用可能なインスタンスタイプ、ティアごとの比較について説明します。
+
+ClickHouse が管理する Postgres は現在ベータで提供中です。2026 年 6 月 15 日に使用量の計測が始まるまで、サービスは無料で利用できるため、請求開始前にチームで適切なインスタンスサイズを見極めることができます。
+
+ベータ期間中は、初期導入のお客様へのコミットメントとして、すべてのプランに 50% の割引が適用されます。料金は、1 vCPU、8 GB RAM、59 GB の NVMe ストレージ構成で **月額約 30 ドル** からです。
+
+<Tip>
+  **料金計算ツール**
+
+  正確な料金については、[料金計算ツール](https://clickhouse.com/pricing?service=postgres#pricing-calculator) を使用して、ワークロードに最適な構成と料金を確認してください。
+</Tip>
+
+<div id="price-performance">
+  ## 価格対性能
+</div>
+
+このサービスはローカルのNVMeストレージ上で稼働するため、多くのワークロードで、従来のネットワーク接続型ストレージアーキテクチャと比べて大幅に優れた価格対性能を実現できます。類似したハードウェアプロファイルにおける他の Postgres プロバイダーとのベンチマーク比較については、[PostgresBench](https://postgresbench.clickhouse.com/)を参照してください。
+
+同等のワークロードでは、必要なコンピュート量が最大で2〜4分の1になる場合があります。プロバイダー間で料金を比較する際は、こうした潜在的な効率向上を考慮する必要がありますが、実際の改善幅はワークロードによって異なるため、具体的なアプリケーションに対して検証してください。
+
+<div id="pricing-model">
+  ## 料金モデル
+</div>
+
+このサービスはローカル NVMe ストレージ上で稼働するため、料金はコンピュート料金とディスク料金を個別に課金するのではなく、CPU、メモリ、ストレージを含む VM 構成全体に基づいて決まります。
+
+1 vCPU / 8 GB RAM / 59 GB NVMe から 96 vCPU / 768 GB RAM / 60 TB NVMe ストレージまで、50 を超える構成が用意されており、コンピュート負荷の高い Postgres ワークロードにも、大容量ストレージを必要とする Postgres ワークロードにも柔軟に対応できます。
+
+<div id="tier-based-pricing">
+  ### ティア別料金
+</div>
+
+料金、機能、リソース制限は組織ティア — [Basic, Scale, or Enterprise](/ja/products/cloud/features/cloud-tiers) — によって異なります。ただし、すべてのティアで、ローカル NVMe ストレージ上の本番環境対応 Postgres、ClickHouse へのネイティブ CDC、`pg_clickhouse` 拡張機能など、サービスの中核機能を利用できます。
+
+以下の表は、各ティアに含まれる機能、提供内容、および制限をまとめたものです。ティアごとの料金を比較するには、[料金計算ツール](https://clickhouse.com/pricing?service=postgres#pricing-calculator)を参照してください。
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0'}}>
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Basic</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>新しいアイデアの検証や小規模プロジェクトの立ち上げに最適です。ストレージとメモリには制限があります。</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/ja/products/managed-postgres/scaling">コンピュートは最大 8 GB RAM</a></li>
+      <li><a href="/ja/products/managed-postgres/scaling">ローカル NVMe ストレージは最大 118 GB</a></li>
+      <li><a href="/ja/products/managed-postgres/backup-and-restore">保持期間 1 日のバックアップ</a></li>
+      <li><a href="/ja/products/managed-postgres/backup-and-restore">PITR とブランチ</a></li>
+      <li><a href="/ja/products/managed-postgres/high-availability">High Availability</a> を含む</li>
+      <li>保持期間 1 日の<a href="/ja/products/managed-postgres/monitoring/query-insights">クエリインサイト</a></li>
+      <li><a href="/ja/products/managed-postgres/extensions">90 種類以上の Postgres 拡張機能</a></li>
+      <li><a href="/ja/products/managed-postgres/clickhouse-integration">ClickHouse へのネイティブ CDC</a></li>
+      <li><a href="/ja/products/managed-postgres/extensions"><code>pg&#95;clickhouse</code> 拡張機能</a></li>
+      <li><a href="/ja/products/managed-postgres/migrations/clickhouse-cloud">完全マネージド型のデータ移行</a></li>
+      <li>1 営業日以内に応答するエキスパートサポート</li>
+      <li>Google または Microsoft のソーシャルログインを使用する<a href="/ja/products/cloud/guides/security/cloud-access-management/manage-my-account">シングルサインオン認証 (SSO) </a></li>
+      <li><a href="/ja/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">多要素認証</a></li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Scale</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>本番環境や大規模データ、プロフェッショナル用途に適しています。</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Basic のすべてに加えて、以下が含まれます</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/ja/products/managed-postgres/scaling">最大 60 TB のストレージ</a></li>
+      <li><a href="/ja/products/managed-postgres/scaling">最大 96 vCPU、768 GB RAM</a></li>
+      <li><a href="/ja/products/managed-postgres/scaling">ストレージの自動スケーリング</a></li>
+      <li><a href="/ja/products/managed-postgres/read-replicas">読み取りレプリカ</a></li>
+      <li><a href="/ja/products/managed-postgres/security">プライベートネットワーキング</a></li>
+      <li><a href="/ja/products/managed-postgres/backup-and-restore">7 日間保持されるバックアップ</a></li>
+      <li><a href="/ja/products/managed-postgres/monitoring/query-insights">クエリインサイト</a> (保持期間 7 日間) </li>
+      <li>重大度 1 の問題には、24 時間 365 日、1 時間以内に応答するエキスパートサポート</li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Enterprise</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>本番環境での運用、非常に大規模なデータ処理、またはエンタープライズ向けのユースケースに適しています。</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>Scale の全機能に加えて、以下が含まれます</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li>重大度 1 の問題に対して 30 分の初回応答時間を保証する Enterprise サポート</li>
+      <li>プライベートリージョン</li>
+      <li>担当リードサポートエンジニア</li>
+      <li><a href="/ja/products/managed-postgres/extensions">カスタム拡張機能</a> (*承認待ち)</li>
+      <li><a href="/ja/products/managed-postgres/migrations/clickhouse-cloud">移行に関するコンサルティングガイド</a></li>
+      <li><a href="/ja/products/managed-postgres/upgrades">スケジュールされたアップグレード</a></li>
+    </ul>
+  </div>
+</div>
+
+<div id="instance-types">
+  ### インスタンスタイプ
+</div>
+
+インスタンス構成は、ワークロードの特性に応じたインフラストラクチャの選定を簡素化するため、3 つのカテゴリに分類されています。
+
+* **メモリ最適化:** メモリ集約型ワークロード向けに設計されており、メモリ対 CPU の比率が高くなっています (1:8 や 1:4 など) 。AWS Graviton ベースの `r8gd`、`r6gd`、`m6gd`、`m8gd` ファミリーをサポートします。大規模なワーキングセット、高いキャッシュヒット率、メモリバウンドなデータベースワークロードに最適です。
+* **ストレージ最適化:** コンピュートを比例してスケーリングすることなく、大量のローカル NVMe ストレージを必要とするワークロード向けに設計されています。AWS Graviton ベースの `i8g`、`i8ge`、`i7i`、`i7ie` ファミリーをサポートし、構成によっては最大 60 TB のローカル NVMe ストレージを利用できます。大規模なデータセット、時系列ワークロード、ログやイベントの保存、ストレージ負荷の高い OLTP ワークロードに最適です。
+* **CPU 最適化:** コンピュート集約型ワークロード向けに設計されており、メモリ対 CPU の比率は低めです (通常は 1:2 前後) 。`c6gd` ファミリーをサポートし、高コンカレンシーのトランザクションワークロードや CPU バウンドなクエリに最適です。
+
+<div id="pricing-calculator">
+  ## 料金計算ツール
+</div>
+
+さまざまなワークロードプロファイルや構成におけるデプロイメントコストの見積もりには、[料金計算ツール](https://clickhouse.com/pricing?service=postgres#pricing-calculator)を使用します。次の項目をカスタマイズできます。
+
+* 組織ティア (Basic、Scale、Enterprise)
+* リージョン
+* 構成タイプ (Memory、Storage、または CPU Optimized)
+* CPU アーキテクチャ (ARM または x86)
+* vCPU、メモリ、ストレージのサイジング
+* スタンバイ / 高可用性 (HA) 構成
+
+これにより、50 を超えるサポート対象の構成の組み合わせで価格を比較し、ワークロードに最適な構成を見つけることができます。
+
+<div id="beta-pricing-highlights">
+  ## ベータ料金の主なポイント
+</div>
+
+ベータ期間中は、以下のとおりです。
+
+* **2026年6月15日**に使用量の計測が開始されるまでは、サービスは無料です
+* **ClickPipes** によるネイティブ CDC は追加料金なしで利用できます
+* 現在、**ネットワークエグレス** や **バックアップ** に対する料金は発生しません
+* 現在、すべてのプランに **50%割引のベータ料金** が適用されます
+
+<div id="disclaimers">
+  ## 免責事項
+</div>
+
+製品はベータ期間中も進化を続けるため、一般提供 (GA) に先立って、価格設定やパッケージ内容が見直される場合があります。以下の点にご注意ください。
+
+* ネットワークエグレス料金は、GA 後に導入される予定です。データベースと同じ環境に配置されたアプリケーションでは、エグレスコストは最小限に抑えられる見込みです。
+* 現在策定中の上限を超える保持期間については、GA 時点で追加のバックアップ料金が適用される場合があります。
+* Postgres と ClickHouse が同じリージョンに配置されている場合、ClickPipes 経由のネイティブ CDC は、統合 OLTP + OLAP プラットフォームというビジョンに沿って、GA 時点でも無料、またはごく低価格にとどまる見込みです。
+* データベースをオンラインのまま維持するため、スケーリングとメンテナンス操作では、新しいインスタンスが古いインスタンスと並列に短時間稼働します。移行が完了するまでの間は、古いインスタンスと新しいインスタンスの両方に対する料金が一時的に重複して発生する場合があります。この期間の長さは、インスタンスタイプとストレージ容量によって異なります。
+* 選択したインスタンスタイプの容量が一部のアベイラビリティゾーンで一時的に制限されている場合、選択した高可用性構成を維持するために、サービスは古い世代の同等のインスタンスタイプにフォールバックすることがあります。この場合、対象のインスタンスタイプの料金が適用されます。
+* 既存の価格設定は、ベータ期間中に実際の顧客の利用パターン、ワークロードの特性、インフラストラクチャ要件について知見が深まるにつれて見直され、GA が近づく段階で変更される場合があります。
