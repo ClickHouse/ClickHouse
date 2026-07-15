@@ -19,6 +19,15 @@ namespace
 
         size_t getNumberOfArguments() const override { return 0; }
 
+        /// The result is the id of the thread processing the current block: it varies between
+        /// blocks of one query, so the function is not deterministic even within a query, and
+        /// folding it during analysis would replace it with the analysis thread's id.
+        bool isDeterministic() const override { return false; }
+
+        bool isDeterministicInScopeOfQuery() const override { return false; }
+
+        bool isSuitableForConstantFolding() const override { return false; }
+
         DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
