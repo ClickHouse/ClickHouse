@@ -1964,12 +1964,12 @@ def test_namespace_prefix_distributed_join(started_cluster):
     )
     assert count == 3, f"expected 3 rows via distributed JOIN, got {count}"
 
-    # the legacy analyzer cannot ship the prefix, so reads under a scope are rejected
+    # the legacy analyzer cannot ship the prefix, so it cannot even enter a scope
     _, err = node.query_and_get_answer_with_error(
         f"USE {CATALOG_NAME}.{namespace}; SELECT count() FROM {table_name}",
         settings={"allow_experimental_table_namespaces": 1, "enable_analyzer": 0},
     )
-    assert "NOT_IMPLEMENTED" in err, f"legacy-analyzer read under a scope must be rejected: {err}"
+    assert "SUPPORT_IS_DISABLED" in err, f"the legacy analyzer must not enter a namespace scope: {err}"
 
 
 def test_namespace_prefix_show_columns(started_cluster):
