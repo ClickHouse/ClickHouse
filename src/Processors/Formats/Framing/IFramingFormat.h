@@ -36,6 +36,13 @@ enum class FramedPacketKind : uint8_t
   * The concatenation of the payloads of all `data`, `totals` and `extremes` packets is exactly
   * what the output format would have written without framing.
   *
+  * One deliberate exception: an output format that cannot represent totals and extremes in its plain
+  * output and drops them (the `JSONCompactEachRow` family, where they would be indistinguishable from
+  * ordinary rows) does emit them under framing, into the `totals` and `extremes` packets, because the
+  * packet kind tells them apart. For such formats the concatenation of the `data` packets alone is
+  * exactly the unframed output, and the `totals` and `extremes` packets carry additional rows that
+  * the unframed output does not contain.
+  *
   * Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
   *
   * The framing format is selected by the query setting `framing_output_format`. It applies to the

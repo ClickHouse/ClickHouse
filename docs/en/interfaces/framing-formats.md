@@ -13,7 +13,7 @@ A framing format multiplexes different response parts of the query in a single s
 
 Framing formats are independent of [output formats](/interfaces/formats): they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
 
-Framing can also make an output format more expressive. The `JSONCompactEachRow` family of formats drops totals and extremes in its plain output, because their rows would be indistinguishable from ordinary data rows. Under a framing format the packet kind tells them apart, so these formats emit totals and extremes rows (in their usual row syntax) into the `totals` and `extremes` packets.
+Framing can also make an output format more expressive - this is the one deliberate exception to the rule above. The `JSONCompactEachRow` family of formats drops totals and extremes in its plain output, because their rows would be indistinguishable from ordinary data rows. Under a framing format the packet kind tells them apart, so these formats emit totals and extremes rows (in their usual row syntax) into the `totals` and `extremes` packets. For these formats the concatenation of the payloads of the `data` packets alone is exactly what the output format would have produced without framing, and the `totals` and `extremes` packets carry additional rows that the unframed output does not contain - so a client that reconstructs the unframed output from such a stream should concatenate only the `data` payloads.
 
 The framing format is selected by the query-level setting `framing_output_format`. It currently applies to the HTTP protocol and is ignored for other interfaces.
 
@@ -21,7 +21,7 @@ Server logs are included as packets if the `send_logs_level` setting is set. Pro
 
 If an exception happens during query execution, it is sent as an `exception` packet (the last packet of the stream), regardless of the `http_write_exception_in_output_format` setting, so the client can always parse the response as a stream of packets.
 
-A framing format is applied to queries that produce no result stream as well - a successful `INSERT`, a DDL query, or any other query without output. Such a response carries no `data` packets, but still switches the response `Content-Type` to the framing format and streams the `progress`, `log`, and `profile_events` packets, matching the native protocol.
+A framing format is applied to queries that produce no result stream as well - a successful `INSERT`, a DDL query, or any other query without output. Such a response carries no `data` packets, but still switches the response `Content-Type` to the framing format and streams the `progress`, `log`, and `profile_events` packets, matching the native protocol. The stream ends with a final `progress` packet carrying the final counters (for example `result_rows` and `result_bytes` with the number of written rows for an `INSERT`). Because no payload is formatted, the output format is irrelevant for such queries and does not affect the framed stream.
 
 ## Available framing formats {#available-framing-formats}
 

@@ -147,3 +147,35 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_l
 [ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'failing INSERT exception packet: OK'
 [ "$(grep -c '"packet":"data"' "$result_file")" -eq 0 ] && echo 'failing INSERT no data packets: OK'
 rm "$result_file"
+
+# The final progress flush after the query finishes must reach the framed stream too. The `Null` payload
+# carrier of the no-result path is not part of the pipeline, so it is finalized explicitly, flushing the
+# pending (throttled) progress update: the last `progress` packet carries the final counters
+# (`result_rows` / `result_bytes`), like the final progress packet of the native protocol.
+echo '--- a framed INSERT ends with a final progress packet carrying the final counters'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE framing_no_result_04513 (x UInt64) ENGINE = Memory"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "INSERT INTO framing_no_result_04513 SELECT number FROM numbers(1000000)" > "$result_file"
+[ "$(grep -c '"packet":"progress"' "$result_file")" -ge 1 ] && echo 'INSERT progress packets: OK'
+grep '"packet":"progress"' "$result_file" | tail -1 | grep -q '"result_rows":"1000000"' && echo 'INSERT final progress result_rows: OK'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE framing_no_result_04513"
+rm "$result_file"
+
+# The output format is irrelevant for a no-result query (no payload is formatted), so the framing must
+# not depend on it: a mistyped `default_format` must not fail the query, and a binary `default_format`
+# (`Native`) must not flip the `EventStream` content type to `payload=base64`.
+echo '--- a framed no-result query does not depend on the output format'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE framing_no_result_04513 (x UInt64) ENGINE = Memory"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&default_format=NoSuchFormat04513" \
+    -d "INSERT INTO framing_no_result_04513 SELECT number FROM numbers(10)" > "$result_file"
+[ "$(grep -c '"packet":"exception"' "$result_file")" -eq 0 ] && echo 'INSERT with unknown default_format no exception: OK'
+[ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM framing_no_result_04513")" = "10" ] && echo 'INSERT with unknown default_format rows written: OK'
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=EventStream&default_format=Native" \
+    -d "CREATE TABLE IF NOT EXISTS framing_no_result_04513_ddl (x UInt64) ENGINE = Memory" > /dev/null
+grep -qi '^content-type: *text/event-stream' "$header_file" && echo 'DDL EventStream content type with binary default_format: OK'
+grep -qi 'payload=base64' "$header_file" || echo 'DDL EventStream no payload=base64 with binary default_format: OK'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513_ddl"
+rm "$result_file" "$header_file"
