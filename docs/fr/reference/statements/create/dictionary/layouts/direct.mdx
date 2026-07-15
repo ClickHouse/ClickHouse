@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'layout de dictionnaire direct'
+sidebarTitle: 'direct'
+description: 'Un layout de dictionnaire qui interroge directement la source, sans mise en cache.'
+doc_type: 'référence'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+Le dictionnaire n’est pas stocké en mémoire et interroge directement la source lors du traitement d’une requête.
+
+La clé du dictionnaire est de type [UInt64](/fr/reference/data-types/int-uint).
+
+Tous les types de [sources](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), à l’exception des fichiers locaux, sont pris en charge.
+
+Exemple de configuration :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+Ce type de stockage s’utilise avec des [clés](/fr/reference/statements/create/dictionary/attributes#composite-key) composites. Comme `direct`.

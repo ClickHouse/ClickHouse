@@ -1,0 +1,2569 @@
+---
+sidebarTitle: 'C#'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
+slug: /integrations/csharp
+description: 'عميل C# الرسمي للاتصال بـ ClickHouse.'
+title: 'عميل C# الرسمي لـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+عميل C# الرسمي للاتصال بـ ClickHouse.
+تتوفّر الشيفرة المصدرية للعميل في [مستودع GitHub](https://github.com/ClickHouse/clickhouse-cs).
+طوّره في الأصل [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
+
+توفّر المكتبة واجهتَي برمجة تطبيقات رئيسيتين:
+
+* **`ClickHouseClient`** (موصى به): عميل عالي المستوى وآمن للاستخدام من عدة خيوط، ومصمَّم للاستخدام بنمط singleton. يوفّر واجهة برمجة تطبيقات غير متزامنة وبسيطة للاستعلامات وعمليات الإدراج المجمّع. وهو الأنسب لمعظم التطبيقات.
+
+* **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): تجريدات قياسية لقواعد البيانات في .NET. وهي مطلوبة لتكامل ORM ‏(Dapper وLinq2db) وعندما تحتاج إلى التوافق مع ADO.NET. تُعد `ClickHouseBulkCopy` فئة مساعدة لإدراج البيانات بكفاءة باستخدام اتصال ADO.NET. الفئة `ClickHouseBulkCopy` مُهمَلة وستُزال في إصدار مستقبلي؛ استخدم `ClickHouseClient.InsertBinaryAsync` بدلاً منها.
+
+تشترك كلتا الواجهتين في مجمّع اتصالات HTTP الأساسي نفسه، ويمكن استخدامهما معًا داخل التطبيق نفسه.
+
+<div id="migration-guide">
+  ## دليل الترحيل
+</div>
+
+1. حدّث ملف `.csproj` لاستخدام اسم الحزمة الجديد `ClickHouse.Driver` و[أحدث إصدار على NuGet](https://www.nuget.org/packages/ClickHouse.Driver).
+2. حدّث جميع مراجع `ClickHouse.Client` إلى `ClickHouse.Driver` في شيفرة مشروعك.
+
+***
+
+<div id="supported-net-versions">
+  ## إصدارات ‎.NET‎ المدعومة
+</div>
+
+يدعم `ClickHouse.Driver` إصدارات ‎.NET‎ التالية:
+
+* .NET 6.0
+* .NET 8.0
+* .NET 9.0
+* .NET 10.0
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+ثبّت الحزمة من NuGet:
+
+```bash
+dotnet add package ClickHouse.Driver
+```
+
+أو باستخدام مدير حزم NuGet:
+
+```bash
+Install-Package ClickHouse.Driver
+```
+
+<div id="quick-start">
+  ## البدء السريع
+</div>
+
+```csharp
+using ClickHouse.Driver;
+
+// Create a client (typically as a singleton)
+using var client = new ClickHouseClient("Host=my.clickhouse;Protocol=https;Port=8443;Username=user");
+
+// Execute a query
+var version = await client.ExecuteScalarAsync("SELECT version()");
+Console.WriteLine(version);
+```
+
+<div id="configuration">
+  ## التهيئة
+</div>
+
+هناك طريقتان لتهيئة اتصالك بـ ClickHouse:
+
+* **سلسلة الاتصال:** أزواج مفتاح/قيمة مفصولة بفواصل منقوطة، تحدد المضيف وبيانات اعتماد المصادقة وخيارات الاتصال الأخرى.
+* **كائن `ClickHouseClientSettings`:** كائن تهيئة مضبوط الأنواع يمكن تحميله من ملفات التهيئة أو تعيينه في الشيفرة.
+
+فيما يلي قائمة كاملة بجميع الإعدادات وقيمها الافتراضية وتأثيراتها.
+
+<div id="connection-settings">
+  ### إعدادات الاتصال
+</div>
+
+| الخاصية        | النوع      | الافتراضي                  | مفتاح سلسلة الاتصال | الوصف                                                                                     |
+| -------------- | ---------- | -------------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| المضيف         | `string`   | `"localhost"`              | `Host`              | اسم المضيف أو عنوان IP لخادم ClickHouse                                                   |
+| المنفذ         | `ushort`   | 8123 (HTTP) / 8443 (HTTPS) | `Port`              | رقم المنفذ؛ تُحدَّد القيمة الافتراضية حسب البروتوكول                                      |
+| اسم المستخدم   | `string`   | `"default"`                | `Username`          | اسم المستخدم للمصادقة                                                                     |
+| كلمة المرور    | `string`   | `""`                       | `Password`          | كلمة المرور للمصادقة                                                                      |
+| قاعدة البيانات | `string`   | `""`                       | `Database`          | قاعدة البيانات الافتراضية؛ عند تركها فارغة، تُستخدَم القيمة الافتراضية للخادم أو المستخدم |
+| البروتوكول     | `string`   | `"http"`                   | `Protocol`          | بروتوكول الاتصال: `"http"` أو `"https"`                                                   |
+| المسار         | `string`   | `null`                     | `Path`              | مسار URL في سيناريوهات الوكيل العكسي (مثل `/clickhouse`)                                  |
+| المهلة         | `TimeSpan` | دقيقتان                    | `Timeout`           | مهلة العملية (تُخزَّن بالثواني في سلسلة الاتصال)                                          |
+
+<div id="data-format-serialization">
+  ### تنسيق البيانات والتسلسل
+</div>
+
+| الخاصية                 | النوع                    | الافتراضي | مفتاح سلسلة الاتصال       | الوصف                                                                                                                                         |
+| ----------------------- | ------------------------ | --------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| UseCompression          | `bool`                   | `true`    | `Compression`             | تفعيل ضغط gzip لنقل البيانات                                                                                                                  |
+| UseCustomDecimals       | `bool`                   | `true`    | `UseCustomDecimals`       | استخدم `ClickHouseDecimal` للدقة الاعتباطية؛ وإذا كانت القيمة `false`، فسيُستخدم `decimal` في .NET (بحد 128 بت)                               |
+| ReadStringsAsByteArrays | `bool`                   | `false`   | `ReadStringsAsByteArrays` | اقرأ أعمدة `String` و`FixedString` كمصفوفات `byte[]` بدلًا من `string`؛ وهذا مفيد للبيانات الثنائية                                           |
+| UseFormDataParameters   | `bool`                   | `false`   | `UseFormDataParameters`   | أرسل المعلمات كبيانات نموذج بدلًا من سلسلة استعلام URL                                                                                        |
+| ParameterTypeResolver   | `IParameterTypeResolver` | `null`    | —                         | مُحلِّل مخصص لتعيين نوع المعلمات بأسلوب `@`؛ راجع [تعيين نوع المعلمات المخصص](#parameter-type-mapping)                                        |
+| JsonReadMode            | `JsonReadMode`           | `Binary`  | `JsonReadMode`            | كيفية إرجاع بيانات JSON: `Binary` (يعيد `JsonObject`) أو `String` (يعيد سلسلة JSON الخام)                                                     |
+| JsonWriteMode           | `JsonWriteMode`          | `String`  | `JsonWriteMode`           | كيفية إرسال بيانات JSON: `String` (يُسلسِل عبر `JsonSerializer` ويقبل جميع المدخلات) أو `Binary` (كائنات POCO المسجَّلة فقط مع تلميحات النوع) |
+
+<div id="session-management">
+  ### إدارة الجلسات
+</div>
+
+| Property   | Type     | Default | Connection String Key | Description                                                                             |
+| ---------- | -------- | ------- | --------------------- | --------------------------------------------------------------------------------------- |
+| UseSession | `bool`   | `false` | `UseSession`          | تمكين الجلسات ذات الحالة؛ يجعل الطلبات تُنفَّذ تسلسليًا                                 |
+| SessionId  | `string` | `null`  | `SessionId`           | معرّف الجلسة؛ يُنشئ GUID تلقائيًا إذا كانت القيمة `null` وكان `UseSession` يساوي `true` |
+
+<Note>
+  تؤدي العلامة `UseSession` إلى الاحتفاظ بجلسة الخادم، مما يتيح استخدام عبارات `SET` والجداول المؤقتة. ستُعاد تهيئة الجلسات بعد 60 ثانية من عدم النشاط (المهلة الافتراضية). ويمكن تمديد مدة الجلسة عبر تعيين إعدادات الجلسة باستخدام عبارات ClickHouse أو إعدادات الخادم.
+
+  تتيح الفئة `ClickHouseConnection` عادةً التشغيل المتوازي (أي يمكن لعدة خيوط تنفيذ الاستعلامات بالتزامن). ومع ذلك، فإن تمكين العلامة `UseSession` يقيّد ذلك باستعلام نشط واحد فقط لكل اتصال في أي لحظة (وهذا قيد على جهة الخادم).
+</Note>
+
+<div id="security">
+  ### الأمان
+</div>
+
+| الخاصية                         | النوع  | الافتراضي | مفتاح سلسلة الاتصال | الوصف                                                               |
+| ------------------------------- | ------ | --------- | ------------------- | ------------------------------------------------------------------- |
+| SkipServerCertificateValidation | `bool` | `false`   | —                   | تجاوز التحقق من شهادة HTTPS؛ **غير مخصص للاستخدام في بيئة الإنتاج** |
+
+<div id="http-client-configuration">
+  ### تهيئة عميل HTTP
+</div>
+
+| الخاصية           | النوع                | الافتراضي | مفتاح سلسلة الاتصال | الوصف                                              |
+| ----------------- | -------------------- | --------- | ------------------- | -------------------------------------------------- |
+| HttpClient        | `HttpClient`         | `null`    | —                   | مثيل `HttpClient` مخصص ومُهيأ مسبقًا               |
+| HttpClientFactory | `IHttpClientFactory` | `null`    | —                   | مصنع مخصص لإنشاء مثيلات `HttpClient`               |
+| HttpClientName    | `string`             | `null`    | —                   | اسم يستخدِمه `HttpClientFactory` لإنشاء عميل معيّن |
+
+<div id="logging-debugging">
+  ### التسجيل وتصحيح الأخطاء
+</div>
+
+| Property        | Type             | Default | Connection String Key | Description                                                                                           |
+| --------------- | ---------------- | ------- | --------------------- | ----------------------------------------------------------------------------------------------------- |
+| LoggerFactory   | `ILoggerFactory` | `null`  | —                     | مصنع logger المستخدم للتسجيل التشخيصي                                                                 |
+| EnableDebugMode | `bool`           | `false` | —                     | تمكين تتبّع الشبكة في .NET (يتطلب LoggerFactory مع ضبط المستوى على Trace)؛ **تأثير ملحوظ على الأداء** |
+
+<div id="custom-settings-roles">
+  ### الإعدادات المخصصة والأدوار
+</div>
+
+| الخاصية        | النوع                         | القيمة الافتراضية | مفتاح سلسلة الاتصال | الوصف                                                     |
+| -------------- | ----------------------------- | ----------------- | ------------------- | --------------------------------------------------------- |
+| CustomSettings | `IDictionary<string, object>` | فارغ              | البادئة `set_*`     | إعدادات خادم ClickHouse، راجع الملاحظة أدناه              |
+| Roles          | `IReadOnlyList<string>`       | فارغ              | `Roles`             | أدوار ClickHouse مفصولة بفواصل (مثل `Roles=admin,reader`) |
+
+<Note>
+  عند استخدام سلسلة اتصال لتعيين إعدادات مخصصة، استخدم البادئة `set_`، مثل &quot;set&#95;max&#95;threads=4&quot;. أما عند استخدام كائن ClickHouseClientSettings، فلا تستخدم البادئة `set_`.
+
+  للاطلاع على القائمة الكاملة بالإعدادات المتاحة، راجع [هنا](/ar/reference/settings/session-settings).
+</Note>
+
+***
+
+<div id="connection-string-examples">
+  ### أمثلة لسلسلة الاتصال
+</div>
+
+<div id="basic-connection">
+  #### اتصال بسيط
+</div>
+
+```text
+Host=localhost;Port=8123;Username=default;Password=secret;Database=mydb
+```
+
+<div id="with-custom-clickhouse-settings">
+  #### باستخدام إعدادات ClickHouse مخصّصة
+</div>
+
+```text
+Host=localhost;set_max_threads=4;set_readonly=1;set_max_memory_usage=10000000000
+```
+
+***
+
+<div id="query-options">
+  ### QueryOptions
+</div>
+
+يتيح لك `QueryOptions` تجاوز الإعدادات على مستوى العميل لكل استعلام على حدة. جميع الخصائص اختيارية، ولا تستبدل القيم الافتراضية للعميل إلا عند تحديدها.
+
+| الخاصية               | النوع                         | الوصف                                                                                                                       |
+| --------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| QueryId               | `string`                      | معرّف استعلام مخصّص للتتبّع في `system.query_log` أو للإلغاء                                                                |
+| Database              | `string`                      | تجاوز قاعدة البيانات الافتراضية لهذا الاستعلام                                                                              |
+| Roles                 | `IReadOnlyList<string>`       | تجاوز أدوار العميل لهذا الاستعلام                                                                                           |
+| CustomSettings        | `IDictionary<string, object>` | إعدادات خادم ClickHouse لهذا الاستعلام (مثل `max_threads`)                                                                  |
+| CustomHeaders         | `IDictionary<string, string>` | ترويسات HTTP إضافية لهذا الاستعلام                                                                                          |
+| UseSession            | `bool?`                       | تجاوز سلوك الجلسة لهذا الاستعلام                                                                                            |
+| SessionId             | `string`                      | معرّف الجلسة لهذا الاستعلام (يتطلب `UseSession = true`)                                                                     |
+| BearerToken           | `string`                      | تجاوز رمز المصادقة لهذا الاستعلام                                                                                           |
+| ParameterTypeResolver | `IParameterTypeResolver`      | تجاوز المُحلِّل على مستوى العميل لتعيين نوع المعلَمات بنمط `@`؛ راجع [تعيين نوع المعلَمات المخصّص](#parameter-type-mapping) |
+| MaxExecutionTime      | `TimeSpan?`                   | مهلة الاستعلام من جانب الخادم (تُمرَّر كإعداد `max_execution_time`)؛ يُلغي الخادم الاستعلام إذا تم تجاوزها                  |
+
+**مثال:**
+
+```csharp
+var options = new QueryOptions
+{
+    QueryId = "report-2024-001",
+    Database = "analytics",
+    CustomSettings = new Dictionary<string, object>
+    {
+        { "max_threads", 4 },
+        { "max_memory_usage", 10_000_000_000 }
+    },
+    MaxExecutionTime = TimeSpan.FromMinutes(5)
+};
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM large_table",
+    parameters: null,
+    options: options
+);
+```
+
+***
+
+<div id="insert-options">
+  ### InsertOptions
+</div>
+
+يوسّع `InsertOptions` ‏`QueryOptions` بإعدادات خاصة بعمليات الإدراج المجمّع عبر `InsertBinaryAsync`.
+
+| الخاصية                | النوع                                 | القيمة الافتراضية | الوصف                                                                         |
+| ---------------------- | ------------------------------------- | ----------------- | ----------------------------------------------------------------------------- |
+| BatchSize              | `int`                                 | 100,000           | عدد الصفوف في كل دفعة                                                         |
+| MaxDegreeOfParallelism | `int`                                 | 1                 | عدد عمليات رفع الدُفعات المتوازية                                             |
+| Format                 | `RowBinaryFormat`                     | `RowBinary`       | التنسيق الثنائي: `RowBinary` أو `RowBinaryWithDefaults`                       |
+| ColumnTypes            | `IReadOnlyDictionary<string, string>` | `null`            | اسم العمود ← سلسلة النوع في ClickHouse. يتجاوز استعلام فحص المخطط عند تعيينه. |
+| UseSchemaCache         | `bool`                                | `false`           | يخزّن مخطط الجدول الكامل لكل زوج من (database, table) طوال مدة حياة العميل.   |
+
+تتوفّر أيضًا جميع خصائص `QueryOptions` في `InsertOptions`.
+
+**مثال:**
+
+```csharp
+var insertOptions = new InsertOptions
+{
+    BatchSize = 50_000,
+    MaxDegreeOfParallelism = 4,
+    QueryId = "bulk-import-001"
+};
+
+long rowsInserted = await client.InsertBinaryAsync(
+    "my_table",
+    columns,
+    rows,
+    insertOptions
+);
+```
+
+<div id="skip-schema-query">
+  #### تخطي استعلام فحص المخطط
+</div>
+
+بشكل افتراضي، يرسل `InsertBinaryAsync` استعلام `SELECT ... WHERE 1=0` قبل كل عملية إدراج لاكتشاف أنواع الأعمدة. في السيناريوهات ذات معدل النقل المرتفع، يمكنك التخلص من هذا العبء الإضافي باستخدام خيارين:
+
+**الخيار 1: تحديد أنواع الأعمدة صراحةً**
+
+عندما تكون على دراية بمخطط الجدول وقت التجميع، مرّره مباشرةً عبر `ColumnTypes`. عندها لن يُرسل أي استعلام للمخطط على الإطلاق:
+
+```csharp
+var options = new InsertOptions
+{
+    ColumnTypes = new Dictionary<string, string>
+    {
+        ["id"] = "UInt64",
+        ["name"] = "Nullable(String)",
+        ["score"] = "Float32",
+    },
+};
+
+await client.InsertBinaryAsync("my_table", ["id", "name", "score"], rows, options);
+```
+
+**الخيار 2: تخزين المخطط مؤقتًا**
+
+عند الإدراج في الجدول نفسه بشكل متكرر، اضبط `UseSchemaCache = true` للاستعلام عن المخطط مرة واحدة ثم إعادة استخدامه في عمليات الإدراج اللاحقة ضمن مثيل `ClickHouseClient` نفسه:
+
+```csharp
+var options = new InsertOptions { UseSchemaCache = true };
+
+// First call fetches schema from the server
+await client.InsertBinaryAsync("my_table", columns, batch1, options);
+
+// Second call reuses cached schema — no extra round-trip
+await client.InsertBinaryAsync("my_table", columns, batch2, options);
+```
+
+<Note>
+  * يحظى `ColumnTypes` بالأولوية على `UseSchemaCache`. وإذا تم تعيينهما معًا، فستُستخدم الأنواع المحددة صراحةً.
+  * لا تكتشف ذاكرة التخزين المؤقت للمخطط تغييرات `ALTER TABLE`. إذا عدّلت مخطط الجدول، فأنشئ `ClickHouseClient` جديدًا أو تجنّب استخدام `UseSchemaCache` لهذا الجدول.
+  * يقتصر نطاق ذاكرة التخزين المؤقت على instance الخاصة بـ `ClickHouseClient`، ويُعرَّف مفتاحها بواسطة (database, table). وتشترك المجموعات الفرعية المختلفة من الأعمدة في الجدول نفسه في مخطط واحد مخزَّن مؤقتًا.
+</Note>
+
+<div id="clickhouse-client">
+  ## ClickHouseClient
+</div>
+
+تُعد `ClickHouseClient` واجهة برمجة التطبيقات الموصى بها للتفاعل مع ClickHouse. وهي آمنة للاستخدام من عدة خيوط، ومصممة للاستخدام كـ singleton، وتدير داخليًا تجمّع اتصالات HTTP.
+
+<div id="creating-a-client">
+  ### إنشاء عميل
+</div>
+
+أنشئ `ClickHouseClient` باستخدام سلسلة اتصال أو كائن `ClickHouseClientSettings`. راجع قسم [التهيئة](#configuration) للاطّلاع على الخيارات المتاحة.
+
+تتوفّر تفاصيل خدمة ClickHouse Cloud الخاصة بك في وحدة تحكم ClickHouse Cloud.
+
+حدّد خدمة وانقر على **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر الاتصال بخدمة ClickHouse Cloud" border />
+
+اختر **C#**. ستُعرض تفاصيل الاتصال أدناه.
+
+<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="تفاصيل اتصال ClickHouse Cloud لـ C#" border />
+
+إذا كنت تستخدم ClickHouse مُدارًا ذاتيًا، فسيُحدِّد مسؤول ClickHouse لديك تفاصيل الاتصال.
+
+باستخدام سلسلة اتصال:
+
+```csharp
+using ClickHouse.Driver;
+
+using var client = new ClickHouseClient("Host=localhost;Username=default;Password=secret");
+```
+
+أو باستخدام `ClickHouseClientSettings`:
+
+```csharp
+using ClickHouse.Driver;
+
+var settings = new ClickHouseClientSettings
+{
+    Host = "localhost",
+    Username = "default",
+    Password = "secret"
+};
+using var client = new ClickHouseClient(settings);
+```
+
+في حالات استخدام حقن التبعية، استخدم `IHttpClientFactory`:
+
+```csharp
+// In your DI configuration
+services.AddHttpClient("ClickHouse", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+});
+
+// Create client with factory
+var factory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+var client = new ClickHouseClient("Host=localhost", factory, "ClickHouse");
+```
+
+<Note>
+  صُمِّم `ClickHouseClient` ليكون طويل الأمد ويُستخدم بشكل مشترك عبر تطبيقك. أنشِئه مرة واحدة فقط (عادةً بصفته singleton) وأعِد استخدامه في جميع عمليات قاعدة البيانات. يتولى العميل إدارة تجميع اتصالات HTTP داخليًا.
+</Note>
+
+***
+
+<div id="executing-queries">
+  ### تنفيذ الاستعلامات
+</div>
+
+استخدم `ExecuteNonQueryAsync` مع التعليمات التي لا تُرجع نتائج:
+
+```csharp
+// Create a table
+await client.ExecuteNonQueryAsync(
+    "CREATE TABLE IF NOT EXISTS default.my_table (id Int64, name String) ENGINE = Memory"
+);
+
+// Drop a table
+await client.ExecuteNonQueryAsync("DROP TABLE IF EXISTS default.my_table");
+```
+
+استخدم `ExecuteScalarAsync` لاسترجاع قيمة واحدة:
+
+```csharp
+var count = await client.ExecuteScalarAsync("SELECT count() FROM default.my_table");
+Console.WriteLine($"Row count: {count}");
+
+var version = await client.ExecuteScalarAsync("SELECT version()");
+Console.WriteLine($"Server version: {version}");
+```
+
+***
+
+<div id="inserting-data">
+  ### إدخال البيانات
+</div>
+
+<div id="parameterized-inserts">
+  #### عمليات الإدراج باستخدام المعلمات
+</div>
+
+أدرِج البيانات باستخدام استعلامات ذات معلمات عبر `ExecuteNonQueryAsync`. يجب تحديد أنواع المعلمات في SQL باستخدام الصياغة `{name:Type}`:
+
+```csharp
+using ClickHouse.Driver;
+using ClickHouse.Driver.ADO.Parameters;
+
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("id", 1L);
+parameters.AddParameter("name", "Alice");
+
+await client.ExecuteNonQueryAsync(
+    "INSERT INTO default.my_table (id, name) VALUES ({id:Int64}, {name:String})",
+    parameters
+);
+```
+
+***
+
+<div id="bulk-insert">
+  #### عمليات الإدراج المجمّعة
+</div>
+
+استخدم `InsertBinaryAsync` لإدراج أعداد كبيرة من الصفوف بكفاءة. فهو يمرّر البيانات بتنسيق الصفوف الثنائي الأصلي في ClickHouse، ويدعم تحميل الدُفعات بالتوازي، ويتجنب أخطاء &quot;URL طويل جدًا&quot; التي قد تحدث مع الاستعلامات ذات المعلمات.
+
+```csharp
+// Prepare data as IEnumerable<object[]>
+var rows = Enumerable.Range(0, 1_000_000)
+    .Select(i => new object[] { (long)i, $"value{i}" });
+
+var columns = new[] { "id", "name" };
+
+// Basic insert
+long rowsInserted = await client.InsertBinaryAsync("default.my_table", columns, rows);
+Console.WriteLine($"Rows inserted: {rowsInserted}");
+```
+
+لمجموعات البيانات الكبيرة، اضبط التجميع على دفعات ومستوى التوازي باستخدام `InsertOptions`:
+
+```csharp
+var options = new InsertOptions
+{
+    BatchSize = 100_000,           // Rows per batch (default: 100,000)
+    MaxDegreeOfParallelism = 4     // Parallel batch uploads (default: 1)
+};
+```
+
+<Note>
+  * يجلب العميل تلقائيًا بنية الجدول عبر `SELECT * FROM <table> WHERE 1=0` قبل الإدراج. يجب أن تتوافق القيم المُمرَّرة مع أنواع الأعمدة المستهدفة. لتجاوز هذا الاستعلام، استخدم [`InsertOptions.ColumnTypes` أو `InsertOptions.UseSchemaCache`](#skip-schema-query).
+  * عندما تكون قيمة `MaxDegreeOfParallelism > 1`، تُحمَّل الدفعات بالتوازي. لا تتوافق الجلسات مع الإدراج المتوازي؛ لذا عطّل الجلسات أو عيّن `MaxDegreeOfParallelism = 1`.
+  * استخدم `RowBinaryFormat.RowBinaryWithDefaults` في `InsertOptions.Format` إذا كنت تريد أن يطبّق الخادم قيم DEFAULT على الأعمدة غير المُمرَّرة.
+</Note>
+
+<div id="poco-insert">
+  #### عمليات إدراج POCO
+</div>
+
+بدلاً من إنشاء مصفوفات `object[]`، يمكنك إدراج كائنات POCO محددة النوع مباشرةً. سجّل النوع مرة واحدة، ثم مرّر `IEnumerable<T>`:
+
+```csharp
+// Define a POCO matching your table columns
+public class SensorReading
+{
+    public ulong Id { get; set; }
+    public string SensorName { get; set; }
+    public double Value { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+// Register the type (once per client lifetime)
+client.RegisterBinaryInsertType<SensorReading>();
+
+// Insert directly — column names are derived from property names
+var readings = Enumerable.Range(0, 100_000)
+    .Select(i => new SensorReading
+    {
+        Id = (ulong)i,
+        SensorName = $"sensor_{i % 10}",
+        Value = Random.Shared.NextDouble() * 100,
+        Timestamp = DateTime.UtcNow,
+    });
+
+long rowsInserted = await client.InsertBinaryAsync("sensors", readings);
+```
+
+افتراضيًا، تُعيَّن جميع الخصائص العامة القابلة للقراءة إلى أعمدة باستخدام مطابقة صارمة للأسماء تراعي حالة الأحرف. يمكنك تخصيص هذا التعيين باستخدام السمات:
+
+```csharp
+public class Event
+{
+    [ClickHouseColumn(Name = "event_id")]     // Map to a differently-named column
+    public ulong Id { get; set; }
+
+    [ClickHouseColumn(Type = "LowCardinality(String)")]  // Explicit ClickHouse type
+    public string Category { get; set; }
+
+    public string Payload { get; set; }
+
+    [ClickHouseNotMapped]                     // Exclude from insert
+    public string InternalTag { get; set; }
+}
+```
+
+| السمة                              | الغرض                            |
+| ---------------------------------- | -------------------------------- |
+| `[ClickHouseColumn(Name = "...")]` | تجاوز اسم العمود الهدف           |
+| `[ClickHouseColumn(Type = "...")]` | التصريح بنوع ClickHouse صراحةً   |
+| `[ClickHouseNotMapped]`            | استبعاد الخاصية من عملية الإدراج |
+
+عندما تحدد **جميع** الخصائص المعينة `Type` صريحًا، يُتخطّى `استعلام فحص المخطط` بالكامل. وعندما تكون بعض الخصائص فقط ذات أنواع صريحة، يعود `برنامج التشغيل` إلى `فحص المخطط` لمجموعة الأعمدة الكاملة.
+
+يدعم `InsertBinaryAsync<T>` خيارات `InsertOptions` نفسها (التجميع على دفعات، التوازي، التخزين المؤقت للمخطط) مثل التحميل الزائد `object[]`.
+
+<Note>
+  بخلاف التحميل الزائد `object[]`، لا يقبل `InsertBinaryAsync<T>` قائمة أعمدة صريحة. تُحدَّد الأعمدة بواسطة الخصائص المعينة للنوع المسجل. للتحكم في الأعمدة التي تُدرج، استخدم `[ClickHouseNotMapped]` لاستبعاد الخصائص أو `[ClickHouseColumn(Name = "...")]` لإعادة تسميتها.
+
+  إذا تم تعيين `ColumnTypes` في `InsertOptions`، فستتجاوز سمات POCO.
+</Note>
+
+<div id="poco-insert-schema-evolution">
+  #### تطور المخطط
+</div>
+
+تعمل عمليات الإدراج الخاصة بـ POCO بسلاسة عند إضافة أعمدة إلى الجدول المستهدف بعد تسجيل النوع. ونظرًا إلى أن برنامج التشغيل لا يُدرج سوى الأعمدة المرتبطة بـ POCO، فإن أي أعمدة جديدة تحتوي على `DEFAULT` (أو تعبيرات افتراضية أخرى) يملؤها الخادم تلقائيًا. ولا حاجة إلى أي تغييرات في الشيفرة أو إلى إعادة التسجيل.
+
+***
+
+<div id="reading-data">
+  ### قراءة البيانات
+</div>
+
+استخدم `ExecuteReaderAsync` لتنفيذ استعلامات SELECT. يوفّر `ClickHouseDataReader` المُعاد وصولًا مُحدَّد النوع إلى أعمدة النتائج عبر طرق مثل `GetInt64()` و`GetString()` و`GetFieldValue<T>()`.
+
+استدعِ `Read()` للانتقال إلى الصف التالي. وتُرجع `false` عند عدم وجود المزيد من الصفوف. ويمكنك الوصول إلى الأعمدة حسب الفهرس (ابتداءً من 0) أو حسب اسم العمود.
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("max_id", 100L);
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM default.my_table WHERE id < {max_id:Int64}",
+    parameters
+);
+
+while (reader.Read())
+{
+    Console.WriteLine($"Id: {reader.GetInt64(0)}, Name: {reader.GetString(1)}");
+}
+```
+
+***
+
+<div id="sql-parameters">
+  ### معلمات SQL
+</div>
+
+في ClickHouse، الصيغة القياسية لمعلمات الاستعلام في استعلامات SQL هي `{parameter_name:DataType}`.
+
+**أمثلة:**
+
+```sql
+SELECT {value:Array(UInt16)} as a
+```
+
+```sql
+SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}
+```
+
+```sql
+INSERT INTO table VALUES ({val1:Int32}, {val2:Array(UInt8)})
+```
+
+<Note>
+  تُمرَّر معلمات SQL ‏&#39;bind&#39; كمعلمات استعلام في HTTP URI، لذا فإن استخدام عدد كبير جدًا منها قد يؤدي إلى ظهور استثناء &quot;URL طويل جدًا&quot;. استخدم `InsertBinaryAsync` لإدراج كميات كبيرة من البيانات لتجنّب هذا القيد.
+</Note>
+
+***
+
+<div id="query-id">
+  ### معرّف الاستعلام
+</div>
+
+يُخصَّص لكل استعلام معرّف فريد `query_id` يمكن استخدامه لجلب البيانات من جدول `system.query_log` أو لإلغاء الاستعلامات طويلة التشغيل. يمكنك تحديد معرّف استعلام مخصّص عبر `QueryOptions`:
+
+```csharp
+var options = new QueryOptions
+{
+    QueryId = $"report-{Guid.NewGuid()}"
+};
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM large_table",
+    parameters: null,
+    options: options
+);
+```
+
+<Tip>
+  إذا كنت تحدد `QueryId` مخصصًا، فتأكد من أنه فريد في كل استدعاء. ويُعد GUID عشوائيًا خيارًا جيدًا.
+</Tip>
+
+***
+
+<div id="parameter-type-mapping">
+  ### تعيين نوع المعلمة المخصّص
+</div>
+
+عند استخدام المعلمات بأسلوب `@` (مثل `WHERE id = @id`)، يستنتج برنامج التشغيل تلقائيًا نوع ClickHouse من نوع القيمة في ‎.NET. على سبيل المثال، يُعيَّن `int` إلى `Int32`، ويُعيَّن `DateTime` إلى `DateTime`.
+
+لتجاوز هذه الإعدادات الافتراضية، عيّن `ParameterTypeResolver` في `ClickHouseClientSettings`. ويكون ذلك مفيدًا عندما تريد استخدام `DateTime64(3)` لجميع معلمات `DateTime` بدقة الملّي ثانية، أو استخدام قيمة `scale` محددة لجميع قيم Decimal، من دون تعيين `ClickHouseType` لكل معلمة على حدة.
+
+**استخدام `DictionaryParameterTypeResolver` لتعيينات الأنواع البسيطة:**
+
+```csharp
+using ClickHouse.Driver.ADO.Parameters;
+
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    ParameterTypeResolver = new DictionaryParameterTypeResolver(new Dictionary<Type, string>
+    {
+        [typeof(DateTime)] = "DateTime64(3)",
+        [typeof(decimal)] = "Decimal64(4)",
+    }),
+};
+using var client = new ClickHouseClient(settings);
+
+var parameters = new ClickHouseParameterCollection();
+parameters.AddParameter("dt", DateTime.UtcNow);     // Mapped to DateTime64(3)
+parameters.AddParameter("amount", 99.1234m);         // Mapped to Decimal64(4)
+
+await client.ExecuteReaderAsync("SELECT @dt, @amount", parameters);
+```
+
+**`IParameterTypeResolver` مخصّص للحالات المتقدمة:**
+
+للاستدلال المعتمد على القيمة أو المستند إلى الاسم، نفِّذ الواجهة `IParameterTypeResolver` مباشرةً. أرجِع `null` للانتقال إلى الاستدلال الافتراضي:
+
+```csharp
+public class SmartDecimalResolver : IParameterTypeResolver
+{
+    public string ResolveType(Type clrType, object value, string parameterName)
+    {
+        if (clrType != typeof(decimal))
+            return null; // Fall through to default
+
+        var scale = (decimal.GetBits((decimal)value)[3] >> 16) & 0x7F;
+        return scale <= 4 ? $"Decimal64({scale})" : $"Decimal128({scale})";
+    }
+}
+```
+
+يمكنك أيضًا تعيين محلِّل لاستعلام واحد عبر `QueryOptions.ParameterTypeResolver`. وعند تعيينه، تكون له أولوية أعلى من المحلِّل على مستوى العميل.
+
+**ترتيب أولوية تحديد النوع:**
+
+المحلِّل ليس سوى خطوة ضمن سلسلة ترتيب الأولوية. من الأعلى إلى الأدنى أولوية:
+
+1. تعيين `ClickHouseType` صراحةً على المعلَمة
+2. تلميح نوع SQL من الصيغة `{name:Type}` في الاستعلام
+3. `IParameterTypeResolver` (من `QueryOptions.ParameterTypeResolver`، مع الرجوع إلى `ClickHouseClientSettings.ParameterTypeResolver`)
+4. استنتاج النوع المضمَّن (`TypeConverter.ToClickHouseType`)
+
+يعمل المحلِّل أيضًا مع مسار ADO.NET `ClickHouseConnection` — إذ ترث الاتصالات المُنشأة من العميل هذه الإعدادات.
+
+***
+
+<div id="raw-streaming">
+  ### البث الخام
+</div>
+
+استخدم `ExecuteRawResultAsync` لبث نتائج الاستعلام مباشرةً بتنسيق محدد، متجاوزًا قارئ البيانات. يفيد ذلك عند تصدير البيانات إلى ملفات أو تمريرها إلى أنظمة أخرى:
+
+```csharp
+using var result = await client.ExecuteRawResultAsync(
+    "SELECT * FROM default.my_table LIMIT 100 FORMAT JSONEachRow"
+);
+
+await using var stream = await result.ReadAsStreamAsync();
+using var reader = new StreamReader(stream);
+var json = await reader.ReadToEndAsync();
+```
+
+التنسيقات الشائعة: `JSONEachRow`، `CSV`، `TSV`، `Parquet`، `Native`. راجع [توثيق التنسيقات](/ar/reference/formats/index) للتعرّف على جميع الخيارات.
+
+***
+
+<div id="raw-stream-insert">
+  ### إدراج تدفق خام
+</div>
+
+استخدم `InsertRawStreamAsync` لإدراج البيانات مباشرةً من تدفقات الملفات أو الذاكرة بتنسيقات مثل CSV وJSON وParquet، أو بأي [تنسيق ClickHouse مدعوم](/ar/reference/formats/index).
+
+**إدراج من ملف CSV:**
+
+```csharp
+await using var fileStream = File.OpenRead("data.csv");
+
+using var response = await client.InsertRawStreamAsync(
+    table: "my_table",
+    stream: fileStream,
+    format: "CSV",
+    columns: ["id", "product", "price"] // Optional: specify columns
+);
+```
+
+<Note>
+  راجع [وثائق إعدادات الصيغ](/ar/reference/settings/formats) للاطلاع على خيارات التحكّم في سلوك إدخال البيانات.
+</Note>
+
+***
+
+<div id="more-examples">
+  ### المزيد من الأمثلة
+</div>
+
+للاطلاع على المزيد من أمثلة الاستخدام العملية، راجع [دليل الأمثلة](https://github.com/ClickHouse/clickhouse-cs/tree/main/examples) في مستودع GitHub.
+
+<div id="ado-net">
+  ## ADO.NET
+</div>
+
+توفّر المكتبة دعمًا كاملًا لـ ADO.NET من خلال `ClickHouseConnection` و`ClickHouseCommand` و`ClickHouseDataReader`. وتُعد واجهة برمجة التطبيقات هذه ضرورية للتكامل مع ORM ‏(Dapper وLinq2db)، وكذلك عند الحاجة إلى طبقات تجريد قواعد البيانات القياسية في .NET.
+
+<div id="ado-net-datasource">
+  ### إدارة دورة الحياة باستخدام ClickHouseDataSource
+</div>
+
+**أنشئ الاتصالات دائمًا عبر `ClickHouseDataSource`** لضمان الإدارة السليمة لدورة الحياة وتجميع الاتصالات. يدير DataSource مثيل `ClickHouseClient` واحدًا داخليًا، وتشترك جميع الاتصالات في تجمّع الاتصالات HTTP الخاص به.
+
+```csharp
+using ClickHouse.Driver.ADO;
+
+// Create DataSource once (register as singleton in DI)
+var dataSource = new ClickHouseDataSource("Host=localhost;Username=default;Password=secret");
+
+// Create lightweight connections as needed
+await using var connection = await dataSource.OpenConnectionAsync();
+
+// Use the connection
+await using var command = connection.CreateCommand("SELECT version()");
+var version = await command.ExecuteScalarAsync();
+```
+
+في حال استخدام حقن التبعيات:
+
+```csharp
+// In Startup.cs or Program.cs
+services.AddSingleton(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    return new ClickHouseDataSource("Host=localhost", factory, "ClickHouse");
+});
+
+// In your service
+public class MyService
+{
+    private readonly ClickHouseDataSource _dataSource;
+
+    public MyService(ClickHouseDataSource dataSource)
+    {
+        _dataSource = dataSource;
+    }
+
+    public async Task DoWorkAsync()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        // Use connection...
+    }
+}
+```
+
+<Warning>
+  **لا تُنشئ `ClickHouseConnection` مباشرةً** في شيفرة الإنتاج. فكل إنشاء مباشر له ينشئ عميل HTTP جديدًا وتجمّع اتصالات جديدًا، ما قد يؤدي إلى استنفاد المقابس عند ارتفاع الحمل:
+
+  ```csharp
+  // لا تفعل هذا — ينشئ مجمّع اتصالات جديدًا في كل مرة
+  using var conn = new ClickHouseConnection("Host=localhost");
+  await conn.OpenAsync();
+  ```
+
+  بدلًا من ذلك، استخدم دائمًا `ClickHouseDataSource` أو شارِك مثيلًا واحدًا من `ClickHouseClient`.
+</Warning>
+
+***
+
+<div id="ado-net-command">
+  ### استخدام ClickHouseCommand
+</div>
+
+أنشئ أوامر باستخدام اتصال لتنفيذ SQL:
+
+```csharp
+await using var connection = await dataSource.OpenConnectionAsync();
+
+// Create command with SQL
+await using var command = connection.CreateCommand("SELECT * FROM my_table WHERE id = {id:Int64}");
+command.AddParameter("id", 42L);
+
+// Execute and read results
+await using var reader = await command.ExecuteReaderAsync();
+while (reader.Read())
+{
+    Console.WriteLine($"Name: {reader.GetString("name")}");
+}
+```
+
+طرق الأوامر:
+
+* `ExecuteNonQueryAsync()` - لعبارات INSERT وUPDATE وDELETE وDDL
+* `ExecuteScalarAsync()` - يعيد أول عمود من أول صف
+* `ExecuteReaderAsync()` - يعيد `ClickHouseDataReader` للتنقّل بين النتائج
+
+***
+
+<div id="ado-net-reader">
+  ### استخدام `ClickHouseDataReader`
+</div>
+
+يتيح `ClickHouseDataReader` الوصول إلى نتائج الاستعلام مع الحفاظ على أنواع البيانات:
+
+```csharp
+await using var reader = await command.ExecuteReaderAsync();
+
+while (reader.Read())
+{
+    // Access by column index
+    var id = reader.GetInt64(0);
+    var name = reader.GetString(1);
+
+    // Access by column name
+    var email = reader.GetString("email");
+
+    // Generic access
+    var timestamp = reader.GetFieldValue<DateTime>("created_at");
+
+    // Check for null
+    if (!reader.IsDBNull("optional_field"))
+    {
+        var value = reader.GetString("optional_field");
+    }
+}
+```
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="best-practices-connection-lifetime">
+  ### مدة الاتصال وتجميع الاتصالات
+</div>
+
+يستخدم `ClickHouse.Driver` المكوّن `System.Net.Http.HttpClient` في الخلفية. ويحتوي `HttpClient` على تجمّع اتصالات لكل `endpoint`. ونتيجة لذلك:
+
+* تُمرَّر جلسات قاعدة البيانات عبر اتصالات HTTP التي يديرها تجمّع الاتصالات.
+* يُعيد التجمّع استخدام اتصالات HTTP تلقائيًا.
+* قد تظل الاتصالات مفتوحة حتى بعد التخلّص من الكائنات `ClickHouseClient` أو `ClickHouseConnection`.
+
+**الأنماط الموصى بها:**
+
+| السيناريو       | النهج الموصى به                                                                          |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| الاستخدام العام | استخدم `ClickHouseClient` بنمط singleton                                                 |
+| ADO.NET / ORMs  | استخدم `ClickHouseDataSource` (ينشئ اتصالات تشترك في تجمّع الاتصالات نفسه)               |
+| بيئات DI        | سجّل `ClickHouseClient` أو `ClickHouseDataSource` بنمط singleton مع `IHttpClientFactory` |
+
+<Warning>
+  عند استخدام `HttpClient` أو `HttpClientFactory` مخصّص، تأكد من ضبط `PooledConnectionIdleTimeout` على قيمة أقل من `keep_alive_timeout` الخاص بالخادم، لتجنّب الأخطاء الناتجة عن الاتصالات نصف المغلقة. القيمة الافتراضية لـ `keep_alive_timeout` في Cloud deployments هي 10 ثوانٍ.
+</Warning>
+
+<Warning>
+  تجنّب إنشاء عدة مثيلات من `ClickHouseClient` أو مثيلات `ClickHouseConnection` مستقلة من دون `HttpClient` مشترك. فكل مثيل ينشئ تجمّع الاتصالات الخاص به.
+</Warning>
+
+***
+
+<div id="best-practice-datetime">
+  ### التعامل مع DateTime
+</div>
+
+1. **استخدم UTC كلما أمكن.** خزّن الطوابع الزمنية في أعمدة `DateTime('UTC')` واستخدم `DateTimeKind.Utc` في الشيفرة الخاصة بك. هذا يزيل أي التباس متعلق بالمنطقة الزمنية.
+
+2. **استخدم `DateTimeOffset` للتعامل الصريح مع المنطقة الزمنية.** فهو يمثّل دائمًا لحظة زمنية محددة ويتضمن معلومات الإزاحة.
+
+3. **حدّد المنطقة الزمنية في تلميحات النوع في SQL.** عند استخدام المعلمات مع قيم DateTime من النوع `Unspecified` والموجّهة إلى أعمدة غير UTC، ضمّن المنطقة الزمنية في SQL:
+   ```csharp
+   var parameters = new ClickHouseParameterCollection();
+   parameters.AddParameter("dt", myDateTime);
+
+   await client.ExecuteNonQueryAsync(
+       "INSERT INTO table (dt) VALUES ({dt:DateTime('Europe/Amsterdam')})",
+       parameters
+   );
+   ```
+
+***
+
+<div id="async-inserts">
+  ### عمليات الإدراج غير المتزامنة
+</div>
+
+تنقل [عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) مسؤولية التجميع من العميل إلى الخادم. فبدلًا من اشتراط التجميع من جهة العميل، يخزّن الخادم البيانات الواردة مؤقتًا ثم يفرّغها إلى التخزين وفقًا لعتبات قابلة للتهيئة. ويكون هذا مفيدًا في السيناريوهات عالية التزامن، مثل أحمال عمل observability، حيث يرسل العديد من الوكلاء حمولات صغيرة.
+
+فعِّل عمليات الإدراج غير المتزامنة عبر `CustomSettings` أو سلسلة الاتصال:
+
+```csharp
+// Using CustomSettings
+var settings = new ClickHouseClientSettings("Host=localhost");
+settings.CustomSettings["async_insert"] = 1;
+settings.CustomSettings["wait_for_async_insert"] = 1; // Recommended: wait for flush acknowledgment
+
+// Or via connection string
+// "Host=localhost;set_async_insert=1;set_wait_for_async_insert=1"
+```
+
+**وضعان** (يحددهما `wait_for_async_insert`):
+
+| الوضع                     | السلوك                                                                            | حالة الاستخدام                        |
+| ------------------------- | --------------------------------------------------------------------------------- | ------------------------------------- |
+| `wait_for_async_insert=1` | تعود عملية الإدراج بعد كتابة البيانات إلى القرص. وتُعاد الأخطاء إلى العميل.       | **موصى به** لمعظم أحمال العمل         |
+| `wait_for_async_insert=0` | تعود عملية الإدراج فورًا عند تخزين البيانات مؤقتًا. لا يوجد ما يضمن حفظ البيانات. | فقط عندما يكون فقدان البيانات مقبولًا |
+
+<Warning>
+  مع `wait_for_async_insert=0`، لا تظهر الأخطاء إلا أثناء التفريغ ولا يمكن ربطها بعملية الإدراج الأصلية. كما أن العميل لا يوفّر ضغطًا عكسيًا، مما يعرّض الخادم لخطر زيادة الحمل.
+</Warning>
+
+**الإعدادات الأساسية:**
+
+| الإعداد                         | الوصف                                            |
+| ------------------------------- | ------------------------------------------------ |
+| `async_insert_max_data_size`    | فرّغ عند وصول المخزن المؤقت إلى هذا الحجم (بايت) |
+| `async_insert_busy_timeout_ms`  | فرّغ بعد انقضاء هذه المهلة (مللي ثانية)          |
+| `async_insert_max_query_number` | فرّغ بعد تراكم هذا العدد من الاستعلامات          |
+
+***
+
+<div id="best-practices-sessions">
+  ### الجلسات
+</div>
+
+لا تُفعِّل الجلسات إلا عند الحاجة إلى ميزات من جهة الخادم تحتفظ بالحالة، مثل:
+
+* الجداول المؤقتة (`CREATE TEMPORARY TABLE`)
+* الحفاظ على سياق الاستعلام عبر عدة تعليمات
+* إعدادات على مستوى الجلسة (`SET max_threads = 4`)
+
+عند تفعيل الجلسات، تُعالَج الطلبات تسلسليًا لمنع الاستخدام المتزامن للجلسة نفسها. ويضيف ذلك حملًا إضافيًا إلى أحمال العمل التي لا تتطلب حالة الجلسة.
+
+```csharp
+var settings = new ClickHouseClientSettings
+{
+    Host = "localhost",
+    UseSession = true,
+    SessionId = "my-session", // Optional -- will be auto-generated if not provided
+};
+
+using var client = new ClickHouseClient(settings);
+
+await client.ExecuteNonQueryAsync("CREATE TEMPORARY TABLE temp_ids (id UInt64)");
+await client.ExecuteNonQueryAsync("INSERT INTO temp_ids VALUES (1), (2), (3)");
+
+var reader = await client.ExecuteReaderAsync(
+    "SELECT * FROM users WHERE id IN (SELECT id FROM temp_ids)"
+);
+```
+
+**استخدام ADO.NET (للتوافق مع أطر ORM):**
+
+```csharp
+var settings = new ClickHouseClientSettings
+{
+    Host = "localhost",
+    UseSession = true,
+    SessionId = "my-session",
+};
+
+var dataSource = new ClickHouseDataSource(settings);
+await using var connection = await dataSource.OpenConnectionAsync();
+
+await using var cmd1 = connection.CreateCommand("CREATE TEMPORARY TABLE temp_ids (id UInt64)");
+await cmd1.ExecuteNonQueryAsync();
+
+await using var cmd2 = connection.CreateCommand("INSERT INTO temp_ids VALUES (1), (2), (3)");
+await cmd2.ExecuteNonQueryAsync();
+
+await using var cmd3 = connection.CreateCommand("SELECT * FROM users WHERE id IN (SELECT id FROM temp_ids)");
+await using var reader = await cmd3.ExecuteReaderAsync();
+```
+
+<div id="supported-data-types">
+  ## أنواع البيانات المدعومة
+</div>
+
+يدعم `ClickHouse.Driver` جميع أنواع بيانات ClickHouse. تُبيّن الجداول أدناه أوجه التوافق بين أنواع ClickHouse وأنواع ‎.NET الأصلية عند قراءة البيانات من قاعدة البيانات.
+
+<div id="clickhouse-native-type-map-reading">
+  ### تعيين الأنواع: عند القراءة من ClickHouse
+</div>
+
+<div id="type-map-reading-integer">
+  #### أنواع الأعداد الصحيحة
+</div>
+
+| نوع ClickHouse | نوع .NET     |
+| -------------- | ------------ |
+| Int8           | `sbyte`      |
+| UInt8          | `byte`       |
+| Int16          | `short`      |
+| UInt16         | `ushort`     |
+| Int32          | `int`        |
+| UInt32         | `uint`       |
+| Int64          | `long`       |
+| UInt64         | `ulong`      |
+| Int128         | `BigInteger` |
+| UInt128        | `BigInteger` |
+| Int256         | `BigInteger` |
+| UInt256        | `BigInteger` |
+
+***
+
+<div id="type-map-reading-floating-points">
+  #### أنواع الأعداد ذات الفاصلة العائمة
+</div>
+
+| نوع ClickHouse | نوع .NET |
+| -------------- | -------- |
+| Float32        | `float`  |
+| Float64        | `double` |
+| BFloat16       | `float`  |
+
+***
+
+<div id="type-map-reading-decimal">
+  #### الأنواع العشرية
+</div>
+
+| نوع ClickHouse | نوع .NET                        |
+| -------------- | ------------------------------- |
+| Decimal(P, S)  | `decimal` / `ClickHouseDecimal` |
+| Decimal32(S)   | `decimal` / `ClickHouseDecimal` |
+| Decimal64(S)   | `decimal` / `ClickHouseDecimal` |
+| Decimal128(S)  | `decimal` / `ClickHouseDecimal` |
+| Decimal256(S)  | `decimal` / `ClickHouseDecimal` |
+
+<Note>
+  يُتحكَّم في تحويل النوع Decimal من خلال الإعداد UseCustomDecimals.
+</Note>
+
+***
+
+<div id="type-map-reading-boolean">
+  #### نوع Boolean
+</div>
+
+| نوع ClickHouse | نوع .NET |
+| -------------- | -------- |
+| Bool           | `bool`   |
+
+***
+
+<div id="type-map-reading-strings">
+  #### أنواع السلاسل النصية
+</div>
+
+| نوع ClickHouse | نوع .NET |
+| -------------- | -------- |
+| String         | `string` |
+| FixedString(N) | `string` |
+
+<Note>
+  افتراضيًا، يُرجَع كلٌّ من العمودين `String` و`FixedString(N)` على هيئة `string`. عيّن `ReadStringsAsByteArrays=true` في سلسلة الاتصال لقراءتهما على هيئة `byte[]` بدلًا من ذلك. يفيد هذا عند تخزين بيانات ثنائية قد لا تكون بتنسيق UTF-8 صالح.
+</Note>
+
+***
+
+<div id="type-map-reading-datetime">
+  #### أنواع التاريخ والوقت
+</div>
+
+| نوع ClickHouse | نوع .NET   |
+| -------------- | ---------- |
+| Date           | `DateTime` |
+| Date32         | `DateTime` |
+| DateTime       | `DateTime` |
+| DateTime32     | `DateTime` |
+| DateTime64     | `DateTime` |
+| Time           | `TimeSpan` |
+| Time64         | `TimeSpan` |
+
+يخزّن ClickHouse قيم `DateTime` و`DateTime64` داخليًا على هيئة طوابع زمنية Unix (بالثواني أو بوحدات أصغر من الثانية منذ حقبة Unix). وعلى الرغم من أن التخزين يكون دائمًا بتوقيت UTC، فقد تكون للأعمدة منطقة زمنية مرتبطة بها تؤثر في كيفية عرض القيم وتفسيرها.
+
+عند قراءة قيم `DateTime`، تُضبط الخاصية `DateTime.Kind` بناءً على المنطقة الزمنية للعمود:
+
+| تعريف العمود                   | قيمة `DateTime.Kind` المُعادة | ملاحظات                      |
+| ------------------------------ | ----------------------------- | ---------------------------- |
+| `DateTime('UTC')`              | `Utc`                         | منطقة UTC زمنية محددة صراحةً |
+| `DateTime('Europe/Amsterdam')` | `Unspecified`                 | تُطبَّق الإزاحة              |
+| `DateTime`                     | `Unspecified`                 | يُحفَظ الوقت المحلي كما هو   |
+
+بالنسبة إلى الأعمدة التي لا تستخدم UTC، تمثل قيمة `DateTime` المُعادة الوقت المحلي في تلك المنطقة الزمنية. استخدم `ClickHouseDataReader.GetDateTimeOffset()` للحصول على `DateTimeOffset` مع الإزاحة الصحيحة لتلك المنطقة الزمنية:
+
+```csharp
+var reader = (ClickHouseDataReader)await connection.ExecuteReaderAsync(
+    "SELECT toDateTime('2024-06-15 14:30:00', 'Europe/Amsterdam')");
+reader.Read();
+
+var dt = reader.GetDateTime(0);    // 2024-06-15 14:30:00, Kind=Unspecified
+var dto = reader.GetDateTimeOffset(0); // 2024-06-15 14:30:00 +02:00 (CEST)
+```
+
+بالنسبة إلى الأعمدة **التي لا تتضمن** منطقة زمنية صريحة (أي `DateTime` بدلًا من `DateTime('Europe/Amsterdam')`)، يعيد برنامج التشغيل قيمة `DateTime` مع `Kind=Unspecified`. وهذا يحافظ على الوقت المحلي كما تظهره الساعة تمامًا كما هو مخزّن، من دون افتراض أي منطقة زمنية.
+
+إذا كنت بحاجة إلى سلوكٍ مدركٍ للمنطقة الزمنية للأعمدة التي لا تتضمن مناطق زمنية صريحة، فإما أن:
+
+1. تستخدم مناطق زمنية صريحة في تعريفات الأعمدة: `DateTime('UTC')` أو `DateTime('Europe/Amsterdam')`
+2. تطبّق المنطقة الزمنية بنفسك بعد القراءة.
+
+***
+
+<div id="type-map-reading-json">
+  #### نوع JSON
+</div>
+
+| نوع ClickHouse | نوع .NET     | ملاحظات                           |
+| -------------- | ------------ | --------------------------------- |
+| Json           | `JsonObject` | الافتراضي (`JsonReadMode=Binary`) |
+| Json           | `string`     | عند استخدام `JsonReadMode=String` |
+
+يُحدَّد نوع الإرجاع لأعمدة JSON من خلال الإعداد `JsonReadMode`:
+
+* **`Binary` (الافتراضي)**: يعيد `System.Text.Json.Nodes.JsonObject`. يوفّر وصولًا منظّمًا إلى بيانات JSON، لكن أنواع ClickHouse المتخصصة (مثل عناوين IP وUUIDs والقيم العشرية الكبيرة) تُحوَّل إلى تمثيلاتها النصية داخل بنية JSON.
+
+* **`String`**: يعيد JSON الخام كسلسلة `string`. ويحافظ على تمثيل JSON كما هو تمامًا من ClickHouse، وهو ما يكون مفيدًا عندما تحتاج إلى تمرير JSON كما هو دون تحليله، أو عندما تريد التعامل مع فك التسلسل بنفسك.
+
+```csharp
+// Configure string mode via settings
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    JsonReadMode = JsonReadMode.String
+};
+
+// Or via connection string
+// "Host=localhost;JsonReadMode=String"
+```
+
+***
+
+<div id="type-map-reading-other">
+  #### أنواع أخرى
+</div>
+
+| نوع ClickHouse          | نوع .NET                            |
+| ----------------------- | ----------------------------------- |
+| UUID                    | `Guid`                              |
+| IPv4                    | `IPAddress`                         |
+| IPv6                    | `IPAddress`                         |
+| Nothing                 | `DBNull`                            |
+| Dynamic                 | انظر الملاحظة                       |
+| Array(T)                | `T[]`                               |
+| Tuple(T1, T2, ...)      | `Tuple<T1, T2, ...>` / `LargeTuple` |
+| Map(K, V)               | `Dictionary<K, V>`                  |
+| Nullable(T)             | `T?`                                |
+| Enum8                   | `string`                            |
+| Enum16                  | `string`                            |
+| LowCardinality(T)       | نفس T                               |
+| SimpleAggregateFunction | نفس النوع الأساسي                   |
+| Nested(...)             | `Tuple[]`                           |
+| Variant(T1, T2, ...)    | انظر الملاحظة                       |
+| QBit(T, dimension)      | `T[]`                               |
+
+<Note>
+  سيُحوَّل النوعان Dynamic وVariant إلى النوع المقابل للنوع الأساسي الفعلي في كل صف.
+</Note>
+
+***
+
+<div id="type-map-reading-geometry">
+  #### أنواع Geometry
+</div>
+
+| نوع ClickHouse  | نوع .NET                  |
+| --------------- | ------------------------- |
+| Point           | `Tuple<double, double>`   |
+| Ring            | `Tuple<double, double>[]` |
+| LineString      | `Tuple<double, double>[]` |
+| Polygon         | `Ring[]`                  |
+| MultiLineString | `LineString[]`            |
+| MultiPolygon    | `Polygon[]`               |
+| Geometry        | راجع الملاحظة             |
+
+<Note>
+  نوع Geometry هو نوع Variant يمكن أن يحتوي على أيٍّ من أنواع Geometry. وسيُحوَّل إلى النوع المقابل.
+</Note>
+
+***
+
+<div id="clickhouse-native-type-map-writing">
+  ### تعيين الأنواع: الكتابة إلى ClickHouse
+</div>
+
+عند إدراج البيانات، يحوّل برنامج التشغيل أنواع .NET إلى أنواع ClickHouse المقابلة لها. وتبيّن الجداول أدناه أنواع .NET المقبولة لكل نوع عمود في ClickHouse.
+
+<div id="type-map-reading-integer">
+  #### أنواع الأعداد الصحيحة
+</div>
+
+| نوع ClickHouse | أنواع .NET المقبولة                                                                                               | ملاحظات |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- | ------- |
+| Int8           | `sbyte`، وأي نوع متوافق مع `Convert.ToSByte()`                                                                    |         |
+| UInt8          | `byte`، وأي نوع متوافق مع `Convert.ToByte()`                                                                      |         |
+| Int16          | `short`، وأي نوع متوافق مع `Convert.ToInt16()`                                                                    |         |
+| UInt16         | `ushort`، وأي نوع متوافق مع `Convert.ToUInt16()`                                                                  |         |
+| Int32          | `int`، وأي نوع متوافق مع `Convert.ToInt32()`                                                                      |         |
+| UInt32         | `uint`، وأي نوع متوافق مع `Convert.ToUInt32()`                                                                    |         |
+| Int64          | `long`، وأي نوع متوافق مع `Convert.ToInt64()`                                                                     |         |
+| UInt64         | `ulong`، وأي نوع متوافق مع `Convert.ToUInt64()`                                                                   |         |
+| Int128         | `BigInteger`، `decimal`، `double`، `float`، `int`، `uint`، `long`، `ulong`، وأي نوع متوافق مع `Convert.ToInt64()` |         |
+| UInt128        | `BigInteger`، `decimal`، `double`، `float`، `int`، `uint`، `long`، `ulong`، وأي نوع متوافق مع `Convert.ToInt64()` |         |
+| Int256         | `BigInteger`، `decimal`، `double`، `float`، `int`، `uint`، `long`، `ulong`، وأي نوع متوافق مع `Convert.ToInt64()` |         |
+| UInt256        | `BigInteger`، `decimal`، `double`، `float`، `int`، `uint`، `long`، `ulong`، وأي نوع متوافق مع `Convert.ToInt64()` |         |
+
+***
+
+<div id="type-map-reading-floating-points">
+  #### أنواع الأعداد ذات الفاصلة العائمة
+</div>
+
+| نوع ClickHouse | أنواع .NET المقبولة                              | ملاحظات                                            |
+| -------------- | ------------------------------------------------ | -------------------------------------------------- |
+| Float32        | `float`، وأي نوع متوافق مع `Convert.ToSingle()`  |                                                    |
+| Float64        | `double`، وأي نوع متوافق مع `Convert.ToDouble()` |                                                    |
+| BFloat16       | `float`، وأي نوع متوافق مع `Convert.ToSingle()`  | يُقتطع إلى تنسيق bfloat16 ‏(brain float)‏ ذي 16 بت |
+
+***
+
+<div id="type-map-writing-boolean">
+  #### النوع المنطقي
+</div>
+
+| نوع ClickHouse | أنواع .NET المقبولة | ملاحظات |
+| -------------- | ------------------- | ------- |
+| Bool           | `bool`              |         |
+
+***
+
+<div id="type-map-writing-strings">
+  #### أنواع String
+</div>
+
+| نوع ClickHouse | أنواع .NET المقبولة                                  | ملاحظات                                                                                 |
+| -------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| String         | `string`, `byte[]`, `ReadOnlyMemory<byte>`, `Stream` | تُكتب الأنواع الثنائية مباشرةً؛ ويمكن أن تكون التدفقات قابلةً لـ seek أو غير قابلة له   |
+| FixedString(N) | `string`, `byte[]`, `ReadOnlyMemory<byte>`, `Stream` | يُرمَّز String بترميز UTF-8 ويُحشّى؛ ويجب أن تكون الأنواع الثنائية بطول N بايتات بالضبط |
+
+***
+
+<div id="type-map-reading-datetime">
+  #### أنواع التاريخ والوقت
+</div>
+
+| نوع ClickHouse | أنواع .NET المقبولة                                               | ملاحظات                                                                                     |
+| -------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Date           | `DateTime`, `DateTimeOffset`, `DateOnly`, أنواع NodaTime          | تُحوَّل إلى أيام Unix بصيغة UInt16                                                          |
+| Date32         | `DateTime`, `DateTimeOffset`, `DateOnly`, أنواع NodaTime          | تُحوَّل إلى أيام Unix بصيغة Int32                                                           |
+| DateTime       | `DateTime`, `DateTimeOffset`, `DateOnly`, أنواع NodaTime          | انظر أدناه للاطّلاع على التفاصيل                                                            |
+| DateTime32     | `DateTime`, `DateTimeOffset`, `DateOnly`, أنواع NodaTime          | مثل DateTime                                                                                |
+| DateTime64     | `DateTime`, `DateTimeOffset`, `DateOnly`, أنواع NodaTime          | تعتمد الدقة على معلمة Scale                                                                 |
+| Time           | `TimeSpan`, `int`                                                 | تُقيَّد إلى ±999:59:59؛ ويُتعامل مع `int` على أنه ثوانٍ                                     |
+| Time64         | `TimeSpan`, `decimal`, `double`, `float`, `int`, `long`, `string` | تُحلَّل السلسلة النصية بالصيغة `[-]HHH:MM:SS[.fraction]`؛ وتُقيَّد إلى ±999:59:59.999999999 |
+
+يراعي برنامج التشغيل `DateTime.Kind` عند كتابة القيم:
+
+| DateTime.Kind | معلمات HTTP                                                           | Bulk                                            |
+| ------------- | --------------------------------------------------------------------- | ----------------------------------------------- |
+| Utc           | تُحفَظ اللحظة الزمنية كما هي                                          | تُحفَظ اللحظة الزمنية كما هي                    |
+| Local         | تُحفَظ اللحظة الزمنية كما هي                                          | تُحفَظ اللحظة الزمنية كما هي                    |
+| Unspecified   | يُتعامل معه كوقت محلي في المنطقة الزمنية لنوع المعلمة (UTC افتراضيًا) | يُتعامل معه كوقت محلي في المنطقة الزمنية للعمود |
+
+تحافظ قيم `DateTimeOffset` دائمًا على اللحظة الزمنية الدقيقة.
+
+**مثال: DateTime بتوقيت UTC (تُحفَظ اللحظة الزمنية كما هي)**
+
+```csharp
+var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
+// Stored as 12:00 UTC
+// Read from DateTime('Europe/Amsterdam') column: 13:00 (UTC+1)
+// Read from DateTime('UTC') column: 12:00 UTC
+```
+
+**مثال: DateTime غير محدد (التوقيت المحلي)**
+
+```csharp
+var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
+// Written to DateTime('Europe/Amsterdam') column: stored as 14:30 Amsterdam time
+// Read back from DateTime('Europe/Amsterdam') column: 14:30
+```
+
+**التوصية:** للحصول على أبسط سلوك وأكثره قابلية للتنبؤ، استخدم `DateTimeKind.Utc` أو `DateTimeOffset` في جميع عمليات DateTime. يضمن ذلك أن تعمل شيفرتك بشكل متسق بغض النظر عن المنطقة الزمنية للخادم أو العميل أو العمود.
+
+<div id="datetime-http-param-vs-bulkcopy">
+  #### معلمات HTTP مقابل Bulk Copy
+</div>
+
+يوجد فرق مهم بين ربط معلمات HTTP وBulk Copy عند كتابة قيم DateTime من النوع `Unspecified`:
+
+**Bulk Copy** يعرف المنطقة الزمنية للعمود المستهدف ويفسّر قيم `Unspecified` بشكل صحيح وفقًا لتلك المنطقة الزمنية.
+
+**HTTP Parameters** لا تعرف تلقائيًا المنطقة الزمنية للعمود. يجب تحديدها في تلميح نوع SQL:
+
+```csharp
+// CORRECT: Timezone in SQL type hint - type is extracted automatically
+command.CommandText = "INSERT INTO table (dt_amsterdam) VALUES ({dt:DateTime('Europe/Amsterdam')})";
+command.AddParameter("dt", myDateTime);
+
+// INCORRECT: Without timezone hint, interpreted as UTC
+command.CommandText = "INSERT INTO table (dt_amsterdam) VALUES ({dt:DateTime})";
+command.AddParameter("dt", myDateTime);
+// String value "2024-01-15 14:30:00" interpreted as UTC, not Amsterdam time!
+```
+
+| `DateTime.Kind` | العمود المستهدف  | معلمة HTTP (مع تلميح المنطقة الزمنية) | معلمة HTTP (من دون تلميح المنطقة الزمنية) | النسخ المجمّع                    |
+| --------------- | ---------------- | ------------------------------------- | ----------------------------------------- | -------------------------------- |
+| `Utc`           | UTC              | تبقى اللحظة الزمنية كما هي            | تبقى اللحظة الزمنية كما هي                | تبقى اللحظة الزمنية كما هي       |
+| `Utc`           | Europe/Amsterdam | تبقى اللحظة الزمنية كما هي            | تبقى اللحظة الزمنية كما هي                | تبقى اللحظة الزمنية كما هي       |
+| `Local`         | أيّ قيمة         | تبقى اللحظة الزمنية كما هي            | تبقى اللحظة الزمنية كما هي                | تبقى اللحظة الزمنية كما هي       |
+| `Unspecified`   | UTC              | يُعامَل على أنه UTC                   | يُعامَل على أنه UTC                       | يُعامَل على أنه UTC              |
+| `Unspecified`   | Europe/Amsterdam | يُعامَل على أنه بتوقيت Amsterdam      | **يُعامَل على أنه UTC**                   | يُعامَل على أنه بتوقيت Amsterdam |
+
+***
+
+<div id="type-map-writing-decimal">
+  #### أنواع Decimal
+</div>
+
+| نوع ClickHouse | أنواع .NET المقبولة                                                     | ملاحظات                                             |
+| -------------- | ----------------------------------------------------------------------- | --------------------------------------------------- |
+| Decimal(P,S)   | `decimal`، `ClickHouseDecimal`، وأي نوع متوافق مع `Convert.ToDecimal()` | يتم طرح `OverflowException` إذا تجاوزت القيمة الدقة |
+| Decimal32      | `decimal`، `ClickHouseDecimal`، وأي نوع متوافق مع `Convert.ToDecimal()` | الحد الأقصى للدقة هو 9                              |
+| Decimal64      | `decimal`، `ClickHouseDecimal`، وأي نوع متوافق مع `Convert.ToDecimal()` | الحد الأقصى للدقة هو 18                             |
+| Decimal128     | `decimal`، `ClickHouseDecimal`، وأي نوع متوافق مع `Convert.ToDecimal()` | الحد الأقصى للدقة هو 38                             |
+| Decimal256     | `decimal`، `ClickHouseDecimal`، وأي نوع متوافق مع `Convert.ToDecimal()` | الحد الأقصى للدقة هو 76                             |
+
+***
+
+<div id="type-map-reading-json">
+  #### نوع JSON
+</div>
+
+| ClickHouse Type | أنواع .NET المقبولة                         | ملاحظات                                |
+| --------------- | ------------------------------------------- | -------------------------------------- |
+| Json            | `string`, `JsonObject`, `JsonNode`, أي كائن | يعتمد السلوك على إعداد `JsonWriteMode` |
+
+يتحكم إعداد `JsonWriteMode` في السلوك عند كتابة JSON:
+
+| نوع الإدخال                 | `JsonWriteMode.String` (الافتراضي)       | `JsonWriteMode.Binary`                                |
+| --------------------------- | ---------------------------------------- | ----------------------------------------------------- |
+| `string`                    | يُمرَّر كما هو                           | يطرح `ArgumentException`                              |
+| `JsonObject`                | يُسلسَل عبر `ToJsonString()`             | يطرح `ArgumentException`                              |
+| `JsonNode`                  | يُسلسَل عبر `ToJsonString()`             | يطرح `ArgumentException`                              |
+| POCO مسجّل                  | يُسلسَل عبر `JsonSerializer.Serialize()` | ترميز ثنائي مع دعم تلميحات النوع وسمات المسار المخصصة |
+| POCO غير مسجّل / كائن مجهول | يُسلسَل عبر `JsonSerializer.Serialize()` | يطرح `ClickHouseJsonSerializationException`           |
+
+* **`String` (الافتراضي)**: يقبل `string` و`JsonObject` و`JsonNode` أو أي كائن. تُسلسَل جميع المدخلات عبر `System.Text.Json.JsonSerializer` وتُرسل كسلاسل JSON لتحليلها على جهة الخادم. هذا هو الوضع الأكثر مرونة ويعمل من دون تسجيل النوع.
+
+* **`Binary`**: لا يقبل إلا أنواع POCO المسجّلة. تُحوَّل البيانات إلى تنسيق JSON الثنائي الخاص بـ ClickHouse على جهة العميل مع دعم كامل لتلميحات النوع. ويتطلب استدعاء `connection.RegisterJsonSerializationType<T>()` قبل الاستخدام. وتؤدي كتابة قيم `string` أو `JsonNode` في هذا الوضع إلى طرح `ArgumentException`.
+
+```csharp
+// Default String mode works with any input
+await client.InsertBinaryAsync(
+    "my_table",
+    new[] { "id", "data" },
+    new[] { new object[] { 1u, new { name = "test", value = 42 } } }
+);
+
+// Binary mode requires explicit opt-in and type registration
+var settings = new ClickHouseClientSettings("Host=localhost")
+{
+    JsonWriteMode = JsonWriteMode.Binary
+};
+using var client = new ClickHouseClient(settings);
+client.RegisterJsonSerializationType<MyPocoType>();
+```
+
+<div id="json-typed-columns">
+  ##### أعمدة JSON محددة الأنواع
+</div>
+
+عندما يحتوي عمود JSON على تلميحات للأنواع (مثل `JSON(id UInt64, price Decimal128(2))`)، يستخدم برنامج التشغيل هذه التلميحات لتسلسل القيم مع الحفاظ الكامل على سلامة الأنواع. وهذا يحافظ على الدقة في أنواع مثل `UInt64` و`Decimal` و`UUID` و`DateTime64`، والتي قد تفقد دقتها لولا ذلك عند تسلسلها بصيغة JSON عامة.
+
+<div id="json-poco-serialization">
+  ##### تسلسل كائنات POCO
+</div>
+
+يمكن كتابة كائنات POCO في أعمدة JSON بطريقتين وفقًا لـ `JsonWriteMode`:
+
+**String mode (الافتراضي)**: تُسلسَل كائنات POCO عبر `System.Text.Json.JsonSerializer`. لا يتطلب ذلك تسجيل الأنواع. هذا هو النهج الأبسط، كما أنه يعمل مع الكائنات المجهولة.
+
+**Binary mode**: تُسلسَل كائنات POCO باستخدام تنسيق JSON الثنائي الخاص ببرنامج التشغيل مع دعم كامل لتلميحات النوع. يجب تسجيل الأنواع باستخدام `connection.RegisterJsonSerializationType<T>()` قبل الاستخدام. يدعم هذا الوضع تعيينات مسارات مخصّصة عبر السمات:
+
+* **`[ClickHouseJsonPath("path")]`**: يربط خاصيةً بمسار JSON مخصّص. ويكون ذلك مفيدًا مع البُنى المتداخلة أو عندما يختلف اسم الخاصية عن مفتاح JSON المطلوب. **يعمل فقط في Binary mode.**
+
+* **`[ClickHouseJsonIgnore]`**: يستبعد خاصيةً من التسلسل. **يعمل فقط في Binary mode.**
+
+```sql
+CREATE TABLE events (
+    id UInt32,
+    data JSON(`user.id` Int64, `user.name` String, Timestamp DateTime64(3))
+) ENGINE = MergeTree() ORDER BY id
+```
+
+```csharp
+using ClickHouse.Driver.Json;
+
+public class UserEvent
+{
+    [ClickHouseJsonPath("user.id")]
+    public long UserId { get; set; }
+
+    [ClickHouseJsonPath("user.name")]
+    public string UserName { get; set; }
+
+    public DateTime Timestamp { get; set; }
+
+    [ClickHouseJsonIgnore]
+    public string InternalData { get; set; }  // Not serialized
+}
+
+// For Binary mode: Register the type and enable Binary mode
+var settings = new ClickHouseClientSettings("Host=localhost") { JsonWriteMode = JsonWriteMode.Binary };
+using var client = new ClickHouseClient(settings);
+client.RegisterJsonSerializationType<UserEvent>();
+
+// Insert POCO - serialized to JSON with nested structure via custom path attributes
+await client.InsertBinaryAsync(
+    "events",
+    new[] { "id", "data" },
+    new[] { new object[] { 1u, new UserEvent { UserId = 123, UserName = "Alice", Timestamp = DateTime.UtcNow } } }
+);
+// Resulting JSON: {"user": {"id": 123, "name": "Alice"}, "Timestamp": "2024-01-15T..."}
+```
+
+مطابقة أسماء الخصائص مع تلميحات نوع العمود حسّاسة لحالة الأحرف. فالخاصية `UserId` لن تتطابق إلا مع تلميح مُعرَّف باسم `UserId`، وليس `userid`. وهذا يتوافق مع سلوك ClickHouse الذي يسمح بوجود مسارات مثل `userName` و`UserName` معًا كحقول منفصلة.
+
+**القيود (في Binary mode فقط):**
+
+* يجب تسجيل أنواع POCO على الاتصال باستخدام `connection.RegisterJsonSerializationType<T>()` قبل إجراء التسلسل. وستؤدي محاولة تسلسل نوع غير مسجّل إلى ظهور الاستثناء `ClickHouseJsonSerializationException`.
+* تتطلب خصائص القاموس والمصفوفة/القائمة تلميحات نوع في تعريف العمود لكي تُسلسَل بشكل صحيح. ومن دون هذه التلميحات، استخدم String mode بدلًا من ذلك.
+* لا تُكتَب القيم الخالية في خصائص POCO إلا إذا كان للمسار تلميح نوع `Nullable(T)` في تعريف العمود. ولا يسمح ClickHouse بأنواع `Nullable` داخل مسارات JSON الديناميكية، لذلك يتم تخطي الخصائص الخالية غير المزوّدة بتلميحات.
+* يتم تجاهل السمات `ClickHouseJsonPath` و`ClickHouseJsonIgnore` في String mode (إذ لا تعمل إلا في Binary mode).
+
+***
+
+<div id="type-map-reading-other">
+  #### أنواع أخرى
+</div>
+
+| نوع ClickHouse          | أنواع .NET المقبولة                        | ملاحظات                                                                |
+| ----------------------- | ------------------------------------------ | ---------------------------------------------------------------------- |
+| UUID                    | `Guid`, `string`                           | تُحلَّل السلسلة النصية باعتبارها Guid                                  |
+| IPv4                    | `IPAddress`, `string`                      | يجب أن يكون IPv4؛ وتُحلَّل السلسلة النصية باستخدام `IPAddress.Parse()` |
+| IPv6                    | `IPAddress`, `string`                      | يجب أن يكون IPv6؛ وتُحلَّل السلسلة النصية باستخدام `IPAddress.Parse()` |
+| Nothing                 | أيّ نوع                                    | لا يكتب شيئًا (no-op)                                                  |
+| Dynamic                 | —                                          | **غير مدعوم** (throws `NotImplementedException`)                       |
+| Array(T)                | `IList`, `null`                            | تؤدي القيمة null إلى كتابة مصفوفة فارغة                                |
+| Tuple(T1, T2, ...)      | `ITuple`, `IList`                          | يجب أن يتطابق عدد العناصر مع رتبة Tuple                                |
+| Map(K, V)               | `IDictionary`                              |                                                                        |
+| Nullable(T)             | `null`, `DBNull`, أو الأنواع المقبولة لـ T | يكتب بايت علامة null قبل القيمة                                        |
+| Enum8                   | `string`, `sbyte`, أنواع رقمية             | يُبحث عن السلسلة النصية في قاموس enum                                  |
+| Enum16                  | `string`, `short`, أنواع رقمية             | يُبحث عن السلسلة النصية في قاموس enum                                  |
+| LowCardinality(T)       | الأنواع المقبولة لـ T                      | يُفوَّض إلى النوع الأساسي                                              |
+| SimpleAggregateFunction | الأنواع المقبولة للنوع الأساسي             | يُفوَّض إلى النوع الأساسي                                              |
+| Nested(...)             | `IList` من tuples                          | يجب أن يتطابق عدد العناصر مع عدد الحقول                                |
+| Variant(T1, T2, ...)    | قيمة تطابق أحد T1 أو T2 أو ...             | Throws `ArgumentException` إذا لم يطابق أي نوع                         |
+| QBit(T, dim)            | `IList`                                    | يُفوَّض إلى Array؛ والبُعد بيانات وصفية فقط                            |
+
+***
+
+<div id="type-map-reading-geometry">
+  #### أنواع Geometry
+</div>
+
+| نوع ClickHouse  | أنواع .NET المقبولة                                | ملاحظات                      |
+| --------------- | -------------------------------------------------- | ---------------------------- |
+| Point           | `System.Drawing.Point`, `ITuple`, `IList` (عنصران) |                              |
+| Ring            | `IList` من عناصر Point                             |                              |
+| LineString      | `IList` من عناصر Point                             |                              |
+| Polygon         | `IList` من عناصر Ring                              |                              |
+| MultiLineString | `IList` من عناصر LineString                        |                              |
+| MultiPolygon    | `IList` من عناصر Polygon                           |                              |
+| Geometry        | أي نوع من أنواع Geometry أعلاه                     | Variant لجميع أنواع Geometry |
+
+***
+
+<div id="type-map-writing-not-supported">
+  #### غير مدعوم عند الكتابة
+</div>
+
+| نوع ClickHouse    | ملاحظات                                     |
+| ----------------- | ------------------------------------------- |
+| Dynamic           | يؤدي إلى إطلاق `NotImplementedException`    |
+| AggregateFunction | يؤدي إلى إطلاق `AggregateFunctionException` |
+
+***
+
+<div id="nested-type-handling">
+  ### التعامل مع النوع Nested
+</div>
+
+يمكن قراءة النوع Nested في ClickHouse (`Nested(...)`) وكتابته باستخدام دلالات المصفوفات.
+
+```sql
+CREATE TABLE test.nested (
+    id UInt32,
+    params Nested (param_id UInt8, param_val String)
+) ENGINE = Memory
+```
+
+```csharp
+var row1 = new object[] { 1, new[] { 1, 2, 3 }, new[] { "v1", "v2", "v3" } };
+var row2 = new object[] { 2, new[] { 4, 5, 6 }, new[] { "v4", "v5", "v6" } };
+
+await client.InsertBinaryAsync(
+    "test.nested",
+    new[] { "id", "params.param_id", "params.param_val" },
+    new[] { row1, row2 }
+);
+```
+
+<div id="logging-and-diagnostics">
+  ## التسجيل والتشخيص
+</div>
+
+يتكامل عميل ClickHouse لـ .NET مع تجريدات `Microsoft.Extensions.Logging` لتوفير تسجيل خفيف الوزن يُفعَّل عند الحاجة. وعند تمكينه، يُصدر برنامج التشغيل رسائل منظَّمة لأحداث دورة حياة الاتصال، وتنفيذ الأوامر، وعمليات النقل، وعمليات الإدراج المجمّع. ويظل التسجيل اختياريًا بالكامل—فالتطبيقات التي لا تُعدّ مُسجِّلًا تواصل العمل دون أي عبء إضافي.
+
+<div id="logging-quick-start">
+  ### البدء السريع
+</div>
+
+```csharp
+using ClickHouse.Driver;
+using Microsoft.Extensions.Logging;
+
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConsole()
+        .SetMinimumLevel(LogLevel.Information);
+});
+
+var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
+{
+    LoggerFactory = loggerFactory
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<div id="logging-appsettings-config">
+  #### استخدام appsettings.json
+</div>
+
+يمكنك ضبط مستويات التسجيل باستخدام إعدادات .NET القياسية:
+
+```csharp
+using ClickHouse.Driver;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json")
+    .Build();
+
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConfiguration(configuration.GetSection("Logging"))
+        .AddConsole();
+});
+
+var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
+{
+    LoggerFactory = loggerFactory
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<div id="logging-inmemory-config">
+  #### استخدام تهيئة داخل الذاكرة
+</div>
+
+يمكنك أيضًا ضبط مستوى تفصيل التسجيل لكل فئة في الشيفرة:
+
+```csharp
+using ClickHouse.Driver;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+var categoriesConfiguration = new Dictionary<string, string>
+{
+    { "LogLevel:Default", "Warning" },
+    { "LogLevel:ClickHouse.Driver.Connection", "Information" },
+    { "LogLevel:ClickHouse.Driver.Command", "Debug" }
+};
+
+var config = new ConfigurationBuilder()
+    .AddInMemoryCollection(categoriesConfiguration)
+    .Build();
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConfiguration(config)
+        .AddSimpleConsole();
+});
+
+var settings = new ClickHouseClientSettings("Host=localhost;Port=8123")
+{
+    LoggerFactory = loggerFactory
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<div id="logging-categories">
+  ### الفئات والبواعث
+</div>
+
+يستخدم برنامج التشغيل فئات مخصّصة بحيث يمكنك ضبط مستويات السجل بدقة لكل مكوّن:
+
+| الفئة                          | المصدر                 | أبرز الجوانب                                                                                |
+| ------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------- |
+| `ClickHouse.Driver.Connection` | `ClickHouseConnection` | دورة حياة الاتصال، واختيار HTTP client factory، وفتح الاتصال وإغلاقه، وإدارة الجلسات.       |
+| `ClickHouse.Driver.Command`    | `ClickHouseCommand`    | بدء تنفيذ الاستعلام واكتماله، والتوقيت، ومعرّفات الاستعلام، وإحصاءات الخادم، وتفاصيل الخطأ. |
+| `ClickHouse.Driver.Transport`  | `ClickHouseConnection` | طلبات HTTP streaming منخفضة المستوى، وعلامات الضغط، ورموز حالة الاستجابة، وإخفاقات النقل.   |
+| `ClickHouse.Driver.Client`     | `ClickHouseClient`     | عمليات insert الثنائية، والاستعلامات، والعمليات الأخرى                                      |
+| `ClickHouse.Driver.NetTrace`   | `TraceHelper`          | تتبّع الشبكة، فقط عند تمكين وضع التصحيح                                                     |
+
+<div id="logging-config-example">
+  #### مثال: تشخيص مشكلات الاتصال
+</div>
+
+```json
+{
+    "Logging": {
+        "LogLevel": {
+            "ClickHouse.Driver.Connection": "Trace",
+            "ClickHouse.Driver.Transport": "Trace"
+        }
+    }
+}
+```
+
+سيُسجِّل هذا ما يلي:
+
+* اختيار HTTP client factory ‏(التجمّع default مقابل اتصال واحد)
+* تهيئة HTTP handler ‏(SocketsHttpHandler أو HttpClientHandler)
+* إعدادات connection pool ‏(MaxConnectionsPerServer وPooledConnectionLifetime وما إلى ذلك)
+* إعدادات timeout ‏(ConnectTimeout وExpect100ContinueTimeout وما إلى ذلك)
+* تهيئة SSL/TLS
+* أحداث فتح الاتصال وإغلاقه
+* تتبّع معرّف الجلسة
+
+<div id="logging-debugmode">
+  ### وضع Debug: تتبّع الشبكة والتشخيص
+</div>
+
+للمساعدة في تشخيص مشكلات الشبكة، تتضمن مكتبة برنامج التشغيل أداة مساعدة تُمكّن التتبّع منخفض المستوى للمكوّنات الداخلية للشبكات في .NET. ولتمكينه، يجب تمرير LoggerFactory مع تعيين المستوى إلى Trace، وضبط EnableDebugMode على true (أو تمكينه يدويًا عبر الصنف `ClickHouse.Driver.Diagnostic.TraceHelper`). ستُسجَّل الأحداث ضمن الفئة `ClickHouse.Driver.NetTrace`. تحذير: سيؤدي ذلك إلى إنشاء سجلات شديدة التفصيل، وسيؤثر في الأداء. لا يُنصح بتمكين وضع Debug في بيئة الإنتاج.
+
+```csharp
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder
+        .AddConsole()
+        .SetMinimumLevel(LogLevel.Trace); // Must be Trace level to see network events
+});
+
+var settings = new ClickHouseClientSettings()
+{
+    LoggerFactory = loggerFactory,
+    EnableDebugMode = true,  // Enable low-level network tracing
+};
+```
+
+<div id="opentelemetry">
+  ## OpenTelemetry
+</div>
+
+يوفّر برنامج التشغيل دعمًا مدمجًا للتتبّع الموزّع في OpenTelemetry عبر واجهة برمجة تطبيقات .NET [`System.Diagnostics.Activity`](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/distributed-tracing). وعند تمكينه، يُنشئ برنامج التشغيل spans لعمليات قاعدة البيانات يمكن تصديرها إلى أنظمة observability الخلفية مثل Jaeger أو ClickHouse نفسه (عبر [OpenTelemetry Collector](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry)).
+
+<div id="opentelemetry-enabling">
+  ### تمكين التتبّع
+</div>
+
+في تطبيقات ASP.NET Core، أضِف `ActivitySource` الخاص ببرنامج تشغيل ClickHouse إلى تهيئة OpenTelemetry:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource(ClickHouseDiagnosticsOptions.ActivitySourceName)  // Subscribe to ClickHouse driver spans
+        .AddAspNetCoreInstrumentation()
+        .AddOtlpExporter());             // Or AddJaegerExporter(), etc.
+```
+
+لتطبيقات سطر الأوامر، أو للاختبار، أو للإعداد اليدوي:
+
+```csharp
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+
+var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource(ClickHouseDiagnosticsOptions.ActivitySourceName)
+    .AddConsoleExporter()
+    .Build();
+```
+
+<div id="opentelemetry-attributes">
+  ### سمات span
+</div>
+
+يتضمن كل span سمات قاعدة البيانات القياسية في OpenTelemetry، بالإضافة إلى إحصاءات query الخاصة بـ ClickHouse التي يمكن استخدامها في debugging.
+
+| السمة                         | الوصف                                      |
+| ----------------------------- | ------------------------------------------ |
+| `db.system`                   | تكون دائمًا `"clickhouse"`                 |
+| `db.name`                     | اسم قاعدة البيانات                         |
+| `db.user`                     | اسم المستخدم                               |
+| `db.statement`                | SQL query (إذا كان enabled)                |
+| `db.clickhouse.read_rows`     | الصفوف التي قرأها الـ query                |
+| `db.clickhouse.read_bytes`    | البايتات التي قرأها الـ query              |
+| `db.clickhouse.written_rows`  | الصفوف التي كتبها الـ query                |
+| `db.clickhouse.written_bytes` | البايتات التي كتبها الـ query              |
+| `db.clickhouse.elapsed_ns`    | execution time على جهة الخادم بالنانوثانية |
+
+<div id="opentelemetry-configuration">
+  ### خيارات التكوين
+</div>
+
+تحكَّم في سلوك التتبّع باستخدام `ClickHouseDiagnosticsOptions`:
+
+```csharp
+using ClickHouse.Driver.Diagnostic;
+
+// Include SQL statements in spans (default: false for security)
+ClickHouseDiagnosticsOptions.IncludeSqlInActivityTags = true;
+
+// Truncate long SQL statements (default: 1000 characters)
+ClickHouseDiagnosticsOptions.StatementMaxLength = 500;
+```
+
+<Warning>
+  قد يؤدي تفعيل `IncludeSqlInActivityTags` إلى كشف بيانات حساسة ضمن التتبعات الخاصة بك. استخدمه بحذر في بيئات الإنتاج.
+</Warning>
+
+<div id="tls-configuration">
+  ## إعدادات TLS
+</div>
+
+عند الاتصال بـ ClickHouse عبر HTTPS، يمكنك تهيئة سلوك TLS/SSL بعدة طرق.
+
+<div id="custom-certificate-validation">
+  ### التحقق المخصص من الشهادات
+</div>
+
+بالنسبة إلى بيئات الإنتاج التي تتطلب منطقًا مخصصًا للتحقق من الشهادات، وفّر `HttpClient` خاصًا بك مع معالج `ServerCertificateCustomValidationCallback` مُعدّ:
+
+```csharp
+using System.Net;
+using System.Net.Security;
+using ClickHouse.Driver;
+
+var handler = new HttpClientHandler
+{
+    // Required when compression is enabled (default)
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+
+    ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) =>
+    {
+        // Example: Accept a specific certificate thumbprint
+        if (cert?.Thumbprint == "YOUR_EXPECTED_THUMBPRINT")
+            return true;
+
+        // Example: Accept certificates from a specific issuer
+        if (cert?.Issuer.Contains("YourOrganization") == true)
+            return true;
+
+        // Default: Use standard validation
+        return sslPolicyErrors == SslPolicyErrors.None;
+    },
+};
+
+var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+
+var settings = new ClickHouseClientSettings
+{
+    Host = "my.clickhouse.server",
+    Protocol = "https",
+    HttpClient = httpClient,
+};
+
+using var client = new ClickHouseClient(settings);
+```
+
+<Note>
+  اعتبارات مهمة عند استخدام `HttpClient` مخصّص
+
+  * **فك الضغط التلقائي**: يجب تمكين `AutomaticDecompression` إذا لم يكن الضغط معطّلًا (فالضغط مفعّل افتراضيًا).
+  * **مهلة الخمول**: اضبط `PooledConnectionIdleTimeout` على قيمة أقل من `keep_alive_timeout` الخاص بالخادم (10 ثوانٍ في ClickHouse Cloud) لتجنّب أخطاء الاتصال الناتجة عن الاتصالات شبه المفتوحة.
+</Note>
+
+<div id="orm-support">
+  ## دعم ORM
+</div>
+
+تتطلب أطر ORM واجهة ADO.NET (`ClickHouseConnection`). ولإدارة دورة حياة الاتصالات على النحو الصحيح، أنشئ الاتصالات باستخدام `ClickHouseDataSource`:
+
+```csharp
+// Register DataSource as singleton
+var dataSource = new ClickHouseDataSource("Host=localhost;Username=default");
+
+// Create connections for ORM use
+await using var connection = await dataSource.OpenConnectionAsync();
+// Pass connection to your ORM...
+```
+
+<div id="orm-support-dapper">
+  ### Dapper
+</div>
+
+يعمل `ClickHouse.Driver` مع Dapper. ويحوّل برنامج التشغيل تلقائيًا صياغة `@parameter` الخاصة بـ Dapper إلى الصياغة الأصلية في ClickHouse `{parameter:Type}`، مع استنتاج الأنواع من قيم .NET.
+
+استخدم `ClickHouseDataSource` لإدارة مدة بقاء الاتصال على نحو صحيح:
+
+```csharp
+var dataSource = new ClickHouseDataSource("Host=localhost");
+services.AddSingleton(dataSource); // Register as singleton in DI
+
+using var connection = dataSource.CreateConnection();
+```
+
+<div id="dapper-parameter-passing">
+  #### أنماط تمرير المَعلمات
+</div>
+
+جميع أنماط مَعلمات Dapper القياسية مدعومة:
+
+**الكائنات المجهولة:**
+
+```csharp
+await connection.ExecuteAsync(
+    "INSERT INTO users (id, name, balance) VALUES (@Id, @Name, @Balance)",
+    new { Id = 1, Name = "alice", Balance = 3.14 });
+```
+
+**فئات POCO:**
+
+```csharp
+class InsertParams
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public double Balance { get; set; }
+}
+
+var param = new InsertParams { Id = 42, Name = "bob", Balance = 99.9 };
+await connection.ExecuteAsync(
+    "INSERT INTO users (id, name, balance) VALUES (@Id, @Name, @Balance)", param);
+```
+
+**القاموس:**
+
+```csharp
+var parameters = new Dictionary<string, object> { { "Id", 2 } };
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE id = @Id", parameters);
+```
+
+**`DynamicParameters` (من قاموس أو كائن مجهول الاسم):**
+
+```csharp
+var dynParams = new DynamicParameters(new { Id = 1 });
+// or: new DynamicParameters(new Dictionary<string, object> { { "Id", 1 } });
+
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE id = @Id", dynParams);
+```
+
+<div id="dapper-pocos">
+  #### الاستعلام عن POCOs
+</div>
+
+يربط Dapper الأعمدة بالخصائص حسب الاسم (من دون حساسية لحالة الأحرف):
+
+```csharp
+class User
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public double Balance { get; set; }
+}
+
+// From a table
+var users = (await connection.QueryAsync<User>("SELECT id, name, balance FROM users")).ToList();
+
+// From a literal
+var row = (await connection.QueryAsync<User>("SELECT 1 as id, 'hello' as name, 2.5 as balance")).Single();
+```
+
+<div id="dapper-clickhouse-param-syntax">
+  #### صياغة المعلمات الأصلية في ClickHouse
+</div>
+
+عندما تحتاج إلى تحكم صريح في النوع، استخدم مباشرةً في SQL صياغة `{param:Type}` الخاصة بـ ClickHouse مع `Dictionary<string, object>` لقيم المعلمات. لا تجمع بين صياغة `@param` وصياغة `{param:Type}` للمعلمة نفسها.
+
+```csharp
+var parameters = new Dictionary<string, object> { { "value", 42 } };
+var result = await connection.QueryAsync<int>("SELECT {value:Int32}", parameters);
+```
+
+<div id="dapper-where-in">
+  #### WHERE IN
+</div>
+
+**تعمل ميزة توسيع IN المدمجة في Dapper:**
+
+```csharp
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE id IN @Ids ORDER BY id",
+    new { Ids = new[] { 1, 3, 5 } });
+```
+
+يعيد Dapper صياغة ذلك إلى `WHERE id IN (@Ids1, @Ids2, @Ids3)`، ويحوّل برنامج التشغيل كل معلمة موسَّعة.
+
+**كما تعمل الدالة `has()` في ClickHouse أيضًا مع معلمة من النوع Array:**
+
+```csharp
+var parameters = new Dictionary<string, object> { { "ids", new[] { 1, 3, 5 } } };
+var rows = await connection.QueryAsync<User>(
+    "SELECT id, name FROM users WHERE has({ids:Array(Int32)}, id) ORDER BY id",
+    parameters);
+```
+
+<div id="dapper-type-handlers">
+  #### معالِجات الأنواع المخصّصة
+</div>
+
+تتطلّب بعض أنواع ClickHouse، مثل `ITuple` و`BigInteger` و`ClickHouseDecimal`، تسجيل معالِجات عند بدء التشغيل:
+
+```csharp
+// ClickHouseDecimal (for Decimal64/128/256 columns)
+SqlMapper.AddTypeHandler(new ClickHouseDecimalHandler());
+
+// BigInteger (for Int128/Int256/UInt128/UInt256 columns)
+SqlMapper.AddTypeHandler(new BigIntegerHandler());
+
+// IPAddress (for IPv4/IPv6 columns)
+SqlMapper.AddTypeHandler(new IpAddressHandler());
+```
+
+راجع [مثال Dapper](https://github.com/ClickHouse/clickhouse-cs/blob/main/examples/ORM/ORM_001_Dapper.cs) للاطلاع على مثال لتنفيذ معالج أنواع.
+
+<div id="dapper-contrib">
+  #### Dapper.Contrib
+</div>
+
+يعمل كلٌّ من `GetAll<T>()` و`Get<T>(id)`. أما `Insert<T>()` فلا يعمل، إذ يولّد صياغة SQL Server (`SCOPE_IDENTITY`, `[]`). ويُوصى باستخدام الطريقة الأصلية `InsertBinaryAsync` في `ClickHouseClient` بدلًا من ذلك.
+
+```csharp
+[Table("test.users")]
+record class UserRecord(int Id, string Name, DateTime Timestamp);
+
+var all = await connection.GetAllAsync<UserRecord>();
+var one = await connection.GetAsync<UserRecord>(1);
+```
+
+يجب أن تتطابق أسماء الخصائص تمامًا مع أسماء أعمدة ClickHouse (تراعي حالة الأحرف).
+
+<div id="dapper-limitations">
+  #### القيود
+</div>
+
+| العنصر                       | الحالة    | التفاصيل                                                               |
+| ---------------------------- | --------- | ---------------------------------------------------------------------- |
+| Tuple كـ **نتيجة**           | يعمل      | يتطلب تسجيل `SqlMapper.TypeHandler<ITuple>`                            |
+| Tuple كـ **معلمة**           | غير مدعوم | لا يستطيع Dapper إجراء تسلسل لـ `ITuple`/`Tuple<>` كقيمة `DbParameter` |
+| أنواع Nested كمعلمة          | غير مدعوم | للسبب نفسه — يرفض Dapper الأنواع المعقدة كقيم للمعلمات                |
+| أنواع Geo كمعلمة             | غير مدعوم | Point, Ring, Polygon, LineString, MultiLineString, MultiPolygon        |
+| `Dapper.Contrib.Insert<T>()` | غير مدعوم | يُنشئ صياغة خاصة بـ SQL Server                                         |
+| النوع `Nothing`              | غير مدعوم | لا يوجد له تمثيل ذو معنى في .NET                                       |
+
+<div id="orm-support-linq2db">
+  ### Linq2db
+</div>
+
+يتوافق برنامج التشغيل هذا مع [linq2db](https://github.com/linq2db/linq2db)، وهو ORM خفيف الوزن وموفّر LINQ لـ .NET. راجع موقع المشروع للاطلاع على وثائق تفصيلية.
+
+**مثال على الاستخدام:**
+
+أنشئ `DataConnection` باستخدام موفّر ClickHouse:
+
+```csharp
+using LinqToDB;
+using LinqToDB.Data;
+using LinqToDB.DataProvider.ClickHouse;
+
+var connectionString = "Host=localhost;Port=8123;Database=default";
+var options = new DataOptions()
+    .UseClickHouse(connectionString, ClickHouseProvider.ClickHouseDriver);
+
+await using var db = new DataConnection(options);
+```
+
+يمكن تحديد تعيينات الجداول باستخدام السمات أو التهيئة بأسلوب Fluent. إذا كانت أسماء الفئة والخاصية لديك تطابق تمامًا أسماء الجدول والعمود، فلا حاجة إلى أي تهيئة:
+
+```csharp
+public class Product
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public decimal Price { get; set; }
+}
+```
+
+**الاستعلام عن:**
+
+```csharp
+await using var db = new DataConnection(options);
+
+var products = await db.GetTable<Product>()
+    .Where(p => p.Price > 100)
+    .OrderByDescending(p => p.Name)
+    .ToListAsync();
+```
+
+**النسخ المجمّع:**
+
+استخدم `BulkCopyAsync` لإجراء عمليات إدراج مجمّعة بكفاءة.
+
+```csharp
+await using var db = new DataConnection(options);
+var table = db.GetTable<Product>();
+
+var options = new BulkCopyOptions
+{
+    MaxBatchSize = 100000,
+    MaxDegreeOfParallelism = 1,
+    WithoutSession = true
+};
+
+await table.BulkCopyAsync(options, products);
+```
+
+<div id="orm-support-ef-core">
+  ### Entity Framework Core
+</div>
+
+موفّر Entity Framework Core الرسمي لـ ClickHouse. اربط فئات C# بجداول ClickHouse، ونفّذ الاستعلامات باستخدام LINQ، وأدرِج البيانات عبر `SaveChanges` — وكل ذلك باستخدام أنماط EF Core المألوفة.
+
+* **NuGet**: [`ClickHouse.EntityFrameworkCore`](https://www.nuget.org/packages/ClickHouse.EntityFrameworkCore)
+* **المصدر**: [GitHub](https://github.com/ClickHouse/ClickHouse.EntityFrameworkCore)
+
+<Note>
+  هذا الموفّر قيد التطوير النشط. يدعم الإصدار الحالي استعلامات LINQ (بما في ذلك عمليات JOIN، والاستعلامات الفرعية، وعمليات المجموعات)، و`INSERT` عبر `SaveChanges` / `BulkInsertAsync`، وعمليات الترحيل مع دعم DDL الكامل (CREATE / ALTER / DROP)، وتهيئة محرك الجدول الخاصة بـ ClickHouse. لا يدعم `UPDATE` / `DELETE`.
+</Note>
+
+<div id="ef-core-installation">
+  #### التثبيت
+</div>
+
+```bash
+dotnet add package ClickHouse.EntityFrameworkCore
+```
+
+يتطلب .NET 10.0 وEF Core 10.
+
+<div id="ef-core-quick-start">
+  #### البدء السريع
+</div>
+
+عرّف الكيان و`DbContext`، ثم أجرِ استعلامًا باستخدام LINQ:
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+
+public class PageView
+{
+    public long Id { get; set; }
+    public string Path { get; set; }
+    public DateOnly Date { get; set; }
+    public string UserAgent { get; set; }
+}
+
+public class AnalyticsContext : DbContext
+{
+    public DbSet<PageView> PageViews { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        => optionsBuilder.UseClickHouse("Host=localhost;Database=analytics");
+}
+
+// Query
+await using var ctx = new AnalyticsContext();
+
+var topPages = await ctx.PageViews
+    .Where(v => v.Date >= new DateOnly(2024, 1, 1))
+    .GroupBy(v => v.Path)
+    .Select(g => new { Path = g.Key, Views = g.Count() })
+    .OrderByDescending(x => x.Views)
+    .Take(10)
+    .ToListAsync();
+```
+
+<div id="ef-core-types">
+  #### الأنواع المدعومة
+</div>
+
+| الفئة                           | أنواع ClickHouse                                                                        | أنواع CLR                                                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **الأعداد الصحيحة**             | `Int8`–`Int64`, `UInt8`–`UInt64`                                                        | `sbyte`, `short`, `int`, `long`, `byte`, `ushort`, `uint`, `ulong`                                             |
+| **الأعداد الصحيحة الكبيرة**     | `Int128`, `Int256`, `UInt128`, `UInt256`                                                | `BigInteger`                                                                                                   |
+| **الأعداد ذات الفاصلة العائمة** | `Float32`, `Float64`, `BFloat16`                                                        | `float`, `double`                                                                                              |
+| **الأعداد العشرية**             | `Decimal(P,S)`, `Decimal32(S)`, `Decimal64(S)`, `Decimal128(S)`                         | `decimal` أو `ClickHouseDecimal`                                                                               |
+| **Bool**                        | `Bool`                                                                                  | `bool`                                                                                                         |
+| **السلاسل النصية**              | `String`, `FixedString(N)`                                                              | `string`                                                                                                       |
+| **التعدادات**                   | `Enum8(...)`, `Enum16(...)`                                                             | `string` أو `enum` في C#                                                                                       |
+| **التاريخ/الوقت**               | `Date`, `Date32`, `DateTime`, `DateTime64(P, 'TZ')`                                     | `DateOnly`, `DateTime`                                                                                         |
+| **الوقت**                       | `Time`, `Time64(N)`                                                                     | `TimeSpan`                                                                                                     |
+| **UUID**                        | `UUID`                                                                                  | `Guid`                                                                                                         |
+| **الشبكة**                      | `IPv4`, `IPv6`                                                                          | `IPAddress`                                                                                                    |
+| **المصفوفات**                   | `Array(T)`                                                                              | `T[]`, `List<T>`, `IList<T>`, `ICollection<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `IEnumerable<T>` |
+| **الخرائط**                     | `Map(K, V)`                                                                             | `Dictionary<K,V>`                                                                                              |
+| **Tuples**                      | `Tuple(T1, ...)`                                                                        | `Tuple<...>` أو `ValueTuple<...>`                                                                              |
+| **Variant**                     | `Variant(T1, T2, ...)`                                                                  | `object`                                                                                                       |
+| **Dynamic**                     | `Dynamic`                                                                               | `object`                                                                                                       |
+| **JSON**                        | `Json`                                                                                  | `JsonNode` أو `string`                                                                                         |
+| **الأنواع الجغرافية**           | `Point`, `Ring`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`, `Geometry` | `Tuple<double,double>` ومصفوفات منها؛ و`object` لـ `Geometry`                                                  |
+| **المغلِّفات**                  | `Nullable(T)`, `LowCardinality(T)`                                                      | تُفك تلقائيًا                                                                                                  |
+
+استخدم `ClickHouseDecimal` (من `ClickHouse.Driver.Numerics`) بدلًا من `decimal` عندما تحتاج إلى الدقة الكاملة لأعمدة `Decimal128`/`Decimal256`، لأن `decimal` في .NET يقتصر على 28–29 رقمًا معنويًا.
+
+<div id="ef-core-linq">
+  #### عمليات LINQ المدعومة
+</div>
+
+**الاستعلامات:** `Where`, `OrderBy`, `Take`, `Skip`, `Select`, `First`, `Single`, `Any`, `All`, `Count`, `Distinct`, `AsNoTracking`
+
+**GROUP BY والتجميع:** `GroupBy` مع `Count`, `LongCount`, `Sum`, `Average`, `Min`, `Max` — بما في ذلك `HAVING` (استخدام `.Where()` بعد `.GroupBy()`)، وإجراء عدة عمليات تجميع ضمن إسقاط واحد، واستخدام `OrderBy` على نتائج التجميع.
+
+**عمليات JOIN:** `Join` (INNER)، وأنماط `GroupJoin`/`SelectMany`‏ (LEFT وCROSS). تُرجِع LEFT JOIN قيمة `null` فعلية للصفوف غير المتطابقة (راجع [دلالات null في LEFT JOIN](#ef-core-join-nulls) أدناه).
+
+**الاستعلامات الفرعية:** `Contains` / `IN` المترابطة، و`Any` / `EXISTS`، و`All`، والاستعلامات الفرعية scalar ضمن الإسقاطات.
+
+**عمليات المجموعات:** `Concat` (→ `UNION ALL`)، و`Union` (→ `UNION DISTINCT`)، و`Intersect`، و`Except`.
+
+**المجموعات المحلية المضمنة:** تُترجَم عمليات join و`Contains` على المجموعات الموجودة في الذاكرة (`int[]`, `List<T>`, إلخ) إلى سلسلة من عمليات UNION.
+
+**طرق String:** `Contains`, `StartsWith`, `EndsWith`, `IndexOf`, `Replace`, `Substring`, `Trim`/`TrimStart`/`TrimEnd`, `ToLower`, `ToUpper`, `Length`, `IsNullOrEmpty`, `Concat` (والمعامل `+`).
+
+**الدوال الرياضية:** تُترجَم طرق `Math` و`MathF` القياسية إلى ما يقابلها في ClickHouse — بما يشمل الدوال الحسابية واللوغاريتمية والمثلثية ودوال الأدوات المساعدة.
+
+<div id="ef-core-join-nulls">
+  ##### دلالات NULL في LEFT JOIN
+</div>
+
+يحقن الموفّر `set_join_use_nulls=1` تلقائيًا في كل مسار اتصال لمواءمة توقّعات Entity Framework بشأن سلوك JOIN.
+
+إذا كان خادم ClickHouse أو ملف التعريف لديك يمنع تغيير هذا الإعداد (على سبيل المثال، ملف تعريف بقيمة `readonly=1`)، فأوقِف هذا السلوك باستخدام:
+
+```csharp
+optionsBuilder.UseClickHouse(connectionString, o => o.DisableJoinNullSemantics());
+```
+
+عند تفعيل خيار إلغاء الاشتراك، يعيد LEFT JOIN القيم الافتراضية لأعمدة ClickHouse، ولا يعود اكتشاف التنقل في EF المعتمد على `null` يعمل كما هو متوقع. استخدم مقارنات صريحة مع `0` / `""` بدلًا من `== null`.
+
+<div id="ef-core-insert">
+  #### إدراج البيانات
+</div>
+
+يستخدم `SaveChanges` واجهة برمجة تطبيقات `InsertBinaryAsync` الأصلية لبرنامج التشغيل — بترميز RowBinary مع ضغط GZip، وهو أكثر كفاءة بكثير من عبارات SQL ذات المعلمات:
+
+```csharp
+await using var ctx = new AnalyticsContext();
+
+ctx.PageViews.Add(new PageView
+{
+    Id = 1,
+    Path = "/home",
+    Date = new DateOnly(2024, 6, 15),
+    UserAgent = "Mozilla/5.0"
+});
+
+await ctx.SaveChangesAsync();
+```
+
+تنتقل الكيانات من `Added` إلى `Unchanged` بعد الحفظ، تمامًا كما يحدث مع أي موفّر آخر لـ EF Core.
+
+يمكن ضبط **حجم الدفعة** (الافتراضي 1000):
+
+```csharp
+optionsBuilder.UseClickHouse("Host=localhost", o => o.MaxBatchSize(5000));
+```
+
+<div id="ef-core-bulk-insert">
+  #### الإدراج المجمّع
+</div>
+
+لعمليات التحميل عالية الإنتاجية، استخدم `BulkInsertAsync` بدلًا من `SaveChanges`. هذه طريقة امتداد لـ `DbContext` تتجاوز بالكامل متتبّع التغييرات في EF Core، وآلية حلّ الهوية، وإدارة الحالة — إذ تستدعي مباشرةً `InsertBinaryAsync` الخاصة ببرنامج التشغيل باستخدام ترميز RowBinary وضغط GZip.
+
+وهذا يجعلها مناسبة لتحميل مجموعات بيانات كبيرة عندما لا تحتاج إلى تتبّع الكيانات بعد الإدراج:
+
+```csharp
+var events = Enumerable.Range(0, 100_000)
+    .Select(i => new PageView
+    {
+        Id = i,
+        Path = $"/page/{i}",
+        Date = DateOnly.FromDateTime(DateTime.Today)
+    });
+
+long rowsInserted = await ctx.BulkInsertAsync(events);
+```
+
+يمكن أن يكون الإدخال أي `IEnumerable<T>` — إذ يمر عبر الكيانات دون تحميلها جميعًا إلى الذاكرة. قيمة الإرجاع هي عدد الصفوف المُدرجة. لا تُرفَق الكيانات بـ `DbContext` بعد الإدراج، لذلك لا يحدث انتقال في الحالة من `Added` إلى `Unchanged`.
+
+<div id="ef-core-enums">
+  #### التعدادات
+</div>
+
+يمكن تعيين أعمدة `Enum8`/`Enum16` في ClickHouse كخصائص `string` أو كأنواع `enum` في C#. وعند استخدام تعدادات C#، يُجري الموفّر التحويل تلقائيًا بين التعداد وتمثيله النصي:
+
+```csharp
+public enum Status { Active, Inactive, Pending }
+
+public class User
+{
+    public long Id { get; set; }
+    public Status Status { get; set; }
+}
+
+// Query with enum values
+var active = await ctx.Users
+    .Where(u => u.Status == Status.Active)
+    .ToListAsync();
+```
+
+<div id="ef-core-value-converters">
+  #### تحويلات الأنواع المخصّصة
+</div>
+
+يتيح لك نظام `ValueConverter` في EF Core تعيين الأنواع المخصّصة إلى أنواع يدعمها الموفّر بالفعل. ولا يرى الموفّر نوعك المخصّص مطلقًا، إذ يتولّى EF Core التحويل عند نقطة الفصل.
+
+**التحويل على مستوى كل خاصية:**
+
+```csharp
+public class Money
+{
+    public decimal Amount { get; set; }
+    public string Currency { get; set; }
+}
+
+public class Order
+{
+    public long Id { get; set; }
+    public Money Price { get; set; }
+}
+
+// In OnModelCreating:
+modelBuilder.Entity<Order>()
+    .Property(o => o.Price)
+    .HasConversion(
+        m => $"{m.Amount}|{m.Currency}",
+        s => new Money
+        {
+            Amount = decimal.Parse(s.Split('|')[0]),
+            Currency = s.Split('|')[1]
+        })
+    .HasColumnType("String");
+```
+
+**فئة مُحوِّل قابلة لإعادة الاستخدام:**
+
+```csharp
+public class MoneyConverter : ValueConverter<Money, string>
+{
+    public MoneyConverter() : base(
+        m => $"{m.Amount}|{m.Currency}",
+        s => Parse(s)) { }
+
+    private static Money Parse(string s)
+    {
+        var parts = s.Split('|');
+        return new Money { Amount = decimal.Parse(parts[0]), Currency = parts[1] };
+    }
+}
+
+// Apply to a single property:
+.HasConversion<MoneyConverter>()
+
+// Or apply to all properties of a type via conventions:
+protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+{
+    configurationBuilder.Properties<Money>()
+        .HaveConversion<MoneyConverter>();
+}
+```
+
+<div id="ef-core-column-types">
+  #### تعليقات توضيحية لنوع العمود
+</div>
+
+بالنسبة إلى الأنواع القياسية مثل `string` و`int` و`DateTime` وغيرها، يستنتج الموفّر نوع ClickHouse تلقائيًا. أمّا الأنواع ذات المعلمات والأغلفة، فيلزم تحديد نوع ClickHouse صراحةً.
+
+**استخدام التعليقات التوضيحية للبيانات (السمات):**
+
+```csharp
+using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
+
+[Table("sensor_readings")]
+public class SensorReading
+{
+    public long Id { get; set; }
+
+    [Column(TypeName = "Array(String)")]
+    public string[] Tags { get; set; }
+
+    [Column(TypeName = "Map(String, String)")]
+    public Dictionary<string, string> Metadata { get; set; }
+
+    [Column(TypeName = "Nullable(Float64)")]
+    public double? Value { get; set; }
+
+    [Column(TypeName = "Decimal128(18)")]
+    public decimal HighPrecision { get; set; }
+}
+```
+
+**استخدام أسلوب fluent API في `OnModelCreating`:**
+
+```csharp
+modelBuilder.Entity<SensorReading>(e =>
+{
+    e.ToTable("sensor_readings");
+    e.Property(x => x.Tags).HasColumnType("Array(String)");
+    e.Property(x => x.Metadata).HasColumnType("Map(String, String)");
+    e.Property(x => x.Value).HasColumnType("Nullable(Float64)");
+    e.Property(x => x.Category).HasColumnType("LowCardinality(String)");
+    e.Property(x => x.HighPrecision).HasColumnType("Decimal128(18)");
+});
+```
+
+الأغلفة المتداخلة مثل `Array(Nullable(Int32))` و`LowCardinality(Nullable(String))` مدعومة — إذ يفكّ الموفّر تغليف `Nullable` و`LowCardinality` تلقائيًا عند كل مستوى من مستويات التداخل.
+
+<div id="ef-core-variant-dynamic">
+  #### أعمدة Variant وDynamic
+</div>
+
+تُقابِل أعمدة ClickHouse `Variant(T1, T2, ...)` و`Dynamic` النوع `object` في .NET. وبما أن `object` عام جدًا بحيث لا يتيح استنتاج النوع تلقائيًا، يجب التصريح بنوع التخزين صراحةً باستخدام `.HasColumnType()`:
+
+```csharp
+public class Event
+{
+    public long Id { get; set; }
+    public object? Payload { get; set; }
+}
+
+// In OnModelCreating:
+entity.Property(e => e.Payload).HasColumnType("Variant(String, UInt64, Array(UInt64))");
+// or:
+entity.Property(e => e.Payload).HasColumnType("Dynamic");
+```
+
+عند القراءة، يُفك تسلسل القيمة تلقائيًا إلى نوع .NET الموافق للمميِّز المخزَّن (مثل `string` و`ulong` و`ulong[]`).
+
+<div id="ef-core-json">
+  #### أعمدة JSON
+</div>
+
+يدعم المزوّد نوع العمود `Json` في ClickHouse، ويعيّنه إلى `System.Text.Json.Nodes.JsonNode` (بشكل أساسي) أو `string` (عبر `ValueConverter` تلقائي):
+
+```csharp
+using System.Text.Json.Nodes;
+
+public class Event
+{
+    public long Id { get; set; }
+    public JsonNode? Data { get; set; }
+}
+
+// In OnModelCreating:
+entity.Property(e => e.Data).HasColumnType("Json");
+```
+
+تتم قراءة JSON وكتابته من خلال كلٍّ من `SaveChanges` و`BulkInsertAsync`:
+
+```csharp
+ctx.Events.Add(new Event
+{
+    Id = 1,
+    Data = JsonNode.Parse("""{"action": "click", "x": 100, "y": 200}""")
+});
+await ctx.SaveChangesAsync();
+
+var ev = await ctx.Events.Where(e => e.Id == 1).SingleAsync();
+string action = ev.Data!["action"]!.GetValue<string>(); // "click"
+```
+
+إذا كنت تفضّل سلاسل JSON الخام، فاضبط الخاصية لتكون `string` مع نوع عمود `Json` — يطبّق الموفّر `ValueConverter` تلقائيًا:
+
+```csharp
+public class Event
+{
+    public long Id { get; set; }
+    public string? Data { get; set; }  // raw JSON string
+}
+
+entity.Property(e => e.Data).HasColumnType("Json");
+```
+
+<Note>
+  * **عدم ترجمة JSON path** — لا يُترجَم `entity.Data["name"]` في LINQ إلى صياغة SQL `data.name` الخاصة بـ ClickHouse. طبّق عامل التصفية على الأعمدة غير JSON وافحص JSON في الذاكرة.
+  * **دلالات NULL** — يعيد JSON type في ClickHouse القيمة `{}` (كائنًا فارغًا) لقيم NULL بدلًا من SQL NULL.
+  * **دقة الأعداد الصحيحة** — يخزّن JSON في ClickHouse جميع الأعداد الصحيحة بصيغة `Int64`. عند القراءة عبر `JsonNode`، استخدم `GetValue<long>()` بدلًا من `GetValue<int>()`.
+</Note>
+
+<div id="ef-core-engines">
+  #### محركات الجداول
+</div>
+
+اضبط محركات جداول ClickHouse والعبارات الخاصة بكل محرك عبر واجهة `ToTable(name, t => ...)` بأسلوب الاستدعاءات المتسلسلة. عند عدم ضبط أي محرك، يستخدم الموفّر `MergeTree` افتراضيًا، مع استمداد `ORDER BY` من المفتاح الأساسي للكيان.
+
+```csharp
+modelBuilder.Entity<Event>(e =>
+{
+    e.ToTable("events", t => t
+        .HasMergeTreeEngine()
+        .WithOrderBy("UserId", "Timestamp")
+        .WithPartitionBy("toYYYYMM(Timestamp)")
+        .WithPrimaryKey("UserId")
+        .WithSettings("index_granularity = 8192"));
+});
+```
+
+عائلات المحركات المدعومة:
+
+| المحرّك                                 | الأسلوب المتسلسل                                                                                          | ملاحظات                                   |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `MergeTree`                             | `HasMergeTreeEngine()`                                                                                    | الافتراضي عند عدم تكوين أي شيء            |
+| `ReplacingMergeTree`                    | `HasReplacingMergeTreeEngine("Version", "IsDeleted")` or `HasReplacingMergeTreeEngine<T>(e => e.Version)` | عمودا Version وIsDeleted اختياريان        |
+| `SummingMergeTree`                      | `HasSummingMergeTreeEngine(…)` or `HasSummingMergeTreeEngine<T>(e => new { … })`                          | أعمدة الجمع اختيارية                      |
+| `AggregatingMergeTree`                  | `HasAggregatingMergeTreeEngine()`                                                                         | —                                         |
+| `CollapsingMergeTree`                   | `HasCollapsingMergeTreeEngine("Sign")` or `HasCollapsingMergeTreeEngine<T>(e => e.Sign)`                  | يجب أن يكون العمود `Sign` من النوع `Int8` |
+| `VersionedCollapsingMergeTree`          | `HasVersionedCollapsingMergeTreeEngine("Sign", "Version")` or `<T>(e => e.Sign, e => e.Version)`          | —                                         |
+| `GraphiteMergeTree`                     | `HasGraphiteMergeTreeEngine("config_section")`                                                            | —                                         |
+| `Log`, `TinyLog`, `StripeLog`, `Memory` | `HasLogEngine()`, `HasTinyLogEngine()`, `HasStripeLogEngine()`, `HasMemoryEngine()`                       | بدون ORDER BY / PARTITION BY              |
+
+**بنود المحرّك:** `WithOrderBy`, `WithPartitionBy`, `WithPrimaryKey`, `WithSampleBy`, `WithTtl`, `WithSettings`. ترتبط جميعها بمنشئ المحرّك المُعاد من `HasXxxEngine()`.
+
+**ميزات على مستوى العمود:** `HasCodec`, `HasTtl`, `HasComment`, `HasDefault` — جميعها تدخل في عمليات الترحيل.
+
+**فهارس تخطي البيانات** — عبر `HasIndex(...).HasSkippingIndexType(...)`:
+
+```csharp
+modelBuilder.Entity<Event>()
+    .HasIndex(e => e.UserId)
+    .HasSkippingIndexType("minmax")
+    .HasGranularity(4);
+
+// Index with parameters (e.g. bloom_filter, tokenbf_v1):
+modelBuilder.Entity<Event>()
+    .HasIndex(e => e.Tag)
+    .HasSkippingIndexType("bloom_filter")
+    .HasSkippingIndexParams("0.01")
+    .HasGranularity(1);
+```
+
+يُتجاهَل الفهرس القياسي (غير القائم على تخطي البيانات) بصمت، إذ لا يوجد في ClickHouse ما يقابله. أما الفهارس الفريدة فتؤدي إلى ظهور استثناء، لأن ClickHouse لا يفرض التفرد.
+
+<div id="ef-core-migrations">
+  #### عمليات الترحيل
+</div>
+
+سير العمل القياسي لعمليات الترحيل في EF Core:
+
+```bash
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+```
+
+العمليات المدعومة:
+
+| العملية                                | الناتج                                                                                                   |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `CREATE TABLE`                         | يتضمن عبارة engine، وORDER BY، وPARTITION BY، وSETTINGS، ومرمّزات الأعمدة/TTL/التعليقات/القيم الافتراضية |
+| `ALTER TABLE ADD COLUMN`               | —                                                                                                        |
+| `ALTER TABLE DROP COLUMN`              | —                                                                                                        |
+| `ALTER TABLE MODIFY COLUMN`            | يعالج تغيير النوع، بالإضافة إلى إضافة/إزالة السمات (CODEC, TTL, COMMENT, DEFAULT)                        |
+| `ALTER TABLE RENAME COLUMN`            | —                                                                                                        |
+| `RENAME TABLE`                         | —                                                                                                        |
+| `ALTER TABLE ADD INDEX` / `DROP INDEX` | فهارس تخطي البيانات فقط                                                                                  |
+| `CREATE DATABASE` / `DROP DATABASE`    | عبر `EnsureCreated` / `EnsureDeleted` وعمليات الترحيل                                                    |
+
+<div id="ef-core-limitations">
+  #### قيود الترحيل
+</div>
+
+| الميزة                                                    | السبب                                                                                                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| المفاتيح الخارجية                                         | لا يفرض ClickHouse المفاتيح الخارجية. ترفض عمليات الترحيل `AddForeignKey`، ويُصدر مدقق النموذج تحذيرًا عند بناء النموذج.                               |
+| القيود الفريدة / الفهارس الفريدة                          | لا يفرض ClickHouse التفرد. وتؤدي الفهارس الفريدة إلى إطلاق استثناء أثناء الترحيل.                                                                      |
+| القيم التي ينشئها الخادم (الزيادة التلقائية / `IDENTITY`) | لا يوجد ما يقابلها في ClickHouse.                                                                                                                      |
+| أعمدة `Nested(…)`                                         | غير مدعومة بعد كنوع CLR مُعيَّن.                                                                                                                       |
+| الكيانات المملوكة بصيغة JSON (`.ToJson()`)                | لم يُنفَّذ بعد التعيين البنيوي لـ JSON للكيانات المملوكة. استخدم `JsonNode` / `string` في عمود `Json` بدلًا من ذلك (راجع [أعمدة JSON](#ef-core-json)). |
+
+وبالإضافة إلى عمليات الترحيل، لا يزال الموفّر لا يدعم أيضًا ما يلي:
+
+* **`UPDATE` / `DELETE`**
+* **المعاملات**: `BeginTransaction` عملية no-op. لا يوجد دعم لمعاملات ACID في ClickHouse.
+* **ترجمة استعلامات JSON path**: ‏`entity.Data["key"]` في LINQ لا يُترجم إلى صياغة SQL الخاصة بـ ClickHouse، أي `data.key`. استخدم التصفية على أعمدة غير JSON وافحص JSON في الذاكرة.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+<div id="aggregatefunction-columns">
+  ### أعمدة AggregateFunction
+</div>
+
+لا يمكن الاستعلام عن الأعمدة من النوع `AggregateFunction(...)` أو الإدراج فيها مباشرةً.
+
+للإدراج:
+
+```sql
+INSERT INTO t VALUES (uniqState(1));
+```
+
+للاختيار:
+
+```sql
+SELECT uniqMerge(c) FROM t;
+```
+
+***

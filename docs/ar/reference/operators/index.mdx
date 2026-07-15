@@ -1,0 +1,693 @@
+---
+description: 'توثيق المعاملات'
+sidebarTitle: 'المعاملات'
+slug: /sql-reference/operators/
+title: 'المعاملات'
+doc_type: 'مرجع'
+---
+
+يحوّل ClickHouse المعاملات إلى الدوال المقابلة لها في مرحلة تحليل الاستعلام وفقًا لأولويتها وأسبقيتها وترابطها.
+
+<div id="access-operators">
+  ## معاملات الوصول
+</div>
+
+`a[N]` – الوصول إلى عنصر في مصفوفة. الدالة `arrayElement(a, N)`.
+
+`a.N` – الوصول إلى عنصر في tuple. الدالة `tupleElement(a, N)`.
+
+<div id="numeric-negation-operator">
+  ## معامل النفي العددي
+</div>
+
+`-a` – الدالة `negate (a)`.
+
+لنفي `tuple`: [tupleNegate](/ar/reference/functions/regular-functions/tuple-functions#tupleNegate).
+
+<div id="multiplication-and-division-operators">
+  ## معاملات الضرب والقسمة
+</div>
+
+`a * b` – الدالة `multiply (a, b)`.
+
+لضرب Tuple في عدد: [tupleMultiplyByNumber](/ar/reference/functions/regular-functions/tuple-functions#tupleMultiplyByNumber)، ولحساب حاصل الضرب القياسي: [dotProduct](/ar/reference/functions/regular-functions/array-functions#arrayDotProduct).
+
+`a / b` – الدالة `divide(a, b)`.
+
+لقسمة Tuple على عدد: [tupleDivideByNumber](/ar/reference/functions/regular-functions/tuple-functions#tupleDivideByNumber).
+
+`a % b` – الدالة `modulo(a, b)`.
+
+<div id="addition-and-subtraction-operators">
+  ## معاملات الجمع والطرح
+</div>
+
+`a + b` – الدالة `plus(a, b)`.
+
+لجمع قيم Tuple: [tuplePlus](/ar/reference/functions/regular-functions/tuple-functions#tuplePlus).
+
+`a - b` – الدالة `minus(a, b)`.
+
+لطرح قيم Tuple: [tupleMinus](/ar/reference/functions/regular-functions/tuple-functions#tupleMinus).
+
+<div id="comparison-operators">
+  ## معاملات المقارنة
+</div>
+
+<div id="equals-function">
+  ### دالة equals
+</div>
+
+`a = b` – دالة `equals(a, b)`.
+
+`a == b` – دالة `equals(a, b)`.
+
+<div id="notequals-function">
+  ### دالة notEquals
+</div>
+
+`a != b` – الدالة `notEquals(a, b)`.
+
+`a <> b` – الدالة `notEquals(a, b)`.
+
+<div id="lessorequals-function">
+  ### دالة lessOrEquals
+</div>
+
+`a <= b` – هي الدالة `lessOrEquals(a, b)`.
+
+<div id="greaterorequals-function">
+  ### دالة greaterOrEquals
+</div>
+
+`a >= b` – تمثلها الدالة `greaterOrEquals(a, b)`.
+
+<div id="less-function">
+  ### دالة less
+</div>
+
+`a < b` – الدالة `less(a, b)`.
+
+<div id="greater-function">
+  ### الدالة greater
+</div>
+
+`a > b` – الدالة `greater(a, b)`.
+
+<div id="like-function">
+  ### الدالة like
+</div>
+
+`a LIKE b` – الدالة `like(a, b)`.
+
+<div id="notlike-function">
+  ### دالة notLike
+</div>
+
+`a NOT LIKE b` – الدالة `notLike(a, b)`.
+
+<div id="ilike-function">
+  ### دالة ilike
+</div>
+
+`a ILIKE b` – هي الدالة `ilike(a, b)`.
+
+<div id="between-function">
+  ### دالة BETWEEN
+</div>
+
+`a BETWEEN b AND c` – تعادل `a >= b AND a <= c`.
+
+`a NOT BETWEEN b AND c` – تعادل `a < b OR a > c`.
+
+<div id="is-not-distinct-from">
+  ### معامل &quot;ليس مختلفًا عن&quot; (`<=>`)
+</div>
+
+<Note>
+  اعتبارًا من الإصدار 25.10، يمكنك استخدام `<=>` بالطريقة نفسها التي تستخدم بها أي معامل آخر.
+  قبل الإصدار 25.10، لم يكن بالإمكان استخدامه إلا في تعبيرات JOIN، على سبيل المثال:
+
+  ```sql
+  CREATE TABLE a (x String) ENGINE = Memory;
+  INSERT INTO a VALUES ('ClickHouse');
+
+  SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
+
+  ┌─x──────────┬─a2.x───────┐
+  │ ClickHouse │ ClickHouse │
+  └────────────┴────────────┘
+  ```
+</Note>
+
+المعامل `<=>` هو معامل مساواة آمن مع `NULL`، وهو مكافئ لـ `IS NOT DISTINCT FROM`.
+وهو يعمل مثل معامل المساواة العادي (`=`)، لكنه يتعامل مع قيم `NULL` على أنها قابلة للمقارنة.
+تُعدّ قيمتا `NULL` متساويتين، كما أن مقارنة `NULL` بأي قيمة غير `NULL` تُرجع 0 (`false`) بدلًا من `NULL`.
+
+```sql
+SELECT
+  'ClickHouse' <=> NULL,
+  NULL <=> NULL
+```
+
+```response
+┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+<div id="operators-for-working-with-strings">
+  ## المعاملات الخاصة بالتعامل مع السلاسل النصية
+</div>
+
+<div id="overlay">
+  ### OVERLAY
+</div>
+
+* `OVERLAY(string PLACING replacement FROM offset)` - الدالة `overlay(string, replacement, offset)`.
+* `OVERLAY(string PLACING replacement FROM offset FOR length)` - الدالة `overlay(string, replacement, offset, length)`.
+* `OVERLAYUTF8(string PLACING replacement FROM offset)` - الدالة `overlayUTF8(string, replacement, offset)`.
+* `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - الدالة `overlayUTF8(string, replacement, offset, length)`.
+
+<div id="operators-for-working-with-data-sets">
+  ## المعاملات الخاصة بالعمل مع مجموعات البيانات
+</div>
+
+راجع [معاملات IN](/ar/reference/statements/in) و[المعامل EXISTS](/ar/reference/operators/exists).
+
+<div id="in-function">
+  ### الدالة in
+</div>
+
+`a IN ...` – الدالة `in(a, b)`.
+
+<div id="notin-function">
+  ### دالة notIn
+</div>
+
+`a NOT IN ...` – الدالة `notIn(a, b)`.
+
+<div id="globalin-function">
+  ### دالة globalIn
+</div>
+
+`a GLOBAL IN ...` – الدالة `globalIn(a, b)`.
+
+<div id="globalnotin-function">
+  ### دالة globalNotIn
+</div>
+
+`a GLOBAL NOT IN ...` – الدالة `globalNotIn(a, b)`.
+
+<div id="in-subquery-function">
+  ### دالة in للاستعلامات الفرعية
+</div>
+
+`a = ANY (subquery)` – وهي الدالة `in(a, subquery)`.
+
+<div id="notin-subquery-function">
+  ### notIn استعلام فرعي function
+</div>
+
+`a != ANY (subquery)` – وهو مماثل لـ `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+<div id="in-subquery-function-1">
+  ### دالة in استعلام فرعي
+</div>
+
+`a = ALL (subquery)` – هي نفسها `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+<div id="notin-subquery-function-1">
+  ### دالة notIn للاستعلام الفرعي
+</div>
+
+`a != ALL (subquery)` – الدالة `notIn(a, subquery)`.
+
+**أمثلة**
+
+استعلام باستخدام ALL:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+استعلام باستخدام ANY:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+<div id="some-all-on-arrays">
+  ### `SOME` / `ALL` على المصفوفات
+</div>
+
+بالإضافة إلى صيغة الاستعلام الفرعي الموضحة أعلاه، يمكن أن يكون الطرف الأيمن من `SOME` / `ALL` تعبيرَ مصفوفة (قيمة حرفية لمصفوفة، أو عمودًا من نوع مصفوفة، أو أي تعبير يُرجع مصفوفة). هذه هي صيغة مكمِّم المصفوفة بأسلوب PostgreSQL. ويُتعرَّف عليها أثناء التحليل وتُعاد كتابتها إلى دوال المصفوفات، لذلك لا حاجة إلى إعادة كتابتها يدويًا:
+
+| الصياغة                                  | تُعاد كتابتها إلى                  |
+| ---------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                       | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                       | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (أي عامل مقارنة آخر) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (أي عامل مقارنة آخر)  | `arrayAll(x -> expr OP x, arr)`    |
+
+يمثل `SOME` المكمِّم الوجودي (وهو المرادف في SQL لـ `ANY`). وتُعامَل `=` و `<>` كحالتين خاصتين وتُحوَّلان إلى `has` / `NOT has` لأن لهما تنفيذًا مُحسَّنًا؛ أما الصيغة العامة فتعتمد على الدالتين الأعلى ترتيبًا `arrayExists` / `arrayAll`.
+
+لا يُتعرَّف على صيغة المصفوفة إلا مع عوامل المقارنة `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, و `>=`. أما العوامل الأخرى التي تقبل مصفوفة في الطرف الأيمن — مثل `LIKE` و `ILIKE` و `NOT LIKE` و `REGEXP` و `IN` — فلا **تُعاد** كتابتها إلى مكمِّم المصفوفة، وتحتفظ بمعناها المعتاد. على سبيل المثال، `'abc' LIKE SOME(['a%', 'b%'])` ليست صيغة مكمِّم المصفوفة؛ استخدم `arrayExists` / `arrayAll` مباشرةً في تلك الحالات.
+
+<Info>
+  **`ANY` غير مدعومة في صيغة المصفوفة**
+
+  لا يقبل الطرف الأيمن كمصفوفة إلا `SOME` و `ALL`. تُستبعَد `ANY` لأن `any` هي أيضًا دالة تجميع، لذلك يحتفظ التعبير بالشكل `expr = any(x)` بمعنى استدعاء الدالة. استخدم `SOME` لمكمِّم المصفوفة.
+</Info>
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+<Info>
+  **تختلف معالجة `NULL` عن صيغة الاستعلام الفرعي**
+
+  لأن صيغة المصفوفة يُعادَت صياغتها في المحلّل النحوي (حيث لا تكون إعدادات الاستعلام مثل `transform_null_in` متاحة، كما أن عمود المصفوفة على مستوى الصف لا يمكنه استخدام مسار `IN` الآمن مع `NULL` في المحلّل)، فإنها تستخدم الدلالات ثنائية القيمة لكل من `has` (مع `=` / `<>`) و `arrayExists` / `arrayAll` (اللذين يختزلان نتيجة مقارنة `NULL` غير المعروفة إلى `0`). وقد يختلف ذلك عن صيغة الاستعلام الفرعي، إذ تُعالَج فيها `NULL` عبر `IN` / `NOT IN` وتعتمد على `transform_null_in`:
+
+  ```sql
+  SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+  SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+  SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+  SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+  ```
+</Info>
+
+<div id="operators-for-working-with-dates-and-times">
+  ## المعاملات للعمل مع التواريخ والأوقات
+</div>
+
+<div id="extract">
+  ### EXTRACT
+</div>
+
+```sql
+EXTRACT(part FROM date);
+```
+
+استخرج أجزاء من تاريخ معيّن. على سبيل المثال، يمكنك استخراج شهر من تاريخ معيّن، أو ثانية من وقت معيّن.
+
+تحدِّد المعلمة `part` أي جزء من التاريخ يجب استخراجه. القيم التالية متاحة:
+
+* `NANOSECOND` — النانوثانية. القيم الممكنة: 0–999999999.
+* `MICROSECOND` — الميكروثانية. القيم الممكنة: 0–999999.
+* `MILLISECOND` — الميلي ثانية. القيم الممكنة: 0–999.
+* `SECOND` — الثانية. القيم الممكنة: 0–59.
+* `MINUTE` — الدقيقة. القيم الممكنة: 0–59.
+* `HOUR` — الساعة. القيم الممكنة: 0–23.
+* `DAY` — يوم الشهر. القيم الممكنة: 1–31.
+* `WEEK` — رقم الأسبوع وفق معيار ISO 8601. القيم الممكنة: 1–53.
+* `MONTH` — رقم الشهر. القيم الممكنة: 1–12.
+* `QUARTER` — الربع. القيم الممكنة: 1–4.
+* `YEAR` — السنة.
+* `EPOCH` — الطابع الزمني لـ Unix (الثواني منذ 1970-01-01 00:00:00 UTC). ملاحظة: بالنسبة إلى `DateTime64`، يُقتطع الجزء الأقل من الثانية.
+* `DOW` — يوم الأسبوع (متوافق مع PostgreSQL). 0 = الأحد، 6 = السبت.
+* `DOY` — يوم السنة. القيم الممكنة: 1–366.
+* `ISODOW` — يوم الأسبوع وفق ISO. 1 = الاثنين، 7 = الأحد.
+* `ISOYEAR` — سنة ترقيم الأسابيع وفق ISO 8601.
+* `CENTURY` — القرن. على سبيل المثال، السنة 2024 تقع في القرن الحادي والعشرين.
+* `DECADE` — العقد (السنة مقسومة على 10). على سبيل المثال، السنة 2024 عقدها 202.
+* `MILLENNIUM` — الألفية. على سبيل المثال، السنة 2024 تقع في الألفية الثالثة.
+* `TIMEZONE_HOUR` — جزء الساعات الموقَّع من إزاحة UTC للمنطقة الزمنية الخاصة بالمعامل. على سبيل المثال، `+5:30` تُرجع `5`، و`-3:30` تُرجع `-3`.
+* `TIMEZONE_MINUTE` — جزء الدقائق الموقَّع من إزاحة UTC للمنطقة الزمنية الخاصة بالمعامل. على سبيل المثال، `+5:30` تُرجع `30`، و`-3:30` تُرجع `-30`.
+
+المعلمة `part` غير حساسة لحالة الأحرف.
+
+تحدِّد المعلمة `date` القيمة المطلوب معالجتها. الأنواع [Date](/ar/reference/data-types/date) و[Date32](/ar/reference/data-types/date32) و[DateTime](/ar/reference/data-types/datetime) و[DateTime64](/ar/reference/data-types/datetime64) و[Interval](/ar/reference/data-types/special-data-types/interval) مدعومة. عندما تكون `date` من النوع `Interval`، يجب أن يطابق `part` المطلوب النوع المخزَّن في الـ interval (على سبيل المثال، يُسمح بـ `EXTRACT(DAY FROM INTERVAL 5 DAY)`؛ ويُرفَض `EXTRACT(HOUR FROM INTERVAL 5 DAY)`، لأن فواصل ClickHouse تكون من نوع واحد فقط). تكون نتيجة معامل `Interval` من النوع `Int64`.
+
+أمثلة:
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
+SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
+SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
+```
+
+في المثال التالي، نُنشئ جدولًا ونُدرِج فيه قيمة من نوع `DateTime`.
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+) ENGINE = MergeTree
+ORDER BY ();
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+يمكنك الاطلاع على المزيد من الأمثلة في [الاختبارات](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
+
+<div id="interval">
+  ### INTERVAL
+</div>
+
+ينشئ قيمة من نوع [Interval](/ar/reference/data-types/special-data-types/interval) ينبغي استخدامها في العمليات الحسابية مع قيم من النوعين [Date](/ar/reference/data-types/date) و[DateTime](/ar/reference/data-types/datetime).
+
+أنواع الفواصل الزمنية:
+
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+يمكنك أيضًا استخدام قيمة حرفية نصية عند تعيين قيمة `INTERVAL`. على سبيل المثال، `INTERVAL 1 HOUR` مكافئ لـ `INTERVAL '1 hour'` أو `INTERVAL '1' hour`.
+
+<Tip>
+  لا يمكن دمج الفواصل الزمنية ذات الأنواع المختلفة. لا يمكنك استخدام تعبيرات مثل `INTERVAL 4 DAY 1 HOUR`. حدِّد الفواصل الزمنية بوحدات أصغر من أصغر وحدة في الفاصل الزمني أو مساوية لها، على سبيل المثال `INTERVAL 25 HOUR`. ويمكنك استخدام عمليات متتالية، كما في المثال أدناه.
+</Tip>
+
+أمثلة:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  يُفضَّل دائمًا استخدام صيغة `INTERVAL` أو الدالة `addDays`. أمّا الجمع أو الطرح البسيط (بصيغة مثل `now() + ...`) فلا يأخذ إعدادات التوقيت في الحسبان، مثل التوقيت الصيفي.
+</Note>
+
+أمثلة:
+
+```sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+```text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+```
+
+**راجع أيضًا**
+
+* [Interval](/ar/reference/data-types/special-data-types/interval) نوع البيانات
+* [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) دوال تحويل الأنواع
+
+<div id="date-time-addition">
+  ### إضافة التاريخ والوقت
+</div>
+
+يمكن إضافة قيمة [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) إلى قيمة [Time](/ar/reference/data-types/time) أو [Time64](/ar/reference/data-types/time64) باستخدام المعامل `+`. وتكون النتيجة [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64)، وتمثل التاريخ عند الوقت المحدد من اليوم. هذه العملية إبدالية.
+
+يعتمد نوع النتيجة على نوعَي المعاملين:
+
+| المعامل الأيسر | المعامل الأيمن | نوع النتيجة     |
+| -------------- | -------------- | --------------- |
+| `Date`         | `Time`         | `DateTime`      |
+| `Date`         | `Time64(s)`    | `DateTime64(s)` |
+| `Date32`       | `Time`         | `DateTime64(0)` |
+| `Date32`       | `Time64(s)`    | `DateTime64(s)` |
+
+<Note>
+  تستخدم النتيجة [المنطقة الزمنية للجلسة](/ar/reference/settings/session-settings#session_timezone) (أو المنطقة الزمنية الافتراضية للخادوم إذا لم يتم تعيين منطقة زمنية للجلسة). ويتحكم الإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats#date_time_overflow_behavior) في ما يحدث عندما تكون النتيجة خارج النطاق القابل للتمثيل.
+</Note>
+
+أمثلة:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
+
+<div id="logical-and-operator">
+  ## المعامل المنطقي AND
+</div>
+
+الصياغة `SELECT a AND b` — تحسب الاقتران المنطقي لـ `a` و`b` باستخدام الدالة [and](/ar/reference/functions/regular-functions/logical-functions#and).
+
+<div id="logical-or-operator">
+  ## معامل OR المنطقي
+</div>
+
+الصياغة `SELECT a OR b` — يحسب الفصل المنطقي لـ `a` و`b` باستخدام الدالة [or](/ar/reference/functions/regular-functions/logical-functions#or).
+
+<div id="logical-negation-operator">
+  ## معامل النفي المنطقي
+</div>
+
+الصياغة `SELECT NOT a` — تحسب النفي المنطقي لـ `a` باستخدام الدالة [not](/ar/reference/functions/regular-functions/logical-functions#not).
+
+<div id="conditional-operator">
+  ## المعامل الشرطي
+</div>
+
+`a ? b : c` – الدالة `if(a, b, c)`.
+
+ملاحظة:
+
+يحسب المعامل الشرطي قيمتَي b و c، ثم يتحقق مما إذا كان الشرط a متحققًا، ثم يعيد القيمة المقابلة. إذا كانت `b` أو `C` دالة [arrayJoin()](/ar/reference/functions/regular-functions/array-join)، فسيُكرَّر كل صف بغض النظر عن الشرط &quot;a&quot;.
+
+<div id="conditional-expression">
+  ## التعبير الشرطي
+</div>
+
+```sql
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    [ELSE c]
+END
+```
+
+إذا كان `x` محددًا، فستُستخدم الدالة `transform(x, [a, ...], [b, ...], c)`. وإلا فستُستخدم `multiIf(a, b, ..., c)`.
+
+إذا لم تتضمن expression عبارة `ELSE c`، فستكون القيمة الافتراضية هي `NULL`.
+
+لا تعمل الدالة `transform` مع `NULL`.
+
+<div id="concatenation-operator">
+  ## معامل ربط السلاسل
+</div>
+
+`s1 || s2` – دالة `concat(s1, s2)`.
+
+<div id="lambda-creation-operator">
+  ## معامل إنشاء Lambda
+</div>
+
+`x -> expr` – الدالة `lambda(x, expr)`.
+
+لا أولوية للمعاملات التالية لأنها أقواس:
+
+<div id="array-creation-operator">
+  ## معامل إنشاء المصفوفة
+</div>
+
+`[x1, ...]` – الدالة `array(x1, ...)`.
+
+<div id="tuple-creation-operator">
+  ## معامل إنشاء Tuple
+</div>
+
+`(x1, x2, ...)` – الدالة `tuple(x2, x2, ...)`.
+
+<div id="associativity">
+  ## الترابطية
+</div>
+
+تتمتع جميع المعاملات الثنائية بترابطية يسارية. على سبيل المثال، يُحوَّل `1 + 2 + 3` إلى `plus(plus(1, 2), 3)`.
+وأحيانًا لا يعمل ذلك بالطريقة التي قد تتوقعها. فعلى سبيل المثال، تكون نتيجة `SELECT 4 > 2 > 3` هي 0.
+
+ولتحسين الكفاءة، تقبل الدالتان `and` و`or` أي عدد من الوسائط. وتُحوَّل سلاسل المعاملات `AND` و`OR` المقابلة إلى استدعاء واحد لهاتين الدالتين.
+
+<div id="checking-for-null">
+  ## التحقق من وجود `NULL`
+</div>
+
+يدعم ClickHouse العاملين `IS NULL` و`IS NOT NULL`.
+
+<div id="is_null">
+  ### IS NULL
+</div>
+
+* بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المعامل `IS NULL` ما يلي:
+  * `1` إذا كانت القيمة `NULL`.
+  * `0` بخلاف ذلك.
+* بالنسبة إلى القيم الأخرى، يعيد المعامل `IS NULL` دائمًا القيمة `0`.
+
+يمكن تحسين ذلك بتمكين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null FROM TABLE`.
+
+{/* */}
+
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+
+```text
+┌─plus(x, 100)─┐
+│          101 │
+└──────────────┘
+```
+
+<div id="is_not_null">
+  ### IS NOT NULL
+</div>
+
+* بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المعامل `IS NOT NULL` ما يلي:
+  * `0` إذا كانت القيمة `NULL`.
+  * `1` في غير ذلك.
+* بالنسبة إلى القيم الأخرى، يعيد المعامل `IS NOT NULL` دائمًا `1`.
+
+{/* */}
+
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+
+```text
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+يمكن تحسين ذلك عبر تفعيل إعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، لا تقرأ الدالة سوى العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NOT NULL FROM table` إلى `SELECT NOT n.null FROM TABLE`.
+
+<div id="checking-boolean-values">
+  ## التحقق من القيم المنطقية
+</div>
+
+يدعم ClickHouse المعاملات `IS TRUE` و`IS FALSE` و`IS UNKNOWN` و`IS NOT TRUE` و`IS NOT FALSE` و`IS NOT UNKNOWN`.
+تُستخدم هذه المعاملات مع تعبيرات [Bool](/ar/reference/data-types/boolean) و`Nullable(Bool)`.
+
+* يعيد `expr IS TRUE` القيمة `1` فقط إذا كانت قيمة `expr` هي `true`.
+* يعيد `expr IS FALSE` القيمة `1` فقط إذا كانت قيمة `expr` هي `false`.
+* يعيد `expr IS UNKNOWN` القيمة `1` فقط إذا كانت قيمة `expr` هي `NULL`.
+* يعيد `expr IS NOT TRUE` القيمة `1` إذا كانت قيمة `expr` هي `false` أو `NULL`.
+* يعيد `expr IS NOT FALSE` القيمة `1` إذا كانت قيمة `expr` هي `true` أو `NULL`.
+* يعيد `expr IS NOT UNKNOWN` القيمة `1` إذا لم تكن قيمة `expr` هي `NULL`.
+
+بالنسبة إلى التعبيرات المنطقية، فإن `IS UNKNOWN` تكافئ `IS NULL`، و`IS NOT UNKNOWN` تكافئ `IS NOT NULL`.
+
+{/* */}
+
+```sql
+CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
+INSERT INTO t_bool VALUES (true), (false), (NULL);
+
+SELECT
+    x,
+    x IS TRUE,
+    x IS FALSE,
+    x IS UNKNOWN,
+    x IS NOT TRUE,
+    x IS NOT FALSE,
+    x IS NOT UNKNOWN
+FROM t_bool;
+```

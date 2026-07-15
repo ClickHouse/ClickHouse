@@ -1,0 +1,130 @@
+---
+sidebarTitle: 'Confluent Platform의 Kafka Connector Sink'
+slug: /integrations/kafka/cloud/confluent/custom-connector
+description: 'Kafka Connect 및 ClickHouse와 함께 ClickHouse Connector Sink 사용하기'
+title: 'Confluent Platform과 ClickHouse 통합'
+keywords: ['Confluent ClickHouse 통합', 'ClickHouse Kafka connector', 'Kafka Connect ClickHouse 싱크', 'Confluent Platform ClickHouse', 'Confluent용 Custom Connector']
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/SQAiPVbd3gg"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+다음 항목을 잘 알고 있다고 가정합니다:
+
+* [ClickHouse Connector Sink](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
+* Confluent Platform 및 [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html).
+
+<div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
+  ## Confluent Platform용 ClickHouse 공식 Kafka Connector
+</div>
+
+<div id="installing-on-confluent-platform">
+  ### Confluent Platform에 설치하기
+</div>
+
+이 문서는 Confluent Platform에서 ClickHouse 싱크 커넥터를 빠르게 시작할 수 있도록 돕는 간단한 안내서입니다.
+자세한 내용은 [Confluent 공식 문서](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector)를 참조하십시오.
+
+<div id="create-a-topic">
+  #### 토픽 생성
+</div>
+
+Confluent Platform에서 토픽을 만드는 작업은 비교적 간단하며, 자세한 안내는 [여기](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)에서 확인할 수 있습니다.
+
+<div id="important-notes">
+  #### 중요 참고 사항
+</div>
+
+* Kafka 토픽 이름은 ClickHouse 테이블 이름과 같아야 합니다. 이 값은 변환기(transformer)를 사용해 조정할 수 있습니다(예: [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
+* 파티션이 더 많다고 해서 항상 성능이 더 좋아지는 것은 아닙니다. 자세한 내용과 성능 관련 팁은 곧 공개될 가이드를 참조하십시오.
+
+<div id="install-connector">
+  #### 커넥터 설치
+</div>
+
+커넥터는 [리포지토리](https://github.com/ClickHouse/clickhouse-kafka-connect/releases)에서 다운로드할 수 있습니다. 의견과 이슈도 그곳에 자유롭게 남겨 주십시오!
+
+&quot;Connector Plugins&quot; -&gt; &quot;Add plugin&quot;으로 이동한 다음, 아래 설정을 사용하십시오:
+
+```text
+'Connector Class' - 'com.clickhouse.kafka.connect.ClickHouseSinkConnector'
+'Connector type' - Sink
+'Sensitive properties' - 'password'. 이렇게 하면 구성 중에 ClickHouse 비밀번호 항목이 마스킹됩니다.
+```
+
+예시:
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="사용자 지정 ClickHouse Connector 추가 설정 화면이 표시된 Confluent Platform UI" border />
+
+<div id="gather-your-connection-details">
+  #### 연결 정보를 확인합니다
+</div>
+
+<ConnectionDetails />
+
+<div id="configure-the-connector">
+  #### 커넥터 설정
+</div>
+
+`Connectors` -&gt; `Add Connector`로 이동한 다음, 다음 설정을 사용하십시오(값은 예시일 뿐입니다):
+
+```json
+{
+  "database": "<DATABASE_NAME>",
+  "errors.retry.timeout": "30",
+  "exactlyOnce": "false",
+  "schemas.enable": "false",
+  "hostname": "<CLICKHOUSE_HOSTNAME>",
+  "password": "<SAMPLE_PASSWORD>",
+  "port": "8443",
+  "ssl": "true",
+  "topics": "<TOPIC_NAME>",
+  "username": "<SAMPLE_USERNAME>",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false"
+}
+```
+
+<div id="specify-the-connection-endpoints">
+  #### 연결 엔드포인트 지정
+</div>
+
+커넥터가 액세스할 수 있는 엔드포인트의 허용 목록을 지정해야 합니다.
+네트워크 이그레스 엔드포인트를 추가할 때는 FQDN(정규화된 도메인 이름)을 사용해야 합니다.
+예시: `u57swl97we.eu-west-1.aws.clickhouse.com:8443`
+
+<Note>
+  HTTP(S) 포트를 지정해야 합니다. 커넥터는 아직 Native protocol을 지원하지 않습니다.
+</Note>
+
+[문서를 참조하십시오.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#cc-byoc-endpoints)
+
+이제 모든 설정이 완료되었습니다!
+
+<div id="known-limitations">
+  #### 알려진 제한 사항
+</div>
+
+* Custom Connectors는 공용 인터넷 엔드포인트를 사용해야 합니다. 고정 IP 주소는 지원되지 않습니다.
+* 일부 Custom Connector 속성은 재정의할 수 있습니다. 자세한 내용은 [공식 문서의 목록](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)을 참조하십시오.
+* Custom Connectors는 [일부 AWS 리전](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)에서만 사용할 수 있습니다.
+* [공식 문서의 Custom Connectors 제한 사항 목록](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)을 참조하십시오.

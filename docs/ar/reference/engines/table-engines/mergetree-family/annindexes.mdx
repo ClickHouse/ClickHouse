@@ -1,0 +1,761 @@
+---
+description: 'توثيق البحث الدقيق والتقريبي عن المتجهات'
+keywords: ['البحث عن تشابه المتجهات', 'ann', 'knn', 'hnsw', 'فهارس', 'فهرس', 'أقرب جار', 'البحث عن المتجهات']
+sidebarTitle: 'البحث الدقيق والتقريبي عن المتجهات'
+slug: /engines/table-engines/mergetree-family/annindexes
+title: 'البحث الدقيق والتقريبي عن المتجهات'
+doc_type: 'guide'
+---
+
+تُعرف مشكلة العثور على أقرب N نقطة في فضاء متعدد الأبعاد (متجهي) إلى نقطة معيّنة باسم [البحث عن أقرب جار](https://en.wikipedia.org/wiki/Nearest_neighbor_search)، أو اختصارًا: البحث عن المتجهات.
+يوجد نهجان أساسيان لحل مسألة البحث عن المتجهات:
+
+* يحسب البحث الدقيق عن المتجهات المسافة بين النقطة المعطاة وجميع النقاط في الفضاء المتجهي. وهذا يضمن أعلى دقة ممكنة، أي إن النقاط المُعادة تكون مضمونة بوصفها أقرب الجيران الفعليين. ونظرًا إلى أن الفضاء المتجهي يُفحَص بالكامل، فقد يكون البحث الدقيق عن المتجهات بطيئًا جدًا للاستخدامات العملية.
+* يشير البحث التقريبي عن المتجهات إلى مجموعة من التقنيات (مثل بُنى بيانات خاصة كالرُّسوم البيانية والغابات العشوائية) التي تحسب النتائج بسرعة أكبر بكثير من البحث الدقيق عن المتجهات. وعادةً ما تكون دقة النتائج &quot;جيدة بما يكفي&quot; للاستخدام العملي. كما توفّر العديد من التقنيات التقريبية معلمات لضبط المفاضلة بين دقة النتائج ووقت البحث.
+
+يمكن كتابة البحث عن المتجهات (الدقيق أو التقريبي) في SQL كما يلي:
+
+```sql
+WITH [...] AS reference_vector
+SELECT [...]
+FROM table
+WHERE [...] -- a WHERE clause is optional
+ORDER BY <DistanceFunction>(vectors, reference_vector)
+LIMIT <N>
+```
+
+تُخزَّن النقاط في فضاء المتجهات في عمود `vectors` من نوع Array، مثل [Array(Float64)](/ar/reference/data-types/array) أو [Array(Float32)](/ar/reference/data-types/array) أو [Array(BFloat16)](/ar/reference/data-types/array).
+يكون المتجه المرجعي مصفوفةً ثابتة، ويُعرَّف كتعبير جدول شائع.
+تحسب `<DistanceFunction>` المسافة بين النقطة المرجعية وجميع النقاط المخزَّنة.
+ويمكن استخدام أي من [دوال المسافة](/ar/reference/functions/regular-functions/distance-functions) المتاحة لهذا الغرض.
+ويحدّد `<N>` عدد الجيران المطلوب إرجاعهم.
+
+<div id="exact-nearest-neighbor-search">
+  ## البحث الدقيق عن المتجهات
+</div>
+
+يمكن إجراء بحث متجهي دقيق باستخدام استعلام SELECT المذكور أعلاه كما هو.
+ويكون زمن تنفيذ مثل هذه الاستعلامات متناسبًا عمومًا مع عدد المتجهات المخزّنة وأبعادها، أي عدد عناصر المصفوفة.
+ونظرًا لأن ClickHouse يجري فحصًا شاملًا لجميع المتجهات، فإن زمن التنفيذ يعتمد أيضًا على عدد الخيوط التي يستخدمها الاستعلام (راجع الإعداد [max&#95;threads](/ar/reference/settings/session-settings#max_threads)).
+
+<div id="exact-nearest-neighbor-search-example">
+  ### مثال
+</div>
+
+```sql
+CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+
+WITH [0., 2.] AS reference_vec
+SELECT id, vec
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3;
+```
+
+القيمة المُعادة
+
+```result
+   ┌─id─┬─vec─────┐
+1. │  6 │ [0,2]   │
+2. │  7 │ [0,2.1] │
+3. │  8 │ [0,2.2] │
+   └────┴─────────┘
+```
+
+<div id="approximate-nearest-neighbor-search">
+  ## البحث التقريبي عن المتجهات
+</div>
+
+<div id="vector-similarity-index">
+  ### فهارس تشابه المتجهات
+</div>
+
+يوفّر ClickHouse فهرسًا خاصًا لـ &quot;تشابه المتجهات&quot; لتنفيذ بحث تقريبي عن المتجهات.
+
+<Note>
+  تتوفّر فهارس تشابه المتجهات في ClickHouse الإصدار 25.8 وما بعده.
+  إذا واجهت أي مشكلات، يُرجى فتح بلاغ في [مستودع ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+<div id="creating-a-vector-similarity-index">
+  #### إنشاء فهرس لتشابه المتجهات
+</div>
+
+يمكن إنشاء فهرس لتشابه المتجهات على جدول جديد كما يلي:
+
+```sql
+CREATE TABLE table
+(
+  [...],
+  vectors Array(Float*),
+  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
+)
+ENGINE = MergeTree
+ORDER BY [...]
+```
+
+بدلاً من ذلك، لإضافة فهرس تشابه المتجهات إلى جدول موجود:
+
+```sql
+ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>];
+```
+
+فهارس تشابه المتجهات هي نوع خاص من فهارس تخطي البيانات (راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) و[هنا](/ar/concepts/features/performance/skip-indexes/skipping-indexes)).
+وبناءً على ذلك، فإن عبارة `ALTER TABLE` أعلاه لا تؤدي إلا إلى إنشاء الفهرس للبيانات الجديدة التي ستُدرَج في الجدول لاحقًا.
+ولإنشاء الفهرس للبيانات الموجودة أيضًا، تحتاج إلى إضفاء الطابع المادي عليه:
+
+```sql
+ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
+```
+
+يجب أن تكون الدالة `<distance_function>` إحدى القيم التالية:
+
+* `L2Distance`، وهي [المسافة الإقليدية](https://en.wikipedia.org/wiki/Euclidean_distance)، وتمثل طول القطعة المستقيمة بين نقطتين في الفضاء الإقليدي،
+* `cosineDistance`، وهي [مسافة جيب التمام](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)، وتمثل الزاوية بين متجهين غير صفريين، أو
+* `dotProduct`، وهو [الضرب النقطي](https://en.wikipedia.org/wiki/Dot_product) (الضرب الداخلي)، ويمثل مجموع نواتج الضرب عنصرًا بعنصر لمتجهين. وهو مكافئ لـ `cosineDistance` في البيانات المُطبَّعة.
+
+بالنسبة إلى البيانات المُطبَّعة، يكون `L2Distance` عادةً الخيار الأفضل، وإلا فيُوصى باستخدام `cosineDistance` للتعويض عن اختلاف المقياس.
+
+<Note>
+  بالنسبة إلى دالتي المسافة `L2Distance` و`cosineDistance`، فإن القيمة الأصغر تعني تشابهًا أعلى، بينما بالنسبة إلى `dotProduct`، فإن القيمة الأكبر تعني تشابهًا أعلى.
+  ونتيجة لذلك، لا يمكن استخدام فهارس المتجهات مع `L2Distance` و`cosineDistance` إلا في استعلامات `SELECT [...] ORDER BY [...] ASC` (حيث إن `ASC` هي القيمة الافتراضية لـ `ORDER BY`)، بينما لا يمكن استخدام فهارس المتجهات المُنشأة لـ `dotProduct` إلا في استعلامات `SELECT [...] ORDER BY [...] DESC`.
+</Note>
+
+يحدد `<dimensions>` عدد عناصر المصفوفة في العمود الأساسي.
+إذا عثر ClickHouse على مصفوفة بعدد عناصر مختلف أثناء إنشاء الفهرس، فسيتم تجاهل الفهرس وإرجاع خطأ.
+
+تشير المعلمة الاختيارية GRANULARITY `<N>` إلى حجم حبيبات الفهرس (انظر [هنا](/ar/concepts/features/performance/skip-indexes/skipping-indexes)).
+وعلى خلاف فهارس التخطي العادية، التي تستخدم قيمة افتراضية لمحببية الفهرس مقدارها 1، تستخدم فهارس تشابه المتجهات 100 مليون بوصفها محببية الفهرس الافتراضية.
+تضمن هذه القيمة ألّا يُنشأ داخليًا سوى عدد قليل من الفهارس حتى مع الأجزاء الكبيرة.
+نوصي بتغيير محببية الفهرس فقط للمستخدمين المتقدمين الذين يفهمون تبعات ما يفعلونه (انظر [أدناه](#differences-to-regular-skipping-indexes)).
+
+تُعد فهارس تشابه المتجهات عامة، بمعنى أنها يمكن أن تدعم طرق بحث تقريبي مختلفة.
+ويُحدَّد النوع المستخدم فعليًا بواسطة المعلمة `<type>`.
+حتى الآن، الطريقة الوحيدة المتاحة هي HNSW ([ورقة أكاديمية](https://arxiv.org/abs/1603.09320))، وهي تقنية شائعة ومتقدمة للبحث المتجهي التقريبي تعتمد على رسوم بيانية هرمية للتقارب.
+إذا استُخدم HNSW بوصفه النوع، فيمكن للمستخدمين اختياريًا تحديد معلمات إضافية خاصة بـ HNSW:
+
+```sql
+CREATE TABLE table
+(
+  [...],
+  vectors Array(Float*),
+  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY [...]
+```
+
+المعلمات الخاصة بـ HNSW المتاحة هي:
+
+* يتحكم `<quantization>` في تكميم المتجهات في رسم بياني القرب. القيم الممكنة هي `f64` و`f32` و`f16` و`bf16` و`i8` أو `b1`. القيمة الافتراضية هي `bf16`. لاحظ أن هذه المَعلمة لا تؤثر في تمثيل المتجهات في العمود الأساسي.
+* يتحكم `<hnsw_max_connections_per_layer>` في عدد الجيران لكل عقدة في الرسم البياني، ويُعرف أيضًا باسم المَعلمة الفائقة `M` في HNSW. القيمة الافتراضية هي `32`. وتعني القيمة `0` استخدام القيمة الافتراضية.
+* يتحكم `<hnsw_candidate_list_size_for_construction>` في حجم قائمة المرشحين الديناميكية أثناء إنشاء رسم HNSW البياني، ويُعرف أيضًا باسم المَعلمة الفائقة `ef_construction` في HNSW. القيمة الافتراضية هي `128`. وتعني القيمة `0` استخدام القيمة الافتراضية.
+
+تعمل القيم الافتراضية لجميع المَعلمات الخاصة بـ HNSW بشكل جيد إلى حد معقول في معظم حالات الاستخدام.
+لذلك، لا نوصي بتخصيص المَعلمات الخاصة بـ HNSW.
+
+تنطبق القيود الإضافية التالية:
+
+* لا يمكن إنشاء فهارس تشابه المتجهات إلا على أعمدة من النوع [Array(Float32)](/ar/reference/data-types/array) أو [Array(Float64)](/ar/reference/data-types/array) أو [Array(BFloat16)](/ar/reference/data-types/array). ولا يُسمح بالمصفوفات ذات القيم العائمة القابلة لأن تكون NULL أو منخفضة الكاردينالية، مثل `Array(Nullable(Float32))` و`Array(LowCardinality(Float32))`.
+* يجب إنشاء فهارس تشابه المتجهات على أعمدة مفردة.
+* يمكن إنشاء فهارس تشابه المتجهات على تعبيرات محسوبة (مثل `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`)، ولكن لا يمكن استخدام هذه الفهارس لاحقًا في البحث التقريبي عن الجيران.
+* تتطلب فهارس تشابه المتجهات أن تحتوي جميع المصفوفات في العمود الأساسي على `<dimension>` عنصرًا — ويُتحقق من ذلك أثناء إنشاء الفهرس. ولاكتشاف أي انتهاك لهذا الشرط في أقرب وقت ممكن، يمكن للمستخدمين إضافة [قيد](/ar/reference/statements/create/table#constraints) على عمود المتجهات، مثل `CONSTRAINT same_length CHECK length(vectors) = 256`.
+* وبالمثل، يجب ألا تكون قيم المصفوفة في العمود الأساسي فارغة (`[]`) أو ذات قيمة افتراضية (وهي أيضًا `[]`).
+
+**تقدير استهلاك التخزين والذاكرة**
+
+يتكون المتجه المُنشأ لاستخدامه مع نموذج ذكاء اصطناعي نموذجي (مثل نموذج لغوي كبير، [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) من مئات أو آلاف القيم ذات الفاصلة العائمة.
+لذلك، قد تستهلك قيمة متجه واحدة عدة كيلوبايت من الذاكرة.
+يمكن للمستخدمين الذين يرغبون في تقدير مساحة التخزين المطلوبة للعمود الأساسي للمتجهات في الجدول، وكذلك الذاكرة الرئيسية اللازمة لفهرس تشابه المتجهات، استخدام الصيغتين أدناه:
+
+استهلاك التخزين لعمود المتجهات في الجدول (غير مضغوط):
+
+```text
+Storage consumption = Number of vectors * Dimension * Size of column data type
+```
+
+مثال على [مجموعة بيانات dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
+```
+
+يجب تحميل فهرس تشابه المتجهات بالكامل من القرص إلى الذاكرة الرئيسية لإجراء عمليات البحث.
+وبالمثل، يُبنى فهرس المتجهات أيضًا بالكامل في الذاكرة ثم يُحفَظ على القرص.
+
+استهلاك الذاكرة المطلوب لتحميل فهرس المتجهات:
+
+```text
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+
+Memory consumption: mv + mg
+```
+
+مثال على [مجموعة بيانات dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
+
+Memory consumption = 3072 + 512 = 3584 MB
+```
+
+لا تأخذ الصيغة أعلاه في الحسبان الذاكرة الإضافية التي تتطلبها فهارس تشابه المتجهات لتخصيص بُنى بيانات وقت التشغيل، مثل المخازن المؤقتة المخصّصة مسبقًا وذاكرات التخزين المؤقت.
+
+<div id="using-a-vector-similarity-index">
+  #### استخدام فهرس تشابه المتجهات
+</div>
+
+<Note>
+  لاستخدام فهارس تشابه المتجهات، يجب أن تكون قيمة الإعداد [compatibility](/ar/reference/settings/session-settings) هي `''` (القيمة الافتراضية)، أو `'25.1'` أو إصدارًا أحدث.
+</Note>
+
+تدعم فهارس تشابه المتجهات استعلامات SELECT من هذا الشكل:
+
+```sql
+WITH [...] AS reference_vector
+SELECT [...]
+FROM table
+WHERE [...] -- a WHERE clause is optional
+ORDER BY <DistanceFunction>(vectors, reference_vector)
+LIMIT <N>
+```
+
+يحاول مُحسِّن الاستعلامات في ClickHouse مطابقة قالب الاستعلام أعلاه والاستفادة من فهارس تشابه المتجهات المتاحة.
+لا يمكن للاستعلام استخدام فهرس تشابه المتجهات إلا إذا كانت دالة المسافة في استعلام SELECT مطابقةً لدالة المسافة المحددة في تعريف الفهرس.
+
+يمكن للمستخدمين المتقدمين تحديد قيمة مخصصة للإعداد [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/ar/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (المعروف أيضاً بالمعامل الفائق لـ HNSW &quot;ef&#95;search&quot;) للتحكم في حجم قائمة المرشحين أثناء البحث (مثلاً: `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+القيمة الافتراضية للإعداد وهي 256 تُحقق أداءً جيداً في غالبية حالات الاستخدام.
+القيم الأعلى تعني دقةً أفضل على حساب أداء أبطأ.
+
+إذا كان بإمكان الاستعلام استخدام فهرس تشابه المتجهات، يتحقق ClickHouse من أن قيمة LIMIT `<N>` المحددة في استعلامات SELECT تقع ضمن حدود معقولة.
+وتحديدًا، يُعاد خطأ إذا كانت `<N>` أكبر من قيمة الإعداد [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/ar/reference/settings/session-settings#max_limit_for_vector_search_queries) التي قيمتها الافتراضية 100.
+قد تؤدي قيم LIMIT الكبيرة جدًا إلى إبطاء عمليات البحث، وغالبًا ما تشير إلى خطأ في الاستخدام.
+
+للتحقق مما إذا كان استعلام SELECT يستخدم فهرس تشابه المتجهات، يمكنك إضافة `EXPLAIN indexes = 1` في بداية الاستعلام.
+
+كمثال، الاستعلام
+
+```sql
+EXPLAIN indexes = 1
+WITH [0.462, 0.084, ..., -0.110] AS reference_vec
+SELECT id, vec
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 10;
+```
+
+قد يُعيد
+
+```result
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                      │
+ 2. │   Limit (preliminary LIMIT (without OFFSET))                                                    │
+ 3. │     Sorting (Sorting for ORDER BY)                                                              │
+ 4. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers))) │
+ 5. │         ReadFromMergeTree (default.tab)                                                         │
+ 6. │         Indexes:                                                                                │
+ 7. │           PrimaryKey                                                                            │
+ 8. │             Condition: true                                                                     │
+ 9. │             Parts: 1/1                                                                          │
+10. │             Granules: 575/575                                                                   │
+11. │           Skip                                                                                  │
+12. │             Name: idx                                                                           │
+13. │             Description: vector_similarity GRANULARITY 100000000                                │
+14. │             Parts: 1/1                                                                          │
+15. │             Granules: 10/575                                                                    │
+    └─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+في هذا المثال، يتم تخزين مليون متجه من [مجموعة بيانات dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)، يبلغ بُعد كل منها 1536، في 575 granule، أي ما يعادل 1.7 ألف صف لكل granule.
+يطلب الاستعلام 10 جيران، ويعثر فهرس تشابه المتجهات على هؤلاء الـ10 جيران في 10 granules منفصلة.
+ستُقرأ هذه الـ10 granules أثناء تنفيذ الاستعلام.
+
+تُستخدم فهارس تشابه المتجهات إذا احتوى الناتج على `Skip` واسم فهرس المتجه ونوعه (في المثال، `idx` و`vector_similarity`).
+في هذه الحالة، تخطّى فهرس تشابه المتجهات اثنتين من أصل أربع حبيبات، أي ما يعادل 50% من البيانات.
+وكلما زاد عدد الحبيبات القابلة للتخطي، كان استخدام الفهرس أكثر فاعلية.
+
+<Tip>
+  لفرض استخدام الفهرس، يمكنك تشغيل استعلام SELECT مع الإعداد [force&#95;data&#95;skipping&#95;indexes](/ar/reference/settings/session-settings#force_data_skipping_indices) (حدِّد اسم الفهرس كقيمة للإعداد).
+</Tip>
+
+**التصفية اللاحقة والتصفية المسبقة**
+
+يمكن للمستخدمين اختياريًا تحديد جملة `WHERE` مع شروط تصفية إضافية لاستعلام SELECT.
+سيُقيِّم ClickHouse شروط التصفية هذه باستخدام إحدى استراتيجيتَي post-filtering أو pre-filtering.
+باختصار، تحدد كلتا الاستراتيجيتين الترتيبَ الذي تُقيَّم به عوامل التصفية:
+
+* تعني التصفية اللاحقة أنه يجري أولًا تقييم فهرس تشابه المتجهات، ثم يقيّم ClickHouse عوامل التصفية الإضافية المحددة في عبارة `WHERE`.
+* وتعني التصفية المسبقة أن ترتيب تقييم عوامل التصفية يكون بالعكس.
+
+لكل استراتيجية مقايضاتها الخاصة:
+
+* تواجه التصفية اللاحقة مشكلة عامة، وهي أنها قد تُرجِع عددًا أقل من الصفوف المطلوبة في عبارة `LIMIT <N>`. ويحدث ذلك عندما لا يستوفي صفّ نتيجة واحد أو أكثر، أعاده فهرس تشابه المتجهات، المرشِّحات الإضافية.
+* تُعدّ التصفية المسبقة عمومًا مشكلة غير محلولة. توفّر بعض قواعد بيانات المتجهات المتخصصة خوارزميات للتصفية المسبقة، لكن معظم قواعد البيانات العلائقية (بما في ذلك ClickHouse) تعود إلى البحث الدقيق عن أقرب الجيران، أي فحص brute-force من دون فهرس.
+
+تعتمد الاستراتيجية المستخدمة على شرط التصفية.
+
+*المرشحات الإضافية جزء من مفتاح التقسيم*
+
+إذا كان شرط التصفية الإضافي جزءًا من مفتاح التقسيم، فسيطبّق ClickHouse تشذيب الأقسام.
+على سبيل المثال، إذا كان الجدول مقسّمًا نطاقيًا حسب العمود `year` وشُغِّل الاستعلام التالي:
+
+```sql
+WITH [0., 2.] AS reference_vec
+SELECT id, vec
+FROM tab
+WHERE year = 2025
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3;
+```
+
+سيستبعد ClickHouse جميع التقسيمات باستثناء تقسيم 2025.
+
+*لا يمكن تقييم عوامل التصفية الإضافية باستخدام الفهارس*
+
+إذا تعذر تقييم شروط التصفية الإضافية باستخدام الفهارس (فهرس المفتاح الأساسي، فهرس تخطي البيانات)، فسيطبّق ClickHouse التصفية اللاحقة.
+
+*يمكن تقييم عوامل التصفية الإضافية باستخدام فهرس المفتاح الأساسي*
+
+إذا أمكن تقييم شروط التصفية الإضافية باستخدام [المفتاح الأساسي](/ar/reference/engines/table-engines/mergetree-family/mergetree#primary-key) (أي إنها تشكّل بادئة للمفتاح الأساسي) و
+
+* إذا كان شرط التصفية يستبعد صفًا واحدًا على الأقل داخل جزء، فسيعود ClickHouse إلى التصفية المسبقة للنطاقات &quot;المتبقية&quot; داخل الجزء،
+* إذا كان شرط التصفية لا يستبعد أي صفوف داخل جزء، فسينفّذ ClickHouse التصفية اللاحقة لهذا الجزء.
+
+في حالات الاستخدام العملية، تُعدّ الحالة الأخيرة غير مرجّحة إلى حدّ كبير.
+
+*يمكن تقييم عوامل التصفية الإضافية باستخدام فهرس تخطي البيانات*
+
+إذا أمكن تقييم شروط التصفية الإضافية باستخدام [فهارس تخطي البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (فهرس minmax، وفهرس set، وما إلى ذلك)، فإن ClickHouse ينفّذ التصفية اللاحقة.
+في مثل هذه الحالات، يُقيَّم فهرس تشابه المتجهات أولًا لأنه يُتوقع أن يستبعد أكبر عدد من الصفوف مقارنةً بفهارس تخطي البيانات الأخرى.
+
+للحصول على تحكم أدق في التصفية اللاحقة مقابل التصفية المسبقة، يمكن استخدام إعدادين:
+
+يمكن ضبط الإعداد [vector&#95;search&#95;filter&#95;strategy](/ar/reference/settings/session-settings#vector_search_filter_strategy) (القيمة الافتراضية: `auto` التي تطبّق الاستدلالات المذكورة أعلاه) على `prefilter`.
+ويكون ذلك مفيدًا لفرض التصفية المسبقة في الحالات التي تكون فيها شروط التصفية الإضافية شديدة الانتقائية.
+على سبيل المثال، قد يستفيد الاستعلام التالي من التصفية المسبقة:
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+```
+
+على افتراض أن عددًا ضئيلًا جدًا من الكتب فقط يقل سعره عن دولارين، فقد لا تُرجِع التصفية اللاحقة أي صفوف، لأن أقرب 10 مطابقات يُرجعها فهرس المتجهات قد تكون جميعها بأسعار تتجاوز دولارين.
+ومن خلال فرض التصفية المسبقة (بإضافة `SETTINGS vector_search_filter_strategy = 'prefilter'` إلى الاستعلام)، يعثر ClickHouse أولًا على جميع الكتب التي يقل سعرها عن دولارين، ثم يُجري بحثًا متجهيًا بالقوة الغاشمة على الكتب التي عُثر عليها.
+
+وكحل بديل للمشكلة المذكورة أعلاه، يمكن ضبط [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ar/reference/settings/session-settings#vector_search_index_fetch_multiplier) (القيمة الافتراضية: `1.0`، والحد الأقصى: `1000.0`) على قيمة &gt; `1.0` (على سبيل المثال، `2.0`).
+ويُضرَب عدد أقرب الجيران التي يجري جلبها من فهرس المتجهات في قيمة هذا الإعداد، ثم يُطبَّق عامل التصفية الإضافي على تلك الصفوف لإرجاع عدد من الصفوف يساوي قيمة LIMIT.
+على سبيل المثال، يمكننا تنفيذ الاستعلام مرة أخرى، ولكن بمعامل `3.0`:
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+SETTING vector_search_index_fetch_multiplier = 3.0;
+```
+
+سيجلب ClickHouse عددًا قدره 3.0 × 10 = 30 من أقرب الجيران من فهرس المتجهات في كل جزء، ثم يقيّم عوامل التصفية الإضافية.
+لن يُعاد إلا أقرب عشرة جيران.
+ونشير إلى أن ضبط `vector_search_index_fetch_multiplier` قد يخفف من هذه المشكلة، ولكن في الحالات القصوى (عندما يكون شرط WHERE انتقائيًا جدًا)، يظل من الممكن إعادة عدد أقل من N من الصفوف المطلوبة.
+
+**إعادة التقييم**
+
+تُجري skip indexes في ClickHouse عادةً التصفية على مستوى الـ حبيبة، أي إن عملية lookup في skip index (داخليًا) تُرجع قائمة بالـ حبيبات التي يُحتمل أن تتطابق، مما يقلل حجم read data في الفحص اللاحق.
+يعمل هذا جيدًا مع skip indexes عمومًا، لكن في حالة فهارس تشابه المتجهات، فإنه يسبب &quot;عدم تطابق في granularity&quot;.
+وبمزيد من التفصيل، يحدد فهرس تشابه المتجهات أرقام الصفوف الخاصة بـ N من أكثر المتجهات تشابهًا بالنسبة إلى المتجه المرجعي معيّن، لكنه يحتاج بعد ذلك إلى إسقاط أرقام الصفوف هذه على أرقام حبيبة.
+بعد ذلك، سيحمّل ClickHouse هذه الـ حبيبات من disk، ويعيد حساب المسافة لجميع المتجهات داخل هذه الـ حبيبات.
+وتُسمى هذه الخطوة rescoring، ومع أنها قد تحسّن الدقة نظريًا — تذكّر أن فهرس تشابه المتجهات لا يُرجع سوى نتيجة *تقريبية* — فمن الواضح أنها ليست مثالية من حيث الأداء.
+
+لذلك يوفّر ClickHouse تحسينًا يعطّل rescoring ويُرجع أكثر المتجهات تشابهًا ومسافاتها مباشرةً من index.
+يكون هذا التحسين enabled افتراضيًا، راجع الإعداد [vector&#95;search&#95;with&#95;rescoring](/ar/reference/settings/session-settings#vector_search_with_rescoring).
+وعلى مستوى عام، تعمل هذه الآلية بأن ClickHouse يوفّر أكثر المتجهات تشابهًا ومسافاتها على هيئة عمود افتراضي `_distances`.
+ولرؤية ذلك، شغّل query بحث متجهي باستخدام `EXPLAIN header = 1`:
+
+```sql
+EXPLAIN header = 1
+WITH [0., 2.] AS reference_vec
+SELECT id
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0
+```
+
+```result
+Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                              │
+ 2. │ Header: id Int32                                                                                        │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
+ 5. │           __table1.id Int32                                                                             │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                      │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
+ 8. │             __table1.id Int32                                                                           │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
+11. │               __table1.id Int32                                                                         │
+12. │         ReadFromMergeTree (default.tab)                                                                 │
+13. │         Header: id Int32                                                                                │
+14. │                 _distance Float32                                                                       │
+    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  قد يرجع الاستعلام الذي يُشغَّل دون إعادة التقييم (`vector_search_with_rescoring = 0`) ومع تفعيل النسخ المتماثلة المتوازية، تلقائيًا إلى إعادة التقييم.
+</Note>
+
+<div id="performance-tuning">
+  #### ضبط الأداء
+</div>
+
+**ضبط الضغط**
+
+في معظم حالات الاستخدام، تكون المتجهات في العمود الأساسي كثيفة ولا تُضغط بكفاءة.
+ونتيجةً لذلك، فإن [الضغط](/ar/reference/statements/create/table#column_compression_codec) يبطئ عمليات الإدراج والقراءة في عمود المتجهات.
+لذلك نوصي بتعطيل الضغط.
+وللقيام بذلك، حدِّد `CODEC(NONE)` لعمود المتجهات كما يلي:
+
+```sql
+CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+```
+
+**ضبط إنشاء الفهرس**
+
+ترتبط دورة حياة فهارس تشابه المتجهات بدورة حياة الأجزاء.
+وبعبارة أخرى، كلما تم إنشاء جزء جديد يتضمّن فهرس تشابه متجهات معرّفًا، يُنشأ الفهرس أيضًا.
+ويحدث ذلك عادةً عند [إدراج](/ar/concepts/features/operations/insert/inserting-data) البيانات أو أثناء [عمليات الدمج](/ar/concepts/core-concepts/merges).
+وللأسف، يشتهر HNSW بطول زمن إنشاء الفهرس، ما قد يبطئ عمليات الإدراج والدمج بشكل ملحوظ.
+ومن الأفضل استخدام فهارس تشابه المتجهات فقط عندما تكون البيانات ثابتة أو نادرًا ما تتغير.
+
+لتسريع إنشاء الفهرس، يمكن استخدام الأساليب التالية:
+
+أولًا، يمكن تنفيذ إنشاء الفهرس بالتوازي.
+يمكن ضبط الحد الأقصى لعدد خيوط إنشاء الفهرس باستخدام إعداد الخادم [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size).
+وللحصول على أفضل أداء، يجب ضبط قيمة الإعداد بما يساوي عدد أنوية CPU.
+
+ثانيًا، لتسريع عبارات INSERT، يمكن للمستخدمين تعطيل إنشاء فهارس تخطي البيانات على الأجزاء المُدرجة حديثًا باستخدام إعداد الجلسة [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ar/reference/settings/session-settings#materialize_skip_indexes_on_insert).
+وستعتمد استعلامات SELECT على هذه الأجزاء على البحث الدقيق كبديل.
+ونظرًا إلى أن الأجزاء المُدرجة تكون عادةً صغيرة مقارنةً بإجمالي حجم الجدول، فمن المتوقع أن يكون تأثير ذلك على الأداء ضئيلًا.
+
+ثالثًا، لتسريع عمليات الدمج، يمكن للمستخدمين تعطيل إنشاء فهارس تخطي البيانات على الأجزاء المدمجة باستخدام إعداد الجلسة [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ar/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge).
+ويوفّر هذا، بالاقتران مع العبارة [ALTER TABLE [...] MATERIALIZE INDEX [...]](/ar/reference/statements/alter/skipping-index#materialize-index)، تحكمًا صريحًا في دورة حياة فهارس تشابه المتجهات.
+فعلى سبيل المثال، يمكن تأجيل إنشاء الفهرس إلى حين إدخال جميع البيانات أو إلى فترة يكون فيها حمل النظام منخفضًا، مثل عطلة نهاية الأسبوع.
+
+**ضبط استخدام الفهرس**
+
+تحتاج استعلامات SELECT إلى تحميل فهارس تشابه المتجهات إلى الذاكرة الرئيسية لاستخدامها.
+ولتجنب تحميل فهرس تشابه المتجهات نفسه إلى الذاكرة الرئيسية مرارًا، يوفّر ClickHouse ذاكرة تخزين مؤقت مخصّصة داخل الذاكرة لهذه الفهارس.
+وكلما زاد حجم ذاكرة التخزين المؤقت هذه، قلّ عدد عمليات التحميل غير الضرورية.
+يمكن ضبط الحد الأقصى لحجم ذاكرة التخزين المؤقت باستخدام إعداد الخادم [vector&#95;similarity&#95;index&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#vector_similarity_index_cache_size).
+وبشكل افتراضي، يمكن أن يصل حجم ذاكرة التخزين المؤقت إلى 5 GB.
+
+تشير رسائل السجل التالية (`system.text_log`) إلى أن فهرس تشابه المتجهات قيد التحميل.
+وإذا ظهرت هذه الرسائل بشكل متكرر مع استعلامات بحث متجهي مختلفة، فهذا يشير إلى أن حجم ذاكرة التخزين المؤقت منخفض جدًا.
+
+```text
+2026-02-03 07:39:10.351635 [1386] f0ac5c85-1b1c-4f35-8848-87a1d1aa00ba : VectorSimilarityIndex Start loading vector similarity index
+
+<...>
+
+2026-02-03 07:40:25.217603 [1386] f0ac5c85-1b1c-4f35-8848-87a1d1aa00ba : VectorSimilarityIndex Loaded vector similarity index: max_level = 2, connectivity = 64, size = 1808111, capacity = 1808111, memory_usage = 8.00 GiB, bytes_per_vector = 4096, scalar_words = 1024, nodes = 1808111, edges = 51356964, max_edges = 233395072
+```
+
+<Note>
+  تخزّن ذاكرة التخزين المؤقت لفهرس تشابه المتجهات حبيبات فهرس المتجهات.
+  إذا كان حجم حبيبات فهرس المتجهات الفردية أكبر من حجم ذاكرة التخزين المؤقت، فلن تُخزَّن مؤقتًا.
+  لذلك، يُرجى التأكد من حساب حجم فهرس المتجهات (استنادًا إلى الصيغة الواردة في &quot;تقدير التخزين واستهلاك الذاكرة&quot; أو [system.data&#95;skipping&#95;indices](/ar/reference/system-tables/data_skipping_indices)) وتحديد حجم ذاكرة التخزين المؤقت بما يتناسب مع ذلك.
+</Note>
+
+*نؤكد مجددًا أن التحقق من ذاكرة التخزين المؤقت لفهرس المتجهات، وزيادتها عند الحاجة، يجب أن يكون الخطوة الأولى عند التحقيق في بطء استعلامات البحث المتجهي.*
+
+يظهر الحجم الحالي لذاكرة التخزين المؤقت لفهرس تشابه المتجهات في [system.metrics](/ar/reference/system-tables/metrics):
+
+```sql
+SELECT metric, value
+FROM system.metrics
+WHERE metric = 'VectorSimilarityIndexCacheBytes'
+```
+
+يمكن الحصول على عدد مرات الإصابة والإخفاق في ذاكرة التخزين المؤقت لاستعلام ذي Query id معيّن من [system.query&#95;log](/ar/reference/system-tables/query_log):
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSimilarityIndexCacheMisses']
+FROM system.query_log
+WHERE type = 'QueryFinish' AND query_id = '<...>'
+ORDER BY event_time_microseconds;
+```
+
+في بيئات الإنتاج، نوصي بأن يكون حجم ذاكرة التخزين المؤقت كبيرًا بما يكفي لإبقاء جميع فهارس المتجهات في الذاكرة طوال الوقت.
+
+**ضبط التكميم**
+
+[التكميم](https://huggingface.co/blog/embedding-quantization) هو أسلوب لتقليل البصمة الذاكرية للمتجهات وخفض التكلفة الحاسوبية لبناء فهارس المتجهات والتنقل فيها.
+تدعم فهارس المتجهات في ClickHouse خيارات التكميم التالية:
+
+| Quantization   | Name                    | Storage per dimension |
+| -------------- | ----------------------- | --------------------- |
+| f32            | دقة مفردة               | 4 بايت                |
+| f16            | نصف الدقة               | 2 بايت                |
+| bf16 (default) | نصف الدقة (brain float) | 2 بايت                |
+| i8             | ربع الدقة               | 1 بايت                |
+| b1             | ثنائي                   | 1 بت                  |
+
+يقلل التكميم من دقة البحث المتجهي مقارنةً بالبحث في قيم الفاصلة العائمة الأصلية كاملة الدقة (`f32`).
+ومع ذلك، في معظم مجموعات البيانات، يؤدي تكميم brain float بنصف الدقة (`bf16`) إلى فقدان طفيف جدًا في الدقة، لذا تستخدم فهارس تشابه المتجهات أسلوب التكميم هذا افتراضيًا.
+أما تكميم ربع الدقة (`i8`) والتكميم الثنائي (`b1`) فيؤديان إلى فقدان ملحوظ في دقة البحث المتجهي.
+ولا نوصي باستخدام هذين النوعين من التكميم إلا إذا كان حجم فهرس تشابه المتجهات أكبر بكثير من حجم DRAM المتاح.
+وفي هذه الحالة، نقترح أيضًا تمكين إعادة التقييم ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ar/reference/settings/session-settings#vector_search_index_fetch_multiplier)، [vector&#95;search&#95;with&#95;rescoring](/ar/reference/settings/session-settings#vector_search_with_rescoring)) لتحسين الدقة.
+ولا يُنصح بالتكميم الثنائي إلا في حالتين فقط: 1) عند استخدام تضمينات مُطبَّعة (أي إن طول المتجه = 1، وعادةً ما تكون نماذج OpenAI مُطبَّعة)، و2) عند استخدام مسافة جيب التمام بوصفها دالة المسافة.
+ويستخدم التكميم الثنائي داخليًا مسافة Hamming لبناء الرسم البياني للتقارب والبحث فيه.
+وتستخدم خطوة إعادة التقييم المتجهات الأصلية كاملة الدقة المخزنة في الجدول لتحديد أقرب الجيران عبر مسافة جيب التمام.
+
+**ضبط نقل البيانات**
+
+يُقدَّم المتجه المرجعي في استعلام البحث المتجهي من قِبل المستخدم، ويُسترجع عادةً عبر إجراء استدعاء إلى نموذج لغوي كبير (LLM).
+وقد يبدو نموذج شيفرة بايثون المعتاد الذي يُجري بحثًا متجهيًا في ClickHouse كما يلي
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'search_v': search_v}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, %(search_v)s)
+    LIMIT 10",
+    parameters = params)
+```
+
+قد يكون لمتجهات التضمين (`search_v` في المقتطف أعلاه) عدد كبير جدًا من الأبعاد.
+فعلى سبيل المثال، توفّر OpenAI نماذج تُنشئ متجهات تضمين تضم 1536 أو حتى 3072 بُعدًا.
+في الشيفرة أعلاه، يستبدل برنامج تشغيل ClickHouse لبايثون متجه التضمين بسلسلة نصية مقروءة للبشر، ثم يرسل استعلام SELECT بالكامل كسلسلة نصية.
+وبافتراض أن متجه التضمين يتكوّن من 1536 قيمة فاصلة عائمة أحادية الدقة، فإن طول السلسلة المُرسلة يصل إلى 20 كيلوبايت.
+ويؤدي ذلك إلى ارتفاع استخدام CPU بسبب تقسيم النص إلى رموز، والتحليل، وإجراء آلاف التحويلات من سلسلة نصية إلى قيمة فاصلة عائمة.
+كما يتطلب ذلك مساحة كبيرة في ملف سجل ClickHouse server، مما يسبب أيضًا تضخمًا في `system.query_log`.
+
+لاحظ أن معظم نماذج LLM تُرجع متجه تضمين على هيئة قائمة أو مصفوفة NumPy من قيم فاصلة عائمة أصلية.
+لذلك نوصي تطبيقات بايثون بربط معلمة متجه المرجع بالصيغة الثنائية باستخدام الأسلوب التالي:
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, reinterpret($search_v_binary$, 'Array(Float32)'))
+    LIMIT 10"
+    parameters = params)
+```
+
+في هذا المثال، يُرسَل المتجه المرجعي كما هو في صيغة ثنائية، ويُعاد تفسيره على الخادم كمصفوفة من القيم العائمة.
+يوفّر ذلك وقت CPU على جانب الخادم، ويجنّب حدوث تضخّم في سجلات الخادم و`system.query_log`.
+
+<div id="administration">
+  #### الإدارة والمراقبة
+</div>
+
+يمكن الحصول على حجم فهارس تشابه المتجهات على القرص من [system.data&#95;skipping&#95;indices](/ar/reference/system-tables/data_skipping_indices):
+
+```sql
+SELECT database, table, name, formatReadableSize(data_compressed_bytes)
+FROM system.data_skipping_indices
+WHERE type = 'vector_similarity';
+```
+
+مثال على المخرجات:
+
+```result
+┌─database─┬─table─┬─name─┬─formatReadab⋯ssed_bytes)─┐
+│ default  │ tab   │ idx  │ 348.00 MB                │
+└──────────┴───────┴──────┴──────────────────────────┘
+```
+
+<div id="differences-to-regular-skipping-indexes">
+  #### الاختلافات عن فهارس التخطي العادية
+</div>
+
+مثل جميع [فهارس التخطي](/ar/concepts/features/performance/skip-indexes/skipping-indexes) العادية، تُنشأ فهارس تشابه المتجهات على مستوى الحبيبات، وتتألف كل كتلة مفهرسة من `GRANULARITY = [N]` حبيبات (`[N]` = 1 افتراضيًا في فهارس التخطي العادية).
+على سبيل المثال، إذا كانت دقة حبيبات الفهرس الأساسي للجدول 8192 (الإعداد `index_granularity = 8192`) وكانت `GRANULARITY = 2`، فستحتوي كل كتلة مفهرسة على 16384 صفًا.
+لكن بُنى البيانات والخوارزميات الخاصة ببحث أقرب الجيران التقريبي هي بطبيعتها موجّهة نحو الصفوف.
+فهي تخزّن تمثيلًا مضغوطًا لمجموعة من الصفوف، كما تُرجع صفوفًا لاستعلامات البحث المتجهي.
+ويؤدي ذلك إلى بعض الاختلافات غير البديهية نوعًا ما في سلوك فهارس تشابه المتجهات مقارنةً بفهارس التخطي العادية.
+
+عندما يعرّف المستخدم فهرس تشابه متجهات على عمود، ينشئ ClickHouse داخليًا &quot;فهرسًا فرعيًا&quot; لتشابه المتجهات لكل كتلة فهرس.
+ويكون الفهرس الفرعي &quot;محليًا&quot; بمعنى أنه لا يعرف إلا صفوف كتلة الفهرس التي ينتمي إليها.
+في المثال السابق، وبافتراض أن العمود يحتوي على 65536 صفًا، نحصل على أربع كتل فهرس (تمتد عبر ثماني حبيبات) وفهرس تشابه متجهات فرعي لكل كتلة فهرس.
+ويستطيع الفهرس الفرعي نظريًا أن يُرجع مباشرةً الصفوف التي تحتوي على أقرب N نقاط ضمن كتلة الفهرس الخاصة به.
+ومع ذلك، نظرًا لأن ClickHouse يحمّل البيانات من القرص إلى الذاكرة على مستوى الحبيبات، فإن الفهارس الفرعية تُسقط الصفوف المطابقة إلى مستوى الحبيبات.
+وهذا يختلف عن فهارس التخطي العادية التي تتخطى البيانات على مستوى كتل الفهرس.
+
+تحدّد المعلمة `GRANULARITY` عدد فهارس تشابه المتجهات الفرعية التي يتم إنشاؤها.
+فكلما كانت قيم `GRANULARITY` أكبر، قلّ عدد فهارس تشابه المتجهات الفرعية ولكن ازداد حجمها، إلى أن نصل إلى حالة لا يكون فيها للعمود (أو لجزء بيانات العمود) سوى فهرس فرعي واحد فقط.
+في هذه الحالة، تكون لدى الفهرس الفرعي رؤية &quot;شاملة&quot; لجميع صفوف العمود، ويمكنه أن يُرجع مباشرةً جميع حبيبات العمود (الجزء) التي تحتوي على صفوف ذات صلة (ويكون عدد هذه الحبيبات بحد أقصى `LIMIT [N]`).
+وفي خطوة ثانية، سيحمّل ClickHouse هذه الحبيبات ويحدّد أفضل الصفوف فعليًا من خلال إجراء حساب مسافة brute-force على جميع صفوف تلك الحبيبات.
+أما عند استخدام قيمة صغيرة لـ `GRANULARITY`، فإن كل فهرس فرعي يُرجع ما يصل إلى `LIMIT N` حبيبات.
+ونتيجةً لذلك، يلزم تحميل عدد أكبر من الحبيبات وتصفيتها لاحقًا.
+لاحظ أن دقة البحث متساوية في كلتا الحالتين، والاختلاف الوحيد هو في أداء المعالجة.
+ويُوصى عمومًا باستخدام قيمة `GRANULARITY` كبيرة لفهارس تشابه المتجهات، واللجوء إلى قيم `GRANULARITY` أصغر فقط عند ظهور مشكلات مثل الاستهلاك المفرط للذاكرة من قِبل بُنى تشابه المتجهات.
+إذا لم يتم تحديد `GRANULARITY` لفهارس تشابه المتجهات، فإن القيمة الافتراضية هي 100 مليون.
+
+<div id="approximate-nearest-neighbor-search-example">
+  #### مثال
+</div>
+
+الاستعلامات:
+
+```sql title="Query"
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+
+WITH [0., 2.] AS reference_vec
+SELECT id, vec
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3;
+```
+
+```result title="Response"
+   ┌─id─┬─vec─────┐
+1. │  6 │ [0,2]   │
+2. │  7 │ [0,2.1] │
+3. │  8 │ [0,2.2] │
+   └────┴─────────┘
+```
+
+مجموعات بيانات إضافية للتجربة تستخدم البحث المتجهي التقريبي:
+
+* [LAION-400M](/ar/get-started/sample-datasets/laion)
+* [LAION-5B](/ar/get-started/sample-datasets/laion5b)
+* [dbpedia](/ar/get-started/sample-datasets/dbpedia)
+* [hackernews](/ar/get-started/sample-datasets/hacker-news-vector-search)
+
+<div id="approximate-nearest-neighbor-search-qbit">
+  ### البت المُكمَّم (QBit)
+</div>
+
+من الأساليب الشائعة لتسريع [البحث المتجهي الدقيق](/ar/reference/data-types/float) استخدام [نوع بيانات الفاصلة العائمة](/ar/reference/data-types/float) الأقل دقة.
+فعلى سبيل المثال، إذا خُزِّنت المتجهات بصيغة `Array(BFloat16)` بدلًا من `Array(Float32)`، فسينخفض حجم البيانات إلى النصف، ومن المتوقع أن تنخفض أزمنة تنفيذ الاستعلامات بنسبة مماثلة.
+وتُعرف هذه الطريقة باسم التكميم. وعلى الرغم من أنها تُسرّع العمليات الحسابية، فقد تقلل من دقة النتائج رغم إجراء فحص شامل لجميع المتجهات.
+
+في التكميم التقليدي، نفقد الدقة أثناء البحث وعند تخزين البيانات أيضًا. ففي المثال أعلاه، سنخزّن `BFloat16` بدلًا من `Float32`، ما يعني أنه لن يعود بالإمكان إجراء بحث أكثر دقة لاحقًا، حتى لو أردنا ذلك. وأحد البدائل هو تخزين نسختين من البيانات: نسخة مكمّمة ونسخة كاملة الدقة. ورغم أن هذا الأسلوب ينجح، فإنه يتطلب تخزينًا زائدًا. تخيّل سيناريو تكون فيه `Float64` هي البيانات الأصلية ونريد تشغيل عمليات بحث بدقات مختلفة (16-بت، أو 32-بت، أو 64-بت كاملة). عندها سنحتاج إلى تخزين ثلاث نسخ منفصلة من البيانات.
+
+يوفّر ClickHouse نوع البيانات Quantized Bit (`QBit`) لمعالجة هذه القيود من خلال:
+
+1. تخزين البيانات الأصلية كاملة الدقة.
+2. إتاحة تحديد دقة التكميم وقت الاستعلام.
+
+ويتحقق ذلك عبر تخزين البيانات بتنسيق مُجمَّع بحسب البتات (أي تُخزَّن جميع البتات ذات الموضع i-th لكل المتجهات معًا)، مما يتيح القراءة بمستوى الدقة المطلوب فقط. وهكذا تحصل على مزايا السرعة الناتجة عن تقليل عمليات الإدخال/الإخراج والحوسبة بفضل التكميم، مع الاحتفاظ بجميع البيانات الأصلية وإتاحتها عند الحاجة. وعند اختيار أعلى دقة ممكنة، يصبح البحث دقيقًا تمامًا.
+
+للتصريح عن عمود من النوع `QBit`، استخدم البنية التالية:
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+حيث:
+
+* `element_type` – نوع كل عنصر في المتجه. والأنواع المدعومة هي `BFloat16` و`Float32` و`Float64`
+* `dimension` – عدد العناصر في كل متجه
+
+<div id="qbit-create">
+  #### إنشاء جدول `QBit` وإدراج البيانات فيه
+</div>
+
+```sql
+CREATE TABLE fruit_animal (
+    word String,
+    vec QBit(Float64, 5)
+) ENGINE = MergeTree
+ORDER BY word;
+
+INSERT INTO fruit_animal VALUES
+    ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+    ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+    ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+    ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+    ('cat', [-0.56611276, 0.52267331, 1.27839863, -0.59809804, -1.26721048]),
+    ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
+```
+
+<div id="qbit-search">
+  #### البحث المتجهي باستخدام `QBit`
+</div>
+
+لنبحث عن أقرب الجيران إلى متجه يمثّل الكلمة &#39;lemon&#39; باستخدام مسافة L2. تحدد المعلمة الثالثة في دالة المسافة مقدار الدقة بالبتات؛ فكلما ارتفعت القيم زادت الدقة، لكنها تتطلب حسابات أكثر.
+
+يمكنك العثور على جميع دوال المسافة المتاحة لـ `QBit` [هنا](/ar/reference/data-types/qbit#vector-search-functions).
+
+**بحث بالدقة الكاملة (64 بت):**
+
+```sql
+SELECT
+    word,
+    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 64) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```text
+   ┌─word───┬────────────distance─┐
+1. │ apple  │ 0.14639757188169716 │
+2. │ banana │   1.998961369007679 │
+3. │ orange │   2.039041552613732 │
+4. │ cat    │   2.752802631487914 │
+5. │ horse  │  2.7555776805484813 │
+6. │ dog    │   3.382295083120104 │
+   └────────┴─────────────────────┘
+```
+
+**البحث بدقة منخفضة:**
+
+```sql
+SELECT
+    word,
+    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 12) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```text
+   ┌─word───┬───────────distance─┐
+1. │ apple  │  0.757668703053566 │
+2. │ orange │ 1.5499475034938677 │
+3. │ banana │ 1.6168396735102937 │
+4. │ cat    │  2.429752230904804 │
+5. │ horse  │  2.524650475528617 │
+6. │ dog    │   3.17766975527459 │
+   └────────┴────────────────────┘
+```
+
+لاحظ أنه مع التكميم إلى 12 بتًا، نحصل على تقريب جيد للمسافات مع تنفيذ الاستعلام بسرعة أكبر. ويظل الترتيب النسبي متسقًا إلى حدّ كبير، مع بقاء &#39;apple&#39; أقرب تطابق.
+
+<div id="qbit-performance">
+  #### اعتبارات الأداء
+</div>
+
+تنبع فائدة الأداء في `QBit` من تقليل عمليات الإدخال/الإخراج، إذ يلزم قراءة كمية أقل من البيانات من التخزين عند استخدام دقة أقل. بالإضافة إلى ذلك، عندما يحتوي `QBit` على بيانات `Float32`، وإذا كانت معلَمة `precision` تساوي 16 أو أقل، فستكون هناك فوائد إضافية ناتجة عن تقليل العمليات الحسابية. وتتحكم معلَمة `precision` مباشرةً في المفاضلة بين الدقة والسرعة:
+
+* **دقة أعلى** (أقرب إلى عرض البيانات الأصلي): نتائج أكثر دقة، واستعلامات أبطأ
+* **دقة أقل**: استعلامات أسرع مع نتائج تقريبية، وانخفاض في استخدام الذاكرة
+
+<div id="references">
+  ### المراجع
+</div>
+
+المدونات:
+
+* [البحث المتجهي باستخدام ClickHouse - الجزء 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
+* [البحث المتجهي باستخدام ClickHouse - الجزء 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)
+* [أنشأنا محرك بحث متجهيًا يتيح لك اختيار الدقة وقت تنفيذ الاستعلام](https://clickhouse.com/blog/qbit-vector-search)

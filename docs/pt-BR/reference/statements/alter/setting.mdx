@@ -1,0 +1,65 @@
+---
+description: 'Documentação sobre manipulação de configurações de tabela'
+sidebarTitle: 'SETTING'
+slug: /sql-reference/statements/alter/setting
+title: 'Manipulação de configurações de tabela'
+doc_type: 'reference'
+---
+
+Há um conjunto de consultas para alterar as configurações da tabela. Você pode modificar as configurações ou redefini-las para os valores padrão. Uma única consulta pode alterar várias configurações de uma só vez.
+Se uma configuração com o nome especificado não existir, a consulta lançará uma exceção.
+
+**Sintaxe**
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
+```
+
+<Note>
+  Estas consultas podem ser aplicadas somente a tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
+</Note>
+
+<div id="modify-setting">
+  ## MODIFY SETTING
+</div>
+
+Altera as configurações da tabela.
+
+**Sintaxe**
+
+```sql
+MODIFY SETTING setting_name=value [, ...]
+```
+
+**Exemplo**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id;
+
+ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_in_total=50000;
+```
+
+<div id="reset-setting">
+  ## RESET SETTING
+</div>
+
+Redefine as configurações da tabela para os valores padrão. Se uma configuração já estiver no estado padrão, nenhuma ação será tomada.
+
+**Sintaxe**
+
+```sql
+RESET SETTING setting_name [, ...]
+```
+
+**Exemplo**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id
+    SETTINGS max_part_loading_threads=8;
+
+ALTER TABLE example_table RESET SETTING max_part_loading_threads;
+```
+
+**Veja também**
+
+* [Configurações do MergeTree](/pt-BR/reference/settings/merge-tree-settings)

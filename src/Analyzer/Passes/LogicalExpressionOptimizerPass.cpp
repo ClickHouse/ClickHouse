@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
+    extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
 }
 
 namespace ErrorCodes
@@ -32,6 +33,11 @@ namespace ErrorCodes
 }
 
 using namespace std::literals;
+
+/// Defined in IQueryTreeNode.cpp: thread-local count of nodes visited by getTreeHash. Used as the
+/// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
+size_t & getTreeHashWorkCounter();
+
 static constexpr std::array boolean_functions{
     "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
     "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
@@ -838,7 +844,61 @@ public:
 
     explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
         : Base(std::move(context))
+        , and_compare_chain_max_hash_work(getSettings()[Setting::optimize_and_compare_chain_max_hash_work])
+        , and_compare_chain_hash_work_start(getTreeHashWorkCounter())
     {}
+
+    /// Work budget for tryOptimizeAndCompareChain, measured directly in nodes hashed by getTreeHash
+    /// (its dominant cost). We snapshot the global counter when the visitor starts and stop the
+    /// optimization once it has hashed more than `and_compare_chain_max_hash_work` nodes for this
+    /// query. On queries with very many / very large AND-comparison chains this caps a cost that
+    /// otherwise dominates analysis while folding nothing (e.g. a 16x16 SQL ray-trace: ~72s -> ~3s),
+    /// while normal queries hash only thousands of nodes and never approach the budget. Stopping
+    /// early is always safe -- it only forgoes an optimization, never changes results.
+    /// The budget is the `optimize_and_compare_chain_max_hash_work` setting (0 disables it).
+    const size_t and_compare_chain_max_hash_work = 0;
+    const size_t and_compare_chain_hash_work_start = 0;
+
+    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
+    /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
+    /// A budget of 0 means unlimited, so the optimization is never stopped early.
+    bool andCompareChainHashBudgetExceeded() const
+    {
+        return and_compare_chain_max_hash_work != 0
+            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+    }
+
+    /// Memoized "this subtree contains a correlated subquery" bit, keyed by node identity.
+    /// tryOptimizeAndCompareChain runs for every `and` node, and skipping a chain that holds a
+    /// correlated subquery requires walking its subtree; without memoization a deeply nested AND
+    /// chain would rescan the shared suffix at every level, making the guard quadratic and defeating
+    /// the `optimize_and_compare_chain_max_hash_work` budget. The map keys are QueryTreeNodePtr
+    /// (strong references), so cached nodes stay alive and their addresses cannot be reused by newly
+    /// allocated nodes while the pass runs. This pass never introduces a correlated subquery, so a
+    /// cached result stays valid for the rest of the traversal.
+    std::unordered_map<QueryTreeNodePtr, bool> correlated_subquery_cache;
+
+    bool subtreeContainsCorrelatedSubquery(const QueryTreeNodePtr & node)
+    {
+        if (auto it = correlated_subquery_cache.find(node); it != correlated_subquery_cache.end())
+            return it->second;
+
+        bool result = isCorrelatedQueryOrUnionNode(node);
+        if (!result)
+        {
+            for (const auto & child : node->getChildren())
+            {
+                if (child && subtreeContainsCorrelatedSubquery(child))
+                {
+                    result = true;
+                    break;
+                }
+            }
+        }
+
+        correlated_subquery_cache.emplace(node, result);
+        return result;
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -1106,6 +1166,23 @@ private:
         if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
             return;
 
+        /// This optimization derives transitive comparisons and clones an operand into each new
+        /// conjunct. When an operand holds a correlated subquery (e.g. `x < exists((SELECT ...))`),
+        /// cloning produces several copies of the subquery that share one action name. Decorrelation
+        /// then adds the same synthetic column on both sides of the generated join and
+        /// `HashJoin::getNonJoinedBlocks` fails the column-count check with `Unexpected number of
+        /// columns in result sample block`. A correlated subquery must be evaluated exactly once, so
+        /// skip the optimization for such a chain and keep the original expression - it executes
+        /// correctly without the transitive conjuncts. The check is memoized so that visiting every
+        /// `and` node in a nested chain stays linear overall (see `correlated_subquery_cache`).
+        if (subtreeContainsCorrelatedSubquery(node))
+            return;
+
+        /// Stop once this query has spent its AND-compare-chain hashing budget (measured in nodes
+        /// hashed by getTreeHash since this visitor started).
+        if (andCompareChainHashBudgetExceeded())
+            return;
+
         enum CompareType
         {
             less = 0,
@@ -1130,6 +1207,14 @@ private:
 
         for (const auto & argument : arguments)
         {
+            /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHash
+            /// containers, and each insert computes a full getTreeHash. A single very large AND chain
+            /// could hash its whole operand set here before any later (DFS) budget check, so honor the
+            /// budget while collecting too -- aborting now only forgoes the optimization (nothing has
+            /// been appended to the AND yet), never changes results.
+            if (andCompareChainHashBudgetExceeded())
+                return;
+
             auto * argument_function = argument->as<FunctionNode>();
             const auto valid_functions = std::unordered_set<std::string>{
                 "less", "greater", "lessOrEquals", "greaterOrEquals", "equals"};
@@ -1210,6 +1295,20 @@ private:
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
+        /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
+        /// transitive conjunct is appended only if an equal one is not already there. The identifier
+        /// resolve cache can hand the same node to several use sites, and the pass visitor is not
+        /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
+        /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
+        QueryTreeNodePtrWithHashSet existing_conjuncts;
+        for (const auto & argument : function_node.getArguments().getNodes())
+        {
+            /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
+            if (andCompareChainHashBudgetExceeded())
+                return;
+            existing_conjuncts.emplace(argument);
+        }
+
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
         std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
             = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
@@ -1218,6 +1317,8 @@ private:
             {
                 for (const auto & left : it->second)
                 {
+                    if (andCompareChainHashBudgetExceeded())
+                        return;
                     if (visited.contains(left.first))
                         continue;
                     visited.insert(left.first);
@@ -1246,7 +1347,8 @@ private:
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
-                        function_node.getArguments().getNodes().push_back(and_node);
+                        if (existing_conjuncts.emplace(and_node).second)
+                            function_node.getArguments().getNodes().push_back(and_node);
                     }
 
                     findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
