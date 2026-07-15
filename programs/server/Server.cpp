@@ -2136,7 +2136,7 @@ try
         stateless_worker_endpoint_ptr.reset();
     });
 
-    #ifdef OS_LINUX
+    #if defined(OS_LINUX) || defined(OS_DARWIN)
     ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
     std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
     if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
@@ -2183,7 +2183,7 @@ try
     });
     #else
     if (config().getUInt("distributed_query.streaming_exchange_port", 0))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on this platform");
     #endif
 
     /// Set up caches.
@@ -3448,70 +3448,6 @@ try
         if (config().has("startup_scripts"))
             loadStartupScripts(config(), server_settings, global_context, log);
 
-        {
-            std::lock_guard lock(servers_lock);
-
-            /// Restore the startup log level overrides before accepting connections,
-            /// so that no requests are served with an elevated (startup) log level.
-            /// This must happen before server.start() because the config reload callback
-            /// (ConfigReloader) reads from config() which includes the writable layer
-            /// where startup level overrides are stored.
-            if (should_restore_default_logger_level)
-            {
-                config().setString("logger.level", default_logger_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
-            }
-
-            if (should_restore_console_log_level)
-            {
-                /// If the level was unset just remove the override so the default can be set via
-                /// Loggers::updateLevels again; otherwise restore the configured value.
-                if (console_log_level_was_set)
-                {
-                    config().setString("logger.console_log_level", original_console_log_level_config);
-                    Loggers::updateLevels(config(), logger());
-                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
-                }
-                else
-                {
-                    config().remove("logger.console_log_level");
-                    Loggers::updateLevels(config(), logger());
-                    LOG_INFO(log, "Restored console logger level to logger.level");
-                }
-            }
-
-            for (auto & server : servers)
-            {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
-            }
-
-            global_context->setServerCompletelyStarted();
-            LOG_INFO(log, "Ready for connections.");
-        }
-
-        startup_watch.stop();
-        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
-
-        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
-
-        try
-        {
-            global_context->startClusterDiscovery();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
-        }
-
-#if defined(OS_LINUX)
-        /// Tell the service manager that service startup is finished.
-        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
-        /// the child process notifies 'READY=1'.
-        systemdNotify("READY=1\n");
-#endif
-
         auto stop_acme_instance = []{
 #if USE_SSL
             /// Stop ACME tasks.
@@ -3627,6 +3563,70 @@ try
                 safeExit(0);
             }
         });
+
+        {
+            std::lock_guard lock(servers_lock);
+
+            /// Restore the startup log level overrides before accepting connections,
+            /// so that no requests are served with an elevated (startup) log level.
+            /// This must happen before server.start() because the config reload callback
+            /// (ConfigReloader) reads from config() which includes the writable layer
+            /// where startup level overrides are stored.
+            if (should_restore_default_logger_level)
+            {
+                config().setString("logger.level", default_logger_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
+            if (should_restore_console_log_level)
+            {
+                /// If the level was unset just remove the override so the default can be set via
+                /// Loggers::updateLevels again; otherwise restore the configured value.
+                if (console_log_level_was_set)
+                {
+                    config().setString("logger.console_log_level", original_console_log_level_config);
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                }
+                else
+                {
+                    config().remove("logger.console_log_level");
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to logger.level");
+                }
+            }
+
+            for (auto & server : servers)
+            {
+                server.start();
+                LOG_INFO(log, "Listening for {}", server.getDescription());
+            }
+
+            global_context->setServerCompletelyStarted();
+            LOG_INFO(log, "Ready for connections.");
+        }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
+
+        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
+
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
+        }
+
+#if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
+        systemdNotify("READY=1\n");
+#endif
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

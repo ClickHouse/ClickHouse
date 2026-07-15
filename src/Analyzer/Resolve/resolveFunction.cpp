@@ -1713,6 +1713,34 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         function->getLambdaArgumentTypes(argument_types);
 
+        /** Validate every lambda argument BEFORE resolving any lambda body. getLambdaArgumentTypes
+          * only fills in the placeholder argument types for positions that actually expect a lambda;
+          * where it does not (e.g. arrayFold's accumulator: arrayFold(lambda, arr, another_lambda)),
+          * the placeholder DataTypeFunction keeps null argument types. Those nulls must be rejected up
+          * front: a later lambda that stays unresolved can be copied into an earlier lambda's argument
+          * type, so resolving the earlier lambda's body first would take the non-lambda path and
+          * dereference the null return type (FunctionArrayMapped::getReturnTypeImpl).
+          */
+        for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
+        {
+            const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
+            if (!function_data_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function '{}' expected function data type for lambda argument with index {}. Actual: {}. In scope {}",
+                    function_name,
+                    function_lambda_argument_index,
+                    argument_types[function_lambda_argument_index]->getName(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            for (const auto & lambda_argument_type : function_data_type->getArgumentTypes())
+                if (!lambda_argument_type)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function '{}' does not expect a lambda expression as argument {}. In scope {}",
+                        function_name,
+                        function_lambda_argument_index + 1,
+                        scope.scope_node->formatASTForErrorMessage());
+        }
+
         ProjectionNames lambda_projection_names;
         for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
         {
