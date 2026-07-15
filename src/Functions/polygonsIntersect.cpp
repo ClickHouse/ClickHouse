@@ -131,9 +131,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-                ┌─polygonsIntersectCartesian()─┐
-                │ 1 │
-                └───────────────────┘
+┌─polygonsIntersectCartesian()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
@@ -159,9 +159,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-                ┌─polygonsIntersectSpherical()─┐
-                │ 1 │
-                └───────────────────┘
+┌─polygonsIntersectSpherical()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});

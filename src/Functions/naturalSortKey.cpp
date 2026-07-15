@@ -226,7 +226,7 @@ REGISTER_FUNCTION(NaturalSortKey)
         R"(
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
         )"
     }
