@@ -23,10 +23,12 @@
 #     NOT contain "Not-ready Set" (an unfixed release build that throws the
 #     exception, or a debug build that aborts after logging it, is caught).
 #   * Ready-tuple cases: shard pruning must be PRESERVED, so the query is
-#     directed at values that map to a single shard (shard 1, 127.0.0.2). With
-#     pruning it contacts only 127.0.0.2; a regression to always-fallback would
-#     try shard 0 (127.0.0.1) first. The fake shards are unreachable, so the
-#     shard actually contacted shows up as the connection-error host.
+#     directed at values that map to a single shard (shard 1, 192.0.2.2). With
+#     pruning it contacts only 192.0.2.2; a regression to always-fallback would
+#     also try shard 0 (192.0.2.1). The shards use RFC5737 TEST-NET addresses,
+#     unreachable in every environment (including the single-node Fast test box
+#     where 127.0.0.1:9000 is a live server), so the shard actually contacted
+#     shows up as the connection-error host.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,13 +41,13 @@ cat > "${CLUSTER_CONFIG}" <<'EOF'
         <test_04545_two_shards>
             <shard>
                 <replica>
-                    <host>127.0.0.1</host>
+                    <host>192.0.2.1</host>
                     <port>9000</port>
                 </replica>
             </shard>
             <shard>
                 <replica>
-                    <host>127.0.0.2</host>
+                    <host>192.0.2.2</host>
                     <port>9000</port>
                 </replica>
             </shard>
@@ -54,7 +56,8 @@ cat > "${CLUSTER_CONFIG}" <<'EOF'
 </clickhouse>
 EOF
 
-COMMON_SETTINGS="prefer_localhost_replica = 0, optimize_skip_unused_shards = 1, optimize_skip_unused_shards_rewrite_in = 1, allow_nondeterministic_optimize_skip_unused_shards = 1"
+# Low failover connect timeout so the unreachable TEST-NET shards fail fast.
+COMMON_SETTINGS="prefer_localhost_replica = 0, optimize_skip_unused_shards = 1, optimize_skip_unused_shards_rewrite_in = 1, allow_nondeterministic_optimize_skip_unused_shards = 1, connect_timeout_with_failover_ms = 300"
 
 # Unready subquery-backed set: the fix must fall back and let planning finish.
 # The bug leaks in two shapes we must both catch:
@@ -83,8 +86,8 @@ run_unready()
 
 # Ready tuple set: `0 IN (1, 2)` is a materialized constant set, so the sharding
 # key reduces to `bitAnd(dummy, 1)` = dummy % 2. Shard pruning must survive.
-# `dummy IN (1, 3)` both map to shard 1 (127.0.0.2); with pruning only that
-# shard is contacted, without pruning shard 0 (127.0.0.1) is tried first.
+# `dummy IN (1, 3)` both map to shard 1 (192.0.2.2); with pruning only that
+# shard is contacted, without pruning shard 0 (192.0.2.1) is contacted too.
 # $1 = analyzer flag.
 run_ready_pruned()
 {
@@ -96,7 +99,7 @@ run_ready_pruned()
         SELECT count() FROM dist_04545 WHERE dummy IN (1, 3);
     " 2>&1 >/dev/null)
 
-    if echo "${err}" | grep -q "127.0.0.2" && ! echo "${err}" | grep -q "127.0.0.1"; then
+    if echo "${err}" | grep -q "192.0.2.2" && ! echo "${err}" | grep -q "192.0.2.1"; then
         echo "PRUNED-TO-SHARD1"
     else
         echo "NOT-PRUNED"
