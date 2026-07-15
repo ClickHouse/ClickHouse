@@ -56,27 +56,27 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
 /// Used to gate the deferral: if delayed blocks are possible the deferral would
 /// silently disable both `topKThroughJoin` and the second-pass through-join pass.
 ///
-/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly. For
-/// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
-/// so we conservatively assume delayed blocks are possible when the configured settings
-/// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
-/// automatic spilling is effectively enabled AND a hash-family algorithm that the spilling
-/// wrapper actually applies to is enabled.
+/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly - the robust property.
 ///
-/// The spill settings only wrap the chosen join in `SpillingHashJoin`, and that wrapping
-/// happens only in the `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE` / `DEFAULT` (and
-/// `AUTO`) branches of `chooseJoinAlgorithm` (`ExpressionAnalyzer.cpp`, `PlannerJoins.cpp`).
-/// `DIRECT` (`DirectKeyValueJoin`), `PARTIAL_MERGE` (`MergeJoin`), and `FULL_SORTING_MERGE`
-/// (`FullSortingMergeJoin`) never enter that branch, so a nonzero spill setting leaves them
-/// with no delayed blocks. That wrapping is also gated on the *effective* threshold
-/// (`JoinAlgorithmParams::max_bytes_before_external_join`, set from
-/// `getEffectiveMaxBytesBeforeExternalJoin()`), which resolves the default
-/// `max_bytes_ratio_before_external_join = 0.5` to `0` when there is no system memory hard
-/// limit. Keying the logical gate off the same effective threshold (rather than the raw
-/// settings) keeps `join_algorithm = 'direct'` (and `partial_merge` / `full_sorting_merge`)
-/// eligible for the deferral, and also keeps `hash` / `parallel_hash` / `default` eligible on
-/// installs without a memory limit, rather than forcing the explicit `Sort + Limit` pushdown
-/// when the physical join cannot spill.
+/// For a `JoinStepLogical` the physical join has not been built yet, so we classify each
+/// configured algorithm fail-closed: an algorithm is treated as may-delay unless it is one
+/// of the few that provably never produces delayed blocks. This is deliberately coarse
+/// (per-algorithm, not data-dependent) so it does not couple to any join-internal decision:
+///   - `GRACE_HASH` (`GraceHashJoin`) / `AUTO` (`JoinSwitcher`) always may delay, regardless
+///     of the spill settings.
+///   - `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE` / `DEFAULT` may delay only when
+///     automatic spilling is effectively on, because the `SpillingHashJoin` wrapper is applied
+///     to exactly these branches in `chooseJoinAlgorithm` (`PlannerJoins.cpp`).
+///   - `DIRECT` / `PARTIAL_MERGE` / `FULL_SORTING_MERGE` are never wrapped, so they never delay.
+///   - any future / unknown algorithm falls through to the fail-closed `return true`.
+///
+/// "Spilling effectively on" is read from the *effective* threshold
+/// (`JoinSettings::getEffectiveMaxBytesBeforeExternalJoin()`), not the raw setting, to match the
+/// physical wrap: the wrap gates on `JoinAlgorithmParams::max_bytes_before_external_join`, set
+/// from that same effective value. The raw `max_bytes_ratio_before_external_join` (default `0.5`)
+/// resolves to `0` when there is no system memory hard limit, leaving a plain non-spilling
+/// `HashJoin`; reading the raw ratio would wrongly flag every hash join as may-delay on installs
+/// without a memory limit and force the slower `Sort + Limit` pushdown.
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -86,36 +86,26 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
-        const auto & js = logical->getJoinSettings();
+        const bool spill_possible = logical->getJoinSettings().getEffectiveMaxBytesBeforeExternalJoin() > 0;
 
-        /// `AUTO` builds a `JoinSwitcher` and `GRACE_HASH` a `GraceHashJoin`, both of which can
-        /// have delayed blocks regardless of the spill settings.
-        const bool always_delayed = std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
+        return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [spill_possible](JoinAlgorithm a)
         {
-            return a == JoinAlgorithm::GRACE_HASH || a == JoinAlgorithm::AUTO;
-        });
-        if (always_delayed)
-            return true;
-
-        /// Spilling only matters when it is actually configured AND enabled for an algorithm the
-        /// `SpillingHashJoin` wrapper applies to (`HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE`
-        /// / `DEFAULT`); `DIRECT` / `PARTIAL_MERGE` / `FULL_SORTING_MERGE` are never wrapped.
-        ///
-        /// Key this off the *effective* threshold, not the raw settings, to match the physical
-        /// wrap: it gates on `JoinAlgorithmParams::max_bytes_before_external_join`, which is set
-        /// from `JoinSettings::getEffectiveMaxBytesBeforeExternalJoin()` (`PlannerJoins.cpp`). The
-        /// raw `max_bytes_ratio_before_external_join` (default `0.5`) resolves to `0` when there is
-        /// no system memory hard limit (`getMostStrictAvailableSystemMemory()` is empty), leaving a
-        /// plain non-spilling `HashJoin`. Reading the raw ratio would wrongly flag every
-        /// `hash` / `parallel_hash` / `default` join as may-delay on installs without a memory
-        /// limit and force the slower `Sort + Limit` pushdown.
-        if (js.getEffectiveMaxBytesBeforeExternalJoin() == 0)
-            return false;
-
-        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
-        {
-            return a == JoinAlgorithm::HASH || a == JoinAlgorithm::PARALLEL_HASH
-                || a == JoinAlgorithm::PREFER_PARTIAL_MERGE || a == JoinAlgorithm::DEFAULT;
+            switch (a)
+            {
+                case JoinAlgorithm::DIRECT:
+                case JoinAlgorithm::PARTIAL_MERGE:
+                case JoinAlgorithm::FULL_SORTING_MERGE:
+                    return false; /// never wrapped in a spilling/switching join
+                case JoinAlgorithm::HASH:
+                case JoinAlgorithm::PARALLEL_HASH:
+                case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+                case JoinAlgorithm::DEFAULT:
+                    return spill_possible; /// wrapped in `SpillingHashJoin` only when spilling is on
+                case JoinAlgorithm::GRACE_HASH:
+                case JoinAlgorithm::AUTO:
+                    return true; /// `GraceHashJoin` / `JoinSwitcher` may always delay
+            }
+            return true; /// fail-closed for any future algorithm
         });
     }
     /// Unknown step kind - be conservative.
