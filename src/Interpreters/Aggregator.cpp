@@ -2057,6 +2057,7 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
     bool final,
     size_t partition_index,
     size_t num_partitions,
+    size_t max_source_table_size,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
@@ -2067,13 +2068,9 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
     for (const auto & variants : non_empty_data)
         sources.push_back(variants.get());
 
-    size_t max_table_size = 0;
-    for (const auto & source : sources)
-        max_table_size = std::max(max_table_size, source->sizeWithoutOverflowRow());
-
     AggregatedDataVariants dst;
     dst.aggregator = this;
-    dst.init(first->type, max_table_size / num_partitions);
+    dst.init(first->type, max_source_table_size / num_partitions);
     dst.keys_size = params.keys_size;
     dst.key_sizes = key_sizes;
     dst.aggregates_pools.insert(dst.aggregates_pools.end(), first->aggregates_pools.begin(), first->aggregates_pools.end());

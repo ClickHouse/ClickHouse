@@ -289,12 +289,14 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         UInt32 num_partitions_,
+        size_t max_source_table_size_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , num_partitions(num_partitions_)
+        , max_source_table_size(max_source_table_size_)
         , updater(std::move(updater_))
     {
     }
@@ -322,7 +324,7 @@ protected:
         }
 
         auto agg_chunk = params->aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-            *data, params->final, partition, num_partitions, shared_data->is_cancelled, updater);
+            *data, params->final, partition, num_partitions, max_source_table_size, shared_data->is_cancelled, updater);
 
         /// Under the `throw` overflow mode this raises as soon as the running total exceeds the
         /// limit — the same condition on which the serial merge would have thrown between tables.
@@ -337,6 +339,7 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     UInt32 num_partitions;
+    size_t max_source_table_size;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
@@ -937,13 +940,16 @@ private:
         const bool has_heavy_states
             = std::ranges::any_of(params->params.aggregates, [](const auto & aggregate) { return aggregate.function->sizeOfData() > 16; });
 
+        /// The largest source table is measured here, before any partition source runs: the merge
+        /// mutates the source tables concurrently, so the workers must not read their sizes.
+        size_t max_table_size = 0;
+        for (const auto & variants : *data)
+            max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
+
         size_t num_partitions = max_partitions;
         if (!has_heavy_states)
         {
             static constexpr size_t MIN_KEYS_PER_PARTITION = 512;
-            size_t max_table_size = 0;
-            for (const auto & variants : *data)
-                max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
             num_partitions = std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
         }
 
@@ -951,7 +957,7 @@ private:
         for (size_t thread = 0; thread < num_sources; ++thread)
         {
             auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
-                params, data, shared_data, static_cast<UInt32>(num_partitions), updater);
+                params, data, shared_data, static_cast<UInt32>(num_partitions), max_table_size, updater);
             processors.emplace_back(std::move(source));
         }
 

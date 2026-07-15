@@ -296,11 +296,15 @@ public:
     /// first-seen keys and nulls the visited source cells, so distinct partitions may run concurrently
     /// over the same source tables and the tables' destruction afterwards cannot double-destroy.
     /// The NULL key of the single-key nullable methods belongs to partition 0.
+    /// `max_source_table_size` (used to pre-size the destination table) must be measured by the
+    /// caller before any partition starts: once the workers run, the source tables are mutated
+    /// concurrently and may not be read outside the caller-owned partition.
     AggregatedChunk mergeSingleLevelPartitionAndConvertToChunk(
         ManyAggregatedDataVariants & non_empty_data,
         bool final,
         size_t partition_index,
         size_t num_partitions,
+        size_t max_source_table_size,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 

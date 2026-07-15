@@ -131,10 +131,14 @@ struct Scenario
         EXPECT_TRUE(aggregator.canMergeSingleLevelInPartitions(*prepared.at(0)));
 
         std::atomic<bool> cancelled{false};
+        size_t max_table_size = 0;
+        for (const auto & variants : prepared)
+            max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
         std::map<String, String> united;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
-            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(prepared, /*final=*/true, partition, num_partitions, cancelled, /*updater=*/nullptr);
+            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
+                prepared, /*final=*/true, partition, num_partitions, max_table_size, cancelled, /*updater=*/nullptr);
             for (const auto & [key, value] : renderChunk(agg_chunk.chunk, params.keys_size))
             {
                 EXPECT_TRUE(united.emplace(key, value).second) << "key " << key << " produced by two partitions";
@@ -152,10 +156,14 @@ struct Scenario
         auto prepared = aggregator.prepareVariantsToMerge(std::move(many));
 
         std::atomic<bool> cancelled{false};
+        size_t max_table_size = 0;
+        for (const auto & variants : prepared)
+            max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
         std::map<String, String> united;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
-            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(prepared, /*final=*/false, partition, num_partitions, cancelled, /*updater=*/nullptr);
+            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
+                prepared, /*final=*/false, partition, num_partitions, max_table_size, cancelled, /*updater=*/nullptr);
             const size_t rows = agg_chunk.chunk.getNumRows();
             auto columns = agg_chunk.chunk.detachColumns();
             for (size_t i = params.keys_size; i < columns.size(); ++i)
