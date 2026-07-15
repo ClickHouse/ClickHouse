@@ -361,7 +361,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     /// above and is needed for a single expression node too, not only for a list: otherwise an alias
     /// defined and later referenced within a standalone constant expression (such as a user predicate
     /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context->getSettingsRef()[Setting::column_and_query_name_matching]);
     visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
