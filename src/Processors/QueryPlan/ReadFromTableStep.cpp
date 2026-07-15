@@ -171,7 +171,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
             readStringBinary(node_name, ctx.in);
             readStringBinary(column_name, ctx.in);
             auto type = decodeDataType(ctx.in, ctx.max_type_complexity);
-            node_name_to_input_node_column.emplace(std::move(node_name), ColumnWithTypeAndName(nullptr, std::move(type), std::move(column_name)));
+            node_name_to_input_node_column.emplace(std::move(node_name), ColumnWithTypeAndName(nullptr, type, column_name));
         }
     }
 
