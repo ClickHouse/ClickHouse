@@ -1,0 +1,158 @@
+---
+slug: /cloud/managed-postgres/extensions
+sidebarTitle: 'الامتدادات'
+title: 'امتدادات PostgreSQL'
+description: 'امتدادات PostgreSQL المتوفرة في ClickHouse Managed Postgres'
+keywords: ['امتدادات Postgres', 'postgis', 'pgvector', 'pg_cron', 'امتدادات PostgreSQL']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
+
+يتضمن Managed Postgres مجموعة مختارة من الامتدادات لتوسيع وظائف قاعدة البيانات لديك. في ما يلي قائمة بالامتدادات المتاحة.
+
+<div id="installing-extensions">
+  ## تثبيت الامتدادات
+</div>
+
+لتثبيت امتداد، اتصل بقاعدة البيانات ثم نفِّذ:
+
+```sql
+CREATE EXTENSION extension_name;
+```
+
+لمعرفة الامتدادات المثبتة حاليًا:
+
+```sql
+SELECT * FROM pg_extension;
+```
+
+لعرض جميع الامتدادات المتاحة وإصداراتها:
+
+```sql
+SELECT * FROM pg_available_extensions;
+```
+
+<div id="available-extensions">
+  ## الامتدادات المتاحة
+</div>
+
+| الامتداد                       | الإصدار | الوصف                                                                               |
+| ------------------------------ | ------- | ----------------------------------------------------------------------------------- |
+| `address_standardizer`         | 3.6.3   | يُستخدم لتحليل العنوان إلى عناصره المكوِّنة                                         |
+| `address_standardizer_data_us` | 3.6.3   | مثال على مجموعة بيانات Address Standardizer للولايات المتحدة                        |
+| `adminpack`                    | 2.1     | وظائف إدارية لـ PostgreSQL *(PG16 فقط)*                                             |
+| `age`                          | 1.7.0   | امتداد قاعدة بيانات بيانية Apache AGE                                               |
+| `amcheck`                      |         | وظائف للتحقق من سلامة العلاقات                                                      |
+| `autoinc`                      | 1.0     | وظائف للحقول ذات الزيادة التلقائية                                                  |
+| `bloom`                        | 1.0     | أسلوب وصول Bloom - فهرس قائم على ملف توقيع                                          |
+| `bool_plperl`                  | 1.0     | تحويل بين bool و plperl                                                             |
+| `bool_plperlu`                 | 1.0     | تحويل بين bool و plperlu                                                            |
+| `btree_gin`                    | 1.3     | دعم فهرسة أنواع البيانات الشائعة في GIN                                             |
+| `btree_gist`                   | 1.8     | دعم فهرسة أنواع البيانات الشائعة في GiST                                            |
+| `citext`                       | 1.8     | نوع بيانات للسلاسل النصية غير الحساسة لحالة الأحرف                                  |
+| `cube`                         | 1.5     | نوع بيانات للمكعبات متعددة الأبعاد                                                  |
+| `dblink`                       | 1.2     | الاتصال بقواعد بيانات PostgreSQL أخرى من داخل قاعدة بيانات                          |
+| `dict_int`                     | 1.0     | قالب قاموس للبحث النصي للأعداد الصحيحة                                              |
+| `dict_xsyn`                    | 1.0     | قالب قاموس للبحث النصي لمعالجة المترادفات الموسعة                                   |
+| `earthdistance`                | 1.2     | حساب مسافات الدائرة العظمى على سطح الأرض                                            |
+| `file_fdw`                     | 1.0     | مغلّف بيانات خارجية للوصول إلى الملفات المسطحة                                      |
+| `fuzzystrmatch`                | 1.2     | تحديد أوجه التشابه والمسافة بين السلاسل النصية                                      |
+| `h3`                           | 4.2.3   | روابط H3 لـ PostgreSQL                                                              |
+| `h3_postgis`                   | 4.2.3   | تكامل H3 مع PostGIS                                                                 |
+| `hll`                          | 2.19    | نوع لتخزين بيانات HyperLogLog                                                       |
+| `hstore`                       | 1.8     | نوع بيانات لتخزين مجموعات من أزواج (مفتاح، قيمة)                                    |
+| `hstore_plperl`                | 1.0     | تحويل بين hstore و plperl                                                           |
+| `hstore_plperlu`               | 1.0     | تحويل بين hstore و plperlu                                                          |
+| `hypopg`                       | 1.4.2   | فهارس افتراضية لـ PostgreSQL                                                        |
+| `intagg`                       | 1.1     | مُجمِّع ومُعدِّد للأعداد الصحيحة (مهجور)                                            |
+| `insert_username`              | 1.0     | وظائف لتتبّع من غيّر جدولًا                                                         |
+| `intarray`                     | 1.5     | وظائف وعوامل ودعم الفهارس لمصفوفات الأعداد الصحيحة أحادية البعد                     |
+| `ip4r`                         | 2.4     | أنواع فهارس لنطاقات IPv4 و IPv6                                                     |
+| `isn`                          | 1.3     | أنواع بيانات لمعايير الترقيم الدولي للمنتجات                                        |
+| `jsonb_plperl`                 | 1.0     | تحويل بين jsonb و plperl                                                            |
+| `jsonb_plperlu`                | 1.0     | تحويل بين jsonb و plperlu                                                           |
+| `lo`                           | 1.2     | صيانة الكائنات الكبيرة                                                              |
+| `ltree`                        | 1.3     | نوع بيانات للبُنى الهرمية الشبيهة بالأشجار                                          |
+| `moddatetime`                  | 1.0     | دوال لتتبّع وقت آخر تعديل                                                           |
+| `mysql_fdw`                    | 1.2     | مغلّف بيانات خارجية للاستعلام من خادم MySQL                                         |
+| `old_snapshot`                 | 1.0     | أدوات مساعدة لدعم old&#95;snapshot&#95;threshold *(PG16 only)*                      |
+| `orafce`                       | 4.16    | دوال ومعاملات تحاكي مجموعة فرعية من الدوال والحِزم في Oracle RDBMS                  |
+| `pageinspect`                  | 1.13    | فحص محتويات صفحات قاعدة البيانات على مستوى منخفض                                    |
+| `pg_buffercache`               |         | فحص ذاكرة التخزين المؤقت المشتركة للمخزن المؤقت                                     |
+| `pg_clickhouse`                | 0.3     | واجهات للاستعلام عن قواعد بيانات ClickHouse من PostgreSQL                           |
+| `pg_cron`                      | 1.6     | مجدول مهام لـ PostgreSQL                                                            |
+| `pg_freespacemap`              | 1.3     | فحص خريطة المساحة الحرة (FSM)                                                       |
+| `pg_hint_plan`                 |         | تلميحات المُحسِّن لـ PostgreSQL                                                     |
+| `pg_ivm`                       | 1.13    | الصيانة التزايدية للعروض في PostgreSQL                                              |
+| `pg_logicalinspect`            | 1.0     | دوال لفحص مكوّنات logical decoding *(PG18+)*                                        |
+| `pg_partman`                   | 5.4.3   | امتداد لإدارة الجداول المُقسّمة حسب الوقت أو المعرّف                                |
+| `pg_prewarm`                   | 1.2     | تهيئة بيانات relation مسبقًا                                                        |
+| `pg_re2`                       | 0.1     | دوال تعبيرات نمطية متوافقة مع ClickHouse ومدعومة بمحرك RE2 من Google                |
+| `pg_repack`                    | 1.5.3   | إعادة تنظيم الجداول في قواعد بيانات PostgreSQL بأقل قدر ممكن من الأقفال             |
+| `pg_similarity`                | 1.0     | دعم استعلامات التشابه                                                               |
+| `pg_stat_ch`                   | 0.3     | يبث بيانات telemetry الخاصة بتنفيذ كل query إلى ClickHouse في الوقت الفعلي          |
+| `pg_stat_statements`           |         | تتبّع إحصاءات التخطيط والتنفيذ لجميع عبارات SQL المنفَّذة                           |
+| `pg_surgery`                   | 1.0     | امتداد لإجراء إصلاح على relation متضرّرة                                            |
+| `pg_tokenizer`                 | 0.1.1   | مقطّع نصوص يُستخدم مع `vchord_bm25`                                                 |
+| `pg_trgm`                      | 1.6     | قياس تشابه النصوص والبحث في الفهارس استنادًا إلى المقاطع الثلاثية                   |
+| `pg_visibility`                | 1.2     | فحص خريطة الظهور (VM) ومعلومات الظهور على مستوى الصفحة                              |
+| `pg_walinspect`                | 1.1     | دوال لفحص محتويات PostgreSQL Write-Ahead Log                                        |
+| `pgaudit`                      |         | يوفّر إمكانات التدقيق                                                               |
+| `pgcrypto`                     | 1.4     | دوال التشفير                                                                        |
+| `pglogical`                    | 2.4.6   | النسخ المنطقي لـ PostgreSQL                                                         |
+| `pglogical_origin`             | 1.0.0   | امتداد وهمي للتوافق عند الترقية من Postgres 9.4                                     |
+| `pgrouting`                    | 4.0.1   | امتداد pgRouting                                                                    |
+| `pgrowlocks`                   | 1.2     | عرض معلومات القفل على مستوى الصفوف                                                  |
+| `pgstattuple`                  | 1.5     | عرض إحصاءات على مستوى الـ tuple                                                     |
+| `pgtap`                        | 1.3.4   | اختبار الوحدات لـ PostgreSQL                                                        |
+| `plperl`                       | 1.0     | لغة PL/Perl الإجرائية                                                               |
+| `plperlu`                      | 1.0     | لغة PL/PerlU الإجرائية غير الموثوقة                                                 |
+| `plpgsql`                      | 1.0     | لغة PL/pgSQL الإجرائية                                                              |
+| `plpgsql_check`                | 2.8     | فحص موسّع لدوال plpgsql                                                             |
+| `postgis`                      | 3.6.3   | أنواع البيانات والدوال المكانية للهندسة والجغرافيا في PostGIS                       |
+| `postgis_raster`               | 3.6.3   | أنواع البيانات النقطية ودوالها في PostGIS                                           |
+| `postgis_sfcgal`               | 3.6.3   | دوال PostGIS SFCGAL                                                                 |
+| `postgis_tiger_geocoder`       | 3.6.3   | المرمّز الجغرافي tiger في PostGIS والمرمّز الجغرافي العكسي                          |
+| `postgis_topology`             | 3.6.3   | أنواع البيانات والدوال المكانية للطوبولوجيا في PostGIS                              |
+| `postgres_fdw`                 | 1.2     | مغلّف البيانات الخارجية لخوادم PostgreSQL البعيدة                                   |
+| `prefix`                       | 1.2.0   | وحدة Prefix Range لـ PostgreSQL                                                     |
+| `refint`                       | 1.0     | دوال لتنفيذ التكامل المرجعي (مهمل)                                                  |
+| `seg`                          | 1.4     | نوع بيانات لتمثيل المقاطع الخطية أو الفترات ذات الفاصلة العائمة                     |
+| `semver`                       | 0.41.0  | نوع بيانات الإصدار الدلالي                                                          |
+| `sslinfo`                      | 1.2     | معلومات حول شهادات SSL                                                              |
+| `tablefunc`                    | 1.0     | دوال تتعامل مع الجداول بالكامل، بما في ذلك crosstab                                 |
+| `tcn`                          | 1.0     | إشعارات بالتغييرات الناتجة عن المشغلات                                              |
+| `tds_fdw`                      | 2.0.5   | مغلّف بيانات خارجية للاستعلام عن قاعدة بيانات TDS ‏(Sybase أو Microsoft SQL Server) |
+| `tsm_system_rows`              | 1.0     | أسلوب TABLESAMPLE يقبل عدد الصفوف كحد                                               |
+| `tsm_system_time`              | 1.0     | أسلوب TABLESAMPLE يقبل الوقت بالمللي ثانية كحد                                      |
+| `uint`                         |         | أنواع الأعداد الصحيحة غير الموقعة                                                   |
+| `unaccent`                     | 1.1     | قاموس بحث نصي يزيل علامات التشكيل                                                   |
+| `unit`                         | 7       | امتداد وحدات SI                                                                     |
+| `uuid-ossp`                    | 1.1     | إنشاء معرّفات فريدة عالميًا (UUIDs)                                                 |
+| `vchord`                       | 1.1.1   | أساليب وصول لفهرسة المتجهات في Postgres                                             |
+| `vchord_bm25`                  | 0.3.0   | أسلوب وصول لترتيب النتائج وفق BM25 للبحث في النص الكامل                             |
+| `vector`                       | 0.8.2   | نوع بيانات للمتجهات وأساليب الوصول `ivfflat` و`hnsw`                                |
+| `xml2`                         | 1.2     | استعلامات XPath وتحويلات XSLT                                                       |
+
+<div id="pg-clickhouse">
+  ## امتداد pg_clickhouse
+</div>
+
+امتداد `pg_clickhouse` مُثبّتة مسبقًا على كل مثيل من Managed Postgres. وتتيح لك الاستعلام مباشرةً عن قواعد بيانات ClickHouse من PostgreSQL، مما يوفر طبقة استعلام موحّدة لكلٍّ من المعاملات والتحليلات.
+
+راجع [وثائق pg&#95;clickhouse](/ar/products/managed-postgres/extensions/pg_clickhouse/introduction) للاطلاع على تعليمات الإعداد وتفاصيل الاستخدام.
+
+<div id="pg-stat-ch">
+  ## امتداد pg_stat_ch
+</div>
+
+يوفّر امتداد `pg_stat_ch` إمكانات observability على مستوى الاستعلام لمثيل Managed Postgres لديك. ويجمع بيانات telemetry لكل استعلام على حدة (التوقيتات، الصفوف، المخازن المؤقتة، WAL، الأخطاء) ويرسلها إلى UI في ClickHouse Cloud، حيث تظهر على شكل عروض الاستعلامات البطيئة والأخطاء وأحمال العمل. لا يتطلب أي إعداد.
+
+<div id="pg-re2">
+  ## امتداد pg_re2
+</div>
+
+يضيف امتداد `pg_re2` إلى Managed Postgres دوال للتعبيرات النمطية متوافقة مع ClickHouse، ومدعومة بمحرك RE2 من Google. ويكون ذلك مفيدًا عند نقل الاستعلامات بينهما أو تشغيل أعباء عمل هجينة تتطلب دلالات متطابقة لمطابقة الأنماط على كلا الجانبين.

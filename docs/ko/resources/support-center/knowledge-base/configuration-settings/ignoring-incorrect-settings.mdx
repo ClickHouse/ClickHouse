@@ -1,0 +1,27 @@
+---
+title: "ClickHouse에서 잘못된 설정을 무시하는 방법"
+description: "`skip_check_for_incorrect_settings` 옵션을 사용하여 사용자 수준 설정(user-level settings)이 잘못 지정된 경우에도 ClickHouse를 시작하는 방법을 알아보십시오."
+date: 2023-03-01
+tags: ['설정']
+keywords: ['잘못된 설정 무시']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## ClickHouse에서 잘못된 설정 무시하기
+</div>
+
+사용자 수준 설정이 잘못된 위치에 지정되면 서버가 시작되지 않고 로그에 예외 메시지가 기록됩니다. 하지만 `skip_check_for_incorrect_settings` 설정을 사용하면 ClickHouse가 잘못된 설정을 무시하도록 할 수 있습니다.
+
+다음을 `config.xml`에 추가하세요:
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  사용자 수준 설정은 `users.xml`의 해당 사용자 프로필에 대한 `<profile>` 섹션에 지정해야 합니다(기본 설정은 `<default>`에 지정).
+</Note>

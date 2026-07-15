@@ -1,0 +1,8 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+    <!-- Put the replicas into a named replica group so the `Replicated` database also exposes an
+         `all_groups.<db>` cluster in `system.clusters` (see `DatabaseReplicated::tryGetAllGroupsCluster`). -->
+    <replica_group_name>group_a</replica_group_name>
+</clickhouse>

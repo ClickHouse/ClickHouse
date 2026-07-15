@@ -273,7 +273,10 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column->size();
-        auto mutable_column = column->assumeMutable();
+        /// `column` may be shared — e.g. it was placed into the substreams cache by an earlier substream
+        /// read — and appending to it in place would then mutate data still referenced by another owner.
+        /// Clone it when shared; `IColumn::mutate` is a no-op for the common uniquely-owned case.
+        MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
@@ -306,7 +309,7 @@ String getNameForSubstreamPath(
     size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -512,7 +515,7 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
 
 void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return;
 
     cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
@@ -520,7 +523,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path, true));
@@ -529,7 +532,7 @@ ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstrea
 
 void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return;
 
     cache->emplace(getSubcolumnNameForStream(path, true), state);
@@ -537,7 +540,7 @@ void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserialize
 
 ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path, true));
@@ -549,6 +552,7 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     for (const auto & elem : path)
     {
         if (elem.type == Substream::NullMap
+            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
@@ -804,7 +808,12 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     /// To determine what case we have we store number of read rows in last range in cache.
     if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
     {
-        result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        /// `result_column` may be shared (it can be handed to the substreams cache below and reused for
+        /// another substream in the same range), so clone it when shared instead of appending in place to
+        /// a buffer still referenced elsewhere. `IColumn::mutate` is a no-op when uniquely owned.
+        MutableColumnPtr mutable_column = IColumn::mutate(std::move(result_column));
+        mutable_column->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        result_column = std::move(mutable_column);
         if (update_cache_after_insert)
         {
             /// Replace column in the cache with the new column to avoid inserting into it again

@@ -80,3 +80,39 @@ def test_parse_failure_asan_check_failed_with_stack_trace(tmp_path):
     assert "Assertion 'px != 0' failed" not in info
     assert "dpkg" not in info
     assert files == []
+
+
+def test_parse_failure_logical_error_name_drops_dangling_stack_trace_marker(tmp_path):
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    server_log.write_text(
+        "2026.06.14 20:00:01.000000 [ 200 ] {} <Fatal> : Logical error: "
+        "'std::exception. Code: 1001, type: std::__1::future_error, "
+        "e.what() = The associated promise has been destructed prior to the "
+        "associated state becoming ready., Stack trace (when copying this "
+        "message, always include the lines below):\n"
+        "\n"
+        "0. ./contrib/llvm-project/libcxx/include/future:509:25: "
+        "std::promise<void>::~promise() @ 0x000000002cbf6d04\n"
+        "2026.06.14 20:00:02.000000 [ 200 ] {} <Fatal> BaseDaemon: Stack trace:\n"
+        "2026.06.14 20:00:02.000000 [ 200 ] {} <Fatal> BaseDaemon: "
+        "1. ./src/Common/Exception.cpp:60: DB::abortOnFailedAssertion() @ 0x14d2262e\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    # The failure name must not end with the "always include the lines below):"
+    # promise when no frames follow it (the first log line is all the name has).
+    assert "always include the lines below" not in result_name
+    assert result_name.startswith("Logical error: 'std::exception.")
+    assert "The associated promise has been destructed" in result_name
+    assert "(STID:" in result_name
+    # The frames are still preserved in the separate stack-trace section of the info.
+    assert "abortOnFailedAssertion" in info

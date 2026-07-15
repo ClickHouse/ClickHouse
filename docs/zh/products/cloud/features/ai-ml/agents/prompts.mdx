@@ -1,0 +1,66 @@
+---
+sidebarTitle: '提示词'
+slug: /cloud/features/ai-ml/agents/prompts
+title: '提示词'
+description: '用于 ClickHouse 智能体的已保存提示词库'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '提示词', '模板']
+doc_type: '参考'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+提示词库用于保存并复用那些你经常反复输入的自然语言提示词。你可以把它看作聊天输入框中的代码片段——当同样的分析问题或格式要求在不同会话中反复出现时，它就很有用。
+
+<div id="create-a-prompt">
+  ## 创建提示词
+</div>
+
+在左侧导航栏中点击 **提示词** 图标，打开 提示词 面板，然后点击 **+** 按钮以打开 **创建提示词** 表单。填写以下字段：
+
+* **提示词名称** (必填) - 即显示在选择器中的名称。请尽量写得具体一些：例如，*&quot;按区域划分的每周活跃用户&quot;* 就比 *&quot;WAU&quot;* 更清晰。
+* **文本** (必填) - 将插入到输入框中的实际文本。
+* **特殊变量** - 点击 **特殊变量** 按钮以插入占位符，或直接输入 `{{name}}` 形式的标记。选择器会在插入前提示你填写相应的值。
+* **分类**、**描述**、**命令** (可选) - 用于整理提示词库、设置选择器中的预览文本，以及配置快速调用的快捷方式。
+
+然后点击右下角的 **创建提示词**。
+
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="提示词 面板中，左侧的 + 按钮被高亮显示，右侧打开了“创建提示词”表单，显示了“提示词名称”“文本”“分类”“特殊变量”“描述”和“命令”字段，以及“创建提示词”按钮" size="lg" />
+
+<div id="use-a-prompt">
+  ## 使用提示词
+</div>
+
+在提示词面板中，打开某个提示词卡片上的 **...** 菜单，然后选择 **Preview**：
+
+<Image img="/images/cloud/agent-builder/prompts/preview.webp" alt="提示词面板中选中了一个提示词，右侧显示其详细信息，菜单中显示 Preview 和 Edit 选项" size="lg" />
+
+预览中会显示提示词文本，以及作者和日期。点击 **Use Prompt** 可将正文插入输入框。如果提示词包含变量，请先填写。
+
+<Image img="/images/cloud/agent-builder/prompts/use-prompt-modal.webp" alt="提示词预览模态框，显示提示词标题、作者、日期、正文文本以及 Use Prompt 按钮" size="md" />
+
+<div id="share-prompts">
+  ## 共享提示词
+</div>
+
+默认情况下，提示词仅创建者本人可见。所有者可以将提示词的可见范围更改为：
+
+* **特定用户或组** - 你指定的任何人都可以找到并使用该提示词。
+* **整个组织** - 你的 ClickHouse Cloud 组织中的所有人都可以找到并使用该提示词。
+
+提示词采用与智能体相同的权限模型。有关角色权限的完整矩阵以及各角色可执行的操作，请参阅 [共享与
+访问](/zh/products/cloud/features/ai-ml/agents/sharing-and-access)。
+
+<div id="prompts-vs-skills-vs-instructions">
+  ## 提示词 vs. 技能 vs. 指令
+</div>
+
+提示词、技能和智能体指令都会向模型添加文本，但它们在由谁触发以及持续时间上有所不同。
+
+* **提示词** - 你自行插入到输入框中的文本，可按每一轮单独编辑。
+* **[技能](/zh/products/cloud/features/ai-ml/agents/builder/skills)** - 当智能体判断其与任务相关时，会自行加载的一组指令。
+* **智能体指令** - 智能体持久性的系统提示，会应用到每个对话中。
+
+如果你想复用措辞，但又希望每次都能自己把控具体表述，就使用提示词。如果你希望智能体在某类任务中始终一致地遵循相同指导，而无需你每次手动输入，就使用技能。如果某种行为应在智能体的整个生命周期内持续生效，就使用智能体指令。

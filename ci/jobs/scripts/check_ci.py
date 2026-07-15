@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -253,7 +252,7 @@ Test output:
 
     @classmethod
     def repr_result(cls, result):
-        res = f"\n - test output:\n"
+        res = "\n - test output:\n"
         # For ERROR status (typically job-level failures), meaningful output is usually at the end,
         # so we truncate from the top to preserve the error details.
         # For other statuses (test failures), the relevant information is often at the beginning,
@@ -524,7 +523,7 @@ class CommitStatusCheck:
                     context=context,
                 )
 
-        print(f"\nCommit statuses:")
+        print("\nCommit statuses:")
         for check in required_checks:
             if check in status_map:
                 state = status_map[check].state
@@ -877,8 +876,9 @@ def main():
             )
             and not FORCE_MERGE
         ):
+            pr_status = status_map[CheckStatuses.PR]
             raise Exception(
-                f"Status for {commit_status_data.context} is not completed: {commit_status_data.state} - cannot proceed"
+                f"Status for {pr_status.context} is not completed: {pr_status.state} - cannot proceed"
             )
     else:
         status_map = {}
@@ -1013,7 +1013,7 @@ def main():
                 only_update=True,
                 verbose=False,
             ):
-                print(f"ERROR: failed to post CI summary")
+                print("ERROR: failed to post CI summary")
         except Exception as e:
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
@@ -1026,7 +1026,7 @@ def main():
     if Shell.check(
         f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo ClickHouse/ClickHouse | grep -q true"
     ):
-        if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
+        if UserPrompt.confirm("It's a draft PR. Do you want to undraft it?"):
             Shell.check(
                 f"gh pr ready {pr_number} --repo ClickHouse/ClickHouse",
                 strict=True,
@@ -1057,7 +1057,20 @@ def main():
         "{mergeQueueEntry{position state}}}' "
         f"-f id={pr_node_id}"
     )
-    if not Shell.check(enqueue_cmd, verbose=True):
+    returncode, stdout, stderr = Shell.get_res_stdout_stderr(enqueue_cmd, verbose=True)
+    # GitHub rejects `enqueuePullRequest` with "Pull request is already in the
+    # queue" when the PR is already queued - e.g. the "Merge when ready" button
+    # was clicked on github.com, or a previous run of this tool already enqueued
+    # it. That is the desired end state, so treat it as success instead of
+    # bailing out with an error.
+    already_queued = "already in the queue" in (stdout + stderr).lower()
+    if returncode != 0 and not already_queued:
+        # Surface the real gh output so auth/permission/validation/rate-limit
+        # failures stay diagnosable, as the previous verbose Shell.check did.
+        if stdout:
+            print(stdout)
+        if stderr:
+            print(stderr)
         print(
             f"ERROR: Failed to add PR #{pr_number} to the merge queue. "
             f"This often happens when mergeStateStatus is UNKNOWN "
@@ -1067,6 +1080,8 @@ def main():
             f"Retry manually:\n  {enqueue_cmd}"
         )
         sys.exit(1)
+    if already_queued:
+        print(f"PR #{pr_number} is already in the merge queue")
 
     # Give GitHub a moment to update the PR's merge state, then verify it
     # actually landed in the queue.

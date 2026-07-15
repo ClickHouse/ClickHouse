@@ -11,7 +11,9 @@ class NegativeLimitStep : public ITransformingStep
 public:
     NegativeLimitStep(
         const SharedHeader & input_header_,
-        UInt64 limit_, UInt64 offset_);
+        UInt64 limit_, UInt64 offset_,
+        bool with_ties_ = false,
+        SortDescription description_ = {});
 
     String getName() const override { return "NegativeLimit"; }
 
@@ -22,12 +24,7 @@ public:
 
     UInt64 getLimit() const { return limit; }
 
-    UInt64 getLimitForSorting() const
-    {
-        return 0;
-    }
-
-    bool withTies() const { return false; }
+    void markAsShardLimit() { is_shard_limit = true; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -44,6 +41,9 @@ private:
 
     UInt64 limit;
     UInt64 offset;
+    bool with_ties;
+    const SortDescription description;
+    bool is_shard_limit = false;
 };
 
 }

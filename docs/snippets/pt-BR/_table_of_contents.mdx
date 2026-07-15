@@ -1,0 +1,16 @@
+---
+title: Sumário
+---
+
+| Página                                                                                         | Descrição                                                                                                                    |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Como escolher uma chave primária](/pt-BR/concepts/best-practices/choosing-a-primary-key)            | Como selecionar chaves primárias que maximizem o desempenho das consultas e minimizem a sobrecarga de armazenamento.         |
+| [Selecionar tipos de dados](/pt-BR/concepts/best-practices/select-data-type)                         | Escolha os tipos de dados ideais para reduzir o uso de memória, melhorar a compressão e acelerar as consultas.               |
+| [Usar visões materializadas](/pt-BR/concepts/best-practices/use-materialized-views)                  | Aproveite visões materializadas para pré-agregar dados e acelerar drasticamente as consultas analíticas.                     |
+| [Minimizar e otimizar JOINs](/pt-BR/concepts/best-practices/minimize-optimize-joins)                 | Boas práticas para usar com eficiência os recursos de `JOIN` do ClickHouse.                                                  |
+| [Como escolher uma chave de particionamento](/pt-BR/concepts/best-practices/partitioning-keys)       | Selecione estratégias de particionamento que permitam eliminar dados desnecessários e executar consultas com mais rapidez.   |
+| [Selecionar uma estratégia de inserção](/pt-BR/concepts/best-practices/selecting-an-insert-strategy) | Otimize a vazão da ingestão de dados e reduza o consumo de recursos com padrões de inserção adequados.                       |
+| [Índices de salto de dados](/pt-BR/concepts/best-practices/using-data-skipping-indices)              | Aplique índices secundários de forma estratégica para ignorar blocos de dados irrelevantes e acelerar consultas com filtros. |
+| [Evitar mutações](/pt-BR/concepts/best-practices/avoid-mutations)                                    | Projete esquemas e fluxos de trabalho que eliminem operações custosas de `UPDATE`/`DELETE` para obter melhor desempenho.     |
+| [Evitar OPTIMIZE FINAL](/pt-BR/concepts/best-practices/avoid-optimize-final)                         | Evite gargalos de desempenho ao entender quando `OPTIMIZE FINAL` mais atrapalha do que ajuda.                                |
+| [Usar JSON quando apropriado](/pt-BR/concepts/best-practices/json-type)                              | Equilibre flexibilidade e desempenho ao trabalhar com dados JSON semiestruturados no ClickHouse.                             |

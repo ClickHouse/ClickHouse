@@ -1,0 +1,352 @@
+---
+title: 'オープンテーブルフォーマットを直接クエリする'
+sidebarTitle: '直接クエリ'
+slug: /use-cases/data-lake/getting-started/querying-directly
+description: 'ClickHouse のテーブル関数を使用すると、事前設定なしでオブジェクトストレージ内の Iceberg、Delta Lake、Hudi、Paimon テーブルを読み取れます。'
+toc_max_heading_level: 2
+keywords: ['データレイク', 'レイクハウス', 'Iceberg', 'Delta Lake', 'hudi', 'paimon', 'テーブル関数']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+ClickHouse では、オブジェクトストレージ内のオープンテーブルフォーマットに保存されたデータを直接クエリできるテーブル関数を提供しています。外部カタログへの接続は不要で、AWS Athena が S3 から読み取るのと同様に、保存先のデータをそのままクエリできます。
+
+関数呼び出しでストレージパスと認証情報を直接指定すれば、残りは ClickHouse が処理します。ClickHouse SQL のすべての構文と関数を利用でき、クエリでは ClickHouse の並列実行と[高効率なネイティブ Parquet リーダー](https://clickhouse.com/blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics)の利点を活かせます。
+
+<Info>
+  **Server、local、または chDB**
+
+  このガイドの手順は、既存の ClickHouse server インストールを使って実行できます。アドホックなクエリでは、代わりに [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) を使用して、server を起動せずに同じワークフローを完了することもできます。少し調整すれば、ClickHouse のインプロセス版である [chDB](/ja/products/chdb/index) を使って同じ手順を実行することも可能です。
+</Info>
+
+以下の例では、各 lakehouse フォーマットで S3 に保存された [hits](/ja/get-started/sample-datasets/star-schema) データセットを使用します。各 lake フォーマットについて、オブジェクトストア provider ごとに専用の関数が用意されています。
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    [`iceberg`](/ja/reference/functions/table-functions/iceberg) テーブル関数 (`icebergS3` のエイリアス) は、オブジェクトストレージから直接 Iceberg テーブルを読み取ります。ストレージバックエンドごとに対応するバリアントが用意されています: `icebergS3`、`icebergAzure`、`icebergHDFS`、`icebergLocal`。
+
+    **構文の例:**
+
+    ```sql
+    icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    icebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS のサポート**
+
+      これらの関数の S3 版は、Google Cloud Storage (GCS) でも使用できます。
+    </Info>
+
+    **例：**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329万
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 163万
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.375 sec. Processed 100.00 million rows, 9.98 GB (29.63 million rows/s., 2.96 GB/s.)
+    Peak memory usage: 10.48 GiB.
+    ```
+
+    ### クラスターバリアント
+
+    [`icebergS3Cluster`](/ja/reference/functions/table-functions/icebergCluster) 関数は、ClickHouse クラスター内の複数のノードに読み取りを分散します。イニシエーターノードはすべてのノードへの接続を確立し、データファイルを動的にディスパッチします。各ワーカーノードは、すべてのファイルが読み取られるまでタスクを要求して処理します。`icebergCluster` は `icebergS3Cluster` のエイリアスです。Azure ([`icebergAzureCluster`](/ja/reference/functions/table-functions/icebergCluster)) および HDFS ([`icebergHDFSCluster`](/ja/reference/functions/table-functions/icebergCluster)) 向けのバリアントも用意されています。
+
+    **構文の例:**
+
+    ```sql
+    icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    -- icebergCluster は icebergS3Cluster のエイリアスです
+
+    icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    **例 (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3Cluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/'
+    )
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### テーブルエンジン
+
+    クエリのたびにテーブル関数を使用する代わりに、[`Iceberg` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)を使用して永続テーブルを作成することもできます。データは引き続きオブジェクトストレージに保存され、必要に応じて読み込まれます。ClickHouse にデータがコピーされることはありません。この方法の利点は、テーブル定義が ClickHouse に保存されるため、各ユーザーがストレージのパスや認証情報を個別に指定しなくても、ユーザーやセッションをまたいで共有できる点です。ストレージバックエンドごとにエンジンのバリアントが用意されており、`IcebergS3` (または `Iceberg` エイリアス) 、`IcebergAzure`、`IcebergHDFS`、`IcebergLocal` があります。
+
+    テーブルエンジンとテーブル関数はいずれも、S3、AzureBlobStorage、HDFSストレージエンジンと同じキャッシュ機構を使用した[データキャッシュ](/ja/reference/engines/table-engines/integrations/iceberg#data-cache)をサポートしています。また、[メタデータキャッシュ](/ja/reference/engines/table-engines/integrations/iceberg#metadata-cache)はマニフェストファイルの情報をメモリに格納し、Icebergメタデータへの繰り返しアクセスを削減します。このキャッシュは、`use_iceberg_metadata_files_cache` 設定によってデフォルトで有効化されています。
+
+    **構文の例:**
+
+    テーブルエンジン `Iceberg` は `IcebergS3` のエイリアスです。
+
+    ```sql
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS のサポート**
+
+      Google Cloud Storage (GCS) では、テーブルエンジンの S3 バリアントを使用できます。
+    </Info>
+
+    **例：**
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 2.737 sec. Processed 100.00 million rows, 9.98 GB (36.53 million rows/s., 3.64 GB/s.)
+    Peak memory usage: 10.53 GiB.
+    ```
+
+    パーティションプルーニング、スキーマの進化、タイムトラベル、キャッシングなどのサポート済み機能については、[サポートマトリックス](/ja/guides/use-cases/data-warehousing/support-matrix#format-support)を参照してください。完全なリファレンスについては、[`iceberg` テーブル関数](/ja/reference/functions/table-functions/iceberg)および[`Iceberg` テーブルエンジン](/ja/reference/engines/table-engines/integrations/iceberg)のドキュメントを参照してください。
+  </Tab>
+
+  <Tab title="Delta Lake">
+    [`deltaLake`](/ja/reference/functions/table-functions/deltalake) テーブル関数 (`deltaLakeS3` のエイリアス) は、オブジェクトストレージから Delta Lake テーブルを読み取ります。他のバックエンド向けのバリアントとして、`deltaLakeAzure` および `deltaLakeLocal` があります。
+
+    **構文の例:**
+
+    ```sql
+    deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+    deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    deltaLakeLocal(path, [,format])
+    ```
+
+    <Info>
+      **GCS のサポート**
+
+      これらの関数の S3 バリアントは、Google Cloud Storage (GCS) でも利用できます。
+    </Info>
+
+    **例：**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329万
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 163万
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.878 sec. Processed 100.00 million rows, 14.82 GB (25.78 million rows/s., 3.82 GB/s.)
+    Peak memory usage: 9.16 GiB.
+    ```
+
+    ### クラスターバリアント
+
+    [`deltaLakeCluster`](/ja/reference/functions/table-functions/deltalakeCluster) 関数は、ClickHouse クラスター内の複数のノードに読み取りを分散します。イニシエーターノードは、並列処理のためにデータファイルをワーカーノードへ動的にディスパッチします。`deltaLakeS3Cluster` は `deltaLakeCluster` のエイリアスです。Azure バリアント ([`deltaLakeAzureCluster`](/ja/reference/functions/table-functions/deltalakeCluster)) も利用可能です。
+
+    **構文の例:**
+
+    ```sql
+    deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    -- deltaLakeS3Cluster は deltaLakeCluster のエイリアスです
+
+    deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS のサポート**
+
+      これらの関数では、Google Cloud Storage (GCS) に対して S3 バリアントを使用できます。
+    </Info>
+
+    **例 (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLakeCluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/'
+    )
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### テーブルエンジン
+
+    クエリごとにテーブル関数を使用する代わりに、S3互換ストレージを使用している場合は、[`DeltaLake` テーブルエンジン](/ja/reference/engines/table-engines/integrations/deltalake)を使用して永続テーブルを作成できます。データは引き続きオブジェクトストレージに保存され、必要に応じて読み込まれます。ClickHouseにデータがコピーされることはありません。テーブル定義がClickHouseに保存されるため、各ユーザーがストレージのパスや認証情報を個別に指定しなくても、ユーザーやセッション間で共有できるという利点があります。
+
+    テーブルエンジンとテーブル関数はいずれも、S3、AzureBlobStorage、HDFSストレージエンジンと同じキャッシュ機構を使用した[データキャッシュ](/ja/reference/engines/table-engines/integrations/deltalake#data-cache)をサポートしています。
+
+    **構文の例:**
+
+    ```sql
+    CREATE TABLE delta_table
+        ENGINE = DeltaLake(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    <Info>
+      **GCS サポート**
+
+      このテーブルエンジンは、Google Cloud Storage (GCS) で利用できます。
+    </Info>
+
+    **例：**
+
+    ```sql
+    CREATE TABLE hits_delta
+        ENGINE = DeltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+
+    SELECT
+        URL,
+        count() AS cnt
+    FROM hits_delta
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.608 sec. Processed 100.00 million rows, 14.82 GB (27.72 million rows/s., 4.11 GB/s.)
+    Peak memory usage: 9.27 GiB.
+    ```
+
+    ストレージバックエンド、キャッシュなどのサポート済み機能については、[サポートマトリックス](/ja/guides/use-cases/data-warehousing/support-matrix#format-support)を参照してください。詳細なリファレンスについては、[`deltaLake` テーブル関数](/ja/reference/functions/table-functions/deltalake)および[`DeltaLake` テーブルエンジン](/ja/reference/engines/table-engines/integrations/deltalake)のドキュメントを参照してください。
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    [`hudi`](/ja/reference/functions/table-functions/hudi) テーブル関数は、S3 上の Hudi テーブルを読み込みます。
+
+    **構文:**
+
+    ```sql
+    hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### クラスター版
+
+    [`hudiCluster`](/ja/reference/functions/table-functions/hudiCluster) 関数は、ClickHouseクラスター内の複数のノードに読み取りを分散します。イニシエーター ノードは、並列処理のためにデータファイルをワーカー ノードへ動的に割り当てます。
+
+    ```sql
+    hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### テーブルエンジン
+
+    すべてのクエリで table function を使用する代わりに、[`Hudi` table engine](/ja/reference/engines/table-engines/integrations/hudi) を使って永続的なテーブルを作成できます。データは引き続きオブジェクトストレージに格納され、必要に応じて読み取られるため、ClickHouse にデータがコピーされることはありません。利点は、テーブル定義が ClickHouse に保存されるため、各ユーザーがストレージパスや認証情報を指定しなくても、ユーザー間やセッション間で共有できることです。
+
+    **構文:**
+
+    ```sql
+    CREATE TABLE hudi_table
+        ENGINE = Hudi(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    ストレージバックエンドなどを含むサポート対象の機能については、[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix#format-support)を参照してください。詳細については、[`hudi` テーブル関数](/ja/reference/functions/table-functions/hudi)および[`Hudi` テーブルエンジン](/ja/reference/engines/table-engines/integrations/hudi)のドキュメントを参照してください。
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    <ExperimentalBadge />
+
+    [`paimon`](/ja/reference/functions/table-functions/paimon) テーブル関数 (`paimonS3` のエイリアス) は、オブジェクトストレージ上の Paimon テーブルを読み取ります。`paimonS3`、`paimonAzure`、`paimonHDFS`、`paimonLocal` のように、ストレージバックエンドごとのバリアントがあります。
+
+    **構文:**
+
+    ```sql
+    paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+
+    paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFS(path_to_table, [,format] [,compression_method])
+
+    paimonLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    ### クラスター版
+
+    [`paimonS3Cluster`](/ja/reference/functions/table-functions/paimonCluster) 関数は、ClickHouseクラスター内の複数のノードに読み取りを分散します。イニシエーターノードは、並列処理のためにデータファイルをワーカーノードへ動的に振り分けます。`paimonCluster` は `paimonS3Cluster` の別名です。Azure 向け ([`paimonAzureCluster`](/ja/reference/functions/table-functions/paimonCluster)) および HDFS 向け ([`paimonHDFSCluster`](/ja/reference/functions/table-functions/paimonCluster)) のバリアントもあります。
+
+    ```sql
+    paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    -- paimonCluster は paimonS3Cluster のエイリアスです
+
+    paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+    ```
+
+    ### テーブルエンジン
+
+    現在、Paimon 用の専用テーブルエンジンは ClickHouse にはありません。Paimon テーブルをクエリするには、上記のテーブル関数を使用してください。
+
+    ストレージバックエンドなどのサポート状況を含む対応機能については、[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix#format-support)を参照してください。詳細なリファレンスについては、[`paimon` テーブル関数](/ja/reference/functions/table-functions/paimon)のドキュメントを参照してください。
+  </Tab>
+</Tabs>
