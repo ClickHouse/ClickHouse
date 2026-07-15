@@ -1306,6 +1306,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    current_database_has_table_prefix(o.current_database_has_table_prefix),
     can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
@@ -2099,16 +2100,27 @@ namespace
 {
 
 /// A dotted current database selects a namespace ("db.ns") unless a database with that exact name exists
-void validateCurrentDatabaseName(const String & name, bool allow_table_namespaces, ContextPtr context)
+CurrentDatabaseInfo validateCurrentDatabaseName(const String & name, bool allow_table_namespaces, ContextPtr context)
 {
     const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
     if (info.table_prefix.empty())
-        return;
+        return info;
     if (!allow_table_namespaces)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
     Names parts;
     splitInto<'.'>(parts, info.table_prefix);
     DatabaseCatalog::instance().getDatabase(info.database)->validateTableNamespace(parts, context);
+    return info;
+}
+
+/// The split decision is frozen when the current database is set, no catalog lookups here
+CurrentDatabaseInfo splitCurrentDatabaseName(const String & name, bool has_table_prefix)
+{
+    if (!has_table_prefix)
+        return {name, ""};
+    const auto dot = name.find('.');
+    chassert(dot != String::npos && dot != 0);
+    return {name.substr(0, dot), name.substr(dot + 1)};
 }
 
 }
@@ -2128,8 +2140,9 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     const auto & database = user->default_database;
 
     /// a dotted DEFAULT DATABASE may select a namespace; validate before taking the mutex
+    CurrentDatabaseInfo database_info;
     if (!database.empty())
-        validateCurrentDatabaseName(database, getSettingsRef()[Setting::allow_experimental_table_namespaces], shared_from_this());
+        database_info = validateCurrentDatabaseName(database, getSettingsRef()[Setting::allow_experimental_table_namespaces], shared_from_this());
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -2145,7 +2158,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
+        setCurrentDatabaseWithLock(database, !database_info.table_prefix.empty(), lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3517,7 +3530,8 @@ String Context::getCurrentDatabase() const
 CurrentDatabaseInfo Context::getCurrentDatabaseInfo() const
 {
     /// the current database is stored as the logical name ("db.ns" when scoped)
-    return DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(getCurrentDatabase());
+    SharedLockGuard lock(mutex);
+    return splitCurrentDatabaseName(current_database, current_database_has_table_prefix);
 }
 
 
@@ -3542,16 +3556,17 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Default database name cannot be changed in global context without server restart");
 
     current_database = name;
+    current_database_has_table_prefix = false;
 }
 
-void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(const String & name, bool has_table_prefix, const std::lock_guard<ContextSharedMutex> &)
 {
     if (name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabaseCatalog::instance().assertDatabaseExists(
-        DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name).database);
+    DatabaseCatalog::instance().assertDatabaseExists(splitCurrentDatabaseName(name, has_table_prefix).database);
     current_database = name;
+    current_database_has_table_prefix = has_table_prefix;
     need_recalculate_access = true;
 }
 
@@ -3562,10 +3577,10 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentDatabase(const String & name, bool allow_table_namespaces)
 {
-    validateCurrentDatabaseName(name, allow_table_namespaces, shared_from_this());
+    const auto info = validateCurrentDatabaseName(name, allow_table_namespaces, shared_from_this());
 
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
+    setCurrentDatabaseWithLock(name, !info.table_prefix.empty(), lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3575,6 +3590,7 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
+    current_database_has_table_prefix = false;
     need_recalculate_access = true;
 }
 
@@ -7840,8 +7856,10 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         }
         storage_id.database_name = current_database;
         /// the current database may be a logical namespace path, fold it into the table name
+        if (current_database_has_table_prefix)
         {
-            storage_id = DatabaseCatalog::instance().foldNamespaceIntoTableName(std::move(storage_id), exception);
+            storage_id = DatabaseCatalog::foldNamespaceIntoTableName(
+                std::move(storage_id), splitCurrentDatabaseName(current_database, current_database_has_table_prefix), exception);
             if (!storage_id)
                 return StorageID::createEmpty();
         }

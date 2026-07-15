@@ -414,8 +414,10 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     /// the current database may be a logical namespace path filled into the id,
     /// with the feature off a dotted database is only ever an exact name
-    const StorageID table_id = context_->getSettingsRef()[Setting::allow_experimental_table_namespaces]
-        ? foldNamespaceIntoTableName(table_id_, exception)
+    const StorageID table_id
+        = (table_id_.database_name.find('.') != String::npos
+           && context_->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabaseInfo(), exception)
         : table_id_;
     if (!table_id)
         return {};
@@ -619,13 +621,14 @@ CurrentDatabaseInfo DatabaseCatalog::splitTablePrefixFromDatabaseName(const Stri
     return {database_name, name.substr(dot + 1)};
 }
 
-StorageID DatabaseCatalog::foldNamespaceIntoTableName(StorageID storage_id, std::optional<Exception> * exception) const
+StorageID DatabaseCatalog::foldNamespaceIntoTableName(
+    StorageID storage_id, const CurrentDatabaseInfo & current_database_info, std::optional<Exception> * exception)
 {
-    if (storage_id.hasUUID() || storage_id.database_name.empty())
+    const auto & info = current_database_info;
+    if (storage_id.hasUUID() || info.table_prefix.empty())
         return storage_id;
 
-    const auto info = splitTablePrefixFromDatabaseName(storage_id.database_name);
-    if (info.table_prefix.empty())
+    if (storage_id.database_name != info.database + "." + info.table_prefix)
         return storage_id;
 
     /// a dot inside the name would be indistinguishable from a deeper path
@@ -1001,8 +1004,10 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id_, ContextPtr c
         return tryGetByUUID(table_id_.uuid).second != nullptr;
 
     std::optional<Exception> fold_exception;
-    const StorageID table_id = context_->getSettingsRef()[Setting::allow_experimental_table_namespaces]
-        ? foldNamespaceIntoTableName(table_id_, &fold_exception)
+    const StorageID table_id
+        = (table_id_.database_name.find('.') != String::npos
+           && context_->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabaseInfo(), &fold_exception)
         : table_id_;
     if (!table_id)
         return false;

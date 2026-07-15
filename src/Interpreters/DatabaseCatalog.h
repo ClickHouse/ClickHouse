@@ -141,11 +141,13 @@ public:
     void assertDatabaseExists(const String & database_name) const;
 
     /// An existing database always wins, so real dotted-named databases keep working,
-    /// otherwise first component is the database and rest is table-name prefix
+    /// otherwise first component is the database and rest is table-name prefix.
+    /// Only used when a current database is being set, the result is frozen after that.
     CurrentDatabaseInfo splitTablePrefixFromDatabaseName(const String & name) const;
 
-    /// Same as above applied to a StorageID: {"db.ns", "t"} -> {"db", "ns.t"}
-    StorageID foldNamespaceIntoTableName(StorageID storage_id, std::optional<Exception> * exception = nullptr) const;
+    /// Apply the frozen split to a StorageID carrying the logical name: {"db.ns", "t"} -> {"db", "ns.t"}
+    static StorageID foldNamespaceIntoTableName(
+        StorageID storage_id, const CurrentDatabaseInfo & current_database_info, std::optional<Exception> * exception = nullptr);
     void assertDatabaseDoesntExist(const String & database_name) const;
 
     DatabasePtr getDatabaseForTemporaryTables() const;

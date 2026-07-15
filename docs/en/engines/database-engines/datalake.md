@@ -116,7 +116,9 @@ still returns the physical database (`catalog_name`), and `SHOW TABLES` lists
 only the direct children of the namespace, by their stored (namespace-qualified)
 names. `SHOW TABLES FROM catalog_name.namespace` does the same without changing the
 scope. The scope is cleared as soon as you switch to another database with
-`USE`.
+`USE`. The interpretation of the name is decided when it is set: creating or
+dropping a database literally named `catalog_name.namespace` afterwards does not
+change the meaning of an already selected scope; the next `USE` re-evaluates it.
 
 Because a two-part name always means `database.table`, writing
 `namespace.table` without the catalog prefix does **not** resolve inside the

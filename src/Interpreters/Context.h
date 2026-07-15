@@ -370,6 +370,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    bool current_database_has_table_prefix = false;
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -1949,7 +1950,7 @@ private:
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentDatabaseWithLock(const String & name, bool has_table_prefix, const std::lock_guard<ContextSharedMutex> & lock);
 
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 

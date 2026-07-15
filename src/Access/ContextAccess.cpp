@@ -865,10 +865,10 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
         /// targets live in the physical database under namespace-qualified table names
         if constexpr (sizeof...(args) > 0)
         {
-            if (params.current_database.find('.') != String::npos)
+            if (context && params.current_database.find('.') != String::npos)
             {
-                const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(params.current_database);
-                if (!info.table_prefix.empty())
+                const auto info = context->getCurrentDatabaseInfo();
+                if (!info.table_prefix.empty() && params.current_database == info.database + "." + info.table_prefix)
                     return checkAccessImplWithTablePrefix<throw_if_denied, grant_option, wildcard>(context, flags, info, args...);
             }
         }
