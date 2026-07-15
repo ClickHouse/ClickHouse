@@ -38,7 +38,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int NOT_IMPLEMENTED;
     extern const int LZ4_DECODER_FAILED;
 }
 
