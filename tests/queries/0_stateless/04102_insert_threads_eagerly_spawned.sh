@@ -46,7 +46,11 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS optimize_if_transform_strings_to_enum = 0
 "
 
-# Test 2: INSERT with a materialized view — should use more threads.
+# Test 2: INSERT with a materialized view should not eagerly grab CPU slots either.
+# The InterpreterInsertQuery passes `max_threads` to the pipeline when MVs are involved
+# (downstream view queries may need parallelism), but lazy ConcurrencyControl only grants
+# the slots the pipeline actually pushes work to. For a trivial 1-MV INSERT that is just
+# 1 thread of work — same upper bound as Test 1.
 echo "=== Plain INSERT with MV ==="
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW test_insert_threads_mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM test_insert_threads"
 
@@ -63,10 +67,9 @@ $CLICKHOUSE_CLIENT \
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-# With MVs, peak_threads should be higher than without MVs
 $CLICKHOUSE_CLIENT -q "
     SELECT
-        if(peak_threads_usage > 1, 'MORE THAN 1 THREAD', 'SINGLE THREAD')
+        if(peak_threads_usage <= 4, 'FEW THREADS', 'MANY THREADS SPAWNED')
     FROM system.query_log
     WHERE event_date >= yesterday()
         AND event_time >= now() - 600

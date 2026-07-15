@@ -1,0 +1,502 @@
+---
+title: 'データの管理'
+description: 'オブザーバビリティ向けのデータ管理'
+slug: /observability/managing-data
+keywords: ['オブザーバビリティ', 'ログ', 'トレース', 'メトリクス', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+オブザーバビリティ用途でClickHouseを導入する場合、必ず大規模なデータセットを扱うことになり、それらを適切に管理する必要があります。ClickHouseには、データ管理に役立つさまざまな機能が用意されています。
+
+<Tip>
+  **ClickStack には最適化されたデフォルトスキーマが含まれています**
+
+  **ClickStack は、ログ、トレース、メトリクス向けのスキーマをすぐに使える形で提供しています**。これらのスキーマには、最新の ClickHouse 機能 (全文検索および map キー検索向けのテキスト索引、直接読み取りフィルタリングのための materialized column と ALIAS Array、block number による行ルックアップ) が組み込まれており、ログおよびトレースのワークロードで優れた初期性能を発揮できるようベンチマークされています。独自設計の際の基準として活用してください。
+
+  * 正式な DDL: [ClickStack で使用されるテーブルとスキーマ](/ja/clickstack/ingesting-data/schemas)。
+  * 最適化の実践例: [ClickStack パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning)。このページの推奨事項の多く (materialized column、スキップ索引、主キーの選択、projections、materialized view) は、自前構成のセットアップにもそのまま適用できます。
+</Tip>
+
+<div id="partitions">
+  ## パーティション
+</div>
+
+ClickHouse のパーティション化では、カラムまたは SQL 式に基づいて、データをディスク上で論理的に分離できます。データを論理的に分離することで、各パーティションを個別に操作できます。たとえば、削除することも可能です。これにより、パーティション、ひいてはそのサブセットを、時間に応じてストレージティア間で効率的に移動したり、[データを期限切れにする／クラスターから効率的に削除する](/ja/reference/statements/alter/partition)ことができます。
+
+パーティション化は、テーブルを最初に定義する際に `PARTITION BY` 句で指定します。この句には、任意のカラムに対する SQL 式を含めることができ、その結果によって各行の格納先となるパーティションが決まります。
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="パーティション" size="md" />
+
+データパーツは、ディスク上で各パーティションに論理的に関連付けられており (共通のフォルダー名プレフィックスを介して) 、個別にクエリできます。以下の例では、デフォルトの `otel_logs` スキーマは、`toDate(Timestamp)` 式を使って日単位でパーティション化されています。行が ClickHouse に挿入されるたびに、この式が各行に対して評価され、対応するパーティションが存在すればそのパーティションに振り分けられます (その日の最初の行であれば、パーティションが作成されます) 。
+
+```sql
+CREATE TABLE default.otel_logs
+(
+...
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+パーティションに対しては、[さまざまな操作](/ja/reference/statements/alter/partition)を実行できます。これには、[バックアップ](/ja/reference/statements/alter/partition#freeze-partition)、[カラム操作](/ja/reference/statements/alter/partition#clear-column-in-partition)、行単位でデータを[変更](/ja/reference/statements/alter/partition#update-in-partition)/[削除](/ja/reference/statements/alter/partition#delete-in-partition)する mutation)、および[索引のクリア (例: セカンダリ索引) ](/ja/reference/statements/alter/partition#clear-index-in-partition)が含まれます。
+
+例として、`otel_logs` テーブルが日単位でパーティション分割されているとします。ここに構造化されたログデータセットを投入すると、数日分のデータが含まれます。
+
+```sql
+SELECT Timestamp::Date AS day,
+         count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-26 │ 1986456 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
+Peak memory usage: 4.41 MiB.
+```
+
+現在のパーティションは、シンプルなシステムテーブルのクエリで確認できます。
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'otel_logs'
+```
+
+```response
+┌─partition──┐
+│ 2019-01-22 │
+│ 2019-01-23 │
+│ 2019-01-24 │
+│ 2019-01-25 │
+│ 2019-01-26 │
+└────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+古いデータを保存するための別のテーブル `otel_logs_archive` を用意している場合があります。データはパーティション単位でこのテーブルへ効率的に移動できます (これは単なるメタデータ変更です) 。
+
+```sql
+CREATE TABLE otel_logs_archive AS otel_logs
+--アーカイブテーブルにデータを移動する
+ALTER TABLE otel_logs
+        (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
+--データが移動されたことを確認する
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.051 sec. Processed 8.38 million rows, 67.03 MB (163.52 million rows/s., 1.31 GB/s.)
+Peak memory usage: 4.40 MiB.
+```
+
+```sql
+SELECT Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs_archive
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-26 │ 1986456 │
+└────────────┴─────────┘
+
+1 row in set. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
+Peak memory usage: 4.99 MiB.
+```
+
+これは、`INSERT INTO SELECT` を使用し、新しいターゲットテーブルにデータを書き換える必要がある他の手法とは対照的です。
+
+<Info>
+  **パーティションの移動**
+
+  [テーブル間でパーティションを移動する](/ja/reference/statements/alter/partition#move-partition-to-table)には、いくつかの条件を満たす必要があります。特に、テーブルの構造、パーティションキー、主キー、インデックス/プロジェクションが同一でなければなりません。`ALTER` DDL でパーティションをどのように指定するかについての詳しい注意事項は、[こちら](/ja/reference/statements/alter/partition#how-to-set-partition-expression)を参照してください。
+</Info>
+
+さらに、データはパーティション単位で効率的に削除できます。これは代替手法 (mutation や論理削除) よりもはるかにリソース効率が高いため、こちらを優先すべきです。
+
+```sql
+ALTER TABLE otel_logs
+        (DROP PARTITION tuple('2019-01-25'))
+
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 4667954 │
+│ 2019-01-23 │ 4653388 │
+│ 2019-01-24 │ 3792510 │
+└────────────┴─────────┘
+```
+
+<Note>
+  この機能は、設定 [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings#ttl_only_drop_parts) を使用すると、有効期限 (TTL) によって利用されます。詳細については、[有効期限 (TTL) を使用したデータ管理](#data-management-with-ttl-time-to-live) を参照してください。
+</Note>
+
+<div id="applications">
+  ### 適用例
+</div>
+
+上記の例は、データをパーティション単位で効率的に移動・操作できることを示しています。実際には、オブザーバビリティのユースケースでは、パーティション操作が最もよく使われるのは、主に次の 2 つのシナリオです。
+
+* **階層型アーキテクチャ** - データをストレージ階層間で移動し ([ストレージティア](#storage-tiers) を参照) 、ホット・コールド構成を実現できます。
+* **効率的な削除** - データが指定した有効期限 (TTL) に達した場合 ([Data management with TTL](#data-management-with-ttl-time-to-live) を参照)
+
+以下では、この 2 つについて詳しく見ていきます。
+
+<div id="query-performance">
+  ### クエリパフォーマンス
+</div>
+
+パーティションはクエリパフォーマンスの向上に役立つことがありますが、その効果はアクセスパターンに大きく左右されます。クエリが少数のパーティション (理想的には 1 つ) だけを対象とする場合は、パフォーマンスが向上する可能性があります。通常、これが有効なのは、パーティションキーが主キーに含まれておらず、そのキーでフィルタしている場合に限られます。一方で、多くのパーティションをまたぐ必要があるクエリでは、パーティション化しない場合よりもパフォーマンスが悪化することがあります (パーツが増える可能性があるためです) 。また、パーティションキーがすでに主キーの前方のエントリに含まれている場合は、単一パーティションを対象にする利点はさらに薄れ、ほとんど、あるいはまったくなくなります。さらに、各パーティション内の値が一意であれば、パーティション化を使って [GROUP BY クエリを最適化](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)することもできます。ただし、一般的には、まず主キーが最適化されていることを確認し、そのうえで、アクセスパターンがデータの特定の予測可能な部分集合にアクセスするような例外的なケースでのみ、パーティション化をクエリ最適化の手法として検討すべきです。たとえば、日単位でパーティション化し、ほとんどのクエリが直近 1 日を対象とするような場合です。この挙動の例については、[こちら](https://medium.com/datadenys/using-partitions-in-clickhouse-3ea0decb89c4)を参照してください。
+
+<div id="data-management-with-ttl-time-to-live">
+  ## 有効期限 (TTL) によるデータ管理
+</div>
+
+Time-to-Live (TTL) は、ClickHouse を基盤とするオブザーバビリティソリューションにおいて、データ保持と管理を効率化するうえで重要な機能です。特に、大量のデータが継続的に生成される環境では、その重要性がさらに高まります。ClickHouse で TTL を実装すると、古いデータを自動的に期限切れとして削除できるため、手動で管理しなくてもストレージを最適に活用しながらパフォーマンスを維持できます。この機能は、データベースをスリムな状態に保ち、ストレージコストを削減し、最も重要で新しいデータに絞ってクエリを処理することで、高速かつ効率的なクエリ性能を維持するうえで不可欠です。さらに、データのライフサイクルを体系的に管理することで、データ保持ポリシーへの準拠にも役立ち、オブザーバビリティソリューション全体の持続性と拡張性を高めます。
+
+ClickHouse では、TTL はテーブルレベルまたはカラムレベルで指定できます。
+
+<div id="table-level-ttl">
+  ### テーブルレベルの有効期限 (TTL)
+</div>
+
+ログとトレースの両方のデフォルトスキーマには、指定した期間が経過するとデータを期限切れにする有効期限 (TTL) が含まれています。これは、ClickHouse exporter の `ttl` キーで指定します (例) 。
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+この構文は現在、[Golang の Duration 構文](https://pkg.go.dev/time#ParseDuration)をサポートしています。**`h` を使用し、パーティション化の期間に合わせることを推奨します。たとえば、日単位でパーティション化している場合は、日数の倍数になるようにしてください (例: 24h、48h、72h) 。** これにより、たとえば `ttl: 96h` の場合、テーブルに有効期限 (TTL) 句が自動的に追加されます。
+
+```sql
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+TTL toDateTime(Timestamp) + toIntervalDay(4)
+SETTINGS ttl_only_drop_parts = 1
+```
+
+デフォルトでは、有効期限 (TTL) が切れたデータは、ClickHouse が[データパーツをマージ](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)する際に削除されます。ClickHouse はデータの有効期限切れを検知すると、通常のスケジュール外でマージを実行します。
+
+<Info>
+  **有効期限 (TTL) のスケジュール**
+
+  有効期限 (TTL) は、前述のとおり即座には適用されず、スケジュールに従って適用されます。MergeTree テーブル設定 `merge_with_ttl_timeout` は、delete 有効期限 (TTL) を伴うマージを再実行するまでの最小待機時間を秒単位で設定します。デフォルト値は 14400 秒 (4 時間) です。ただし、これはあくまで最小待機時間にすぎず、有効期限 (TTL) マージがトリガーされるまでさらに時間がかかることがあります。値が低すぎると、リソースを大量に消費する可能性のあるスケジュール外のマージが多数実行されます。有効期限 (TTL) の期限切れは、コマンド `ALTER TABLE my_table MATERIALIZE TTL` で強制できます。
+</Info>
+
+**重要: [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings#ttl_only_drop_parts) 設定の使用を推奨します** (デフォルトのスキーマで適用されます) 。この設定を有効にすると、ClickHouse は、その中のすべての行の有効期限が切れている場合、パーツ全体を削除します。有効期限 (TTL) 切れの行を部分的にクリーンアップする代わりにパーツ全体を削除することで (`ttl_only_drop_parts=0` の場合は、リソース負荷の高い mutation によって処理されます) 、`merge_with_ttl_timeout` をより短く設定でき、システム性能への影響も抑えられます。有効期限 (TTL) の期限切れを行う単位 (たとえば日単位) と同じ単位でデータをパーティション化していれば、パーツには自然にその期間のデータだけが含まれるようになります。これにより、`ttl_only_drop_parts=1` を効率よく適用できます.
+
+<div id="column-level-ttl">
+  ### カラムレベルの有効期限 (TTL)
+</div>
+
+上記の例では、テーブルレベルでデータに有効期限を設定しています。有効期限はカラムレベルでも設定できます。データが古くなるにつれて、調査での有用性が保持に伴うリソース負荷に見合わないカラムを削除する用途に利用できます。たとえば、挿入時点でまだ抽出されていない新しい動的メタデータが追加される可能性に備えて、`Body` カラムは保持しておくことを推奨します。たとえば、新しい Kubernetes label などです。一定期間、たとえば 1 か月が経過すると、この追加メタデータが有用でないことが明らかになる場合があります。そうなると、`Body` カラムを保持しておく価値は限定的になります。
+
+以下では、`Body` カラムを 30 日後に削除する方法を示します。
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+        ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  カラムレベルの有効期限 (TTL) を指定するには、独自のスキーマを定義する必要があります。これは OTel collector では指定できません。
+</Note>
+
+<div id="recompressing-data">
+  ## データの再圧縮
+</div>
+
+通常、オブザーバビリティのデータには `ZSTD(1)` を推奨していますが、別の圧縮アルゴリズムや、たとえば `ZSTD(3)` のようなより高い圧縮レベルを試すこともできます。これはスキーマ作成時に指定できるだけでなく、一定期間の経過後に圧縮設定を変更するよう構成することも可能です。これは、コーデックや圧縮アルゴリズムによって圧縮率は向上するものの、クエリのパフォーマンスが低下する場合に適しています。このトレードオフは、参照頻度の低い古いデータでは許容できても、調査でより頻繁に使用される新しいデータには適さない可能性があります。
+
+以下にその例を示します。ここでは、データを削除する代わりに、4 日後に `ZSTD(3)` で圧縮します。
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+TTL Timestamp + INTERVAL 4 DAY RECOMPRESS CODEC(ZSTD(3))
+```
+
+<Info>
+  **パフォーマンスを評価する**
+
+  さまざまな圧縮レベルやアルゴリズムが、インサートおよびクエリのパフォーマンスに与える影響は、必ず両方を評価することを推奨します。たとえば、delta codec はタイムスタンプの圧縮に有効な場合があります。ただし、それらが主キーの一部である場合、フィルタリングのパフォーマンスが低下することがあります。
+</Info>
+
+有効期限 (TTL) の設定に関する詳細と例は、[こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)を参照してください。テーブルやカラムに有効期限 (TTL) を追加・変更する方法などの例は、[こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)にあります。有効期限 (TTL) によってホット/ウォームアーキテクチャのようなストレージ階層がどのように実現されるかについては、[ストレージ階層](#storage-tiers)を参照してください。
+
+<div id="storage-tiers">
+  ## ストレージティア
+</div>
+
+ClickHouse では、異なるディスク上にストレージティアを作成できます。たとえば、ホットな新しいデータは SSD に配置し、古いデータは S3 をバックエンドとして保存できます。このアーキテクチャにより、調査で参照される頻度が低く、クエリ SLA に余裕のある古いデータには、より低コストなストレージを使用できます。
+
+<Info>
+  **ClickHouse Cloud には該当しません**
+
+  ClickHouse Cloud では、S3 に保存された単一のデータコピーと、SSD ベースのノード cache を使用します。そのため、ClickHouse Cloud でストレージティアは不要です。
+</Info>
+
+ストレージティアを作成するには、まずディスクを作成し、それを使ってストレージポリシーを定義する必要があります。ポリシー内のボリュームは、テーブル作成時に指定できます。データは、使用率、データパートのサイズ、ボリュームの優先順位に基づいて、ディスク間で自動的に移動できます。詳細は[こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)を参照してください。
+
+データは `ALTER TABLE MOVE PARTITION` コマンドを使ってディスク間で手動移動できますが、ボリューム間のデータ移動は有効期限 (TTL) で制御することもできます。完全な例は[こちら](/ja/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)にあります。
+
+<div id="managing-schema-changes">
+  ## スキーマ変更の管理
+</div>
+
+ログやトレースのスキーマは、たとえばユーザーが異なるメタデータやポッドラベルを持つ新しいシステムを監視するようになるなど、システムの運用期間を通じて必然的に変化します。OTelスキーマを使用してデータを生成し、元のイベントデータを構造化フォーマットで保持しておくことで、ClickHouseのスキーマはこうした変更に強くなります。ただし、新しいメタデータが利用可能になったり、クエリのアクセスパターンが変化したりした場合は、それに合わせてスキーマを更新したくなるでしょう。
+
+スキーマ変更時のダウンタイムを回避するために、ユーザーはいくつかの選択肢を取れます。以下でそれらを紹介します。
+
+<div id="use-default-values">
+  ### デフォルト値を使用する
+</div>
+
+[`DEFAULT` values](/ja/reference/statements/create/table#default) を使って、カラムをスキーマに追加できます。指定されたデフォルト値は、INSERT 時に値が指定されなかった場合に使用されます。
+
+スキーマの変更は、materialized view の変換ロジックや OTel collector の設定を変更する前に行えます。これにより、新しいカラムを送信できるようになります。
+
+スキーマを変更したら、OTel collectors を再設定できます。ここでは、ユーザーが [&quot;Extracting structure with SQL&quot;](/ja/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql) で説明されている推奨プロセス、つまり OTel collectors がデータを Null table engine に送信し、materialized view がターゲットスキーマを抽出して、その結果を保存先のターゲットテーブルに送る構成を使用しているものとします。この場合、ビューは [`ALTER TABLE ... MODIFY QUERY` syntax](/ja/reference/statements/alter/view) を使って変更できます。たとえば、OTel の構造化ログからターゲットスキーマを抽出するために、以下のターゲットテーブルと、それに対応する materialized view (&quot;Extracting structure with SQL&quot; で使用しているものと同様) を考えてみましょう。
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+`LogAttributes` から新しいカラム `Size` を抽出するとします。これは `ALTER TABLE` を使ってスキーマに追加し、デフォルト値を指定できます。
+
+```sql
+ALTER TABLE otel_logs_v2
+        (ADD COLUMN `Size` UInt64 DEFAULT JSONExtractUInt(Body, 'size'))
+```
+
+上記の例では、デフォルト値として `LogAttributes` 内の `size` キーを指定しています (存在しない場合は 0 になります) 。つまり、このカラムにアクセスするクエリでは、その値が挿入されていない行については Map にアクセスする必要があるため、処理が遅くなります。これを定数、たとえば 0 として指定することも簡単にでき、その値を持たない行に対する後続のクエリのコストを削減できます。このテーブルをクエリすると、Map から期待どおりに値が設定されていることがわかります。
+
+```sql
+SELECT Size
+FROM otel_logs_v2
+LIMIT 5
+```
+
+```response
+┌──Size─┐
+│ 30577 │
+│  5667 │
+│  5379 │
+│  1696 │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.012 sec.
+```
+
+今後のすべてのデータにこの値が挿入されるよう、以下のように `ALTER TABLE` 構文を使って materialized view を変更できます。
+
+```sql
+ALTER TABLE otel_logs_mv
+        MODIFY QUERY
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300,                 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+以降の行では、挿入時に `Size` カラムに値が設定されます。
+
+<div id="create-new-tables">
+  ### 新しいテーブルを作成する
+</div>
+
+上記の手順の代替として、新しいスキーマを持つ新しいターゲットテーブルを作成するだけでも構いません。次に、任意の materialized view を、上記の `ALTER TABLE MODIFY QUERY.` を使って新しいテーブルを参照するように変更できます。この方法を使えば、たとえば `otel_logs_v3` のようにテーブルをバージョン管理できます。
+
+この方法では、ユーザーはクエリ対象のテーブルを複数扱うことになります。複数のテーブルをまたいでクエリするには、テーブル名にワイルドカードパターンを指定できる [`merge` 関数](/ja/reference/functions/table-functions/merge) を使用できます。以下では、`otel_logs` テーブルの v2 と v3 をクエリする例を示します。
+
+```sql
+SELECT Status, count() AS c
+FROM merge('otel_logs_v[2|3]')
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.137 sec. Processed 41.46 million rows, 82.92 MB (302.43 million rows/s., 604.85 MB/s.)
+```
+
+エンドユーザーに対して複数のテーブルをまとめたテーブルを公開しつつ、`merge` 関数の使用を避けたい場合は、[Merge テーブルエンジン](/ja/reference/engines/table-engines/special/merge)を使用できます。以下でこれを示します。
+
+```sql
+CREATE TABLE otel_logs_merged
+ENGINE = Merge('default', 'otel_logs_v[2|3]')
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.073 sec. Processed 41.46 million rows, 82.92 MB (565.43 million rows/s., 1.13 GB/s.)
+```
+
+これは、新しいテーブルが追加されるたびに、`EXCHANGE`テーブル構文を使って更新できます。たとえば、v4テーブルを追加するには、新しいテーブルを作成し、これを前のバージョンとアトミックに入れ替えることができます。
+
+```sql
+CREATE TABLE otel_logs_merged_temp
+ENGINE = Merge('default', 'otel_logs_v[2|3|4]')
+
+EXCHANGE TABLE otel_logs_merged_temp AND otel_logs_merged
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 39259996 │
+│   304  │  1378564 │
+│   302  │   820118 │
+│   404  │   429220 │
+│   301  │   276960 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.068 sec. Processed 42.46 million rows, 84.92 MB (620.45 million rows/s., 1.24 GB/s.)
+```

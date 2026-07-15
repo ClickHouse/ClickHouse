@@ -155,6 +155,11 @@ void * valloc(size_t size)
 }
 #endif
 
+/// FreeBSD does not declare memalign in its headers.
+#if defined(OS_FREEBSD)
+void * memalign(size_t alignment, size_t size);
+#endif
+
 void * memalign(size_t alignment, size_t size)
 {
     void * res = nullptr;
@@ -204,7 +209,16 @@ void * pvalloc(size_t size)
 }
 #endif
 
+/// On glibc, reallocarray is declared with __THROW (noexcept).
+/// On FreeBSD and musl, it is declared without noexcept, so we must match.
+#if !defined(OS_FREEBSD) && !defined(USE_MUSL)
+extern "C" void * reallocarray(void * ptr, size_t nmemb, size_t size) noexcept;
+#endif
+
 void * reallocarray(void * ptr, size_t nmemb, size_t size)
+#if !defined(OS_FREEBSD) && !defined(USE_MUSL)
+    noexcept
+#endif
 {
     size_t real_size = 0;
     if (__builtin_mul_overflow(nmemb, size, &real_size))
@@ -215,6 +229,11 @@ void * reallocarray(void * ptr, size_t nmemb, size_t size)
 
     return realloc(ptr, real_size);
 }
+
+/// FreeBSD does not declare malloc_usable_size in its headers.
+#if defined(OS_FREEBSD)
+size_t malloc_usable_size(void * ptr);
+#endif
 
 size_t malloc_usable_size(void * ptr)
 {

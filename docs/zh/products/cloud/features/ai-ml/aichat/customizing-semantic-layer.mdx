@@ -1,0 +1,229 @@
+---
+slug: /use-cases/AI_ML/AIChat/semantic-layer
+sidebarTitle: '使用语义层自定义 ClickHouse Assistant 聊天'
+title: '使用语义层优化 ClickHouse Assistant 对话'
+description: '介绍如何使用 AGENTS.md 为 ClickHouse Assistant 聊天 agent 提供自定义业务逻辑和数据专属指令'
+keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', '语义层', '自定义指令', '系统提示']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+ClickHouse Assistant 聊天 agent 可通过 **AGENTS.md** 进行自定义，从而理解你的特定业务逻辑、数据结构和领域知识。**AGENTS.md** 是一种特殊的已保存查询，可作为叠加在 agent 系统提示之上的语义层。
+
+通过创建 AGENTS.md 文件，你可以提供自定义指令。这些指令会在每次对话开始时注入，用于根据你的组织特有的需求、计算方式和约定来指导 SQL 查询生成和数据分析。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+当你在 Cloud Console 中保存一个名为 &quot;AGENTS.md&quot; (区分大小写) 的查询后：
+
+1. 发送消息时，ClickHouse Assistant 聊天 agent 会自动加载此文件
+2. 文件内容会被放入结构化内容标签中，并注入 agent 的系统提示
+3. 这些指令会应用于该服务中的所有 ClickHouse Assistant 聊天对话
+
+<div id="creating-agents-md">
+  ## 创建 AGENTS.md
+</div>
+
+<Steps>
+  <Step>
+    ### 创建已保存查询
+
+    1. 在 Cloud Console 中创建一个新查询
+    2. 将名称准确设置为：**&quot;AGENTS.md&quot;** (区分大小写) 
+    3. 在查询文本编辑器中编写自定义说明 (不是实际的 SQL) 
+    4. 保存查询
+  </Step>
+
+  <Step>
+    ### 添加说明
+
+    请使用清晰、可执行的语言来组织说明。包括：
+
+    * 业务规则和计算逻辑
+    * 数据结构指导
+    * 领域专用术语
+    * 常见查询模式
+    * 性能优化规则
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="finite-resource">
+  ### 将上下文视为有限资源
+</div>
+
+上下文十分宝贵——每一个标记都会消耗智能体的“注意力预算”。就像人类的工作记忆有限一样，随着上下文变长，语言模型的表现也会逐渐下降。这意味着你需要找到**尽可能少但信号最强的一组标记**，以最大限度提高获得预期结果的可能性。
+
+<div id="right-altitude">
+  ### 找到合适的抽象层级
+</div>
+
+在两个极端之间把握平衡：
+
+* **过于具体**：硬编码脆弱的 if-else 逻辑，既容易出问题，也会增加维护复杂度
+* **过于模糊**：只给出高层次指导，无法提供明确的信号，或错误地假定存在共享上下文
+
+理想的抽象层级应该足够具体，能够有效引导行为；同时也要足够灵活，让模型可以运用有效的启发式方法。先在当前可用的最佳模型上使用一个尽量精简的提示词，再根据观察到的失败模式补充清晰的指令。
+
+<div id="structured-sections">
+  ### 用结构化分节组织内容
+</div>
+
+使用 XML 标签或 Markdown 标题创建清晰、便于浏览的分节：
+
+```xml
+<background_information>
+Context about your data and domain
+</background_information>
+
+<calculation_rules>
+Specific formulas and business logic
+</calculation_rules>
+
+<tool_guidance>
+How to use specific ClickHouse features
+</tool_guidance>
+```
+
+<div id="canonical-examples">
+  ### 提供多样且具代表性的示例
+</div>
+
+示例就像“胜过千言万语的图片”。与其把所有边缘情况都塞进 prompt，不如精心挑选一组重点明确、类型多样的示例，清晰展现预期行为。
+
+<div id="minimal-complete">
+  ### 保持精简但完整
+</div>
+
+* 仅包含常用的说明
+* 保持简洁——上下文过大会因“上下文腐化”而导致性能下降
+* 删除过期或很少使用的规则
+* 确保提供足够的信息来引导所需的行为
+
+<Tip>
+  精简不一定意味着简短。你需要提供足够的细节，确保 agent 按预期行为执行，同时避免不必要的冗长。
+</Tip>
+
+<div id="example-calculated-metrics">
+  ## 示例：基于原始数据计算指标
+</div>
+
+当指标需要经过特定计算，而不能直接访问列时，请指导 agent：
+
+```xml
+<metric_calculations>
+IMPORTANT: "active_sessions" is NOT a column. It must be calculated.
+
+To calculate active sessions:
+COUNT(DISTINCT session_id || '|' || user_id) AS active_sessions
+
+This counts unique combinations of session and user identifiers.
+
+When the user asks for "active sessions" or "session count", always use this formula:
+SELECT
+    date,
+    COUNT(DISTINCT session_id || '|' || user_id) AS active_sessions
+FROM events
+GROUP BY date;
+
+</metric_calculations>
+```
+
+<div id="example-business-logic">
+  ## 示例：业务逻辑规则
+</div>
+
+定义特定业务领域的计算和分类：
+
+```xml
+<business_rules>
+Revenue Calculation:
+- Exclude refunded transactions: WHERE transaction_status != 'refunded'
+- Apply regional tax rates using CASE expressions
+- Use MRR for subscriptions:
+  SUM(CASE
+    WHEN billing_cycle = 'monthly' THEN amount
+    WHEN billing_cycle = 'yearly' THEN amount / 12
+    ELSE 0
+  END) AS mrr
+
+Traffic Source Classification:
+Use CASE expression to categorize:
+CASE
+  WHEN traffic_source IN ('google', 'bing', 'organic') THEN 'Organic Search'
+  WHEN traffic_source IN ('facebook', 'instagram', 'social') THEN 'Social Media'
+  WHEN traffic_source = 'direct' THEN 'Direct'
+  ELSE 'Other'
+END AS source_category
+
+Customer Segmentation:
+- Enterprise: annual_contract_value >= 100000
+- Mid-Market: annual_contract_value >= 10000 AND annual_contract_value < 100000
+- SMB: annual_contract_value < 10000
+
+Always include these categorizations when generating traffic or revenue reports.
+</business_rules>
+```
+
+<div id="example-data-quirks">
+  ## 示例：数据结构方面的特殊情况
+</div>
+
+说明非常规的数据格式或历史遗留的 schema 设计决策：
+
+```xml
+<data_structure_notes>
+The user_status column uses numeric codes, not strings:
+- 1 = 'active'
+- 2 = 'inactive'
+- 3 = 'suspended'
+- 99 = 'deleted'
+
+When filtering or displaying user status, always use:
+CASE user_status
+  WHEN 1 THEN 'active'
+  WHEN 2 THEN 'inactive'
+  WHEN 3 THEN 'suspended'
+  WHEN 99 THEN 'deleted'
+END AS status_label
+
+The product_metadata column contains JSON strings that must be parsed:
+SELECT
+    product_id,
+    JSONExtractString(product_metadata, 'category') AS category,
+    JSONExtractInt(product_metadata, 'inventory_count') AS inventory
+FROM products;
+</data_structure_notes>
+```
+
+<div id="example-terminology">
+  ## 示例：领域相关术语
+</div>
+
+将业务术语对应到技术实现：
+
+```xml
+<terminology>
+When users refer to "conversions", they mean:
+- For e-commerce: transactions WHERE transaction_type = 'purchase'
+- For SaaS: subscriptions WHERE subscription_status = 'active' AND first_payment_date IS NOT NULL
+
+"Churn" is calculated as:
+COUNT(DISTINCT user_id) WHERE last_active_date < today() - INTERVAL 90 DAY
+AND previous_subscription_status = 'active'
+
+"DAU" (Daily Active Users) means:
+COUNT(DISTINCT user_id) WHERE activity_date = today()
+
+"Qualified leads" must meet ALL criteria:
+- lead_score >= 70
+- company_size >= 50
+- budget_confirmed = true
+- contact_role IN ('Director', 'VP', 'C-Level')
+</terminology>
+```

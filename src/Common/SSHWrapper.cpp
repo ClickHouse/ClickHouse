@@ -33,7 +33,7 @@ struct CStringDeleter
 
 SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
 {
-    ssh_key key;
+    ssh_key key = nullptr;
     if (int rc = ssh_pki_import_privkey_file(filename.c_str(), passphrase.c_str(), nullptr, nullptr, &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file");
     return SSHKey(key);
@@ -41,7 +41,7 @@ SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
 
 SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
 {
-    ssh_key key;
+    ssh_key key = nullptr;
     if (int rc = ssh_pki_import_pubkey_file(filename.c_str(), &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH public key from file");
     return SSHKey(key);
@@ -49,7 +49,7 @@ SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
 
 SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_name)
 {
-    ssh_key key;
+    ssh_key key = nullptr;
     auto key_type = ssh_key_type_from_name(type_name.c_str());
     if (int rc = ssh_pki_import_pubkey_base64(base64_key.c_str(), key_type, &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Bad SSH public key provided");

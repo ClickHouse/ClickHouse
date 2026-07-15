@@ -1,0 +1,71 @@
+---
+description: '문자열 컬럼용 LowCardinality 최적화 문서'
+sidebarTitle: 'LowCardinality(T)'
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
+doc_type: 'reference'
+---
+
+다른 데이터 타입의 내부 표현을 딕셔너리 인코딩된 형태로 변경합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+LowCardinality(data_type)
+```
+
+**매개변수**
+
+* `data_type` — [String](/ko/reference/data-types/string), [FixedString](/ko/reference/data-types/fixedstring), [Date](/ko/reference/data-types/date), [DateTime](/ko/reference/data-types/datetime), 그리고 [Decimal](/ko/reference/data-types/decimal)을 제외한 숫자 타입입니다. 일부 데이터 타입에서는 `LowCardinality`가 효율적이지 않을 수 있습니다. 자세한 내용은 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ko/reference/settings/session-settings#allow_suspicious_low_cardinality_types) 설정 설명을 참조하십시오.
+
+<div id="description">
+  ## 설명
+</div>
+
+`LowCardinality`는 데이터 저장 방식과 데이터 처리 규칙을 바꾸는 래퍼 타입입니다. ClickHouse는 `LowCardinality` 컬럼에 [딕셔너리 인코딩](https://en.wikipedia.org/wiki/Dictionary_coder)을 적용합니다. 딕셔너리 인코딩된 데이터를 사용하면 많은 애플리케이션에서 [SELECT](/ko/reference/statements/select/index) 쿼리의 성능이 크게 향상됩니다.
+
+`LowCardinality` 데이터 타입 사용 효율은 데이터의 다양성에 따라 달라집니다. 딕셔너리에 고유한 값이 10,000개 미만이면 ClickHouse는 대체로 데이터 읽기와 저장 효율이 더 높아집니다. 딕셔너리에 고유한 값이 100,000개를 초과하면 일반 데이터 타입을 사용할 때보다 ClickHouse의 성능이 더 나빠질 수 있습니다.
+
+문자열을 다룰 때는 [Enum](/ko/reference/data-types/enum) 대신 `LowCardinality` 사용을 고려하십시오. `LowCardinality`는 더 유연하게 사용할 수 있으며, 효율도 같거나 더 높은 경우가 많습니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+`LowCardinality` 컬럼이 있는 테이블을 생성합니다:
+
+```sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+```
+
+<div id="related-settings-and-functions">
+  ## 관련 설정 및 함수
+</div>
+
+설정:
+
+* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/ko/reference/settings/session-settings#low_cardinality_max_dictionary_size)
+* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/ko/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
+* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/ko/reference/settings/session-settings#low_cardinality_allow_in_native_format)
+* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ko/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
+* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/ko/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+
+함수:
+
+* [toLowCardinality](/ko/reference/functions/regular-functions/type-conversion-functions#toLowCardinality)
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [스키마와 코덱을 활용한 ClickHouse 최적화](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* 블로그: [ClickHouse에서 시계열 데이터 다루기](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* [String 최적화(러시아어 영상 발표)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [영문 슬라이드](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)

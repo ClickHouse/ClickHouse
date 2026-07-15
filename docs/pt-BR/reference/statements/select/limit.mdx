@@ -1,0 +1,168 @@
+---
+description: 'Documentação da cláusula LIMIT'
+sidebarTitle: 'LIMIT'
+slug: /sql-reference/statements/select/limit
+title: 'Cláusula LIMIT'
+doc_type: 'reference'
+---
+
+A cláusula `LIMIT` controla quantas linhas são retornadas no resultado da sua consulta.
+
+<div id="basic-syntax">
+  ## Sintaxe básica
+</div>
+
+**Selecione as primeiras linhas:**
+
+```sql
+LIMIT m
+```
+
+Retorna as primeiras `m` linhas do resultado, ou todos os registros se houver menos de `m`.
+
+**Sintaxe alternativa de TOP (compatível com o MS SQL Server):**
+
+```sql
+-- SELECT TOP número|percentual nome_da(s)_coluna(s) FROM nome_da_tabela
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+Isso equivale a `LIMIT m` e pode ser usado por compatibilidade com consultas do Microsoft SQL Server.
+
+**SELECT com OFFSET:**
+
+```sql
+LIMIT m OFFSET n
+-- ou de forma equivalente:
+LIMIT n, m
+```
+
+Ignora as primeiras `n` linhas e retorna as próximas `m` linhas.
+
+Em ambas as formas, `n` e `m` devem ser inteiros não negativos.
+
+<div id="negative-limits">
+  ## Limites negativos
+</div>
+
+Selecione linhas do *fim* do conjunto de resultados usando valores negativos:
+
+| Sintaxe              | Resultado                                               |
+| -------------------- | ------------------------------------------------------- |
+| `LIMIT -m`           | Últimas `m` linhas                                      |
+| `LIMIT -m OFFSET -n` | Últimas `m` linhas após ignorar as últimas `n` linhas   |
+| `LIMIT m OFFSET -n`  | Primeiras `m` linhas após ignorar as últimas `n` linhas |
+| `LIMIT -m OFFSET n`  | Últimas `m` linhas após ignorar as primeiras `n` linhas |
+
+A sintaxe `LIMIT -n, -m` é equivalente a `LIMIT -m OFFSET -n`.
+
+<div id="fractional-limits">
+  ## Limites fracionários
+</div>
+
+Use valores decimais entre 0 e 1 para selecionar uma porcentagem das linhas:
+
+| Sintaxe                 | Resultado                                                     |
+| ----------------------- | ------------------------------------------------------------- |
+| `LIMIT 0.1`             | Primeiros 10% das linhas                                      |
+| `LIMIT 1 OFFSET 0.5`    | A linha mediana                                               |
+| `LIMIT 0.25 OFFSET 0.5` | Terceiro quartil (25% das linhas após pular os primeiros 50%) |
+
+<Note>
+  * As frações devem ser valores [Float64](/pt-BR/reference/data-types/float) maiores que 0 e menores que 1.
+  * Contagens fracionárias de linhas são arredondadas para o número inteiro seguinte.
+</Note>
+
+<div id="combining-limit-types">
+  ## Combinando tipos de LIMIT
+</div>
+
+Você pode combinar inteiros padrão com offsets fracionários ou negativos:
+
+```sql
+LIMIT 10 OFFSET 0.5    -- 10 linhas a partir do ponto médio
+LIMIT 10 OFFSET -20    -- 10 linhas após ignorar as últimas 20
+```
+
+<div id="limit--with-ties-modifier">
+  ## LIMIT ... WITH TIES
+</div>
+
+O modificador `WITH TIES` inclui linhas adicionais com os mesmos valores de `ORDER BY` da última linha dentro do limite.
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Com `WITH TIES`, todas as linhas com o mesmo último valor são incluídas:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+A linha 6 é incluída porque tem o mesmo valor (`2`) da linha 5.
+
+O mesmo acontece quando o offset é especificado com a palavra-chave `OFFSET`:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Pular as 2 primeiras linhas e retornar 3 normalmente resultaria em `1, 1, 2`, mas o segundo `2` é incluído porque tem o mesmo valor da última linha.
+
+<Note>
+  `WITH TIES` não é compatível com limites negativos.
+</Note>
+
+Esse modificador pode ser combinado com o modificador [`ORDER BY ... WITH FILL`](/pt-BR/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
+
+<div id="considerations">
+  ## Considerações
+</div>
+
+**Resultados não determinísticos:** Sem a cláusula [`ORDER BY`](/pt-BR/reference/statements/select/order-by), as linhas retornadas podem ser arbitrárias e variar entre execuções da consulta.
+
+**Limite no servidor:** O número de linhas retornadas também pode ser afetado pela configuração [limit](/pt-BR/reference/settings/session-settings#limit).
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [LIMIT BY](/pt-BR/reference/statements/select/limit-by) — Limita o número de linhas por grupo de valores, útil para obter os N principais resultados em cada categoria.

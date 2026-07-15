@@ -23,6 +23,43 @@ Don't list too many values explicitly (i.e. millions). If a data set is large, 
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
 
+For historical compatibility, when the right side is a single `tuple` expression, it can be interpreted either as a set of values or as one tuple value, depending on the left side of the `IN` operator. If the left side is a scalar value, ClickHouse treats the elements of this single right-side `tuple` expression as separate `IN` values:
+
+```sql title="Query"
+SELECT
+    1 IN (tuple(1, 2)) AS one_in_tuple,
+    2 IN (tuple(1, 2)) AS two_in_tuple,
+    3 IN (tuple(1, 2)) AS three_in_tuple;
+```
+
+```text title="Response"
+┌─one_in_tuple─┬─two_in_tuple─┬─three_in_tuple─┐
+│            1 │            1 │              0 │
+└──────────────┴──────────────┴────────────────┘
+```
+
+This behaves like `SELECT 1 IN (1, 2)`. If the left side is also a tuple, the right side is interpreted as a set of tuple values:
+
+```sql title="Query"
+SELECT tuple(1, 2) IN (tuple(1, 2)) AS tuple_in_tuple;
+```
+
+```text title="Response"
+┌─tuple_in_tuple─┐
+│              1 │
+└────────────────┘
+```
+
+This special handling applies only when the right side is a single `tuple` expression. A scalar left side cannot be matched against a right side that contains multiple tuple values:
+
+```sql title="Query"
+SELECT 1 IN (tuple(1, 2), tuple(3, 4));
+```
+
+```text title="Response"
+Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Second argument type Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8)). (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
 ClickHouse allows types to differ in the left and the right parts of the `IN` subquery. 
 In this case, it converts the right side value to the type of the left side, as 
 if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accurateCastOrNull) function were applied to the right side. 
@@ -32,15 +69,11 @@ cannot be performed, it returns [NULL](/operations/settings/formats#input_format
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT '1' IN (SELECT 1);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─in('1', _subquery49)─┐
 │                    1 │
 └──────────────────────┘
@@ -54,7 +87,7 @@ The subquery may specify more than one column for filtering tuples.
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -63,7 +96,7 @@ The columns to the left and right of the `IN` operator should have the same type
 The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     EventDate,
     avg(UserID IN
@@ -77,7 +110,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text
+```text title="Response"
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │

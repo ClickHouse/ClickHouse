@@ -1,0 +1,405 @@
+---
+description: 'ARRAY JOIN 子句文档'
+sidebarTitle: 'ARRAY JOIN'
+slug: /sql-reference/statements/select/array-join
+title: 'ARRAY JOIN 子句'
+doc_type: 'reference'
+---
+
+对于包含数组列的表，一个常见操作是生成一张新表：原始列中的每个数组元素各自占据一行，同时其他列的值会被复制。这正是 `ARRAY JOIN` 子句最基本的用法。
+
+它之所以得名，是因为可以将其视为对数组或嵌套数据结构执行 `JOIN`。其用途与 [arrayJoin](/zh/reference/functions/regular-functions/array-join) 函数类似，但子句的功能更为广泛。
+
+语法：
+
+```sql
+SELECT <expr_list>
+FROM <left_subquery>
+[LEFT] ARRAY JOIN <array>
+[WHERE|PREWHERE <expr>]
+...
+```
+
+下面列出了受支持的 `ARRAY JOIN` 类型：
+
+* `ARRAY JOIN` - 在默认情况下，空数组不会包含在 `JOIN` 结果中。
+* `LEFT ARRAY JOIN` - `JOIN` 结果中会包含带空数组的行。对于空数组，其值会被设置为该数组元素类型的默认值 (通常为 0、空字符串或 NULL) 。
+
+<div id="basic-array-join-examples">
+  ## ARRAY JOIN 基本示例
+</div>
+
+<div id="array-join-left-array-join-examples">
+  ### ARRAY JOIN 和 LEFT ARRAY JOIN
+</div>
+
+以下示例展示了 `ARRAY JOIN` 和 `LEFT ARRAY JOIN` 子句的用法。我们先创建一个包含 [Array](/zh/reference/data-types/array) 类型列的表，并向其中插入值：
+
+```sql
+CREATE TABLE arrays_test
+(
+    s String,
+    arr Array(UInt8)
+) ENGINE = Memory;
+
+INSERT INTO arrays_test
+VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
+```
+
+```response
+┌─s───────────┬─arr─────┐
+│ Hello       │ [1,2]   │
+│ World       │ [3,4,5] │
+│ Goodbye     │ []      │
+└─────────────┴─────────┘
+```
+
+下面的示例使用了 `ARRAY JOIN` 子句：
+
+```sql
+SELECT s, arr
+FROM arrays_test
+ARRAY JOIN arr;
+```
+
+```response
+┌─s─────┬─arr─┐
+│ Hello │   1 │
+│ Hello │   2 │
+│ World │   3 │
+│ World │   4 │
+│ World │   5 │
+└───────┴─────┘
+```
+
+下面的示例使用 `LEFT ARRAY JOIN` 子句：
+
+```sql
+SELECT s, arr
+FROM arrays_test
+LEFT ARRAY JOIN arr;
+```
+
+```response
+┌─s───────────┬─arr─┐
+│ Hello       │   1 │
+│ Hello       │   2 │
+│ World       │   3 │
+│ World       │   4 │
+│ World       │   5 │
+│ Goodbye     │   0 │
+└─────────────┴─────┘
+```
+
+<div id="array-join-arrayEnumerate">
+  ### ARRAY JOIN 与 arrayEnumerate 函数
+</div>
+
+此函数通常与 `ARRAY JOIN` 搭配使用。它可以在应用 `ARRAY JOIN` 后，对每个数组只统计一次。示例：
+
+```sql
+SELECT
+    count() AS Reaches,
+    countIf(num = 1) AS Hits
+FROM test.hits
+ARRAY JOIN
+    GoalsReached,
+    arrayEnumerate(GoalsReached) AS num
+WHERE CounterID = 160656
+LIMIT 10
+```
+
+```text
+┌─Reaches─┬──Hits─┐
+│   95606 │ 31406 │
+└─────────┴───────┘
+```
+
+在此示例中，Reaches 表示转化次数 (即应用 `ARRAY JOIN` 后得到的字符串数量) ，而 Hits 表示页面浏览量 (即 `ARRAY JOIN` 之前的字符串数量) 。在这种情况下，你也可以用更简单的方式得到相同结果：
+
+```sql
+SELECT
+    sum(length(GoalsReached)) AS Reaches,
+    count() AS Hits
+FROM test.hits
+WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
+```
+
+```text
+┌─Reaches─┬──Hits─┐
+│   95606 │ 31406 │
+└─────────┴───────┘
+```
+
+<div id="array_join_arrayEnumerateUniq">
+  ### ARRAY JOIN 和 arrayEnumerateUniq
+</div>
+
+此函数在使用 `ARRAY JOIN` 并对数组元素进行聚合时非常有用。
+
+在此示例中，会计算每个目标 ID 的转化次数 (Goals 嵌套数据结构中的每个元素都是一个已达成的目标，我们称其为一次转化) 以及 session 数量。如果不使用 `ARRAY JOIN`，我们会将 session 数量统计为 sum(Sign)。但在这个特定场景中，行被嵌套的 Goals 结构展开了，因此为了确保之后每个 session 只被计数一次，我们对 `arrayEnumerateUniq(Goals.ID)` 函数的返回值应用了条件。
+
+```sql
+SELECT
+    Goals.ID AS GoalID,
+    sum(Sign) AS Reaches,
+    sumIf(Sign, num = 1) AS Visits
+FROM test.visits
+ARRAY JOIN
+    Goals,
+    arrayEnumerateUniq(Goals.ID) AS num
+WHERE CounterID = 160656
+GROUP BY GoalID
+ORDER BY Reaches DESC
+LIMIT 10
+```
+
+```text
+┌──GoalID─┬─Reaches─┬─Visits─┐
+│   53225 │    3214 │   1097 │
+│ 2825062 │    3188 │   1097 │
+│   56600 │    2803 │    488 │
+│ 1989037 │    2401 │    365 │
+│ 2830064 │    2396 │    910 │
+│ 1113562 │    2372 │    373 │
+│ 3270895 │    2262 │    812 │
+│ 1084657 │    2262 │    345 │
+│   56599 │    2260 │    799 │
+│ 3271094 │    2256 │    812 │
+└─────────┴─────────┴────────┘
+```
+
+<div id="using-aliases">
+  ## 使用别名
+</div>
+
+可以为 `ARRAY JOIN` 子句中的数组指定别名。在这种情况下，可以通过该别名访问数组元素，而数组本身仍使用原始名称访问。示例：
+
+```sql
+SELECT s, arr, a
+FROM arrays_test
+ARRAY JOIN arr AS a;
+```
+
+```response
+┌─s─────┬─arr─────┬─a─┐
+│ Hello │ [1,2]   │ 1 │
+│ Hello │ [1,2]   │ 2 │
+│ World │ [3,4,5] │ 3 │
+│ World │ [3,4,5] │ 4 │
+│ World │ [3,4,5] │ 5 │
+└───────┴─────────┴───┘
+```
+
+借助别名，您可以对外部数组执行 `ARRAY JOIN`。例如：
+
+```sql
+SELECT s, arr_external
+FROM arrays_test
+ARRAY JOIN [1, 2, 3] AS arr_external;
+```
+
+```response
+┌─s───────────┬─arr_external─┐
+│ Hello       │            1 │
+│ Hello       │            2 │
+│ Hello       │            3 │
+│ World       │            1 │
+│ World       │            2 │
+│ World       │            3 │
+│ Goodbye     │            1 │
+│ Goodbye     │            2 │
+│ Goodbye     │            3 │
+└─────────────┴──────────────┘
+```
+
+多个数组可以在 `ARRAY JOIN` 子句中用逗号分隔。在这种情况下，会同时对这些数组执行 `JOIN` (即直接和，而不是笛卡儿积) 。请注意，默认情况下，所有数组的大小都必须相同。示例：
+
+```sql
+SELECT s, arr, a, num, mapped
+FROM arrays_test
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped;
+```
+
+```response
+┌─s─────┬─arr─────┬─a─┬─num─┬─mapped─┐
+│ Hello │ [1,2]   │ 1 │   1 │      2 │
+│ Hello │ [1,2]   │ 2 │   2 │      3 │
+│ World │ [3,4,5] │ 3 │   1 │      4 │
+│ World │ [3,4,5] │ 4 │   2 │      5 │
+│ World │ [3,4,5] │ 5 │   3 │      6 │
+└───────┴─────────┴───┴─────┴────────┘
+```
+
+以下示例使用 [arrayEnumerate](/zh/reference/functions/regular-functions/array-functions#arrayEnumerate) 函数：
+
+```sql
+SELECT s, arr, a, num, arrayEnumerate(arr)
+FROM arrays_test
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
+```
+
+```response
+┌─s─────┬─arr─────┬─a─┬─num─┬─arrayEnumerate(arr)─┐
+│ Hello │ [1,2]   │ 1 │   1 │ [1,2]               │
+│ Hello │ [1,2]   │ 2 │   2 │ [1,2]               │
+│ World │ [3,4,5] │ 3 │   1 │ [1,2,3]             │
+│ World │ [3,4,5] │ 4 │   2 │ [1,2,3]             │
+│ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
+└───────┴─────────┴───┴─────┴─────────────────────┘
+```
+
+可以使用 `SETTINGS enable_unaligned_array_join = 1` 对多个大小不同的数组进行 join。示例：
+
+```sql
+SELECT s, arr, a, b
+FROM arrays_test ARRAY JOIN arr AS a, [['a','b'],['c']] AS b
+SETTINGS enable_unaligned_array_join = 1;
+```
+
+```response
+┌─s───────┬─arr─────┬─a─┬─b─────────┐
+│ Hello   │ [1,2]   │ 1 │ ['a','b'] │
+│ Hello   │ [1,2]   │ 2 │ ['c']     │
+│ World   │ [3,4,5] │ 3 │ ['a','b'] │
+│ World   │ [3,4,5] │ 4 │ ['c']     │
+│ World   │ [3,4,5] │ 5 │ []        │
+│ Goodbye │ []      │ 0 │ ['a','b'] │
+│ Goodbye │ []      │ 0 │ ['c']     │
+└─────────┴─────────┴───┴───────────┘
+```
+
+<div id="array-join-with-nested-data-structure">
+  ## ARRAY JOIN 与嵌套数据结构配合使用
+</div>
+
+`ARRAY JOIN` 也可用于[嵌套数据结构](/zh/reference/data-types/nested-data-structures/index)：
+
+```sql
+CREATE TABLE nested_test
+(
+    s String,
+    nest Nested(
+    x UInt8,
+    y UInt32)
+) ENGINE = Memory;
+
+INSERT INTO nested_test
+VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
+```
+
+```response
+┌─s───────┬─nest.x──┬─nest.y─────┐
+│ Hello   │ [1,2]   │ [10,20]    │
+│ World   │ [3,4,5] │ [30,40,50] │
+│ Goodbye │ []      │ []         │
+└─────────┴─────────┴────────────┘
+```
+
+```sql
+SELECT s, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN nest;
+```
+
+```response
+┌─s─────┬─nest.x─┬─nest.y─┐
+│ Hello │      1 │     10 │
+│ Hello │      2 │     20 │
+│ World │      3 │     30 │
+│ World │      4 │     40 │
+│ World │      5 │     50 │
+└───────┴────────┴────────┘
+```
+
+在 `ARRAY JOIN` 中指定嵌套数据结构的名称时，其含义与对该结构所包含的所有数组元素执行 `ARRAY JOIN` 相同。示例如下：
+
+```sql
+SELECT s, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN `nest.x`, `nest.y`;
+```
+
+```response
+┌─s─────┬─nest.x─┬─nest.y─┐
+│ Hello │      1 │     10 │
+│ Hello │      2 │     20 │
+│ World │      3 │     30 │
+│ World │      4 │     40 │
+│ World │      5 │     50 │
+└───────┴────────┴────────┘
+```
+
+这种写法也可以：
+
+```sql
+SELECT s, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN `nest.x`;
+```
+
+```response
+┌─s─────┬─nest.x─┬─nest.y─────┐
+│ Hello │      1 │ [10,20]    │
+│ Hello │      2 │ [10,20]    │
+│ World │      3 │ [30,40,50] │
+│ World │      4 │ [30,40,50] │
+│ World │      5 │ [30,40,50] │
+└───────┴────────┴────────────┘
+```
+
+可以为嵌套数据结构指定别名，以便选择 `JOIN` 结果或源数组。示例：
+
+```sql
+SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
+FROM nested_test
+ARRAY JOIN nest AS n;
+```
+
+```response
+┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
+│ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
+│ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
+│ World │   3 │  30 │ [3,4,5] │ [30,40,50] │
+│ World │   4 │  40 │ [3,4,5] │ [30,40,50] │
+│ World │   5 │  50 │ [3,4,5] │ [30,40,50] │
+└───────┴─────┴─────┴─────────┴────────────┘
+```
+
+[arrayEnumerate](/zh/reference/functions/regular-functions/array-functions#arrayEnumerate) 函数使用示例：
+
+```sql
+SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
+FROM nested_test
+ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
+```
+
+```response
+┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
+│ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
+│ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
+│ World │   3 │  30 │ [3,4,5] │ [30,40,50] │   1 │
+│ World │   4 │  40 │ [3,4,5] │ [30,40,50] │   2 │
+│ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
+└───────┴─────┴─────┴─────────┴────────────┴─────┘
+```
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+执行 `ARRAY JOIN` 时，查询的执行顺序会被优化。虽然在查询中，`ARRAY JOIN` 必须始终写在 [WHERE](/zh/reference/statements/select/where)/[PREWHERE](/zh/reference/statements/select/prewhere) 子句之前，但从技术上讲，它们实际上可以按任意顺序执行，除非过滤会用到 `ARRAY JOIN` 的结果。执行顺序由查询优化器控制。
+
+<div id="incompatibility-with-short-circuit-function-evaluation">
+  ### 与短路函数求值不兼容
+</div>
+
+[短路函数求值](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 是一项功能，用于优化 `if`、`multiIf`、`and` 和 `or` 等特定函数中复杂表达式的执行。它可以防止这些函数在执行过程中出现潜在异常，例如除以零。
+
+`arrayJoin` 始终会被执行，因此不支持短路函数求值。这是因为它是一个特殊函数，在查询分析和执行期间会独立于其他所有函数单独处理，并且需要额外的逻辑，而这套逻辑无法与短路函数执行兼容。原因在于，结果中的行数取决于 `arrayJoin` 的结果，而为 `arrayJoin` 实现惰性执行过于复杂且代价过高。
+
+<div id="related-content">
+  ## 相关文章
+</div>
+
+* 博客：[在 ClickHouse 中处理时间序列数据与函数](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

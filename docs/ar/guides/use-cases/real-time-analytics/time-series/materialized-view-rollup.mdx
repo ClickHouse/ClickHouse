@@ -1,0 +1,265 @@
+---
+title: 'أنشئ rollup باستخدام العروض المادية لتحليلات السلاسل الزمنية السريعة'
+slug: /knowledgebase/materialized-view-rollup-timeseries
+description: 'مثال متكامل لإنشاء جدول أحداث خام، وجدول rollup، وعرض مادي لتحليلات منخفضة زمن الاستجابة.'
+keywords: ['عرض مادي', 'rollup', 'تجميع', 'سلاسل زمنية', 'دليل عملي']
+doc_type: 'guide'
+---
+
+> يوضح لك هذا الدليل العملي كيفية صيانة بيانات rollup مُسبقة التجميع انطلاقًا من جدول أحداث كبير الحجم باستخدام [**العروض المادية**](/ar/concepts/features/materialized-views/index).
+> ستنشئ ثلاثة كائنات: جدولًا خامًا، وجدول rollup، والعرض المادي الذي يكتب إلى جدول الـrollup تلقائيًا.
+
+<div id="when-to-use">
+  ## متى تستخدم هذا النمط
+</div>
+
+استخدم هذا النمط عندما:
+
+* يكون لديك **تدفّق أحداث للإلحاق فقط** (النقرات، مشاهدات الصفحات، إنترنت الأشياء، السجلات).
+* تكون معظم الاستعلامات **عمليات تجميع** عبر نطاقات زمنية (لكل دقيقة/ساعة/يوم).
+* تريد **عمليات قراءة متسقة بأقل من ثانية** من دون إعادة فحص جميع الصفوف الخام.
+
+<Steps>
+  <Step>
+    ## إنشاء جدول الأحداث الخام
+
+    ```sql
+    CREATE TABLE events_raw
+    (
+        event_time   DateTime,
+        user_id      UInt64,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        value        Float64
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMM(event_time)
+    ORDER BY (event_time, user_id)
+    TTL event_time + INTERVAL 90 DAY DELETE
+    ```
+
+    **ملاحظات**
+
+    * `PARTITION BY toYYYYMM(event_time)` يُبقي الأقسام صغيرة ويسهّل حذفها.
+    * `ORDER BY (event_time, user_id)` يدعم الاستعلامات المقيّدة زمنيًا + عامل تصفية ثانوي.
+    * `LowCardinality(String)` يوفّر الذاكرة للأبعاد الفئوية.
+    * `TTL` ينظّف البيانات الخام بعد 90 يومًا (اضبطه وفقًا لمتطلبات الاحتفاظ لديك).
+  </Step>
+
+  <Step>
+    ## صمّم جدول الـ rollup (المجمّع)
+
+    سنُجري التجميع المسبق على مستوى **الساعة**.
+    اختر مستوى التفاصيل بما يتوافق مع نطاق التحليل الأكثر شيوعًا.
+
+    ```sql
+    CREATE TABLE events_rollup_1h
+    (
+        bucket_start  DateTime,            -- start of the hour
+        country       LowCardinality(String),
+        event_type    LowCardinality(String),
+        users_uniq    AggregateFunction(uniqExact, UInt64),
+        value_sum     AggregateFunction(sum, Float64),
+        value_avg     AggregateFunction(avg, Float64),
+        events_count  AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type)
+    ```
+
+    نحن نخزّن **حالات التجميع** (مثل `AggregateFunction(sum, ...)`) التي تمثّل بشكل مضغوط قيم تجميع جزئية، ويمكن دمجها أو تحويلها إلى نتائج نهائية لاحقًا.
+  </Step>
+
+  <Step>
+    ## أنشئ عرضًا ماديًا يملأ الـ rollup
+
+    يعمل هذا العرض المادي تلقائيًا عند إدراج بيانات في `events_raw` ويكتب **حالات التجميع** إلى الـ rollup.
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1h
+    TO events_rollup_1h
+    AS
+    SELECT
+        toStartOfHour(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id)   AS users_uniq,
+        sumState(value)           AS value_sum,
+        avgState(value)           AS value_avg,
+        countState()              AS events_count
+    FROM events_raw
+    GROUP BY bucket_start, country, event_type;
+    ```
+  </Step>
+
+  <Step>
+    ## أدرِج بعض البيانات النموذجية
+
+    أدرِج بعض البيانات النموذجية:
+
+    ```sql
+    INSERT INTO events_raw VALUES
+        (now() - INTERVAL 4 SECOND, 101, 'US', 'view', 1),
+        (now() - INTERVAL 3 SECOND, 101, 'US', 'click', 1),
+        (now() - INTERVAL 2 SECOND, 202, 'DE', 'view', 1),
+        (now() - INTERVAL 1 SECOND, 101, 'US', 'view', 1);
+    ```
+  </Step>
+
+  <Step>
+    ## الاستعلام عن الـ rollup
+
+    يمكنك إما **دمج** حالات التجميع عند القراءة، أو **تحويلها إلى قيم نهائية**:
+
+    <Tabs>
+      <Tab title="الدمج عند القراءة">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type;
+        ```
+      </Tab>
+
+      <Tab title="الإنهاء باستخدام -Final">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type
+        SETTINGS final = 1;  -- أو استخدم SELECT ... FINAL
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    <Tip>
+      إذا كنت تتوقع أن تستهدف عمليات القراءة دائمًا الـ rollup، فيمكنك إنشاء **عرض مادي ثانٍ** يكتب قيمًا *نهائية* إلى جدول `MergeTree` «عادي» وبنفس الدقة 1h.
+      تمنح حالات التجميع مرونة أكبر، بينما تجعل القيم النهائية عمليات القراءة أبسط قليلًا.
+    </Tip>
+  </Step>
+
+  <Step>
+    ## صفِّ البيانات حسب الحقول في المفتاح الأساسي للحصول على أفضل أداء
+
+    يمكنك استخدام الأمر `EXPLAIN` لمعرفة كيفية استخدام الفهرس لتقليص نطاق البيانات:
+
+    ```sql title="Query"
+    EXPLAIN indexes=1
+    SELECT *
+    FROM events_rollup_1h
+    WHERE bucket_start BETWEEN now() - INTERVAL 3 DAY AND now()
+      AND country = 'US';
+    ```
+
+    ```response title="Response"
+            ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+        1.  │ Expression ((Project names + Projection))                                                                                          │
+        2.  │   Expression                                                                                                                       │
+        3.  │     ReadFromMergeTree (default.events_rollup_1h)                                                                                   │
+        4.  │     Indexes:                                                                                                                       │
+        5.  │       MinMax                                                                                                                       │
+        6.  │         Keys:                                                                                                                      │
+        7.  │           bucket_start                                                                                                             │
+        8.  │         Condition: and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))                                 │
+        9.  │         Parts: 1/1                                                                                                                 │
+        10. │         Granules: 1/1                                                                                                              │
+        11. │       Partition                                                                                                                    │
+        12. │         Keys:                                                                                                                      │
+        13. │           toYYYYMM(bucket_start)                                                                                                   │
+        14. │         Condition: and((toYYYYMM(bucket_start) in (-Inf, 202509]), (toYYYYMM(bucket_start) in [202509, +Inf)))                     │
+        15. │         Parts: 1/1                                                                                                                 │
+        16. │         Granules: 1/1                                                                                                              │
+        17. │       PrimaryKey                                                                                                                   │
+        18. │         Keys:                                                                                                                      │
+        19. │           bucket_start                                                                                                             │
+        20. │           country                                                                                                                  │
+        21. │         Condition: and((country in ['US', 'US']), and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))) │
+        22. │         Parts: 1/1                                                                                                                 │
+        23. │         Granules: 1/1                                                                                                              │
+            └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ```
+
+    تُظهر خطة تنفيذ الاستعلام أعلاه استخدام ثلاثة أنواع من الفهارس:
+    فهرس MinMax، وفهرس التقسيم، وفهرس المفتاح الأساسي.
+    يستخدم كل فهرس الحقول المحددة في مفتاحنا الأساسي: `(bucket_start, country, event_type)`.
+    وللحصول على أفضل أداء في التصفية، احرص على أن تستخدم استعلاماتك حقول المفتاح الأساسي لاستبعاد البيانات غير اللازمة.
+  </Step>
+
+  <Step>
+    ## أشكال شائعة
+
+    * **مستويات دقة مختلفة**: أضِف تجميعًا يوميًا:
+
+    ```sql
+    CREATE TABLE events_rollup_1d
+    (
+        bucket_start Date,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        users_uniq   AggregateFunction(uniqExact, UInt64),
+        value_sum    AggregateFunction(sum, Float64),
+        value_avg    AggregateFunction(avg, Float64),
+        events_count AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type);
+    ```
+
+    ثم عرض مادي ثانٍ:
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1d
+    TO events_rollup_1d
+    AS
+    SELECT
+        toDate(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id),
+        sumState(value),
+        avgState(value),
+        countState()
+    FROM events_raw
+    GROUP BY ALL;
+    ```
+
+    * **الضغط**: طبّق ترميزات الضغط على الأعمدة الكبيرة (مثال: `Codec(ZSTD(3))`) في الجدول الخام.
+    * **التحكم في التكلفة**: اجعل عبء الاحتفاظ المكثّف في الجدول الخام، واحتفظ بالتجميعات المُلخّصة طويلة الأمد.
+    * **الاستدراك**: عند تحميل البيانات التاريخية، أدرِجها في `events_raw` ودَع `materialized view` ينشئ التجميعات المُلخّصة تلقائيًا. بالنسبة إلى الصفوف الموجودة، استخدم `POPULATE` عند إنشاء `materialized view` إذا كان ذلك مناسبًا، أو `INSERT SELECT`.
+  </Step>
+
+  <Step>
+    ## التنظيف والاحتفاظ
+
+    * زِد مدة TTL للبيانات الخام (مثلًا، 30/90 يومًا)، مع الإبقاء على البيانات المُجمَّعة لفترة أطول (مثلًا، سنة واحدة).
+    * يمكنك أيضًا استخدام **TTL للنقل** لنقل الأجزاء القديمة إلى وحدة تخزين أقل تكلفة إذا كان التخزين المتدرج مفعّلًا.
+  </Step>
+
+  <Step>
+    ## استكشاف الأخطاء وإصلاحها
+
+    * هل لا يتم تحديث العرض المادي؟ تحقّق من أن عمليات الإدراج تتم إلى **events&#95;raw** (وليس إلى جدول الـ rollup)، وأن وجهة العرض المادي صحيحة (`TO events_rollup_1h`).
+    * هل الاستعلامات بطيئة؟ تأكّد من أنها تصل إلى الـ rollup (من خلال الاستعلام من جدول الـ rollup مباشرةً)، وأن عوامل تصفية الوقت تتوافق مع مستوى التجميع في الـ rollup.
+    * هل توجد حالات عدم تطابق في backfill؟ استخدم `SYSTEM FLUSH LOGS` وتحقّق من `system.query_log` / `system.parts` للتأكد من عمليات الإدراج وعمليات الدمج.
+  </Step>
+</Steps>

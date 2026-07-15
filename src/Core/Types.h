@@ -8,6 +8,7 @@
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <base/UUID.h>
 #include <base/IPv4andIPv6.h>
 #include <base/MacAddress.h>
@@ -50,5 +51,5 @@ using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
-using TypeIndexesSet = std::unordered_set<TypeIndex>;
+using TypeIndexesSet = UnorderedSetWithMemoryTracking<TypeIndex>;
 }

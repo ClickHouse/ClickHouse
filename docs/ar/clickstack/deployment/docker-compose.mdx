@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/deployment/docker-compose
+title: 'Docker Compose'
+description: 'نشر ClickStack Open Source باستخدام Docker Compose - حزمة ClickHouse للـ observability'
+doc_type: 'دليل'
+keywords: ['ClickStack Docker Compose', 'Docker Compose لـ ClickHouse', 'نشر HyperDX عبر Docker', 'دليل نشر ClickStack', 'OpenTelemetry Docker Compose']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import JSONSupport from '/snippets/ar/_json_support.mdx';
+
+تُوزَّع جميع مكونات ClickStack Open Source بشكل منفصل على هيئة صور Docker مستقلة:
+
+* **ClickHouse**
+* **HyperDX**
+* **مجمّع OpenTelemetry (OTel)**
+* **MongoDB**
+
+يمكن دمج هذه الصور ونشرها محليًا باستخدام Docker Compose.
+
+يُتيح Docker Compose منافذ إضافية للأوبزرفابيليتي واستقبال البيانات استنادًا إلى إعداد `otel-collector` الافتراضي:
+
+* `13133`: نقطة نهاية للتحقق من السلامة الخاصة بامتداد `health_check`
+* `24225`: مستقبِل Fluentd لاستقبال السجلات
+* `4317`: مستقبِل OTLP gRPC (المعياري للتتبعات والسجلات والمقاييس)
+* `4318`: مستقبِل OTLP HTTP (بديل لـ gRPC)
+* `8888`: نقطة نهاية مقاييس Prometheus لمراقبة المجمّع نفسه
+
+تُتيح هذه المنافذ عمليات تكامل مع مجموعة متنوعة من مصادر telemetry، وتجعل مجمّع OpenTelemetry جاهزًا للإنتاج لتلبية احتياجات استقبال البيانات المتنوعة.
+
+<div id="suitable-for">
+  ### مناسب لـ
+</div>
+
+* الاختبار المحلي
+* نماذج إثبات المفهوم
+* عمليات النشر في بيئة الإنتاج التي لا تتطلب تحمّل الأعطال، ويكفي فيها خادم واحد لاستضافة جميع بيانات ClickHouse
+* عند نشر ClickStack مع استضافة ClickHouse بشكل منفصل، على سبيل المثال باستخدام ClickHouse Cloud.
+
+<div id="deployment-steps">
+  ## خطوات النشر
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### استنسخ المستودع
+
+    لنشر ClickStack باستخدام Docker Compose، استنسخ مستودع ClickStack، ثم انتقل إلى الدليل وشغّل `docker-compose up`:
+
+    ```shell
+    git clone https://github.com/ClickHouse/ClickStack.git
+    docker compose up
+    ```
+  </Step>
+
+  <Step>
+    ### انتقل إلى واجهة HyperDX
+
+    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
+
+    أنشئ مستخدمًا، وأدخِل اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
+
+    عند النقر على `Create`، ستُنشأ مصادر البيانات لمثيل ClickHouse الذي نُشر باستخدام Docker Compose.
+
+    <Info>
+      **تجاوز الاتصال الافتراضي**
+
+      يمكنك تجاوز الاتصال الافتراضي بمثيل ClickHouse المدمج. لمزيد من التفاصيل، راجع [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    </Info>
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="واجهة HyperDX" size="lg" />
+
+    للاطلاع على مثال لاستخدام مثيل ClickHouse بديل، راجع [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+  </Step>
+
+  <Step>
+    ### أكمل تفاصيل الاتصال
+
+    للاتصال بمثيل ClickHouse المنشور، ما عليك سوى النقر على **Create** وقبول الإعدادات الافتراضية.
+
+    إذا كنت تفضّل الاتصال بـ **عنقود ClickHouse خارجي** خاص بك، مثل ClickHouse Cloud، فيمكنك إدخال بيانات اعتماد الاتصال يدويًا.
+
+    إذا طُلب منك إنشاء مصدر، فاحتفظ بجميع القيم الافتراضية وأكمِل الحقل `Table` بالقيمة `otel_logs`. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="إنشاء مصدر سجلات" size="md" />
+  </Step>
+</Steps>
+
+<div id="modifying-settings">
+  ## تعديل إعدادات Compose
+</div>
+
+يمكنك تعديل إعدادات الحزمة البرمجية، مثل الإصدار المستخدم، عبر ملف متغيرات البيئة:
+
+```shell
+user@example-host clickstack % cat .env
+
+# Used by docker-compose.yml
+IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
+ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-otel-collector
+CODE_VERSION=2.8.0
+IMAGE_VERSION_SUB_TAG=.8.0
+IMAGE_VERSION=2
+IMAGE_NIGHTLY_TAG=2-nightly
+IMAGE_LATEST_TAG=latest
+
+# Set up domain URLs
+HYPERDX_API_PORT=8000 #optional (should not be taken by other services)
+HYPERDX_APP_PORT=8080
+HYPERDX_APP_URL=http://localhost
+HYPERDX_LOG_LEVEL=debug
+HYPERDX_OPAMP_PORT=4320
+
+# Otel/Clickhouse config
+HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
+```
+
+<div id="configuring-collector">
+  ### تهيئة OTel collector
+</div>
+
+يمكن تعديل إعدادات OTel collector عند الحاجة - راجع [&quot;تعديل الإعدادات&quot;](/ar/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
+
+<div id="using-clickhouse-cloud">
+  ## استخدام ClickHouse Cloud
+</div>
+
+يمكن استخدام هذا التوزيع مع ClickHouse Cloud، لكنه يختلف عن [Managed ClickStack](/ar/clickstack/deployment/managed). في هذا الإعداد، تتولى إدارة واجهة ClickStack بنفسك، مع استخدام ClickHouse Cloud فقط للحوسبة والتخزين. ما لم تكن لديك حاجة محددة لتشغيل الواجهة بشكل مستقل، فنوصي باستخدام Managed ClickStack، لأنه يتضمن مصادقة مدمجة وميزات Enterprise إضافية، ويغنيك عن إدارة واجهة ClickStack بنفسك.
+
+يجب عليك:
+
+* إزالة خدمة ClickHouse من ملف `docker-compose.yml`. وهذا اختياري إذا كان الغرض هو الاختبار، إذ سيتم تجاهل مثيل ClickHouse المنشور ببساطة، رغم أنه سيستهلك مواردك المحلية دون داعٍ. وإذا أزلت الخدمة، فتأكد من إزالة أي مراجع لها مثل `depends_on`.
+
+* تعديل OTel collector لاستخدام مثيل ClickHouse Cloud من خلال تعيين متغيرات البيئة `CLICKHOUSE_ENDPOINT` و`CLICKHOUSE_USER` و`CLICKHOUSE_PASSWORD` في ملف compose. وبالتحديد، أضف متغيرات البيئة إلى خدمة OTel collector:
+
+  ```shell
+  otel-collector:
+      image: ${OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
+      environment:
+        CLICKHOUSE_ENDPOINT: '<CLICKHOUSE_ENDPOINT>' # نقطة نهاية https هنا
+        CLICKHOUSE_USER: '<CLICKHOUSE_USER>'
+        CLICKHOUSE_PASSWORD: '<CLICKHOUSE_PASSWORD>'
+        HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: ${HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}
+        HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+        OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+      ports:
+        - '13133:13133' # امتداد health_check
+        - '24225:24225' # مستقبل fluentd
+        - '4317:4317' # مستقبل OTLP gRPC
+        - '4318:4318' # مستقبل OTLP http
+        - '8888:8888' # امتداد المقاييس
+      restart: always
+      networks:
+        - internal
+  ```
+
+  يجب أن تكون قيمة `CLICKHOUSE_ENDPOINT` هي نقطة نهاية HTTPS الخاصة بـ ClickHouse Cloud، بما في ذلك المنفذ `8443`، مثل `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+* عند الاتصال بواجهة HyperDX وإنشاء اتصال بـ ClickHouse، استخدم بيانات اعتماد Cloud الخاصة بك.
+
+<JSONSupport />

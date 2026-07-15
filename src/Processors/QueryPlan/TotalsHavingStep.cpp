@@ -123,7 +123,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
         settings.out << " (removed)";
 
     settings.out << '\n';
-    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)) << '\n';
 
     if (!settings.compact && actions_dag)
     {
@@ -141,7 +141,7 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
 
 void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
+    map.add("Mode", totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)));
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
@@ -199,7 +199,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);
@@ -208,7 +208,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     bool remove_filter_column = bool(flags & 8);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;
@@ -216,7 +216,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     }
 
     return std::make_unique<TotalsHavingStep>(
@@ -231,6 +231,12 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         final);
 }
 
+QueryPlanStepPtr TotalsHavingStep::clone() const
+{
+    return std::make_unique<TotalsHavingStep>(*this);
+}
+
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);

@@ -13,11 +13,13 @@
 #include <optional>
 
 #include <boost/core/noncopyable.hpp>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
+class ReadPipeline;
 class WriteBufferFromFileBase;
 
 struct IDiskTransaction;
@@ -127,6 +129,9 @@ public:
     /// Get metadata for a file inside path dir.
     virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
     virtual size_t getFileSize(const std::string & file_name) const = 0;
+    /// Uncompressed size of a packed skip-index substream from the archive index, or nullopt if
+    /// unknown (non-packed file, or v0 archive). Callers fall back to the compressed size.
+    virtual std::optional<UInt64> getPackedFileUncompressedSize(const std::string & /*file_name*/) const { return {}; }
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
@@ -135,10 +140,19 @@ public:
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const = 0;
+        std::optional<size_t> read_hint) const;
+
+    /// Populate a ReadPipeline with the stages needed to read from this part storage.
+    /// Every implementation must override this method.
+    virtual void prepareRead(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
@@ -207,7 +221,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size;
+            size_t file_size{};
         };
 
         std::map<String, ReplicatedFileDescription> files;

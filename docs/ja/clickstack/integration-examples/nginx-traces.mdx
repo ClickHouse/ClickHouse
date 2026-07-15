@@ -1,0 +1,364 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nginx-traces
+title: 'ClickStack による Nginx トレースの監視'
+sidebarTitle: 'Nginx トレース'
+description: 'ClickStack による Nginx トレースの監視'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Nginx', 'トレース', 'OTel']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OpenTelemetry Nginx モジュール を使用して、Nginx の分散トレースを ClickStack に取り込みます。デモデータセットとあらかじめ用意されたダッシュボードも含まれています。
+</Info>
+
+<div id="existing-nginx">
+  ## 既存のNginxとのインテグレーション
+</div>
+
+このセクションでは、OpenTelemetry モジュールをインストールし、トレースを ClickStack に送信するよう設定することで、既存の Nginx 環境に分散トレーシングを追加する方法を説明します。
+ご自身の既存環境を設定する前にこのインテグレーションを試したい場合は、[次のセクション](/ja/clickstack/integration-examples/nginx-traces#demo-dataset)で、事前構成済みの環境とサンプルデータを使ってテストできます。
+
+<div id="prerequisites">
+  ##### 前提条件
+</div>
+
+* OTLP エンドポイントにアクセス可能な状態で稼働している ClickStack インスタンス (ポート 4317/4318)
+* 既存の Nginx インストール (バージョン 1.18 以上)
+* Nginx の設定を変更するための root または sudo 権限
+* ClickStack のホスト名または IP アドレス
+
+<Steps>
+  <Step>
+    #### OpenTelemetry Nginx モジュールをインストールする
+
+    Nginx にトレーシングを追加する最も簡単な方法は、OpenTelemetry サポートが組み込まれた公式の Nginx イメージを使用することです。
+
+    ##### nginx:otel イメージを使用する
+
+    現在の Nginx イメージを OpenTelemetry 対応版に置き換えます。
+
+    ```yaml
+    # docker-compose.yml または Dockerfile 内
+    image: nginx:1.27-otel
+    ```
+
+    このイメージには `ngx_otel_module.so` があらかじめインストールされており、すぐに使用できます。
+
+    <Note>
+      Docker の外で Nginx を実行している場合は、手動インストールの手順について [OpenTelemetry Nginx documentation](https://github.com/open-telemetry/opentelemetry-cpp-contrib/tree/main/instrumentation/nginx) を参照してください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### Nginx が ClickStack にトレースを送信するよう設定する
+
+    `nginx.conf` ファイルに OpenTelemetry の設定を追加します。この設定では、モジュールを読み込み、トレースを ClickStack の OTLP エンドポイントに送信します。
+
+    まず、API key を取得します。
+
+    1. ClickStack の URL で HyperDX を開きます
+    2. Settings → API Keys に移動します
+    3. **インジェスト API key** をコピーします
+    4. 環境変数として設定します: `export CLICKSTACK_API_KEY=your-api-key-here`
+
+    これを `nginx.conf` に追加します。
+
+    ```yaml
+    load_module modules/ngx_otel_module.so;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        # OpenTelemetry エクスポーターの設定
+        otel_exporter {
+            endpoint <clickstack-host>:4317;
+            header authorization ${CLICKSTACK_API_KEY};
+        }
+        
+        # この nginx インスタンスを識別するためのサービス名
+        otel_service_name "nginx-proxy";
+        
+        # トレーシングを有効化
+        otel_trace on;
+        
+        server {
+            listen 80;
+            
+            location / {
+                # この location でトレーシングを有効化
+                otel_trace_context propagate;
+                otel_span_name "$request_method $uri";
+                
+                # トレースにリクエストの詳細を追加
+                otel_span_attr http.status_code $status;
+                otel_span_attr http.request.method $request_method;
+                otel_span_attr http.route $uri;
+                
+                # 既存のプロキシまたはアプリケーション設定
+                proxy_pass http://your-backend;
+            }
+        }
+    }
+    ```
+
+    Docker で Nginx を実行している場合は、環境変数をコンテナーに渡します。
+
+    ```yaml
+    services:
+      nginx:
+        image: nginx:1.27-otel
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+        volumes:
+          - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ```
+
+    `<clickstack-host>` は、ClickStack インスタンスのホスト名または IP アドレスに置き換えてください。
+
+    <Note>
+      * **Port 4317** は、Nginx モジュールが使用する gRPC エンドポイントです
+      * **otel&#95;service&#95;name** には、Nginx インスタンスがわかる名前を設定してください (例: &quot;api-gateway&quot;、&quot;frontend-proxy&quot;)
+      * HyperDX で識別しやすくするため、環境に合わせて **otel&#95;service&#95;name** を変更してください
+    </Note>
+
+    ##### 設定内容を理解する
+
+    **トレースされる内容:**
+    Nginx への各リクエストごとに、次を示す trace span が作成されます。
+
+    * リクエストメソッドとパス
+    * HTTP ステータスコード
+    * リクエスト時間
+    * タイムスタンプ
+
+    **span 属性:**
+    `otel_span_attr` ディレクティブは各トレースにメタデータを追加し、ステータスコード、メソッド、ルートなどで HyperDX 内のリクエストを絞り込んで分析できるようにします。
+
+    これらの変更を行った後、Nginx の設定をテストします。
+
+    ```bash
+    nginx -t
+    ```
+
+    テストに成功したら、Nginx を再読み込みします。
+
+    ```bash
+    # Docker の場合
+    docker-compose restart nginx
+
+    # systemd の場合
+    sudo systemctl reload nginx
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX でトレースを確認する
+
+    設定が完了したら、HyperDX にログインしてトレースが流れていることを確認します。次のような表示になるはずです。トレースが表示されない場合は、時間範囲を調整してみてください。
+
+    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="トレースを表示" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番環境を構成する前に nginx のトレースインテグレーションを試したいユーザー向けに、実際のトラフィックパターンに近い、事前生成済みの Nginx トレース のサンプルデータセットを用意しています。
+
+<Steps>
+  <Step>
+    #### ClickStack を起動する
+
+    まだ ClickStack を起動していない場合は、次のコマンドを実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    続行する前に、ClickStack の初期化が完了するまで約 30 秒待ってください。
+
+    * ポート 8080: HyperDX の Web インターフェイス
+    * ポート 4317: OTLP gRPC エンドポイント (nginx モジュールで使用)
+    * ポート 4318: OTLP HTTP endpoint (デモトレースで使用)
+  </Step>
+
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルトレースファイルをダウンロードし、timestamp を現在時刻に更新します。
+
+    ```bash
+    # トレースをダウンロード
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
+    ```
+
+    このデータセットには次の内容が含まれています。
+
+    * 現実的なタイミングの 1,000 件のトレーススパン
+    * 異なるトラフィックパターンを持つ 9 種類の endpoint
+    * 約 93% の成功 (200) 、約 3% のクライアントエラー (404) 、約 4% のサーバーエラー (500)
+    * 10ms 〜 800ms のレイテンシ
+    * 元のトラフィックパターンを維持したまま、現在時刻にシフト
+  </Step>
+
+  <Step>
+    #### トレースを ClickStack に送信する
+
+    API key を環境変数として設定します (まだ設定していない場合) 。
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+
+    **API key を取得するには:**
+
+    1. ClickStack の URL で HyperDX を開きます
+    2. Settings → API Keys に移動します
+    3. **インジェスト API key** をコピーします
+
+    続いて、トレースを ClickStack に送信します。
+
+    ```bash
+    curl -X POST http://localhost:4318/v1/traces \
+      -H "Content-Type: application/json" \
+      -H "Authorization: $CLICKSTACK_API_KEY" \
+      -d @nginx-traces-sample.json
+    ```
+
+    <Info>
+      **localhost で実行する場合**
+
+      このデモは、ClickStack が `localhost:4318` でローカル実行されていることを前提としています。リモートのインスタンスを使用する場合は、`localhost` を ClickStack の hostname に置き換えてください。
+    </Info>
+
+    トレースが正常に送信されたことを示す `{"partialSuccess":{}}` のようなレスポンスが返るはずです。1,000 件すべてのトレースが ClickStack に取り込まれます。
+  </Step>
+
+  <Step>
+    #### HyperDX でトレースを確認する
+
+    1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウントの作成が必要な場合があります)
+    2. Search view に移動し、source を `Traces` に設定します
+    3. 時間範囲を **2025-10-25 13:00:00 - 2025-10-28 13:00:00** に設定します
+
+    Search view には次のように表示されるはずです。
+
+    <Info>
+      **タイムゾーン表示**
+
+      HyperDX は timestamp をブラウザーのローカル timezone で表示します。デモデータの期間は **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** です。広めの時間範囲を設定しているため、どの地域からでもデモトレースを確認できます。トレースが表示されたら、より見やすく可視化するために範囲を 24 時間に絞ることができます。
+    </Info>
+
+    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="トレースを表示" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+ClickStack でトレースの監視をすぐに始められるように、トレースデータ用の基本的な可視化を用意しています。
+
+<Steps>
+  <Step>
+    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">ダウンロード</TrackedLink>します
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートします
+
+    1. HyperDX を開き、Dashboards セクションに移動します。
+    2. 右上の三点メニューから &quot;Import Dashboard&quot; をクリックします。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポート" />
+
+    3. nginx-trace-dashboard.json ファイルをアップロードし、インポートを完了します。
+
+    <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="インポートの完了" />
+  </Step>
+
+  <Step>
+    #### すべての可視化が事前設定された状態でダッシュボードが作成されます。
+
+    <Note>
+      デモデータセットでは、時間範囲を **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
+    </Note>
+
+    <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="ダッシュボードの例" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="no-traces">
+  ### HyperDX にトレースが表示されない場合
+</div>
+
+**nginx モジュールが読み込まれていることを確認します。**
+
+```bash
+nginx -V 2>&1 | grep otel
+```
+
+OpenTelemetry モジュールへの参照が表示されるはずです。
+
+**ネットワーク接続を確認する:**
+
+```bash
+telnet <clickstack-host> 4317
+```
+
+これで OTLP gRPC エンドポイントに正常に接続できるはずです。
+
+**API key が設定されていることを確認してください:**
+
+```bash
+echo $CLICKSTACK_API_KEY
+```
+
+API key が出力されるはずです (空でないことを確認してください) 。
+
+**nginx のエラーログを確認します:**
+
+```bash
+# Dockerの場合
+docker logs <nginx-container> 2>&1 | grep -i otel
+
+# systemdの場合
+sudo tail -f /var/log/nginx/error.log | grep -i otel
+```
+
+OpenTelemetry 関連のエラーを確認します。
+
+**nginx がリクエストを受信していることを確認します。**
+
+```bash
+# アクセスログでトラフィックを確認する
+tail -f /var/log/nginx/access.log
+```
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なメトリクス (エラー率、レイテンシの閾値) に対する[アラート](/ja/clickstack/features/alerts)を設定する
+* 特定のユースケース (API の監視、セキュリティイベント) 向けに、追加の[ダッシュボード](/ja/clickstack/features/dashboards/overview)を作成する
+
+<div id="going-to-production">
+  ## 本番環境への移行
+</div>
+
+このガイドでは、Nginx OpenTelemetry モジュールから ClickStack の OTLP エンドポイントへトレースを直接送信します。本番環境へのデプロイでは、バッチ処理と耐障害性を確保するため、ゲートウェイとして独自の OTel collector を実行することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

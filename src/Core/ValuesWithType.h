@@ -2,12 +2,13 @@
 
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ValueWithType.h>
 
 
 namespace DB
 {
 
-using ValuesWithType = std::vector<ValueWithType>;
+using ValuesWithType = VectorWithMemoryTracking<ValueWithType>;
 
 }

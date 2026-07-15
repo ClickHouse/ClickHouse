@@ -1,0 +1,27 @@
+---
+title: Как игнорировать некорректные настройки в ClickHouse
+description: Узнайте, как использовать параметр `skip_check_for_incorrect_settings`, чтобы ClickHouse запускался даже в том случае, если настройки на уровне пользователя указаны некорректно.
+date: 2023-03-01
+tags: ['Настройки']
+keywords: ['Игнорирование некорректных настроек']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## Игнорирование некорректных настроек в ClickHouse
+</div>
+
+Если настройка уровня пользователя указана не в том месте, сервер не запустится, а в журнал будет записано сообщение об исключении. Однако в ClickHouse можно указать игнорировать некорректную настройку с помощью параметра `skip_check_for_incorrect_settings`.
+
+Добавьте следующее в `config.xml`:
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  Настройки на уровне пользователя следует задавать в `users.xml` в разделе `<profile>` для соответствующего профиля пользователя (или в `<default>` для настроек по умолчанию.
+</Note>

@@ -12,7 +12,7 @@ If you don't specify `ALL` or `DISTINCT`, it will depend on the `union_default_m
 
 You can use `UNION` to combine any number of `SELECT` queries by extending their results. Example:
 
-```sql
+```sql title="Query"
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -33,16 +33,12 @@ Queries that are parts of `UNION` can be enclosed in `()`. [ORDER BY](../../../s
 
 If you use `UNION` without explicitly specifying `UNION ALL` or `UNION DISTINCT`, you can specify the union mode using the [union_default_mode](/operations/settings/settings#union_default_mode) setting. The setting values can be `ALL`, `DISTINCT` or an empty string. However, if you use `UNION` with `union_default_mode` setting to empty string, it will throw an exception. The following examples demonstrate the results of queries with different values setting.
 
-Query:
-
-```sql
+```sql title="Query"
 SET union_default_mode = 'DISTINCT';
 SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─1─┐
 │ 1 │
 └───┘
@@ -54,16 +50,12 @@ Result:
 └───┘
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SET union_default_mode = 'ALL';
 SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─1─┐
 │ 1 │
 └───┘

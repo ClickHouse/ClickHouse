@@ -1,0 +1,117 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/slackbot
+sidebarTitle: 'Интеграция SlackBot'
+title: 'Как создать агента SlackBot с помощью MCP-сервера ClickHouse.'
+description: 'Узнайте, как создать агента SlackBot, который может взаимодействовать с MCP-сервером ClickHouse.'
+keywords: ['ClickHouse', 'MCP', 'Slack', 'SlackBot', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+В этом руководстве вы узнаете, как создать агента [SlackBot](https://slack.com/intl/en-gb/help/articles/202026038-An-introduction-to-Slackbot).
+Этот бот позволяет задавать вопросы о данных в ClickHouse прямо из Slack, используя естественный язык. Он использует
+[MCP-сервер ClickHouse](https://github.com/ClickHouse/mcp-clickhouse) и [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1).
+
+<Info>
+  **Пример проекта**
+
+  Код этого примера можно найти в [репозитории examples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/slackbot/README.md).
+</Info>
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* У вас должен быть установлен [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+* У вас должен быть доступ к рабочему пространству Slack
+* Вам понадобится API-ключ Anthropic или API-ключ другого провайдера LLM
+
+<Steps>
+  <Step>
+    ## Создайте приложение Slack
+
+    1. Перейдите на [slack.com/apps](https://slack.com/apps) и нажмите `Create New App`.
+    2. Выберите вариант `From scratch` и укажите имя приложения.
+    3. Выберите своё рабочее пространство Slack.
+  </Step>
+
+  <Step>
+    ## Установите приложение в своё рабочее пространство
+
+    Затем вам нужно добавить в своё рабочее пространство приложение, созданное на предыдущем шаге.
+    Вы можете воспользоваться инструкциями из [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
+    в документации Slack.
+  </Step>
+
+  <Step>
+    ## Настройте параметры приложения Slack
+
+    * Перейдите в `App Home`
+      * В разделе `Show Tabs` → `Messages Tab` включите `Allow users to send Slash commands and messages from the messages tab`
+      * Перейдите в `Socket Mode`
+        * Включите `Socket Mode`
+        * Сохраните значение `Socket Mode Handler` для переменной окружения `SLACK_APP_TOKEN`
+      * Перейдите в `OAuth & Permissions`
+        * Добавьте следующие `Bot Token Scopes`:
+          * `app_mentions:read`
+          * `assistant:write`
+          * `chat:write`
+          * `im:history`
+          * `im:read`
+          * `im:write`
+          * `channels:history`
+        * Установите приложение в своё рабочее пространство и сохраните `Bot User OAuth Token` для переменной окружения `SLACK_BOT_TOKEN`.
+      * Перейдите в `Event Subscriptions`
+        * Включите `Events`
+        * В разделе `Subscribe to bot events` добавьте:
+          * `app_mention`
+          * `assistant_thread_started`
+          * `message:im`
+        * Save Changes
+  </Step>
+
+  <Step>
+    ## Добавьте переменные окружения (`.env`)
+
+    Создайте файл `.env` в корне проекта со следующими переменными окружения,
+    которые позволят вашему приложению подключиться к [Песочнице ClickHouse](https://sql.clickhouse.com/).
+
+    ```env
+    SLACK_BOT_TOKEN=your-slack-bot-token
+    SLACK_APP_TOKEN=your-slack-app-level-token
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    CLICKHOUSE_PORT=8443
+    CLICKHOUSE_USER=demo
+    CLICKHOUSE_PASSWORD=
+    CLICKHOUSE_SECURE=true
+    ```
+
+    При желании вы можете изменить переменные ClickHouse,
+    чтобы использовать собственный сервер ClickHouse
+    или экземпляр Cloud.
+  </Step>
+
+  <Step>
+    ## Использование бота
+
+    1. **Запустите бота:**
+
+       ```sh
+       uv run main.py
+       ```
+    2. **В Slack:**
+       * Упомяните бота в канале: `@yourbot Who are the top contributors to the ClickHouse git repo?`
+       * Ответьте в треде с упоминанием: `@yourbot how many contributions did these users make last week?`
+       * Отправьте боту личное сообщение: `Show me all tables in the demo database.`
+
+    Бот ответит в треде, используя все предыдущие сообщения в треде как контекст,
+    если это применимо.
+
+    **Контекст треда:**
+    При ответе в треде бот загружает все предыдущие сообщения (кроме текущего) и использует их как контекст для ИИ.
+
+    **Использование инструментов:**
+    Бот использует только инструменты, доступные через MCP (например, обнаружение схемы и выполнение SQL), и всегда показывает использованный SQL и краткое описание того, как был получен ответ.
+  </Step>
+</Steps>

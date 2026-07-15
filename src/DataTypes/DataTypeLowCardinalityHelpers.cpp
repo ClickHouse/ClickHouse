@@ -30,18 +30,45 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
     if (!type)
         return type;
 
+    /// In each branch below, return the original type when nothing changed,
+    /// to preserve custom names (e.g. `LineString` vs `Ring` ->
+    /// both are `Array(Tuple(Float64, Float64))`).
+
     /// To support entering Nullable(Tuple)
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-        return std::make_shared<DataTypeNullable>(recursiveRemoveLowCardinality(nullable_type->getNestedType()));
+    {
+        const auto & nested = nullable_type->getNestedType();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested_no_lc.get() == nested.get())
+            return type;
+        return std::make_shared<DataTypeNullable>(std::move(nested_no_lc));
+    }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
+    {
+        const auto & nested = array_type->getNestedType();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested_no_lc.get() == nested.get())
+            return type;
+        return std::make_shared<DataTypeArray>(std::move(nested_no_lc));
+    }
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
-        DataTypes elements = tuple_type->getElements();
+        const auto & old_elements = tuple_type->getElements();
+        DataTypes elements = old_elements;
+        bool changed = false;
         for (auto & element : elements)
-            element = recursiveRemoveLowCardinality(element);
+        {
+            auto element_no_lc = recursiveRemoveLowCardinality(element);
+            if (element_no_lc.get() != element.get())
+            {
+                element = std::move(element_no_lc);
+                changed = true;
+            }
+        }
+        if (!changed)
+            return type;
 
         if (tuple_type->hasExplicitNames())
             return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
@@ -50,8 +77,13 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        return std::make_shared<DataTypeMap>(
-            recursiveRemoveLowCardinality(map_type->getKeyType()), recursiveRemoveLowCardinality(map_type->getValueType()));
+        const auto & key = map_type->getKeyType();
+        const auto & value = map_type->getValueType();
+        auto key_no_lc = recursiveRemoveLowCardinality(key);
+        auto value_no_lc = recursiveRemoveLowCardinality(value);
+        if (key_no_lc.get() == key.get() && value_no_lc.get() == value.get())
+            return type;
+        return std::make_shared<DataTypeMap>(std::move(key_no_lc), std::move(value_no_lc));
     }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -238,6 +270,29 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
                 return column;
 
             return ColumnTuple::create(columns);
+        }
+    }
+
+    if (const auto * from_map_type = typeid_cast<const DataTypeMap *>(from_type.get()))
+    {
+        if (const auto * to_map_type = typeid_cast<const DataTypeMap *>(to_type.get()))
+        {
+            const auto * column_map = typeid_cast<const ColumnMap *>(column.get());
+            if (!column_map)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}", column->getName(), from_type->getName());
+
+            /// A Map is stored as Array(Tuple(key, value)); delegate to that nested
+            /// representation so the Array/Tuple/LowCardinality branches above rebuild
+            /// the key and value types (recursing through nested Maps as well).
+            const auto & nested_from = from_map_type->getNestedType();
+            const auto & nested_to = to_map_type->getNestedType();
+
+            auto nested_result = recursiveLowCardinalityTypeConversion(column_map->getNestedColumnPtr(), nested_from, nested_to);
+
+            if (nested_result.get() == column_map->getNestedColumnPtr().get())
+                return column;
+
+            return ColumnMap::create(nested_result);
         }
     }
 
