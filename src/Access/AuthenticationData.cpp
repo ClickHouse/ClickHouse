@@ -536,6 +536,18 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
                     element.toStringWithoutOptions());
         }
 
+        /// Reject elements that the regular `GRANT` statement rejects as not grantable, such as a global-level
+        /// privilege listed on a table or a database (`GRANTS (CREATE TEMPORARY TABLE ON db.t)`,
+        /// `GRANTS (KILL QUERY ON db.*)`). `AccessRights` silently masks such flags out of the tree when the
+        /// limit is applied, so the clause would be displayed by `SHOW CREATE USER` as written while the actual
+        /// session limit silently diverges from it. Fail the DDL up front instead, exactly like the `GRANT`
+        /// parser does.
+        ///
+        /// Like the checks above, this runs regardless of `validate`: the GRANTS clause is a new feature, so no
+        /// older server could have stored a non-grantable element that we would now have to accept, and the
+        /// `ATTACH USER` path must not become a bypass.
+        grants.throwIfNotGrantable();
+
         if (validate)
         {
             /// Check that the elements can form access rights (throws otherwise).
