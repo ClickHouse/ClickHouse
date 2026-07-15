@@ -158,6 +158,60 @@ std::pair<Int64, Int64> portResidentThenConsumedBytes(
     return {while_parked, after_consumed};
 }
 
+struct BudgetedSplitOutcome
+{
+    bool work_threw_budget_error = false;  /// work() threw TOO_MANY_ROWS_OR_BYTES for the shared buffer budget.
+    Int64 buffered_bytes = 0;              /// The shared counter after the drive (block parked in the ports if no throw).
+};
+
+/// Feed one input block to a transform with a budget of `max_buffered_bytes` bytes and drive prepare()/work()
+/// cycles until the transform stops or work() throws the budget error. The single block exercises the admission
+/// path end to end: the first pull reserves nothing (no estimate yet), so the admission decision runs purely on
+/// the pulled chunk's measured size.
+BudgetedSplitOutcome splitOneChunkUnderBudget(
+    const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns, size_t max_buffered_bytes)
+{
+    const size_t num_rows = columns.at(0)->size();
+    auto counter = std::make_shared<std::atomic<Int64>>(0);
+
+    /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
+    BufferedShardByHashTransform transform(
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, max_buffered_bytes, counter);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+
+    source_output.push(Chunk(std::move(columns), num_rows));
+    for (auto & sink : sinks)
+        sink->setNeeded();
+
+    BudgetedSplitOutcome outcome;
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        try
+        {
+            transform.work();
+        }
+        catch (const Exception & e)
+        {
+            outcome.work_threw_budget_error = e.code() == ErrorCodes::TOO_MANY_ROWS_OR_BYTES;
+            break;
+        }
+    }
+    outcome.buffered_bytes = counter->load();
+    return outcome;
+}
+
 struct SecondPullOutcome
 {
     bool second_chunk_pulled;        /// The second input chunk was pulled (consumed from the input port).
@@ -434,6 +488,54 @@ TEST(BufferedShardByHashTransform, ConstColumnPayloadChargedOncePerBlock)
     /// ~`num_shards` payloads).
     EXPECT_GE(buffered, payload_bytes);
     EXPECT_LT(buffered, 2 * payload_bytes);
+}
+
+/// The admission charge must not double-count a buffer the source chunk references more than once. One
+/// `ColumnConst` literal projected into two columns of the block (`SELECT big AS a, big AS b`, a constant
+/// argument fed to two aggregate functions) puts the same column object into the chunk twice, and the chunk's
+/// raw `allocatedBytes()` sums both references; charging that raw sum on admission arms the budget rejection for
+/// bytes the chunk does not actually hold, so the query throws TOO_MANY_ROWS_OR_BYTES even though the exact
+/// resident bytes (the post-split accounting de-duplicates the shared payload) fit under the budget. With a
+/// budget between the payload counted once and counted twice, the aliased chunk must be admitted, split, and
+/// charged for a single payload.
+TEST(BufferedShardByHashTransform, AliasedColumnsChargedOncePerChunkOnAdmission)
+{
+    const size_t num_rows = 8000;
+    const size_t num_shards = 8;
+    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates the chunk's bytes.
+
+    ColumnPtr key = makeDistinctKeyColumn(num_rows);
+
+    auto payload = ColumnString::create();
+    const std::string big_value(value_len, 'x');
+    payload->insertData(big_value.data(), big_value.size());
+    ColumnPtr constant = ColumnConst::create(std::move(payload), num_rows);
+    const Int64 payload_bytes
+        = static_cast<Int64>(assert_cast<const ColumnConst &>(*constant).getDataColumn().allocatedBytes());
+    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "a"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "b"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    /// The same `ColumnConst` object referenced twice: a raw pre-split sum counts its payload twice.
+    Columns columns{key, constant, constant};
+    /// The chunk's raw double-counted size (what a naive admission charge would use)...
+    const Int64 raw_chunk_bytes = static_cast<Int64>(Chunk(columns, num_rows).allocatedBytes());
+    ASSERT_GE(raw_chunk_bytes, 2 * payload_bytes);
+
+    /// ...and a budget below it, with a half-payload margin over the single-counted size: an admission charge
+    /// that counts the aliased payload once fits comfortably, one that counts it per reference throws.
+    const auto budget = static_cast<size_t>(raw_chunk_bytes - payload_bytes / 2);
+    const auto outcome = splitOneChunkUnderBudget(header, std::move(columns), num_shards, ColumnNumbers{0}, budget);
+
+    EXPECT_FALSE(outcome.work_threw_budget_error);
+    /// The block parked in the ports is charged for one payload, not one per reference or per shard.
+    EXPECT_GE(outcome.buffered_bytes, payload_bytes);
+    EXPECT_LT(outcome.buffered_bytes, 2 * payload_bytes);
 }
 
 /// A chunk pushed to an output port stays resident in the port state (still consuming memory) until the

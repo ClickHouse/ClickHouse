@@ -47,10 +47,13 @@ public:
     /// alternatives to reading ahead are deadlock or spilling.
     ///
     /// The cap is enforced at input-block granularity, on measured sizes only: admission is checked against
-    /// each pulled block's `allocatedBytes()` and re-checked after the block is split (`scatter` can grow
+    /// each pulled block's measured size and re-checked after the block is split (`scatter` can grow
     /// buffers beyond the pre-split size), so the buffered bytes can transiently exceed the cap by up to one
-    /// block's post-split footprint per transform before the exception is raised. A chunk's footprint cannot
-    /// be known before reading it, so any earlier enforcement would reject chunks whose actual bytes fit. The
+    /// block's post-split footprint per transform before the exception is raised. Both measurements charge
+    /// every distinct physical buffer exactly once, however many references the block holds to it (a
+    /// `ColumnConst` payload projected into several columns, a shared `LowCardinality` dictionary). A chunk's
+    /// footprint cannot be known before reading it, so any earlier enforcement would reject chunks whose
+    /// actual bytes fit. The
     /// cap is a guardrail against unbounded read-ahead with an actionable error, not a byte-exact memory
     /// limit — the query memory tracker (`max_memory_usage`) remains the hard limit.
     BufferedShardByHashTransform(
@@ -127,9 +130,10 @@ private:
     /// continuous across the split.
     ///
     /// `already_reserved` bytes were added to the counter before the pull as a provisional reservation (see
-    /// the admission path in prepare()); chargePendingInput adds only the difference to the chunk's exact
-    /// `allocatedBytes()`, so the reservation is reconciled rather than double-charged. It also records the
-    /// chunk's size as `reservation_estimate` to reserve before the next pull.
+    /// the admission path in prepare()); chargePendingInput adds only the difference to the chunk's measured
+    /// size (every distinct physical buffer charged once, however many references the chunk holds to it), so
+    /// the reservation is reconciled rather than double-charged. It also records the chunk's size as
+    /// `reservation_estimate` to reserve before the next pull.
     void chargePendingInput(Int64 already_reserved);
     void dischargePendingInput();
 
@@ -154,7 +158,7 @@ private:
     /// when the chunk is split, or released if the chunk is dropped before it is split.
     Int64 pending_input_bytes = 0;
 
-    /// Pre-split `allocatedBytes()` of the last chunk this scatter pulled. Published to the shared counter
+    /// Pre-split measured size of the last chunk this scatter pulled. Published to the shared counter
     /// *before* the next pull as a provisional reservation, so concurrent scatters (each prepare() runs under
     /// its own node mutex, not a stage-wide lock) observe each other's in-flight pulls through the counter and
     /// cannot all conclude at the same time that there is room for one more chunk each. It is a soft gate: being

@@ -54,6 +54,22 @@ void subtractDuplicateSharedSubobjects(const IColumn & column, std::unordered_se
     });
 }
 
+/// Adds `column`'s `allocatedBytes()` to `bytes`, de-duplicated against everything already charged through the
+/// same `counted` set: a column object already charged in full through an earlier reference contributes nothing,
+/// and a distinct column has any subobject it shares with a previously charged column discounted by the walk
+/// above. Sharing does not only appear across a block's shard chunks after `scatter`: a single source chunk can
+/// reference the same physical buffer more than once (e.g. one `ColumnConst` literal projected into two columns
+/// of the block holds the same payload twice), so the pre-split admission charge and the post-split resident
+/// charge both run this same ownership-aware accounting - a naive `allocatedBytes()` sum would charge such a
+/// buffer once per reference and could reject a chunk whose actual bytes fit the budget.
+void addAllocatedBytesOnce(const IColumn & column, std::unordered_set<const void *> & counted, Int64 & bytes)
+{
+    if (!counted.insert(&column).second)
+        return;
+    bytes += static_cast<Int64>(column.allocatedBytes());
+    subtractDuplicateSharedSubobjects(column, counted, bytes);
+}
+
 }
 
 BufferedShardByHashTransform::BufferedShardByHashTransform(
@@ -143,16 +159,24 @@ void BufferedShardByHashTransform::chargePendingInput(Int64 already_reserved)
 {
     /// Charge the chunk's measured size the moment it is pulled, before it is split, so the shared counter
     /// accounts for the in-flight read-ahead of every scatter and the admission decision in prepare() runs on
-    /// measured bytes. The pre-split `allocatedBytes()` is only an estimate of the post-split resident bytes -
-    /// `scatter` can grow per-shard buffers beyond the source (e.g. `ColumnString` regrows each shard's
-    /// `chars`) - so once the split is done `generateOutputChunks` reconciles this charge to the exact bytes
-    /// actually buffered.
+    /// measured bytes. The measurement is ownership-aware, like the post-split accounting: a source chunk can
+    /// reference the same physical buffer more than once (e.g. one `ColumnConst` literal projected into two
+    /// columns of the block), and a raw `allocatedBytes()` sum would charge such a buffer once per reference,
+    /// arming the admission rejection for bytes the chunk does not actually hold. The pre-split size is only
+    /// an estimate of the post-split resident bytes - `scatter` can grow per-shard buffers beyond the source (e.g.
+    /// `ColumnString` regrows each shard's `chars`) - so once the split is done `generateOutputChunks`
+    /// reconciles this charge to the exact bytes actually buffered.
     ///
     /// `already_reserved` bytes were added to the counter before the pull as a provisional reservation (see
     /// the admission path in prepare()), so add only the difference to reconcile the reservation to the chunk's
     /// exact size rather than double-charging it. Record that size as the estimate to reserve before the next
     /// pull.
-    pending_input_bytes = static_cast<Int64>(pending_input_chunk.allocatedBytes());
+    Int64 measured_bytes = 0;
+    std::unordered_set<const void *> counted_subobjects;
+    for (const auto & column : pending_input_chunk.getColumns())
+        addAllocatedBytesOnce(*column, counted_subobjects, measured_bytes);
+
+    pending_input_bytes = measured_bytes;
     total_buffered_bytes->fetch_add(pending_input_bytes - already_reserved, std::memory_order_relaxed);
     reservation_estimate = pending_input_bytes;
 }
@@ -490,10 +514,7 @@ void BufferedShardByHashTransform::generateOutputChunks()
             continue;
 
         for (const auto & column : shard_columns[shard])
-        {
-            block_bytes += static_cast<Int64>(column->allocatedBytes());
-            subtractDuplicateSharedSubobjects(*column, counted_subobjects, block_bytes);
-        }
+            addAllocatedBytesOnce(*column, counted_subobjects, block_bytes);
 
         enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
         ++enqueued_chunks;
