@@ -3,7 +3,6 @@
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>

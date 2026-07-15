@@ -118,8 +118,8 @@ ActionsDAG buildUnpackDAG(
         for (const auto & field : pick.fields_to_extract)
         {
             auto index_const = index_type->createColumnConst(1, field.one_based_index);
-            const auto * index_node = &dag.addColumn(ColumnWithTypeAndName(
-                std::move(index_const), index_type, std::to_string(field.one_based_index) + "_UInt64"));
+            const auto * index_node = &dag.addColumn(
+                std::move(index_const), index_type, std::to_string(field.one_based_index) + "_UInt64");
             extracted.emplace(field.name, &dag.addFunction(row_element_fn, {wrapper_node, index_node}, field.name));
         }
     }
@@ -155,9 +155,9 @@ size_t tryOptimizeUseRowWrappers(
     if (!parent_node || parent_node->children.empty())
         return 0;
 
-    for (size_t child_idx = 0; child_idx < parent_node->children.size(); ++child_idx)
+    for (auto *& child : parent_node->children)
     {
-        QueryPlan::Node * child_node = parent_node->children[child_idx];
+        QueryPlan::Node * child_node = child;
         if (!child_node)
             continue;
 
@@ -191,7 +191,7 @@ size_t tryOptimizeUseRowWrappers(
         auto & expr_node = nodes.emplace_back();
         expr_node.children.push_back(child_node);
         expr_node.step = std::make_unique<ExpressionStep>(reading->getOutputHeader(), std::move(unpack_dag));
-        parent_node->children[child_idx] = &expr_node;
+        child = &expr_node;
 
         ProfileEvents::increment(ProfileEvents::RowWrapperReads);
         ProfileEvents::increment(ProfileEvents::RowWrapperReadFields, columns_to_remove.size());

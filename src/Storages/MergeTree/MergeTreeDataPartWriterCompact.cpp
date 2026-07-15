@@ -1,4 +1,3 @@
-#include <Columns/ColumnString.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -138,8 +137,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
     auto serialization = getSerialization(name_and_type.name);
-    auto sample_column_ptr = block_sample.getByName(name_and_type.name).column;
-    auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column_ptr);
+    auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 }
 
@@ -659,5 +657,6 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     Base::cancel();
 }
+
 
 }
