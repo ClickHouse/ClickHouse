@@ -491,14 +491,36 @@ TEST(BackupInfo, NormalizedStringValidatesS3ExtraCredentials)
 {
     auto context = getContext().context;
     auto valid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(role_arn = 'ROLEARN'))");
-    auto invalid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(unknown = 'UNKNOWN'))");
+    auto invalid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(unknown = 'TOPSECRET'))");
     auto ignored_for_named_collection = BackupInfo::fromString("S3(collection, extra_credentials(unknown = 'UNKNOWN'))");
     ignored_for_named_collection.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
 
     EXPECT_NO_THROW((void)valid.toNormalizedString(context));
     EXPECT_THROW((void)valid.toNormalizedString(), Exception);
-    EXPECT_THROW((void)invalid.toNormalizedString(context), Exception);
     EXPECT_NO_THROW((void)ignored_for_named_collection.toNormalizedString(context));
+
+    try
+    {
+        (void)invalid.toNormalizedString(context);
+        FAIL() << "Expected invalid extra credentials exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find("extra_credentials"), String::npos);
+        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
+
+    try
+    {
+        (void)BackupInfo::fromString(
+            "S3('s3://bucket/backup', extra_credentials(foo = 'TOPSECRET'), 'trailing')");
+        FAIL() << "Expected misplaced extra credentials exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find("extra_credentials"), String::npos);
+        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
 }
 #endif
 

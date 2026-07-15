@@ -575,8 +575,17 @@ namespace
                             "Context is required to validate `S3` extra credentials for normalized backup identity");
 
                     S3::S3AuthSettings auth_settings;
-                    if (!StorageS3Configuration::collectCredentials(info.function_arg->clone(), auth_settings, context))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", info.function_arg->formatForErrorMessage());
+                    bool credentials_are_valid;
+                    try
+                    {
+                        credentials_are_valid = StorageS3Configuration::collectCredentials(info.function_arg->clone(), auth_settings, context);
+                    }
+                    catch (const Exception &)
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", describeASTStructure(info.function_arg));
+                    }
+                    if (!credentials_are_valid)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", describeASTStructure(info.function_arg));
                 }
 #endif
             }
@@ -857,7 +866,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
                     res.function_arg = elem;
                     break;
                 }
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", elem->formatForErrorMessage());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", describeASTStructure(elem));
             }
             res.args.push_back(lit->value);
         }
