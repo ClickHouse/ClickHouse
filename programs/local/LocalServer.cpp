@@ -4,6 +4,7 @@
 #include <exception>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Defines.h>
@@ -58,6 +59,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -185,6 +187,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
+    extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -214,6 +218,7 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
     extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt32 listen_backlog;
@@ -549,6 +554,12 @@ void LocalServer::tryInitPath()
     std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
 
+    std::string dynamic_udf_path = getClientConfiguration().getString(
+        "dynamic_user_defined_executable_functions_path",
+        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+    global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+    fs::create_directories(dynamic_udf_path);
+
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
     if (!filesystem_caches_path.empty())
@@ -677,7 +688,8 @@ void LocalServer::startServers(const ServerType & server_type)
             /* heavy_metrics_update_period_seconds= */ 120,
             metrics_func,
             /* update_jemalloc_epoch_= */ false,
-            /* update_rss_= */ false);
+            /* update_rss_= */ false
+        );
     }
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
@@ -1159,7 +1171,13 @@ try
     /// try to load user defined executable functions, throw on error and die
     try
     {
+        global_context->loadUserDefinedExecutableFunctionDrivers(getClientConfiguration());
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+
+        /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
+        /// dynamic configuration files are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {
@@ -1303,6 +1321,9 @@ void LocalServer::processConfig()
 
     setupUsers();
 
+    /// SYSTEM ALLOCATE MEMORY is a diagnostic command, harmless to enable in clickhouse-local.
+    global_context->allowSystemAllocateMemory(true);
+
     /// Limit on total number of concurrently executing queries.
     /// Plain `clickhouse-local` runs a single query at a time, but once it is turned into a server
     /// via `SYSTEM START LISTEN` it accepts external connections and must honor the configured
@@ -1344,6 +1365,9 @@ void LocalServer::processConfig()
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
+    per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
+    per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
+
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
     if (page_cache_max_size != 0 && (page_cache_min_size > page_cache_max_size))
@@ -1380,6 +1404,7 @@ void LocalServer::processConfig()
             .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
             .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
             .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+            .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
             .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
                 ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
                 : 0.0,
@@ -1548,6 +1573,10 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
+    /// Initialize a dummy encryption header cache (0 size disables it; still needed so
+    /// system.server_settings can report its size).
+    global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
 
     /// Initialize a dummy query result cache.
     global_context->setQueryResultCache(0, 0, 0, 0);
@@ -1787,7 +1816,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// This sets the default output format for the (global) context, which is used by connections
+    /// served by `clickhouse-local` when it acts as a server (`SYSTEM START LISTEN TCP/HTTP`), as
+    /// well as by internal usages that consult the context's default format. It must match a real
+    /// `clickhouse-server`, which defaults to `TabSeparated`.
+    ///
+    /// Do not use the interactive default (`PrettyCompact`) here: that format is only for rendering
+    /// query results in the terminal and is applied separately via `ClientBase::default_output_format`.
+    /// Otherwise a client connecting over HTTP would receive a `PrettyCompact`-formatted response and
+    /// fail to parse it (for example, the version query used during connection handshake).
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 

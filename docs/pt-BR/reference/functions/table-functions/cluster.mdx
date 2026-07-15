@@ -1,0 +1,76 @@
+---
+description: 'Permite acessar todos os shards (configurados na seção `remote_servers`)
+  de um cluster sem criar uma tabela Distributed.'
+sidebarTitle: 'cluster'
+slug: /sql-reference/table-functions/cluster
+title: 'clusterAllReplicas'
+doc_type: 'reference'
+---
+
+Permite acessar todos os shards (configurados na seção `remote_servers`) de um cluster sem criar uma tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed). Apenas uma réplica de cada shard é consultada.
+
+Função `clusterAllReplicas` — igual a `cluster`, mas consulta todas as réplicas. Cada réplica em um cluster é usada como um shard/conexão independente.
+
+<Note>
+  Todos os clusters disponíveis estão listados na tabela [system.clusters](/pt-BR/reference/system-tables/clusters).
+</Note>
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumentos                  | Tipo                                                                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`              | Nome de um cluster usado para montar um conjunto de endereços e parâmetros de conexão para servidores remotos e locais; defina `default` se não for especificado. |
+| `db.table` ou `db`, `table` | Nome de um banco de dados e de uma tabela.                                                                                                                        |
+| `sharding_key`              | Uma chave de sharding. Opcional. Deve ser especificada se o cluster tiver mais de um shard.                                                                       |
+
+<div id="returned_value">
+  ## Valor retornado
+</div>
+
+O conjunto de dados proveniente dos clusters.
+
+<div id="using_macros">
+  ## Usando macros
+</div>
+
+`cluster_name` pode conter macros — substituições entre `{}`. O valor da substituição é obtido na seção [macros](/pt-BR/reference/settings/server-settings/settings#macros) do arquivo de configuração do servidor.
+
+Exemplo:
+
+```sql
+SELECT * FROM cluster('{cluster}', default.example_table);
+```
+
+<div id="usage_recommendations">
+  ## Uso e recomendações
+</div>
+
+Usar as funções de tabela `cluster` e `clusterAllReplicas` é menos eficiente do que criar uma tabela `Distributed`, porque, nesse caso, a conexão com o servidor é restabelecida a cada requisição. Ao processar um grande número de consultas, sempre crie a tabela `Distributed` com antecedência e não use as funções de tabela `cluster` e `clusterAllReplicas`.
+
+As funções de tabela `cluster` e `clusterAllReplicas` podem ser úteis nos seguintes casos:
+
+* Acessar um cluster específico para comparação de dados, depuração e testes.
+* Executar consultas em vários clusters e réplicas do ClickHouse para fins de pesquisa.
+* Requisições distribuídas pouco frequentes feitas manualmente.
+
+As configurações de conexão, como `host`, `port`, `user`, `password`, `compression` e `secure`, são obtidas da seção de configuração `<remote_servers>`. Veja mais detalhes em [Distributed engine](/pt-BR/reference/engines/table-engines/special/distributed).
+
+<div id="related">
+  ## Relacionado
+</div>
+
+* [skip&#95;unavailable&#95;shards](/pt-BR/reference/settings/session-settings#skip_unavailable_shards)
+* [load&#95;balancing](/pt-BR/reference/settings/session-settings#load_balancing)

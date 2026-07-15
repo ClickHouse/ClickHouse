@@ -1,0 +1,65 @@
+---
+description: 'Page d’aperçu des paramètres.'
+slug: /operations/settings/overview
+title: 'Aperçu des paramètres'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Aperçu
+</div>
+
+<Note>
+  Les profils de paramètres basés sur XML et les [fichiers de configuration](/fr/concepts/features/configuration/server-config/configuration-files) ne sont actuellement pas
+  pris en charge dans ClickHouse Cloud. Pour spécifier des paramètres pour votre service ClickHouse Cloud,
+  vous devez utiliser les [profils de paramètres pilotés par SQL](/fr/concepts/features/security/access-rights#settings-profiles-management).
+</Note>
+
+Voici les principaux groupes de paramètres de ClickHouse :
+
+* Paramètres globaux du serveur
+* Paramètres de session
+* Paramètres de requête
+* Paramètres des opérations en arrière-plan
+
+Les paramètres globaux s’appliquent par défaut, sauf s’ils sont remplacés à des niveaux plus spécifiques. Les paramètres de session peuvent être spécifiés via des profils, la configuration des utilisateurs et des commandes SET. Les paramètres de requête peuvent être fournis via la clause SETTINGS et s’appliquent à des requêtes individuelles. Les paramètres des opérations en arrière-plan s’appliquent aux mutations, aux fusions et éventuellement à d’autres opérations exécutées de manière asynchrone en arrière-plan.
+
+<div id="see-non-default-settings">
+  ## Consulter les paramètres non définis par défaut
+</div>
+
+Pour voir quels paramètres ont été modifiés par rapport à leur valeur par défaut, vous pouvez interroger la table `system.settings` :
+
+```sql
+SELECT name, value FROM system.settings WHERE changed
+```
+
+Si aucun paramètre n’a été modifié par rapport à sa valeur par défaut, ClickHouse ne
+renverra rien.
+
+Pour vérifier la valeur d’un paramètre donné, vous pouvez spécifier le `name` du
+paramètre dans votre requête :
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
+```
+
+Ce qui renverra quelque chose comme ceci :
+
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+* Consultez [les paramètres globaux du serveur](/fr/reference/settings/server-settings/settings) pour en savoir plus sur la configuration de votre
+  serveur ClickHouse à l’échelle du serveur.
+* Consultez [les paramètres de session](/fr/concepts/features/configuration/settings/settings-query-level) pour en savoir plus sur la configuration de votre serveur ClickHouse
+  au niveau de la session.
+* Consultez [la hiérarchie des contextes](/fr/resources/develop-contribute/introduction/architecture#context) pour en savoir plus sur le traitement de la configuration dans ClickHouse.

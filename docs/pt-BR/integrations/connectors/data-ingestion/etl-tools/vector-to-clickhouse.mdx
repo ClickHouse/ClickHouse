@@ -1,0 +1,236 @@
+---
+sidebarTitle: 'Vector'
+slug: /integrations/vector
+description: 'Como monitorar um arquivo de log e enviá-lo ao ClickHouse usando o Vector'
+title: 'Integrando o Vector ao ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://vector.dev/'
+keywords: ['vector', 'coleta de logs', 'observabilidade', 'ingestão de dados', 'pipeline']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Poder analisar seus logs em tempo real é fundamental para aplicações em produção.
+O ClickHouse se destaca no armazenamento e na análise de logs devido à sua excelente compressão (até [170x](https://clickhouse.com/blog/log-compression-170x) para logs)
+e à capacidade de agregar grandes volumes de dados rapidamente.
+
+Este guia mostra como usar o popular pipeline de dados [Vector](https://vector.dev/docs/about/what-is-vector/) para monitorar um arquivo de log do Nginx e enviá-lo ao ClickHouse.
+As etapas abaixo são semelhantes para monitorar qualquer tipo de arquivo de log.
+
+**Pré-requisitos:**
+
+* Você já tem o ClickHouse em execução
+* Você tem o Vector instalado
+
+<Steps>
+  <Step>
+    ## Crie um banco de dados e uma tabela
+
+    Defina uma tabela para armazenar os eventos de log:
+
+    1. Comece criando um novo banco de dados chamado `nginxdb`:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS nginxdb
+    ```
+
+    2. Insira o evento de log inteiro como uma única string. Obviamente, esse não é um bom formato para analisar os dados de log, mas veremos como resolver isso abaixo usando ***visões materializadas***.
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
+      message String
+    )
+    ENGINE = MergeTree()
+    ORDER BY tuple()
+    ```
+
+    <Note>
+      **ORDER BY** está definido como **tuple()** (uma tupla vazia), pois ainda não é necessário ter uma chave primária.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Configurar o Nginx
+
+    Nesta etapa, você verá como configurar os logs do Nginx.
+
+    1. A propriedade `access_log` abaixo envia os logs para `/var/log/nginx/my_access.log` no formato **combined**.
+       Esse valor deve ser colocado na seção `http` do arquivo `nginx.conf`:
+
+    ```bash
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+      access_log  /var/log/nginx/my_access.log combined;
+      sendfile        on;
+      keepalive_timeout  65;
+      include /etc/nginx/conf.d/*.conf;
+    }
+    ```
+
+    2. Certifique-se de reiniciar o Nginx se tiver precisado modificar o `nginx.conf`.
+
+    3. Gere alguns eventos de log no log de acesso acessando páginas no seu servidor web.
+       Os logs no formato **combined** são os seguintes:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET /favicon.ico HTTP/1.1" 404 555 "http://localhost/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:49 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+  </Step>
+
+  <Step>
+    ## Configurar o Vector
+
+    O Vector coleta, transforma e encaminha logs, métricas e traces (chamados de **sources**) para diversos fornecedores (chamados de **sinks**), incluindo compatibilidade nativa com o ClickHouse.
+    Sources e sinks são definidos em um arquivo de configuração chamado **vector.toml**.
+
+    1. O arquivo **vector.toml** a seguir define uma **source** do tipo **file** que faz tail de **my&#95;access.log** e também define um **sink** como a tabela **access&#95;logs** definida acima:
+
+    ```bash
+    [sources.nginx_logs]
+    type = "file"
+    include = [ "/var/log/nginx/my_access.log" ]
+    read_from = "end"
+
+    [sinks.clickhouse]
+    type = "clickhouse"
+    inputs = ["nginx_logs"]
+    endpoint = "http://clickhouse-server:8123"
+    database = "nginxdb"
+    table = "access_logs"
+    skip_unknown_fields = true
+    ```
+
+    2. Inicie o Vector usando a configuração acima. Consulte a [documentação](https://vector.dev/docs/) do Vector para mais detalhes sobre como definir fontes e destinos.
+
+    3. Verifique se os logs de acesso estão sendo inseridos no ClickHouse executando a seguinte consulta. Você deverá ver os logs de acesso na sua tabela:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Veja os logs do ClickHouse em formato de tabela" />
+  </Step>
+
+  <Step>
+    ## Fazer o Parse dos Logs
+
+    Ter os logs no ClickHouse é ótimo, mas armazenar cada evento como uma única string não permite muita análise de dados.
+    A seguir, veremos como fazer o parse dos eventos de log usando uma [visão materializada](/pt-BR/concepts/features/materialized-views/incremental-materialized-view).
+
+    Uma **visão materializada** funciona de forma semelhante a um insert trigger em SQL. Quando linhas de dados são inseridas em uma tabela de origem, a visão materializada aplica alguma transformação nessas linhas e insere os resultados em uma tabela de destino.
+    A visão materializada pode ser configurada para gerar uma representação analisada dos eventos de log em **access&#95;logs**.
+    Um exemplo de um desses eventos de log é mostrado abaixo:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+
+    Existem diversas funções no ClickHouse para fazer o parse da string acima. A função [`splitByWhitespace`](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#splitByWhitespace) faz o split de uma string por espaços em branco e retorna cada token em um array.
+    Para demonstrar, execute o seguinte comando:
+
+    ```sql title="Query"
+    SELECT splitByWhitespace('192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    ```text title="Response"
+    ["192.168.208.1","-","-","[12/Oct/2021:15:32:43","+0000]","\"GET","/","HTTP/1.1\"","304","0","\"-\"","\"Mozilla/5.0","(Macintosh;","Intel","Mac","OS","X","10_15_7)","AppleWebKit/537.36","(KHTML,","like","Gecko)","Chrome/93.0.4577.63","Safari/537.36\""]
+    ```
+
+    Algumas das strings têm caracteres extras, e o user agent (os detalhes do navegador) não precisou ser processado, mas
+    o array resultante está próximo do que é necessário.
+
+    Semelhante ao `splitByWhitespace`, a função [`splitByRegexp`](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) divide uma string em um array com base em uma expressão regular.
+    Execute o comando a seguir, que retorna duas strings.
+
+    ```sql
+    SELECT splitByRegexp('\S \d+ "([^"]*)"', '192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    Observe que a segunda string retornada é o user agent extraído com sucesso do log:
+
+    ```text
+    ["192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] \"GET / HTTP/1.1\" 30"," \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36\""]
+    ```
+
+    Antes de ver o comando final `CREATE MATERIALIZED VIEW`, vamos analisar mais algumas funções usadas para limpar os dados.
+    Por exemplo, o valor de `RequestMethod` é `"GET`, contendo aspas duplas indesejadas.
+    Você pode usar a função [`trimBoth` (alias `trim`)](/pt-BR/reference/functions/regular-functions/string-functions#trimBoth) para remover as aspas duplas:
+
+    ```sql
+    SELECT trim(LEADING '"' FROM '"GET')
+    ```
+
+    A string de tempo possui um `[` no início e também não está em um formato que o ClickHouse consiga interpretar como uma data.
+    No entanto, se alterarmos o separador de dois-pontos (**:**) para vírgula (**,**), o parsing funciona corretamente:
+
+    ```sql
+    SELECT parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM '[12/Oct/2021:15:32:43'), ':', ' '))
+    ```
+
+    Agora estamos prontos para definir a visão materializada.
+    A definição abaixo inclui `POPULATE`, o que significa que as linhas existentes em **access&#95;logs** serão processadas e inseridas imediatamente.
+    Execute a seguinte instrução SQL:
+
+    ```sql
+    CREATE MATERIALIZED VIEW nginxdb.access_logs_view
+    (
+      RemoteAddr String,
+      Client String,
+      RemoteUser String,
+      TimeLocal DateTime,
+      RequestMethod String,
+      Request String,
+      HttpVersion String,
+      Status Int32,
+      BytesSent Int64,
+      UserAgent String
+    )
+    ENGINE = MergeTree()
+    ORDER BY RemoteAddr
+    POPULATE AS
+    WITH
+      splitByWhitespace(message) as split,
+      splitByRegexp('\S \d+ "([^"]*)"', message) as referer
+    SELECT
+      split[1] AS RemoteAddr,
+      split[2] AS Client,
+      split[3] AS RemoteUser,
+      parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM split[4]), ':', ' ')) AS TimeLocal,
+      trim(LEADING '"' FROM split[6]) AS RequestMethod,
+      split[7] AS Request,
+      trim(TRAILING '"' FROM split[8]) AS HttpVersion,
+      split[9] AS Status,
+      split[10] AS BytesSent,
+      trim(BOTH '"' from referer[2]) AS UserAgent
+    FROM
+      (SELECT message FROM nginxdb.access_logs)
+    ```
+
+    Agora verifique se funcionou.
+    Você deve ver os logs de acesso devidamente parseados em colunas:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs_view
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="Veja os logs do ClickHouse já analisados em formato de tabela" />
+
+    <Note>
+      A lição acima armazenou os dados em duas tabelas, mas você pode alterar a tabela inicial `nginxdb.access_logs` para usar o motor de tabela [`Null`](/pt-BR/reference/engines/table-engines/special/null).
+      Os dados processados ainda serão armazenados na tabela `nginxdb.access_logs_view`, mas os dados brutos não serão armazenados em uma tabela.
+    </Note>
+  </Step>
+</Steps>
+
+> Ao usar o Vector, que requer apenas uma instalação simples e uma configuração rápida, você pode enviar logs de um servidor Nginx para uma tabela no ClickHouse. Ao usar uma visão materializada, você pode fazer o parsing desses logs em colunas para facilitar a análise.

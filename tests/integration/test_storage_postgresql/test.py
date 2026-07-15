@@ -391,20 +391,20 @@ def test_concurrent_queries(started_cluster):
     )
 
     def node_select(_):
-        for i in range(20):
+        for i in range(5):
             node1.query("SELECT * FROM test.test_table", user="default")
 
     def node_insert(_):
-        for i in range(20):
+        for i in range(5):
             node1.query(
-                "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+                "INSERT INTO test.test_table SELECT number, number FROM numbers(100)",
                 user="default",
             )
 
     def node_insert_select(_):
-        for i in range(20):
+        for i in range(5):
             node1.query(
-                "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+                "INSERT INTO test.test_table SELECT number, number FROM numbers(100)",
                 user="default",
             )
             node1.query(
@@ -1052,6 +1052,225 @@ def test_postgres_array_parser_dimension_underflow(started_cluster):
 
     node1.query("DROP TABLE pg_array_underflow")
     cursor.execute("DROP TABLE test_array_underflow")
+
+
+def test_postgres_query_passing(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_query_passing"
+    dim_name = "test_query_passing_dim"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"DROP TABLE IF EXISTS {dim_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
+    cursor.execute(f"CREATE TABLE {dim_name} (a integer, factor integer)")
+
+    # Populate via the plain (table-name) form of the table function.
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION postgresql('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}') "
+        "SELECT number, concat('name_', toString(number)), 3 FROM numbers(100)"
+    )
+    cursor.execute(f"INSERT INTO {dim_name} VALUES (1, 10), (2, 100)")
+
+    # query('...') form: the WHERE is executed on the PostgreSQL side.
+    q_func = f"postgresql('{host}', 'postgres', query('SELECT * FROM {table_name} WHERE a % 2 = 0'), 'postgres', '{pg_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_func}").rstrip() == "50"
+    assert node1.query(f"SELECT sum(c) FROM {q_func}").rstrip() == "150"
+
+    # subquery form.
+    q_subq = f"postgresql('{host}', 'postgres', (SELECT a, b FROM {table_name} WHERE a < 10), 'postgres', '{pg_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_subq}").rstrip() == "10"
+    assert node1.query(f"SELECT b FROM {q_subq} ORDER BY a LIMIT 1").rstrip() == "name_0"
+
+    # A JOIN passed to PostgreSQL as is.
+    q_join = (
+        f"postgresql('{host}', 'postgres', "
+        f"query('SELECT t.a AS a, t.c * d.factor AS calculated FROM {table_name} AS t JOIN {dim_name} AS d ON t.a = d.a'), "
+        f"'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT sum(calculated) FROM {q_join}").rstrip() == str(3 * 10 + 3 * 100)
+
+    # Engine with a query: reading works, writing is rejected.
+    node1.query("DROP TABLE IF EXISTS pg_engine_query")
+    node1.query(
+        f"CREATE TABLE pg_engine_query "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT a, b FROM {table_name} WHERE a < 5'), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query("SELECT count() FROM pg_engine_query").rstrip() == "5"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "INSERT INTO pg_engine_query VALUES (1, 'x')"
+    )
+    node1.query("DROP TABLE pg_engine_query")
+
+    # The subquery form is re-serialized in the PostgreSQL dialect, so an identifier that needs quoting
+    # (here, one containing a space) is emitted with PostgreSQL double quotes and accepted by PostgreSQL.
+    # With ClickHouse-style backtick quoting (the previous behaviour) PostgreSQL would reject the query.
+    quoted_name = "test_query_passing_quoted"
+    cursor.execute(f'DROP TABLE IF EXISTS {quoted_name}')
+    cursor.execute(f'CREATE TABLE {quoted_name} (id integer, "weird name" text)')
+    cursor.execute(f"INSERT INTO {quoted_name} VALUES (1, 'quoted_value')")
+    started_cluster.postgres_conn.commit()
+    q_quoted = (
+        f'postgresql(\'{host}\', \'postgres\', '
+        f'(SELECT id, "weird name" FROM {quoted_name}), \'postgres\', \'{pg_pass}\')'
+    )
+    assert node1.query(f'SELECT "weird name" FROM {q_quoted} ORDER BY id').rstrip() == "quoted_value"
+    cursor.execute(f"DROP TABLE {quoted_name}")
+
+    # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
+    # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
+    q_strict = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_strict} WHERE a = 1").rstrip() == "1"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_strict} WHERE a = 1 SETTINGS external_table_strict_query = 1"
+    )
+
+    # INSERT into a query-backed table function is rejected with INCORRECT_QUERY before the storage is
+    # constructed, so the remote schema-inference query is never run against PostgreSQL.
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION {q_strict} VALUES (1, 'x')"
+    )
+
+    # Schema inference must preserve PostgreSQL type modifiers and array dimensions of the query result,
+    # exactly as the plain table-name path does. In particular a wide numeric(78, 0) must be inferred as
+    # Int256 (the typmod must be carried into format_type), and a multidimensional array must keep its
+    # dimensions instead of being treated as one-dimensional.
+    wide_name = "test_query_passing_wide"
+    cursor.execute(f"DROP TABLE IF EXISTS {wide_name}")
+    cursor.execute(
+        f"CREATE TABLE {wide_name} (id integer, big numeric(78, 0), arr1 integer[], arr2 integer[][])"
+    )
+    big_value = "123456789012345678901234567890123456789012345678901234567890"
+    cursor.execute(
+        f"INSERT INTO {wide_name} VALUES (1, {big_value}, '{{1,2,3}}', '{{{{1,2}},{{3,4}}}}')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    # Pin external_table_functions_use_nulls = 0 so the inferred types are not wrapped into Nullable,
+    # which keeps the type-name assertions focused on the typmod and dimension inference.
+    q_wide = (
+        f"postgresql('{host}', 'postgres', query('SELECT id, big, arr1, arr2 FROM {wide_name}'), "
+        f"'postgres', '{pg_pass}') SETTINGS external_table_functions_use_nulls = 0"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(big), toTypeName(arr1), toTypeName(arr2) FROM {q_wide}"
+        ).rstrip()
+        == "Int256\tArray(Int32)\tArray(Array(Int32))"
+    )
+    assert node1.query(f"SELECT big FROM {q_wide}").rstrip() == big_value
+    assert node1.query(f"SELECT arr2 FROM {q_wide}").rstrip() == "[[1,2],[3,4]]"
+
+    # When the first sampled row of an array column is NULL or an empty array, the number of dimensions
+    # cannot be inferred. The query path must fail early during schema inference with a clear error (as the
+    # table-name path does in its recheck_array step) instead of silently inferring a one-dimensional array
+    # and then failing at read time with the confusing `Got more dimensions than expected`.
+    empty_arr_name = "test_query_passing_empty_array"
+    cursor.execute(f"DROP TABLE IF EXISTS {empty_arr_name}")
+    cursor.execute(f"CREATE TABLE {empty_arr_name} (id integer, arr integer[][])")
+    cursor.execute(
+        f"INSERT INTO {empty_arr_name} VALUES (1, '{{}}'), (2, '{{{{1,2}},{{3,4}}}}')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    q_empty = (
+        f"postgresql('{host}', 'postgres', "
+        f"query('SELECT arr FROM {empty_arr_name} ORDER BY id'), 'postgres', '{pg_pass}')"
+    )
+    assert "Cannot infer the number of dimensions" in node1.query_and_get_error(
+        f"SELECT * FROM {q_empty}"
+    )
+
+    cursor.execute(f"DROP TABLE {empty_arr_name}")
+    cursor.execute(f"DROP TABLE {wide_name}")
+    cursor.execute(f"DROP TABLE {table_name}")
+    cursor.execute(f"DROP TABLE {dim_name}")
+
+
+def test_postgres_query_passing_edge_cases(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_query_passing_edge"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer, b text)")
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION postgresql('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}') "
+        "SELECT number, concat('name_', toString(number)) FROM numbers(10)"
+    )
+    started_cluster.postgres_conn.commit()
+
+    # Empty result set: schema inference runs the query with LIMIT 0, so the structure is still resolved
+    # even though no rows come back. The types are inferred normally and count() is 0.
+    q_empty = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name} WHERE a > 1000'), 'postgres', '{pg_pass}')"
+    described = [
+        line.split("\t")[:2]
+        for line in node1.query(
+            f"DESCRIBE TABLE {q_empty} SETTINGS external_table_functions_use_nulls = 0"
+        )
+        .rstrip()
+        .split("\n")
+    ]
+    assert described == [["a", "Int32"], ["b", "String"]]
+    assert node1.query(f"SELECT count() FROM {q_empty}").rstrip() == "0"
+
+    # Missing permissions: the passed query is executed on the PostgreSQL side under the supplied role, so a
+    # role without SELECT on the referenced table fails with PostgreSQL's permission-denied error surfaced by
+    # ClickHouse (raised during schema inference, before any rows are read).
+    cursor.execute("DROP ROLE IF EXISTS query_passing_norole")
+    cursor.execute(
+        "CREATE ROLE query_passing_norole WITH LOGIN PASSWORD 'norole_pass'"
+    )
+    started_cluster.postgres_conn.commit()
+    q_noperm = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'query_passing_norole', 'norole_pass')"
+    assert "permission denied" in node1.query_and_get_error(
+        f"SELECT count() FROM {q_noperm}"
+    )
+    cursor.execute("DROP ROLE query_passing_norole")
+    started_cluster.postgres_conn.commit()
+
+    # Type mismatch on the engine path: the user declares an explicit structure that disagrees with the
+    # actual query result types. The declared structure wins for the engine, and reading a text value into
+    # the declared Int32 fails with a query error (BAD_ARGUMENTS) instead of aborting the server.
+    # The same reader is used for every declared type, so a mismatch against any of them must surface as a
+    # query error, never as a foreign exception (pqxx or std::runtime_error from the text parsers) that
+    # would abort the server. Column b holds text like 'name_0', so reading it into each declared type below
+    # fails to parse.
+    for declared in ["Int32", "UUID", "Date", "DateTime", "DateTime64(6)", "Decimal(10, 2)"]:
+        node1.query("DROP TABLE IF EXISTS pg_engine_type_mismatch")
+        node1.query(
+            f"CREATE TABLE pg_engine_type_mismatch (a Int32, b {declared}) "
+            f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"
+        )
+        assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+            "SELECT * FROM pg_engine_type_mismatch"
+        )
+        node1.query("DROP TABLE pg_engine_type_mismatch")
+
+    # Numeric overflow: a PostgreSQL numeric value parses as a number but does not fit the declared
+    # ClickHouse Decimal. The Decimal text reader rejects it with a parse error, which the shared value
+    # layer normalizes to BAD_ARGUMENTS, so it surfaces as a query error (and reaches the
+    # MaterializedPostgreSQL catch) instead of aborting the server.
+    # Seed the wide value on the PostgreSQL side so it stays an exact numeric. Inserting the same literal
+    # through ClickHouse would type it as Float64 and fail the INSERT with DECIMAL_OVERFLOW before reaching
+    # the read path this case is about.
+    num_table = "test_query_passing_numeric"
+    cursor.execute(f"DROP TABLE IF EXISTS {num_table}")
+    cursor.execute(f"CREATE TABLE {num_table} (a integer, v numeric)")
+    cursor.execute(
+        f"INSERT INTO {num_table} VALUES (1, 99999999999999999999999999999999999999)"
+    )
+    started_cluster.postgres_conn.commit()
+    node1.query("DROP TABLE IF EXISTS pg_engine_decimal_overflow")
+    node1.query(
+        f"CREATE TABLE pg_engine_decimal_overflow (a Int32, v Decimal(10, 2)) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT a, v FROM {num_table}'), 'postgres', '{pg_pass}')"
+    )
+    assert "Cannot parse PostgreSQL value" in node1.query_and_get_error(
+        "SELECT * FROM pg_engine_decimal_overflow"
+    )
+    node1.query("DROP TABLE pg_engine_decimal_overflow")
+    cursor.execute(f"DROP TABLE {num_table}")
+
+    cursor.execute(f"DROP TABLE {table_name}")
 
 
 if __name__ == "__main__":

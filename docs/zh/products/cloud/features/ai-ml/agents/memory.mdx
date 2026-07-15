@@ -1,0 +1,91 @@
+---
+sidebarTitle: 'Memory'
+slug: /cloud/features/ai-ml/agents/memory
+title: 'Memory'
+description: 'ClickHouse 智能体中的 Memory 和个性化'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', 'Memory', '个性化']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+Memory 是按用户划分的存储，agent 可以在不同对话中调用其中的信息。它由多条记录组成，每条都是一个键值对——例如你偏好的
+日期格式、你通常查询的数据库，以及你希望回复简洁到什么程度。agent 会在需要时将这些信息纳入上下文中。
+
+<div id="how-it-works">
+  ## Memory 如何运作
+</div>
+
+一个小型Memory agent会与主对话并行运行。它会读取最近的消息，判断哪些值得记住，并将条目写入每位用户各自的存储中。
+到了下一次对话时，这些条目就会作为上下文提供给主agent参考，你也就不必重复说明了。
+
+你体验到的就是这种连贯性：只要告诉agent一次，比如你偏好 SQL 输出使用小写，或者你的财年在 3 月结束，之后的对话就会据此调整。
+
+<div id="manage-your-memories">
+  ## 管理你的记忆
+</div>
+
+通过左侧导航中的 **Memories** (大脑) 图标打开记忆面板。该面板会列出你已保存的记忆，并提供创建、编辑、删除和过滤条目的控件。
+
+<Image img="/images/cloud/agent-builder/memory/memories.webp" alt="记忆面板，显示左侧导航中高亮的大脑图标、过滤输入框、Add 按钮、使用记忆复选框、一条带有编辑和删除控件的记忆条目，以及一个 Admin Settings 按钮" size="sm" />
+
+记忆仅对当前用户私有。其他人的agent绝不会看到你的条目，你的agent也绝不会看到他们的条目。
+
+<div id="create-memory">
+  ### 创建一条 Memory
+</div>
+
+点击面板顶部的 **+** 按钮，打开 **Create Memory** 对话框。输入 **Key** (仅限小写字母和下划线) 和 **Value**，然后点击 **Create**。
+
+<Image img="/images/cloud/agent-builder/memory/create.webp" alt="高亮显示 Create Memory + 按钮的 Memory 面板" size="sm" />
+
+<div id="filter-memories">
+  ### 筛选Memory
+</div>
+
+使用面板顶部的 **筛选Memory** 输入框，可按键名查找条目。
+
+<Image img="/images/cloud/agent-builder/memory/filter.webp" alt="Memory面板，已高亮显示“筛选Memory”输入框，并输入了“demo”" size="sm" />
+
+<div id="edit-memory">
+  ### 编辑 Memory
+</div>
+
+点击某条 Memory 上的铅笔图标，打开 **Edit Memory** 对话框。修改 Key 或 Value，然后点击 **Save**。
+
+<Image img="/images/cloud/agent-builder/memory/edit.webp" alt="高亮显示 Edit Memory 铅笔图标的 Memory 条目" size="sm" />
+
+<div id="delete-memory">
+  ### 删除Memory条目
+</div>
+
+点击某条Memory上的垃圾桶图标即可将其删除。
+
+<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="高亮显示“删除Memory”垃圾桶图标的Memory条目" size="sm" />
+
+<div id="toggle-memory">
+  ## 开启或关闭Memory
+</div>
+
+使用Memory面板顶部的 **使用Memory** 复选框来开启或关闭Memory。对于不希望被存储的敏感话题，或不需要个性化的一次性对话，请将其关闭。
+
+关闭Memory后，agent 不会从你的Memory存储中读取内容，也不会向其中写入内容。
+
+<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="Memory面板，顶部的“使用Memory”复选框已高亮显示" size="sm" />
+
+<div id="memory-best-practices">
+  ## Memory 最佳实践
+</div>
+
+Memory 在以下情况下会很有帮助：
+
+* 重复使用的约定：偏好的日期格式、业务定义、命名模式。
+* 项目上下文：你通常查询哪个服务或数据库、你关注哪些仪表盘。
+* 沟通风格：偏简洁还是偏健谈、偏重代码还是偏重文字说明的回复。
+
+Memory 的设计目的并不是充当数据库。例如，它不适合用来存放大量参考资料。
+对于这类内容，你应该改用 [技能](/zh/products/cloud/features/ai-ml/agents/builder/skills)，或者直接将其写入agent的说明中。
+它也不是用来检索过往聊天内容的；这一作用应由会话历史本身承担。

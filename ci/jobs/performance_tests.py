@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
+from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -23,6 +24,23 @@ perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
+
+# Settings for the report-building clickhouse-local (post-processing, not the
+# measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
+# in compare.sh.
+REPORT_LOCAL_QUERY_SETTINGS = [
+    # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
+    # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
+    "--max_bytes_before_external_group_by=0",
+    "--max_bytes_ratio_before_external_group_by=0",
+    "--max_bytes_before_external_sort=0",
+    "--max_bytes_ratio_before_external_sort=0",
+]
+REPORT_LOCAL_SERVER_SETTINGS = [
+    # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
+    "--",
+    "--memory_worker_use_cgroup=0",
+]
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
@@ -516,7 +534,7 @@ def get_insert_metadata(info, compare_against_release):
 def build_raw_query_metrics_tsv():
     Path(raw_query_metrics_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY],
+        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -556,7 +574,7 @@ def build_flamegraph_upload_tsv():
     Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
     Path(flamegraph_upload_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY],
+        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -1166,16 +1184,16 @@ def main():
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
-            cmds = []
-            for dataset_path in dataset_paths.values():
-                cmds.append(
-                    f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
-                )
-            res = Shell.check_parallel(cmds, verbose=True)
+            stop_watch = Utils.Stopwatch()
+            errors = download_and_extract_datasets(dataset_paths.values(), db_path)
+            res = not errors
             results.append(
                 Result(
                     name="Download datasets",
                     status=Result.Status.OK if res else Result.Status.ERROR,
+                    start_time=stop_watch.start_time,
+                    duration=stop_watch.duration,
+                    info="\n".join(errors),
                 )
             )
             if res:
@@ -1361,7 +1379,13 @@ def main():
 
         def insert_raw_query_metrics_data():
             cidb = CIDBCluster()
-            assert cidb.is_ready()
+            # Metrics insertion is a reporting side-effect, not the perf
+            # verdict. A transient LogCluster (play.clickhouse.com) timeout
+            # must not fail the whole job - skip and warn, like
+            # insert_report_aggregates() and prepare_historical_data() do.
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping raw query metrics insert")
+                return True
 
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
@@ -1423,7 +1447,12 @@ def main():
 
         def insert_historical_data():
             cidb = CIDBCluster()
-            assert cidb.is_ready()
+            # Reporting side-effect, not the perf verdict - a transient
+            # LogCluster timeout must not fail the job (see
+            # insert_raw_query_metrics_data / insert_report_aggregates).
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping historical data insert")
+                return True
 
             now = datetime.now()
             date = now.date().isoformat()
