@@ -59,6 +59,10 @@ def footer_json_for_blob(blob: bytes, properties: dict[str, str] | None = None) 
 
 
 def build_puffin_file(blob: bytes, footer_json: bytes, *, compressed: bool = False) -> bytes:
+    return build_puffin_file_from_blobs([blob], footer_json, compressed=compressed)
+
+
+def build_puffin_file_from_blobs(blobs: list[bytes], footer_json: bytes, *, compressed: bool = False) -> bytes:
     if compressed:
         footer_payload = lz4.frame.compress(footer_json)
         flags = bytes([0x01, 0x00, 0x00, 0x00])
@@ -67,7 +71,7 @@ def build_puffin_file(blob: bytes, footer_json: bytes, *, compressed: bool = Fal
         flags = b"\x00\x00\x00\x00"
 
     footer_length = struct.pack("<i", len(footer_payload))
-    return PUFFIN_MAGIC + blob + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC
+    return PUFFIN_MAGIC + b"".join(blobs) + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC
 
 
 def extract_blob_and_footer_json(puffin: bytes) -> tuple[bytes, bytes]:
@@ -175,6 +179,44 @@ def generate_sparse_large_key() -> None:
     write_fixture("sparse_large_key.puffin", build_puffin_file(blob, footer_json_for_blob(blob, properties)))
 
 
+def generate_mixed_blob_types() -> None:
+    theta_blob = b"\x00" * 16
+    bitmap = pyroaring.BitMap([2, 5])
+    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
+    deletion_vector_blob = wrap_deletion_vector_blob(vector)
+    theta_offset = len(PUFFIN_MAGIC)
+    deletion_vector_offset = theta_offset + len(theta_blob)
+    footer_json = json.dumps(
+        {
+            "blobs": [
+                {
+                    "type": "apache-datasketches-theta-v1",
+                    "fields": [1],
+                    "snapshot-id": -1,
+                    "sequence-number": -1,
+                    "offset": theta_offset,
+                    "length": len(theta_blob),
+                    "properties": {},
+                },
+                {
+                    "type": "deletion-vector-v1",
+                    "fields": [],
+                    "snapshot-id": -1,
+                    "sequence-number": -1,
+                    "offset": deletion_vector_offset,
+                    "length": len(deletion_vector_blob),
+                    "properties": {"cardinality": "2"},
+                },
+            ]
+        },
+        separators=(", ", ": "),
+    ).encode("utf-8")
+    write_fixture(
+        "mixed_blob_types.puffin",
+        build_puffin_file_from_blobs([theta_blob, deletion_vector_blob], footer_json),
+    )
+
+
 def main() -> None:
     spark_fixture = OUTPUT_DIR / "spark_deletion_vector.puffin"
     if not spark_fixture.exists():
@@ -186,6 +228,7 @@ def main() -> None:
     generate_invalid_bitmap_key()
     generate_inflated_lz4_content_size(spark_fixture)
     generate_missing_required_fields()
+    generate_mixed_blob_types()
     generate_sparse_large_key()
 
 

@@ -588,46 +588,48 @@ Chunk PuffinInputFormat::read()
         initialized = true;
         footer = readPuffinFooter(*in);
     }
-    size_t n = footer.blobs.size();
-    if (n == 0 || n <= blob_index)
-        return {};
 
-    auto col_rows_data = ColumnUInt64::create();
-    auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
-
-    ColumnArray::Offset rows_offset = 0;
-    const auto & blob = footer.blobs[blob_index++];
-
-    if (blob.type != "deletion-vector-v1")
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse supports only deletion vector blobs. Datasketches deletion vectors are not supported");
-
-    if (!blob.compression_codec.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "deletion-vector-v1 blobs must be uncompressed");
-
-    auto blob_buf = readBlobBytes(blob, *in, footer.data);
-    auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length));
-
-    if (auto cardinality_it = blob.properties.find("cardinality"); cardinality_it != blob.properties.end())
+    while (blob_index < footer.blobs.size())
     {
-        const UInt64 expected_cardinality = parse<UInt64>(cardinality_it->second);
-        if (expected_cardinality != rows.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector cardinality {} does not match deserialized row count {}", expected_cardinality, rows.size());
+        const auto & blob = footer.blobs[blob_index++];
+
+        if (blob.type != "deletion-vector-v1")
+            continue;
+
+        if (!blob.compression_codec.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "deletion-vector-v1 blobs must be uncompressed");
+
+        auto col_rows_data = ColumnUInt64::create();
+        auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
+
+        auto blob_buf = readBlobBytes(blob, *in, footer.data);
+        auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length));
+
+        if (auto cardinality_it = blob.properties.find("cardinality"); cardinality_it != blob.properties.end())
+        {
+            const UInt64 expected_cardinality = parse<UInt64>(cardinality_it->second);
+            if (expected_cardinality != rows.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector cardinality {} does not match deserialized row count {}", expected_cardinality, rows.size());
+        }
+
+        ColumnArray::Offset rows_offset = 0;
+        size_t elem_count = 0;
+        for (UInt64 r : rows)
+        {
+            ++elem_count;
+            col_rows_data->insertValue(r);
+        }
+        rows_offset += elem_count;
+        col_rows_offsets->insertValue(rows_offset);
+
+        auto col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
+
+        MutableColumns cols;
+        cols.push_back(std::move(col_rows));
+        return Chunk(std::move(cols), 1);
     }
 
-    size_t elem_count = 0;
-    for (UInt64 r : rows)
-    {
-        ++elem_count;
-        col_rows_data->insertValue(r);
-    }
-    rows_offset += elem_count;
-    col_rows_offsets->insertValue(rows_offset);
-
-    auto col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
-
-    MutableColumns cols;
-    cols.push_back(std::move(col_rows));
-    return Chunk(std::move(cols), 1);
+    return {};
 }
 
 PuffinMetadataSchemaReader::PuffinMetadataSchemaReader(ReadBuffer & in_)

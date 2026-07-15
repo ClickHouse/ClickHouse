@@ -29,3 +29,4 @@ run_happy_path() {
 
 run_happy_path "spark_deletion_vector.puffin" "$DATA/spark_deletion_vector.puffin"
 run_happy_path "compressed_footer.puffin" "$DATA/compressed_footer.puffin"
+run_happy_path "mixed_blob_types.puffin" "$DATA/mixed_blob_types.puffin"

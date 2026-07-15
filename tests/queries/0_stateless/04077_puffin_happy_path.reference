@@ -14,3 +14,9 @@ deletion-vector-v1	-1	-1	4	58		['cardinality','referenced-data-file']	['5','/tmp
 7
 100
 65536
+--- mixed_blob_types.puffin ---
+apache-datasketches-theta-v1	-1	-1	4	16		[]	[]
+deletion-vector-v1	-1	-1	20	44		['cardinality']	['2']
+[2,5]
+2
+5
