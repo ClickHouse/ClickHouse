@@ -114,3 +114,43 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_c
 INSERT INTO t_04545_rbo(a) VALUES (1), (2);
 ALTER TABLE t_04545_rbo RESET SETTING enable_block_offset_column; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_04545_rbo;
+
+-- allow_part_offset_column_in_projections / allow_commit_order_projection are pure CREATE-time
+-- gates: nothing at merge / MATERIALIZE PROJECTION time reads them. They must fire ONLY for a
+-- projection introduced by the current operation (CREATE / ADD PROJECTION), validated against the
+-- effective post-operation settings, and never be re-applied to a pre-existing projection on an
+-- unrelated later ALTER.
+
+-- (9) after disabling allow_commit_order_projection on a table that already has such a projection,
+-- an unrelated ALTER (ADD COLUMN) must NOT be rejected -- no new projection is being created.
+DROP TABLE IF EXISTS t_04545_unrel;
+CREATE TABLE t_04545_unrel (a UInt64,
+    PROJECTION p (SELECT a, _block_number, _block_offset ORDER BY _block_number, _block_offset))
+ENGINE = MergeTree ORDER BY a
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 1;
+INSERT INTO t_04545_unrel(a) VALUES (1), (2);
+ALTER TABLE t_04545_unrel MODIFY SETTING allow_commit_order_projection = 0;
+ALTER TABLE t_04545_unrel ADD COLUMN c UInt64;
+SELECT 'unrelated alter after disable ok';
+DROP TABLE t_04545_unrel;
+
+-- (10) a mixed ALTER that both ADDs a commit-order projection and enables the gate must succeed:
+-- the gate is validated against the effective post-ALTER settings, not the stale live value.
+DROP TABLE IF EXISTS t_04545_mix;
+CREATE TABLE t_04545_mix (a UInt64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+ALTER TABLE t_04545_mix
+    ADD PROJECTION p (SELECT a, _block_number, _block_offset ORDER BY _block_number, _block_offset),
+    MODIFY SETTING allow_commit_order_projection = 1;
+SELECT 'mixed add-projection enable-gate ok';
+DROP TABLE t_04545_mix;
+
+-- (11) control: ADD PROJECTION introducing a commit-order projection while the gate is still off
+-- must be rejected (the gate still fires for a projection introduced by the current operation).
+DROP TABLE IF EXISTS t_04545_addoff;
+CREATE TABLE t_04545_addoff (a UInt64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 0;
+ALTER TABLE t_04545_addoff ADD PROJECTION p (SELECT a, _block_number ORDER BY _block_number); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_04545_addoff;

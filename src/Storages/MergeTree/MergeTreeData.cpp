@@ -1201,19 +1201,29 @@ void MergeTreeData::checkProperties(
     {
         /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
         /// pure CREATE-time feature gates: nothing at merge / MATERIALIZE PROJECTION time reads
-        /// them. Skip them on ATTACH, otherwise an existing table becomes unattachable once the
-        /// setting is disabled (issue #102445). Mirrors the `!attach` guard above.
+        /// them. So they must fire ONLY for a projection INTRODUCED by the current operation
+        /// (CREATE or ADD PROJECTION), validated against the effective post-operation settings,
+        /// and never on ATTACH. A projection is introduced now iff it is absent from
+        /// `old_metadata`; on CREATE / ATTACH the constructor passes the same metadata object as
+        /// both old and new, so compare identity to treat every projection there as introduced.
+        /// Otherwise: an existing table becomes unattachable once the setting is disabled (issue
+        /// #102445); after `MODIFY SETTING allow_commit_order_projection = 0` an unrelated later
+        /// `ALTER` (e.g. `ADD COLUMN`) re-hits this branch for the pre-existing projection and
+        /// throws; and a mixed `ADD PROJECTION` + enable-the-gate `ALTER` would read the stale
+        /// live value and be rejected.
         ///
         /// `enable_block_number_column` / `enable_block_offset_column` are NOT CREATE-only: a
         /// commit-order projection can be rebuilt from the base part during a horizontal merge
         /// (MergeTask pushes it to projections_to_rebuild), and that rebuild only produces the
         /// `_block_number` / `_block_offset` columns when these settings are enabled
         /// (MergeTask::enabledBlockNumberColumn / enabledBlockOffsetColumn). So keep validating
-        /// them even on ATTACH (against the effective settings above): attaching or altering with
-        /// them disabled would let a later merge run without the columns the projection requires.
-        if (!attach)
+        /// them for every projection (even pre-existing, even on ATTACH) against the effective
+        /// settings below: attaching or altering with them disabled would let a later merge run
+        /// without the columns the projection requires.
+        const bool introduced_now = &old_metadata == &new_metadata || !old_metadata.projections.has(projection.name);
+        if (!attach && introduced_now)
         {
-            if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+            if (projection.with_parent_part_offset && !effective_settings[MergeTreeSetting::allow_part_offset_column_in_projections])
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -1222,13 +1232,13 @@ void MergeTreeData::checkProperties(
                     projection.name);
             }
 
-            if (projection.with_block_number && !(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
+            if (projection.with_block_number && !effective_settings[MergeTreeSetting::allow_commit_order_projection])
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
                     projection.name);
 
-            if (projection.with_block_offset && !(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
+            if (projection.with_block_offset && !effective_settings[MergeTreeSetting::allow_commit_order_projection])
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
