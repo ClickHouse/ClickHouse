@@ -32,6 +32,8 @@ public:
 
     String getName() const override { return "PuffinMetadata"; }
 
+    void resetParser() override;
+
 private:
     Chunk read() override;
 
@@ -46,6 +48,8 @@ public:
     PuffinInputFormat(ReadBuffer & buf, SharedHeader header_);
 
     String getName() const override { return "Puffin"; }
+
+    void resetParser() override;
 
 private:
     Chunk read() override;

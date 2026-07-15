@@ -679,6 +679,22 @@ Chunk PuffinInputFormat::read()
     return {};
 }
 
+void PuffinMetadataInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    initialized = false;
+    blob_index = 0;
+    footer = {};
+}
+
+void PuffinInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    initialized = false;
+    blob_index = 0;
+    footer = {};
+}
+
 PuffinMetadataSchemaReader::PuffinMetadataSchemaReader(ReadBuffer & in_)
     : ISchemaReader(in_)
 {
