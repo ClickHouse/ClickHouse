@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -70,6 +71,13 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, table_id);
         else
             getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+
+        /// Through a read-only `Overlay` facade the returned definition is that of the underlying
+        /// source table, so the same privilege is required on the source too: the facade must not
+        /// widen access (see the `Overlay` access-control contract).
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(
+                table_id, DatabaseCatalog::instance().tryGetTable(table_id, getContext())))
+            getContext()->checkAccess(is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS, *source_id);
 
         create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
 

@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -119,6 +120,17 @@ public:
     /// In read-only (facade) mode the underlying databases own the tables, so DROP DATABASE on the
     /// Overlay must not try to iterate and drop them via this facade.
     bool shouldBeEmptyOnDetach() const override { return !readonly; }
+
+    /// Returns true when `database` is a read-only `Overlay` facade (the server-side variant).
+    /// Accepts a null pointer for convenience of callers holding a `tryGetDatabase` result.
+    static bool isReadonlyFacade(const IDatabase * database);
+
+    /// When `written_id` refers to a table reached through a read-only `Overlay` facade — the
+    /// database of `written_id` is a read-only `Overlay` while `storage` belongs to a different
+    /// table (the underlying source) — returns the id of that source table, so the caller can
+    /// require a privilege on both the facade name and the source (the facade must not widen
+    /// access). Returns `std::nullopt` for plain databases, temporary tables, and null `storage`.
+    static std::optional<StorageID> getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage);
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);

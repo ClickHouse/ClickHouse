@@ -134,6 +134,13 @@ policies of **both** the `Overlay` and the underlying source table (a row is ret
 passes both). A row policy defined on the source table still applies to direct reads of that
 table, independently of the `Overlay`.
 
+Metadata visibility follows the same dual-grant rule. `SHOW TABLES`, `SHOW CREATE TABLE`,
+`DESCRIBE`, `SHOW COLUMNS`, `EXISTS`, and the rows of `system.tables` / `system.columns` that
+belong to the facade expose a table only when the corresponding `SHOW` privilege is granted on
+**both** the `Overlay` and the underlying source table. Listings simply omit a table whose
+source-side privilege is missing, `EXISTS` reports it as nonexistent, and the point lookups
+(`SHOW CREATE TABLE`, `DESCRIBE`) are denied.
+
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a
 new `Overlay`. Creating an `Overlay` confers no privileges on the overlay database itself;

@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseOverlay.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -182,6 +183,12 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+    /// Through a read-only `Overlay` facade the described columns are those of the underlying
+    /// source table, so `SHOW_COLUMNS` is required on the source too: the facade must not widen
+    /// access (see the `Overlay` access-control contract).
+    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, table))
+        query_context->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
 
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);

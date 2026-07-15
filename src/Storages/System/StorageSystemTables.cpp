@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -673,6 +674,15 @@ protected:
 
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
+            /// A read-only `Overlay` facade lists tables owned by its underlying source databases,
+            /// and a table is visible through the facade only when `SHOW_TABLES` is granted on the
+            /// underlying source table as well as on the facade name (the facade must not widen
+            /// visibility). A database-wide grant on the facade name is therefore not enough to
+            /// skip per-table checks, and the names-only fast path below (which never resolves the
+            /// source storage) cannot be taken.
+            const bool need_to_check_access_for_overlay_sources
+                = need_to_check_access_for_databases && DatabaseOverlay::isReadonlyFacade(database.get());
+
             /// This is for queries similar to 'show tables', where only name of the table is needed
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
             bool needs_one_column = (needed_columns.size() == 1 && needed_columns[0].name == "name");
@@ -681,7 +691,7 @@ protected:
                         ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
                             (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
 
-            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables)
+            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables && !need_to_check_access_for_overlay_sources)
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
@@ -712,6 +722,18 @@ protected:
                 /// -- so a single broken table neither drops itself from the listing nor aborts the
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
+
+                if (need_to_check_access_for_overlay_sources)
+                {
+                    /// The storage returned by the facade's iterator belongs to the underlying
+                    /// source database; require `SHOW_TABLES` on it too. When the storage cannot
+                    /// be resolved the owning source is unknown, so fail close and skip the row.
+                    if (!table)
+                        continue;
+                    const auto source_id = table->getStorageID();
+                    if (!access->isGranted(AccessType::SHOW_TABLES, source_id.database_name, source_id.table_name))
+                        continue;
+                }
 
                 TableLockHolder lock;
 

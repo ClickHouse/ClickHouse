@@ -4,6 +4,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -73,6 +74,20 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             {
                 getContext()->checkAccess(AccessType::SHOW_TABLES, database, table);
                 result = DatabaseCatalog::instance().isTableExist({database, table}, getContext());
+
+                /// Through a read-only `Overlay` facade a table is reported as existing only when
+                /// `SHOW_TABLES` is also granted on the underlying source table: the facade must
+                /// not widen visibility. Report "does not exist" instead of throwing — a denial
+                /// here would itself leak existence, because the source-side check can only run
+                /// when the table exists.
+                if (result
+                    && DatabaseOverlay::isReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+                {
+                    auto storage = DatabaseCatalog::instance().tryGetTable({database, table}, getContext());
+                    result = storage
+                        && access->isGranted(
+                            AccessType::SHOW_TABLES, storage->getStorageID().database_name, storage->getStorageID().table_name);
+                }
             }
         }
     }
@@ -98,6 +113,12 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
             auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
             result = table && table->isView();
+
+            /// Same rule as for `EXISTS TABLE`: through a read-only `Overlay` facade a view is
+            /// visible only when `SHOW_TABLES` is also granted on the underlying source.
+            if (result)
+                if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database, exists_query->getTable()}, table))
+                    result = getContext()->getAccess()->isGranted(AccessType::SHOW_TABLES, source_id->database_name, source_id->table_name);
         }
     }
     else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))

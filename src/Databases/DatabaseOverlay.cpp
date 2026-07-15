@@ -7,7 +7,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
 #include <Core/UUID.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -61,6 +61,26 @@ DatabaseOverlay & DatabaseOverlay::registerNextDatabaseByName(const String & sou
             backQuote(getDatabaseName()));
     source_names.push_back(source_name);
     return *this;
+}
+
+bool DatabaseOverlay::isReadonlyFacade(const IDatabase * database)
+{
+    const auto * overlay = typeid_cast<const DatabaseOverlay *>(database);
+    return overlay && overlay->readonly;
+}
+
+std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage)
+{
+    if (!storage || !written_id.hasDatabase())
+        return {};
+    auto source_id = storage->getStorageID();
+    if (!source_id.hasDatabase()
+        || (source_id.database_name == written_id.database_name && source_id.table_name == written_id.table_name))
+        return {};
+    const auto written_db = DatabaseCatalog::instance().tryGetDatabase(written_id.database_name);
+    if (isReadonlyFacade(written_db.get()))
+        return source_id;
+    return {};
 }
 
 std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const
@@ -501,14 +521,16 @@ bool DatabaseOverlay::isExternal() const
 
 bool DatabaseOverlay::isRemoteDatabase() const
 {
-    /// A server-side (read-only) `Overlay` is reported as remote so that it is excluded from the
-    /// default catalog enumeration `getDatabases({.with_remote_databases = false})` used by
-    /// `system.tables`, `system.columns` and the asynchronous metrics. Otherwise, because the facade
-    /// is a local object that walks all of its underlying databases in `getTablesIterator`, an
-    /// `Overlay` over a remote source (`MySQL`/`PostgreSQL`/`DataLake`) would let those consumers
-    /// reach the remote service and issue implicit calls (e.g. query `INFORMATION_SCHEMA`) even when
-    /// `show_remote_databases_in_system_tables` is disabled. Explicit `SHOW TABLES` and direct
-    /// queries through the facade still work, and `system.databases` still lists it.
+    /// A server-side (read-only) `Overlay` is reported as remote so that it follows
+    /// `show_remote_databases_in_system_tables` exactly like the remote database engines it may
+    /// wrap: because the facade is a local object that walks all of its underlying databases in
+    /// `getTablesIterator`, an `Overlay` over a remote source (`MySQL`/`PostgreSQL`/`DataLake`)
+    /// would otherwise let `system.tables`/`system.columns` reach the remote service and issue
+    /// implicit calls (e.g. query `INFORMATION_SCHEMA`) even when the setting excludes remote
+    /// databases, and would let the catalog enumeration `getDatabases({.with_remote_databases =
+    /// false})` used by the asynchronous metrics do the same unconditionally. Explicit
+    /// `SHOW TABLES` and direct queries through the facade work regardless of the setting, and
+    /// `system.databases` always lists it.
     ///
     /// We answer from the `readonly` flag rather than by resolving sources: it is constant per
     /// instance (so it does not depend on the order in which databases are loaded at startup) and it
