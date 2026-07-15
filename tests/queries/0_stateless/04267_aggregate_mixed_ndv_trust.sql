@@ -7,6 +7,12 @@
 SET allow_experimental_statistics = 1;
 
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+-- Keep subquery joins as separate optimization scopes: merging expressions into
+-- the outer join graph would inline nested joins and dissolve the trust
+-- boundary these tests exercise.
+SET query_plan_merge_expression_into_join = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 1;
 SET query_plan_optimize_join_order_limit = 10;
