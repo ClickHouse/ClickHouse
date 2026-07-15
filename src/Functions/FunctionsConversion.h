@@ -2192,7 +2192,7 @@ struct ConvertImpl
 
                 /// Rescale the bounded sub-second fraction from the source scale to the target scale,
                 /// then reassemble. multiplyAdd throws (or, for accurateOrNull, nulls) on overflow.
-                Int64 to_fraction;
+                Int64 to_fraction = 0;
                 if (to_scale >= from_scale)
                     to_fraction = fraction * DecimalUtils::scaleMultiplier<Time64>(to_scale - from_scale);
                 else
