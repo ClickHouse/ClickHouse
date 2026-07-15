@@ -1,4 +1,5 @@
 #include <Formats/BuffersWriter.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Formats/NativeWriter.h>
@@ -45,9 +46,16 @@ void BuffersWriter::write(const Block & block)
         SerializationPtr serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations(
             format_settings.client_protocol_version >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 
+        /// Buffers carries no per-column serialization kind on the wire, so the column must be dense
+        /// before it reaches the type-level serializer (NativeWriter::writeData only strips Const and
+        /// compressed wrappers). A ColumnSparse/ColumnReplicated from the pipeline would otherwise
+        /// fail the typeid_cast inside the dense serializer. This mirrors the densification
+        /// NativeWriter::getSerializationAndColumn does for the below-threshold path.
+        ColumnPtr dense_column = recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated());
+
         WriteBufferFromOwnString buffer;
 
-        NativeWriter::writeData(*serialization, column.column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
+        NativeWriter::writeData(*serialization, dense_column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
 
         /// Size of buffer in bytes (UInt64)
         UInt64 buffer_size = static_cast<UInt64>(buffer.count());
