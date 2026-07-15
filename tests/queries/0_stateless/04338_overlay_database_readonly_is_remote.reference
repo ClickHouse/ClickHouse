@@ -1,8 +1,8 @@
-A read-only Overlay is hidden from system.tables by default (no implicit remote call)
-0
-... but it is visible with show_remote_databases_in_system_tables = 1
+A read-only Overlay is visible in system.tables by default, like other remote-flagged databases
 1
-An Overlay over an unreachable remote source is also skipped by default (returns quickly, count 0)
+... and hidden with show_remote_databases_in_system_tables = 0 (no implicit remote call)
+0
+An Overlay over an unreachable remote source is skipped with the setting disabled (returns quickly, count 0)
 0
 SHOW TABLES on the facade still lists everything
 t
