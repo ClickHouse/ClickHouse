@@ -1,4 +1,4 @@
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -8,6 +8,10 @@
 #include <Common/NetException.h>
 #include <Client/IConnections.h>
 #include <Common/AsyncTaskExecutor.h>
+
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace DB
 {
@@ -26,8 +30,20 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     , suspend_when_query_sent(suspend_when_query_sent_)
     , read_packet_type_separately(read_packet_type_separately_)
 {
+#if defined(OS_LINUX)
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+#else
+    /// macOS has no pipe2; create the pipe and set O_NONBLOCK on both ends.
+    if (-1 == pipe(pipe_fd))
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
+    for (int pipe_end_fd : pipe_fd)
+    {
+        int flags = fcntl(pipe_end_fd, F_GETFL, 0);
+        if (-1 == flags || -1 == fcntl(pipe_end_fd, F_SETFL, flags | O_NONBLOCK))
+            throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot make pipe non-blocking");
+    }
+#endif
 
     epoll.add(pipe_fd[0]);
     epoll.add(timer.getDescriptor());
@@ -44,7 +60,7 @@ bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
 
-void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
+void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
     read_context.is_query_sent = true;

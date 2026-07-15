@@ -27,7 +27,7 @@
 	url = https://github.com/ClickHouse/capnproto
 [submodule "contrib/re2"]
 	path = contrib/re2
-	url = https://github.com/google/re2
+	url = https://github.com/ClickHouse/re2
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c
@@ -85,9 +85,6 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-[submodule "contrib/curl"]
-	path = contrib/curl
-	url = https://github.com/curl/curl
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse/icudata
@@ -336,6 +333,9 @@
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
+[submodule "contrib/sz3"]
+	path = contrib/sz3
+	url = https://github.com/ClickHouse/SZ3.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
@@ -390,6 +390,9 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/musl"]
+	path = contrib/musl
+	url = https://github.com/ClickHouse/musl
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
@@ -402,3 +405,12 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/libdeflate"]
+	path = contrib/libdeflate
+	url = https://github.com/ClickHouse/libdeflate
+[submodule "contrib/wagyu"]
+	path = contrib/wagyu
+	url = https://github.com/ClickHouse/wagyu
+[submodule "contrib/mapbox-geometry"]
+	path = contrib/mapbox-geometry
+	url = https://github.com/ClickHouse/geometry.hpp

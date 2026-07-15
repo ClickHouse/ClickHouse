@@ -1,0 +1,176 @@
+---
+slug: /integrations/mysql
+sidebarTitle: 'MySQL'
+title: MySQLとClickHouseのインテグレーション
+hide_title: true
+description: 'MySQLインテグレーションの説明ページ'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse'
+keywords: ['mysql', 'データベースインテグレーション', '外部テーブル', 'データソース', 'SQLデータベース']
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+このページでは、MySQL テーブルからデータを読み取るための `MySQL` テーブルエンジンの使用方法について説明します。
+
+<Note>
+  ClickHouse Cloud では、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) (現在パブリックベータ) を使用して、MySQL テーブルから ClickHouse に簡単にデータを移行することもできます。
+</Note>
+
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## MySQL テーブルエンジン を使用して ClickHouse を MySQL に接続する
+</div>
+
+`MySQL` テーブルエンジン を使用すると、ClickHouse を MySQL に接続できます。**SELECT** 文と **INSERT** 文は、ClickHouse 側でも MySQL テーブル側でも実行できます。この記事では、`MySQL` テーブルエンジン の基本的な使い方を説明します。
+
+<div id="1-configure-mysql">
+  ### 1. MySQL を設定する
+</div>
+
+1. MySQL にデータベースを作成します:
+
+```sql
+  CREATE DATABASE db1;
+```
+
+2. テーブルを作成します:
+
+```sql
+  CREATE TABLE db1.table1 (
+    id INT,
+    column1 VARCHAR(255)
+  );
+```
+
+3. サンプル行を挿入します:
+
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def'),
+    (3, 'ghi');
+```
+
+4. ClickHouse から接続するためのユーザーを作成します:
+
+```sql
+  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+```
+
+5. 必要に応じて権限を付与します。 (説明のため、`mysql_clickhouse` ユーザーには管理者権限を付与します。)
+
+```sql
+  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+```
+
+<Note>
+  この機能を ClickHouse Cloud で使用する場合、ClickHouse Cloud の IP アドレスから MySQL インスタンスにアクセスできるよう許可が必要になることがあります。
+  送信トラフィックの詳細については、ClickHouse の [Cloud Endpoints API](/ja/products/cloud/guides/sql-console/query-endpoints) を確認してください。
+</Note>
+
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. ClickHouseでテーブルを定義する
+</div>
+
+1. それでは、`MySQL` テーブルエンジンを使用する ClickHouse テーブルを作成しましょう。
+
+```sql
+  CREATE TABLE mysql_table1 (
+    id UInt64,
+    column1 String
+  )
+  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+```
+
+最低限必要なパラメータは次のとおりです。
+
+| parameter | Description      | example               |
+| --------- | ---------------- | --------------------- |
+| host      | ホスト名または IP       | mysql-host.domain.com |
+| database  | MySQL データベース名    | db1                   |
+| table     | MySQL テーブル名      | table1                |
+| user      | MySQL に接続するユーザー名 | mysql&#95;clickhouse  |
+| password  | MySQL に接続するパスワード | Password123!          |
+
+<Note>
+  パラメータの完全な一覧については、[MySQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/mysql) のドキュメントページを参照してください。
+</Note>
+
+<div id="3-test-the-integration">
+  ### 3. インテグレーションをテストする
+</div>
+
+1. MySQL でサンプルの行を挿入します:
+
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (4, 'jkl');
+```
+
+2. MySQLテーブルの既存の行に、先ほど追加した新しい行も含めて、ClickHouseテーブルに入っていることを確認します。
+
+```sql
+  SELECT
+      id,
+      column1
+  FROM mysql_table1
+```
+
+4 行表示されるはずです。
+
+```response
+  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
+
+  4 rows in set. Elapsed: 0.044 sec.
+```
+
+3. ClickHouseのテーブルに行を追加しましょう:
+
+```sql
+  INSERT INTO mysql_table1
+    (id, column1)
+  VALUES
+    (5,'mno')
+```
+
+4. MySQL に新しい行が表示されていることを確認します:
+
+```bash
+  mysql> select id,column1 from db1.table1;
+```
+
+新しい行が表示されます：
+
+```response
+  +------+---------+
+  | id   | column1 |
+  +------+---------+
+  |    1 | abc     |
+  |    2 | def     |
+  |    3 | ghi     |
+  |    4 | jkl     |
+  |    5 | mno     |
+  +------+---------+
+  5 rows in set (0.01 sec)
+```
+
+<div id="summary">
+  ### 概要
+</div>
+
+`MySQL` テーブルエンジンを使用すると、ClickHouse を MySQL に接続し、データを双方向にやり取りできます。詳細については、[MySQL テーブルエンジン](/ja/reference/functions/table-functions/mysql) のドキュメントページを参照してください。

@@ -1,0 +1,24 @@
+---
+description: '有关约束操作的文档'
+sidebarTitle: 'CONSTRAINT'
+slug: /sql-reference/statements/alter/constraint
+title: '约束操作'
+doc_type: 'reference'
+---
+
+可以使用以下语法来添加或删除约束：
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
+```
+
+更多信息请参阅[约束](/zh/reference/statements/create/table#constraints)。
+
+这些查询会为表添加或移除约束元数据，因此会立即生效。
+
+<Tip>
+  如果约束是后添加的，**不会**对现有数据执行约束检查。
+</Tip>
+
+复制表上的所有更改都会广播到 ZooKeeper，并会同时应用到其他副本上。

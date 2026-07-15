@@ -22,6 +22,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
+    extern const SettingsBool compile_regular_expressions;
+    extern const SettingsUInt64 min_count_to_compile_regular_expression;
 }
 
 /** Search and replace functions in strings:
@@ -107,6 +109,9 @@ private:
 
     ArgumentOrder argument_order = ArgumentOrder::HaystackNeedle;
 
+    /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
+    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
+
 public:
     static constexpr auto name = Impl::name;
 
@@ -119,6 +124,11 @@ public:
             if (context->getSettingsRef()[Setting::function_locate_has_mysql_compatible_argument_order])
                 argument_order = ArgumentOrder::NeedleHaystack;
         }
+
+        /// When JIT compilation of simple regular expressions is enabled, the impl receives the
+        /// compile-count threshold; otherwise it gets a sentinel that disables the JIT path.
+        if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
+            regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
     }
 
     String getName() const override { return name; }
@@ -324,14 +334,21 @@ public:
                 null_map.get(),
                 input_rows_count);
         else if (col_haystack_vector && col_needle_const)
-            Impl::vectorConstant(
-                col_haystack_vector->getChars(),
-                col_haystack_vector->getOffsets(),
-                col_needle_const->getValue<String>(),
-                column_start_pos,
-                vec_res,
-                null_map.get(),
-                input_rows_count);
+        {
+            const String needle = col_needle_const->getValue<String>();
+            const auto & haystack_chars = col_haystack_vector->getChars();
+            const auto & haystack_offsets = col_haystack_vector->getOffsets();
+            /// Only impls that opt in (currently `MatchImpl`) take the JIT compile-count threshold;
+            /// all others keep their original signature.
+            if constexpr (requires { Impl::vectorConstant(haystack_chars, haystack_offsets, needle, column_start_pos, vec_res, null_map.get(), input_rows_count, regexp_jit_min_count); })
+                Impl::vectorConstant(
+                    haystack_chars, haystack_offsets, needle, column_start_pos,
+                    vec_res, null_map.get(), input_rows_count, regexp_jit_min_count);
+            else
+                Impl::vectorConstant(
+                    haystack_chars, haystack_offsets, needle, column_start_pos,
+                    vec_res, null_map.get(), input_rows_count);
+        }
         else if (col_haystack_vector_fixed && col_needle_vector)
             Impl::vectorFixedVector(
                 col_haystack_vector_fixed->getChars(),

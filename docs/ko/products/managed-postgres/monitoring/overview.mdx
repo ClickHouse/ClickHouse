@@ -1,0 +1,36 @@
+---
+slug: /cloud/managed-postgres/monitoring/overview
+sidebarTitle: '개요'
+title: 'Managed Postgres 모니터링'
+description: 'ClickHouse Managed Postgres에서 사용할 수 있는 모니터링 및 관측성 옵션 개요'
+keywords: ['managed postgres', '모니터링', '관측성', '메트릭', '대시보드', 'prometheus', '쿼리 인사이트', 'pg_stat_ch']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
+
+Managed Postgres 서비스는 다음 방법으로 모니터링할 수 있습니다:
+
+| Section                                                              | Description                                                          | Setup required       |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------- |
+| [대시보드](/ko/products/managed-postgres/monitoring/dashboard)              | 리소스 사용량과 데이터베이스 활동을 보여주는 Cloud Console 기본 제공 차트                      | 없음                   |
+| [쿼리 인사이트](/ko/products/managed-postgres/monitoring/query-insights)      | 각 statement의 telemetry: 영향도 순으로 순위가 매겨진 모든 쿼리 패턴과 진단 카운터             | 없음                   |
+| [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) | Prometheus, Grafana, Datadog 또는 OpenMetrics 호환 collector로 메트릭을 스크레이프 | API Key + scraper 설정 |
+| [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics)              | Prometheus 엔드포인트에서 노출되는 메트릭의 전체 목록과 타입, 레이블, 의미                      | 해당 없음                |
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+Cloud Console을 열고 아무 Managed Postgres 인스턴스의 **모니터링** 탭으로 이동하면 CPU, 메모리, IOPS,
+연결, 트랜잭션, 캐시 적중률, 교착 상태에 대한 실시간 차트를 확인할 수
+있습니다. 별도의 구성은 필요하지 않습니다.
+
+쿼리별 telemetry(지연 시간 백분위수, 캐시 대비 디스크 읽기,
+임시 spill, 병렬 워커 활용도, WAL 볼륨)를 보려면 동일한 인스턴스의
+[쿼리 인사이트](/ko/products/managed-postgres/monitoring/query-insights) 탭을 여십시오.
+호스트 수준 메트릭을 자체
+관측성 스택으로 수집하려면
+[Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)를 사용하십시오.

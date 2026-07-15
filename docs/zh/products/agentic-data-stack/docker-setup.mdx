@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'Docker 设置'
+title: '使用 Docker Compose 搭建 Agentic Data Stack'
+description: '通过 Docker Compose 运行完整的 Agentic Data Stack（ClickHouse、LibreChat、MCP Server 和 Langfuse）'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'docker compose', '设置', 'LibreChat', 'MCP', 'Langfuse']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+使用 Docker Compose 在本地运行完整的 Agentic Data Stack，首次登录后即可直接向您的数据提问。只需一条 `docker compose up` 命令，即可启动 [LibreChat](/zh/products/agentic-data-stack/components/librechat)、[ClickHouse MCP 服务器](/zh/products/agentic-data-stack/components/mcp-server)、[ClickHouse](/zh/get-started/setup/install) 和用于可观测性的 [Langfuse](/zh/products/agentic-data-stack/components/langfuse)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 安装了 Compose 插件 (Compose v2 或更高版本) 的 **Docker**。
+* **Git**，用于克隆仓库。
+* 模型提供商的 API 密钥 (例如 OpenAI、Anthropic 或 Google) 。agent 需要一个模型来回答问题，因此请在设置期间提供 API 密钥，或在首次聊天前先在 LibreChat UI 中添加。
+
+<div id="stand-up-the-stack">
+  ## 启动技术栈
+</div>
+
+<Steps>
+  <Step title="克隆仓库">
+    ```bash
+    git clone https://github.com/ClickHouse/agentic-data-stack
+    cd agentic-data-stack
+    ```
+
+    该仓库在顶层自带 `docker-compose.yml`，因此只需一条命令即可启动整个技术栈。完整服务列表请参见[架构](#how-it-is-wired)。
+  </Step>
+
+  <Step title="运行演示环境准备脚本">
+    ```bash
+    ./scripts/prepare-demo.sh
+    ```
+
+    该脚本会生成一个 `.env` 文件，其中包含各个服务的凭据，然后提供一个交互式菜单，用于为所选提供商配置 API key。你也可以直接在 `.env` 文件中设置这些 key。你跳过的提供商会保持为 `user_provided`，这样之后就可以改为在 LibreChat UI 中添加你自己的 key。
+
+    首次启动时，技术栈会根据 `.env` 创建一个 admin 用户。默认登录信息为 `admin@admin.com` / `password`。
+
+    <Accordion title="设置你自己的登录凭据">
+      在运行 `prepare-demo.sh` 之前，先使用这些变量运行 `generate-env.sh`：
+
+      ```bash
+      USER_EMAIL="you@example.com" USER_PASSWORD="supersecret" USER_NAME="YourName" ./scripts/generate-env.sh
+      ```
+
+      随后，`prepare-demo.sh` 会检测到已存在的 `.env`，并直接进入 API-key 配置步骤。
+    </Accordion>
+  </Step>
+
+  <Step title="在后台启动服务">
+    ```bash
+    docker compose up -d
+    ```
+
+    启动顺序会自动处理。LibreChat 只有在 MCP Server 健康后才会启动，因此首次加载时，它与 ClickHouse 的连接就已经就绪。
+  </Step>
+
+  <Step title="打开 LibreChat 并登录">
+    技术栈启动后，你可以在浏览器中访问以下服务：
+
+    * **LibreChat** (聊天 UI) — [http://localhost:3080](http://localhost:3080)
+    * **Langfuse** (可观测性) — [http://localhost:3000](http://localhost:3000)
+    * **Admin Panel** (基于浏览器的 LibreChat 配置界面) — [http://localhost:3081](http://localhost:3081)
+    * **MinIO console** (对象存储；凭据见 `.env`) — [http://localhost:9091](http://localhost:9091)
+
+    使用 `.env` 文件中的 admin 凭据登录 LibreChat。
+  </Step>
+
+  <Step title="选择模型">
+    系统默认已选中一个模型。如果你想更改，请打开模型选择器并选择要使用的模型。
+
+    <Image img="/images/agentic-data-stack/select-model.webp" alt="左上角的 LibreChat 模型选择器，显示默认模型，并带有“Select a model”提示" size="md" />
+
+    如果你在设置过程中没有设置提供商 key，请在 UI 中添加一个。
+
+    <Accordion title="在 UI 中设置提供商 key">
+      打开模型选择器，然后点击对应提供商旁边的 **Set API Key**。
+
+      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="LibreChat 模型选择器，其中 Anthropic 提供商旁边显示 Set API Key 按钮" size="md" />
+
+      在对话框中粘贴你的 key，然后点击 **Submit**。你可以设置过期时间，也可以让该 key 永不过期。
+
+      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="用于 Anthropic 的 Set API Key 对话框，其中包含过期时间下拉菜单、Key 字段，以及 Submit 和 Revoke 按钮" size="md" />
+    </Accordion>
+  </Step>
+
+  <Step title="选择 MCP Server">
+    该技术栈已在 LibreChat 的 `librechat.yaml` 中预先配置好 MCP servers。在消息输入框中，点击 **MCP Servers** 并选择 **ClickHouse-Local**。
+
+    如果要使用 ClickHouse Cloud 服务，请改为选择 **ClickHouse-Cloud**。
+
+    {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
+
+    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="LibreChat 输入框中已打开的 MCP Servers 菜单，显示带有绿色已连接圆点的 ClickHouse-Local 和 ClickHouse-Cloud" size="md" />
+  </Step>
+
+  <Step title="提出你的第一个问题">
+    例如：
+
+    > 有哪些数据库和表可用，最大的一张表有多少行？
+
+    agent 会使用 MCP Server 的工具列出数据库和表，对 ClickHouse 执行只读查询，并根据结果生成答案。你无需编写 SQL。
+
+    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat 通过调用 ClickHouse-Local MCP 工具回答示例问题，并列出可用的数据库和表" size="md" />
+  </Step>
+</Steps>
+
+<div id="stop-or-reset">
+  ## 停止或重置技术栈
+</div>
+
+停止各项服务，且不删除任何内容：
+
+```bash
+docker compose down
+```
+
+要停止并移除所有容器，同时清空所有卷以便全新开始，请使用该技术栈的重置脚本：
+
+```bash
+./scripts/reset-all.sh
+```
+
+<div id="how-it-is-wired">
+  ## 架构
+</div>
+
+`docker-compose.yml` 是一个精简的入口文件，包含四个 Compose 文件：
+
+| Compose 文件                   | 定义内容                                                     |
+| ---------------------------- | -------------------------------------------------------- |
+| `langfuse-compose.yml`       | Langfuse 及其后端服务 (ClickHouse、PostgreSQL、Redis、MinIO)      |
+| `clickhouse-mcp-compose.yml` | ClickHouse MCP 服务器                                       |
+| `librechat-compose.yml`      | LibreChat 及其后端服务 (MongoDB、Meilisearch、pgvector、RAG API)  |
+| `admin-panel-compose.yml`    | LibreChat 管理面板                                           |
+
+有两个关键点让单命令启动成为可能：
+
+* **健康检查和启动顺序。** Compose 使用健康检查来控制启动顺序。MCP 服务器会等待 ClickHouse 就绪，LibreChat 则会等待 MCP 服务器就绪。
+* **共享环境文件。** `.env` 保存了各个服务的凭据和连接信息，并以一致的方式进行配置，以便服务之间能够互相访问。例如，MCP 服务器会使用 `.env` 中的 ClickHouse 凭据连接到 ClickHouse。LibreChat 会收到 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 和 `LANGFUSE_BASE_URL`，因此默认情况下每次运行都会将 trace 发送到 Langfuse。
+
+ClickHouse 在这一技术栈中承担两个角色：它既是 Langfuse 的存储后端，也是你的 agent 通过 MCP 服务器查询的数据库。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 了解技术栈中各个组成部分的作用：[ClickHouse MCP 服务器](/zh/products/agentic-data-stack/components/mcp-server)、[LibreChat](/zh/products/agentic-data-stack/components/librechat) 和 [Langfuse](/zh/products/agentic-data-stack/components/langfuse)。
+* 查看[概览](/zh/products/agentic-data-stack/overview)，了解该技术栈是如何组合在一起的。
+* 如果想在无需安装任何内容的情况下，使用公开数据集试用该技术栈，请使用托管演示版 [AgentHouse](https://llm.clickhouse.com)。

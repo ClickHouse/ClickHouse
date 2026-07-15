@@ -1,0 +1,238 @@
+---
+description: '同じ主キー（より正確には、同じ[ソートキー](/reference/engines/table-engines/mergetree-family/mergetree)）
+  を持つすべての行を、集約関数の状態の組み合わせを格納する
+  単一の行（単一のデータパーツ内）に置き換えます。'
+sidebarTitle: 'AggregatingMergeTree'
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'AggregatingMergeTree テーブルエンジン'
+doc_type: 'reference'
+---
+
+このエンジンは [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を継承しており、データパーツのマージロジックを変更しています。ClickHouse は、同じ主キー (より正確には、同じ[ソートキー](/ja/reference/engines/table-engines/mergetree-family/mergetree)) を持つすべての行を、集約関数の状態の組み合わせを格納する単一の行 (単一のデータパーツ内) に置き換えます。
+
+`AggregatingMergeTree` テーブルは、集計済みの materialized view を含む、インクリメンタルなデータ集計に使用できます。
+
+以下のビデオでは、AggregatingMergeTree と Aggregate 関数の使用例を確認できます。
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+このエンジンは、次の型を持つすべてのカラムを処理します。
+
+* [`AggregateFunction`](/ja/reference/data-types/aggregatefunction)
+* [`SimpleAggregateFunction`](/ja/reference/data-types/simpleaggregatefunction)
+
+`AggregatingMergeTree` は、行数を桁違いに減らせる場合に適しています。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+```
+
+リクエストパラメータの説明については、[リクエストの説明](/ja/reference/statements/create/table)を参照してください。
+
+**クエリ句**
+
+`AggregatingMergeTree` テーブルの作成時には、`MergeTree` テーブルの作成時と同じ [句](/ja/reference/engines/table-engines/mergetree-family/mergetree) が必要です。
+
+<details markdown="1">
+  <summary>非推奨のテーブル作成方法</summary>
+
+  <Note>
+    新しいプロジェクトではこの方法を使用しないでください。可能であれば、既存のプロジェクトも上記で説明した方法に切り替えてください。
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+  ```
+
+  すべてのパラメータは、`MergeTree` の場合と同じ意味を持ちます。
+</details>
+
+<div id="select-and-insert">
+  ## SELECT and INSERT
+</div>
+
+データを挿入するには、集約 -State- 関数を使用する [INSERT SELECT](/ja/reference/statements/insert-into) クエリを使用します。
+`AggregatingMergeTree` テーブルからデータを選択する場合は、`GROUP BY` 句と、データ挿入時と同じ集約関数を使用しますが、`-Merge` 接尾辞を付けます。
+
+`SELECT` クエリの結果では、`AggregateFunction` 型の値は、ClickHouse のすべての出力フォーマットにおいて実装固有のバイナリ表現になります。たとえば、`SELECT` クエリでデータを `TabSeparated` フォーマットにダンプした場合、そのダンプは `INSERT` クエリを使って再度読み込めます。
+
+<div id="example-of-an-aggregated-materialized-view">
+  ## 集計materialized viewの例
+</div>
+
+以下の例では、`test`という名前のデータベースが存在することを前提としています。まだ存在しない場合は、以下のコマンドを使用して作成してください。
+
+```sql
+CREATE DATABASE test;
+```
+
+次に、生データを格納するテーブル `test.visits` を作成します：
+
+```sql
+CREATE TABLE test.visits
+ (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Sign Nullable(Int32),
+    UserID Nullable(Int32)
+) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+```
+
+次に、訪問の総数とユニークユーザー数を追跡する `AggregationFunction` を保存する `AggregatingMergeTree` テーブルを作成します。
+
+`test.visits` テーブルを監視し、[`AggregateFunction`](/ja/reference/data-types/aggregatefunction) 型を使用する `AggregatingMergeTree` のマテリアライズドビューを作成します:
+
+```sql
+CREATE TABLE test.agg_visits (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Visits AggregateFunction(sum, Nullable(Int32)),
+    Users AggregateFunction(uniq, Nullable(Int32))
+)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+`test.visits` から `test.agg_visits` にデータを格納するマテリアライズドビューを作成します:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+```
+
+`test.visits` テーブルにデータを挿入します：
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+```
+
+データは`test.visits`と`test.agg_visits`の両方に挿入されます。
+
+集計データを取得するには、materialized view `test.visits_mv` に対して `SELECT ... GROUP BY ...` などのクエリを実行します：
+
+```sql
+SELECT
+    StartDate,
+    sumMerge(Visits) AS Visits,
+    uniqMerge(Users) AS Users
+FROM test.visits_mv
+GROUP BY StartDate
+ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+`test.visits` にさらにいくつかのレコードを追加します。今回は、そのうちの1件に異なるタイムスタンプを使用してみましょう：
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+`SELECT` クエリを再度実行すると、次の出力が返されます。
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
+```
+
+場合によっては、集計コストをinsert時からmerge時に移すために、insert時に行を事前集計しないようにしたいことがあります。通常、エラーを回避するには、materialized viewの定義の`GROUP BY`句に集計対象外のカラムを含める必要があります。しかし、`optimize_on_insert = 0` (デフォルトでは有効) を設定した上で[`initializeAggregation`](/ja/reference/functions/regular-functions/other-functions#initializeAggregation)関数を使用することで、これを実現できます。この場合、`GROUP BY`は不要になります。
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+<Note>
+  `initializeAggregation` を使用すると、グループ化せずに各行ごとに aggregate state が作成されます。
+  各ソース行は materialized view で 1 行を生成し、実際の aggregation はその後、
+  `AggregatingMergeTree` がパーツをマージする際に行われます。これは `optimize_on_insert = 0` の場合にのみ当てはまります。
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Tuple 要素の集計
+</div>
+
+`allow_tuple_element_aggregation` 設定が有効な場合、`Tuple` カラムは再帰的にフラット化され、各リーフ要素が独立して集計の対象になります。つまり、`Tuple` 内の `AggregateFunction` または `SimpleAggregateFunction` サブカラムは、それぞれの関数に従って、トップレベルのカラムと同様に集計されます。
+
+ソートキー内の `Tuple` に属するサブカラムは、集計から除外されます。非集約のサブカラムは通常のカラムとして扱われます (最初の値が保持されます) 。
+
+<Note>
+  この設定は変更不可であり、テーブル作成時に指定する必要があります。
+</Note>
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+`total_visits` は `sum` で集計され (100 + 200 = 300) 、`unique_users` は `max` で集計されます (max(5, 8) = 8) 。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseで集約コンビネータを使う: Array、Map、state](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: '主キーの選び方'
+title: '主キーの選び方'
+description: 'ClickHouse で主キーを選ぶ方法について説明するページ'
+keywords: ['主キー']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> このページでは、「ソートキー」という用語を「primary key」とほぼ同義で使用しています。厳密には、[ClickHouse では両者は異なります](/ja/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)が、このドキュメントでは同じものとして捉えて差し支えありません。ここでいう ソートキー は、テーブルの `ORDER BY` で指定するカラムを指します。
+
+ClickHouse の主キーは、Postgres などの OLTP データベースにおける同様の用語に慣れている方の想像とは[大きく異なる](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse)点に注意してください。
+
+ClickHouse で効果的な主キーを選ぶことは、クエリパフォーマンスとストレージ効率の両方にとって非常に重要です。ClickHouse はデータを複数のパーツに分割して管理し、各パーツはそれぞれ独自のスパースプライマリ索引を持ちます。この索引により、スキャンするデータ量を減らせるため、クエリを大幅に高速化できます。さらに、主キーはデータがディスク上で物理的にどの順序で配置されるかを決めるため、圧縮効率にも直接影響します。最適な順序で配置されたデータはより効率よく圧縮され、I/O が減ることでパフォーマンスがさらに向上します。
+
+1. ソートキー を選ぶ際は、クエリのフィルタ (つまり `WHERE` 句) で頻繁に使用されるカラム、特に大量の行を除外できるカラムを優先してください。
+2. テーブル内の他のデータとの相関が高いカラムも有効です。連続した形で格納されることで、`GROUP BY` や `ORDER BY` の処理時に圧縮率とメモリ効率が向上するためです。
+
+<br />
+
+ソートキー を選ぶ際の助けとなる簡単なルールがいくつかあります。以下の条件は互いに相反する場合もあるため、順に検討してください。**このプロセスで複数のキー候補を特定できますが、通常は 4～5 個で十分です**：
+
+<Info>
+  **重要**
+
+  ソートキー はテーブル作成時に定義する必要があり、後から追加することはできません。一方で、プロジェクションと呼ばれる機能を使えば、データ挿入後 (または前) に追加の並び順をテーブルに加えることができます。ただし、その場合はデータが重複する点に注意してください。詳細は[こちら](/ja/reference/statements/alter/projection)を参照してください。
+</Info>
+
+<div id="example">
+  ## 例
+</div>
+
+次の `posts_unordered` テーブルについて見てみましょう。このテーブルには、Stack Overflow の各投稿に対応する行が 1 つずつ含まれます。
+
+このテーブルには主キーがありません。これは `ORDER BY tuple()` で示されています。
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+あるユーザーが、最も一般的なアクセスパターンとして、2024年以降に投稿された質問数を計算したいとします。
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+このクエリで読み取られた行数とバイト数に注目してください。主キーがない場合、クエリはデータセット全体をスキャンする必要があります。
+
+`EXPLAIN indexes=1` を使うと、索引がないためにテーブル全体のスキャンが発生していることを確認できます。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+同じデータを含むテーブル `posts_ordered` が、`ORDER BY` に `(PostTypeId, toDate(CreationDate))` を指定して定義されていると仮定します。つまり、
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+`PostTypeId` のカーディナリティは 8 で、ソートキーの最初のエントリとして理にかなった選択です。日付粒度でのフィルタリングで十分である可能性が高く (datetime フィルターにも引き続き効果があります) 、キーの 2 番目の部分には `toDate(CreationDate)` を使用します。これにより、日付は 16 bits で表現できるため、より小さな索引を作成でき、フィルタリングも高速化されます。
+
+次のアニメーションは、Stack Overflow の Posts テーブルに対して最適化されたスパースプライマリインデックスがどのように作成されるかを示しています。個々の行に索引を作成するのではなく、この索引は行のブロックを対象とします。
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="主キー" />
+
+同じクエリを、このソートキーを持つテーブルに対して繰り返すと、次のようになります。
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+このクエリではスパースインデックスが利用されるようになり、読み取るデータ量が大幅に減少し、実行時間も4倍高速化されました。読み取った行数とバイト数が減っている点に注目してください。
+
+索引が使用されていることは、`EXPLAIN indexes=1` で確認できます。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+さらに、スパースインデックスが、サンプルクエリに一致する可能性のないすべての行ブロックをどのように枝刈りするかを可視化します。
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="主キー" />
+
+<Note>
+  テーブル内のすべてのカラムは、キー自体に含まれているかどうかにかかわらず、指定されたソートキーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用した場合、他のすべてのカラムの値の並び順は `CreationDate` カラムの値の並び順に対応します。複数のソートキーを指定することもでき、その場合は `SELECT` クエリの `ORDER BY` 句と同じ意味で並べ替えられます。
+</Note>
+
+主キーの選び方に関する高度で包括的なガイドは、[こちら](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)で確認できます。
+
+ソートキーがどのように圧縮を改善し、ストレージをさらに最適化するのかをより深く理解するには、公式ガイドの [ClickHouse における圧縮](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) と [カラム圧縮 codec](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec) を参照してください。
