@@ -57,13 +57,23 @@ FORMAT CSV
 SETTINGS allow_introspection_functions=1;
 "
 
-# Check if symbols and lines are populated.
-# The last_error_symbols/last_error_lines columns are filled via ELF symbolization with DWARF
-# file:line info, which is unavailable on macOS (backtrace_symbols() provides no file:line, see
-# 02420_stracktrace_debug_symbols) and the columns are ELF-only. Skip the check on Darwin and
-# emit the reference output there.
+# Check that symbols and lines are populated.
+# `last_error_symbols` is resolved from the symbol table, present on all our builds. `last_error_lines`
+# additionally needs DWARF debug info - read from the binary on Linux, or from a co-located .dSYM
+# bundle on macOS. The macOS CI runner ships without a .dSYM, so file:line is unavailable there (the
+# same limitation as 02420_stracktrace_debug_symbols); assert its real absence on macOS rather than
+# skipping or faking the result.
 if [ "$($CLICKHOUSE_CLIENT -q "SELECT value = 'Darwin' FROM system.build_options WHERE name = 'SYSTEM'")" = "1" ]; then
-    echo "1,1"
+    $CLICKHOUSE_CLIENT -m -q "
+    SELECT
+        arrayExists(x -> (x LIKE '%Exception%'), last_error_symbols),
+        NOT arrayExists(x -> (x LIKE '%:%:%'), last_error_lines)
+    FROM system.error_log
+    WHERE code = 333 AND event_date >= yesterday() AND event_time >= (now() - 600)
+    ORDER BY last_error_time DESC
+    LIMIT 1
+    FORMAT CSV
+    "
 else
     $CLICKHOUSE_CLIENT -m -q "
     SELECT
