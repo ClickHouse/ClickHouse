@@ -23,6 +23,9 @@ $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/invalid_roaring_bitma
 echo "--- invalid_bitmap_key.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/invalid_bitmap_key.puffin', Puffin)" 2>&1 | grep -oF 'Invalid deletion vector bitmap key'
 
+echo "--- cardinality_mismatch_large_bitmap.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/cardinality_mismatch_large_bitmap.puffin', Puffin)" 2>&1 | grep -oF 'exceeds declared cardinality'
+
 echo "--- inflated_lz4_content_size.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 content size'
 

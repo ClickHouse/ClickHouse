@@ -224,6 +224,20 @@ def generate_missing_required_fields() -> None:
     )
 
 
+def generate_cardinality_mismatch_large_bitmap() -> None:
+    bitmap = pyroaring.BitMap([2, 5, 7, 100, 65536])
+    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
+    blob = wrap_deletion_vector_blob(vector)
+    properties = {
+        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+        "cardinality": "1",
+    }
+    write_fixture(
+        "cardinality_mismatch_large_bitmap.puffin",
+        build_puffin_file(blob, footer_json_for_blob(blob, properties)),
+    )
+
+
 def generate_sparse_large_key() -> None:
     bitmap = pyroaring.BitMap()
     bitmap.add(SPARSE_SUB_POSITION)
@@ -338,6 +352,7 @@ def main() -> None:
     generate_missing_required_fields()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
+    generate_cardinality_mismatch_large_bitmap()
     generate_sparse_large_key()
 
 

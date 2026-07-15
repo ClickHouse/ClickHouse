@@ -391,7 +391,7 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
     }
 }
 
-std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
+std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality)
 {
     if (bytes.size() < sizeof(Int64))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
@@ -410,6 +410,7 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
     std::vector<UInt64> positions;
     Int32 last_key = -1;
     Int32 remaining_count = static_cast<Int32>(bitmap_count);
+    UInt64 running_cardinality = 0;
 
     while (remaining_count > 0)
     {
@@ -432,6 +433,23 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
         if (bitmap_size > remaining)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector roaring bitmap at key {} exceeds blob size", key);
 
+        const UInt64 bitmap_cardinality = bitmap.cardinality();
+        UInt64 new_running_cardinality = 0;
+        if (common::addOverflow(running_cardinality, bitmap_cardinality, new_running_cardinality))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Deletion vector cardinality exceeds declared cardinality {}",
+                expected_cardinality);
+
+        if (new_running_cardinality > expected_cardinality)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Deletion vector cardinality {} exceeds declared cardinality {}",
+                new_running_cardinality,
+                expected_cardinality);
+
+        running_cardinality = new_running_cardinality;
+
         for (UInt32 sub_position : bitmap)
         {
             const UInt64 position = positionFromKeyAndSubPosition(static_cast<UInt32>(key), sub_position);
@@ -448,6 +466,13 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
 
     if (remaining != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap has {} trailing bytes", remaining);
+
+    if (running_cardinality != expected_cardinality)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} does not match deserialized row count {}",
+            expected_cardinality,
+            running_cardinality);
 
     return positions;
 }
@@ -480,14 +505,14 @@ std::string_view extractDeletionVectorPayload(std::string_view blob)
     return std::string_view(blob.data() + 2 * sizeof(UInt32), vector_size);
 }
 
-std::vector<UInt64> deserializeDeletionVectorV1(ReadBuffer & buf, size_t size)
+std::vector<UInt64> deserializeDeletionVectorV1(ReadBuffer & buf, size_t size, UInt64 expected_cardinality)
 {
     String blob_data(size, '\0');
     buf.readStrict(blob_data.data(), size);
 
     const std::string_view blob_view(blob_data);
     const std::string_view vector_bytes = extractDeletionVectorPayload(blob_view);
-    return deserializeRoaringPositionBitmap(vector_bytes);
+    return deserializeRoaringPositionBitmap(vector_bytes, expected_cardinality);
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -659,12 +684,10 @@ Chunk PuffinInputFormat::read()
         auto col_rows_data = ColumnUInt64::create();
         auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
 
-        auto blob_buf = readBlobBytes(blob, *in, footer.data);
-        auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length));
-
         const UInt64 expected_cardinality = parse<UInt64>(blob.properties.at("cardinality"));
-        if (expected_cardinality != rows.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector cardinality {} does not match deserialized row count {}", expected_cardinality, rows.size());
+
+        auto blob_buf = readBlobBytes(blob, *in, footer.data);
+        auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length), expected_cardinality);
 
         ColumnArray::Offset rows_offset = 0;
         size_t elem_count = 0;
