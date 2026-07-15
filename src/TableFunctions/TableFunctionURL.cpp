@@ -203,6 +203,16 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
                 "The url table function does not support headers(...) when dispatching to the {} engine (URL '{}')",
                 storageEngineNameForURLScheme(target), filename);
 
+        /// The delegate argument list rebuilt in `buildDelegate` carries only the source, format,
+        /// structure and compression method, and the delegate backends read without an HTTP request
+        /// body anyway, so a `body(...)` argument would be silently dropped. Reject it explicitly,
+        /// consistently with the `headers(...)` rejection above.
+        if (!configuration.body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The url table function does not support body(...) when dispatching to the {} engine (URL '{}')",
+                storageEngineNameForURLScheme(target), filename);
+
         buildDelegate(target, context);
         return;
     }
