@@ -1,4 +1,7 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: the test requires non-adaptive granularity (index_granularity_bytes = 0),
+-- and SharedMergeTree rejects it at CREATE TABLE with "SharedMergeTree table cannot have index
+-- granularity (bytes) equals zero", so the tested scenario cannot exist there.
 -- Regression test for STID 4063-3b45.
 -- MOVE/REPLACE/ATTACH PARTITION between two tables with incompatible granularity
 -- settings (one adaptive, one non-adaptive) used to throw LOGICAL_ERROR in three of
