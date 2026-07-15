@@ -436,6 +436,8 @@ it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num
 with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`.
 Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be
 `Nullable`.
+An untyped `NULL` argument is rejected because its element type cannot be inferred. Cast it to an explicit
+`Nullable(T)` type to create an empty typed state.
 The `-Distinct` combinator is not supported because duplicate values do not change a Bloom filter and its
 additional state cannot be consumed by `bloomFilterContains`.
 Other combinators that change or replicate the aggregate state, including `-ArgMin`, `-ArgMax`, `-ForEach`,
@@ -512,7 +514,10 @@ WHERE number >= 100
 
     factory.registerFunction(
         AggregateFunctionGroupBloomFilterData::name,
-        {createAggregateFunctionGroupBloomFilter, documentation, {.rejects_nullable_arguments_with_if = true}});
+        {createAggregateFunctionGroupBloomFilter, documentation, {
+            .rejects_nullable_arguments_with_if = true,
+            .rejects_only_null_arguments = true,
+        }});
 }
 
 }

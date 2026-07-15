@@ -48,6 +48,7 @@ FROM source
 ```
 
 Calling `groupBloomFilterState` directly with a `Nullable` value remains supported; `NULL` values are skipped.
+An untyped `NULL` argument is rejected because its element type cannot be inferred. Cast it to an explicit `Nullable(T)` type to create an empty typed state.
 
 The `-OrNull` and `-OrDefault` combinators are not supported, including state-only chains such as:
 

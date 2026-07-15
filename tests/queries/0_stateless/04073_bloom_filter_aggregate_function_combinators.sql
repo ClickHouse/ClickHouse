@@ -32,6 +32,15 @@ FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 SELECT groupBloomFilterDistinct(1000)(materialize(CAST(NULL, 'Nullable(UInt64)')))
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 
+SELECT groupBloomFilter(NULL); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterState(NULL); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterDistinctState(NULL); -- { serverError BAD_ARGUMENTS }
+
+WITH groupBloomFilterState(CAST(NULL, 'Nullable(UInt64)')) AS bf
+SELECT toTypeName(bf), bloomFilterContains(bf, toUInt64(1));
+
 SELECT groupBloomFilterOrNull(1000)(number)
 FROM numbers(0); -- { serverError BAD_ARGUMENTS }
 

@@ -131,6 +131,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
+        if (has_null_arguments && properties.has_value() && properties->rejects_only_null_arguments)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} does not support arguments whose type can only be NULL",
+                name);
+
         AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
 
         if (nested_function)

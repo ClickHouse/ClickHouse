@@ -996,6 +996,9 @@ struct AggregateFunctionProperties
 
     /// Whether `Nullable` arguments with the `-If` combinator must be rejected.
     bool rejects_nullable_arguments_with_if = false;
+
+    /// Whether arguments whose type can only contain `NULL` must be rejected instead of replacing the function with `nothingNull`.
+    bool rejects_only_null_arguments = false;
 };
 
 
