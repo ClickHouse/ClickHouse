@@ -926,7 +926,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const CompiledRegexPtr & url_regexp_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
-    NameToNameMap header_column_mappings_)
+    std::vector<std::pair<String, String>> header_column_mappings_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
@@ -1085,7 +1085,9 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
 
     /// Parse optional <header_column_mappings> block.
     /// Each child tag is treated as <HeaderName>column_name</HeaderName>.
-    NameToNameMap header_column_mappings;
+    /// Stored as a vector to preserve declaration order; first occurrence wins
+    /// when two entries target the same column.
+    std::vector<std::pair<String, String>> header_column_mappings;
     const std::string mappings_key = config_prefix + ".handler.header_column_mappings";
     if (config.has(mappings_key))
     {
@@ -1095,7 +1097,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         {
             const String column_name = config.getString(mappings_key + "." + header_name);
             if (!header_name.empty() && !column_name.empty())
-                header_column_mappings.emplace(header_name, column_name);
+                header_column_mappings.emplace_back(header_name, column_name);
         }
     }
 

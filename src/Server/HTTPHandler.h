@@ -195,10 +195,11 @@ private:
     std::string predefined_query;
     CompiledRegexPtr url_regexp;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regexp;
-    /// Config-declared header→column mappings for INSERT queries.
-    /// Key: HTTP header name, Value: target INSERT column name.
-    /// Resolved at request time and stored in the query context as http_header_columns.
-    NameToNameMap header_column_mappings;
+    /// Config-declared header→column mappings for INSERT queries, in declaration order.
+    /// Each pair is (HTTP header name, target INSERT column name).
+    /// Stored as a vector to preserve config order; first occurrence wins when multiple
+    /// entries target the same column.
+    std::vector<std::pair<String, String>> header_column_mappings;
 
 public:
     PredefinedQueryHandler(
@@ -209,7 +210,7 @@ public:
         const CompiledRegexPtr & url_regexp_,
         const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
-        NameToNameMap header_column_mappings_ = {});
+        std::vector<std::pair<String, String>> header_column_mappings_ = {});
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 

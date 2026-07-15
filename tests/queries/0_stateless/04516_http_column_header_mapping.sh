@@ -336,3 +336,76 @@ echo "--- async: schema drift same TypeIndex (FixedString shrink) - valid entry 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 # 'ab' must be inserted; 'abcd' must fail in isolation (not in result).
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
+
+# Dedup regression: failed entry's token must remain retryable.
+# Queue two entries with distinct dedup tokens before the schema change.
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: ab' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&insert_deduplication_token=token-valid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    -d '{"payload":"dedup-valid"}'
+
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: abcd' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&insert_deduplication_token=token-invalid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    -d '{"payload":"dedup-invalid"}'
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+
+# Schema drift regression: text-compatible but Field-incompatible type change.
+# String -> Array(String): Field conversion would fail, but text re-parsing succeeds.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t;
+    CREATE TABLE t (tags String, payload String) ENGINE = MergeTree ORDER BY tuple();
+"
+
+${CLICKHOUSE_CURL} -sS \
+    -H "X-Tags: ['a','b']" \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Tags=tags" \
+    -d '{"payload":"text-compat"}'
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN tags Array(String)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+
+echo "--- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse"
+${CLICKHOUSE_CLIENT} -q "SELECT tags, payload FROM t"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
+
+echo "--- async: failed dedup token remains retryable after schema drift"
+# Only the valid entry ('ab') must be in the table.
+${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
+
+# Retry the previously-failed entry with the same token — must succeed now.
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: ab' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&insert_deduplication_token=token-invalid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    -d '{"payload":"dedup-retry"}'
+
+${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
+
+# Regression: waiter with wait_for_async_insert=1 must receive an exception, not silent
+# 0-row success, when schema drift invalidates the buffered header value during defaults
+# evaluation (input_format_defaults_for_omitted_fields=1 path).
+# HTTP enqueue is synchronous: by the time the curl process is backgrounded, the entry
+# is already queued, so there is no race between enqueue and the ALTER below.
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+
+drift_response=$(
+    ${CLICKHOUSE_CURL} -sS \
+        -H 'X-Code: abcd' \
+        "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&async_insert_busy_timeout_ms=60000&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+        -d '{"payload":"drift-waiter"}' 2>&1
+) &
+drift_pid=$!
+
+# Entry is now queued; shrink column to invalidate the buffered value.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(1)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+wait "${drift_pid}"
+
+echo "--- async: schema drift with wait_for_async_insert=1, waiter receives error"
+# Waiter must have received an error (TYPE_MISMATCH or similar).
+echo "${drift_response}" | grep -oE 'TYPE_MISMATCH|type.mismatch' | head -1 || echo 'ERROR_RECEIVED'
+# No rows must have been inserted.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t"

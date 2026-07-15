@@ -17,6 +17,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1454,6 +1455,22 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// Track per-entry row counts for column replication after the loop.
     std::vector<size_t> entry_num_rows;
 
+    /// Re-parses a stored 1-row column through text serialization to adapt it to a
+    /// new flush-time type after schema drift (ALTER TABLE ... MODIFY COLUMN).
+    /// This mirrors how body columns are re-parsed by the format at flush time,
+    /// so text-compatible changes (e.g. String -> Array(String)) succeed where
+    /// Field-based conversion would fail.
+    const FormatSettings fmt_settings_for_drift = getFormatSettings(insert_context);
+    auto reparse_for_drift = [&](const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type) -> ColumnPtr
+    {
+        WriteBufferFromOwnString str_buf;
+        from_type->getDefaultSerialization()->serializeText(*col, 0, str_buf, fmt_settings_for_drift);
+        auto new_col = to_type->createColumn();
+        ReadBufferFromString read_buf(str_buf.str());
+        to_type->getDefaultSerialization()->deserializeWholeText(*new_col, read_buf, fmt_settings_for_drift);
+        return new_col;
+    };
+
     for (const auto & entry : data->entries)
     {
         current_entry = entry;
@@ -1471,27 +1488,43 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         /// using the correct header-injected value for this entry's rows.
         if (!injected_column_infos.empty())
         {
+            /// Build constant columns for AddingDefaultsTransform. If schema drift
+            /// causes a conversion failure, fail this entry in isolation and skip it.
+            std::exception_ptr defaults_conversion_exception;
             Columns const_cols;
             const_cols.reserve(injected_column_infos.size());
             for (const auto & info : injected_column_infos)
             {
                 const auto & stored = entry->http_header_column_values[info.entry_parsed_idx];
                 const ColumnPtr & stored_col = stored.col;
-                /// Handle schema drift (ALTER TABLE ... MODIFY COLUMN during buffering):
-                /// if the push-time column type differs from the flush-time type, convert
-                /// via Field so the DEFAULT expression sees the right type.
                 if (!stored.push_time_type->equals(*info.type))
                 {
-                    Field value;
-                    stored_col->get(0, value);
-                    auto converted = info.type->createColumn();
-                    converted->insert(value);
-                    const_cols.push_back(std::move(converted));
+                    try
+                    {
+                        const_cols.push_back(reparse_for_drift(stored_col, stored.push_time_type, info.type));
+                    }
+                    catch (...)
+                    {
+                        /// Capture inside the catch — std::current_exception() is null after.
+                        defaults_conversion_exception = std::current_exception();
+                        break;
+                    }
                 }
                 else
                 {
                     const_cols.push_back(stored_col);
                 }
+            }
+
+            if (defaults_conversion_exception)
+            {
+                LOG_ERROR(logger, "Failed http_column schema-drift conversion for defaults in entry {}, skipping.",
+                    entry->query_id);
+                entry->finish(defaults_conversion_exception);
+                entry_num_rows.push_back(0);
+                add_to_async_insert_log(entry, "schema drift in defaults conversion", 0, bytes->size());
+                entry->resetChunk();
+                continue;
             }
             executor.setConstantColumnsForDefaults(std::move(const_cols));
         }
@@ -1501,9 +1534,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         total_rows += num_rows;
         entry_num_rows.push_back(num_rows);
-
-        /// it is ok if total_rows is 0 here or async_dedup_token is empty
-        deduplication_info->setUserToken(entry->async_dedup_token, num_rows);
 
         add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
         current_exception.clear();
@@ -1553,11 +1583,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                     {
                         try
                         {
-                            Field value;
-                            stored.col->get(0, value);
-                            auto converted = info.type->createColumn();
-                            converted->insert(value);
-                            col_to_use = std::move(converted);
+                            col_to_use = reparse_for_drift(stored.col, stored.push_time_type, info.type);
                         }
                         catch (...) // Ok: mark entry invalid; handled below after the loop
                         {
@@ -1605,7 +1631,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             col = std::move(new_col);
         }
 
-        /// Finish failed entries with an exception.
+        /// Finish entries whose schema-drift conversion failed.
         size_t ei2 = 0;
         for (const auto & entry : data->entries)
         {
@@ -1621,6 +1647,18 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             ++ei2;
         }
         total_rows = valid_rows;
+    }
+
+    /// Register dedup tokens only for entries whose rows actually reached the result.
+    /// Failed entries (schema drift) are excluded so their tokens remain retryable.
+    {
+        size_t ei = 0;
+        for (const auto & entry : data->entries)
+        {
+            if (entry_valid[ei])
+                deduplication_info->setUserToken(entry->async_dedup_token, entry_num_rows[ei]);
+            ++ei;
+        }
     }
 
     Chunk chunk(std::move(result_columns), total_rows);

@@ -783,11 +783,31 @@ void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
                     : " (MATERIALIZED columns require insert_allow_materialized_columns=1)");
     }
 
-    /// Only modify the explicit column list when the user provided one.
-    /// A null list means \"all table columns\": getSampleBlock already returns the
-    /// full schema including the http_column columns, so no modification is needed.
-    if (query.columns)
+    if (!query.columns)
     {
+        /// No explicit column list. Synthesize one with all insertable body columns
+        /// (minus the http_column_*-mapped ones) followed by the mapped columns.
+        /// This enforces the "body or header, not both" invariant consistently with
+        /// the explicit-list path: the format only ever sees the body columns, so a
+        /// body field matching a mapped column is treated as unknown by the format
+        /// regardless of input_format_skip_unknown_fields.
+        query.columns = make_intrusive<ASTExpressionList>();
+        for (const auto & col : columns_desc)
+        {
+            if (http_header_columns.contains(col.name))
+                continue;
+            const auto kind = col.default_desc.kind;
+            const bool is_body_col = (kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Ephemeral)
+                || (allow_materialized && kind == ColumnDefaultKind::Materialized);
+            if (is_body_col)
+                query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
+        }
+        for (const auto & [col_name, _] : http_header_columns)
+            query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+    }
+    else
+    {
+        /// Explicit list: check for conflicts and append mapped columns.
         NameSet existing_columns;
         for (const auto & child : query.columns->children)
             existing_columns.insert(child->getColumnName());
