@@ -14,7 +14,7 @@
 1
 1
 1
--- the scope requires the new analyzer, entering and staying
+-- the scope requires the analyzer, entering and staying
 1
 1
 -- reads, writes and introspection keep working under the scope
