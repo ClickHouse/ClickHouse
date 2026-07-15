@@ -49,12 +49,35 @@ function check_logs_credentials()
     __set_connection_args
     __shadow_credentials
     local code
-    # Catch both success and error to not fail on `set -e`
-    clickhouse-client "${CONNECTION_ARGS[@]:?}" -q 'SELECT 1 FORMAT Null' && return 0 || code=$?
-    if [ "$code" != 0 ]; then
-        echo 'Failed to connect to CI Logs cluster'
-        return $code
-    fi
+    # The remote CI logs cluster occasionally resets the connection, which is
+    # transient and unrelated to the credentials. Retry only that specific
+    # case. We match it on the stderr message "Connection reset by peer" rather
+    # than the exit status: the shell keeps only the low 8 bits of the client's
+    # exit code, so unrelated errors (e.g. 466/722) alias to 210, and the
+    # client also raises NETWORK_ERROR for permanent cases (protocol mismatch,
+    # generic NetException). A short --connect_timeout (instead of the 10s
+    # default) is applied to the probe only, so a real outage or a
+    # non-recoverable error (auth, config, DNS) fails fast: this probe is
+    # best-effort and must not slow every CI job. Export queries keep the
+    # default timeouts.
+    local attempt err
+    # BEGIN: logs-cluster connectivity probe loop
+    for attempt in 1 2 3; do
+        # Catch both success and error to not fail on `set -e`. Capture stderr
+        # so we can distinguish the transient reset from other failures.
+        err=$(clickhouse-client "${CONNECTION_ARGS[@]:?}" --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
+        # Only a "Connection reset by peer" is worth retrying; anything else
+        # will not recover on retry, so stop immediately.
+        if [[ "$err" != *"Connection reset by peer"* ]]; then
+            break
+        fi
+        echo "Attempt ${attempt}/3 to connect to CI Logs cluster failed (connection reset by peer)"
+        [ "$attempt" -lt 3 ] && sleep "$((attempt + 1))"
+    done
+    # END: logs-cluster connectivity probe loop
+    echo 'Failed to connect to CI Logs cluster'
+    echo "$err"
+    return "$code"
 }
 
 function setup_logs_replication()

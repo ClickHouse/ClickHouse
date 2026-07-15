@@ -868,6 +868,38 @@ public:
             && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
     }
 
+    /// Memoized "this subtree contains a correlated subquery" bit, keyed by node identity.
+    /// tryOptimizeAndCompareChain runs for every `and` node, and skipping a chain that holds a
+    /// correlated subquery requires walking its subtree; without memoization a deeply nested AND
+    /// chain would rescan the shared suffix at every level, making the guard quadratic and defeating
+    /// the `optimize_and_compare_chain_max_hash_work` budget. The map keys are QueryTreeNodePtr
+    /// (strong references), so cached nodes stay alive and their addresses cannot be reused by newly
+    /// allocated nodes while the pass runs. This pass never introduces a correlated subquery, so a
+    /// cached result stays valid for the rest of the traversal.
+    std::unordered_map<QueryTreeNodePtr, bool> correlated_subquery_cache;
+
+    bool subtreeContainsCorrelatedSubquery(const QueryTreeNodePtr & node)
+    {
+        if (auto it = correlated_subquery_cache.find(node); it != correlated_subquery_cache.end())
+            return it->second;
+
+        bool result = isCorrelatedQueryOrUnionNode(node);
+        if (!result)
+        {
+            for (const auto & child : node->getChildren())
+            {
+                if (child && subtreeContainsCorrelatedSubquery(child))
+                {
+                    result = true;
+                    break;
+                }
+            }
+        }
+
+        correlated_subquery_cache.emplace(node, result);
+        return result;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
@@ -1132,6 +1164,18 @@ private:
 
         auto & function_node = node->as<FunctionNode &>();
         if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
+            return;
+
+        /// This optimization derives transitive comparisons and clones an operand into each new
+        /// conjunct. When an operand holds a correlated subquery (e.g. `x < exists((SELECT ...))`),
+        /// cloning produces several copies of the subquery that share one action name. Decorrelation
+        /// then adds the same synthetic column on both sides of the generated join and
+        /// `HashJoin::getNonJoinedBlocks` fails the column-count check with `Unexpected number of
+        /// columns in result sample block`. A correlated subquery must be evaluated exactly once, so
+        /// skip the optimization for such a chain and keep the original expression - it executes
+        /// correctly without the transitive conjuncts. The check is memoized so that visiting every
+        /// `and` node in a nested chain stays linear overall (see `correlated_subquery_cache`).
+        if (subtreeContainsCorrelatedSubquery(node))
             return;
 
         /// Stop once this query has spent its AND-compare-chain hashing budget (measured in nodes
