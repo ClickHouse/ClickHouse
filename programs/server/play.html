@@ -2383,7 +2383,13 @@ class QueryResultElement extends HTMLElement
             link.href = text;
             link.setAttribute('target', '_blank');
             /// If the URL points to an image, preview it on hover (see `attachImagePreview`).
-            if (text.match(/\.(jpe?g|png|gif|webp)(?:[?#].*)?$/i))
+            /// Test the extension against the parsed pathname only: a query string or
+            /// fragment ending in an image extension (e.g. `https://host/endpoint#x.png`)
+            /// must not qualify, because the browser strips the fragment and requests
+            /// the non-image path.
+            let image_url_path = null;
+            try { image_url_path = new URL(text).pathname; } catch (e) { /* unparsable URL */ }
+            if (image_url_path !== null && image_url_path.match(/\.(jpe?g|png|gif|webp)$/i))
             {
                 attachImagePreview(link, text);
             }
