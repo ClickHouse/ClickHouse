@@ -17,12 +17,30 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
+#if USE_AWS_S3
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#endif
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <fmt/ranges.h>
 
 namespace DB
 {
+
+#if USE_AWS_S3
+namespace S3AuthSetting
+{
+extern const S3AuthSettingsString access_key_id;
+extern const S3AuthSettingsString secret_access_key;
+extern const S3AuthSettingsString session_token;
+extern const S3AuthSettingsString region;
+extern const S3AuthSettingsString role_arn;
+extern const S3AuthSettingsString role_session_name;
+extern const S3AuthSettingsBool use_environment_credentials;
+extern const S3AuthSettingsBool no_sign_request;
+}
+#endif
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -40,12 +58,20 @@ class LanceDatasetObjectInfo final : public ObjectInfo
 {
 public:
     LanceDatasetObjectInfo(String dataset_path_, Lance::TableStateSnapshot snapshot_)
-        : ObjectInfo(RelativePathWithMetadata(std::move(dataset_path_), ObjectMetadata{}))
+        : ObjectInfo(RelativePathWithMetadata(std::move(dataset_path_), createDatasetObjectMetadata()))
         , snapshot(std::move(snapshot_))
     {
     }
 
     const Lance::TableStateSnapshot snapshot;
+
+private:
+    static ObjectMetadata createDatasetObjectMetadata()
+    {
+        ObjectMetadata metadata;
+        metadata.is_size_known = false;
+        return metadata;
+    }
 };
 
 class LanceDatasetIterator final : public IObjectIterator
@@ -354,6 +380,28 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage configuration for Lance metadata is expired");
 
     Lance::DatasetOptions options;
+
+#if USE_AWS_S3
+    if (const auto * s3_configuration = dynamic_cast<const StorageS3Configuration *>(configuration_ptr.get()))
+    {
+        const auto & auth_settings = s3_configuration->getAuthSettings();
+        options.uri = fmt::format("s3://{}/{}", s3_configuration->url.bucket, s3_configuration->url.key);
+        options.use_s3 = true;
+        options.s3_endpoint = s3_configuration->url.endpoint;
+        options.s3_region = auth_settings[S3AuthSetting::region].value;
+        options.s3_access_key_id = auth_settings[S3AuthSetting::access_key_id].value;
+        options.s3_secret_access_key = auth_settings[S3AuthSetting::secret_access_key].value;
+        options.s3_session_token = auth_settings[S3AuthSetting::session_token].value;
+        options.s3_role_arn = auth_settings[S3AuthSetting::role_arn].value;
+        options.s3_role_session_name = auth_settings[S3AuthSetting::role_session_name].value;
+        options.s3_use_environment_credentials = auth_settings[S3AuthSetting::use_environment_credentials].value;
+        options.s3_no_sign_request = auth_settings[S3AuthSetting::no_sign_request].value;
+        options.s3_allow_http = s3_configuration->url.uri.getScheme() == "http";
+        options.s3_virtual_hosted_style_request = s3_configuration->url.is_virtual_hosted_style;
+        return options;
+    }
+#endif
+
     options.uri = configuration_ptr->getRawPath().path;
     return options;
 }

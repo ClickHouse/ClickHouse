@@ -536,6 +536,42 @@ void registerStorageDeltaLake(StorageFactory & factory)
 #if USE_LANCE
 void registerStorageLance(StorageFactory & factory)
 {
+#if USE_AWS_S3
+    factory.registerStorage(
+        LanceS3Definition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                switch (disk->getObjectStorage()->getType())
+                {
+                    case ObjectStorageType::S3:
+                        configuration = std::make_shared<StorageS3LanceConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<StorageS3LanceConfiguration>(storage_settings);
+
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::S3,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+#endif
+
     factory.registerStorage(
         LanceLocalDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
