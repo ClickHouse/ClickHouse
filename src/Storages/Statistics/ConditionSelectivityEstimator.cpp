@@ -507,8 +507,11 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
-        else
+        else if (column_estimator.stats->structureEquals(*column_stats))
             column_estimator.stats->merge(column_stats);
+        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
+        /// shifting the aggregate-function state layout). Skip this part's statistics so the
+        /// estimator still works with the compatible parts instead of crashing.
     }
 }
 

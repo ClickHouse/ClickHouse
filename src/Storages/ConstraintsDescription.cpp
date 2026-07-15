@@ -1,7 +1,10 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/misc.h>
 #include <Planner/AnalyzeExpression.h>
 
@@ -187,6 +190,13 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
+    /// The columns that are physically available when the constraint is checked (the top-level table columns).
+    /// A constraint expression may reference subcolumns (e.g. `x.null` of a `Nullable` column, `arr.size0` of an
+    /// `Array`) that are not present in this block; they have to be extracted from their parent columns first.
+    Block available_columns;
+    for (const auto & column : source_columns_)
+        available_columns.insert({column.type->createColumn(), column.type, column.name});
+
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
@@ -204,8 +214,15 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             /// Executing the subquery now would emit a stray `Progress` packet to the client.
             /// `CheckConstraintsTransform::onConsume` builds the sets at the right time via
             /// `VirtualColumnUtils::buildSetsForDAG`, matching the legacy behavior.
-            res.push_back(analyzeExpressionToActions(
-                expr, source_columns_, context, /* add_aliases */ false, CompileExpressions::yes, /* build_subquery_sets */ false));
+            auto constraint_dag = analyzeExpressionToActionsDAG(
+                expr, source_columns_, context, /* add_aliases */ false, /* project_result */ true, /* build_subquery_sets */ false);
+
+            /// Prepend actions that extract the required subcolumns from their parent columns, so the expression
+            /// can be evaluated on a block that contains only the top-level columns.
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), context);
+            res.push_back(std::make_shared<ExpressionActions>(
+                ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag)),
+                ExpressionActionsSettings(context, CompileExpressions::yes)));
         }
     }
     return res;
