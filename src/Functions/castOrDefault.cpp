@@ -20,6 +20,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -86,6 +87,16 @@ public:
         /// consistently between getReturnTypeImpl and executeImpl.
         ColumnsWithTypeAndName cast_args{arguments[0], arguments[1]};
         DataTypePtr result_type = removeNullable(cast_or_null_resolver->getReturnType(cast_args));
+
+        /// The resolver uses CastType::accurateOrNull which wraps non-Nullable
+        /// targets in Nullable (to detect cast failures via NULL). We strip that
+        /// wrapper above. But when the user explicitly requested a Nullable target
+        /// type, the resolver didn't add the Nullable wrapper — the target was
+        /// already Nullable — so removeNullable incorrectly stripped the
+        /// user-requested Nullable. Restore it.
+        auto user_target_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        if (user_target_type->isNullable())
+            result_type = makeNullable(result_type);
 
         if (keep_nullable && arguments.front().type->isNullable())
             result_type = makeNullable(result_type);
