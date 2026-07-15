@@ -230,7 +230,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int TIMEOUT_EXCEEDED;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -1936,21 +1935,13 @@ static BlockIO executeQueryImpl(
 
         if (process_list_entry)
         {
-            /// Query was killed before execution
-            const auto query_status = process_list_entry->getQueryStatus();
-            if (query_status->isKilled())
-            {
-                const auto & query_id = query_status->getClientInfo().current_query_id;
-                /// A max_execution_time timeout can fire while the query is still pending (e.g. during
-                /// planning), before any executor is started. In that case the kill reason is TIMEOUT,
-                /// so report TIMEOUT_EXCEEDED to match the behavior of a timeout that fires during execution
-                /// instead of the generic QUERY_WAS_CANCELLED.
-                if (query_status->getCancelReason() == CancelReason::TIMEOUT)
-                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                        "Query '{}' is killed in pending state (timeout exceeded)", query_id);
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", query_id);
-            }
+            /// Query was killed before execution.
+            /// Funnel through QueryStatus so the pending-state path reports the same exception as
+            /// the rest of the cancellation machinery: TIMEOUT_EXCEEDED for a max_execution_time
+            /// timeout (which can fire while still pending, e.g. during planning), the concrete
+            /// stored exception when the kill carried one (e.g. CANCELLED_BY_ERROR with
+            /// FAILED_TO_SYNC_BACKUP_OR_RESTORE), and QUERY_WAS_CANCELLED otherwise.
+            process_list_entry->getQueryStatus()->throwIfKilled();
         }
 
         /// Hold element of process list till end of query execution.
