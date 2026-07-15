@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -23,6 +24,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -39,6 +42,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -75,7 +79,10 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -91,6 +98,7 @@ namespace Setting
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
+    extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
@@ -181,14 +189,13 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
         pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
     const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
-    MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, nullptr, nullptr, &exact_ranges, pk_to_minmax_slot_ptr, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(
+            part, metadata_snapshot, key_condition, nullptr, nullptr, /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
-    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -808,9 +815,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
     /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
+    ///    the on-the-fly mutations above) no longer describe the values the query sees.
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context)))
     {
         return parts;
     }
@@ -1433,12 +1443,58 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes)
+{
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(indexes.use_skip_indexes);
+
+    /// Salt with the identity of the skip indexes that index analysis actually used. This set is
+    /// already the effective one: buildIndexes removes indexes disabled via ignore_data_skipping_indices,
+    /// drops indexes no longer present in metadata, and leaves it empty when use_skip_indexes = 0. So
+    /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
+    /// indexes off) changes the key, and a query that did not run an index never reads a verdict
+    /// produced by it. Each index contributes a stable identity: its name, its granularity, and the
+    /// tree hash of its definition AST (type, expression, arguments). name and granularity are plain
+    /// members of ASTIndexDeclaration and are not part of its tree hash, so they are folded in
+    /// separately; otherwise two indexes with the same expression and type but a different name or
+    /// granularity would share a key (the partially-materialized case: a verdict produced while one
+    /// index ran could be served to a query running only the other). The name is length-prefixed so
+    /// distinct (name, granularity) pairs cannot collide by concatenation. Index names are unique
+    /// within a table, so sorting by name is a deterministic, order-independent ordering.
+    std::vector<std::tuple<String, UInt64, IASTHash>> index_identities;
+    index_identities.reserve(indexes.skip_indexes.useful_indices.size());
+    for (const auto & useful_index : indexes.skip_indexes.useful_indices)
+        index_identities.emplace_back(
+            useful_index.index->index.name,
+            useful_index.index->index.granularity,
+            useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
+    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return std::get<0>(l) < std::get<0>(r); });
+
+    hash.update(index_identities.size());
+    for (const auto & [name, granularity, definition_hash] : index_identities)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(granularity);
+        hash.update(definition_hash.low64);
+        hash.update(definition_hash.high64);
+    }
+
+    /// use_skip_indexes_for_disjunctions changes the exclusions produced by the same indexes for OR
+    /// predicates, so two queries with different effective modes must not share a key.
+    hash.update(indexes.use_skip_indexes_for_disjunctions);
+
+    return hash.get64();
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1452,6 +1508,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
+
+    /// Each condition is looked up under two keys (see the write sides):
+    ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
+    ///     MergeTreeSelectProcessor, object storage) which are always sound; and
+    ///   * a hash salted with the effective skip-index profile that index analysis ran
+    ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
+    ///     written by ReadFromMergeTree.
+    /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
+    /// index with a preprocessor), so they must only be consulted by a query that ran the same set
+    /// of indexes; salting the key with the running index set (and disjunction mode) guarantees a
+    /// query that ran a different set (use_skip_indexes = 0, an index dropped/ignored, or a
+    /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
+    /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
+    /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
+    /// skip-index poisoning of issue #108519.
 
     struct Stats
     {
@@ -1474,6 +1545,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         if (apply_top_k_salt && top_k_filter_info)
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
+        /// The skip-index-analysis exclusions written by ReadFromMergeTree are stored under a key
+        /// salted with the effective skip-index profile, computed from the same (top-k-salted)
+        /// condition hash the write side used, so only a query that ran the same set of indexes
+        /// consults them. See getSkipIndexProfiledConditionHash and issue #108519.
+        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, indexes);
+
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1482,14 +1559,33 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
+            /// Row-level entries are sound under any profile; skip-index entries only under the
+            /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
+            /// This is one logical cache consultation, so it must emit at most one
+            /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
+            /// the hit/miss ourselves and suppress the per-read events on both lookups.
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash, /*increment_profile_events=*/false);
+            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash, /*increment_profile_events=*/false);
+            if (!row_level_marks_opt && !skip_index_marks_opt)
             {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
-            auto & matching_marks = *matching_marks_opt;
+            QueryConditionCache::MatchingMarks matching_marks;
+            if (row_level_marks_opt && skip_index_marks_opt
+                && row_level_marks_opt->size() == skip_index_marks_opt->size())
+            {
+                matching_marks = std::move(*row_level_marks_opt);
+                for (size_t i = 0; i < matching_marks.size(); ++i)
+                    matching_marks[i] = matching_marks[i] && (*skip_index_marks_opt)[i];
+            }
+            else if (row_level_marks_opt)
+                matching_marks = std::move(*row_level_marks_opt);
+            else
+                matching_marks = std::move(*skip_index_marks_opt);
             MarkRanges ranges;
             const auto & part = it->data_part;
             size_t min_marks_for_seek = roundRowsOrBytesToMarks(
@@ -2141,65 +2237,34 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
-        size_t steps = 0;
-
-        for (const auto & part_range : part_with_ranges.ranges)
+        GenericExclusionSearchSettings search_settings
         {
-            /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-            /// At each step, take the left segment and check if it fits.
-            /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-            /// If the segment is already of one mark length, add it to response and discard it.
+            .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
+            .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
+            .min_marks_for_seek = min_marks_for_seek,
+        };
 
-            std::vector<MarkRange> ranges_stack = {part_range};
-            while (!ranges_stack.empty())
-            {
-                MarkRange range = ranges_stack.back();
-                ranges_stack.pop_back();
+        auto search_result = genericExclusionSearch(
+            part_with_ranges.ranges,
+            [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+            search_settings,
+            exact_ranges != nullptr);
 
-                ++steps;
-
-                auto result = check_in_range(range, BoolMask());
-                if (!result.can_be_true)
-                    continue;
-
-                if (!result.can_be_false || range.end == range.begin + 1)
-                {
-                    /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
-                        res.push_back(range);
-                    else
-                        res.back().end = range.end;
-
-                    if (exact_ranges && !result.can_be_false)
-                    {
-                        if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                            exact_ranges->push_back(range);
-                        else
-                            exact_ranges->back().end = range.end;
-                    }
-                }
-                else
-                {
-                    /// Break the segment and put the result on the stack from right to left.
-                    size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                    size_t end = 0;
-
-                    for (end = range.end; end > range.begin + step; end -= step)
-                        ranges_stack.emplace_back(end - step, end);
-
-                    ranges_stack.emplace_back(range.begin, end);
-                }
-            }
-        }
+        res = std::move(search_result.ranges);
+        if (exact_ranges)
+            *exact_ranges = std::move(search_result.exact_ranges);
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
+        if (search_result.reached_step_limit)
+            ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchStepLimitReached);
         LOG_TRACE(
             log,
-            "Used generic exclusion search {}over index for part {} with {} steps",
+            "Used generic exclusion search {}over index for part {} with {} steps{}",
             exact_ranges ? "with exact ranges " : "",
             part_name,
-            steps);
+            search_result.num_steps,
+            search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
     }
     else
     {
