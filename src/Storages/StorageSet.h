@@ -97,4 +97,11 @@ private:
     size_t getSize(ContextPtr) const override;
 };
 
+/// Returns the underlying StorageSet if `storage` is a StorageSet (including derived set storages
+/// such as the Cloud-only StorageSharedSet), or resolves to one through a chain of StorageAlias
+/// wrappers. Returns nullptr otherwise, including a broken alias whose target cannot be resolved.
+/// A set-backed table is consumed natively as a prepared set on the right of IN and cannot be read,
+/// so both the analyzer and the planner must recognize it through any alias wrapping.
+StorageSet * getSetStorageFromTable(const StoragePtr & storage);
+
 }

@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -196,6 +197,28 @@ SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
     return set;
+}
+
+
+StorageSet * getSetStorageFromTable(const StoragePtr & storage)
+{
+    StoragePtr current = storage;
+    /// Bound the walk so a self-referential or cyclic alias chain cannot loop forever.
+    for (size_t depth = 0; current && depth < 64; ++depth)
+    {
+        if (auto * storage_set = dynamic_cast<StorageSet *>(current.get()))
+            return storage_set;
+
+        if (const auto * alias = dynamic_cast<const StorageAlias *>(current.get()))
+        {
+            current = alias->tryGetTargetTable();
+            continue;
+        }
+
+        break;
+    }
+
+    return nullptr;
 }
 
 
