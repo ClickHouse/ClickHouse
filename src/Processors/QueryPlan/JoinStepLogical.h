@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -140,28 +141,35 @@ public:
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
-        std::optional<UInt64> left_rows_ = {},
-        std::optional<UInt64> right_rows_ = {},
         std::unordered_map<String, ColumnStats> column_stats_ = {},
         bool imprecise_estimate_ = false)
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
-        left_rows_estimation = left_rows_;
-        right_rows_estimation = right_rows_;
         result_column_stats = std::move(column_stats_);
         imprecise_estimate = imprecise_estimate_;
     }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
     {
-        left_table_label = std::move(left_table_label_);
-        right_table_label = std::move(right_table_label_);
+        left_relation = RelationEstimateInfo{.name = std::move(left_table_label_)};
+        right_relation = RelationEstimateInfo{.name = std::move(right_table_label_)};
+    }
+
+    void setInputRelations(RelationEstimateInfo left_relation_, RelationEstimateInfo right_relation_)
+    {
+        left_relation = std::move(left_relation_);
+        right_relation = std::move(right_relation_);
     }
 
     std::pair<std::reference_wrapper<const String>, std::reference_wrapper<const String>> getInputLabels() const
     {
-        return {std::cref(left_table_label), std::cref(right_table_label)};
+        return {std::cref(left_relation.name), std::cref(right_relation.name)};
+    }
+
+    std::pair<std::reference_wrapper<const RelationEstimateInfo>, std::reference_wrapper<const RelationEstimateInfo>> getInputRelations() const
+    {
+        return {std::cref(left_relation), std::cref(right_relation)};
     }
 
     String getReadableRelationName() const;
@@ -204,8 +212,6 @@ protected:
 
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
-    std::optional<UInt64> left_rows_estimation = {};
-    std::optional<UInt64> right_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
 
     /// True when the row count estimation used by join reordering was derived from the primary index
@@ -213,8 +219,8 @@ protected:
     bool imprecise_estimate = false;
     UInt64 right_hash_table_cache_key = 0;
 
-    String left_table_label;
-    String right_table_label;
+    RelationEstimateInfo left_relation;
+    RelationEstimateInfo right_relation;
 
     /// Dummy stats retrieved from hints, used for debugging
     String dummy_stats;

@@ -286,9 +286,12 @@ static std::string_view joinTypePretty(const JoinOperator & join_operator)
 
 String JoinStepLogical::getReadableRelationName() const
 {
-    if (left_table_label.empty() || right_table_label.empty())
+    if (left_relation.name.empty() || right_relation.name.empty())
         return "";
-    return fmt::format("{} {} {}", left_table_label, joinTypePretty(join_operator), right_table_label);
+    String right_name = right_relation.displayName();
+    if (right_relation.composite)
+        right_name = fmt::format("({})", right_name);
+    return fmt::format("{} {} {}", left_relation.displayName(), joinTypePretty(join_operator), right_name);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -1493,8 +1496,8 @@ void JoinStepLogical::buildPhysicalJoin(
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
 
-        if (join_step->right_rows_estimation)
-            join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
+        if (join_step->right_relation.estimated_rows)
+            join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
         if (hash_table_key_hash)
         {

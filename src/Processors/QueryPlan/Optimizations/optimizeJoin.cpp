@@ -323,7 +323,7 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
             /// join-reordering diagnostic reflect that the fallback was caused by missing column statistics.
             total_number_of_distinct_values.reset();
             aggregation_stats.imprecise_estimate = true;
-            if (aggregation_stats.source == RowEstimateSource::Statistics)
+            if (aggregation_stats.source == RowEstimateSource::Statistics || aggregation_stats.source == RowEstimateSource::NoSource)
                 aggregation_stats.source = RowEstimateSource::NoStatistics;
             continue;
         }
@@ -368,7 +368,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                RelationStats stats {
+                    .estimated_rows = relation_profile.rows,
+                    .column_stats = relation_profile.column_stats,
+                    .table_name = table_display_name,
+                    .source = RowEstimateSource::Statistics};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
@@ -421,7 +425,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -466,6 +470,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
         return RelationStats{
             .estimated_rows = join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
@@ -1056,44 +1062,33 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
-    std::unordered_map<BitSet, String> relation_names;
+    std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        const auto & table_name = rel.table_name;
-        auto estimated_count = rel.estimated_rows;
         leaf_imprecise[i] = rel.imprecise_estimate;
 
-        /// A derived sub-join keeps `Statistics` but may still be imprecise; fall back to the bool.
-        std::string_view source_tag = rowEstimateSourceTag(rel.source);
-        if (source_tag.empty() && rel.imprecise_estimate)
-            source_tag = "no_stats";
-
-        String estimation;
-        if (estimated_count)
-            estimation = fmt::format("[{}{}{}]", source_tag, source_tag.empty() ? "" : "~", estimated_count.value());
-        else if (!source_tag.empty())
-            estimation = fmt::format("[{}~?]", source_tag);
-
-        if (!table_name.empty())
-            relation_names[BitSet().set(i)] = fmt::format("{}{}", table_name, estimation);
-        else
-            relation_names[BitSet().set(i)] = fmt::format("R{}{}", i, estimation);
+        relation_infos[BitSet().set(i)] = RelationEstimateInfo{
+            .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
+            .estimated_rows = rel.estimated_rows,
+            .source = rel.source,
+            .imprecise_estimate = rel.imprecise_estimate};
 
         if (isMissingStatisticsSource(rel.source))
-            relations_without_statistics.push_back(table_name.empty() ? fmt::format("table{}", i) : table_name);
+            relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
 
+    /// The listed names can be aliases or subquery labels, so no concrete `ALTER` command is suggested.
     if (!relations_without_statistics.empty())
         LOG_DEBUG(
             getLogger("optimizeJoin"),
             "Join order optimization uses imprecise row count estimates derived from the primary index "
-            "because the following table(s) have no column statistics available for join reordering: {}. "
-            "The chosen join order may be suboptimal. Consider creating statistics and enabling the "
-            "'use_statistics' setting, for example: ALTER TABLE {} MATERIALIZE STATISTICS ALL",
-            fmt::join(relations_without_statistics, ", "), relations_without_statistics.front());
+            "because the following relation(s) have no column statistics available for join reordering: {}. "
+            "The chosen join order may be suboptimal. Consider creating column statistics for the joined tables "
+            "(for example, `ALTER TABLE <table> MATERIALIZE STATISTICS ALL`) and enabling the 'use_statistics' setting",
+            fmt::join(relations_without_statistics, ", "));
 
     auto global_expression_actions = std::move(query_graph_builder.expression_actions);
     auto global_actions_dag = global_expression_actions.getActionsDAG();
@@ -1239,7 +1234,6 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 /// For hash joins, we want to keep the smaller side on the right
                 std::swap(left_rels, right_rels);
                 std::swap(left_child_node, right_child_node);
-                std::swap(lhs_estimation, rhs_estimation);
                 join_operator.kind = reverseJoinKind(join_operator.kind);
             }
 
@@ -1397,22 +1391,20 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 join_settings,
                 sorting_settings);
 
-            auto left_label = relation_names[left_rels];
-            auto right_label = relation_names[right_rels];
-
-            if (!right_label.empty() && right_rels.count() > 1)
-                right_label = fmt::format("({})", right_label);
-
-            join_step->setInputLabels(std::move(left_label), std::move(right_label));
-            relation_names[entry->relations] = join_step->getReadableRelationName();
-
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
             for (size_t i = 0; i < leaf_imprecise.size(); ++i)
                 if (entry->relations.test(i))
                     imprecise_estimate |= leaf_imprecise[i];
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, imprecise_estimate);
+            join_step->setInputRelations(relation_infos[left_rels], relation_infos[right_rels]);
+            relation_infos[entry->relations] = RelationEstimateInfo{
+                .name = join_step->getReadableRelationName(),
+                .estimated_rows = entry->estimated_rows,
+                .imprecise_estimate = imprecise_estimate,
+                .composite = true};
+
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate);
 
             auto & new_node = nodes.emplace_back();
 

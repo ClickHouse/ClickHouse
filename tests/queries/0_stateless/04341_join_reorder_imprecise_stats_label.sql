@@ -2,9 +2,12 @@
 -- the client log stream so the test harness does not treat it as unexpected stderr output.
 SET send_logs_level = 'fatal';
 
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on the estimate labels
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET allow_experimental_statistics = 1;
+SET materialize_statistics_on_insert = 1; -- pinned: the `t_stats_*` cases rely on materialized statistics
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_join_swap_table = 0;
