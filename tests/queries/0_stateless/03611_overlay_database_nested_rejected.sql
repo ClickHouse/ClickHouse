@@ -10,7 +10,7 @@
 -- `top.t` with `top = Overlay('mid')` and `mid = Overlay('src')` resolves straight to `src.t`, so a
 -- check that only sees the written id (`top.t`) and the resolved storage id (`src.t`) would skip the
 -- grants and row policies defined on `mid.t`. Such nesting is therefore rejected at CREATE time.
--- A single-level facade keeps working under both the old and the new analyzer.
+-- A single-level facade keeps working under both the old and the current analyzer.
 -- Related: https://github.com/ClickHouse/ClickHouse/pull/86768
 
 DROP DATABASE IF EXISTS ov_nested_src;
