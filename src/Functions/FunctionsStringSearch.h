@@ -137,7 +137,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        /// The OrNull variants return NULL instead of throwing on execution errors.
+        if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)
+            return false;
+        return Impl::can_throw;
+    }
 
     size_t getNumberOfArguments() const override
     {

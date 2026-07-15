@@ -42,7 +42,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isDeterministic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -57,8 +57,12 @@ public:
              "UInt8/UInt16/UInt32/UInt64 (constant)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        return std::make_shared<DataTypeUInt8>();
+    }
 
-        /// Validate the constant rounds; canThrow relies on this build-time check.
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        unsigned rounds = default_rounds;
         if (arguments.size() == 2)
         {
             const UInt64 r = arguments[1].column->getUInt(0);
@@ -72,16 +76,8 @@ public:
                     getName(),
                     max_rounds,
                     r);
+            rounds = static_cast<unsigned>(std::min<UInt64>(r, std::numeric_limits<unsigned>::max()));
         }
-
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        unsigned rounds = default_rounds;
-        if (arguments.size() == 2)
-            rounds = static_cast<unsigned>(std::min<UInt64>(arguments[1].column->getUInt(0), std::numeric_limits<unsigned>::max()));
 
         const IColumn * column = arguments[0].column.get();
         auto result = ColumnUInt8::create(input_rows_count);
