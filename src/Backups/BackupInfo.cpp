@@ -660,6 +660,35 @@ namespace
         result += ')';
         return result;
     }
+
+    NamedCollectionPtr resolveNamedCollection(const BackupInfo & info, ContextPtr context, bool strict_override_validation)
+    {
+        if (info.id_arg.empty())
+            return nullptr;
+
+        if (info.frozen_named_collection)
+        {
+            if (context)
+                context->checkAccess(AccessType::NAMED_COLLECTION, info.id_arg);
+            return info.frozen_named_collection;
+        }
+
+        if (!context)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to resolve named collection `{}`", info.id_arg);
+
+        ASTs collection_args;
+        collection_args.reserve(1 + info.kv_args.size());
+        collection_args.push_back(make_intrusive<ASTIdentifier>(info.id_arg));
+        collection_args.insert(collection_args.end(), info.kv_args.begin(), info.kv_args.end());
+
+        return tryGetNamedCollectionWithOverrides(
+            collection_args,
+            context,
+            /* throw_unknown_collection = */ true,
+            /* complex_args = */ nullptr,
+            /* dependent_table_id = */ nullptr,
+            strict_override_validation);
+    }
 }
 
 ASTPtr BackupInfo::toAST() const
@@ -828,7 +857,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
 
     validateBackupInfoShapeForNormalizedIdentity(*this, context);
 
-    auto collection = getNamedCollection(context);
+    auto collection = resolveNamedCollection(*this, context, /* strict_override_validation = */ true);
     BackupInfo resolved = *this;
     resolved.id_arg.clear();
     resolved.kv_args.clear();
@@ -967,31 +996,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
 
 NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
 {
-    if (id_arg.empty())
-        return nullptr;
-
-    if (frozen_named_collection)
-    {
-        if (context)
-            context->checkAccess(AccessType::NAMED_COLLECTION, id_arg);
-        return frozen_named_collection;
-    }
-
-    if (!context)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to resolve named collection `{}`", id_arg);
-
-    ASTs collection_args;
-    collection_args.reserve(1 + kv_args.size());
-    collection_args.push_back(make_intrusive<ASTIdentifier>(id_arg));
-    collection_args.insert(collection_args.end(), kv_args.begin(), kv_args.end());
-
-    return tryGetNamedCollectionWithOverrides(
-        collection_args,
-        context,
-        /* throw_unknown_collection = */ true,
-        /* complex_args = */ nullptr,
-        /* dependent_table_id = */ nullptr,
-        /* strict_override_validation = */ true);
+    return resolveNamedCollection(*this, context, /* strict_override_validation = */ false);
 }
 
 BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
@@ -1000,7 +1005,7 @@ BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
         return *this;
 
     BackupInfo res = *this;
-    res.frozen_named_collection = getNamedCollection(context)->duplicate();
+    res.frozen_named_collection = resolveNamedCollection(*this, context, /* strict_override_validation = */ true)->duplicate();
     return res;
 }
 
