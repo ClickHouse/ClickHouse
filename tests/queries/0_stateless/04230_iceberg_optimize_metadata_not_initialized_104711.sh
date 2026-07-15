@@ -11,7 +11,8 @@
 #
 # We reproduce the "could not load metadata" state by:
 #   1. creating an Iceberg table with `iceberg_metadata_compression_method='deflate'`,
-#   2. issuing an `INSERT` with an invalid `output_format_compression_level=11`
+#   2. issuing an `INSERT` with an out-of-range `output_format_compression_level=13`
+#      (above the max supported deflate level - 9 for zlib, 12 for libdeflate)
 #      so the second metadata file lands on disk corrupted,
 #   3. `DETACH ... SYNC` + `ATTACH` (equivalent to a server restart from the
 #      perspective of `DataLakeConfiguration::current_metadata`),
@@ -35,8 +36,9 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # Step 2: provoke the corrupt-metadata-on-disk state via an INSERT with an
-# unsupported compression level. The INSERT itself must fail.
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --output_format_compression_level=11 \
+# out-of-range compression level (13 exceeds the deflate max of 9 for zlib and
+# 12 for libdeflate). The INSERT itself must fail.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --output_format_compression_level=13 \
     --query "INSERT INTO ${TABLE} VALUES (2)" 2>&1 \
     | grep -F 'INCORRECT_DATA' > /dev/null && echo "INSERT failed as expected"
 

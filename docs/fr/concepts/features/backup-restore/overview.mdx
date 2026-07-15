@@ -1,0 +1,328 @@
+---
+description: 'Vue d’ensemble de la sauvegarde et de la restauration dans ClickHouse'
+sidebarTitle: 'Vue d’ensemble'
+slug: /operations/backup/overview
+title: 'Sauvegarde et restauration dans ClickHouse'
+doc_type: 'reference'
+---
+
+import GenericSettings from '/snippets/fr/_generic_settings.mdx';
+import Syntax from '/snippets/fr/_syntax.mdx';
+import AzureSettings from '/snippets/fr/_azure_settings.mdx';
+import S3Settings from '/snippets/fr/_s3_settings.mdx';
+
+> Cette section présente de manière générale les sauvegardes et les restaurations dans ClickHouse. Pour une
+> description plus détaillée de chaque méthode de sauvegarde, consultez les pages consacrées aux méthodes spécifiques
+> dans la barre latérale.
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Bien que la [réplication](/fr/reference/engines/table-engines/mergetree-family/replication) offre une protection contre les pannes matérielles, elle ne
+protège pas contre les erreurs humaines : suppression accidentelle de données, suppression de la mauvaise
+table ou d&#39;une table sur le mauvais cluster, et bogues logiciels entraînant un traitement incorrect
+des données ou leur corruption.
+
+Dans de nombreux cas, ce type d&#39;erreur affectera toutes les répliques. ClickHouse intègre des
+mécanismes de protection pour éviter certains types d&#39;erreurs. Par exemple, [par défaut](/fr/reference/settings/session-settings#max_table_size_to_drop),
+vous ne pouvez pas simplement supprimer des tables utilisant un moteur de la famille `MergeTree` contenant plus de
+50 Go de données. Cependant, ces mécanismes de protection ne couvrent pas tous les cas possibles et
+des problèmes peuvent malgré tout survenir.
+
+Pour limiter efficacement les erreurs humaines potentielles, vous devez préparer avec soin une
+stratégie de sauvegarde et de restauration de vos données **à l&#39;avance**.
+
+Chaque entreprise dispose de ressources et d&#39;exigences métier différentes. Il
+n&#39;existe donc pas de solution universelle de sauvegarde et de restauration ClickHouse qui convienne
+à toutes les situations. Ce qui fonctionne pour un gigaoctet de données ne fonctionnera probablement
+pas pour des dizaines de pétaoctets de données. Il existe diverses approches possibles, chacune avec ses avantages
+et ses inconvénients, présentées dans cette section de la documentation. Il est judicieux
+d&#39;utiliser plusieurs approches plutôt qu&#39;une seule afin de compenser leurs différentes
+limites.
+
+<Note>
+  Gardez à l&#39;esprit que si vous avez sauvegardé quelque chose sans jamais essayer de le restaurer,
+  il y a de fortes chances que la restauration ne fonctionne pas correctement lorsque vous en aurez réellement besoin (ou qu&#39;à tout
+  le moins, elle prenne plus de temps que ce que l&#39;entreprise peut tolérer). Quelle que soit l&#39;approche de sauvegarde
+  que vous choisissez, veillez également à automatiser le processus de restauration et entraînez-vous
+  régulièrement sur un cluster ClickHouse de rechange.
+</Note>
+
+Les pages suivantes détaillent les différentes méthodes de sauvegarde et de
+restauration disponibles dans ClickHouse :
+
+| Page                                                                                                                             | Description                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [Sauvegarde/restauration à l&#39;aide d&#39;un disque local ou d&#39;un disque S3](/fr/concepts/features/backup-restore/local-disk) | Détaille la sauvegarde/restauration vers ou depuis un disque local ou un disque S3        |
+| [Sauvegarde/restauration à l&#39;aide d&#39;un endpoint S3](/fr/concepts/features/backup-restore/s3-endpoint)                       | Détaille la sauvegarde/restauration vers ou depuis un endpoint S3                         |
+| [Sauvegarde/restauration à l&#39;aide d&#39;AzureBlobStorage](/fr/concepts/features/backup-restore/azure-blob-storage)              | Détaille la sauvegarde/restauration vers ou depuis Azure Blob Storage                     |
+| [Méthodes alternatives](/fr/concepts/features/backup-restore/alternative-methods)                                                   | Présente des méthodes de sauvegarde alternatives                                          |
+| [Sauvegarde snapshot](/fr/concepts/features/backup-restore/snapshot)                                                                | Snapshots légers pour les tables SharedMergeTree utilisant le stockage d&#39;objets cloud |
+
+Les sauvegardes peuvent :
+
+* être [complètes ou incrémentielles](#backup-types)
+* être [synchrones ou asynchrones](#synchronous-vs-asynchronous)
+* être [concurrentes ou non concurrentes](#concurrent-vs-non-concurrent)
+* être [compressées ou non compressées](#compressed-vs-uncompressed)
+* utiliser des [collections nommées](#using-named-collections)
+* être protégées par mot de passe
+* porter sur des [tables système, tables de logs ou tables de gestion des accès](#system-backups)
+
+<div id="backup-types">
+  ## Types de sauvegarde
+</div>
+
+Les sauvegardes peuvent être complètes ou incrémentielles. Les sauvegardes complètes constituent une copie intégrale des
+données, tandis que les sauvegardes incrémentielles ne contiennent que les modifications apportées depuis la dernière sauvegarde complète.
+
+Les sauvegardes complètes offrent l’avantage d’être une méthode de récupération simple, indépendante (des autres sauvegardes)
+et fiable. Cependant, elles peuvent prendre beaucoup de temps à s’exécuter et
+occuper beaucoup d’espace. Les sauvegardes incrémentielles, en revanche, sont plus
+efficaces à la fois en temps et en espace, mais la restauration des données nécessite que toutes
+les sauvegardes soient disponibles.
+
+Selon vos besoins, vous pouvez privilégier :
+
+* **Les sauvegardes complètes** pour les petites bases de données ou les données critiques.
+* **Les sauvegardes incrémentielles** pour les grandes bases de données ou lorsque les sauvegardes doivent être effectuées fréquemment et à moindre coût.
+* **Les deux**, par exemple des sauvegardes complètes hebdomadaires et des sauvegardes incrémentielles quotidiennes.
+
+<div id="synchronous-vs-asynchronous">
+  ## Sauvegardes synchrones et asynchrones
+</div>
+
+Les commandes `BACKUP` et `RESTORE` peuvent également être marquées `ASYNC`. Dans ce cas, la
+commande de sauvegarde renvoie immédiatement, et le processus de sauvegarde s&#39;exécute en arrière-plan.
+Si les commandes ne sont pas marquées `ASYNC`, le processus de sauvegarde est synchrone et
+la commande reste bloquée jusqu&#39;à ce que la sauvegarde soit terminée.
+
+<div id="concurrent-vs-non-concurrent">
+  ## Sauvegardes concurrentes ou non concurrentes
+</div>
+
+Par défaut, ClickHouse autorise les sauvegardes et les restaurations
+concurrentes. Cela signifie que vous
+pouvez lancer simultanément plusieurs opérations de sauvegarde ou de restauration. Cependant,
+des paramètres au niveau du serveur permettent de désactiver ce comportement. Si vous définissez
+ces paramètres sur false, une seule opération de sauvegarde ou de restauration peut s’exécuter
+sur un cluster à la fois. Cela peut aider à éviter la contention des ressources ou d’éventuels
+conflits entre les opérations.
+
+Pour interdire les sauvegardes/restaurations concurrentes, vous pouvez utiliser respectivement les paramètres suivants :
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+La valeur par défaut des deux est true ; par défaut, les sauvegardes/restaurations concurrentes sont donc
+autorisées. Lorsque ces paramètres sont définis sur false sur un cluster, une seule sauvegarde/restauration
+peut être exécutée sur un cluster à la fois.
+
+<div id="compressed-vs-uncompressed">
+  ## Sauvegardes compressées ou non compressées
+</div>
+
+Les sauvegardes ClickHouse prennent en charge la compression via les paramètres `compression_method` et `compression_level`.
+
+Lors de la création d’une sauvegarde, vous pouvez spécifier :
+
+```sql
+BACKUP TABLE test.table
+  TO Disk('backups', 'filename.zip')
+  SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="using-named-collections">
+  ## Utilisation des collections nommées
+</div>
+
+Les collections nommées vous permettent de stocker des paires clé-valeur (comme des identifiants S3, des endpoints et des paramètres) réutilisables dans les opérations de sauvegarde/restauration.
+Elles permettent de :
+
+* Masquer les identifiants aux utilisateurs sans accès administrateur
+* Simplifier les commandes en centralisant les configurations complexes
+* Assurer la cohérence entre les opérations
+* Éviter l’exposition des identifiants dans les journaux de requêtes
+
+Voir [« collections nommées »](/fr/concepts/features/configuration/server-config/named-collections) pour plus de détails.
+
+<div id="system-backups">
+  ## Sauvegarde des tables système, de journalisation ou de gestion des accès
+</div>
+
+Les tables système peuvent également être incluses dans vos workflows de sauvegarde et de restauration, mais leur
+prise en compte dépend de votre cas d’usage.
+
+Les tables système qui stockent des données historiques, comme celles avec le suffixe `_log` (par ex.,
+`query_log`, `part_log`), peuvent être sauvegardées et restaurées comme n’importe quelle autre table.
+Si votre cas d’usage repose sur l’analyse de données historiques — par exemple, l’utilisation de `query_log`
+pour suivre les performances des requêtes ou déboguer des problèmes — il est recommandé d’inclure ces
+tables dans votre stratégie de sauvegarde. En revanche, si les données historiques de ces tables ne sont
+pas nécessaires, elles peuvent être exclues afin d’économiser de l’espace de stockage pour les sauvegardes.
+
+Les tables système liées à la gestion des accès, telles que users, roles, row&#95;policies,
+settings&#95;profiles et quotas, font l’objet d’un traitement particulier lors des opérations de sauvegarde et de restauration.
+Lorsque ces tables sont incluses dans une sauvegarde, leur contenu est exporté dans un fichier spécial
+`accessXX.txt`, qui contient les instructions SQL équivalentes pour créer
+et configurer les entités d’accès. Lors de la restauration, le processus de restauration
+interprète ces fichiers et réapplique les commandes SQL pour recréer les utilisateurs,
+les rôles et les autres configurations. Cette fonctionnalité garantit que la configuration du contrôle d’accès
+d’un cluster ClickHouse peut être sauvegardée et restaurée dans le cadre de
+la configuration globale du cluster.
+
+Cette fonctionnalité ne fonctionne que pour les configurations gérées au moyen de commandes SQL
+(désignées sous le nom de [&quot;contrôle d’accès et gestion des comptes pilotés par SQL&quot;](/fr/concepts/features/security/access-rights#enabling-access-control)).
+Les configurations d’accès définies dans les fichiers de configuration du serveur ClickHouse (par ex. `users.xml`)
+ne sont pas incluses dans les sauvegardes et ne peuvent pas être restaurées par cette méthode.
+
+<div id="syntax">
+  ## Syntaxe générale
+</div>
+
+<Syntax />
+
+<div id="command-summary">
+  ### Résumé des commandes
+</div>
+
+Chacune des commandes ci-dessus est détaillée ci-dessous :
+
+| **Commande**                                                           | **Description**                                                                                                                                              |   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | - |
+| `BACKUP`                                                               | Crée une sauvegarde des objets spécifiés                                                                                                                     |   |
+| `RESTORE`                                                              | Restaure des objets à partir d’une sauvegarde                                                                                                                |   |
+| `TABLE [db.]table_name [AS [db.]table_name_in_backup]`                 | Sauvegarde/restaure une table spécifique (peut être renommée)                                                                                                |   |
+| `[PARTITION[S] partition_expr [,...]]`                                 | Sauvegarde/restaure uniquement certaines partitions de la table                                                                                              |   |
+| `DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup]`             | Sauvegarde/restaure un dictionnaire                                                                                                                          |   |
+| `DATABASE database_name [AS database_name_in_backup]`                  | Sauvegarde/restaure une base de données entière (peut être renommée)                                                                                         |   |
+| `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Sauvegarde/restaure une table temporaire (peut être renommée)                                                                                                |   |
+| `VIEW view_name [AS view_name_in_backup]`                              | Sauvegarde/restaure une vue (peut être renommée)                                                                                                             |   |
+| `[EXCEPT TABLES ...]`                                                  | Exclut certaines tables lors de la sauvegarde d’une base de données                                                                                          |   |
+| `ALL`                                                                  | Sauvegarde/restaure tout (toutes les bases de données, tables, etc.). Avant la version 23.4 de ClickHouse, `ALL` ne s’appliquait qu’à la commande `RESTORE`. |   |
+| `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclut certaines tables ou bases de données lors de l’utilisation de `ALL`                                                                                   |   |
+| `[ON CLUSTER 'cluster_name']`                                          | Exécute la sauvegarde/restauration sur l’ensemble d’un cluster ClickHouse                                                                                    |   |
+| `TO\|FROM`                                                             | Direction : `TO` pour la destination de sauvegarde, `FROM` pour la source de restauration                                                                    |   |
+| `File('<path>/<filename>')`                                            | Stocke dans/restaure depuis le système de fichiers local                                                                                                     |   |
+| `Disk('<disk_name>', '<path>/')`                                       | Stocke sur/restaure depuis un disque configuré                                                                                                               |   |
+| `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Stocke sur/restaure depuis Amazon S3 ou un stockage compatible S3                                                                                            |   |
+| `[SETTINGS ...]`                                                       | Voir ci-dessous pour la liste complète des paramètres                                                                                                        |   |
+| `[ASYNC]`                                                              | Exécute l’opération de manière asynchrone (renvoie immédiatement un ID que vous pouvez surveiller)                                                           |   |
+
+<div id="settings">
+  ### Paramètres
+</div>
+
+**Paramètres génériques de sauvegarde/restauration**
+
+<GenericSettings />
+
+**Paramètres spécifiques à S3**
+
+<S3Settings />
+
+**Paramètres spécifiques à Azure**
+
+<AzureSettings />
+
+<div id="check-the-status-of-backups">
+  ## Administration et dépannage
+</div>
+
+La commande de sauvegarde renvoie un `id` et un `status`, et cet `id` peut être utilisé pour
+obtenir l’état de la sauvegarde. C’est très utile pour suivre l’avancement de
+sauvegardes `ASYNC` de longue durée. L’exemple ci-dessous montre un échec survenu lors d’une tentative
+d’écrasement d’un fichier de sauvegarde existant :
+
+```sql
+BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
+```
+
+```response
+┌─id───────────────────────────────────┬─status──────────┐
+│ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
+└──────────────────────────────────────┴─────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT
+*
+FROM system.backups
+WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+
+```response highlight={5,9}
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Outre la table [`system.backups`](/fr/reference/system-tables/backups), toutes les opérations de sauvegarde et de restauration sont également consignées dans la table de journalisation système
+[`system.backup_log`](/fr/reference/system-tables/backup_log) :
+
+```sql
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+
+```response highlight={26}
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec.
+```

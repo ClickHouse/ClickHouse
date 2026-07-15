@@ -1,0 +1,133 @@
+---
+title: 为应用接入遥测
+---
+
+<Steps>
+  <Step>
+    ## 克隆并运行应用程序
+
+    克隆仓库，安装依赖项，并创建 `.env` 文件：
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    ClickHouse 数据源默认指向公网只读演示集群，因此应用无需额外配置即可运行。启动它：
+
+    ```bash
+    ./run.sh
+    ```
+
+    打开 [http://localhost:5001](http://localhost:5001)。你会看到年份选择器、汇总统计信息、活动图表、热门用户和域名表，以及一个搜索框。可以随意点一点：切换年份，深入查看具体帖子。
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 应用" />
+
+    此时，应用程序已经运行，但尚未接入遥测。ClickStack 中还没有数据：它正在等待遥测数据。这就是“之前”的状态。
+  </Step>
+
+  <Step>
+    ## 获取连接信息
+
+    应用程序需要以下两个值才能连接到 collector：
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`：你的 collector 暴露的 OTLP 端点 (OTLP over HTTP 通常使用端口 `4318`) 。
+    * `OTEL_EXPORTER_OTLP_HEADERS`：携带摄取令牌的授权请求头，格式为 `authorization=<token>`。
+
+    打开 `.env` 并设置它们：
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    ```
+
+    SDK 使用 `OTEL_EXPORTER_OTLP_HEADERS` 为三种信号设置授权请求头：链路追踪、指标和日志。如果你的 collector 在本地运行且不强制启用身份验证，可以将该值留空 (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) ；但该变量必须存在，因为如果未设置，或其值完全为空，SDK 会完全跳过初始化。
+  </Step>
+
+  <Step>
+    ## 为应用添加插桩
+
+    插桩分为三个部分：安装 SDKs、切换启动命令，以及启用浏览器 SDK。这些操作都不会改变应用程序的业务逻辑。
+
+    ### 安装 SDKs
+
+    同时安装后端和浏览器 OpenTelemetry SDKs：
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### 使用 opentelemetry-instrument CLI
+
+    应用程序由 `run.sh` 启动，文件底部有两行 `exec`：一行启用，另一行被注释掉。切换启用的那一行，让 Node 通过 `opentelemetry-instrument` 启动：
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    这就是后端的全部改动。自动插桩会在进程启动时由 `opentelemetry-instrument` 加载。
+
+    ### 启用 Browser SDK
+
+    要采集分布式链路追踪 (从浏览器到后端) 和会话回放，请在 `src/web/telemetry.ts` 中启用 Browser SDK。取消对 import 和 `HyperDX.init({...})` 代码块的注释：
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    无需额外修改 `.env`。`__OTLP_ENDPOINT__` 和 `__OTLP_AUTH_TOKEN__` 是由 `vite.config.ts` 注入的编译时常量：端点对应 `OTEL_EXPORTER_OTLP_ENDPOINT`，令牌则从 `OTEL_EXPORTER_OTLP_HEADERS` 中解析出来，与后端使用的值相同。
+
+    <Warning>
+      摄取令牌会被打包进公开的浏览器 bundle 中，任何检查 Network 选项卡的人都可以读取它。
+    </Warning>
+  </Step>
+
+  <Step>
+    ## 生成流量并查看遥测数据
+
+    重启应用程序，使新的启动命令和新构建的浏览器端打包产物生效：
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    重新加载浏览器选项卡，让 Vite 提供更新后的 bundle，然后多刷新应用几次、切换年份，再点开几篇 story 来生成流量。
+
+    打开 ClickStack UI：
+
+    1. 前往 **搜索**，将时间范围过滤到最近 5 分钟。`hn-analyzer-api` 的日志会不断流入。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 日志" />
+
+    2. 点开一个请求，沿着 trace 向上查看。你会看到 Express handler span、一个指向 ClickHouse 集群且显示真实网络耗时的子 HTTP span，以及同一条 trace 上已关联的 `console.log` 记录。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 链路追踪" />
+
+    3. 打开 **Session Replay**，回放带可拖动进度条的浏览器会话视频，并与 trace 时间线同步。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 会话" />
+
+    日志、指标、链路追踪和会话回放都会汇集到同一个 UI 中，共享同一种查询语言，并自动完成关联。
+  </Step>
+</Steps>

@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: 'ローカルモードのみ'
+description: 'ローカルモードのみで ClickStack をデプロイする - ClickHouse オブザーバビリティスタック'
+doc_type: 'guide'
+keywords: ['clickstack', 'デプロイメント', 'セットアップ', '設定', 'オブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import JSONSupport from '/snippets/ja/_json_support.mdx';
+
+[all-in-one image](/ja/clickstack/deployment/docker-compose)と同様に、この包括的なDockerイメージには、ClickStackのすべてのコンポーネントが含まれています:
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector** (ポート`4317`および`4318`でOTLPを公開)
+* **MongoDB** (永続的なアプリケーション状態のため)
+
+**ただし、このHyperDXディストリビューションではユーザー認証は無効になっています**
+
+<div id="suitable-for">
+  ### 適した用途
+</div>
+
+* デモ
+* デバッグ
+* HyperDX を利用する開発
+
+<div id="deployment-steps">
+  ## デプロイ手順
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Docker でデプロイ
+
+    ローカルモードでは、HyperDX UI がポート 8080 で起動します。
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+  </Step>
+
+  <Step>
+    ### HyperDX UI にアクセス
+
+    HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開いてください。
+
+    **このデプロイモードでは認証が有効になっていないため、ユーザー作成は求められません。**
+
+    ClickHouse Cloud など、外部の ClickHouse クラスターに接続します。
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="ログインを作成" size="md" />
+
+    ログソースを作成し、すべてのデフォルト値はそのままにして、`Table` フィールドに `otel_logs` を入力します。その他の設定は自動検出されるため、`Save New Source` をクリックできます。
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="ログソースを作成" size="md" />
+  </Step>
+</Steps>
+
+<JSONSupport />

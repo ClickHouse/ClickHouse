@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'middleware', 'observabilidad', 'integración', 'monitorización']
+description: 'Conecta Middleware con ClickHouse para supervisar y analizar las métricas y los logs de ClickHouse.'
+title: 'Conectar Middleware a ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) es una plataforma de observabilidad en la nube para supervisar la infraestructura, los logs y el rendimiento de las aplicaciones.
+
+Puede conectar ClickHouse con Middleware para recopilar y visualizar la telemetría de la base de datos como parte de sus flujos generales de monitorización.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Un servicio de ClickHouse en ejecución (Cloud o autogestionado)
+* Acceso al host, puerto, nombre de usuario y contraseña de ClickHouse
+* Una cuenta de Middleware
+
+<div id="connect-clickhouse-in-middleware">
+  ## Conecta ClickHouse en Middleware
+</div>
+
+1. Inicia sesión en tu cuenta de Middleware.
+2. Ve a **Integraciones** y busca **ClickHouse**.
+3. Elige la integración de ClickHouse e introduce los detalles de conexión:
+   * Host
+   * Puerto
+   * Base de datos
+   * Nombre de usuario
+   * Contraseña
+4. Guarda la integración y ejecuta una prueba de conexión.
+
+<div id="verify-data-collection">
+  ## Verificar la recopilación de datos
+</div>
+
+Después de la configuración, comprueba que las métricas y/o los logs de ClickHouse estén visibles en los paneles de Middleware.
+
+Si falla la validación de la conexión, verifica que:
+
+* ClickHouse acepte conexiones entrantes desde Middleware
+* La configuración de SSL/TLS coincida con el endpoint de ClickHouse
+* Las credenciales y los permisos de la base de datos sean correctos
+
+<div id="additional-resources">
+  ## Recursos adicionales
+</div>
+
+* [Sitio web de Middleware](https://middleware.io/)

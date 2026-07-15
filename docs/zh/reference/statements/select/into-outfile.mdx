@@ -1,0 +1,45 @@
+---
+description: 'INTO OUTFILE 子句文档'
+sidebarTitle: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'INTO OUTFILE 子句'
+doc_type: 'reference'
+---
+
+`INTO OUTFILE` 子句会将 `SELECT` 查询结果重定向到**客户端**侧的文件中。
+
+支持压缩文件。压缩类型会根据文件名扩展名自动检测 (默认使用 `'auto'` 模式) ，也可以在 `COMPRESSION` 子句中显式指定。还可以在 `LEVEL` 子句中指定特定压缩类型的压缩级别。
+
+**语法**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` 和 `type` 都是字符串字面量。支持的压缩类型包括：`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'`。
+
+`level` 是数值字面量。支持以下范围内的正整数：`lz4` 类型为 `1-12`，`zstd` 类型为 `1-22`，其他压缩类型为 `1-9`。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+* 此功能可在[命令行客户端](/zh/concepts/features/interfaces/client)和[clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)中使用。因此，通过[HTTP interface](/zh/concepts/features/interfaces/http)发送的查询会失败。
+* 如果已存在同名文件，查询会失败。
+* 默认[输出格式](/zh/reference/formats/index)为 `TabSeparated` (与命令行客户端的批次模式相同) 。可使用 [FORMAT](/zh/reference/statements/select/format) 子句进行更改。
+* 如果查询中指定了 `AND STDOUT`，写入文件的输出也会显示在标准输出中。如果使用压缩，标准输出中显示的是明文。
+* 如果查询中指定了 `APPEND`，输出会追加到现有文件中。如果使用压缩，则不能使用 `APPEND`。
+* 向已存在的文件写入时，必须使用 `APPEND` 或 `TRUNCATE`。
+
+**示例**
+
+使用[命令行客户端](/zh/concepts/features/interfaces/client)执行以下查询：
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz 
+```
+
+```text title="Response"
+1,"ABC"
+```
