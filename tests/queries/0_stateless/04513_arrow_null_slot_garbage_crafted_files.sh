@@ -31,6 +31,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #                                                validity marks the slot valid
 #   struct_json_garbage_bytes_under_null:        struct<j: string> read as Nullable(Tuple(j JSON));
 #                                                the NULL row's bytes are not valid JSON
+#   struct_ipv6_binary_garbage_under_null:       struct<v: binary> read as Nullable(Tuple(v IPv6));
+#                                                the NULL row's value is not 16 bytes, which must not
+#                                                force the whole column down the text-parsed String
+#                                                fallback (that would corrupt the visible rows too)
+#   struct_int128_binary_garbage_under_null:     as above for Nullable(Tuple(n Int128))
 #
 # Read only with the native reader — a NULL list/map slot whose offsets span a non-empty range
 # (spec-legal: offsets stay monotonic, the range's bytes are undefined). The Apache Arrow library
@@ -75,6 +80,12 @@ for reader in 1 0; do
     echo "=== struct_json_garbage_bytes_under_null, native_reader=$reader"
     $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_json_garbage_bytes_under_null.arrow', 'Arrow', 's Nullable(Tuple(j JSON))')
         SETTINGS allow_experimental_nullable_tuple_type = 1, enable_json_type = 1, input_format_arrow_use_native_reader = $reader"
+    echo "=== struct_ipv6_binary_garbage_under_null, native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_ipv6_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(v IPv6))')
+        SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
+    echo "=== struct_int128_binary_garbage_under_null, native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_int128_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(n Int128))')
+        SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
 done
 
 for f in list_date32_garbage_in_null_slot_range fixed_size_list_date32_garbage_in_null_slot_range map_date32_garbage_in_null_slot_range; do

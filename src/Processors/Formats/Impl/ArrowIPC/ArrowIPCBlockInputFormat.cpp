@@ -576,8 +576,13 @@ MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap *
 /// UUID / IPv6 / big-integer types the requested `to_type` asks for, descending through Nullable, Array,
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
 /// subsequent `castColumn`. Returns the (possibly rewritten) column and its new type.
+/// `ancestor_nulls` (may be null) marks rows that are null at an enclosing Nullable level: the Arrow spec
+/// leaves the bytes of such rows undefined, so the leaf width sniff must not let them force the String
+/// fallback (and text-parsing of the whole column in the cast); their values decode as type defaults.
+/// Only row-aligned levels propagate it — an Array/Map child lives in a different row space.
 std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
-    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type)
+    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type,
+    const NullMap * ancestor_nulls)
 {
     const DataTypePtr to_no_null = removeNullable(to_type);
     const DataTypePtr from_no_null = removeNullable(from_type);
@@ -592,7 +597,12 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     {
         if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(col.get()))
         {
-            auto [new_nested, new_nested_type] = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_no_null);
+            /// The peeled wrapper's nulls make the rows under them invisible for every row-aligned
+            /// descendant; compose them into the inherited set.
+            NullMap combined_storage;
+            const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
+            auto [new_nested, new_nested_type]
+                = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_no_null, combined);
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get())
                 return {col, from_type};
             if (new_nested->canBeInsideNullable())
@@ -608,7 +618,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         const auto * col_arr = typeid_cast<const ColumnArray *>(col.get());
         if (!from_arr || !col_arr)
             return {col, from_type};
-        auto [new_data, new_data_type] = reinterpretRawBytes(col_arr->getDataPtr(), from_arr->getNestedType(), to_arr->getNestedType());
+        auto [new_data, new_data_type] = reinterpretRawBytes(
+            col_arr->getDataPtr(), from_arr->getNestedType(), to_arr->getNestedType(), /*ancestor_nulls=*/nullptr);
         if (new_data.get() == col_arr->getDataPtr().get())
             return {col, from_type};
         auto new_arr = ColumnArray::create(IColumn::mutate(std::move(new_data)), IColumn::mutate(col_arr->getOffsetsPtr()));
@@ -630,7 +641,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         bool changed = false;
         for (size_t i = 0; i < to_elems.size(); ++i)
         {
-            auto [c, t] = reinterpretRawBytes(col_tup->getColumnPtr(i), from_elems[i], to_elems[i]);
+            auto [c, t] = reinterpretRawBytes(col_tup->getColumnPtr(i), from_elems[i], to_elems[i], ancestor_nulls);
             if (c.get() != col_tup->getColumnPtr(i).get())
                 changed = true;
             new_cols[i] = std::move(c);
@@ -656,7 +667,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             std::make_shared<DataTypeTuple>(DataTypes{from_map->getKeyType(), from_map->getValueType()}));
         auto to_nested = std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{to_map->getKeyType(), to_map->getValueType()}));
-        auto [new_nested, new_nested_type] = reinterpretRawBytes(col_map->getNestedColumnPtr(), from_nested, to_nested);
+        auto [new_nested, new_nested_type] = reinterpretRawBytes(col_map->getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls);
         if (new_nested.get() == col_map->getNestedColumnPtr().get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
@@ -673,6 +684,14 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
     const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
+
+    /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
+    /// exempt from the width sniff and decode as defaults.
+    NullMap combined_storage;
+    if (null_map)
+        null_map = ArrowIPC::unionNullMaps(*null_map, ancestor_nulls, combined_storage);
+    else
+        null_map = ancestor_nulls;
 
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
@@ -696,7 +715,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
 void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type)
 {
-    auto [new_column, new_type] = reinterpretRawBytes(column.column, column.type, to_type);
+    auto [new_column, new_type] = reinterpretRawBytes(column.column, column.type, to_type, /*ancestor_nulls=*/nullptr);
     column.column = std::move(new_column);
     column.type = std::move(new_type);
 }

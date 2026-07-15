@@ -570,7 +570,8 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
 /// Rows whose values are semantically absent: rows under a null slot of an ancestor struct, or rows in
 /// a list range no valid slot references. The Arrow spec leaves the value bytes of a null slot
 /// undefined, so value-level validation (the `Date32` range check, dictionary index bounds, view-struct
-/// checks, JSON parsing) must not reject such rows; their values decode as type defaults instead.
+/// checks, JSON parsing, the binary width sniffing for IPv6 and big integers) must not reject such rows
+/// or let them steer a whole-column parse-path decision; their values decode as type defaults instead.
 using InvisibleRowsMask = std::vector<PaddedPODArray<UInt8>>;
 
 template <typename ArrowView>
@@ -830,7 +831,9 @@ static ColumnWithTypeAndName readColumnWithBigIntegerFromFixedBinaryData(const s
 }
 
 template <typename ColumnType, typename ValueType = typename ColumnType::ValueType>
-static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const DataTypePtr & column_type)
+static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const DataTypePtr & column_type,
+    const InvisibleRowsMask * invisible_rows)
 {
     size_t total_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -840,9 +843,13 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
         const size_t chunk_length = chunk.length();
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
 
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
+
         for (size_t i = 0; i != chunk_length; ++i)
         {
-            if (chunk.IsNull(i))
+            /// The bytes of a null or invisible slot are undefined per the Arrow spec: they must not
+            /// force the whole column down the String fallback, nor have their read range validated.
+            if (chunk.IsNull(i) || (invisible && invisible[i]))
                 continue;
             /// If at least one value size is not equal to the size if big integer, fallback to reading String column and further cast to result type.
             if (chunk.value_length(i) != sizeof(ValueType))
@@ -869,9 +876,10 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            if (chunk.IsNull(value_i))
+            if (chunk.IsNull(value_i) || (invisible && invisible[value_i]))
             {
                 integer_column.insertDefault();
             }
@@ -1733,7 +1741,9 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
 
-static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
+    const InvisibleRowsMask * invisible_rows)
 {
     size_t total_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -1742,10 +1752,13 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t chunk_length = chunk.length();
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
 
         for (size_t i = 0; i != chunk_length; ++i)
         {
-            if (chunk.IsNull(i))
+            /// The bytes of a null or invisible slot are undefined per the Arrow spec: they must not
+            /// force the whole column down the String fallback, nor have their read range validated.
+            if (chunk.IsNull(i) || (invisible && invisible[i]))
                 continue;
             /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
             if (chunk.value_length(i) != sizeof(IPv6))
@@ -1773,9 +1786,10 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
+        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            if (chunk.IsNull(value_i))
+            if (chunk.IsNull(value_i) || (invisible && invisible[value_i]))
             {
                 ipv6_column.insertDefault();
             }
@@ -1884,7 +1898,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 switch (type_hint->getTypeId())
                 {
                     case TypeIndex::IPv6:
-                        return readIPv6ColumnFromBinaryData(arrow_column, column_name);
+                        return readIPv6ColumnFromBinaryData(arrow_column, column_name, invisible_rows);
                     /// ORC format outputs big integers as binary column, because there is no fixed binary in ORC.
                     ///
                     /// When ORC/Parquet file says the type is "byte array" or "fixed len byte array",
@@ -1896,16 +1910,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     /// byte array is variable-length, and the length is different from sizeof(type),
                     /// we parse as text, otherwise as binary.
                     case TypeIndex::Int128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(arrow_column, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(arrow_column, column_name, type_hint, invisible_rows);
                     case TypeIndex::UInt128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(arrow_column, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(arrow_column, column_name, type_hint, invisible_rows);
                     case TypeIndex::Int256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(arrow_column, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(arrow_column, column_name, type_hint, invisible_rows);
                     case TypeIndex::UInt256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(arrow_column, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(arrow_column, column_name, type_hint, invisible_rows);
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
+                        return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint, invisible_rows);
                     case TypeIndex::Object:
                         if (settings.enable_json_parsing)
                             return readColumnWithJSONData<arrow::BinaryArray>(
