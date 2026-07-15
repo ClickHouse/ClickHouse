@@ -237,8 +237,10 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
 
-        /// for output filename matching compressed allow additional 13 + 7 symbols for ".decompressed.XXXXXX" suffix
-        size_t file_name_len = file_info.exec ? strlen(name) + 13 + 7 + 1 : le64toh(file_info.name_length);
+        /// Allow additional 14 + 6 symbols for ".decompressed.XXXXXX" suffix, which is appended
+        /// both for exec files and for files whose stored name matches the running binary name
+        /// (name_length already includes the terminating NUL).
+        size_t file_name_len = file_info.exec ? strlen(name) + 14 + 6 + 1 : le64toh(file_info.name_length) + 14 + 6;
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
