@@ -228,7 +228,6 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     EXPECT_EQ(hit.range.offset, 0u);
     EXPECT_EQ(hit.range.size, kSegmentSize);
     ASSERT_NE(hit.reader, nullptr);
-    EXPECT_EQ(hit.reader->readable(), kSegmentSize);
 
     ChainedBuffers got = hit.reader->read(ByteRange{0, kSegmentSize});
     ASSERT_TRUE(got.covers(ByteRange{0, kSegmentSize}));
@@ -406,9 +405,9 @@ TEST_F(DiskCacheBuffers, PinFrontier)
 }
 
 
-/// (g) readable() grows: after a partial write, a read buffer obtained via
-/// planResidencyView reflects the new cwo and reads up to it.
-TEST_F(DiskCacheBuffers, ReadableGrowsWithPartialWrite)
+/// (g) the hit tracks the cwo: after a partial write, a fresh probe reports the
+/// committed prefix as the hit and its reader serves it in full.
+TEST_F(DiskCacheBuffers, HitTracksPartialWrite)
 {
     auto provider = makeProvider();
     auto object = makeObject("obj_g", kSegmentSize);
@@ -420,13 +419,12 @@ TEST_F(DiskCacheBuffers, ReadableGrowsWithPartialWrite)
     const size_t quarter = kSegmentSize / 4;     // sub-segment partial fill
     ASSERT_EQ(claimedWrite(writer, makeChain(0, quarter, 'R')), quarter);
 
-    // A view over the same range reports the committed prefix as a hit; its read
-    // buffer's readable() reflects the partial cwo.
+    // A view over the same range reports the committed prefix as a hit.
     auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
     ASSERT_FALSE(view->hits().empty());
     const auto & hit = view->hits()[0];
     EXPECT_EQ(hit.range.offset, 0u);
-    EXPECT_EQ(hit.reader->readable(), quarter);
+    EXPECT_EQ(hit.range.size, quarter);
 
     ChainedBuffers got = hit.reader->read(ByteRange{0, quarter});
     ASSERT_TRUE(got.covers(ByteRange{0, quarter}));
@@ -594,7 +592,6 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     EXPECT_EQ(hit.range.offset, 0u);
     EXPECT_EQ(hit.range.size, half);
     ASSERT_NE(hit.reader, nullptr);
-    EXPECT_EQ(hit.reader->readable(), half);
     ChainedBuffers got = hit.reader->read(ByteRange{0, half});
     ASSERT_TRUE(got.covers(ByteRange{0, half}));
     EXPECT_EQ(flatten(got), std::string(half, 'S'));

@@ -533,7 +533,7 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
                     if (!hit.reader)
                         continue;
                     const size_t lo = std::max(hit.range.offset, header_range.offset);
-                    const size_t hi = std::min({hit.range.end(), header_range.end(), hit.reader->readable()});
+                    const size_t hi = std::min(hit.range.end(), header_range.end());
                     if (lo >= hi)
                         continue;
                     chain.append(hit.reader->read(ByteRange{lo, hi - lo}));
@@ -861,10 +861,11 @@ static size_t cellCeil(const PlanSchedule::Retrieve & r, size_t pos)
 
 /// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
 /// buffers: find each `HitEntry` overlapping `clamped`, read the overlap from its
-/// re-readable buffer (clamped to `readable()` so a partial prefix is never over-read),
-/// and append the pieces. The result is contiguous from `clamped.offset`, short only at
-/// the TAIL (`Display::read` marks `range().size` bytes covered, so a mid-range hole
-/// would over-mark coverage). Records each `read` on the view for the deferred LRU bump.
+/// re-readable buffer, and append the pieces. A hit is readable in full (the probe
+/// splits partial segments at their write offset), so the result is contiguous from
+/// `clamped.offset`, short only at the TAIL (`Display::read` marks `range().size` bytes
+/// covered, so a mid-range hole would over-mark coverage). Records each `read` on the
+/// view for the deferred LRU bump.
 ChainedBuffers ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamped)
 {
     ChainedBuffers out;
@@ -872,9 +873,8 @@ ChainedBuffers ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamp
     {
         if (!hit.reader)
             continue;
-        const size_t readable = hit.reader->readable();
         const size_t lo = std::max(hit.range.offset, clamped.offset);
-        const size_t hi = std::min({hit.range.end(), clamped.end(), readable});
+        const size_t hi = std::min(hit.range.end(), clamped.end());
         if (lo >= hi)
             continue;
         out.append(hit.reader->read(ByteRange{lo, hi - lo}));

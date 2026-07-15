@@ -210,33 +210,6 @@ DiskCacheReader::DiskCacheReader(
 {
 }
 
-size_t DiskCacheReader::readable() const
-{
-    /// Live committed end of the segment(s) covering `hit_range`, re-read each call
-    /// so a concurrent downloader's growth is visible. DOWNLOADED → `hit_range.end()`;
-    /// partial / downloading → `cwo + object_file_offset`, clamped to `hit_range.end()`.
-    if (!holder)
-        return hit_range.offset;
-
-    chassert(hit_range.offset >= object_file_offset);
-    const size_t range_obj_off = hit_range.offset - object_file_offset;
-
-    size_t readable_end = hit_range.offset;
-    for (const auto & segment : *holder)
-    {
-        const auto & seg_range = segment->range();
-        if (seg_range.right + 1 <= range_obj_off)
-            continue;
-        if (seg_range.left >= range_obj_off + hit_range.size)
-            break;
-
-        const size_t committed_end_obj = segmentCommittedEnd(*segment);
-        readable_end = std::max(readable_end, committed_end_obj + object_file_offset);
-    }
-
-    return std::min(readable_end, hit_range.end());
-}
-
 ChainedBuffers DiskCacheReader::read(ByteRange sub)
 {
     ChainedBuffers result;
@@ -246,7 +219,7 @@ ChainedBuffers DiskCacheReader::read(ByteRange sub)
     /// Clamp to THIS buffer's hit range: every hit buffer of a view shares one
     /// holder spanning all hit segments, so a `read` for a `sub` outside `hit_range`
     /// would serve a neighbouring hit's bytes from the shared holder. The contract is
-    /// `sub` within `[range().offset, readable())`; clamp defensively.
+    /// `sub` within `range()`; clamp defensively to the committed sub-ranges.
     {
         const size_t lo = std::max(sub.offset, hit_range.offset);
         const size_t hi = std::min(sub.end(), hit_range.end());

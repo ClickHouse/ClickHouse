@@ -422,7 +422,6 @@ public:
         : range_member(range_in_file), storage(storage_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
-    size_t readable() const override { return range_member.end(); }
 
     ChainedBuffers read(ByteRange sub) override
     {
@@ -1892,10 +1891,10 @@ private:
 };
 
 /// Held read buffer over ONE segment's committed prefix `[seg_start, seg_start+dl)`.
-/// `readable()` re-reads the LIVE `downloaded[idx]` each call (clamped to the hit
-/// range), so a partial segment grown across windows by a concurrent writer becomes
-/// visible - like the real `DiskCacheReader`. `read(sub)` returns the genuine stored
-/// bytes for the committed sub-range.
+/// `read(sub)` re-reads the LIVE `downloaded[idx]` each call (clamped to the hit
+/// range), so an eviction between windows makes the hit come up short and the
+/// executor heals by refetch. Returns the genuine stored bytes for the committed
+/// sub-range.
 class EvictableSegmentReadBuffer : public CacheReader
 {
 public:
@@ -1904,20 +1903,11 @@ public:
 
     ByteRange range() const override { return hit_range; }
 
-    size_t readable() const override
-    {
-        const size_t seg = cache.segmentSize();
-        const size_t seg_start = seg_idx * seg;
-        const size_t dl = cache.downloaded.contains(seg_idx) ? cache.downloaded[seg_idx] : 0;
-        const size_t committed_end = seg_start + std::min(dl, seg);
-        return std::min(committed_end, hit_range.end());
-    }
-
     ChainedBuffers read(ByteRange sub) override
     {
         ChainedBuffers result;
         const size_t lo = std::max(sub.offset, hit_range.offset);
-        const size_t hi = std::min({sub.end(), hit_range.end(), readable()});
+        const size_t hi = std::min({sub.end(), hit_range.end(), liveCommittedEnd()});
         if (lo >= hi)
             return result;
         auto it = cache.bytes.find(seg_idx);
@@ -1936,6 +1926,14 @@ public:
     }
 
 private:
+    size_t liveCommittedEnd() const
+    {
+        const size_t seg = cache.segmentSize();
+        const size_t seg_start = seg_idx * seg;
+        const size_t dl = cache.downloaded.contains(seg_idx) ? cache.downloaded[seg_idx] : 0;
+        return std::min(seg_start + std::min(dl, seg), hit_range.end());
+    }
+
     ByteRange hit_range;
     size_t seg_idx;
     EvictableSegmentMockCache & cache;
@@ -2951,8 +2949,6 @@ public:
         : range_member(range_in_file), storage(storage_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
-    size_t readable() const override { return range_member.end(); }
-
     ChainedBuffers read(ByteRange sub) override
     {
         ChainedBuffers result;

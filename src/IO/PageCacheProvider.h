@@ -30,7 +30,7 @@ private:
 /// ── Per-range buffer API (see `ICacheProvider.h`) ──
 
 /// `CacheReader` over the pinned whole-block cell(s) backing one hit range.
-/// Page cells are whole blocks, so `readable() == range().end()` and there is
+/// Page cells are whole blocks, so a hit is always fully resident and there is
 /// no deferred-LRU bump.
 class PageCacheReader : public CacheReader
 {
@@ -44,7 +44,6 @@ public:
     PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_);
 
     ByteRange range() const override { return range_member; }
-    size_t readable() const override { return range_member.end(); }
     ChainedBuffers read(ByteRange sub) override;
 
 private:

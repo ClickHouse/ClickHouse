@@ -36,13 +36,11 @@ public:
     /// the plan asked for - the executor clamps).
     virtual ByteRange range() const = 0;
 
-    /// Committed-prefix end. == `range().end()` for a fully-resident segment
-    /// or block; for a partially-downloaded disk segment the LIVE write
-    /// offset, re-evaluated each call. Reads must stay below it.
-    virtual size_t readable() const = 0;
-
-    /// Read `sub` (within `[range().offset, readable())`) as a ChainedBuffers of
+    /// Read `sub` (within `range()`) as a ChainedBuffers of
     /// file-level nodes. Records `sub` for the view's deferred LRU bump.
+    /// A hit is readable in full: the probe splits a partially-downloaded
+    /// segment at its write offset, so the hit is the committed prefix and
+    /// growth is the WRITER's story (`CacheWriter::committed`).
     virtual ChainedBuffers read(ByteRange sub) = 0;
 };
 

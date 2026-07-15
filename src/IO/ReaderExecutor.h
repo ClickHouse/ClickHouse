@@ -354,11 +354,11 @@ private:
     /// append-only prefix permanently uncommitted. Runs before any plan exists.
     ChainedBuffers fetchEncryptionHeader();
 
-    /// Serve a clamped resident sub-range from a view's hit buffers, clamping
-    /// each read to the buffer's live `readable()` and recording it for the
-    /// deferred LRU bump. The result is contiguous from `clamped.offset` and
-    /// may be short only at the TAIL (`Display::read` marks `range().size`
-    /// bytes covered, so a mid-range hole would over-mark coverage).
+    /// Serve a clamped resident sub-range from a view's hit buffers, recording
+    /// each read for the deferred LRU bump. A hit is readable in full. The
+    /// result is contiguous from `clamped.offset` and may be short only at the
+    /// TAIL (`Display::read` marks `range().size` bytes covered, so a mid-range
+    /// hole would over-mark coverage).
     static ChainedBuffers readHitFromView(CacheView & view, ByteRange clamped);
 
     // ─── Gap fetch + backfill ────────────────────────────────────────────

@@ -2696,7 +2696,6 @@ namespace
             : hit_range(hit_), recorded(rec_), data(std::move(data_)) {}
 
         ByteRange range() const override { return hit_range; }
-        size_t readable() const override { return hit_range.end(); }
 
         ChainedBuffers read(ByteRange sub) override
         {
