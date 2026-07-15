@@ -155,7 +155,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -247,7 +247,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq = false;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;

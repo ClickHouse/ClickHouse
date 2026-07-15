@@ -19,7 +19,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -52,7 +51,7 @@ class NullMapBuilder;
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
   */
 template <ArrayElementExceptionMode mode = ArrayElementExceptionMode::Zero>
-class FunctionArrayElement final : public IFunction
+class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
@@ -261,7 +260,7 @@ struct ArrayElementNumImpl
 
             if (index < array_size)
             {
-                size_t j = 0;
+                size_t j;
                 if constexpr (negative)
                     j = offsets[i] - index - 1;
                 else
@@ -584,7 +583,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
@@ -617,7 +616,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -680,7 +679,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -688,7 +687,7 @@ struct ArrayElementStringImpl
 
             if (index < array_size)
             {
-                size_t adjusted_index = 0;
+                size_t adjusted_index;
                 if constexpr (negative)
                     adjusted_index = array_size - index - 1;
                 else
@@ -742,12 +741,12 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -2052,7 +2051,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
-    chassert(col_map || col_const_map);
+    assert(col_map || col_const_map);
 
     if (col_const_map)
         col_map = typeid_cast<const ColumnMap *>(&col_const_map->getDataColumn());

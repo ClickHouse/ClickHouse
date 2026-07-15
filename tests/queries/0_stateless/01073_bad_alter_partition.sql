@@ -7,7 +7,7 @@ SELECT 1, * FROM merge_tree ORDER BY d;
 -- ALTER TABLE merge_tree DROP PARTITION 2020-01-02; -- This does not even parse
 -- SELECT 2, * FROM merge_tree;
 
-ALTER TABLE merge_tree DROP PARTITION 20200103; -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE merge_tree DROP PARTITION 20200103; -- unfortunately, this works, but not as user expected.
 SELECT 3, * FROM merge_tree ORDER BY d;
 
 ALTER TABLE merge_tree DROP PARTITION '20200104';

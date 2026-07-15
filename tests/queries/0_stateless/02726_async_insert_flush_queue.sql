@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS t_async_inserts_flush;
 
 CREATE TABLE t_async_inserts_flush (a UInt64) ENGINE = Memory;
@@ -28,7 +30,7 @@ ORDER BY format;
 
 SELECT count() FROM t_async_inserts_flush;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE t_async_inserts_flush;
+SYSTEM FLUSH ASYNC INSERT QUEUE;
 
 SELECT count() FROM system.asynchronous_inserts
 WHERE database = currentDatabase() AND table = 't_async_inserts_flush';

@@ -45,9 +45,7 @@ public:
             return;
 
         const auto & function_name = function_node->getFunctionName();
-        bool is_distance_function
-            = (function_name == "L2DistanceTransposed" || function_name == "cosineDistanceTransposed"
-               || function_name == "dotProductTransposed");
+        bool is_distance_function = (function_name == "L2DistanceTransposed" || function_name == "cosineDistanceTransposed");
 
         if (!is_distance_function)
             return;

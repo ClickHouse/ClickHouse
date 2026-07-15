@@ -1,7 +1,6 @@
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <base/demangle.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -50,7 +49,7 @@ VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
 namespace
 {
 
-class SymbolsBlockSource final : public ISource
+class SymbolsBlockSource : public ISource
 {
 private:
     using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;
@@ -151,9 +150,5 @@ Pipe StorageSystemSymbols::read(
 }
 
 }
-
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSymbols) }
 
 #endif

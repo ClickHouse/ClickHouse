@@ -32,17 +32,7 @@ ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 template <size_t block_size>
 ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 {
-    /// Match copies may overlap (src points into the already-decoded output).
-    /// When offset < 32, a 256-bit load reads bytes just written in the same
-    /// cache line, causing store-forwarding stalls.  Two 128-bit copies halve
-    /// the stall window.
-    if constexpr (block_size == 32)
-    {
-        __builtin_memcpy(dst, src, 16);
-        __builtin_memcpy(dst + 16, src + 16, 16);
-    }
-    else
-        __builtin_memcpy(dst, src, block_size);
+    __builtin_memcpy(dst, src, block_size);
 }
 
 template <size_t block_size>
@@ -67,19 +57,11 @@ ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t siz
 {
     /// Unrolling with clang is doing >10% performance degrade on x86.
     /// On ARM (Graviton 4) the pragma has no measurable effect.
-    ///
-    /// Same store-forwarding concern as `copyFromOutput`.
     size_t i = 0;
     #pragma nounroll
     do
     {
-        if constexpr (block_size == 32)
-        {
-            __builtin_memcpy(dst, src, 16);
-            __builtin_memcpy(dst + 16, src + 16, 16);
-        }
-        else
-            __builtin_memcpy(dst, src, block_size);
+        __builtin_memcpy(dst, src, block_size);
         dst += block_size;
         src += block_size;
         i += block_size;
@@ -129,8 +111,8 @@ template <>
     {
         [[maybe_unused]] __m64 shuffled = _mm_shuffle_pi8(__m64{}, __m64{});
 
-        std::vector<int> vec;                              // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_set<int> set(vec.begin(), vec.end()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<int> vec;
+        std::unordered_set<int> set(vec.begin(), vec.end());
 
         std::cerr << set.size() << "\n";
         return 0;
@@ -463,11 +445,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     while (true)
     {
-        size_t length = 0;
+        size_t length;
 
         auto continue_read_length = [&]
         {
-            unsigned s = 0;
+            unsigned s;
             do
             {
                 s = *ip++;
@@ -483,8 +465,8 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         const unsigned token = *ip++;
         length = token >> 4;
 
-        UInt8 * copy_end = nullptr;
-        size_t real_length = 0;
+        UInt8 * copy_end;
+        size_t real_length;
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -651,7 +633,7 @@ bool decompress(
         size_t best_variant = statistics.select(variant_size);
 
         Stopwatch watch;
-        bool success = false;
+        bool success;
         if (best_variant == 0)
             success = decompressImpl<8>(source, dest, source_size, dest_size);
         else if (best_variant == 1)

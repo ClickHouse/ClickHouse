@@ -1,7 +1,6 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -42,7 +41,6 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
@@ -65,20 +63,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
-
-    /// INTERSECT/EXCEPT children always return their full header (they ignore
-    /// required_result_column_names), so the whole UNION must keep the full header too.
-    if (!require_full_header)
-    {
-        for (const auto & select : ast->list_of_selects->children)
-        {
-            if (select->as<ASTSelectIntersectExceptQuery>())
-            {
-                require_full_header = true;
-                break;
-            }
-        }
-    }
 
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0))
@@ -359,9 +343,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             headers[i] = plans[i]->getCurrentHeader();
         }
 
-        auto max_threads = getMaxThreadsForAvailableMemory(
-            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* allow_narrowing = */ true);
+        auto max_threads = settings[Setting::max_threads];
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
@@ -423,7 +406,6 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

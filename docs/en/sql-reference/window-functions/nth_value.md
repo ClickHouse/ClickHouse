@@ -7,6 +7,8 @@ title: 'nth_value'
 doc_type: 'reference'
 ---
 
+# nth_value
+
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
 **Syntax**
@@ -34,7 +36,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 In this example the `nth-value` function is used to find the third-highest salary from a fictional dataset of salaries of Premier League football players.
 
-```sql title="Query"
+Query:
+
+```sql
 DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (
@@ -55,11 +59,13 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql title="Query"
+```sql
 SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_highest_salary FROM salaries;
 ```
 
-```response title="Response"
+Result:
+
+```response
    ┌─player──────────┬─salary─┬─third_highest_salary─┐
 1. │ Gary Chen       │ 195000 │                      │
 2. │ Robert George   │ 195000 │                      │

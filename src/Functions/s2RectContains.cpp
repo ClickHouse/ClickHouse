@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionS2RectContains final : public IFunction
+class FunctionS2RectContains : public IFunction
 {
 public:
     static constexpr auto name = "s2RectContains";
