@@ -1,0 +1,9 @@
+-- Full access (base table + view object): SELECT and EXPLAIN SYNTAX are allowed
+SELECT via parameterized view: OK
+EXPLAIN SYNTAX parameterized view: OK
+-- Base table access without a grant on the view: the old interpreter allows the real SELECT, so EXPLAIN SYNTAX is allowed too
+SELECT via parameterized view: OK
+EXPLAIN SYNTAX parameterized view: OK
+-- No grants: both the real SELECT and EXPLAIN SYNTAX are denied
+SELECT via parameterized view: ACCESS_DENIED
+EXPLAIN SYNTAX parameterized view: ACCESS_DENIED

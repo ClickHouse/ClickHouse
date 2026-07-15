@@ -908,6 +908,16 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// access check on the original query instead, where the view still resolves to its own
                 /// `TableNode`, and skip the (now incomplete) check on the expanded tree. This enforces
                 /// the view's `SELECT` grant exactly as a real `SELECT ... FROM pv(...)` does.
+                ///
+                /// This pre-check is deliberately analyzer-only. The old interpreter never requires a
+                /// `SELECT` grant on the parameterized view object: `Context::executeTableFunction`
+                /// resolves `pv(...)` without any access check and `InterpreterSelectQuery` skips
+                /// `checkAccessRightsForSelect` for table functions, so a real
+                /// `SELECT ... FROM pv(...)` with `allow_experimental_analyzer = 0` succeeds with only
+                /// the base-table grants (which `ExplainAnalyzedSyntaxVisitor` below does enforce, via
+                /// `InterpreterSelectQuery` analysis of the expanded subquery). Running the view-object
+                /// check in the legacy fallback would make `EXPLAIN SYNTAX` deny a query whose real
+                /// execution succeeds.
                 if (expanded_parameterized_view)
                     checkAccessForExplainedQuery(
                         explained_query_before_expansion, query_context, settings.run_query_tree_passes, settings.query_tree_passes);
