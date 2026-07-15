@@ -650,7 +650,12 @@ void StorageKafka2::parsePartitionAffinitySettings()
     shard_count = shard_count_val;
 
     /// Isolate Keeper coordination state per affinity bucket.
-    keeper_path = keeper_path + "/" + toString(partition_shard_num);
+    /// Use a sibling path (e.g. /foo__shard1) rather than a child path (e.g. /foo/1)
+    /// to avoid nesting under another table's Keeper root, which would cause
+    /// recursive deletion conflicts during drop.
+    if (!keeper_path.empty() && keeper_path.back() == '/')
+        keeper_path.resize(keeper_path.size() - 1);
+    keeper_path = keeper_path + "__shard" + toString(partition_shard_num);
     fs_keeper_path = keeper_path;
     replica_path = keeper_path + "/replicas/" + (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
 

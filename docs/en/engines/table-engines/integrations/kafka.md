@@ -458,6 +458,8 @@ partition_id % kafka_shard_count == kafka_partition_shard_num - 1
 
 Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be between 1 and `kafka_shard_count` inclusive. It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup. This allows the same table metadata to be shared across shards in a Replicated database, with each shard resolving its own value. Validation is performed after macro expansion.
 
+Each shard's Keeper state is automatically isolated by appending a `__shard{N}` suffix to `kafka_keeper_path` (e.g., `/clickhouse/kafka/mytable__shard1`). All shards should use the same `kafka_keeper_path` value; the shard differentiation is handled automatically.
+
 Example with 3 shards consuming a 12-partition topic:
 
 ```sql
@@ -465,7 +467,7 @@ Example with 3 shards consuming a 12-partition topic:
 CREATE TABLE kafka_shard1 (key UInt64, value String)
 ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
 SETTINGS
-    kafka_keeper_path = '/clickhouse/kafka/{database}/shard1',
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
@@ -475,7 +477,7 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
 CREATE TABLE kafka_shard2 (key UInt64, value String)
 ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
 SETTINGS
-    kafka_keeper_path = '/clickhouse/kafka/{database}/shard2',
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
