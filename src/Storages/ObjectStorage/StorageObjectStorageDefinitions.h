@@ -119,6 +119,13 @@ struct LanceLocalDefinition
     static constexpr auto object_storage_type = "local";
 };
 
+struct LanceS3Definition
+{
+    static constexpr auto name = "lanceS3";
+    static constexpr auto storage_engine_name = "LanceS3";
+    static constexpr auto object_storage_type = "s3";
+};
+
 struct HudiDefinition
 {
     static constexpr auto name = "hudi";

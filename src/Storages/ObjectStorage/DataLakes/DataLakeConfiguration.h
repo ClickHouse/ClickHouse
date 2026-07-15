@@ -508,6 +508,9 @@ using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalCon
 
 #if USE_LANCE
 using StorageLocalLanceConfiguration = DataLakeConfiguration<StorageLocalConfiguration, LanceMetadata>;
+#if USE_AWS_S3
+using StorageS3LanceConfiguration = DataLakeConfiguration<StorageS3Configuration, LanceMetadata>;
+#endif
 #endif
 
 #if USE_AWS_S3
