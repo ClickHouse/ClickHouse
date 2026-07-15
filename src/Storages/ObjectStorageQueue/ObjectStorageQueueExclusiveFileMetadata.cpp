@@ -12,23 +12,24 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
     const std::string & zookeeper_name_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
-        path_,
-        zookeeper_name_,
-        /* processing_node_path */std::string(),
-        /* processed_node_path */std::string(),
-        /* failed_node_path */std::string(),
-        file_status_,
-        max_loading_retries_,
-        metadata_ref_count_,
-        /* use_persistent_processing_nodes */false,
-        log_)
+          path_,
+          zookeeper_name_,
+          /* processing_node_path */ std::string(),
+          /* processed_node_path */ std::string(),
+          /* failed_node_path */ std::string(),
+          file_status_,
+          max_loading_retries_,
+          metadata_ref_count_,
+          /* use_persistent_processing_nodes */ false,
+          log_)
     , metadata(metadata_)
 {
     LOG_TRACE(log, "Exclusive mode {}", path);
 }
 
 ObjectStorageQueueExclusiveFileMetadata::SetProcessingResponseIndexes
-ObjectStorageQueueExclusiveFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests & requests, const std::string & /*processing_id*/)
+ObjectStorageQueueExclusiveFileMetadata::prepareProcessingRequestsImpl(
+    Coordination::Requests & requests, const std::string & /*processing_id*/)
 {
     SetProcessingResponseIndexes result_indexes;
 
@@ -42,7 +43,7 @@ ObjectStorageQueueExclusiveFileMetadata::prepareProcessingRequestsImpl(Coordinat
 void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordination::Requests & /*requests*/, bool retriable)
 {
     if (retriable)
-        file_status->retries.fetch_add(1,  std::memory_order_relaxed);
+        file_status->retries.fetch_add(1, std::memory_order_relaxed);
     else
         file_status->retries = max_loading_retries ? max_loading_retries : 1;
     // Nothing is changed in zookeeper.
@@ -52,14 +53,11 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
 {
     const auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed
+        || (state == FileStatus::State::Failed && file_status->retries && file_status->retries >= max_loading_retries))
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, state, file_status->retries.load(), max_loading_retries);
+        LOG_TEST(
+            log, "File {} has non-processable state `{}` (retries: {}/{})", path, state, file_status->retries.load(), max_loading_retries);
         return std::pair{false, state};
     }
 
@@ -79,14 +77,18 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coo
     LOG_TRACE(log, "Prepare {} reset processed request", path);
 }
 
-void ObjectStorageQueueExclusiveFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & /*requests*/, LastProcessedFileInfoMapPtr /* created_nodes */)
+void ObjectStorageQueueExclusiveFileMetadata::prepareProcessedRequestsImpl(
+    Coordination::Requests & /*requests*/, LastProcessedFileInfoMapPtr /* created_nodes */)
 {
     // Nothing is changed in zookeeper.
     LOG_TRACE(log, "Prepare {} processed request", path);
 }
 
 void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
-    std::vector<std::string> & /*paths*/, const std::filesystem::path & /*zk_path_*/, const std::string & /*zookeeper_name_*/, LoggerPtr log_)
+    std::vector<std::string> & /*paths*/,
+    const std::filesystem::path & /*zk_path_*/,
+    const std::string & /*zookeeper_name_*/,
+    LoggerPtr log_)
 {
     // Nothing is changed in zookeeper.
     LOG_TRACE(log_, "Filter processed paths");
