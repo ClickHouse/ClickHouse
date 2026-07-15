@@ -753,11 +753,82 @@ void registerInputFormatPuffin(FormatFactory & factory)
         { return std::make_shared<PuffinMetadataInputFormat>(buf, std::make_shared<const Block>(sample)); });
     factory.markFormatSupportsSubsetOfColumns("PuffinMetadata");
 
+    factory.setDocumentation("PuffinMetadata", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
+It outputs one row per blob entry from the footer `BlobMetadata` list.
+
+Fixed output columns:
+- `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
+- `snapshot_id` (`Int64`) - snapshot id of the blob
+- `sequence_number` (`Int64`) - sequence number of the blob
+- `fields` (`Array(Int32)`) - sorted list of field ids the blob applies to
+- `offset` (`Int64`) - offset of the blob payload in the file
+- `length` (`Int64`) - length of the blob payload in bytes
+- `compression_codec` (`String`) - compression codec of the blob payload, if present
+- `properties` (`Map(String, String)`) - blob-specific properties
+
+LZ4-compressed puffin footers are supported.
+
+## Example usage {#example-usage}
+
+Inspect footer blobs:
+
+```sql
+SELECT blob_type, snapshot_id, sequence_number, offset, length, compression_codec,
+       mapKeys(properties), mapValues(properties)
+FROM file(deletes.puffin, PuffinMetadata);
+```
+
+Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
+)DOCS_MD",
+        .related = {"Puffin"},
+    });
+
     factory.registerInputFormat(
         "Puffin",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings &)
         { return std::make_shared<PuffinInputFormat>(buf, std::make_shared<const Block>(sample)); });
     factory.markFormatSupportsSubsetOfColumns("Puffin");
+
+    factory.setDocumentation("Puffin", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
+
+The format exposes deleted row positions from `deletion-vector-v1` blobs. Other blob types (for example `apache-datasketches-theta-v1`) are skipped.
+If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
+
+Fixed output column:
+- `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
+
+Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
+
+## Example usage {#example-usage}
+
+Read deleted row positions:
+
+```sql
+SELECT deleted_rows
+FROM file(deletes.puffin, Puffin);
+```
+
+Expand deleted positions into individual rows:
+
+```sql
+SELECT row_number
+FROM file(deletes.puffin, Puffin)
+ARRAY JOIN deleted_rows AS row_number
+ORDER BY row_number;
+```
+
+Use `PuffinMetadata` to inspect footer blob descriptors before reading deletion vectors.
+)DOCS_MD",
+        .related = {"PuffinMetadata"},
+    });
 }
 
 void registerPuffinSchemaReaders(FormatFactory & factory)

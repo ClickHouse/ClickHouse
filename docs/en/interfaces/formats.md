@@ -110,6 +110,8 @@ The supported formats are:
 | [AvroConfluent](./formats/Avro/AvroConfluent.md)                                                           | ✔   | ✔     |
 | [Parquet](./formats/Parquet/Parquet.md)                                                                    | ✔   | ✔     |
 | [ParquetMetadata](./formats/Parquet/ParquetMetadata.md)                                                    | ✔   | ✗     |
+| [Puffin](./formats/Puffin/Puffin.md)                                                                       | ✔   | ✗     |
+| [PuffinMetadata](./formats/Puffin/PuffinMetadata.md)                                                       | ✔   | ✗     |
 | [Arrow](./formats/Arrow/Arrow.md)                                                                          | ✔   | ✔     |
 | [ArrowStream](./formats/Arrow/ArrowStream.md)                                                              | ✔   | ✔     |
 | [ORC](./formats/ORC.md)                                                                                    | ✔   | ✔     |
