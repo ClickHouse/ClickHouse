@@ -445,8 +445,8 @@ DROP TABLE IF EXISTS _03300_ret_mask;
 SELECT '-- aiMask: with replacement and temperature';
 SELECT count() FROM (SELECT aiMask(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
 
--- aiMask is fail-closed: a provider error aborts the query even with ai_function_throw_on_error = 0.
-SELECT '-- aiMask: fail-closed on provider error despite throw_on_error = 0';
+-- A provider error aborts the query even with ai_function_throw_on_error = 0.
+SELECT '-- aiMask: provider error aborts the query despite throw_on_error = 0';
 SELECT aiMask('secret', ['email']) SETTINGS ai_function_throw_on_error = 0; -- { serverError POCO_EXCEPTION, NETWORK_ERROR, SOCKET_TIMEOUT }
 
 -- =============================================================================
@@ -589,9 +589,9 @@ INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(translation) FROM _03300_translate_default;
 DROP TABLE _03300_translate_default;
 
--- Counterpart to the survives-INSERT cases above. aiMask is fail-closed, so its DEFAULT INSERT
--- fails even under ai_function_throw_on_error = 0.
-SELECT '-- aiMask: DEFAULT INSERT fails (fail-closed, unlike the functions above)';
+-- Counterpart to the survives-INSERT cases above. aiMask aborts the query on error, so its DEFAULT
+-- INSERT fails even under ai_function_throw_on_error = 0.
+SELECT '-- aiMask: DEFAULT INSERT fails on error, unlike the functions above';
 DROP TABLE IF EXISTS _03300_mask_default;
 CREATE TABLE _03300_mask_default
 (

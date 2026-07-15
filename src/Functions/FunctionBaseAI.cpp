@@ -360,8 +360,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
     UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
 
-    /// Fail-closed functions (e.g. `aiMask`) must never substitute the column default for an errored
-    /// row, so they always propagate errors regardless of `ai_function_throw_on_error`.
+    /// Functions that must abort the query on error (e.g. `aiMask`) never substitute the column default
+    /// for an errored row; they always propagate errors regardless of `ai_function_throw_on_error`.
     bool throw_on_error = failClosedOnError() || settings[Setting::ai_function_throw_on_error].value;
 
     AIQuotaTracker quota(

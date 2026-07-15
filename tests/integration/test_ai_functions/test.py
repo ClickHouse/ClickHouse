@@ -629,8 +629,8 @@ def test_mask_null_input(started_cluster):
     assert "text" in lines
 
 
-def test_mask_fail_closed_ignores_throw_on_error(started_cluster):
-    """aiMask is fail-closed."""
+def test_mask_error_aborts_query_ignoring_throw_on_error(started_cluster):
+    """aiMask aborts the query on error, even with ai_function_throw_on_error = 0."""
     error = instance.query_and_get_error(
         "SELECT aiMask('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
