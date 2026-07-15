@@ -866,6 +866,8 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
 
+This is also what makes a `MaterializedPostgreSQL` database work when it is created `ON CLUSTER`: an `ON CLUSTER` query assigns the same ClickHouse UUID to the database on every replica, so the replication slot and publication names are made unique per server (by mixing in the per-server identity) instead of per database. Without this setting all replicas would derive the same names and fight over a single `PostgreSQL` replication slot and publication.
+
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
