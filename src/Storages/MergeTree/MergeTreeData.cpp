@@ -9285,9 +9285,22 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        /// Track covered parts locked by non-transactional operations for cleanup on failure.
-        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
-        DataPartsVector locked_parts_to_cleanup;
+        /// A non-transactional removal of a part created by a still-running transaction is rejected
+        /// (see checkNonTransactionalRemovalIsPossible). Unlike transactional locks (unlocked by
+        /// MergeTreeTransaction rollback), non-transactional removal marks cannot be undone once
+        /// persisted, so check all covered parts before locking any of them.
+        if (!txn)
+        {
+            for (const auto & part : precommitted_parts)
+            {
+                DataPartPtr covering_part;
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+                if (covering_part)
+                    continue;
+                for (const auto & covered : covered_parts)
+                    covered->version->checkNonTransactionalRemovalIsPossible();
+            }
+        }
 
         for (const auto & part : precommitted_parts)
         {
@@ -9317,12 +9330,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             /// Call addNewPartAndRemoveCovered only if there's no covering part.
             /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
             if (!covering_part)
-            {
                 MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                /// Track successfully locked parts for cleanup in case a later iteration fails.
-                if (!txn)
-                    locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
-            }
 
             covered_parts_for_commit.push_back(std::move(covered_parts));
         }

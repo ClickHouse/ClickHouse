@@ -138,21 +138,43 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
     LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
-    auto update_function = [tid](VersionInfo & info)
+    auto update_function = [this, tid](VersionInfo & info)
     {
         if (info.removal_tid == tid)
             return false;
 
         chassert(info.removal_tid.isEmpty() || tid == Tx::EmptyTID, fmt::format("removal_tid {}, tid {}", info.removal_tid, tid));
+
+        if (tid.isNonTransactional())
+            checkNonTransactionalRemovalIsPossible(info);
+
         info.removal_tid = tid;
-        /// A non-transactional removal can cover a part whose creating transaction has not
-        /// committed yet (it selects covered parts ignoring MVCC visibility). `creation_csn`
-        /// must be persisted before `removal_csn`, so defer the csn until creation resolves.
-        if (tid.isNonTransactional() && info.creation_csn)
+        if (tid.isNonTransactional())
             info.removal_csn = Tx::NonTransactionalCSN;
         return true;
     };
     updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
+}
+
+void VersionMetadata::checkNonTransactionalRemovalIsPossible()
+{
+    checkNonTransactionalRemovalIsPossible(getInfo());
+}
+
+void VersionMetadata::checkNonTransactionalRemovalIsPossible(const VersionInfo & info)
+{
+    /// A non-transactional removal covers all active parts ignoring MVCC visibility, so it can
+    /// meet a part whose creating transaction is still running (e.g. a non-transactional
+    /// DROP PARTITION over a part inserted by a concurrent uncommitted transaction).
+    /// Removing such a part would persist removal_csn before creation_csn and silently discard
+    /// the uncommitted data on commit, so fail instead.
+    if (!info.creation_csn && tryGetCSN(info.creation_tid) == Tx::UnknownCSN)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Cannot remove data object {}: it was created by transaction {} which is not committed yet. "
+            "Wait for the transaction to commit or roll back, and retry",
+            getObjectName(),
+            info.creation_tid);
 }
 
 void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
@@ -390,12 +412,8 @@ std::optional<bool> VersionMetadata::updateCSNIfNeeded(VersionInfo & current_inf
             }
             else if (csn_of_removal_tid)
             {
-                /// Never resolve removal_csn before creation_csn (see setAndStoreRemovalTID).
-                if (current_info.creation_csn)
-                {
-                    current_info.removal_csn = csn_of_removal_tid;
-                    info_updated = true;
-                }
+                current_info.removal_csn = csn_of_removal_tid;
+                info_updated = true;
             }
             else
             {
@@ -519,9 +537,7 @@ void VersionMetadata::validateInfo(const String & object_name, const VersionInfo
                 object_name,
                 info.removal_csn);
 
-        /// A non-transactional removal_tid over an unresolved creation is a valid deferred
-        /// state: the covering DROP could not see that the creating transaction is uncommitted.
-        if (info.creation_tid != info.removal_tid && !info.removal_tid.isEmpty() && !info.removal_tid.isNonTransactional())
+        if (info.creation_tid != info.removal_tid && !info.removal_tid.isEmpty())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Object {}, creation_csn is not set while removal_tid is not {}", object_name, info.removal_tid);
     }

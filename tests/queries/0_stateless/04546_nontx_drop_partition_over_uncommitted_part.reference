@@ -1,4 +1,8 @@
-case 1	0
-case 2	0
+SERIALIZATION_ERROR
+case 1 before commit	2
+case 1 after commit	2
+case 1 after drop	0
+SERIALIZATION_ERROR
+case 2 after rollback	0
+case 2 after drop	0
 case 3	0
-case 4	1
