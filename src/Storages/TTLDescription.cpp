@@ -319,9 +319,15 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
+            /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
+            /// a table created on an earlier version must still load even if its recompression codec would now be
+            /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. `is_attach` here is
+            /// also set for a create with `allow_suspicious_ttl_expressions`, matching `checkTTLExpression` below.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    ttl_element->recompression_codec, {},
+                    !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                    is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
         }
     }
 
