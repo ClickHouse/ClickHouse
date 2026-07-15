@@ -577,7 +577,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fs::path pid_path = prefix / options["pid-path"].as<std::string>();
 
         bool has_password_for_default_user = false;
-        bool default_user_removed = false;
+        bool is_default_user_removed = false;
 
         if (!fs::exists(config_d))
         {
@@ -729,7 +729,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             {
                 /// The default user was explicitly removed, e.g. via `<default remove="1" />` in users.d.
                 /// There is no user to set up a password for.
-                default_user_removed = true;
+                is_default_user_removed = true;
             }
             else if (!configuration->getString("users.default.password", "").empty()
                 || !configuration->getString("users.default.password_sha256_hex", "").empty()
@@ -826,7 +826,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool can_ask_password = !noninteractive && stdout_is_a_tty;
 
         /// Set up password for default user.
-        if (default_user_removed)
+        if (is_default_user_removed)
         {
             fmt::print("{}The default user is removed from {} and {}. Not setting up a password for it.{}\n",
                 start_hilite, users_config_file.string(), users_d.string(), end_hilite);
