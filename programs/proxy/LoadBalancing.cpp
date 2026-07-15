@@ -5,6 +5,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <atomic>
+#include <cmath>
 
 namespace DB
 {
@@ -146,14 +147,21 @@ std::unique_ptr<ILoadBalancingStrategy> ILoadBalancingStrategy::create(const Str
 
 BackendPtr chooseByConsistentHash(const std::vector<BackendPtr> & candidates, const String & key)
 {
+    /// Weighted rendezvous (highest random weight) hashing: a backend receives keys in proportion
+    /// to its weight, and each key moves only when its chosen backend is removed. The score is
+    /// monotonically increasing in the hash, so with equal weights the winner is the same backend
+    /// that plain rendezvous hashing (argmax of the hash) would pick.
     BackendPtr best;
-    UInt64 best_score = 0;
+    double best_score = 0;
     for (const auto & backend : candidates)
     {
         SipHash hash;
         hash.update(key);
         hash.update(backend->name());
-        UInt64 score = hash.get64();
+        /// The top 53 bits of the hash, mapped to a double strictly inside (0, 1),
+        /// so the logarithm below is finite and negative.
+        const double uniform = (static_cast<double>(hash.get64() >> 11) + 0.5) * 0x1.0p-53;
+        const double score = -static_cast<double>(backend->config().weight) / std::log(uniform);
         if (!best || score > best_score)
         {
             best = backend;
