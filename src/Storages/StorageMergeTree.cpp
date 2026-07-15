@@ -3113,6 +3113,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             auto data_parts_lock = lockParts();
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
+            /// Fail close before committing the cloned parts: the removal below is rejected if the
+            /// replaced range contains a part of a still-running transaction (see
+            /// checkNonTransactionalRemovalIsPossible), and at that point the cloned parts would
+            /// already be committed and could not be undone.
+            if (replace && !local_context->getCurrentTransaction())
+            {
+                for (const auto & part : getDataPartsVectorInPartitionForInternalUsage(DataPartState::Active, partition_id, data_parts_lock))
+                    if (drop_range.contains(part->info))
+                        part->version->checkNonTransactionalRemovalIsPossible();
+            }
+
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
@@ -3282,6 +3293,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
             auto src_data_parts_lock = lockParts();
+
+            /// Fail close before publishing anything in the destination table: the moved data must
+            /// come from committed transactions only (see checkCreationIsCommitted). A still-running
+            /// creator would also make the source-side removal below fail after the destination is
+            /// already committed, and a rolled-back part must never reappear in the destination.
+            if (!txn)
+            {
+                for (const auto & part : src_parts)
+                    part->version->checkCreationIsCommitted();
+            }
 
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 

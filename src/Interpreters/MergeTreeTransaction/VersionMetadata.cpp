@@ -177,6 +177,31 @@ void VersionMetadata::checkNonTransactionalRemovalIsPossible(const VersionInfo &
             info.creation_tid);
 }
 
+void VersionMetadata::checkCreationIsCommitted()
+{
+    auto info = getInfo();
+    /// A rollback sets the in-memory creation_csn to RolledBackCSN before removing the part from
+    /// the working set, so a rolled-back part can still be active here for a short while.
+    CSN creation_csn = info.creation_csn;
+    if (!creation_csn)
+        creation_csn = tryGetCSN(info.creation_tid);
+
+    if (creation_csn == Tx::UnknownCSN)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Cannot use data object {}: it was created by transaction {} which is not committed yet. "
+            "Wait for the transaction to commit or roll back, and retry",
+            getObjectName(),
+            info.creation_tid);
+
+    if (creation_csn == Tx::RolledBackCSN)
+        throw Exception(
+            ErrorCodes::SERIALIZATION_ERROR,
+            "Cannot use data object {}: it was created by transaction {} which was rolled back",
+            getObjectName(),
+            info.creation_tid);
+}
+
 void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
     LOG_TEST(

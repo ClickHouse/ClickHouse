@@ -111,6 +111,12 @@ public:
     /// check all of them first, so a failed removal does not leave some parts locked.
     void checkNonTransactionalRemovalIsPossible();
 
+    /// Throws SERIALIZATION_ERROR unless the object's creating transaction is committed (rejects
+    /// both still-running and rolled-back creators). Used before publishing the object's data
+    /// elsewhere (e.g. MOVE PARTITION TO TABLE): a commit is irreversible, so once this check
+    /// passes under the parts lock, the data cannot retroactively become rolled-back.
+    void checkCreationIsCommitted();
+
     /// Checks if the data part can be safely removed from storage.
     /// Returns true if no running transaction can see this part anymore.
     /// Logic:

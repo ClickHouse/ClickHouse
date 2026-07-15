@@ -6,3 +6,9 @@ SERIALIZATION_ERROR
 case 2 after rollback	0
 case 2 after drop	0
 case 3	0
+SERIALIZATION_ERROR
+case 4 after reject	2	1
+case 4 after replace	1	100
+SERIALIZATION_ERROR
+case 5 after reject	0	2	107
+case 5 after move	100	0

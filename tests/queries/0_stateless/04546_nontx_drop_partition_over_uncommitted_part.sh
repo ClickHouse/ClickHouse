@@ -44,4 +44,31 @@ $CLICKHOUSE_CLIENT -q "insert into mt values (3)"
 $CLICKHOUSE_CLIENT -q "alter table mt drop partition id 'all'"
 $CLICKHOUSE_CLIENT -q "select 'case 3', count() from mt"
 
+# Case 4: REPLACE PARTITION FROM is rejected before publishing the cloned parts: the destination
+# must keep exactly its old data (nothing removed, nothing added).
+$CLICKHOUSE_CLIENT -q "drop table if exists mt_src"
+$CLICKHOUSE_CLIENT -q "create table mt_src (n int) engine=MergeTree order by tuple()"
+$CLICKHOUSE_CLIENT -q "insert into mt_src values (100)"
+$CLICKHOUSE_CLIENT -q "insert into mt values (0)"
+tx 4 "begin transaction"
+tx 4 "insert into mt settings async_insert=0 values (1)"
+$CLICKHOUSE_CLIENT -q "alter table mt replace partition id 'all' from mt_src" 2>&1 | grep -oE "SERIALIZATION_ERROR" | head -1
+$CLICKHOUSE_CLIENT -q "select 'case 4 after reject', count(), sum(n) from mt"
+tx 4 "commit"
+$CLICKHOUSE_CLIENT -q "alter table mt replace partition id 'all' from mt_src"
+$CLICKHOUSE_CLIENT -q "select 'case 4 after replace', count(), sum(n) from mt"
+
+# Case 5: MOVE PARTITION TO TABLE is rejected before publishing anything in the destination.
+$CLICKHOUSE_CLIENT -q "drop table if exists mt_dst"
+$CLICKHOUSE_CLIENT -q "create table mt_dst (n int) engine=MergeTree order by tuple()"
+tx 5 "begin transaction"
+tx 5 "insert into mt settings async_insert=0 values (7)"
+$CLICKHOUSE_CLIENT -q "alter table mt move partition id 'all' to table mt_dst" 2>&1 | grep -oE "SERIALIZATION_ERROR" | head -1
+$CLICKHOUSE_CLIENT -q "select 'case 5 after reject', (select count() from mt_dst), count(), sum(n) from mt"
+tx 5 "rollback"
+$CLICKHOUSE_CLIENT -q "alter table mt move partition id 'all' to table mt_dst"
+$CLICKHOUSE_CLIENT -q "select 'case 5 after move', (select sum(n) from mt_dst), count() from mt"
+
 $CLICKHOUSE_CLIENT -q "drop table mt"
+$CLICKHOUSE_CLIENT -q "drop table mt_src"
+$CLICKHOUSE_CLIENT -q "drop table mt_dst"

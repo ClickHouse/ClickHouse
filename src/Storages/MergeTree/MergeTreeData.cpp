@@ -5846,6 +5846,13 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 {
     if (txn)
         transactions_enabled.store(true);
+    else
+    {
+        /// A non-transactional removal mark cannot be undone once persisted, so check all parts
+        /// before mutating anything (see checkNonTransactionalRemovalIsPossible).
+        for (const DataPartPtr & part : remove)
+            part->version->checkNonTransactionalRemovalIsPossible();
+    }
 
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
