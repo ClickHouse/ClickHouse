@@ -29,6 +29,7 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_stats_alias SELECT number, number, number
 # Write the statistics file for mtrl at its original type (Int64).
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_stats_alias MATERIALIZE STATISTICS mtrl SETTINGS mutations_sync = 2"
 
+# system.tables.metadata_path is relative to the database disk root, so prepend the disk path.
 metadata_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables WHERE table = 't_stats_alias' AND database = currentDatabase()")
 
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_stats_alias"
@@ -36,7 +37,18 @@ ${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_stats_alias"
 # Rewrite the column definition to what the fuzzer eventually reaches: mtrl as an ALIAS column of
 # a different type. The part on disk is untouched, so it still carries the physical Int64 column
 # and its Int64 statistics file.
-sed -i "s/\`mtrl\` Int64 STATISTICS(uniq, minmax)/\`mtrl\` Int16 ALIAS 1/" "$metadata_path"
+sed_expr="s/\`mtrl\` Int64 STATISTICS(uniq, minmax)/\`mtrl\` Int16 ALIAS 1/"
+data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
+if [ -e "$data_path$metadata_path" ]; then
+    sed -i -e "$sed_expr" "$data_path$metadata_path"
+else
+    # The database metadata lives on a remote disk (the "db disk" parametrization).
+    config="${CURDIR}/04501_statistics_type_mismatch_after_alias_modify.xml"
+    metadata=$(clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "read $metadata_path")
+    metadata_updated=$(echo "$metadata" | sed -e "$sed_expr")
+    echo "$metadata_updated" | clickhouse-disks -C "$config" --disk "disk_db_remote" --save-logs --query "write --path-to $metadata_path"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP DISK METADATA CACHE 'disk_db_remote'"
+fi
 
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE t_stats_alias"
 
