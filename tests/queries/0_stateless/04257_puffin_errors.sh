@@ -29,7 +29,10 @@ $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_siz
 for PUFFIN_FILE in \
     "$DATA/missing_snapshot_id.puffin" \
     "$DATA/missing_sequence_number.puffin" \
-    "$DATA/missing_fields.puffin"
+    "$DATA/missing_fields.puffin" \
+    "$DATA/missing_type.puffin" \
+    "$DATA/missing_offset.puffin" \
+    "$DATA/missing_length.puffin"
 do
     echo "--- $(basename "$PUFFIN_FILE") ---"
     $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF 'missing required field'

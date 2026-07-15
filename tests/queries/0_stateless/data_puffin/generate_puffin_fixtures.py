@@ -154,6 +154,9 @@ def generate_missing_required_fields() -> None:
         "missing_snapshot_id.puffin": "snapshot-id",
         "missing_sequence_number.puffin": "sequence-number",
         "missing_fields.puffin": "fields",
+        "missing_type.puffin": "type",
+        "missing_offset.puffin": "offset",
+        "missing_length.puffin": "length",
     }
     for name, field in blob_field_cases.items():
         case_payload = json.loads(json.dumps(payload))

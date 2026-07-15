@@ -201,6 +201,8 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
     {
         auto blob_obj = blobs_arr->getObject(static_cast<unsigned>(i));
         PuffinBlob blob;
+
+        requireBlobMetadataField(blob_obj, "type", i);
         blob.type = blob_obj->getValue<String>("type");
 
         requireBlobMetadataField(blob_obj, "snapshot-id", i);
@@ -209,7 +211,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
         requireBlobMetadataField(blob_obj, "sequence-number", i);
         blob.sequence_number = blob_obj->getValue<Int64>("sequence-number");
 
+        requireBlobMetadataField(blob_obj, "offset", i);
         blob.offset = blob_obj->getValue<Int64>("offset");
+
+        requireBlobMetadataField(blob_obj, "length", i);
         blob.length = blob_obj->getValue<Int64>("length");
         blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
 

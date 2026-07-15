@@ -16,6 +16,12 @@ missing required field
 missing required field
 --- missing_fields.puffin ---
 missing required field
+--- missing_type.puffin ---
+missing required field
+--- missing_offset.puffin ---
+missing required field
+--- missing_length.puffin ---
+missing required field
 --- missing_blobs.puffin ---
 missing required field 'blobs'
 --- null_blobs.puffin ---
