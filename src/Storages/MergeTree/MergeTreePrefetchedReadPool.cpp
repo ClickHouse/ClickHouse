@@ -360,12 +360,19 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         /// `local_fs_settings.buffer_size`. A remote reader normally allocates exactly
         /// `remote_fs_settings.buffer_size`; only when a filesystem-cache stage that prefers a bigger
         /// buffer is active does `DiskObjectStorage::prepareRead` raise the buffer to `large_buffer_size`
-        /// (to avoid cache fragmentation). Mirror that predicate here, otherwise with the cache off (e.g.
-        /// `enable_filesystem_cache = 0`, small `max_read_buffer_size_remote_fs`, large `prefetch_buffer_size`)
-        /// the admission estimate would charge `large_buffer_size` and reject prefetches that in reality fit.
+        /// (to avoid cache fragmentation). Mirror that predicate here so admission matches the buffer the
+        /// reader really allocates. The promotion requires the part's disk to actually expose a filesystem
+        /// cache (`getCacheName`, i.e. `IDisk::supportsCache`) on top of `enable_filesystem_cache`: on a
+        /// plain object-storage disk such as `s3_disk`, or with `enable_filesystem_cache = 0`, no promotion
+        /// happens and the buffer stays `buffer_size`, so charging `large_buffer_size` there would reject
+        /// remote prefetches (small `max_read_buffer_size_remote_fs`, large `prefetch_buffer_size`) that in
+        /// reality fit. The distributed-cache path can only *disable* the promotion further, so ignoring it
+        /// here is conservative: at worst we overcharge and admit fewer prefetches, never exceed the budget.
         const auto & read_settings = reader_settings.read_settings;
         const auto & remote_fs = read_settings.remote_fs_settings;
-        const bool remote_prefers_bigger_buffer = read_settings.enable_filesystem_cache
+        const bool part_disk_supports_cache = read_info.data_part->getDataPartStorage().getCacheName().has_value();
+        const bool remote_prefers_bigger_buffer = part_disk_supports_cache
+            && read_settings.enable_filesystem_cache
             && read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
             && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass;
         const size_t remote_buffer_size
