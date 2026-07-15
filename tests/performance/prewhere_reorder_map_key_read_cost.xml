@@ -1,0 +1,63 @@
+<test>
+    <!-- Benchmarks PREWHERE reordering with a Map-key predicate combined with a cheap, selective
+         filter on a small column (regression #110462). Before the fix, the reorderer hoisted the
+         `h['k'] = const` map-key subcolumn predicate ahead of the cheap `modality != ''` filter
+         (it was charged zero read cost and looked more selective), forcing a full read of the fat
+         `Map` column for every granule. The fix charges the map-key predicate its base `Map` read
+         cost, so the cheap filter runs first and the whole Map is no longer read. -->
+
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <optimize_functions_to_subcolumns>1</optimize_functions_to_subcolumns>
+        <allow_reorder_prewhere_conditions>1</allow_reorder_prewhere_conditions>
+    </settings>
+
+    <!-- Wide part format: per-column sizes exist, so the cost model can charge the Map read. -->
+    <create_query>
+        CREATE TABLE prewhere_map_cost_wide (id UInt64, modality LowCardinality(String), h Map(String, String))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <!-- Compact part format -->
+    <create_query>
+        CREATE TABLE prewhere_map_cost_compact (id UInt64, modality LowCardinality(String), h Map(String, String))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000
+    </create_query>
+
+    <!-- `modality` is a tiny selective column; `h` holds two 300-byte values so a full Map read is
+         expensive. The few matching rows are clustered (id < 10000) so a correctly-ordered cheap
+         prefilter skips the Map in almost every granule; the unfixed order reads the whole Map. -->
+    <fill_query>
+        INSERT INTO prewhere_map_cost_wide
+        SELECT number AS id,
+               if(less(number, 10000), 'active', '') AS modality,
+               map('k', repeat('v', 300), 'k2', repeat('w', 300)) AS h
+        FROM numbers_mt(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_map_cost_wide FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <fill_query>
+        INSERT INTO prewhere_map_cost_compact
+        SELECT number AS id,
+               if(less(number, 10000), 'active', '') AS modality,
+               map('k', repeat('v', 300), 'k2', repeat('w', 300)) AS h
+        FROM numbers_mt(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_map_cost_compact FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Wide: cheap filter should be evaluated first; only matching rows read the Map. -->
+    <query>
+        SELECT count() FROM prewhere_map_cost_wide WHERE modality != '' AND h['k'] = 'nope'
+    </query>
+
+    <!-- Compact -->
+    <query>
+        SELECT count() FROM prewhere_map_cost_compact WHERE modality != '' AND h['k'] = 'nope'
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_map_cost_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prewhere_map_cost_compact</drop_query>
+</test>
