@@ -963,7 +963,8 @@ void MergeTreeData::checkProperties(
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    const MergeTreeSettings * alter_effective_settings) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1179,18 +1180,22 @@ void MergeTreeData::checkProperties(
 
     /// `enable_block_number_column` / `enable_block_offset_column` are merge-time invariants for
     /// commit-order projections, so they must be validated against the settings the table WILL
-    /// have after this operation, not the live ones. On ALTER the live storage settings still hold
-    /// the OLD values while `new_metadata.settings_changes` carries the post-ALTER change set, so
-    /// `getSettings(&changes)` gives the effective settings. Otherwise
-    /// `ALTER TABLE ... MODIFY SETTING enable_block_number_column = 0` (or the offset one) on a
+    /// have after this operation, not against arbitrary values. Otherwise
+    /// `ALTER TABLE ... MODIFY SETTING enable_block_number_column = 0` (or RESET SETTING) on a
     /// table with such a projection would be accepted, yet a later merge / MATERIALIZE PROJECTION
     /// rebuild would run without materializing the required `_block_number` / `_block_offset`.
-    MergeTreeSettingsPtr effective_settings = getSettings();
-    if (new_metadata.settings_changes)
-    {
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        effective_settings = getSettings(&new_changes);
-    }
+    ///
+    /// On CREATE / ATTACH the live `getSettings()` already IS the effective table settings, and on
+    /// the post-`changeSettings` validation in `alter()` (`checkMetadataProperties`) the live
+    /// settings have already been updated, so `getSettings()` is correct there too. Only
+    /// `checkAlterIsPossible` runs BEFORE `changeSettings`, with the live settings still holding
+    /// the OLD values; it passes `alter_effective_settings` computed the same way the real
+    /// settings-update path does (`getDefaultSettings()` overlaid with the full post-ALTER
+    /// override list), which also handles RESET SETTING correctly (a dropped override falls back
+    /// to the default). `getDefaultSettings()` is virtual, so it must NOT be called here: this
+    /// runs from `setProperties` during the base `MergeTreeData` constructor, before the derived
+    /// vtable exists.
+    const MergeTreeSettings & effective_settings = alter_effective_settings ? *alter_effective_settings : *getSettings();
 
     for (const auto & projection : new_metadata.projections)
     {
@@ -1230,13 +1235,13 @@ void MergeTreeData::checkProperties(
                     projection.name);
         }
 
-        if (projection.with_block_number && !(*effective_settings)[MergeTreeSetting::enable_block_number_column])
+        if (projection.with_block_number && !effective_settings[MergeTreeSetting::enable_block_number_column])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
                 projection.name);
 
-        if (projection.with_block_offset && !(*effective_settings)[MergeTreeSetting::enable_block_offset_column])
+        if (projection.with_block_offset && !effective_settings[MergeTreeSetting::enable_block_offset_column])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
@@ -5094,7 +5099,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+
+    /// `checkAlterIsPossible` runs before `changeSettings`, so the live settings still hold the OLD
+    /// values. Reconstruct the effective post-ALTER settings the same way the real settings-update
+    /// path does (`getDefaultSettings()` overlaid with the full post-ALTER override list) so the
+    /// setting-dependent projection checks in `checkProperties` validate against what the table WILL
+    /// have. This handles RESET SETTING correctly: a dropped override falls back to the default.
+    MergeTreeSettingsPtr alter_effective_settings = getSettings();
+    if (new_metadata.settings_changes)
+    {
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto copy = getDefaultSettings();
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        alter_effective_settings = std::move(copy);
+    }
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
