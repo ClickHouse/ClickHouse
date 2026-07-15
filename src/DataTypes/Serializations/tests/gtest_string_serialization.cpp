@@ -332,3 +332,120 @@ TEST(StringSerialization, WithSizeStreamCorruptSkippedPrefixSizeThrows)
         ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 }
+
+/// A short/truncated `.size` sub-stream (fewer UInt64 lengths than requested). The size stream is
+/// deserialized with `SerializationNumber<UInt64>::deserializeBinaryBulk`, which appends whatever it
+/// finds and returns without demanding the full requested prefix. Before the fix, `num_read_rows <
+/// rows_offset + limit` was not checked, so the read either walked past `sizes_data` (when the
+/// skipped prefix exceeded what was read) or silently produced fewer rows than requested. A corrupt
+/// part must fail loudly, symmetric to the short data-stream path (CANNOT_READ_ALL_DATA).
+TEST(StringSerialization, WithSizeStreamShortSizeStreamThrows)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    auto src = makeVariedStringColumn(rows);
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    /// Keep only the first 100 UInt64 lengths; the data stream is left intact. The reader requests
+    /// all `rows` from offset 0, so `num_read_rows` (100) is short of the requested prefix.
+    std::string sizes_bytes = sizes_out.str();
+    ASSERT_GE(sizes_bytes.size(), 100 * sizeof(UInt64));
+    std::string truncated_sizes = sizes_bytes.substr(0, 100 * sizeof(UInt64));
+
+    ReadBufferFromString sizes_in(truncated_sizes);
+    ReadBufferFromString data_in(data_out.str());
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        FAIL() << "deserialize accepted a short size stream and produced "
+               << assert_cast<const ColumnString &>(*result).size() << " rows for " << rows << " requested";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+}
+
+/// A corrupt per-row size that lands in the MIDDLE of the requested (appended) range, not at index 0
+/// and not in the skipped prefix. Trace analogue: sizes `[good, ..., 0x8000...1, ...]`. Before the
+/// fix, `deserializeBinaryBulkWithSizeStream` appended the good leading offsets into the column and
+/// only threw when it reached the corrupt one, leaving the caller with `offsets.back() > chars.size()`
+/// (the override mutates `column` directly, so there is no clone-and-assign rollback). The whole size
+/// slice is now validated before any offset is pushed or `data.resize()` runs, so the throw path
+/// leaves the column internally consistent.
+TEST(StringSerialization, WithSizeStreamMidRangeCorruptSizeLeavesColumnConsistent)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    constexpr size_t corrupt_index = 250;
+    auto src = makeVariedStringColumn(rows);
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    /// Corrupt a size in the middle of the requested range (rows_offset == 0). The leading rows are
+    /// all valid, so a non-atomic implementation would have committed their offsets before throwing.
+    std::string sizes_bytes = sizes_out.str();
+    ASSERT_GE(sizes_bytes.size(), (corrupt_index + 1) * sizeof(UInt64));
+    const UInt64 corrupt_size = 0x8000000000000000ULL | 1ULL;
+    memcpy(sizes_bytes.data() + corrupt_index * sizeof(UInt64), &corrupt_size, sizeof(UInt64));
+
+    ReadBufferFromString sizes_in(sizes_bytes);
+    ReadBufferFromString data_in(data_out.str());
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        FAIL() << "deserialize accepted a mid-range corrupt size and produced offsets.back()="
+               << assert_cast<const ColumnString &>(*result).getOffsets().back()
+               << " vs chars.size()=" << assert_cast<const ColumnString &>(*result).getChars().size();
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
+
+    /// The key assertion: whatever the caller is left holding must be internally consistent -- no
+    /// offsets committed without matching chars.
+    if (result)
+    {
+        const auto & result_string = assert_cast<const ColumnString &>(*result);
+        const IColumn::Offset last_offset = result_string.getOffsets().empty() ? 0 : result_string.getOffsets().back();
+        ASSERT_LE(last_offset, result_string.getChars().size());
+    }
+}

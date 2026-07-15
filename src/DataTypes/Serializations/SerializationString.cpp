@@ -27,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -865,12 +866,35 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
-    /// Validate the skipped-prefix sizes with the same bound (a bit-63 size would otherwise wrap
-    /// the skip sum and misalign the data stream instead of throwing) and use checked addition.
-    for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
+
+    /// The size sub-stream is read with `SerializationNumber<UInt64>::deserializeBinaryBulk`, which
+    /// appends however many `UInt64` values were available and returns without demanding the full
+    /// requested prefix. A short/truncated `.size` stream (`num_read_rows < rows_offset + limit`)
+    /// would then make the skipped-prefix loop index past `sizes_data` (when `rows_offset >
+    /// num_read_rows`) or `appendStringSizesToColumnStringOffsets` underflow `num_read_rows -
+    /// rows_offset`, and with `rows_offset == 0` we would silently deserialize fewer rows than
+    /// requested instead of rejecting the corrupt part. Reject it loudly, symmetric to the short
+    /// data-stream path (`readBigStrict` -> CANNOT_READ_ALL_DATA).
+    if (num_read_rows < rows_offset + limit)
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "The String size sub-stream produced {} rows but {} were requested. The size and data "
+            "sub-streams are inconsistent; the part is likely truncated or corrupted.",
+            num_read_rows,
+            rows_offset + limit);
+
+    /// Validate the ENTIRE requested size slice (skipped prefix + appended rows) with the per-row
+    /// bound BEFORE mutating the column. `deserializeBinaryBulkWithSizeStream` mutates `column`
+    /// directly instead of going through the generic clone-and-assign path, so a corrupt size in the
+    /// middle of the range must not leave the caller with committed offsets and no matching chars
+    /// (`offsets.back() > chars.size()`). Because no offset is appended and no `data.resize` runs
+    /// until this loop passes, the column stays internally consistent on the throw path. The skipped
+    /// prefix additionally sums `bytes_to_skip` with checked addition (a bit-63 size would otherwise
+    /// wrap the sum and misalign the data stream instead of throwing).
+    for (size_t i = prev_size; i != prev_size + num_read_rows; ++i)
     {
         checkStringSizeFromSizeStream(sizes_data[i]);
-        if (__builtin_add_overflow(bytes_to_skip, sizes_data[i], &bytes_to_skip))
+        if (i < prev_size + rows_offset && __builtin_add_overflow(bytes_to_skip, sizes_data[i], &bytes_to_skip))
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "Overflow while computing the number of bytes to skip in the String data sub-stream. "
