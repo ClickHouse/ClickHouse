@@ -1755,19 +1755,19 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// because of TTL move rules, JBOD balancing, or multi-volume storage policies, and whose
             /// object-storage write buffer sizes come from the disk configuration rather than the merge
             /// context. Redo the reservation with the correct write buffer sizes whenever the output is on a
-            /// remote disk (to reflect that disk's own multipart upload ceiling) or the local/remote guess
-            /// was wrong. At this point the merge is already committed to run, so reserve unconditionally (as
-            /// the replicated path does): the corrected reservation still throttles selection of further merges.
+            /// remote disk (to reflect that disk's own multipart upload ceiling - or its absence: a remote
+            /// disk like HDFS has no multipart upload buffers and gets the local per-stream estimate) or the
+            /// local/remote guess was wrong. At this point the merge is already committed to run, so reserve
+            /// unconditionally (as the replicated path does): the corrected reservation still throttles
+            /// selection of further merges.
             const DiskPtr actual_disk = tagger->reserved_space->getDisk();
             const bool actual_output_on_remote_disk = actual_disk->isRemote();
             if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_on_remote_disk)
             {
-                const UInt64 remote_write_buffer_ceiling = actual_output_on_remote_disk
-                    ? CompactionStatistics::getDiskWriteBufferMemoryCeiling(actual_disk)
-                    : 0;
                 memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
                     CompactionStatistics::estimateNeededMemoryForMerge(
-                        *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk, remote_write_buffer_ceiling)));
+                        *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk,
+                        CompactionStatistics::getDiskWriteBufferMemoryCeiling(actual_disk))));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);

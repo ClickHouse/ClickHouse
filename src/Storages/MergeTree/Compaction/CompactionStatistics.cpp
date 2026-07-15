@@ -15,6 +15,8 @@
 
 #include <base/interpolate.h>
 
+#include <algorithm>
+#include <optional>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -200,29 +202,29 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             continue;
 
         /// Only types with a dynamic structure (JSON, Dynamic, and composites containing them) have
-        /// substreams that the default serialization cannot enumerate, so only those need to be recovered
-        /// from the part's actual on-disk stream count. hasDynamicSubcolumns() is too broad here: a plain
-        /// Map or Variant reports true there, yet its physical streams are fully enumerable from the default
-        /// serialization, so they are already counted once by the per-column union above (via
-        /// countColumnStreams). Excluding them from non_dynamic_columns would count them a second time
-        /// through total_streams - non_dynamic_streams and over-reserve the merge on upgrade-path tables.
-        NamesAndTypesList non_dynamic_columns;
-        bool has_dynamic_structure_column = false;
-        for (const auto & column : part->getColumns())
-        {
-            if (column.type->hasDynamicStructure())
-                has_dynamic_structure_column = true;
-            else
-                non_dynamic_columns.push_back(column);
-        }
-
+        /// substreams that the default serialization cannot enumerate, so only such parts need the
+        /// recovery at all. hasDynamicSubcolumns() would be too broad as the gate: a plain Map or Variant
+        /// reports true there, yet its physical streams are fully enumerable from the default serialization.
+        const auto & part_columns = part->getColumns();
+        const bool has_dynamic_structure_column = std::any_of(
+            part_columns.begin(), part_columns.end(),
+            [](const auto & column) { return column.type->hasDynamicStructure(); });
         if (!has_dynamic_structure_column)
             continue;
 
+        /// Subtract every stream the default serialization can enumerate from the part's on-disk stream
+        /// count. For a column without dynamic structure that is all of its streams; for a column with
+        /// dynamic structure it is the static skeleton of its layout - and composites keep a real one:
+        /// Tuple(UInt64, JSON) still has the UInt64 element stream, Array(JSON) its offsets, JSON its
+        /// shared-data streams. Both kinds are already counted once by the per-column union above, so
+        /// subtracting only whole non-dynamic columns (as if a dynamic-structure column had no enumerable
+        /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
+        /// What remains after the subtraction is exactly the part's dynamic substreams, which nothing
+        /// else accounts for.
         const size_t total_streams = countPartStreams(*part);
-        const size_t non_dynamic_streams = countColumnStreams(non_dynamic_columns);
-        if (total_streams > non_dynamic_streams)
-            unrecorded_dynamic_streams += total_streams - non_dynamic_streams;
+        const size_t statically_enumerable_streams = countColumnStreams(part_columns);
+        if (total_streams > statically_enumerable_streams)
+            unrecorded_dynamic_streams += total_streams - statically_enumerable_streams;
     }
     streams += unrecorded_dynamic_streams;
 
@@ -244,7 +246,7 @@ UInt64 estimateNeededMemoryForMerge(
     const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk,
-    UInt64 remote_write_buffer_ceiling)
+    std::optional<UInt64> remote_write_buffer_ceiling)
 {
     /// Per-stream read buffer size, from the effective server settings (merges read through the global
     /// context). A read buffer is later shrunk to the granule size, and it is smaller for the local
@@ -260,26 +262,35 @@ UInt64 estimateNeededMemoryForMerge(
         max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
     const UInt64 local_write_buffer_size = 2 * max_compress_block_size;
 
-    /// Per-stream write buffer size on object storage (S3 / Azure). A stream's upload buffers follow the
-    /// multipart buffer allocation policy (see BufferAllocationPolicy / WriteBufferFromS3 /
+    /// Per-stream write buffer size on multipart object storage (S3 / Azure). A stream's upload buffers
+    /// follow the multipart buffer allocation policy (see BufferAllocationPolicy / WriteBufferFromS3 /
     /// WriteBufferFromAzureBlobStorage): the first buffer is max(*_max_single_part_upload_size,
     /// *_min_upload_part_size) (ExpBufferAllocationPolicy::first_size), later buffers grow up to
     /// *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in memory at
     /// once while their uploads are in flight.
     ///
     /// Prefer the actual destination disk's ceiling (remote_write_buffer_ceiling from
-    /// IObjectStorage::getWriteBufferMemoryCeiling) when the caller knows the disk: a background merge's
+    /// getDiskWriteBufferMemoryCeiling) when the caller knows the disk: a background merge's
     /// object-storage writer takes its multipart sizes from the disk's own request settings and ignores the
     /// query/session settings (see S3ObjectStorage::writeObject), so a disk config that raises the multipart
-    /// sizes is reflected here and cannot allocate more per stream than is reserved. When the disk is not yet
-    /// known (the admission guess before CurrentlyMergingPartsTagger picks it), fall back to the worst-case
-    /// per-stream ceiling from the context settings over both back ends (a given disk is only one of them, so
-    /// the max is a safe upper bound); pinning the first buffer to *_max_single_part_upload_size alone would
-    /// underestimate it when *_min_upload_part_size is the larger of the two. This is only a ceiling: the
-    /// output side is separately capped by the merge's data volume below, because an upload buffer never
-    /// holds more than the data written into it.
-    UInt64 remote_write_buffer_size = remote_write_buffer_ceiling;
-    if (remote_write_buffer_size == 0)
+    /// sizes is reflected here and cannot allocate more per stream than is reserved. A known disk with a
+    /// zero ceiling has no multipart upload buffers at all - a remote disk such as HDFS writes through a
+    /// normal buffer (see HDFSObjectStorage::writeObject) - so the local per-stream estimate applies there;
+    /// treating every remote disk as an S3 / Azure multipart writer would reserve, per output stream,
+    /// gigabytes a HDFS merge can never allocate, and a many-column table would saturate
+    /// merges_mutations_memory_usage_soft_limit and starve merges for no real memory pressure. Only when
+    /// the disk is not yet known (the admission guess before CurrentlyMergingPartsTagger picks it) fall
+    /// back to the worst-case per-stream ceiling from the context settings over both back ends (a given
+    /// disk is only one of them, so the max is a safe upper bound); pinning the first buffer to
+    /// *_max_single_part_upload_size alone would underestimate it when *_min_upload_part_size is the larger
+    /// of the two. This is only a ceiling: the output side is separately capped by the merge's data volume
+    /// below, because an upload buffer never holds more than the data written into it.
+    UInt64 remote_write_buffer_size = 0;
+    if (remote_write_buffer_ceiling.has_value())
+    {
+        remote_write_buffer_size = *remote_write_buffer_ceiling;
+    }
+    else if (output_on_remote_disk)
     {
         auto remote_stream_ceiling = [](UInt64 max_single, UInt64 min_upload, UInt64 max_upload, UInt64 max_inflight) -> UInt64
         {
@@ -329,8 +340,10 @@ UInt64 estimateNeededMemoryForMerge(
         ? countOutputStreams(output_columns, future_part.parts)
         : 1;
 
-    /// Worst case: every stream allocates all of its buffers in full.
-    const UInt64 write_buffer_size = output_on_remote_disk ? remote_write_buffer_size : local_write_buffer_size;
+    /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
+    /// means the output is not written through multipart upload buffers (a local disk, a known remote disk
+    /// without them, or a local pre-disk-selection guess), so the local per-stream size applies.
+    const UInt64 write_buffer_size = remote_write_buffer_size != 0 ? remote_write_buffer_size : local_write_buffer_size;
     const UInt64 output_worst_case = output_streams * write_buffer_size;
 
     /// However, only the compressor block and the file buffer are allocated eagerly (and they start at
@@ -356,12 +369,17 @@ UInt64 estimateNeededMemoryForMerge(
 
 UInt64 getDiskWriteBufferMemoryCeiling(const DiskPtr & disk)
 {
-    /// Only real object-storage disks expose a settings-dependent write buffer ceiling. A plain local disk,
-    /// or a decorator that is not itself a DiskObjectStorage, returns 0 so the estimator falls back to the
-    /// context settings (dynamic_cast avoids the exception that IDisk::getObjectStorage throws for disks
-    /// that do not support object storage).
-    if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get()))
-        return object_storage_disk->getObjectStorage()->getWriteBufferMemoryCeiling();
+    /// Unwrap decorator disks (encrypted, read-only, ...) down to the disk they delegate to: they forward
+    /// object-storage writes to the wrapped disk (see DiskEncrypted::getObjectStorage), so a wrapped
+    /// S3 / Azure disk allocates the same multipart upload buffers as a bare one and its ceiling must come
+    /// from the same request settings. Only a real object-storage disk exposes a settings-dependent
+    /// ceiling; for everything else - a plain local disk, or a remote disk such as HDFS whose writer has
+    /// no multipart upload buffers - return 0, which the estimator takes as "use the local per-stream
+    /// estimate" (dynamic_cast avoids the exception that IDisk::getObjectStorage throws for disks that do
+    /// not support object storage).
+    for (DiskPtr current = disk; current; current = current->getDelegateDiskIfExists())
+        if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(current.get()))
+            return object_storage_disk->getObjectStorage()->getWriteBufferMemoryCeiling();
     return 0;
 }
 
