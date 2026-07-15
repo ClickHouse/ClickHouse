@@ -2094,7 +2094,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                         create_field_ref(range.begin, key_col, left);
 
-                        right = POSITIVE_INFINITY;
+                        /// The last mark range opens towards +inf for an ascending key and towards
+                        /// -inf for a descending (reverse) key, whose last granule holds the smallest
+                        /// values. Using +inf unconditionally inverts the key range (left > right)
+                        /// for a reverse key. index_bounds tightens this bound per call.
+                        right = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
                 else
@@ -2145,7 +2149,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     else
                         left = index_bounds[i].left;
 
-                    right = index_bounds[i].right;
+                    /// The last mark range is open on its far side. For an ascending key that far
+                    /// side is the upper bound of the part; for a descending (reverse) key the last
+                    /// granule holds the smallest values, so its open side is the lower bound.
+                    /// Using index_bounds[i].right unconditionally would produce an inverted key
+                    /// range (left > right) for a reverse key, which mis-prunes granules (wrong
+                    /// results) and trips the MergeTreeSetIndex binary-search assertion.
+                    right = reverse_flags[i] ? index_bounds[i].left : index_bounds[i].right;
                 }
             }
             else

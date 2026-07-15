@@ -1,0 +1,9 @@
+part_type	Wide
+lt0	500
+ge0	500
+between	201
+eq_min	1
+eq_max	1
+in_set	50
+multi_range	43
+multi_in	30
