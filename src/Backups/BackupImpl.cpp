@@ -174,6 +174,7 @@ BackupImpl::BackupImpl(
     , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
+    , backup_id(params.backup_id)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
@@ -433,6 +434,8 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
+    if (!backup_id.empty())
+        *out << "<backup_id>" << xml << backup_id << "</backup_id>";
     if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
@@ -580,6 +583,8 @@ void BackupImpl::readBackupMetadata()
 
     timestamp = parse<::LocalDateTime>(getString(config_root, "timestamp")).to_time_t();
     uuid = parse<UUID>(getString(config_root, "uuid"));
+    if (config_root->getNodeByPath("backup_id"))
+        backup_id = getString(config_root, "backup_id");
 
     if (config_root->getNodeByPath("base_backup") && !base_backup_info)
     {
