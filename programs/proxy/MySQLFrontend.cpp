@@ -142,11 +142,20 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
     client_ep.receivePacket(auth_switch_response);
 
     /// Log in to the backend as the user, with the response now bound to the backend's scramble.
-    uint32_t backend_request_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
+    /// The command phase is spliced byte for byte after authentication, so capability bits that
+    /// change its framing (e.g. CLIENT_DEPRECATE_EOF result set endings) must be negotiated
+    /// identically on both legs: forward what the client negotiated with the proxy, intersected
+    /// with what the backend advertises. The bits governing the login itself are always set,
+    /// because this packet is composed by the proxy, not spliced.
+    uint32_t backend_request_capabilities
+        = response.capability_flags & server_capabilities & backend_greeting.capability_flags;
+    backend_request_capabilities |= CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
         | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA;
     if (!response.database.empty())
         backend_request_capabilities |= CLIENT_CONNECT_WITH_DB;
-    HandshakeResponse backend_response(backend_request_capabilities, 0, 33,
+    else
+        backend_request_capabilities &= ~static_cast<uint32_t>(CLIENT_CONNECT_WITH_DB);
+    HandshakeResponse backend_response(backend_request_capabilities, response.max_packet_size, response.character_set,
         response.username, response.database, auth_switch_response.value, "mysql_native_password");
     backend_ep.sendPacket(backend_response, true);
 
