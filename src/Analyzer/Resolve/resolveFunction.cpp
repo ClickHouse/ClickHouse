@@ -36,6 +36,7 @@
 #include <Columns/validateColumnType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Storages/StorageSet.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -1288,10 +1289,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// If table is already prepared set, we do not replace it with subquery.
             /// If table is not a StorageSet, we'll create plan to build set in the Planner.
             ///
-            /// If its single column is an Array one dimension deeper than the left argument,
-            /// interpret it as the set of the array's elements, exactly like an array subquery,
-            /// an array literal, or an array-returning function on the right side of IN.
-            flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
+            /// A StorageSet is consumed natively as a prepared set (see Planner/CollectSets),
+            /// and cannot be read, so it must not be rewritten into a `SELECT column FROM table`
+            /// subquery. Its Array elements are the set rows and are matched by the native path.
+            ///
+            /// For any other table, if its single column is an Array one dimension deeper than the
+            /// left argument, interpret it as the set of the array's elements, exactly like an array
+            /// subquery, an array literal, or an array-returning function on the right side of IN.
+            if (!typeid_cast<const StorageSet *>(table_node->getStorage().get()))
+                flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
         }
         else if (table_function_node)
         {

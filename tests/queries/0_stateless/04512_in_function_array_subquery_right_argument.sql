@@ -139,3 +139,16 @@ CREATE TABLE t_04512_rwj (arr Array(UInt8)) ENGINE = Memory;
 INSERT INTO t_04512_rwj VALUES ([1, 2, 3]);
 SELECT 2 IN t_04512_rwj AS present, 5 IN t_04512_rwj AS absent;
 DROP TABLE t_04512_rwj;
+
+-- Regression guard: a `Set`-engine table must NOT be flattened. It is consumed natively as a
+-- prepared set (it has no `read`), so rewriting it into `SELECT arr FROM t` used to throw
+-- `NOT_IMPLEMENTED: Method read is not supported by storage Set`. The elements of a `Set` of
+-- `Array` are whole arrays, so an array left argument matches a stored row, and a scalar left
+-- argument is a genuine type mismatch, exactly as before the array-table flattening was added.
+SET rewrite_in_to_join = 0;
+DROP TABLE IF EXISTS t_04512_set;
+CREATE TABLE t_04512_set (arr Array(UInt8)) ENGINE = Set;
+INSERT INTO t_04512_set VALUES ([1, 2, 3]), ([4, 5]);
+SELECT [1, 2, 3] IN t_04512_set AS row_present, [9, 9] IN t_04512_set AS row_absent;
+SELECT 2 IN t_04512_set; -- { serverError TYPE_MISMATCH }
+DROP TABLE t_04512_set;
