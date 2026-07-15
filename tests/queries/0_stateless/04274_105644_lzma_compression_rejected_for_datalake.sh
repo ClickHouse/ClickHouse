@@ -122,10 +122,11 @@ for forbidden in lzma gzip; do
 done
 
 # 9b. Full-definition `ATTACH TABLE name FROM 'path' (cols) ENGINE = ...` also
-#     skips the rejection: the gate fires only for fresh definitions
-#     (`LoadingStrictnessLevel < ATTACH`), and every `ATTACH` form (short or
-#     full-definition) reuses previously-validated metadata, so it must load
-#     even when the saved engine args carry the forbidden value. The
+#     skips the rejection: the gate fires only for `LoadingStrictnessLevel <
+#     ATTACH`, and every `ATTACH` form (short or full-definition) is
+#     deliberately exempt as a compatibility path, so pre-fix tables can be
+#     re-attached after upgrade even though a full-definition `ATTACH`
+#     supplies the engine args inline. The
 #     compression-specific error must be absent (`grep -c` returns 0); the
 #     statement may still fail for an unrelated reason (the path holds no
 #     Iceberg metadata), which does not print that message.

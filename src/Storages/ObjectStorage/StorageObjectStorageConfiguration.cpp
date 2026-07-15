@@ -130,10 +130,12 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
 
-        /// Reject only when the user supplies a fresh definition: a `CREATE TABLE`, or a table
-        /// function (which always loads with `CREATE`). Every `ATTACH` and server-startup replay
-        /// has `mode >= ATTACH` and reuses previously-validated metadata, so it must skip the check
-        /// for pre-fix tables to still load after upgrade. `RESTORE TABLE` loads with
+        /// Reject only a `CREATE TABLE` or a table function (which always loads with `CREATE`).
+        /// Every `ATTACH` form and server-startup replay has `mode >= ATTACH` and is deliberately
+        /// exempt as a compatibility path, so pre-fix tables still load after upgrade. This
+        /// includes a user-supplied full-definition `ATTACH TABLE ... ENGINE = ...`, which can
+        /// therefore still persist a definition carrying `compression_method`; per review the
+        /// gate is intentionally kept as simple as `mode < ATTACH`. `RESTORE TABLE` loads with
         /// `SECONDARY_CREATE` (which is `< ATTACH`), hence the explicit `is_restore_from_backup` guard.
         if (mode < LoadingStrictnessLevel::ATTACH
             && !is_restore_from_backup
