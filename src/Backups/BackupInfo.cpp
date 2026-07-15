@@ -245,37 +245,44 @@ namespace
 
     String normalizePlainAzureStorageAccountURL(const String & url)
     {
+        Poco::URI uri;
         try
         {
-            Poco::URI uri(url);
-            const String scheme = toLower(uri.getScheme());
-            const bool is_valid = (scheme == "http" || scheme == "https")
-                && !uri.getHost().empty()
-                && url.find_first_of("?#") == String::npos
-                && stripURLUserInfo(url) == url;
-
-            if (!is_valid)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "AzureBlobStorage with explicit account credentials requires a plain storage account URL without userinfo, query, or fragment");
-
-#if USE_AZURE_BLOB_STORAGE
-            return Azure::Core::Url(url).GetAbsoluteUrl();
-#else
-            uri.setScheme(scheme);
-            return uri.toString();
-#endif
+            uri = Poco::URI(url);
         }
         catch (const Poco::Exception &)
         {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AzureBlobStorage with explicit account credentials requires a valid storage account URL");
+        }
+
+        const String scheme = toLower(uri.getScheme());
+        const bool is_valid = (scheme == "http" || scheme == "https")
+            && !uri.getHost().empty()
+            && url.find_first_of("?#") == String::npos
+            && stripURLUserInfo(url) == url;
+
+        if (!is_valid)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AzureBlobStorage with explicit account credentials requires a plain storage account URL without userinfo, query, or fragment");
+
+#if USE_AZURE_BLOB_STORAGE
+        try
+        {
+            return Azure::Core::Url(url).GetAbsoluteUrl();
         }
         catch (const std::logic_error &)
         {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AzureBlobStorage with explicit account credentials requires a valid storage account URL");
         }
-
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "AzureBlobStorage with explicit account credentials requires a plain storage account URL without userinfo, query, or fragment");
+#else
+        uri.setScheme(scheme);
+        return uri.toString();
+#endif
     }
 
     String getStringArgForNormalizedIdentity(const Field & arg, const String & backup_engine_name, size_t index)
