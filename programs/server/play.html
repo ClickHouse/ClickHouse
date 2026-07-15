@@ -4313,10 +4313,19 @@ function attachImagePreview(link, url) {
 /// pinned when the hovered link scrolls out from under a stationary cursor (scrolling
 /// delivers no mouse event, so `mouseleave` does not fire). Clearing the hovered URL
 /// also suppresses an in-flight `load` that would otherwise reveal a stale preview
-/// after the scroll.
+/// after the scroll. Detaching the source aborts a still-running download: a slow or
+/// large image would otherwise keep loading invisibly after the preview is dismissed
+/// (re-entering the link refetches, normally from the browser cache).
 function hideImagePreview() {
     image_preview_hovered_url = null;
-    if (image_preview) { image_preview.style.display = 'none'; }
+    if (image_preview)
+    {
+        image_preview.style.display = 'none';
+        image_preview.onload = null;
+        image_preview.onerror = null;
+        image_preview.removeAttribute('src');
+        delete image_preview.dataset.url;
+    }
 }
 
 /// Hide the currently visible table-info balloon on any scroll: it uses
