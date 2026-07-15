@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
+    extern const SettingsBool query_plan_rewrite_grouped_count_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
@@ -286,6 +287,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_size_to_preallocate_for_joins = from[Setting::max_size_to_preallocate_for_joins];
     collect_hash_table_stats_during_joins = from[Setting::collect_hash_table_stats_during_joins];
     collect_hash_table_stats_during_aggregation = from[Setting::collect_hash_table_stats_during_aggregation];
+    rewrite_grouped_count_distinct
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_rewrite_grouped_count_distinct];
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = std::chrono::milliseconds(from[Setting::lock_acquire_timeout].totalMilliseconds());
     actions_settings = std::move(actions_settings_);

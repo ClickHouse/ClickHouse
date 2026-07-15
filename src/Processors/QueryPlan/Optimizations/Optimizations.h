@@ -226,6 +226,11 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 /// AST. Mirrors how join steps get their keys. No-op unless collect_hash_table_stats_during_aggregation.
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// Rewrites `uniqExact(x) ... GROUP BY k` into a `count(x)` over a deduplicating `GROUP BY k, x`
+/// when the hash-table statistics of a previous run show the profitable shape: few group keys,
+/// shared across the aggregating threads, each with a large distinct set.
+bool rewriteGroupedCountDistinct(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+
 /// Populates two maps in lock-step:
 ///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
 ///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
