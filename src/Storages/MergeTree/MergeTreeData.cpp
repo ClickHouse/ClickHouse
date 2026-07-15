@@ -1177,8 +1177,13 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    /// CREATE-only feature gates: skip on ATTACH, or an existing table becomes unattachable
+    /// once the relevant setting is disabled (issue #102445). Mirrors the `!attach` guard above.
     for (const auto & projection : new_metadata.projections)
     {
+        if (attach)
+            break;
+
         if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
         {
             throw Exception(
