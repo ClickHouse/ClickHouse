@@ -254,3 +254,31 @@ def test_invalid_body_format_sends_no_request(started_cluster):
         )
         assert "UNKNOWN_FORMAT" in error
         assert get_request_count() == 0
+
+
+def test_create_as_with_body_rejected_before_any_request(started_cluster):
+    # `CREATE TABLE ... AS url(..., body(...))` is an insert-style use of the table function and is
+    # rejected, because inserting into `url` sends the inserted rows as the request body. With the
+    # columns omitted the rejection must fire *before* the schema-inference request; otherwise the
+    # doomed query would still deliver the body payload to the remote endpoint. Assert that the
+    # query fails and that the endpoint received zero requests.
+    for query in (
+        "CREATE TABLE t_create_as_body AS url('http://localhost:8002/', JSONEachRow, body('x'))",
+        "CREATE TABLE t_create_as_body AS url('http://localhost:8002/', JSONEachRow, body((SELECT 'x')))",
+        # With an explicit structure there is nothing to infer; the rejection then comes from the
+        # storage-creation guard, still before any request.
+        "CREATE TABLE t_create_as_body AS url('http://localhost:8002/', JSONEachRow, 'v UInt8', body('x'))",
+    ):
+        reset_request_count()
+        error = server.query_and_get_error(query)
+        assert "BAD_ARGUMENTS" in error
+        assert get_request_count() == 0
+
+
+def test_describe_with_body_sends_one_request(started_cluster):
+    # DESCRIBE is a pure read: it must keep working with `body(...)` and resolve the structure the
+    # same way a SELECT would, sending exactly one schema-inference POST.
+    reset_request_count()
+    result = server.query("DESC url('http://localhost:8002/', JSONEachRow, body('x'))")
+    assert "v" in result
+    assert get_request_count() == 1

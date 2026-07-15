@@ -376,7 +376,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            getActualTableStructure(context, is_insert_query),
             ConstraintsDescription{},
             configuration);
     }
@@ -438,6 +438,19 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
     if (structure == "auto")
     {
+        /// An insert-style structure resolution (`INSERT INTO FUNCTION url(...)`,
+        /// `CREATE TABLE ... AS url(...)`) must not send the body-carrying schema-inference
+        /// request: the insert-style execution itself rejects `body(...)` later (see `getStorage`),
+        /// so the endpoint would receive the payload from a query that is doomed to fail.
+        /// Fail before any request is made instead.
+        if (is_insert_query && !configuration.body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Schema inference is not supported for the url table function with the 'body' argument when "
+                "the structure is resolved for an insert-style query (e.g. INSERT INTO FUNCTION url(...) or "
+                "CREATE TABLE ... AS url(...)): it would send the body-carrying HTTP request even though such "
+                "a query rejects the 'body' argument. Specify the 'structure' argument explicitly instead.");
+
         ColumnsDescription columns;
         String sample_path = filename;
 
