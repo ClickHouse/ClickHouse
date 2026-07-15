@@ -84,34 +84,90 @@ class GH:
         assert repo_name
         print(repo_name)
 
-        for attempt in range(3):
-            # store changed files
-            if info.pr_number > 0:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
-                )
-                assert exit_code == 0, "Failed to retrieve changed files list"
-            else:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
+        # Include both sides of renames: .filename is the destination path and
+        # .previous_filename (REST API only, absent for non-renames) is the
+        # source path. Without the source path a rename out of a watched
+        # directory is invisible to consumers such as job filtering and the
+        # read-only docs guard. Rename sources do not exist in the checkout at
+        # HEAD, same as deleted files, which were always included.
+        jq_both_sides = ".filename, (.previous_filename // empty)"
+
+        # In a merge-queue run PR_NUMBER is 0, but the queue entry is built for
+        # exactly one PR (parsed from the merge group head ref). Use that PR's
+        # paginated files list: the merge group SHA is a merge commit, and the
+        # commits API caps a commit's file list at 300 entries.
+        pr_number = info.pr_number
+        if pr_number <= 0 and info.is_merge_queue_event:
+            pr_number = info.linked_pr_number
+            if pr_number <= 0 and strict:
+                # The linked PR number could not be parsed from the merge group
+                # head ref. Falling back to `repos/{repo}/commits/{sha}` would
+                # reintroduce the 300-entry cap this branch exists to avoid, so a
+                # large PR could silently lose changed test files and turn the
+                # merge-queue flaky check into a false green. Fail closed instead:
+                # a merge-queue run always corresponds to exactly one PR, so a
+                # missing linked PR number is a real fault, not a skip condition.
+                raise RuntimeError(
+                    "Merge-queue run has no linked PR number (could not parse it "
+                    "from the merge group head ref); refusing to fall back to the "
+                    "capped commits API for changed-file detection."
                 )
 
+        if pr_number > 0:
+            command = (
+                f"gh api repos/{repo_name}/pulls/{pr_number}/files "
+                f"--paginate --jq '.[] | {jq_both_sides}'"
+            )
+        else:
+            command = (
+                f"gh api repos/{repo_name}/commits/{sha} "
+                f"--jq '.files[] | {jq_both_sides}'"
+            )
+
+        # The GitHub API call is an idempotent read that occasionally fails with
+        # a transient error (rate limiting, a 5xx, or a GraphQL "Something went
+        # wrong" hiccup). Retry a few times with a small backoff so a momentary
+        # blip does not take down the whole workflow. Every non-zero exit code
+        # is treated as retryable: this is a read, so a spurious retry is cheap
+        # and we cannot reliably tell transient from permanent errors apart by
+        # the exit code alone.
+        attempts = 5
+        last_exit_code = 0
+        last_err = ""
+        last_out = ""
+        for attempt in range(attempts):
+            exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(command)
+            last_exit_code, last_err, last_out = exit_code, err, changed_files_str
             if exit_code == 0:
-                res = changed_files_str.split("\n") if changed_files_str else []
+                res = (
+                    list(dict.fromkeys(changed_files_str.split("\n")))
+                    if changed_files_str
+                    else []
+                )
                 break
             else:
                 print(
-                    f"Failed to get changed files, attempt [{attempt+1}], exit code [{exit_code}], error [{err}]"
+                    f"Failed to get changed files, attempt [{attempt + 1}/{attempts}], "
+                    f"exit code [{exit_code}], stderr [{err}]"
                 )
-                if exit_code > 1:
-                    # assume that exit code == 1 is retryable - Fix if not true
-                    # exit_code 1 for this type of errors:  WARNING: stderr: GraphQL: Something went wrong while executing your query on 2025-08-05T15:33:56Z. Please include `E746:1CAA99:44F9F67:8B9B520:68922464` when reporting this issue.
-                    print("error is not retryable - break")
-                    break
-                time.sleep(1)
+                if attempt + 1 < attempts:
+                    time.sleep(attempt + 1)
 
-        if res is None and strict:
-            raise RuntimeError("Failed to get changed files")
+        if res is None:
+            # Surface the actual command, exit code and stderr so the failure is
+            # diagnosable directly from the report, instead of resurfacing later
+            # as a confusing "NoneType is not iterable" in a downstream consumer
+            # that read the (never stored) changed files from the KV data.
+            message = (
+                f"Failed to retrieve the list of changed files after {attempts} attempts.\n"
+                f"  command:   {command}\n"
+                f"  exit code: {last_exit_code}\n"
+                f"  stderr:    {last_err}\n"
+                f"  stdout:    {last_out}"
+            )
+            print(message)
+            if strict:
+                raise RuntimeError(message)
 
         return res
 
