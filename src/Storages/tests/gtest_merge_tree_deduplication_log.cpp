@@ -77,12 +77,64 @@ TEST(MergeTreeDeduplicationLog, RotationFailureKeepsLogUsable)
     /// This add reaches rotate_interval and triggers a rotation whose writeFile is injected to fail.
     EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
 
+    /// The failed insert must not have left "block2" published: the caller aborts
+    /// the insert before the part is committed, so a client retry of the same block
+    /// must be accepted, not deduplicated against a part that never became active.
+    EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
+
+    /// And now that the retry has committed the block, it deduplicates as usual.
+    EXPECT_FALSE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+
     /// After the failed rotation the previous writer must still be live, so this
     /// must not abort with "Cannot write to finalized buffer".
     EXPECT_NO_THROW(log.addPart({"block3"}, part("all_3_3_0")));
 
     /// Dropping a part writes DROP records too; it must also stay usable.
     EXPECT_NO_THROW(log.dropPart(part("all_3_3_0")));
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: block IDs published by an insert that failed on log rotation
+/// must not survive a server restart either. The rollback writes compensating DROP
+/// records into the still-live writer, so replaying the log on startup must not
+/// re-publish them and a retry of the failed insert must be accepted.
+TEST(MergeTreeDeduplicationLog, RotationFailureRollsBackPublishedBlockIds)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_rollback/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskThrowingOnNthWrite>("faulty", work_dir, /*fail_on_write=*/ 2);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// The rotation fails, so the insert of "block2" is aborted and rolled back.
+        EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+
+        /// Finalize the current log as on a graceful shutdown.
+        log.shutdown();
+    }
+
+    {
+        /// "Restart" with a healthy disk: replay the log from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// The rolled back "block2" must not have been re-published by the replay:
+        /// the retry of the failed insert must be accepted...
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
+
+        /// ...and only then deduplicate as usual.
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());
+    }
 
     std::filesystem::remove_all(work_dir);
 }
