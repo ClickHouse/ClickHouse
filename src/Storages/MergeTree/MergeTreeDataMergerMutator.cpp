@@ -255,7 +255,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             selector, *merge_predicate,
             ranges_in_partition, partitions_stats, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-            can_use_ttl_merges, can_generate_ttl_clear_index_merges, data.supportsReplication(), current_time, log);
+            can_use_ttl_merges, can_generate_ttl_clear_index_merges, current_time, log);
 
         const String & partition_id = ranges_in_partition.front().front().info.getPartitionId();
 
@@ -316,7 +316,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         selector, *merge_predicate,
         ranges, partitions_stats, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-        can_use_ttl_merges, can_generate_ttl_clear_index_merges, data.supportsReplication(), current_time, log);
+        can_use_ttl_merges, can_generate_ttl_clear_index_merges, current_time, log);
 
     if (!merge_choices.empty())
     {
@@ -692,7 +692,6 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
     bool can_generate_ttl_clear_index_merges,
-    bool is_replicated,
     time_t current_time,
     const LoggerPtr & log)
 {
@@ -701,7 +700,7 @@ MergeSelectorChoices chooseMergesFrom(
     auto choices = selector.chooseMergesFrom(
         ranges, partitions_stats, predicate, metadata_snapshot,
         data_settings, next_delete_times, next_recompress_times,
-        can_use_ttl_merges, can_generate_ttl_clear_index_merges, is_replicated, current_time);
+        can_use_ttl_merges, can_generate_ttl_clear_index_merges, current_time);
 
     if (!choices.empty())
     {

@@ -285,9 +285,8 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
 /// down partitions with several expired parts, because `select` returns one part per call.
 /// Failed attempts on replicated tables are retried with the usual queue postpone backoff.
 /// `TTLPartDropMergeSelector` passes nullptr for the same reason.
-TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_, bool is_replicated_)
+TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
     : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
-    , is_replicated(is_replicated_)
 {
 }
 
@@ -311,17 +310,8 @@ PartsRanges TTLIndexClearMergeSelector::select(
             if (!ttl || ttl > current_time)
                 continue;
 
-            /// A part may exceed the normal merge size limits only if the merge will replace the
-            /// part without rewriting its rows (`can_clear_index_metadata_only`). If the rows
-            /// would have to be rewritten, the limits apply as usual. On replicated tables the
-            /// limits always apply: `can_clear_index_metadata_only` describes only the local
-            /// replica (storage type, remote disk, zero-copy), but the selection creates a
-            /// replication log entry that every replica must execute, and a replica that cannot
-            /// replace the part cheaply would have to rewrite an arbitrarily large part.
-            const bool exceeds_normal_merge_limits = part.size > merge_constraints.front().max_size_bytes
-                || part.rows > merge_constraints.front().max_size_rows;
-            const bool may_bypass_size_cap = part.can_clear_index_metadata_only && !is_replicated;
-            if (exceeds_normal_merge_limits && !may_bypass_size_cap)
+            if (part.size > merge_constraints.front().max_size_bytes
+                || part.rows > merge_constraints.front().max_size_rows)
                 continue;
 
             PartsRange single_part_range{part};

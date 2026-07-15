@@ -16,6 +16,7 @@ namespace DB
 
 class IMergeTreeDataPart;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+struct FutureMergedMutatedPart;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -58,19 +59,20 @@ struct PartProperties
     /// Next expired index-clear TTL for part. Used by clear-index TTL merge selector.
     const time_t next_index_clear_ttl = 0;
 
-    /// Whether the source part is eligible for metadata-only clear-index replacement.
-    /// When false, TTLClearIndex selection must obey normal full-part merge size limits
-    /// because execution may fall back to a row-rewriting merge.
-    const bool can_clear_index_metadata_only = false;
+    /// Whether the source part can produce a clear-index replacement while preserving files.
+    /// When false, the selector schedules a one-part `Regular` merge.
+    const bool can_preserve_files_for_index_clear = false;
 };
 
 using PartsRange = std::vector<PartProperties>;
 using PartsRanges = std::vector<PartsRange>;
 using PartsRangeView = std::span<const PartProperties>;
 
-bool canUseMetadataOnlyIndexClear(
+bool canPreserveFilesForIndexClear(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartPtr & part);
+
+bool canPreserveFilesForIndexClear(const FutureMergedMutatedPart & future_part);
 
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,

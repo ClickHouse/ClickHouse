@@ -2509,11 +2509,14 @@ private:
         {
             .files_to_skip = &effective_files_to_skip,
             .copy_instead_of_hardlinks = (*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+            .cancellation_callback = {},
         };
         if (auto copied_hardlinks = copyPartFilesWithSkip(
                 ctx->source_part->getDataPartStorage(),
                 ctx->new_data_part->getDataPartStorage(),
-                copy_options))
+                copy_options,
+                ctx->context->getReadSettings(),
+                ctx->context->getWriteSettings()))
         {
             hardlinked_files.insert(copied_hardlinks->begin(), copied_hardlinks->end());
         }

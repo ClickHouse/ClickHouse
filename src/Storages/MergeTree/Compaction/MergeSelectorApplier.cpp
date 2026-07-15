@@ -14,6 +14,17 @@
 namespace DB
 {
 
+static MergeSelectorChoice makeTTLIndexClearMergeChoice(PartsRange range, PartsRange patch_parts)
+{
+    chassert(range.size() == 1);
+
+    /// A `TTLClearIndex` entry always preserves source files and never applies patches.
+    if (range.front().can_preserve_files_for_index_clear && patch_parts.empty())
+        return MergeSelectorChoice{std::move(range), {}, MergeType::TTLClearIndex};
+
+    return MergeSelectorChoice{std::move(range), std::move(patch_parts), MergeType::Regular};
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
@@ -51,11 +62,12 @@ struct ChooseContext
     const time_t current_time;
     const bool aggressive;
     const bool can_generate_ttl_clear_index_merges;
-    const bool is_replicated;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
 {
+    chassert(type != MergeType::TTLClearIndex);
+
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
         const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
@@ -103,34 +115,27 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
-    /// Clear index files - 4 priority. Generation is gated for rolling-upgrade safety because
-    /// merge type is serialized in replicated MergeTree log entries.
+    /// Clear index files - 4 priority. Generation is enabled separately for rolling-upgrade safety
+    /// because the merge type is serialized in replicated `MergeTree` log entries.
     if (!ctx.merge_constraints.empty()
         && ctx.metadata_snapshot.hasAnyIndexClearTTL()
         && ctx.can_generate_ttl_clear_index_merges)
     {
-        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time, ctx.is_replicated);
-        IMergeSelector::RangeFilter range_filter = [&](PartsRangeView range)
+        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
+
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
         {
-            if (ctx.range_filter && !ctx.range_filter(range))
-                return false;
-
-            const bool exceeds_normal_merge_limits = range.size() == 1
-                && (range.front().size > ctx.merge_constraints.front().max_size_bytes
-                    || range.front().rows > ctx.merge_constraints.front().max_size_rows);
-            if (exceeds_normal_merge_limits
-                && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge])
+            MergeSelectorChoices choices;
+            choices.reserve(merge_ranges.size());
+            for (auto & range : merge_ranges)
             {
-                PartsRange single_part_range{range.front()};
-                if (!ctx.predicate.getPatchesToApplyOnMerge(single_part_range).empty())
-                    return false;
+                const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+                /// Pending patches remain pending unless this merge applies them. Only applied patches require `Regular`.
+                PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(range) : PartsRange{};
+                choices.push_back(makeTTLIndexClearMergeChoice(std::move(range), std::move(patch_parts)));
             }
-
-            return true;
-        };
-
-        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLClearIndex);
+            return choices;
+        }
     }
 
 
@@ -231,7 +236,6 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
     bool can_generate_ttl_clear_index_merges,
-    bool is_replicated,
     time_t current_time) const
 {
     ChooseContext ctx{
@@ -248,7 +252,6 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .current_time = current_time,
         .aggressive = aggressive,
         .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges,
-        .is_replicated = is_replicated,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

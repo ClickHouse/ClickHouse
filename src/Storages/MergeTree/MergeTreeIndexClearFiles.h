@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
-#include <set>
+#include <ctime>
+#include <functional>
+#include <memory>
 #include <optional>
+#include <set>
 
 namespace DB
 {
@@ -13,6 +17,10 @@ class DataPartStorageOnDiskBase;
 class IDataPartStorage;
 class IMergeTreeDataPart;
 struct MergeTreeDataPartChecksums;
+struct MergeTreeSettings;
+struct ReadSettings;
+struct StorageInMemoryMetadata;
+struct WriteSettings;
 
 struct SkipIndexClearFiles
 {
@@ -20,6 +28,26 @@ struct SkipIndexClearFiles
     bool packed_archive_dirty = false;
     bool has_existing_files = false;
 };
+
+bool isIndexExpiredByTTL(
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    const String & index_name,
+    time_t current_time,
+    bool ttl_merges_allowed);
+
+std::set<MergeTreeIndexPtr> getIndexesExpiredByClearTTL(
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time,
+    bool ttl_merges_allowed);
+
+SkipIndexClearFiles getClearIndexFilesToClear(
+    const std::shared_ptr<const IMergeTreeDataPart> & part,
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    time_t current_time,
+    bool ttl_merges_allowed);
 
 /// Return every concrete filename that may belong to these skip indexes in a part:
 /// logical substream names, mark files, legacy data extensions, and hashed / storage-overlay names.
@@ -65,6 +93,7 @@ struct PartFileCopyOptions
     bool copy_instead_of_hardlinks = false;
     bool fail_on_temporary_projection_directories = false;
     bool fail_on_projection_subdirectories = false;
+    std::function<void()> cancellation_callback;
 };
 
 /// Return false if copyPartFilesWithSkip would reject the source part before copying anything.
@@ -78,6 +107,8 @@ bool canCopyPartFilesWithSkip(
 std::optional<NameSet> copyPartFilesWithSkip(
     const IDataPartStorage & source_storage,
     IDataPartStorage & destination_storage,
-    const PartFileCopyOptions & options);
+    const PartFileCopyOptions & options,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings);
 
 }

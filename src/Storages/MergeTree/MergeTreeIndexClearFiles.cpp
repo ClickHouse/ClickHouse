@@ -3,7 +3,12 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageInMemoryMetadata.h>
+
+#include <IO/copyData.h>
 
 #include <array>
 #include <filesystem>
@@ -11,6 +16,74 @@
 
 namespace DB
 {
+
+bool isIndexExpiredByTTL(
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    const String & index_name,
+    time_t current_time,
+    bool ttl_merges_allowed)
+{
+    if (!ttl_merges_allowed || !metadata_snapshot->hasAnyIndexClearTTL())
+        return false;
+
+    for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
+    {
+        if (ttl.index_name != index_name)
+            continue;
+
+        auto ttl_info_it = ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (ttl_info_it == ttl_infos.index_clear_ttl.end())
+            continue;
+
+        const time_t max_ttl = ttl_info_it->second.max;
+        if (max_ttl && max_ttl <= current_time)
+            return true;
+    }
+
+    return false;
+}
+
+std::set<MergeTreeIndexPtr> getIndexesExpiredByClearTTL(
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time,
+    bool ttl_merges_allowed)
+{
+    std::set<MergeTreeIndexPtr> result;
+    if (!ttl_merges_allowed || !metadata_snapshot->hasAnyIndexClearTTL())
+        return result;
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (isIndexExpiredByTTL(metadata_snapshot, ttl_infos, index.name, current_time, ttl_merges_allowed))
+            result.insert(index_factory.get(metadata_snapshot, index, settings));
+    }
+
+    return result;
+}
+
+SkipIndexClearFiles getClearIndexFilesToClear(
+    const std::shared_ptr<const IMergeTreeDataPart> & part,
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    time_t current_time,
+    bool ttl_merges_allowed)
+{
+    const auto indexes = getIndexesExpiredByClearTTL(
+        metadata_snapshot,
+        *part->storage.getSettings(),
+        part->ttl_infos,
+        current_time,
+        ttl_merges_allowed);
+
+    return collectSkipIndexClearFiles(
+        indexes,
+        part->getMarksFileExtension(),
+        part->checksums,
+        part->getDataPartStorage());
+}
 
 NameSet getSkipIndexSubstreamFileNames(
     const std::set<MergeTreeIndexPtr> & indexes,
@@ -172,6 +245,31 @@ bool shouldCopyPartFileEntry(const String & name, const PartFileCopyOptions & op
     return !(options.files_to_skip && options.files_to_skip->contains(name));
 }
 
+void copyPartFile(
+    const IDataPartStorage & source_storage,
+    IDataPartStorage & destination_storage,
+    const String & name,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_callback)
+{
+    auto source = source_storage.readFile(name, read_settings, std::nullopt);
+    auto destination = destination_storage.writeFile(name, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    try
+    {
+        if (cancellation_callback)
+            copyData(*source, *destination, cancellation_callback);
+        else
+            copyData(*source, *destination);
+        destination->finalize();
+    }
+    catch (...)
+    {
+        destination->cancel();
+        throw;
+    }
+}
+
 }
 
 bool canCopyPartFilesWithSkip(
@@ -199,7 +297,9 @@ bool canCopyPartFilesWithSkip(
 std::optional<NameSet> copyPartFilesWithSkip(
     const IDataPartStorage & source_storage,
     IDataPartStorage & destination_storage,
-    const PartFileCopyOptions & options)
+    const PartFileCopyOptions & options,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
 {
     if (!canCopyPartFilesWithSkip(source_storage, options))
         return std::nullopt;
@@ -217,7 +317,7 @@ std::optional<NameSet> copyPartFilesWithSkip(
             const bool copy_file = options.copy_instead_of_hardlinks
                 || source_storage.getDiskName() != destination_storage.getDiskName();
             if (copy_file)
-                destination_storage.copyFileFrom(source_storage, name, name);
+                copyPartFile(source_storage, destination_storage, name, read_settings, write_settings, options.cancellation_callback);
             else
             {
                 destination_storage.createHardLinkFrom(source_storage, name, name);
@@ -242,7 +342,7 @@ std::optional<NameSet> copyPartFilesWithSkip(
 
             const auto projection_file = projection_it->name();
             if (copy_projection_file)
-                projection_dst->copyFileFrom(*projection_src, projection_file, projection_file);
+                copyPartFile(*projection_src, *projection_dst, projection_file, read_settings, write_settings, options.cancellation_callback);
             else
             {
                 projection_dst->createHardLinkFrom(*projection_src, projection_file, projection_file);

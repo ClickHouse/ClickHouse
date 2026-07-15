@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Interpreters/Context.h>
 
@@ -86,7 +87,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             {}, this->projections_merge_time);
     };
 
-    if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part])
+    const bool is_ttl_clear_index_source
+        = entry.merge_type == MergeType::TTLClearIndex && entry.source_replica == storage.replica_name;
+
+    if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part] && !is_ttl_clear_index_source)
     {
         LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_merged_part' is true", entry.new_part_name);
         return PrepareResult{
@@ -115,7 +119,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// and it may be better to spread merges tasks across the replicas
     /// instead of doing exactly the same merge cluster-wise
 
-    if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+    if (!is_ttl_clear_index_source && storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
         std::optional<String> replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
         if (replica_to_execute_merge)
@@ -253,11 +257,23 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
     future_merged_part->assign(parts, patch_parts, entry.new_part_format);
+    future_merged_part->uuid = entry.new_part_uuid;
 
     if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
             backQuote(future_merged_part->name), backQuote(entry.new_part_name));
+    }
+
+    if (entry.merge_type == MergeType::TTLClearIndex
+        && !canPreserveFilesForIndexClear(*future_merged_part))
+    {
+        LOG_INFO(log, "Will fetch part {} because this replica cannot preserve files for `TTLClearIndex`", entry.new_part_name);
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = part_log_writer,
+        };
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
@@ -275,7 +291,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         reserved_space = storage.reserveSpacePreferringTTLRules(
             metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
-    future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
     /// If a merge is a cleanup merge we need to mark the future part as final as cleanup merges can only be performed when merging all parts in a partition down to a single part.

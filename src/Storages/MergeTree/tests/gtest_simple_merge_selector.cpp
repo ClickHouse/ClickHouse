@@ -57,9 +57,9 @@ TEST(SimpleMergeSelector, TestRowsConstraint)
 TEST(TTLIndexClearMergeSelector, TestRowsConstraint)
 {
     const time_t current_time = 100;
-    TTLIndexClearMergeSelector selector(current_time, /*is_replicated_=*/false);
+    TTLIndexClearMergeSelector selector(current_time);
 
-    auto make_part = [&](bool can_clear_index_metadata_only)
+    auto make_part = [&](bool can_preserve_files_for_index_clear)
     {
         return PartProperties
         {
@@ -68,28 +68,15 @@ TEST(TTLIndexClearMergeSelector, TestRowsConstraint)
             .size = 100,
             .rows = 1000,
             .next_index_clear_ttl = current_time,
-            .can_clear_index_metadata_only = can_clear_index_metadata_only,
+            .can_preserve_files_for_index_clear = can_preserve_files_for_index_clear,
         };
     };
 
     std::vector<MergeConstraint> constraints{{1000, 100}};
 
+    for (const bool can_preserve_files_for_index_clear : {false, true})
     {
-        auto selected = selector.select({PartsRange{make_part(/*can_clear_index_metadata_only=*/false)}}, constraints, nullptr);
-        ASSERT_TRUE(selected.empty());
-    }
-
-    {
-        auto selected = selector.select({PartsRange{make_part(/*can_clear_index_metadata_only=*/true)}}, constraints, nullptr);
-        ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(selected[0].size(), 1);
-    }
-
-    /// On replicated tables the size limits apply even to parts that this replica could replace
-    /// without rewriting rows, because other replicas may not be able to.
-    {
-        TTLIndexClearMergeSelector replicated_selector(current_time, /*is_replicated_=*/true);
-        auto selected = replicated_selector.select({PartsRange{make_part(/*can_clear_index_metadata_only=*/true)}}, constraints, nullptr);
+        auto selected = selector.select({PartsRange{make_part(can_preserve_files_for_index_clear)}}, constraints, nullptr);
         ASSERT_TRUE(selected.empty());
     }
 }

@@ -1,12 +1,12 @@
--- Tags: no-parallel, no-object-storage, no-random-merge-tree-settings
--- no-parallel: uses global ProfileEvents counters to prove the metadata-only cleanup path.
--- no-object-storage: metadata-only TTLClearIndex fast path is local/full-storage only.
--- no-random-merge-tree-settings: randomized part-format/storage settings can disable the specific fast path asserted here.
+-- Tags: no-parallel, no-random-merge-tree-settings
+-- no-parallel: uses global ProfileEvents counters to prove `Regular` cleanup does not use file-preserving construction.
+-- no-random-merge-tree-settings: randomized part formats and storage settings can change the cleanup behavior asserted here.
 DROP TABLE IF EXISTS ttl_clear_index;
 DROP TABLE IF EXISTS ttl_clear_index_bad;
 DROP TABLE IF EXISTS ttl_clear_index_same_expr;
 DROP TABLE IF EXISTS ttl_clear_index_packed_all;
 DROP TABLE IF EXISTS ttl_clear_index_packed_mixed;
+DROP TABLE IF EXISTS ttl_clear_index_whole_part_packed;
 DROP TABLE IF EXISTS ttl_clear_index_large_part;
 DROP TABLE IF EXISTS ttl_clear_index_uuid_ineligible;
 DROP TABLE IF EXISTS ttl_clear_index_lightweight_delete;
@@ -62,7 +62,7 @@ WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
 OPTIMIZE TABLE ttl_clear_index FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
 
-SELECT sum(value) - (SELECT value FROM ttl_clear_index_events_before) > 0
+SELECT sum(value) = (SELECT value FROM ttl_clear_index_events_before)
 FROM system.events
 WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
@@ -92,7 +92,17 @@ WHERE database = currentDatabase()
   AND table = 'ttl_clear_index'
   AND active;
 
-OPTIMIZE TABLE ttl_clear_index FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
+CREATE TEMPORARY TABLE ttl_clear_index_regular_events_before (value UInt64) ENGINE = Memory;
+INSERT INTO ttl_clear_index_regular_events_before
+SELECT sum(value)
+FROM system.events
+WHERE event = 'TTLClearIndexMetadataOnlyMerges';
+
+OPTIMIZE TABLE ttl_clear_index FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 0, optimize_skip_merged_partitions = 1;
+
+SELECT sum(value) = (SELECT value FROM ttl_clear_index_regular_events_before)
+FROM system.events
+WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
 SELECT sum(secondary_indices_compressed_bytes) > 0
 FROM system.parts
@@ -175,7 +185,7 @@ WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
 OPTIMIZE TABLE ttl_clear_index_packed_all FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
 
-SELECT sum(value) - (SELECT value FROM ttl_clear_index_packed_events_before) > 0
+SELECT sum(value) = (SELECT value FROM ttl_clear_index_packed_events_before)
 FROM system.events
 WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
@@ -231,6 +241,47 @@ SELECT count()
 FROM ttl_clear_index_packed_mixed
 WHERE k = 2;
 
+CREATE TABLE ttl_clear_index_whole_part_packed
+(
+    d Date,
+    k UInt64,
+    v UInt64,
+    INDEX idx v TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+SETTINGS
+    index_granularity = 2,
+    index_granularity_bytes = '10Mi',
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = '1Gi',
+    min_rows_for_full_part_storage = 1000000,
+    min_level_for_full_part_storage = 1000000;
+
+INSERT INTO ttl_clear_index_whole_part_packed VALUES
+    ('2000-01-01', 1, 1),
+    ('2000-01-01', 2, 2);
+
+CREATE TEMPORARY TABLE ttl_clear_index_whole_part_packed_events_before (value UInt64) ENGINE = Memory;
+INSERT INTO ttl_clear_index_whole_part_packed_events_before
+SELECT sum(value)
+FROM system.events
+WHERE event = 'TTLClearIndexMetadataOnlyMerges';
+
+OPTIMIZE TABLE ttl_clear_index_whole_part_packed FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
+
+SELECT sum(value) = (SELECT value FROM ttl_clear_index_whole_part_packed_events_before)
+FROM system.events
+WHERE event = 'TTLClearIndexMetadataOnlyMerges';
+
+SELECT sum(secondary_indices_compressed_bytes) > 0
+FROM system.parts
+WHERE database = currentDatabase()
+  AND table = 'ttl_clear_index_whole_part_packed'
+  AND active;
+
 DROP TABLE ttl_clear_index;
 DROP TABLE ttl_clear_index_same_expr;
 DROP TABLE ttl_clear_index_packed_all;
@@ -264,7 +315,7 @@ WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
 OPTIMIZE TABLE ttl_clear_index_large_part FINAL SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
 
-SELECT sum(value) - (SELECT value FROM ttl_clear_index_large_events_before) > 0
+SELECT sum(value) = (SELECT value FROM ttl_clear_index_large_events_before)
 FROM system.events
 WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
@@ -363,5 +414,6 @@ SELECT count()
 FROM ttl_clear_index_lightweight_delete;
 
 DROP TABLE ttl_clear_index_large_part;
+DROP TABLE ttl_clear_index_whole_part_packed;
 DROP TABLE ttl_clear_index_uuid_ineligible;
 DROP TABLE ttl_clear_index_lightweight_delete;

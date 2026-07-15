@@ -365,7 +365,7 @@ private:
         bool prepare() const;
         bool executeImpl() const;
         void finalize() const;
-        bool tryPrepareClearIndexReplacementPart() const;
+        void prepareClearIndexReplacementPart() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
         using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;

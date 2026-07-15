@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
@@ -104,19 +105,16 @@ time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDat
 
 }
 
-bool canUseMetadataOnlyIndexClear(
+bool canPreserveFilesForIndexClear(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartPtr & part)
 {
     if ((*part->storage.getSettings())[MergeTreeSetting::assign_part_uuids])
         return false;
 
-    if (part->isStoredOnRemoteDisk()
-        || part->getDataPartStorage().supportZeroCopyReplication()
-        || part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full)
-        return false;
-
-    if (part->uuid != UUIDHelpers::Nil
+    if (part->info.isPatch()
+        || part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full
+        || part->uuid != UUIDHelpers::Nil
         || part->old_part_with_no_metadata_version_on_disk
         || part->getMetadataVersion() != metadata_snapshot->getMetadataVersion())
         return false;
@@ -127,8 +125,39 @@ bool canUseMetadataOnlyIndexClear(
         part->info.level + 1,
         /*projection=*/nullptr);
 
-    return chosen_format.part_type == part->getType()
-        && chosen_format.storage_type == MergeTreeDataPartStorageType::Full;
+    if (chosen_format.part_type != part->getType()
+        || chosen_format.storage_type != MergeTreeDataPartStorageType::Full)
+        return false;
+
+    const PartFileCopyOptions copy_options
+    {
+        .fail_on_temporary_projection_directories = true,
+        .fail_on_projection_subdirectories = true,
+        .cancellation_callback = {},
+    };
+    return canCopyPartFilesWithSkip(part->getDataPartStorage(), copy_options);
+}
+
+bool canPreserveFilesForIndexClear(const FutureMergedMutatedPart & future_part)
+{
+    if (future_part.parts.size() != 1 || !future_part.patch_parts.empty())
+        return false;
+
+    const auto & source_part = future_part.parts.front();
+    if (source_part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full
+        || future_part.part_format.storage_type != MergeTreeDataPartStorageType::Full
+        || future_part.part_format.part_type != source_part->getType()
+        || future_part.part_format.storage_type != source_part->getDataPartStorage().getType()
+        || future_part.uuid != source_part->uuid)
+        return false;
+
+    const PartFileCopyOptions copy_options
+    {
+        .fail_on_temporary_projection_directories = true,
+        .fail_on_projection_subdirectories = true,
+        .cancellation_callback = {},
+    };
+    return canCopyPartFilesWithSkip(source_part->getDataPartStorage(), copy_options);
 }
 
 namespace
@@ -165,7 +194,7 @@ PartProperties buildPartProperties(
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
         .next_index_clear_ttl = buildNextIndexClearTTL(metadata_snapshot, part, current_time),
-        .can_clear_index_metadata_only = canUseMetadataOnlyIndexClear(metadata_snapshot, part),
+        .can_preserve_files_for_index_clear = canPreserveFilesForIndexClear(metadata_snapshot, part),
     };
 }
 

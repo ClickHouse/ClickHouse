@@ -112,7 +112,7 @@ private:
 class TTLIndexClearMergeSelector : public ITTLMergeSelector
 {
 public:
-    TTLIndexClearMergeSelector(time_t current_time_, bool is_replicated_);
+    explicit TTLIndexClearMergeSelector(time_t current_time_);
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
@@ -122,8 +122,6 @@ public:
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
     bool canConsiderPart(const PartProperties & part) const override;
-
-    const bool is_replicated;
 };
 
 }

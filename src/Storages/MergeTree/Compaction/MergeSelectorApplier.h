@@ -50,7 +50,6 @@ public:
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
         bool can_generate_ttl_clear_index_merges,
-        bool is_replicated,
         time_t current_time) const;
 };
 
