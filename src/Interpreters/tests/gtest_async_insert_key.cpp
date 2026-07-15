@@ -118,17 +118,17 @@ TEST(AsyncInsertKey, ClientProtocolVersion)
     /// protocol version on flush, so the version is part of the key and different revisions do not batch.
     {
         auto old_rev = make_key(native, 0, Kind::Parsed);
-        auto new_rev = make_key(native, 54487, Kind::Parsed);
+        auto new_rev = make_key(native, 54488, Kind::Parsed);
         EXPECT_NE(old_rev.hash, new_rev.hash);
         EXPECT_NE(old_rev, new_rev);
-        EXPECT_EQ(new_rev, make_key(native, 54487, Kind::Parsed));
+        EXPECT_EQ(new_rev, make_key(native, 54488, Kind::Parsed));
     }
 
     /// Preprocessed entries are already-materialized Blocks (for example the native TCP path) and are
     /// never reparsed, so the version must not fragment the batch even for a Native query.
     {
         auto old_rev = make_key(native, 0, Kind::Preprocessed);
-        auto new_rev = make_key(native, 54487, Kind::Preprocessed);
+        auto new_rev = make_key(native, 54488, Kind::Preprocessed);
         EXPECT_EQ(old_rev.hash, new_rev.hash);
         EXPECT_EQ(old_rev, new_rev);
     }
@@ -137,7 +137,7 @@ TEST(AsyncInsertKey, ClientProtocolVersion)
     /// revisions must still batch together.
     {
         auto old_rev = make_key(values, 0, Kind::Parsed);
-        auto new_rev = make_key(values, 54487, Kind::Parsed);
+        auto new_rev = make_key(values, 54488, Kind::Parsed);
         EXPECT_EQ(old_rev.hash, new_rev.hash);
         EXPECT_EQ(old_rev, new_rev);
     }
