@@ -634,6 +634,11 @@ struct FormatSettings
         bool validate_geometry = true;
     } geojson{};
 
+    /// Column names that must never be silently skipped as unknown fields, even
+    /// when skip_unknown_fields = true. Used by HTTP header column injection
+    /// (http_column_* URL params) to enforce "body or header, not both":
+    /// a body field that matches a mapped column is always an error.
+    NameSet http_column_names = {};
 };
 
 }

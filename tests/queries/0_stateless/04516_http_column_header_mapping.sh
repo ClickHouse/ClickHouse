@@ -44,17 +44,15 @@ do_basic_tests() {
     ${CLICKHOUSE_CLIENT} -q "SELECT event_type, signature, payload FROM t"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
 
-    echo "--- ${mode}: no explicit column list, body also contains a header-mapped field (header wins)"
-    # Body provides event_type='from-body', but http_column also maps event_type from header.
-    # Since event_type is excluded from format_header, the body value is silently discarded
-    # and the header value wins. input_format_skip_unknown_fields=1 prevents a parse error.
+    echo "--- ${mode}: no explicit column list, body also contains a header-mapped field is an error"
+    # Body provides event_type='from-body' but http_column also maps event_type from header.
+    # Even with input_format_skip_unknown_fields=1, the body field is never silently dropped:
+    # http_column_* mapped columns are forbidden unknown fields and always raise an error.
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Event-Type: from-header' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
-        -d '{"event_type":"from-body","payload":"conflict-test","signature":"s"}'
-    flush
-    ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
-    ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+        -d '{"event_type":"from-body","payload":"conflict-test","signature":"s"}' \
+        | grep -oE 'INCORRECT_DATA|Unknown field' | head -1
 
     echo "--- ${mode}: basic header-to-column mapping"
     ${CLICKHOUSE_CURL} -sS \
