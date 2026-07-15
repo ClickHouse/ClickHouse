@@ -723,6 +723,22 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
+static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+{
+    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+    {
+        std::optional<TableExpressionModifiers> modifiers;
+        if (const auto * table_node = node->as<TableNode>())
+            modifiers = table_node->getTableExpressionModifiers();
+        else if (const auto * table_function_node = node->as<TableFunctionNode>())
+            modifiers = table_function_node->getTableExpressionModifiers();
+
+        if (modifiers && modifiers->hasStream())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+    }
+}
+
 struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
