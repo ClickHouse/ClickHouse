@@ -505,15 +505,51 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if res and build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE):
-        # Release binaries must be fully static: no dynamic loader (PT_INTERP)
-        # and no shared library dependencies (DT_NEEDED).
+    # These build types publish their self-extracting binaries to
+    # builds.clickhouse.com (see build_master_head_hook.py): universal.sh routes
+    # modern hosts to the release artifacts and older CPUs to amd64compat /
+    # aarch64v80compat.
+    published_static_builds = (
+        BuildTypes.AMD_RELEASE,
+        BuildTypes.ARM_RELEASE,
+        BuildTypes.AMD_COMPAT,
+        BuildTypes.ARM_V80COMPAT,
+    )
+
+    if res and build_type in published_static_builds:
+        # Published binaries must be fully static: no dynamic loader (PT_INTERP)
+        # and no shared library dependencies (DT_NEEDED). The self-extracting
+        # wrapper starts with the decompressor ELF, so the same assertions
+        # cover the decompressor as well.
         results.append(
             Result.from_commands_run(
                 name="not dynamically linked",
                 command=[
                     f'test "$(readelf -l {build_dir_normalized}/programs/clickhouse | grep -c INTERP)" = 0',
                     f"test \"$(readelf -d {build_dir_normalized}/programs/clickhouse 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+                    f'test "$(readelf -l {build_dir_normalized}/programs/self-extracting/clickhouse-stripped | grep -c INTERP)" = 0',
+                    f"test \"$(readelf -d {build_dir_normalized}/programs/self-extracting/clickhouse-stripped 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+                ],
+            )
+        )
+        res = results[-1].is_ok()
+
+    if res and build_type in published_static_builds:
+        # Smoke-test the exact artifact universal.sh downloads: the
+        # self-extracting clickhouse-stripped (uploaded as the public
+        # "clickhouse"). Run a copy - the wrapper replaces itself with the
+        # decompressed binary on first run, and the original file must stay
+        # intact for the artifact upload.
+        smoke_dir = f"{temp_dir}/self_extracting_smoke"
+        results.append(
+            Result.from_commands_run(
+                name="self-extracting binary smoke test",
+                command=[
+                    f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
+                    f"cp {build_dir_normalized}/programs/self-extracting/clickhouse-stripped {smoke_dir}/clickhouse",
+                    f"{smoke_dir}/clickhouse --version",
+                    f'{smoke_dir}/clickhouse local --query "SELECT 1"',
+                    f"rm -rf {smoke_dir}",
                 ],
             )
         )
