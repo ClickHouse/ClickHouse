@@ -6,12 +6,14 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -32,6 +34,12 @@ public:
 private:
     UnorderedMapWithMemoryTracking<Int64, ColumnPtr> dictionaries;
 };
+
+/// Rows whose values are semantically absent: null at this or an ancestor level, in a list range no
+/// valid slot references, or in a union child slot its row's type id does not select. The Arrow spec
+/// leaves the value bytes of such slots undefined, so value-level validation must not reject them
+/// and their values decode as type defaults.
+using InvisibleRowsMask = NullMap;
 
 /// Decodes Arrow IPC record batches directly into ClickHouse columns, without the Apache Arrow library.
 /// Supports flat and nested (Array/Tuple/Map) types, LowCardinality (dictionary-encoded) fields, and
@@ -106,6 +114,27 @@ private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
 
+    /// The next FieldNode without advancing the cursor: the child of a List/FixedSizeList/Map/Union field
+    /// is the next node in the pre-order layout, and its row count is needed to size the child's
+    /// invisible-rows mask before `decodeField` consumes the node.
+    const flatbuf::FieldNode & peekNode() const;
+    /// The row count the next FieldNode declares, clamped at zero (a negative length is rejected when the
+    /// node is consumed).
+    size_t peekNodeRows() const;
+
+    /// The invisible-rows mask for the child of a List/LargeList/Map field, sized to the child's declared
+    /// row count. A child row is invisible when only invisible slots reference it, or when no slot
+    /// references it at all.
+    std::optional<InvisibleRowsMask> buildOffsetsChildInvisibleMask(
+        size_t rows, Int64 base, Int64 prev, const PaddedPODArray<UInt64> & offsets,
+        const InvisibleRowsMask * invisible_rows) const;
+
+    /// Consumes and decodes the offsets buffer of a List/LargeList/Map field into ClickHouse array
+    /// offsets (per-slot cumulative lengths relative to the first offset), validating that the first
+    /// offset is non-negative and that the sequence is monotonic non-decreasing (each offset compared
+    /// with its predecessor, not only with the first).
+    ColumnUInt64::MutablePtr decodeListOffsets(size_t rows, bool large, const char * what, Int64 & base, Int64 & prev);
+
     /// `allow_low_cardinality` is set only for top-level fields: a dictionary-encoded field decodes into
     /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized
     /// to its plain value column (matching the type `fieldToCHType` declares for the nested field).
@@ -113,20 +142,29 @@ private:
     /// decoder recurses (and falling back to a `target_types` lookup by `path`, the dotted column name). It
     /// only affects `date32`: when the hint resolves to a numeric type the raw `Int32` day number is read
     /// without the `Date32` range/overflow check, matching the library reader's numeric type hint.
+    /// `invisible_rows`, when non-null, is sized to this field's row count (see `InvisibleRowsMask`);
+    /// null maps and column types are built from each field's own declared validity exactly as without
+    /// a mask.
     ColumnPtr decodeField(
-        const ArrowField & field, bool allow_low_cardinality = false,
-        const DataTypePtr & target_hint = nullptr, const String & path = {});
+        const ArrowField & field, bool allow_low_cardinality,
+        const DataTypePtr & target_hint, const String & path,
+        const InvisibleRowsMask * invisible_rows);
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
     /// flat node/buffer cursors aligned for the columns that follow.
     void skipField(const ArrowField & field);
-    ColumnPtr decodeInner(const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path);
-    ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
+    ColumnPtr decodeInner(
+        const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
+        const InvisibleRowsMask * invisible_rows);
+    ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
+    /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
+    /// validity buffer), so this function needs no separate null map for the indices.
     ColumnPtr decodeDictionary(
-        const ArrowField & field, size_t rows, const Slice & validity, Int64 null_count, bool allow_low_cardinality);
+        const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows);
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     ColumnPtr readOffsetsAndChild(
-        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path);
+        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
+        const InvisibleRowsMask * invisible_rows);
     /// The requested ClickHouse type for a field, preferring the hint derived from its parent and otherwise
     /// looking up `path` (the dotted column name) in `target_types`. Returns null when neither is available.
     DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const;
@@ -144,6 +182,11 @@ private:
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
+    /// Total bytes across `buffer_slices`. Serves as a validated upper bound for allocations sized by
+    /// untrusted FieldNode lengths: any row of a field that undergoes value decoding occupies at least
+    /// one bit in some buffer, so a declared row count above `total_buffer_bytes * 8` is forged and
+    /// must not drive an allocation.
+    size_t total_buffer_bytes = 0;
     PODArray<char> decompressed_body;
     size_t node_index = 0;
     size_t buffer_index = 0;
