@@ -73,7 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
-    extern const MergeTreeSettingsBool allow_experimental_text_index_positions;
+    extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
 }
 
 namespace Setting
@@ -1791,7 +1791,9 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
     const IColumn & column_data = column_array->getData();
     const IColumn::Offsets & column_offsets = column_array->getOffsets();
-    const bool data_is_nullable = column_data.isNullable();
+    /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
+    /// covers it, otherwise getDataAt() below throws on NULL array elements.
+    const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
@@ -1910,7 +1912,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
-static const String ARGUMENT_POSITIONS = "positions";
+static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
 namespace
 {
@@ -2066,10 +2068,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
-    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_positions])
+    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
-            "`allow_experimental_text_index_positions = 1`.", ARGUMENT_POSITIONS);
+            "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
