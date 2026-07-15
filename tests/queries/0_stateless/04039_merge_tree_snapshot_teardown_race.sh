@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-detach
+# Tags: long, no-flaky-check, no-random-detach
+#  - no-flaky-check: near the 600s cap on amd_msan/WasmEdge; the rerun count
+#    does not affect the snapshot-teardown race this test exercises.
 
 set -e
 
