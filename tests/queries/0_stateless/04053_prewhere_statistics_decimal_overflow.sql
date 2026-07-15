@@ -3,7 +3,12 @@
 -- Workaround: `allow_reorder_prewhere_conditions = 0` keeps the original WHERE order
 -- so the NOT-IN guard stays at position 0.
 --
--- Tags: no-fasttest
+-- no-random-merge-tree-settings: the read-cost-aware PREWHERE ordering (#110462) ranks arraySum
+-- against the NOT-IN guard by physical column size, so randomized serialization/compression settings
+-- change which condition is hoisted and whether the overflow fires. Pin the layout so the repro is
+-- deterministic; the reorder still triggers the overflow on the default layout the test documents.
+--
+-- Tags: no-fasttest, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS test_prewhere_decimal_overflow;
 
