@@ -560,6 +560,21 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
+    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
+    # the merge group state (the PR merged with the current `master`), so a PR
+    # whose last CI run predates test-infrastructure changes on `master` (e.g.
+    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
+    # queue instead of breaking `master`. Runs on the `amd_binary` build the
+    # merge queue produces anyway; merge-queue runs use a reduced iteration
+    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
+    # latency bounded.
+    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",

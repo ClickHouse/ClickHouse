@@ -4,7 +4,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
-
 #include <boost/core/noncopyable.hpp>
 
 namespace DB
@@ -32,6 +31,7 @@ enum class StatisticsFileVersion : UInt16
 
 class Field;
 class Block;
+class IAggregateFunction;
 
 struct StatisticsUtils
 {
@@ -46,6 +46,12 @@ struct StatisticsUtils
     /// a common numeric representation.
     static std::optional<Float64> interpolateLessLinear(
         const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
+
+    /// Returns true iff two aggregate functions have the same state size and identical argument
+    /// types. Statistics implementations use this to decide whether states from two parts can be
+    /// merged: a column type change (e.g. numeric → String) may preserve the state size while
+    /// switching to a different hash function, producing wrong estimates if the states are mixed.
+    static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
 };
 
 class IStatistics;
@@ -78,6 +84,12 @@ public:
     virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
+
+    /// Returns true iff `other` can be safely merged into this statistics object.
+    /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
+    /// shifts the aggregate-function state layout) should return false so that
+    /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
+    virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
 protected:
     SingleStatisticsDescription stat;
