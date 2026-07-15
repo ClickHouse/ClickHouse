@@ -866,7 +866,7 @@ private:
 
     static IQueryTreeNode::Hash getExpressionHash(const QueryTreeNodePtr & expression)
     {
-        return expression->getTreeHash({.compare_aliases = false, .compare_types = true, .ignore_cte = false});
+        return expression->getTreeHash({.compare_aliases = false, .ignore_cte = false});
     }
 
     /// Remember the names of all ALIAS columns sharing one expression, per column source.
