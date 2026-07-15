@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -226,9 +227,28 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const
+StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & processors_by_group) const
 {
-    return join->getAnalysisReport();
+    if (join->getName() != "FullSortingMergeJoin")
+        return join->getAnalysisReport();
+
+    JoinAnalysisCounters counters;
+    for (const auto & [group, processors] : processors_by_group)
+    {
+        for (const auto * proc : processors)
+        {
+            if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
+            {
+                const auto c = merge_join->getJoinAnalysisCounters();
+                counters.left_rows += c.left_rows;
+                counters.matched_left += c.matched_left;
+                counters.right_rows += c.right_rows;
+                counters.matched_right += c.matched_right;
+            }
+        }
+    }
+
+    return buildMatchedRowsReport(counters);
 }
 
 
