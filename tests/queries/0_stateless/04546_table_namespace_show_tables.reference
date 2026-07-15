@@ -1,17 +1,17 @@
 -- flag off: multipart FROM is a syntax error (master behavior)
 1
--- direct children of the namespace, relative names
-alpha
-beta
--- LIKE applies to the relative name
-alpha
+-- direct children of the namespace, shown as stored
+ns.alpha
+ns.beta
+-- LIKE applies to the stored name
+ns.alpha
 -- FULL keeps the engine column
-beta	Memory
+ns.beta	Memory
 -- nested namespace
-gamma
+ns.child.gamma
 -- session scope applies when FROM is omitted
-alpha
-beta
+ns.alpha
+ns.beta
 -- the plain database listing is unchanged
 ns.alpha
 ns.beta

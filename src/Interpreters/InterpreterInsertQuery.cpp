@@ -1155,7 +1155,7 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
             /* no_destination */false,
             /* async_insert */false);
     };
-    factory.registerInterpreter("InterpreterInsertQuery", create_fn);
+    factory.registerInterpreter("InterpreterInsertQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 

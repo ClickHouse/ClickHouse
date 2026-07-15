@@ -47,12 +47,12 @@ struct LightWeightTableDetails
     String name;
 };
 
-/// How a database exposes hierarchical table paths (`namespace.table`).
+/// How a database exposes hierarchical table paths (`namespace.table`)
 enum class TableNamespaceSupport
 {
     None,     /// flat table names only
-    Lexical,  /// a namespace exists when some table name starts with it plus a dot
-    Native,   /// the engine has real namespace metadata (e.g. a data lake catalog)
+    Lexical,  /// namespace exists when some table name starts with it plus a dot
+    Native,   /// the engine has real namespace metadata (data lake catalog)
 };
 
 /// Advisory hint passed to getTablesIterator: lets DataLake catalogs restrict
@@ -72,10 +72,6 @@ struct TablesFilter
 
     /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
     String pattern;
-
-    /// A `name NOT LIKE '…'` conjunct, if any. With `pattern` = `ns.%` and
-    /// `exclude_pattern` = `ns.%.%` this is the scoped SHOW TABLES shape (direct children of `ns`).
-    String exclude_pattern;
 };
 
 class IDatabaseTablesIterator
@@ -225,10 +221,10 @@ public:
     virtual TableNamespaceSupport getTableNamespaceSupport() const { return TableNamespaceSupport::None; }
 
     /// Throws if the namespace does not exist. `namespace_parts` are separate path
-    /// components; ["a.b"] and ["a", "b"] are different namespaces.
+    /// components; ["a.b"] and ["a", "b"] are different namespaces
     virtual void validateTableNamespace(const Names & namespace_parts, ContextPtr context) const;
 
-    /// Canonical stored table name for a namespace-qualified path.
+    /// Canonical stored table name for a namespace-qualified path
     virtual String resolveTableNamePath(const Names & path_parts) const;
 
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.

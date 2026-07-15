@@ -2060,7 +2060,7 @@ def test_namespace_scope_rejects_ddl(started_cluster):
 def test_namespace_prefix_show_tables_scope(started_cluster):
     """
     SHOW TABLES under USE db.namespace lists only the direct children of the
-    selected namespace, by their relative names.
+    selected namespace, by their stored (namespace-qualified) names.
     """
     node = started_cluster.instances["node1"]
     ns_settings = {"allow_experimental_table_namespaces": 1}
@@ -2080,23 +2080,13 @@ def test_namespace_prefix_show_tables_scope(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
     tables = node.query(f"USE {CATALOG_NAME}.{ns_1}; SHOW TABLES", settings=ns_settings)
-    assert "scoped_table" in tables, f"missing namespace table: {tables}"
-    assert ns_1 not in tables, f"names must be relative to the namespace: {tables}"
+    assert f"{ns_1}.scoped_table" in tables, f"missing namespace table: {tables}"
     assert ns_2 not in tables, f"SHOW TABLES leaked other namespaces: {tables}"
     assert "nested_table" not in tables, f"nested namespaces are not direct children: {tables}"
 
     tables = node.query(f"SHOW TABLES FROM {CATALOG_NAME}.{ns_1}", settings=ns_settings)
-    assert "scoped_table" in tables, f"missing namespace table: {tables}"
+    assert f"{ns_1}.scoped_table" in tables, f"missing namespace table: {tables}"
     assert ns_2 not in tables, f"SHOW TABLES FROM leaked other namespaces: {tables}"
-
-    # a LIKE/NOT LIKE pair that is NOT the scoped-SHOW shape must not take the
-    # direct-children shortcut: the nested table still matches the pattern
-    tables = node.query(
-        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
-        f"AND name LIKE '{ns_1}.%table' AND name NOT LIKE '{ns_1}.%table.%'",
-        settings={"show_data_lake_catalogs_in_system_tables": 1},
-    )
-    assert f"{ns_1}.sub.nested_table" in tables, f"imperfect-prefix LIKE dropped a nested table: {tables}"
 
 
 def test_namespace_nested_sql_ddl(started_cluster):

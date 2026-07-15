@@ -296,8 +296,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (table_identifier.isCompound())
     {
         database_name = table_identifier[0];
-        /// extra parts are a table path inside the database: db.ns1.ns2.table.
-        /// a quoted component with a literal dot would alias another path - stay unresolved
+        /// extra parts are a table path inside the database (db.ns1.ns2.table)
+        /// quoted component with dot would alias another path, stay unresolved
         if (parts_size > 2)
             for (size_t i = 1; i < parts_size; ++i)
                 if (table_identifier[i].find('.') != String::npos)
@@ -802,11 +802,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 namespace
 {
 
-/// How many identifier parts a (possibly dotted) table name consumes starting at `start`:
-/// table name "ns.t" consumes 2 parts of identifier ns.t.column. 0 if it does not match.
-/// A quoted part with a literal dot matches only a whole dotted component ("ns.t" as 1 part).
-/// With `allow_multipart` off (the experimental setting is disabled), only a single part
-/// may match, exactly as before the feature existed.
+/// Parts of the identifier consumed by the table name at `start`, "ns.t" eats 2 parts of
+/// ns.t.column, or 1 quoted dotted part. allow_multipart=0 keeps old single-part match
 size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name, bool allow_multipart)
 {
     if (table_name.empty())
@@ -877,8 +874,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             && numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths) + 1 == parts_size)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
-        /// no eager error for longer identifiers: the caller falls through to CTE,
-        /// parent-scope and database-catalog resolution, which handle table paths
+        /// longer identifiers fall through to CTE/parent-scope/catalog resolution, which handle table paths
         return {};
     }
 

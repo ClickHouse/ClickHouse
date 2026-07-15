@@ -25,9 +25,6 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    /// central resolution fills the namespace prefix under `USE db.namespace` for
-    /// unqualified names; an explicit database that does not exist is kept as written
-    /// so the rewritten query returns an empty result instead of throwing
     StorageID storage_id{query.database, query.table};
     if (storage_id.database_name.empty())
         storage_id = getContext()->resolveStorageID(storage_id, Context::ResolveOrdinary);
@@ -140,7 +137,6 @@ BlockIO InterpreterShowIndexesQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    /// Explicit introspection of a data lake catalog should see its tables in system tables.
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
@@ -156,7 +152,7 @@ void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowIndexesQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

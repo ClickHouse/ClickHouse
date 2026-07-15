@@ -106,62 +106,15 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace
-{
-
-/// Statements that resolve table names through the central resolver (which applies the
-/// `USE db.namespace` prefix) or that name no tables at all. Everything else would
-/// silently target the database while ignoring the selected namespace, so it is
-/// rejected while a namespace scope is active (fail-closed for the experimental feature).
-/// The legacy analyzer ships distributed subqueries with bare-name qualification that
-/// ignores the namespace prefix, so reads under a scope require the new analyzer.
-bool isAllowedUnderTableNamespaceScope(std::string_view interpreter_name, bool has_analyzer)
-{
-    if (!has_analyzer
-        && (interpreter_name.starts_with("InterpreterSelect") || interpreter_name == "InterpreterInsertQuery"
-            || interpreter_name == "InterpreterExplainQuery"))
-        return false;
-
-    static const std::unordered_set<std::string_view> allowed
-    {
-        "InterpreterSelectQueryAnalyzer",
-        "InterpreterInsertQuery",
-        "InterpreterExplainQuery",
-        "InterpreterDescribeQuery",
-        "InterpreterDescribeCacheQuery",
-        "InterpreterExistsQuery",
-        "InterpreterShowCreateQuery",
-        "InterpreterShowTablesQuery",
-        "InterpreterShowColumnsQuery",
-        "InterpreterShowIndexesQuery",
-        "InterpreterShowSettingQuery",
-        "InterpreterShowEnginesQuery",
-        "InterpreterShowFunctionsQuery",
-        "InterpreterShowProcesslistQuery",
-        "InterpreterShowGrantsQuery",
-        "InterpreterShowPrivilegesQuery",
-        "InterpreterShowAccessEntitiesQuery",
-        "InterpreterShowCreateAccessEntityQuery",
-        "InterpreterUseQuery",
-        "InterpreterSetQuery",
-        "InterpreterSetRoleQuery",
-        "InterpreterKillQueryQuery",
-        "InterpreterTransactionControlQuery",
-    };
-    return allowed.contains(interpreter_name);
-}
-
-}
-
 InterpreterFactory & InterpreterFactory::instance()
 {
     static InterpreterFactory interpreter_fact;
     return interpreter_fact;
 }
 
-void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn)
+void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn, bool supports_table_namespace_scope)
 {
-    if (!interpreters.emplace(name, std::move(creator_fn)).second)
+    if (!interpreters.emplace(name, RegisteredInterpreter{std::move(creator_fn), supports_table_namespace_scope}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
@@ -462,9 +415,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     if (!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
 
-    /// The scope is governed by the selected prefix, not by the current setting value:
-    /// otherwise a query-level or session-level `SETTINGS allow_experimental_table_namespaces = 0`
-    /// would silently retarget names to the parent database while the scope is active.
+    const auto & registered = interpreters.at(interpreter_name);
+
+    /// `SETTINGS allow_experimental_table_namespaces = 0`
+    /// must not retarget names to the parent database while the scope is active
     if (const auto database_info = context->getCurrentDatabaseInfo(); !database_info.table_prefix.empty())
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
@@ -475,7 +429,15 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
                 backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
                 backQuoteIfNeed(database_info.database));
 
-        if (!isAllowedUnderTableNamespaceScope(interpreter_name, context->getSettingsRef()[Setting::allow_experimental_analyzer]))
+        if (!context->getSettingsRef()[Setting::allow_experimental_analyzer]
+            && interpreter_name != "InterpreterUseQuery" && interpreter_name != "InterpreterSetQuery")
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "enable_analyzer cannot be disabled while a table namespace is selected "
+                "(USE {}.{}); select the database itself with USE {} first",
+                backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
+                backQuoteIfNeed(database_info.database));
+
+        if (!registered.supports_table_namespace_scope)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "This statement is not supported while a table namespace is selected (USE {}.{}); "
                 "select the database itself with USE {} and qualify table names with the full path",
@@ -483,9 +445,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
                 backQuoteIfNeed(database_info.database));
     }
 
-    // creator_fn creates and returns a InterpreterPtr with the supplied arguments
-    auto creator_fn = interpreters.at(interpreter_name);
-
-    return creator_fn(arguments);
+    return registered.creator_fn(arguments);
 }
 }

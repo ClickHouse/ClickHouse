@@ -44,13 +44,10 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// `USE db.namespace` selects a namespace inside a database (experimental).
-    /// The parts stay separate so the interpreter sees the structure, not a dotted string.
     if (pos.allow_multipart_table_paths && s_dot.ignore(pos, expected))
     {
         String first_part;
-        /// no query parameters in a path, and no quoted components with a literal dot:
-        /// a substituted or quoted dot would alias another path
+
         if (!tryGetIdentifierNameInto(database, first_part) || first_part.empty()
             || first_part.find('.') != String::npos)
             return false;

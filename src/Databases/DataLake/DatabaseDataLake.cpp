@@ -145,13 +145,13 @@ DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_f
     switch (tables_filter.kind)
     {
         case TablesFilter::Kind::None:
-            return {DataLake::TableNameFilter::Kind::All, {}, {}};
+            return {DataLake::TableNameFilter::Kind::All, {}};
         case TablesFilter::Kind::Equals:
-            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern, {}};
+            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
         case TablesFilter::Kind::Like:
-            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern, tables_filter.exclude_pattern};
+            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
     }
-    return {DataLake::TableNameFilter::Kind::All, {}, {}};
+    return {DataLake::TableNameFilter::Kind::All, {}};
 }
 
 }
@@ -607,7 +607,7 @@ bool DatabaseDataLake::empty() const
 
 void DatabaseDataLake::validateTableNamespace(const Names & namespace_parts, ContextPtr /*context*/) const
 {
-    /// one targeted catalog call; also recognizes empty namespaces
+    /// one targeted catalog call, also recognizes empty namespaces
     const String requested = resolveTableNamePath(namespace_parts);
     if (!getCatalog()->existsNamespace(requested))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Catalog {} has no namespace {}",
@@ -1164,8 +1164,8 @@ void DatabaseDataLake::checkDatabase() const
 
 void DatabaseDataLake::checkMetadataFilenameAvailability(const String & table_name) const
 {
-    /// runs before storage creation on CREATE, i.e. before any object-storage write:
-    /// validate the name so no side effect can target an unrepresentable one
+    /// runs before storage creation on CREATE, before any object-storage write,
+    /// validate the name so no side effect can target an unrepresentable table
     if (!DataLake::tryParseTableName(table_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table name {} must be namespace-qualified (namespace.table)", backQuote(table_name));

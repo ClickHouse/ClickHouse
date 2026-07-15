@@ -138,8 +138,6 @@ struct TableNameFilter
     Kind kind = Kind::All;
     /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
     std::string value;
-    /// Optional `name NOT LIKE '…'` conjunct (see `DB::TablesFilter::exclude_pattern`).
-    std::string exclude;
 };
 
 
@@ -180,8 +178,6 @@ public:
     /// return every nested level; flat catalogs their single-level names).
     virtual Namespaces getNamespaces() const = 0;
 
-    /// Check that a namespace exists. The default enumerates everything;
-    /// catalogs with a targeted lookup should override.
     virtual bool existsNamespace(const std::string & namespace_name) const;
 
     /// Fetch fully-qualified table names, restricted by the `name` predicate (see

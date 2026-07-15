@@ -28,7 +28,7 @@ class DatabaseMaterializedPostgreSQL : public DatabaseAtomic
 {
 
 public:
-    /// materialized replication has no namespace semantics; don't inherit the Atomic lexical opt-in
+    /// materialized replication has no namespace semantics, don't inherit the Atomic lexical opt-in
     TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::None; }
 
     DatabaseMaterializedPostgreSQL(

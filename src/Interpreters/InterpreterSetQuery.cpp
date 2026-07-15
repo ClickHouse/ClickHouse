@@ -51,8 +51,6 @@ BlockIO InterpreterSetQuery::execute()
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
 
-    /// the selected namespace scope governs name resolution; disabling the feature
-    /// underneath it would silently retarget unqualified names to the parent database
     if (!session_context->getCurrentDatabaseInfo().table_prefix.empty())
         for (const auto & change : changes)
             if (change.name == "allow_experimental_table_namespaces" && !change.value.safeGet<bool>())
@@ -271,6 +269,6 @@ void registerInterpreterSetQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSetQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterSetQuery", create_fn);
+    factory.registerInterpreter("InterpreterSetQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 }

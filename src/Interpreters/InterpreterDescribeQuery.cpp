@@ -290,7 +290,7 @@ void registerInterpreterDescribeQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDescribeQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterDescribeQuery", create_fn);
+    factory.registerInterpreter("InterpreterDescribeQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

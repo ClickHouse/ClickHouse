@@ -466,7 +466,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
-    /// the JSON subcolumn delimiters make no sense in a table path, leave them unconsumed
+    /// JSON subcolumn delimiters make no sense in table path, leave them unconsumed
     if (!(table_name_with_optional_uuid && pos.allow_multipart_table_paths))
     {
         delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
@@ -548,12 +548,12 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
         if (parts.size() > 2)
         {
-            /// hierarchical table path (experimental): fold db.ns1.ns2.table into
-            /// (db, `ns1.ns2.table`). the two-part form db.`ns.t` stays as written
+            /// hierarchical table path: fold db.ns1.ns2.table into
+            /// (db, `ns1.ns2.table`). two-part form db.`ns.t` stays as written
             if (!pos.allow_multipart_table_paths)
                 return false;
             /// no query parameters inside a path, and no quoted components with a
-            /// literal dot: a substituted or quoted dot would alias another path
+            /// literal dot, a substituted or quoted dot would alias another path
             for (size_t i = 1; i < parts.size(); ++i)
                 if (parts[i].empty() || parts[i].find('.') != String::npos)
                     return false;

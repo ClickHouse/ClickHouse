@@ -20,14 +20,14 @@ CREATE TABLE $DB.plain (x Int32) ENGINE = Memory;
 echo "-- flag off: multipart FROM is a syntax error (master behavior)"
 $CLICKHOUSE_CLIENT -q "SHOW TABLES FROM $DB.ns" 2>&1 | grep -m1 -c "SYNTAX_ERROR\|Syntax error"
 
-echo "-- direct children of the namespace, relative names"
+echo "-- direct children of the namespace, shown as stored"
 $CH -q "SHOW TABLES FROM $DB.ns"
 
-echo "-- LIKE applies to the relative name"
-$CH -q "SHOW TABLES FROM $DB.ns LIKE 'al%'"
+echo "-- LIKE applies to the stored name"
+$CH -q "SHOW TABLES FROM $DB.ns LIKE 'ns.al%'"
 
 echo "-- FULL keeps the engine column"
-$CH -q "SHOW FULL TABLES FROM $DB.ns LIKE 'beta'"
+$CH -q "SHOW FULL TABLES FROM $DB.ns LIKE 'ns.beta'"
 
 echo "-- nested namespace"
 $CH -q "SHOW TABLES FROM $DB.ns.child"

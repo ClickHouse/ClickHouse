@@ -148,11 +148,7 @@ public:
 
     bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return !needsJwtReconnect() && isConnected() && ping(timeouts); }
-
-    /// True when the JWT is about to expire and a fresh token has been obtained,
-    /// so the connection must be re-established before sending the next query.
-    bool needsJwtReconnect();
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
     void disconnect() override;
 

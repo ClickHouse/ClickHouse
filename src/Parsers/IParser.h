@@ -124,9 +124,6 @@ public:
         uint32_t backtracks = 0;
         uint32_t max_backtracks = 0;
 
-        /// Accept hierarchical table paths (`db.ns.table`, `USE db.ns`); driven by the
-        /// experimental `allow_experimental_table_namespaces` setting at the parse entry
-        /// point. Off by default, so persisted definitions and internal parses stay strict.
         bool allow_multipart_table_paths = false;
 
         Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)

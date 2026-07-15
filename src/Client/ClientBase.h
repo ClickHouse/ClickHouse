@@ -109,9 +109,7 @@ public:
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
 
-    /// Re-select `USE db.namespace` on a fresh connection, or throw: continuing silently
-    /// would resolve unqualified names in the parent database.
-    void restoreTableNamespaceScopeAfterReconnect();
+    /// Re-select `USE db.namespace` on a fresh connection, or throw
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
 
@@ -350,7 +348,6 @@ protected:
     /// Namespace selected with `USE db.namespace` (experimental). Tracked separately from
     /// `default_database`: folded into one string it would be ambiguous with a database
     /// whose name contains a dot. Restored (or failed loudly) after a reconnect.
-    String default_database_table_namespace;
     String query_id;
     Int32 suggestion_limit{};
     bool enable_highlight = true;

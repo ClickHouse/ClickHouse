@@ -15,7 +15,6 @@
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsBool mysql_map_fixed_string_to_text_in_show_columns;
@@ -42,9 +41,7 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
-    /// central resolution fills the namespace prefix under `USE db.namespace` for
-    /// unqualified names; an explicit database that does not exist is kept as written
-    /// so the rewritten query returns an empty result instead of throwing
+
     StorageID storage_id{query.database, query.table};
     if (storage_id.database_name.empty())
         storage_id = getContext()->resolveStorageID(storage_id, Context::ResolveOrdinary);
@@ -190,7 +187,6 @@ BlockIO InterpreterShowColumnsQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    /// Explicit introspection of a data lake catalog should see its tables in system tables.
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
@@ -206,7 +202,7 @@ void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowColumnsQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

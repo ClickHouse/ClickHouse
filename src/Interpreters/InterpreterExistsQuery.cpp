@@ -37,10 +37,8 @@ Block InterpreterExistsQuery::getSampleBlock()
 }
 
 
-/// Central resolution fills the namespace prefix under `USE db.namespace` for
-/// unqualified names, but validates that an explicit database exists; EXISTS must
-/// answer on a missing database instead of throwing, so an explicit qualifier is
-/// kept as written when resolution fails (the probe then finds nothing).
+/// EXISTS must answer 0 on a missing db instead of throwing, so explicit
+/// qualifier is kept as written when resolution fails
 StorageID InterpreterExistsQuery::resolveExistsTarget(const ASTQueryWithTableAndOutput & query) const
 {
     StorageID storage_id{query.getDatabase(), query.getTable()};
@@ -143,6 +141,6 @@ void registerInterpreterExistsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterExistsQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterExistsQuery", create_fn);
+    factory.registerInterpreter("InterpreterExistsQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 }

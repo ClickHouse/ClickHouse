@@ -178,14 +178,13 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!name_p.parse(pos, database, expected))
                 return false;
 
-            /// `FROM db.namespace` (experimental): keep the parts separate so the
-            /// interpreter sees the structure, not a dotted string.
+            /// in `FROM db.namespace` keep the parts separate so
+            /// interpreter sees the structure
             ParserToken dot(TokenType::Dot);
             if (pos.allow_multipart_table_paths && dot.ignore(pos, expected))
             {
                 String first_part;
-                /// no query parameters in a path, and no quoted components with a literal
-                /// dot: a substituted or quoted dot would alias another path
+                /// substituted or quoted dot would alias another path
                 if (!tryGetIdentifierNameInto(database, first_part) || first_part.empty()
                     || first_part.find('.') != String::npos)
                     return false;

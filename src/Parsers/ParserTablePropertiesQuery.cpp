@@ -126,9 +126,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             if (!name_p.parse(pos, table, expected))
                 return false;
 
-            /// hierarchical table path (experimental): db.ns1.ns2.table -> (db, `ns1.ns2.table`).
-            /// no query parameters inside a path, and no quoted components with a literal dot:
-            /// a substituted or quoted dot would alias another path
+            /// hierarchical table path: db.ns1.ns2.table -> (db, `ns1.ns2.table`)
+            /// substituted or quoted dot would alias another path
             if (pos.allow_multipart_table_paths && s_dot.checkWithoutMoving(pos, expected))
             {
                 String table_path = getIdentifierName(table);

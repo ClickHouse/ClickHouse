@@ -23,7 +23,7 @@ ASTPtr tryParseQuery(
     size_t max_parser_depth,
     size_t max_parser_backtracks,
     bool skip_insignificant,   /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
-    bool allow_multipart_table_paths = false); /// Experimental `db.ns.table` paths (see IParser::Pos)
+    bool allow_multipart_table_paths = false); /// `db.ns.table` paths
 
 
 /// Parse query or throw an exception with error message.

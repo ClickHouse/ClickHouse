@@ -447,9 +447,7 @@ IASTHash calculateASTHash(ASTPtr ast, const CurrentDatabaseInfo & current_databa
     /// tables (issue #64136)
     hash.update(current_database.database);
 
-    /// Same for the namespace prefix selected via `USE db.namespace` (DataLakeCatalog databases):
-    /// the same unqualified table name resolves to different tables under different prefixes.
-    /// Hash the size first to keep (database, prefix) pairs unambiguous.
+    //// Same for the `USE db.namespace` prefix, the size first keeps (database, prefix) unambiguous
     hash.update(current_database.table_prefix.size());
     hash.update(current_database.table_prefix);
 

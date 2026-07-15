@@ -139,6 +139,16 @@ public:
 
 
     void assertDatabaseExists(const String & database_name) const;
+
+    /// The current database may be a logical namespace path ("db.ns"). An existing
+    /// database always wins, so real dotted-named databases keep working; otherwise
+    /// the first component is the database and the rest is a table-name prefix.
+    CurrentDatabaseInfo splitTablePrefixFromDatabaseName(const String & name) const;
+
+    /// Same rule applied to a StorageID: {"db.ns", "t"} -> {"db", "ns.t"}.
+    /// Fails (via `exception` or throw) when the table name already contains a dot -
+    /// it would be indistinguishable from a deeper path.
+    StorageID foldNamespaceIntoTableName(StorageID storage_id, std::optional<Exception> * exception = nullptr) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
 
     DatabasePtr getDatabaseForTemporaryTables() const;

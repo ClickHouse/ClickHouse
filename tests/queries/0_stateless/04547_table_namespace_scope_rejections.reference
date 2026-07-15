@@ -11,20 +11,27 @@
 1
 1
 1
+1
+1
+1
+-- the scope requires the new analyzer, entering and staying
+1
+1
 -- reads, writes and introspection keep working under the scope
 1
 2
 1
 x	Int32
 SELECT 1
+0
 -- escapes through table functions and views are closed
 3
 1
 1
 -- SHOW subqueries resolve under the scope, never against the parent
+ns.probe
 probe
-probe
-probe
+ns.probe
 x	Int32
 -- outside the scope, DDL over an explicit path works and is deterministic
-created_via_path
+ns2.created_via_path

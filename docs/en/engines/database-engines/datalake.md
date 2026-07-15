@@ -113,8 +113,8 @@ SELECT * FROM table;
 `USE catalog_name.namespace` validates that the namespace exists in the
 catalog and fails otherwise. While a namespace is selected, `currentDatabase`
 still returns the physical database (`catalog_name`), and `SHOW TABLES` lists
-only the direct children of the namespace, by their names relative to it.
-`SHOW TABLES FROM catalog_name.namespace` does the same without changing the
+only the direct children of the namespace, by their stored (namespace-qualified)
+names. `SHOW TABLES FROM catalog_name.namespace` does the same without changing the
 scope. The scope is cleared as soon as you switch to another database with
 `USE`.
 

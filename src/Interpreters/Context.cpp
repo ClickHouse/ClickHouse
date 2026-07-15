@@ -1306,7 +1306,6 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
-    current_table_prefix(o.current_table_prefix),
     can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
@@ -2099,15 +2098,18 @@ ConfigurationPtr Context::getUsersConfig()
 namespace
 {
 
-/// `USE db.namespace` must fail if the namespace does not exist; the check may reach
-/// a remote catalog, so never call this under the Context mutex
-void validateTableNamespacePrefix(const String & database_name, const String & table_prefix, ContextPtr context)
+/// A dotted current database selects a namespace ("db.ns") unless a database with that exact name exists
+void validateCurrentDatabaseName(const String & name, const Settings & settings, ContextPtr context)
 {
-    if (table_prefix.empty())
+    const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
+    if (info.table_prefix.empty())
         return;
+    /// with the feature off a dotted name is only ever an exact database name (master behavior)
+    if (!settings[Setting::allow_experimental_table_namespaces])
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
     Names parts;
-    splitInto<'.'>(parts, table_prefix);
-    DatabaseCatalog::instance().getDatabase(database_name)->validateTableNamespace(parts, context);
+    splitInto<'.'>(parts, info.table_prefix);
+    DatabaseCatalog::instance().getDatabase(info.database)->validateTableNamespace(parts, context);
 }
 
 }
@@ -2126,6 +2128,10 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
+    /// a dotted DEFAULT DATABASE may select a namespace; validate before taking the mutex
+    if (!database.empty())
+        validateCurrentDatabaseName(database, getSettingsRef(), shared_from_this());
+
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
@@ -2140,7 +2146,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, /*table_prefix*/ "", lock);
+        setCurrentDatabaseWithLock(database, lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3512,8 +3518,8 @@ String Context::getCurrentDatabase() const
 
 CurrentDatabaseInfo Context::getCurrentDatabaseInfo() const
 {
-    SharedLockGuard lock(mutex);
-    return {current_database, current_table_prefix};
+    /// derived: the current database is stored as the logical name ("db.ns" when scoped)
+    return DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(getCurrentDatabase());
 }
 
 
@@ -3540,26 +3546,23 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     current_database = name;
 }
 
-void Context::setCurrentDatabaseWithLock(const String & name, const String & table_prefix, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
 {
     if (name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabaseCatalog::instance().assertDatabaseExists(name);
+    DatabaseCatalog::instance().assertDatabaseExists(
+        DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name).database);
     current_database = name;
-    /// The namespace prefix (USE db.namespace) is tied to the database it was selected with,
-    /// so every database change updates the (database, prefix) pair as a unit.
-    current_table_prefix = table_prefix;
     need_recalculate_access = true;
 }
 
-void Context::setCurrentDatabase(const String & name, const String & table_prefix)
+void Context::setCurrentDatabase(const String & name)
 {
-    /// the (possibly remote) namespace check must happen before taking the mutex
-    validateTableNamespacePrefix(name, table_prefix, shared_from_this());
+    validateCurrentDatabaseName(name, getSettingsRef(), shared_from_this());
 
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, table_prefix, lock);
+    setCurrentDatabaseWithLock(name, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3569,7 +3572,6 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
-    current_table_prefix.clear();
     need_recalculate_access = true;
 }
 
@@ -7834,24 +7836,11 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
-        /// Under `USE db.namespace` unqualified table names resolve within the selected
-        /// namespace. The prefix governs resolution regardless of the current setting
-        /// value: it can only be selected while the setting is on, and later setting
-        /// changes must not silently retarget names to the parent database.
-        if (!current_table_prefix.empty())
+        /// the current database may be a logical namespace path, fold it into the table name
         {
-            /// a dot inside the name would be indistinguishable from a deeper path
-            if (storage_id.table_name.find('.') != String::npos)
-            {
-                if (exception)
-                    exception->emplace(Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Table name {} contains a dot and cannot be resolved inside namespace {}; "
-                        "select the database with USE {} and use a fully qualified name",
-                        backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(current_table_prefix),
-                        backQuoteIfNeed(current_database)));
+            storage_id = DatabaseCatalog::instance().foldNamespaceIntoTableName(std::move(storage_id), exception);
+            if (!storage_id)
                 return StorageID::createEmpty();
-            }
-            storage_id.table_name = current_table_prefix + "." + storage_id.table_name;
         }
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;

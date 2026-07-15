@@ -120,7 +120,7 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
-/// REST request bodies represent a nested namespace as an array of components.
+/// REST request bodies represent a nested namespace as an array of components
 Poco::JSON::Array::Ptr namespaceComponents(const String & namespace_name)
 {
     Poco::JSON::Array::Ptr components = new Poco::JSON::Array;
@@ -740,8 +740,7 @@ DB::Names RestCatalog::getTables() const
 
 bool RestCatalog::existsNamespace(const std::string & namespace_name) const
 {
-    /// one listing of the parent instead of walking the whole namespace tree;
-    /// a missing parent means the namespace doesn't exist either
+    /// missing parent means the namespace doesn't exist either
     const auto pos = namespace_name.rfind('.');
     const auto parent = pos == std::string::npos ? std::string{} : namespace_name.substr(0, pos);
     const auto children = listChildNamespaces(parent, /*missing_parent_is_empty*/ true);

@@ -859,7 +859,32 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
 template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
 bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlags & flags, std::string_view database, const Args &... args) const
 {
-    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, database.empty() ? params.current_database : database, args...);
+    if (database.empty())
+    {
+        /// the current database may be a logical namespace path ("db.ns"): access
+        /// targets live in the physical database under namespace-qualified table names
+        if constexpr (sizeof...(args) > 0)
+        {
+            if (params.current_database.find('.') != String::npos)
+            {
+                const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(params.current_database);
+                if (!info.table_prefix.empty())
+                    return checkAccessImplWithTablePrefix<throw_if_denied, grant_option, wildcard>(context, flags, info, args...);
+            }
+        }
+        return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, std::string_view{params.current_database}, args...);
+    }
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(context, flags, database, args...);
+}
+
+template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
+bool ContextAccess::checkAccessImplWithTablePrefix(
+    const ContextPtr & context, const AccessFlags & flags, const CurrentDatabaseInfo & database_info,
+    std::string_view table, const Args &... args) const
+{
+    const String prefixed_table = database_info.table_prefix + "." + String(table);
+    return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(
+        context, flags, std::string_view{database_info.database}, std::string_view{prefixed_table}, args...);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>

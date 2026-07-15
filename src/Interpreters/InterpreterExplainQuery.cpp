@@ -959,7 +959,7 @@ void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)
     { return std::make_unique<InterpreterExplainQuery>(args.query, args.context, args.options); };
-    factory.registerInterpreter("InterpreterExplainQuery", create_fn);
+    factory.registerInterpreter("InterpreterExplainQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

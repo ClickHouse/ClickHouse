@@ -34,9 +34,15 @@ public:
 
     using CreatorFn = std::function<InterpreterPtr(const Arguments & arguments)>;
 
-    using Interpreters = std::unordered_map<String, CreatorFn>;
+    struct RegisteredInterpreter
+    {
+        CreatorFn creator_fn;
+        bool supports_table_namespace_scope = false;
+    };
 
-    void registerInterpreter(const std::string & name, CreatorFn creator_fn);
+    using Interpreters = std::unordered_map<String, RegisteredInterpreter>;
+
+    void registerInterpreter(const std::string & name, CreatorFn creator_fn, bool supports_table_namespace_scope = false);
 
 private:
     Interpreters interpreters;

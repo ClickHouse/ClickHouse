@@ -24,7 +24,7 @@ def run_session_with_reconnect(queries_before, queries_after, out_file):
     after = "".join(q + ";\n" for q in queries_after)
     script = (
         f"( printf '{before}'; sleep 12; printf '{after}' ) | "
-        "clickhouse-client -mn --allow_experimental_table_namespaces=1 "
+        "clickhouse client --allow_experimental_table_namespaces=1 "
         f"> {out_file} 2>&1"
     )
     node.exec_in_container(["bash", "-c", script], detach=True)

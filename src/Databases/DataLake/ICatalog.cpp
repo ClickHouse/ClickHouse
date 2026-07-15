@@ -329,8 +329,8 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
 
         case TableNameFilter::Kind::Equals:
         {
-            /// `name = 'ns.table'` -> list namespace `ns` and keep the exact name only, so
-            /// downstream metadata fetches don't touch sibling tables.
+            /// `name = 'ns.table'` -> list namespace `ns` and keep the exact name only,
+            /// downstream metadata fetches don't touch sibling tables
             const auto pos = filter.value.rfind('.');
             if (pos == std::string::npos)
                 return getTables();
@@ -353,15 +353,6 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
             /// `system.tables` row is dropped; a looser match only costs an extra
             /// table listing.
             const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
-
-            /// `LIKE 'ns.%' AND NOT LIKE 'ns.%.%'` is the scoped SHOW TABLES shape:
-            /// only the direct children of `ns`, so descendant namespaces need not be listed.
-            /// The pattern must be a perfect prefix (nothing after the wildcard): a pattern
-            /// like `ns.%foo` also matches descendants, which this shortcut would drop.
-            const auto [perfect_prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ true);
-            if (is_perfect && !perfect_prefix.empty() && perfect_prefix.back() == '.'
-                && !filter.exclude.empty() && filter.exclude == filter.value + ".%")
-                return listTablesInNamespaceDirect(perfect_prefix.substr(0, perfect_prefix.size() - 1));
 
             /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
             /// Calling getTables() is better as its parallel.

@@ -4533,7 +4533,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
         auto context = scope_context->getQueryContext();
 
-        /// an unqualified view name would bind to the parent database, ignoring the namespace
+        /// unqualified view name would bind to the parent database, ignoring the namespace
         if (!view_name_is_qualified && !context->getCurrentDatabaseInfo().table_prefix.empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Parameterized views are not supported while a table namespace is selected; "
