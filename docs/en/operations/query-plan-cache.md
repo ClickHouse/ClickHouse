@@ -69,7 +69,7 @@ The first execution serializes and stores the plan. Subsequent executions of the
 A query is admitted to the cache only if **all** of the following hold:
 
 - The statement is a single `SELECT` against exactly one table (no `JOIN`, no `UNION` of multiple subqueries, no scalar/`IN`-subquery references to other tables).
-- The table is a local, non-system, non-view storage. Distributed tables, table functions, dictionaries, views, and materialized views are excluded.
+- The table is a direct local, non-system, non-view `MergeTree`-family storage. Distributed tables, table functions, dictionaries, views, materialized views, and wrapper engines such as `Buffer` or `Merge` are excluded.
 - [`enable_analyzer`](/operations/settings/settings#enable_analyzer) is `1` (the default).
 - The query does not run with parallel replicas (`enable_parallel_replicas = 0`).
 - The query does not contain non-deterministic functions (`now`, `rand`, etc.) or subqueries.
