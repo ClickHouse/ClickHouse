@@ -1,0 +1,101 @@
+---
+title: 提升 ClickHouse 中 Map 查找性能
+description: 了解如何通过将特定键物化为独立列，优化 ClickHouse 中 Map 列的查找性能并提升查询效率。
+date: 2022-10-30
+tags: ['性能与优化']
+keywords: ['Map 性能']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## 问题
+</div>
+
+Map 查找 (例如 `a['key']`) 的复杂度是线性的 (如[此处](/zh/reference/data-types/map)所述) ，因此效率可能较低。这是因为，要从表中选取具有特定键的值，就需要遍历 Map 列中所有行 (N) 的全部键 (约 M) ，最终导致约 MxN 次 查找。
+
+使用 Map 的 查找 可能比 String 列慢 10 倍。下面的实验也表明，冷查询也会出现约 10 倍的性能下降，而且处理的数据量相差多个数量级 (7.21 MB 对比 5.65 GB) 。
+
+```sql
+-- 创建以 SpanName 为 String、ResourceAttributes 为 Map 的表
+DROP TABLE IF EXISTS tbl;
+CREATE TABLE tbl (
+    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
+    `TraceId` String CODEC (ZSTD(1)),
+    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
+    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
+    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId);
+
+-- 创建 UDF，为 ResourceAttributes 生成随机 Map 数据
+DROP FUNCTION IF EXISTS genmap;
+CREATE FUNCTION genmap AS (n) -> arrayMap (x-> (x::String, (x*rand32())::String), range(1, n));
+
+-- 验证 genmap 是否按预期工作
+SELECT genmap(10)::Map(String, String);
+
+-- 插入 100 万行数据
+INSERT INTO tbl
+SELECT
+    now() - randUniform(1, 1000000.) as Timestamp,
+    randomPrintableASCII(2) as TraceId,
+    randomPrintableASCII(2) as ServiceName,
+    rand32() as Duration,
+    randomPrintableASCII(2) as SpanName,
+    genmap(rand64()%500)::Map(String, String) as ResourceAttributes
+FROM numbers(1_000_000);
+
+-- 按 SpanName 查询速度更快
+-- [冷查询] 0 rows in set. Elapsed: 0.642 sec. Processed 1.00 million rows, 7.21 MB (1.56 million rows/s., 11.22 MB/s.)
+-- [热查询] 0 rows in set. Elapsed: 0.164 sec. Processed 1.00 million rows, 7.21 MB (6.10 million rows/s., 43.99 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    SpanName
+FROM tbl
+GROUP BY SpanName ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- 按 ResourceAttributes 查询速度较慢
+-- [冷查询] 0 rows in set. Elapsed: 6.432 sec. Processed 1.00 million rows, 5.65 GB (155.46 thousand rows/s., 879.07 MB/s.)
+-- [热查询] 0 rows in set. Elapsed: 5.935 sec. Processed 1.00 million rows, 5.65 GB (168.50 thousand rows/s., 952.81 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    ResourceAttributes['1'] as hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+```
+
+**解决方案**
+为了优化该查询，我们可以新增一列，将其默认值设为 Map 列中某个特定键对应的值，再将其物化，以便为现有行补齐该值。这样一来，我们就在插入时提取并存储了所需的值，从而加快查询时的查找。
+
+```sql
+-- 解决方案是添加一个列，其值默认为 Map 中某个特定键的值
+ALTER TABLE tbl ADD COLUMN hostname LowCardinality(String) DEFAULT ResourceAttributes['1'];
+ALTER TABLE tbl MATERIALIZE COLUMN hostname;
+
+-- 针对 hostname（新列）的查询现在更快了
+-- [cold] 0 rows in set. Elapsed: 2.215 sec. Processed 1.00 million rows, 21.67 MB (451.52 thousand rows/s., 9.78 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 0.541 sec. Processed 1.00 million rows, 21.67 MB (1.85 million rows/s., 40.04 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- 清除缓存以执行冷查询
+SYSTEM DROP FILESYSTEM CACHE;
+```

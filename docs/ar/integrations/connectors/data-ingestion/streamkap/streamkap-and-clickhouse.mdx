@@ -1,0 +1,168 @@
+---
+sidebarTitle: 'ربط Streamkap بـ ClickHouse'
+keywords: ['ClickHouse', 'Streamkap', 'CDC', 'ربط', 'تكامل', 'etl', 'تكامل البيانات', 'التقاط تغييرات البيانات']
+slug: /integrations/sttreamkap
+description: 'إدخال البيانات المتدفقة إلى ClickHouse باستخدام خطوط بيانات Airbyte'
+
+title: 'ربط Streamkap بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://www.streamkap.com/'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+تُعد <a href="https://www.streamkap.com/" target="_blank">Streamkap</a> منصة لتكامل البيانات في الوقت الفعلي، متخصصة في بث CDC (التقاط بيانات التغيير) ومعالجة التدفقات. وهي مبنية على مكدس عالي الإنتاجية وقابل للتوسع باستخدام Apache Kafka وApache Flink وDebezium، وتُقدَّم كخدمة مُدارة بالكامل ضمن نماذج نشر SaaS أو BYOC (Bring your own Cloud).
+
+تتيح لك Streamkap بث كل عمليات الإدراج والتحديث والحذف من قواعد البيانات المصدر مثل PostgreSQL وMySQL وSQL Server وMongoDB و<a href="https://streamkap.com/connectors" target="_blank">المزيد</a> مباشرةً إلى ClickHouse بزمن استجابة في حدود المللي ثانية.
+
+وهذا يجعلها مثالية لتشغيل لوحات معلومات تحليلية في الوقت الفعلي، والتحليلات التشغيلية، وتغذية نماذج التعلّم الآلي بالبيانات الحية.
+
+<div id="key-features">
+  ## الميزات الرئيسية
+</div>
+
+* **CDC للبث في الوقت الفعلي:** تلتقط Streamkap التغييرات مباشرةً من سجلات قاعدة بياناتك، مما يضمن أن تكون البيانات في ClickHouse نسخة مطابقة للمصدر في الوقت الفعلي.
+  معالجة التدفق المبسطة: حوِّل البيانات وأثرِها ووجّهها ونسّقها وأنشئ embeddings منها في الوقت الفعلي قبل وصولها إلى ClickHouse. وهي تعمل بواسطة Flink من دون تعقيداته
+
+* **مُدارة بالكامل وقابلة للتوسع:** توفّر خط معالجة جاهزًا للإنتاج ومن دون حاجة إلى صيانة، مما يلغي الحاجة إلى إدارة البنية التحتية الخاصة بك لـ Kafka أو Flink أو Debezium أو schema registry. صُمِّمت المنصة لتحقيق معدل نقل عالٍ، ويمكنها التوسع خطيًا للتعامل مع مليارات الأحداث.
+
+* **التطور التلقائي للمخطط:** تكتشف Streamkap تلقائيًا تغييرات المخطط في قاعدة البيانات المصدر وتطبّقها في ClickHouse. ويمكنها التعامل مع إضافة أعمدة جديدة أو تغيير أنواع الأعمدة من دون تدخل يدوي.
+
+* **محسّنة لـ ClickHouse:** بُني هذا التكامل ليعمل بكفاءة مع ميزات ClickHouse. وبشكل افتراضي، يستخدم محرك ReplacingMergeTree للتعامل بسلاسة مع التحديثات وعمليات الحذف من النظام المصدر.
+
+* **تسليم موثوق:** توفّر المنصة ضمان التسليم مرة واحدة على الأقل، مما يضمن اتساق البيانات بين مصدرك وClickHouse. وبالنسبة إلى عمليات upsert، فإنها تنفّذ إزالة التكرار استنادًا إلى المفتاح الأساسي.
+
+<div id="started">
+  ## البدء
+</div>
+
+يقدّم هذا الدليل نظرة عامة موجزة على إعداد مسار بيانات في Streamkap لتحميل البيانات إلى ClickHouse.
+
+<div id="prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+* <a href="https://app.streamkap.com/account/sign-up" target="_blank">حساب Streamkap</a>.
+* تفاصيل الاتصال بعنقود ClickHouse الخاص بك: اسم المضيف، والمنفذ، واسم المستخدم، وكلمة المرور.
+* قاعدة بيانات مصدر (مثل PostgreSQL أو SQL Server) مُعدّة للسماح باستخدام CDC. يمكنك العثور على أدلة إعداد مفصلة في وثائق Streamkap.
+
+<div id="configure-clickhouse-source">
+  ### الخطوة 1: تكوين المصدر في Streamkap
+</div>
+
+1. سجّل الدخول إلى حسابك في Streamkap.
+2. من الشريط الجانبي، انتقل إلى **Connectors** ثم اختر علامة التبويب **Sources**.
+3. انقر على **+ Add** وحدّد نوع قاعدة البيانات المصدر (مثل SQL Server RDS).
+4. أدخل بيانات الاتصال، بما في ذلك نقطة النهاية والمنفذ واسم قاعدة البيانات وبيانات اعتماد المستخدم.
+5. احفظ الموصّل.
+
+<div id="configure-clickhouse-dest">
+  ### الخطوة 2: تكوين وجهة ClickHouse
+</div>
+
+1. في قسم **Connectors**، حدِّد علامة التبويب **Destinations**.
+2. انقر على **+ Add** واختر **ClickHouse** من القائمة.
+3. أدخل تفاصيل الاتصال الخاصة بخدمة ClickHouse:
+   * **Hostname:** اسم المضيف لمثيل ClickHouse لديك (على سبيل المثال، `abc123.us-west-2.aws.clickhouse.cloud`)
+   * **Port:** منفذ HTTPS الآمن، وعادةً ما يكون `8443`
+   * **Username and Password:** بيانات اعتماد مستخدم ClickHouse لديك
+   * **Database:** اسم قاعدة البيانات الهدف في ClickHouse
+4. احفظ الوجهة.
+
+<div id="run-pipeline">
+  ### الخطوة 3: إنشاء مسار بيانات وتشغيله
+</div>
+
+1. انتقل إلى **Pipelines** في الشريط الجانبي وانقر على **+ Create**.
+2. حدِّد الـSource والوجهة اللذين أعددتهما للتو.
+3. اختر المخططات والجداول التي تريد بثها.
+4. سمِّ مسار بيانات ثم انقر على **Save**.
+
+بمجرد إنشائه، سيصبح مسار بيانات نشطًا. سيأخذ Streamkap أولًا لقطة من البيانات الحالية، ثم يبدأ ببث أي تغييرات جديدة فور حدوثها.
+
+<div id="verify-data-clickhoouse">
+  ### الخطوة 4: التحقّق من البيانات في ClickHouse
+</div>
+
+اتصل بعنقود ClickHouse لديك ونفّذ استعلامًا للاطّلاع على البيانات التي تصل إلى الجدول الهدف.
+
+```sql
+SELECT * FROM your_table_name LIMIT 10;
+```
+
+<div id="how-it-works-with-clickhouse">
+  ## آلية العمل مع ClickHouse
+</div>
+
+صُمِّم تكامل Streamkap لإدارة بيانات CDC بكفاءة داخل ClickHouse.
+
+<div id="table-engine-data-handling">
+  ### محرك الجدول ومعالجة البيانات
+</div>
+
+بشكل افتراضي، يستخدم Streamkap وضع إدخال `upsert`. وعند إنشاء جدول في ClickHouse، يستخدم المحرك ReplacingMergeTree. ويُعد هذا المحرك مثاليًا للتعامل مع أحداث CDC:
+
+* يُستخدم المفتاح الأساسي للجدول المصدر باعتباره مفتاح ORDER BY في تعريف جدول ReplacingMergeTree.
+
+* تُكتب **التحديثات** في المصدر كصفوف جديدة في ClickHouse. وأثناء عملية الدمج في الخلفية، يدمج ReplacingMergeTree هذه الصفوف بحيث لا يحتفظ إلا بأحدث إصدار استنادًا إلى مفتاح الترتيب.
+
+* تُعالَج **عمليات الحذف** بواسطة علامة بيانات وصفية تُمرَّر إلى المعامل `is_deleted` في ReplacingMergeTree. ولا تُزال الصفوف المحذوفة من المصدر فورًا، بل تُعلَّم على أنها محذوفة.
+  * ويمكن اختياريًا الاحتفاظ بالسجلات المحذوفة في ClickHouse لأغراض التحليلات
+
+<div id="metadata-columns">
+  ### أعمدة البيانات الوصفية
+</div>
+
+تضيف Streamkap عدة أعمدة بيانات وصفية إلى كل جدول لإدارة حالة البيانات:
+
+| اسم العمود                | الوصف                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `_STREAMKAP_SOURCE_TS_MS` | الطابع الزمني (بالملي ثانية) للحدث في قاعدة البيانات المصدر.                     |
+| `_STREAMKAP_TS_MS`        | الطابع الزمني (بالملي ثانية) لوقت معالجة Streamkap للحدث.                        |
+| `__DELETED`               | علامة منطقية (`true`/`false`) تشير إلى ما إذا كان الصف قد حُذف من المصدر.        |
+| `_STREAMKAP_OFFSET`       | قيمة الإزاحة من السجلات الداخلية لـ Streamkap، وهي مفيدة للترتيب وتصحيح الأخطاء. |
+
+<div id="query-latest-data">
+  ### الاستعلام عن أحدث البيانات
+</div>
+
+لأن ReplacingMergeTree يعالج التحديثات وعمليات الحذف في الخلفية، فقد يُظهر استعلام SELECT * بسيط صفوفًا تاريخية أو صفوفًا محذوفة قبل اكتمال عملية الدمج. وللحصول على أحدث حالة لبياناتك، يجب تصفية السجلات المحذوفة واختيار أحدث إصدار فقط من كل صف.
+
+يمكنك فعل ذلك باستخدام المُعدِّل FINAL، وهو خيار عملي لكنه قد يؤثر في أداء الاستعلام:
+
+```sql
+-- Using FINAL to get the correct current state
+SELECT * FROM your_table_name FINAL WHERE __DELETED = 'false';
+SELECT * FROM your_table_name FINAL LIMIT 10;
+SELECT * FROM your_table_name FINAL WHERE <filter by keys in ORDER BY clause>;
+SELECT count(*) FROM your_table_name FINAL;
+```
+
+لتحسين الأداء عند التعامل مع
+الجداول الكبيرة، خاصةً إذا لم تكن بحاجة إلى قراءة جميع الأعمدة، وفي الاستعلامات التحليلية التي تُجرى لمرة واحدة، يمكنك استخدام الدالة argMax لاختيار أحدث سجل يدويًا لكل مفتاح أساسي:
+
+```sql
+SELECT key,
+       argMax(col1, version) AS col1,
+       argMax(col2, version) AS col2
+FROM t
+WHERE <your predicates>
+GROUP BY key;
+```
+
+في حالات الاستخدام في بيئات الإنتاج، ومع استعلامات المستخدمين النهائيين المتكررة والمتزامنة، يمكن استخدام العروض المادية لنمذجة البيانات بما يلائم على نحو أفضل أنماط الوصول اللاحقة.
+
+<div id="further-reading">
+  ## لمزيد من القراءة
+</div>
+
+* <a href="https://streamkap.com/" target="_blank">موقع Streamkap</a>
+* <a href="https://docs.streamkap.com/clickhouse" target="_blank">وثائق Streamkap لـ ClickHouse</a>
+* <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">المدونة: البث باستخدام Change Data Capture إلى ClickHouse</a>
+* <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">وثائق ClickHouse: ReplacingMergeTree</a>

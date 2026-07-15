@@ -6,6 +6,8 @@
 -- it depends on) explicitly so CI random-settings cannot move the query
 -- off the target path.
 
+set explain_query_plan_default='legacy';
+
 DROP TABLE IF EXISTS items_arrjoin;
 DROP TABLE IF EXISTS tags_arrjoin;
 DROP TABLE IF EXISTS right_arrjoin;

@@ -1,0 +1,163 @@
+---
+description: 'このエンジンでは、ClickHouse を Redis と連携できます。'
+sidebarTitle: 'Redis'
+slug: /engines/table-engines/integrations/redis
+title: 'Redis テーブルエンジン'
+doc_type: 'guide'
+---
+
+このエンジンでは、ClickHouse を [Redis](https://redis.io/) と連携できます。Redis はキー・バリューモデルを採用しているため、`where k=xx` や `where k in (xx, xx)` のようなポイントクエリでのみ使用することを強く推奨します。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Redis({host:port[, db_index[, password[, pool_size]]] | named_collection[, option=value [,..]] })
+PRIMARY KEY(primary_key_name);
+```
+
+**エンジンパラメータ**
+
+* `host:port` — Redis server のアドレスです。port は省略でき、その場合はデフォルトの Redis ポート 6379 が使用されます。
+* `db_index` — Redis の DB 索引です。範囲は 0〜15 で、デフォルトは 0 です。
+* `password` — ユーザーパスワードです。デフォルトは空文字列です。
+* `pool_size` — Redis の最大接続プールサイズです。デフォルトは 16 です。
+* `primary_key_name` - カラム一覧内の任意のカラム名です。
+
+<Info>
+  **シリアライゼーション**
+
+  `PRIMARY KEY` は 1 つのカラムのみをサポートします。主キーは Redis のキーとしてバイナリ形式でシリアライズされます。
+  主キー以外のカラムは、対応する順序で Redis の値としてバイナリ形式でシリアライズされます。
+</Info>
+
+引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`host` と `port` は個別に指定する必要があります。この方法は本番環境では推奨されます。現時点では、名前付きコレクション を使用して Redis に渡すすべてのパラメータが必須です。
+
+<Info>
+  **フィルタリング**
+
+  `key equals` または `in` フィルタリングを含むクエリは、Redis に対する複数キーのルックアップに最適化されます。キーによるフィルタリングがないクエリではフルテーブルスキャンが発生し、これは高コストな処理です。
+</Info>
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+通常の引数を使って、`Redis`エンジンを使用する ClickHouse のテーブルを作成します:
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
+```
+
+または、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)を使用します：
+
+```xml
+<named_collections>
+    <redis_creds>
+        <host>localhost</host>
+        <port>6379</port>
+        <password>****</password>
+        <pool_size>16</pool_size>
+        <db_index>0</db_index>
+    </redis_creds>
+</named_collections>
+```
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis(redis_creds) PRIMARY KEY(key);
+```
+
+挿入:
+
+```sql title="Query"
+INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+```
+
+```sql title="Query"
+SELECT COUNT(*) FROM redis_table;
+```
+
+```text title="Response"
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE key='1';
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 1   │  1 │ 1  │  1 │
+└─────┴────┴────┴────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE v1=2;
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 2   │  2 │ 2  │  2 │
+└─────┴────┴────┴────┘
+```
+
+更新:
+
+主キーは更新できません。
+
+```sql title="Query"
+ALTER TABLE redis_table UPDATE v1=2 WHERE key='1';
+```
+
+削除：
+
+```sql title="Query"
+ALTER TABLE redis_table DELETE WHERE key='1';
+```
+
+Truncate:
+
+Redis DB を非同期に flush します。`Truncate` は SYNC モードにも対応しています。
+
+```sql title="Query"
+TRUNCATE TABLE redis_table SYNC;
+```
+
+JOIN:
+
+他のテーブルと結合します。
+
+```sql title="Query"
+SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
+```
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+Redis エンジン は、`where k > xx` のようなスキャンクエリもサポートしていますが、いくつか制限があります。
+
+1. スキャンクエリでは、リハッシュ中のごくまれなケースでキーが重複して返されることがあります。詳細は [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269) を参照してください。
+2. スキャン中にキーが作成または削除される可能性があるため、結果として得られるデータセットは、ある時点における整合した状態を表すものにはなりません。

@@ -1,0 +1,186 @@
+---
+sidebarTitle: '存储与计算分离'
+slug: /guides/separation-storage-compute
+title: '存储与计算分离'
+description: '本指南将介绍如何使用 ClickHouse 和 S3 实现存储与计算分离的架构。'
+doc_type: 'guide'
+keywords: ['存储', '计算', '架构', '可扩展性', '云']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="overview">
+  ## 概述
+</div>
+
+本指南将介绍如何使用 ClickHouse 和 S3 实现存储与计算分离的架构。
+
+存储与计算分离意味着计算资源和存储资源是分别独立管理的。在 ClickHouse 中，这种方式可以带来更好的可扩展性、更高的成本效益以及更强的灵活性。您可以根据需要分别扩展存储资源和计算资源，从而优化性能和成本。
+
+基于 S3 的 ClickHouse 特别适用于对“冷”数据查询性能要求不高的场景。ClickHouse 支持通过 `S3BackedMergeTree` 将 S3 用作 `MergeTree` 引擎的存储层。这种表引擎使您能够利用 S3 在可扩展性和成本方面的优势，同时保持 `MergeTree` 引擎的插入和查询性能。
+
+请注意，与标准 ClickHouse 部署相比，实现和管理存储与计算分离架构更加复杂。虽然自管理 ClickHouse 支持本指南中介绍的存储与计算分离方案，但我们建议使用 [ClickHouse Cloud](https://clickhouse.com/cloud)。借助 [`SharedMergeTree` 表引擎](/zh/products/cloud/features/infrastructure/shared-merge-tree)，您无需额外配置即可在这种架构下使用 ClickHouse。
+
+*本指南假设您使用的是 22.8 或更高版本的 ClickHouse。*
+
+<Warning>
+  请勿配置任何 AWS/GCS 生命周期策略。这种做法不受支持，并且可能导致表损坏。
+</Warning>
+
+<div id="1-use-s3-as-a-clickhouse-disk">
+  ## 1. 将 S3 用作 ClickHouse 磁盘
+</div>
+
+<div id="creating-a-disk">
+  ### 创建磁盘
+</div>
+
+在 ClickHouse 的 `config.d` 目录中新建一个文件，用于存放存储配置：
+
+```bash
+vim /etc/clickhouse-server/config.d/storage_config.xml
+```
+
+将以下 XML 复制到新建的文件中，并将 `BUCKET`、`ACCESS_KEY_ID` 和 `SECRET_ACCESS_KEY` 替换为你希望用于存储数据的 AWS 存储桶详细信息：
+
+```xml
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3_disk>
+        <type>s3</type>
+        <endpoint>$BUCKET</endpoint>
+        <access_key_id>$ACCESS_KEY_ID</access_key_id>
+        <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
+        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+      </s3_disk>
+      <s3_cache>
+        <type>cache</type>
+        <disk>s3_disk</disk>
+        <path>/var/lib/clickhouse/disks/s3_cache/</path>
+        <max_size>10Gi</max_size>
+      </s3_cache>
+    </disks>
+    <policies>
+      <s3_main>
+        <volumes>
+          <main>
+            <disk>s3_disk</disk>
+          </main>
+        </volumes>
+      </s3_main>
+    </policies>
+  </storage_configuration>
+</clickhouse>
+```
+
+如果你需要进一步指定 S3 磁盘的设置，例如指定 `region` 或发送自定义 HTTP `header`，可以在[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)查看相关设置列表。
+
+你也可以将 `access_key_id` 和 `secret_access_key` 替换为以下内容，这会尝试从环境变量和 Amazon EC2 元数据中获取凭证：
+
+```bash
+<use_environment_credentials>true</use_environment_credentials>
+```
+
+创建好配置文件后，您需要将该文件的属主和属组更改为 clickhouse 用户和组：
+
+```bash
+chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+```
+
+现在，您可以重启 ClickHouse 服务器，以使更改生效：
+
+```bash
+service clickhouse-server restart
+```
+
+<div id="2-create-a-table-backed-by-s3">
+  ## 2. 创建由 S3 支撑的表
+</div>
+
+为验证 S3 磁盘是否已正确配置，我们可以尝试创建一个表并对其进行查询。
+
+创建一个表，并指定新的 S3 存储策略：
+
+```sql
+CREATE TABLE my_s3_table
+  (
+    `id` UInt64,
+    `column1` String
+  )
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+请注意，我们无需将引擎显式指定为 `S3BackedMergeTree`。如果 ClickHouse 检测到该表使用 S3 存储，它会在内部自动转换引擎类型。
+
+确认该表已使用正确的策略创建：
+
+```sql
+SHOW CREATE TABLE my_s3_table;
+```
+
+你应该会看到如下结果：
+
+```response
+┌─statement────────────────────────────────────────────────────
+│ CREATE TABLE default.my_s3_table
+(
+  `id` UInt64,
+  `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main', index_granularity = 8192
+└──────────────────────────────────────────────────────────────
+```
+
+现在，我们向新表中插入几行数据：
+
+```sql
+INSERT INTO my_s3_table (id, column1)
+  VALUES (1, 'abc'), (2, 'xyz');
+```
+
+验证一下这些行是否已成功插入：
+
+```sql
+SELECT * FROM my_s3_table;
+```
+
+```response
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ xyz     │
+└────┴─────────┘
+
+2 rows in set. Elapsed: 0.284 sec.
+```
+
+在 AWS 控制台中，如果你的数据已成功写入 S3，你应该会看到 ClickHouse 已在你指定的存储桶中创建了新文件。
+
+如果一切顺利，你现在就已经在使用存储与计算分离的 ClickHouse 了！
+
+<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="使用存储与计算分离的 S3 存储桶示例" border />
+
+<div id="3-implementing-replication-for-fault-tolerance-optional">
+  ## 3. 实现复制以实现容错 (可选)
+</div>
+
+<Warning>
+  请勿配置任何 AWS/GCS 生命周期策略。这不受支持，并且可能导致表损坏。
+</Warning>
+
+为实现容错，你可以使用分布在多个 AWS 区域的多个 ClickHouse 服务器节点，并为每个节点配置一个 S3 存储桶。
+
+使用 `ReplicatedMergeTree` 表引擎即可实现基于 S3 磁盘的复制。详情请参阅以下指南：
+
+* [使用 S3 对象存储在两个 AWS 区域之间复制单个分片](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+* [SharedMergeTree 表引擎](/zh/products/cloud/features/infrastructure/shared-merge-tree)
+* [SharedMergeTree 发布博文](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)

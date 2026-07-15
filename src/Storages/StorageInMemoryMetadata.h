@@ -86,6 +86,9 @@ struct StorageInMemoryMetadata
     ///  Current state of a datalake table.
     std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
+    /// If metadata was cloned we need to extend lifetime of previous metadata.
+    std::shared_ptr<const StorageInMemoryMetadata> cloned_from = nullptr;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -225,6 +228,10 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized + virtuals.
     Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
+    /// All columns (incl. alias/ephemeral) plus virtual columns, a physical column shadowing a
+    /// virtual of the same name. Used to resolve implicit indices over virtual columns.
+    ColumnsDescription getColumnsWithVirtuals() const;
+
     /// Returns whether the column is virtual and not shadowed by a real column.
     bool isVirtualColumn(const String & column_name) const;
 
@@ -336,10 +343,36 @@ struct StorageInMemoryMetadata
 
     void addImplicitIndicesForVirtualColumns(ContextPtr context);
     void dropImplicitIndicesForVirtualColumns();
+
+    static std::shared_ptr<StorageInMemoryMetadata> clone(std::shared_ptr<const StorageInMemoryMetadata> from);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
+
+/// Lifetime-safe wrapper.
+class [[nodiscard]] StorageMetadataHandle
+{
+public:
+    StorageMetadataHandle() = default;
+    StorageMetadataHandle(std::nullptr_t) {} /// NOLINT(google-explicit-constructor)
+    StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_); /// NOLINT(google-explicit-constructor)
+    StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_); /// NOLINT(google-explicit-constructor)
+
+    const StorageInMemoryMetadata * operator->() const &;
+    const StorageInMemoryMetadata & operator*() const &;
+    const StorageInMemoryMetadata * operator->() const && = delete;
+    const StorageInMemoryMetadata & operator*() const && = delete;
+
+    operator StorageMetadataPtr() const &; /// NOLINT(google-explicit-constructor)
+    operator StorageMetadataPtr() const && = delete; /// NOLINT(google-explicit-constructor)
+
+    explicit operator bool() const;
+    bool operator==(std::nullptr_t) const;
+
+private:
+    StorageMetadataPtr metadata;
+};
 
 String listOfColumns(const NamesAndTypesList & available_columns);
 

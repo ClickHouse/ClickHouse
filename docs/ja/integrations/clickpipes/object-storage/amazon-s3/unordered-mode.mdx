@@ -1,0 +1,205 @@
+---
+sidebarTitle: '順不同モードを設定する'
+title: '継続的インジェスト向け順不同モードの設定'
+slug: /integrations/clickpipes/object-storage/s3/unordered-mode
+description: 'S3 ClickPipes で継続的インジェスト向けに順不同モードを設定する手順ガイド。'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+デフォルトでは、S3 ClickPipe は、ファイルがバケットに[辞書式順序](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order)で追加されることを想定しています。[Amazon SQS](https://aws.amazon.com/sqs/) キューをバケットに接続し、必要に応じて [Amazon EventBridge](https://aws.amazon.com/eventbridge/) をイベントルーターとして使用することで、明確な順序を持たないファイルを取り込めるように S3 ClickPipe を設定できます。これにより、ClickPipes は `ObjectCreated:*` イベントを待ち受け、ファイル名の命名規則に関係なく、新しいファイルを取り込めるようになります。
+
+<Note>
+  順不同モードは Amazon S3 で**のみ**サポートされており、パブリックバケットや S3 互換サービスでは**サポートされていません**。このモードを使用するには、[Amazon SQS](https://aws.amazon.com/sqs/) キューをバケットに接続し、必要に応じて [Amazon EventBridge](https://aws.amazon.com/eventbridge/) をイベントルーターとして使用する設定が必要です。
+</Note>
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+このモードでは、S3 ClickPipe は選択したパス内の**すべてのファイル**に対して初期ロードを実行した後、指定したパスに一致するキュー内の `ObjectCreated:*` イベントを監視します。すでに処理済みのファイルに関するメッセージ、パスに一致しないファイル、または別種のイベントは、すべて**無視**されます。ファイルは、`max insert bytes` または `max file count` で設定されたしきい値に達した時点、または設定可能な間隔 (デフォルトでは 30 秒) 経過後に取り込まれます。特定のファイルや特定の時点からインジェストを開始することは**できません**。ClickPipes は常に、選択したパス内のすべてのファイルを読み込みます。
+
+データの取り込み時にはさまざまな障害が発生する可能性があり、その結果、一部のみが挿入されたり、重複データが発生したりすることがあります。Object Storage 用 ClickPipes は挿入の失敗に強く、一時的なステージングテーブルを使用して exactly-once セマンティクスを提供します。データはまずステージングテーブルに挿入され、問題が発生した場合はステージングテーブルを空にして、クリーンな状態から挿入を再試行します。挿入が正常に完了した場合にのみ、パーティションがターゲットテーブルに移動されます。
+
+<Steps>
+  <Step>
+    ## Amazon SQS キューの作成
+
+    **1.** AWS Console で **Simple Queue Service &gt; Create queue** に移動します。デフォルト設定のまま新しい標準キューを作成します。
+
+    <Tip>
+      SQS キューに **Dead-Letter-Queue (DLQ)** を設定することを強く推奨します。これにより、失敗したメッセージのデバッグや再試行が容易になります。DLQ が設定されている場合、失敗したメッセージは再度エンキューされ、DLQ の `maxReceiveCount` パラメータで設定された回数まで再処理されます。
+    </Tip>
+
+    **2.** 以下の2つのオプションのいずれかを使用して、S3バケットをSQSキューに接続します。EventBridgeは、ファンアウトのサポート、より柔軟なイベントフィルタリング、そしてイベントタイプおよびプレフィックスごとの通知ルール数が1つに制限されるS3の制約を受けないという利点があるため、ほとんどのユースケースで推奨されます。
+
+    <Tabs>
+      <Tab title="EventBridge 経由">
+        **a.** S3 バケットのプロパティで **Event notifications &gt; Amazon EventBridge** に移動し、EventBridge への通知送信を有効にします。**Save changes** をクリックします。
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="S3 バケットのプロパティで Amazon EventBridge 通知を有効にする" size="lg" border />
+
+        **b.** AWS Console で **Amazon EventBridge &gt; Rules &gt; Create rule** に移動します。ルールに名前を付け (例: `S3ObjectCreated`) 、**default** event bus を選択して、**Next** をクリックします。**Build event pattern** ステップで、イベントソースとして **AWS events or EventBridge partner events** を選択し、次のイベントパターンを手動で入力します。このとき、`<bucket-name>` は使用するバケット名に置き換えてください。
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="EventBridge ルール名と event bus を設定する" size="lg" border />
+
+        ```json
+        {
+          "source": ["aws.s3"],
+          "detail-type": ["Object Created"],
+          "detail": {
+            "bucket": {
+              "name": ["<bucket-name>"]
+            }
+          }
+        }
+        ```
+
+        必要に応じて、プレフィックスまたは接尾辞で絞り込むための `object.key` 条件をパターンに追加できます。その場合は、ClickPipe に設定したパスと一致していることを確認してください。
+
+        **c.** **Select target(s)** ステップで、ターゲットタイプとして **AWS service** を選択し、**SQS queue** を選びます。前のステップで作成したキューを選択してください。EventBridge が必要な IAM ロールを自動作成できるよう、**Use execution role (recommended)** はチェックしたままにして、**Next** をクリックし、ウィザードを完了します。
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge ルールのターゲットとして SQS queue を設定する" size="lg" border />
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge ルールの作成完了" size="lg" border />
+
+        **d.** SQS キューのアクセスポリシーを編集し、EventBridge がメッセージを送信できるようにします。`<sqs-queue-arn>` と `<eventbridge-rule-arn>` は適切な値に置き換えてください。
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowEventBridgeToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<eventbridge-rule-arn>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+      </Tab>
+
+      <Tab title="Direct S3 → SQS">
+        **a.** SQS キューのアクセスポリシーを編集し、S3 バケットがメッセージを送信できるようにします。`<sqs-queue-arn>`、`<bucket-arn>`、`<aws-account-id>` は適切な値に置き換えてください。
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowS3ToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<bucket-arn>"
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "<aws-account-id>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+
+        **b.** S3 バケットのプロパティで、`ObjectCreated` イベントに対する **Event notifications** を有効にし、宛先を SQS キューに設定します。必要に応じて、通知をトリガーするオブジェクトを絞り込むためにプレフィックスまたは接尾辞を指定できます。その場合は、ClickPipe に設定したパスと一致していることを確認してください。
+
+        <Note>
+          S3 では、同じバケット内で同じイベントタイプを対象とする、重複する複数の通知ルールは設定できません。このバケットに対してすでに `ObjectCreated` イベントの通知ルールがある場合は、代わりに EventBridge の方法を使用してください。
+        </Note>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ## IAM ロールを設定する
+
+    **1.** ClickHouse Cloud console で **Settings &gt; Network security information** に移動し、サービスの **IAM role ARN** をコピーします。
+
+    **2.** AWS Console で **IAM &gt; Roles &gt; Create role** に移動します。**Custom trust policy** を選択し、以下の内容を貼り付けます。`<ch-cloud-arn>` は、前の手順でコピーした IAM role ARN に置き換えてください。
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowAssumeRole",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "<ch-cloud-arn>"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **3.** S3 のオブジェクトを読み取り、SQS キュー内のメッセージを管理するために必要な[権限](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#permissions)を含むインラインポリシーを IAM ロールに作成します。`<bucket-arn>` と `<sqs-queue-arn>` は適切な値に置き換えてください。
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "S3BucketMetadataAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": "<bucket-arn>"
+        },
+        {
+          "Sid": "AllowGetListObjects",
+          "Effect": "Allow",
+          "Action": [
+            "s3:Get*",
+            "s3:List*"
+          ],
+          "Resource": "<bucket-arn>/*"
+        },
+        {
+          "Sid": "SQSNotificationsAccess",
+          "Effect": "Allow",
+          "Action": [
+            "sqs:DeleteMessage",
+            "sqs:ListQueues",
+            "sqs:ReceiveMessage",
+            "sqs:GetQueueAttributes"
+          ],
+          "Resource": "<sqs-queue-arn>"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## 順不同モードで ClickPipe を作成する
+
+    **1.** ClickHouse Cloudコンソールで **Data Sources &gt; Create ClickPipe** に移動し、**Amazon S3** を選択します。S3 バケットへの接続に必要な情報を入力します。**Authentication method** で **IAM role** を選択し、前の手順で作成したロールの ARN を指定します。
+
+    **2.** **Incoming data** で **Continuous ingestion** をオンにします。インジェストモードとして **Any order** を選択し、バケットに接続されたキューの **SQS queue URL** を指定します。
+
+    **3.** **Parse information** で、ターゲットテーブルの **Sorting key** を定義します。マッピングされたスキーマに必要な調整を加えたら、ClickPipes のデータベースユーザーに割り当てるロールを設定します。
+
+    **4.** 設定内容を確認し、**Create ClickPipe** をクリックします。ClickPipes はまずバケットを初回スキャンして、指定したパスに一致する既存のファイルをすべて読み込みます。その後、新しい `ObjectCreated:*` イベントがキューに到着すると、ファイルの処理を開始します。
+  </Step>
+</Steps>

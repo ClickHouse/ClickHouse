@@ -1,0 +1,41 @@
+---
+description: '用于管理列统计信息的文档'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: '管理列统计信息'
+doc_type: '参考'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+支持以下操作：
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - 向表元数据中添加统计信息描述。
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - 修改表元数据中的统计信息描述。
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - 从指定列的元数据中移除统计信息，并删除指定列在所有 parts 中的所有统计信息对象。
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - 删除指定列在所有 parts 中的所有统计信息对象。可使用 `ALTER TABLE MATERIALIZE STATISTICS` 重新构建这些统计信息对象。
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - 重新构建列的统计信息。其实现方式为 [变更](/zh/reference/statements/alter/index#mutations)。
+
+前两条命令是轻量级操作，因为它们只会更改元数据或删除文件。
+
+此外，这些操作也支持复制，并通过 ZooKeeper 同步统计信息元数据。
+
+<div id="example">
+  ## 示例：
+</div>
+
+为两列添加两种统计类型：
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  统计信息仅支持使用 [`*MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎的表 (包括[复制型](/zh/reference/engines/table-engines/mergetree-family/replication)变体) 。
+</Note>
