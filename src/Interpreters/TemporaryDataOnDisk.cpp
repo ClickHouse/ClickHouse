@@ -77,6 +77,18 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
+/// With the NONE codec, CompressedWriteBuffer writes the data directly into the file buffer
+/// (out_buffer_is_exclusive), reserving COMPRESSED_BLOCK_PREFIX_SIZE bytes in front of the payload
+/// for the checksum and the header. The file buffer must be that much larger than the block size,
+/// or every full block would be split one prefix short of settings.buffer_size.
+inline size_t getFileBufferSize(const TemporaryDataOnDiskSettings & settings)
+{
+    size_t buffer_size = settings.buffer_size;
+    if (getCodec(settings)->isNone())
+        buffer_size += CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE;
+    return buffer_size;
+}
+
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -95,7 +107,7 @@ public:
                                        size_t reserve_size,
                                        const TemporaryDataOnDiskSettings & settings)
         : TemporaryFileHolder(settings.metrics)
-        , buffer_size(settings.buffer_size)
+        , buffer_size(getFileBufferSize(settings))
     {
         const auto key = FileSegment::Key::random();
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
@@ -135,7 +147,7 @@ public:
     explicit TemporaryFileInDistributedCache(const TemporaryDataOnDiskSettings & settings)
         : TemporaryFileHolder(settings.metrics)
         , file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
-        , buffer_size(settings.buffer_size)
+        , buffer_size(getFileBufferSize(settings))
         , log(getLogger("TemporaryFileInDistributedCache"))
     {
         LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
@@ -243,7 +255,7 @@ public:
     explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, const TemporaryDataOnDiskSettings & settings = {})
         : TemporaryFileHolder(settings.metrics)
         , path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
-        , buffer_size(settings.buffer_size)
+        , buffer_size(getFileBufferSize(settings))
     {
         LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
         if (reserve_size > 0)
