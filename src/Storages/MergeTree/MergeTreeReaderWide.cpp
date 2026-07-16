@@ -270,11 +270,20 @@ size_t MergeTreeReaderWide::readRows(
         /// gaps between ranges, so every range except the last would neither hit the
         /// cache nor populate it. Fall back to the task's last mark when the caller
         /// did not provide the range end.
-        const size_t cache_last_mark = current_range_last_mark ? current_range_last_mark : current_task_last_mark;
-        const size_t row_end_max = (cache_last_mark < index_granularity.getMarksCount())
-            ? index_granularity.getMarkStartingRow(cache_last_mark)
-            : data_part_info_for_read->getRowCount();
-        const size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
+        /// Only computed when the cache is actually usable: the fallback below calls
+        /// getRowCount, which some MergeTreeDataPartInfoForReader implementations used
+        /// for ad-hoc part reads (outside of any table) do not support.
+        size_t cache_last_mark = 0;
+        size_t row_end_max = 0;
+        size_t row_end_query = 0;
+        if (cache_possible)
+        {
+            cache_last_mark = current_range_last_mark ? current_range_last_mark : current_task_last_mark;
+            row_end_max = (cache_last_mark < index_granularity.getMarksCount())
+                ? index_granularity.getMarkStartingRow(cache_last_mark)
+                : data_part_info_for_read->getRowCount();
+            row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
+        }
 
         /// When `serving_from_cache` is true, these hold the row range of the cached blocks
         /// and are guaranteed to be valid (they refer to a non-dropped column's cache key).
