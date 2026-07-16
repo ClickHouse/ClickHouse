@@ -8401,6 +8401,11 @@ Allow to clean up old data files during Iceberg compaction.
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 30, R"(
+Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
+If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
+Requires allow_experimental_iceberg_compaction to be enabled.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_iceberg_remove_orphan_files, false, R"(
 Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
 )", EXPERIMENTAL) \

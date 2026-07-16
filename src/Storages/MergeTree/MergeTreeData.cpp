@@ -2810,7 +2810,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 
     watch.stop();
-    LOG_DEBUG(log, "Loaded data parts ({} items) took {} seconds", data_parts_indexes.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Loaded data parts ({} items) took {:.3f} seconds", data_parts_indexes.size(), watch.elapsedSeconds());
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
@@ -2961,7 +2961,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     auto old_parts = grabOldParts(true);
 
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {} seconds",
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {:.3f} seconds",
         parts_to_add.size(), old_parts.size(), watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
@@ -3419,7 +3419,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {} seconds", watch.elapsedSeconds());
+    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {:.3f} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
