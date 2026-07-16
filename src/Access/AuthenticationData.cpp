@@ -157,6 +157,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 #endif
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
+        && (lhs.unusable_ssh_keys == rhs.unusable_ssh_keys)
 #endif
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
@@ -449,6 +450,12 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             for (const auto & key : getSSHKeys())
                 node->children.push_back(make_intrusive<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
+            /// Re-emit keys that were preserved but not usable in this build (Ed25519 under FIPS), so a
+            /// rewritten ATTACH USER / disk / ZooKeeper entity keeps the original method verbatim and does
+            /// not silently drop keys from the stored definition.
+            for (const auto & [key_base64, key_type] : getUnusableSSHKeys())
+                node->children.push_back(make_intrusive<ASTPublicSSHKey>(key_base64, key_type));
+
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
@@ -510,6 +517,9 @@ std::optional<AuthenticationData> AuthenticationData::fromAST(const ASTAuthentic
 #if USE_SSH
         AuthenticationData auth_data(*query.type);
         std::vector<SSHKey> keys;
+        /// (base64, type) of keys that are not usable in this build (Ed25519 under FIPS: libssh cannot
+        /// import them). On the reload/ATTACH path we preserve them verbatim so the entity round-trips.
+        std::vector<std::pair<String, String>> unusable_keys;
 
         size_t args_size = query.children.size();
         for (size_t i = 0; i < args_size; ++i)
@@ -522,11 +532,18 @@ std::optional<AuthenticationData> AuthenticationData::fromAST(const ASTAuthentic
             {
                 /// On the interactive SQL path (CREATE/ALTER USER, validate == true) fail loudly: silently dropping
                 /// the key would create a user that can never authenticate and lose the key from SHOW CREATE USER.
-                /// Only reload/ATTACH USER (validate == false) may skip and continue.
                 if (validate)
                     throw Exception(ErrorCodes::LIBSSH_ERROR, "SSH key of type {} is not usable in FIPS mode", type);
 
-                LOG_WARNING(getLogger("AuthenticationData"), "Skipping SSH key of type {}: not usable in FIPS mode", type);
+                /// Reload/ATTACH USER (validate == false), i.e. a persisted disk / ZooKeeper entity: do NOT
+                /// drop the key. libssh cannot import it here, but if we discard it, toAST would re-emit a
+                /// method missing that key and DiskAccessStorage::writeEntityFile / ZooKeeperReplicator would
+                /// persist the truncated definition, permanently deleting the key on the next rewrite. Preserve
+                /// it verbatim so the stored definition round-trips unchanged; it just does not authenticate here.
+                LOG_WARNING(getLogger("AuthenticationData"),
+                    "Preserving SSH key of type {} that is not usable in FIPS mode; it is kept in the stored "
+                    "definition but cannot be used for authentication", type);
+                unusable_keys.emplace_back(key_base64, type);
                 continue;
             }
 
@@ -540,10 +557,10 @@ std::optional<AuthenticationData> AuthenticationData::fromAST(const ASTAuthentic
             }
         }
 
-        /// An SSH_KEY method with an empty key list is not round-trippable: toAST would emit "ssh_key BY"
-        /// with no keys, which ParserCreateUserQuery rejects. This state arises when all keys are filtered
-        /// out under FIPS mode (reload/ATTACH path) or from a malformed zero-key AST.
-        if (keys.empty())
+        /// A truly empty SSH_KEY method (no keys at all, usable or preserved) is not round-trippable: toAST
+        /// would emit "ssh_key BY" with no keys, which ParserCreateUserQuery rejects. This is either a
+        /// malformed zero-child AST or (on the reload path) a method that had no keys to begin with.
+        if (keys.empty() && unusable_keys.empty())
         {
             /// Interactive path (CREATE/ALTER USER): fail loudly so we never materialize an unusable method.
             if (validate)
@@ -555,6 +572,7 @@ std::optional<AuthenticationData> AuthenticationData::fromAST(const ASTAuthentic
         }
 
         auth_data.setSSHKeys(std::move(keys));
+        auth_data.setUnusableSSHKeys(std::move(unusable_keys));
         auth_data.setValidUntil(valid_until);
         return auth_data;
 #else

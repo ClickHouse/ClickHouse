@@ -11,6 +11,7 @@
 #include <Parsers/Access/ASTAuthenticationData.h>
 
 #include <optional>
+#include <utility>
 #include <vector>
 #include <base/types.h>
 
@@ -72,6 +73,15 @@ public:
 #if USE_SSH
     const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
     void setSSHKeys(std::vector<SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<SSHKey>>(ssh_keys_); }
+
+    /// (base64, type) of SSH keys that were preserved but are NOT usable for authentication in this
+    /// build (Ed25519 under FIPS mode: libssh cannot import them, so no SSHKey object can be
+    /// constructed). They are kept only so that toAST re-emits the original method definition
+    /// verbatim; a persisted ATTACH USER / disk / ZooKeeper entity is therefore rewritten without
+    /// silently dropping keys, and SHOW CREATE USER stays round-trippable. They never take part in
+    /// authentication (getSSHKeys() is the usable set).
+    const std::vector<std::pair<String, String>> & getUnusableSSHKeys() const { return unusable_ssh_keys; }
+    void setUnusableSSHKeys(std::vector<std::pair<String, String>> && unusable_ssh_keys_) { unusable_ssh_keys = std::move(unusable_ssh_keys_); }
 #endif
 
     HTTPAuthenticationScheme getHTTPAuthenticationScheme() const { return http_auth_scheme; }
@@ -122,6 +132,8 @@ private:
 
 #if USE_SSH
     std::vector<SSHKey> ssh_keys;
+    /// SSH keys preserved verbatim but unusable for authentication in this build (Ed25519 under FIPS).
+    std::vector<std::pair<String, String>> unusable_ssh_keys;
 #endif
     /// HTTP authentication properties
     String http_auth_server_name;
