@@ -34,4 +34,17 @@ SETTINGS enable_sharding_aggregator = 1,
          max_threads = 16,
          max_streams_for_union_step = 1;
 
+-- Same deadlock via a scalar-subquery-wrapped UNION ALL (found by the AST-fuzzer oracle,
+-- see the issue thread). The stuck state is a property of the sharded transform, not of
+-- where the UNION ALL sits, so wrapping it in a scalar subquery reaches the same code path.
+SELECT (
+    SELECT count() FROM (
+        SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
+        UNION ALL
+        SELECT a, sum(b) AS s FROM test_106237 GROUP BY a
+    ) SETTINGS enable_sharding_aggregator = 1,
+              max_threads = 16,
+              max_streams_for_union_step = 1
+);
+
 DROP TABLE test_106237;
