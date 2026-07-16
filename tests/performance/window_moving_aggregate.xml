@@ -1,19 +1,23 @@
 <test>
-    <!-- Moving-aggregate optimization for sliding window frames:
-         sum/avg subtract rows leaving the frame, min/max use a monotonic deque
-         for large ROWS frames. -->
+    <!-- Sliding window frames: once a moving frame is observed to have at least 2048
+         rows, the aggregate state is rebuilt from a FlatFAT-style tree of partial
+         aggregate states (FrameAggregateTree) instead of re-adding the whole frame. -->
     <query>SELECT sum(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT avg(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT min(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT max(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
 
-    <!-- Subtraction also applies to sliding RANGE frames. -->
+    <!-- The tree also applies to sliding RANGE frames. -->
     <query>SELECT sum(number) OVER (ORDER BY number RANGE BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
 
-    <!-- Small frames for min/max stay on the recompute path (below the deque crossover);
-         make sure it does not regress. -->
-    <query>SELECT min(number) OVER (ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+    <!-- The tree relies only on merge, so it also covers functions with no cheap
+         inverse: floating point sums, combinators, heavy states like uniqExact. -->
+    <query>SELECT sum(toFloat64(number)) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT sumIf(number, number % 2 = 0) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT uniqExact(number % 1000) OVER (ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) FROM numbers(30000) FORMAT Null</query>
 
-    <!-- Floating point sum is excluded from subtraction and keeps the recompute path. -->
+    <!-- Frames below the ~2048-row crossover stay on the plain recompute path; make
+         sure it does not regress. -->
+    <query>SELECT min(number) OVER (ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT sum(toFloat64(number)) OVER (ROWS BETWEEN 1000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
 </test>

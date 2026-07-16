@@ -7,7 +7,6 @@
 #include <Processors/Port.h>
 
 #include <deque>
-#include <optional>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -102,8 +101,14 @@ public:
     void advanceFrameEndRangeOffset();
 
     void updateAggregationState();
-    void applyRangeToAggregation(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, bool add);
-    void updateMonotonicWindowFrame(size_t workspace_index);
+    template <typename F>
+    void forEachRowsRangeInBlocks(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, F && func);
+    void addRowsToAggregationState(WindowFunctionWorkspace & ws, AggregateDataPtr state, RowNumber rows_begin, RowNumber rows_end);
+    UInt64 countRowsBetween(RowNumber from, RowNumber to, UInt64 limit = std::numeric_limits<UInt64>::max()) const;
+    void frameTreeActivate(size_t workspace_index);
+    void frameTreeAppend(size_t workspace_index);
+    void frameTreeQuery(size_t workspace_index);
+    void resetFrameTrees();
     void writeOutCurrentRow();
 
     Columns & inputAt(const RowNumber & x);
@@ -237,16 +242,86 @@ public:
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
 
-    // Moving min/max state for MonotonicWindowFrameKind workspaces, indexed in parallel
-    // with `workspaces` (see updateMonotonicWindowFrame()).
-    struct MonotonicFrameState
+    // A FlatFAT-style tree of partial aggregate states over the rows of a sliding window
+    // frame (cf. Tangwongsan et al., "General Incremental Sliding-Window Aggregation",
+    // PVLDB 2015). A segment at level L holds the state of fanout^(L+1) consecutive rows,
+    // so re-aggregating a frame of N rows takes O(fanout * log N) merge calls instead of
+    // N add calls, and only relies on merge, so every aggregate function is supported.
+    // Rows are identified by their index counted from the frame start at activation.
+    // Frame boundaries only move forward, so segments are immutable once built; the
+    // single trailing level-0 segment accumulates rows as they arrive, and may be
+    // queried because it covers exactly the rows up to the current frame end.
+    class FrameAggregateTree
     {
-        std::deque<RowNumber> candidates;
-        // The row currently accumulated into the aggregation state; the state is rebuilt
-        // only when the best candidate changes.
-        std::optional<RowNumber> materialized_row;
+    public:
+        static constexpr UInt64 fanout = 16;
+
+        bool isActive() const { return function != nullptr; }
+        void activate(const IAggregateFunction & function_);
+        void append(const IColumn ** columns, size_t first_row, size_t past_the_end_row, Arena * arena_ptr);
+        // Must be called for every frame start advance while active.
+        void evict(UInt64 rows_passed);
+        // Rows at the frame start not covered by any usable segment (their level-0
+        // segment also covers evicted rows); the caller must add them to the result
+        // directly from the input, before calling mergeFrame().
+        UInt64 leadRowCount() const;
+        // Merges the segments covering the rest of the frame into `result`, in frame
+        // order (merge is not commutative for e.g. groupArray).
+        void mergeFrame(AggregateDataPtr result, Arena * arena_ptr);
+        void reset();
+
+        FrameAggregateTree() = default;
+        FrameAggregateTree(FrameAggregateTree &&) = default;
+        FrameAggregateTree & operator=(FrameAggregateTree &&) = default;
+        FrameAggregateTree(const FrameAggregateTree &) = delete;
+        FrameAggregateTree & operator=(const FrameAggregateTree &) = delete;
+        ~FrameAggregateTree() { reset(); }
+
+    private:
+        static constexpr UInt64 segments_per_chunk = 256;
+
+        struct Level
+        {
+            Level() = default;
+            explicit Level(UInt64 start_segment)
+                : chunk_begin_segment(start_segment), begin_segment(start_segment), end_segment(start_segment)
+            {
+            }
+
+            // Chunked storage so that states never move: slots for segments
+            // [chunk_begin_segment, chunk_begin_segment + capacity), of which
+            // [begin_segment, end_segment) are created.
+            std::deque<AlignedBuffer> chunks;
+            UInt64 chunk_begin_segment = 0;
+            UInt64 begin_segment = 0;
+            UInt64 end_segment = 0;
+        };
+
+        char * segmentState(size_t level, UInt64 segment);
+        char * createSegment(size_t level);
+        void buildParents(Arena * arena_ptr);
+        void destroySegments(size_t level, UInt64 begin, UInt64 end);
+
+        const IAggregateFunction * function = nullptr;
+        UInt64 padded_state_size = 0;
+        UInt64 state_align = 1;
+        UInt64 frame_start_index = 0;
+        UInt64 frame_end_index = 0;   // == number of rows appended
+        std::vector<Level> levels;
     };
-    std::vector<MonotonicFrameState> workspace_monotonic_frames;
+
+    // Indexed in parallel with `workspaces`.
+    struct WorkspaceFrameTree
+    {
+        FrameAggregateTree tree;
+        // The first row not yet appended; appends lag behind frame_end while the frame
+        // start is not moving (the tree is not queried then).
+        RowNumber appended_end;
+    };
+    std::vector<WorkspaceFrameTree> workspace_frame_trees;
+    // All trees are activated together, so this is per-transform (see
+    // updateAggregationState()).
+    bool frame_trees_active = false;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).

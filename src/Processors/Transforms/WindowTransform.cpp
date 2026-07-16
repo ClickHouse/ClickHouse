@@ -26,8 +26,12 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <Common/memory.h>
+
 #include <algorithm>
+#include <array>
 #include <limits>
+#include <optional>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -74,32 +78,11 @@ namespace ErrorCodes
 
 namespace
 {
-    // Below this frame size the deque bookkeeping costs more than a full reset-and-readd
-    // saves (benchmarked crossover ~2000 rows).
-    constexpr Int64 min_rows_for_monotonic_window_frame = 2048;
-
-    bool shouldUseMonotonicWindowFrame(const WindowFrame & frame)
-    {
-        // Only for ROWS frames is the size statically known to be over the crossover.
-        // With an unbounded frame start the plain "add the tail rows" path is already
-        // O(1) per row and the deque would be pure overhead.
-        if (frame.type != WindowFrame::FrameType::ROWS || frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-            return false;
-
-        if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
-            return true;
-
-        auto boundary_position = [](WindowFrame::BoundaryType type, const Field & offset, bool preceding) -> Int128
-        {
-            if (type == WindowFrame::BoundaryType::Current)
-                return 0;
-            const Int128 value = offset.safeGet<UInt64>();
-            return preceding ? -value : value;
-        };
-        const auto frame_rows = boundary_position(frame.end_type, frame.end_offset, frame.end_preceding)
-            - boundary_position(frame.begin_type, frame.begin_offset, frame.begin_preceding) + 1;
-        return frame_rows >= min_rows_for_monotonic_window_frame;
-    }
+    // Below this frame size the plain reset-and-readd path stays in use. Measured
+    // crossover: ~2000 rows for vectorized primitives (sum/min/avg over numbers), much
+    // lower for functions with expensive adds (e.g. uniqExact); the conservative value
+    // guarantees the tree is never slower than the recompute path.
+    constexpr UInt64 min_frame_rows_for_aggregate_tree = 2048;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -364,7 +347,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
 
         workspaces.push_back(std::move(workspace));
     }
-    workspace_monotonic_frames.resize(workspaces.size());
+    workspace_frame_trees.resize(workspaces.size());
 
     partition_by_indices.reserve(window_description.partition_by.size());
     for (const auto & column : window_description.partition_by)
@@ -440,7 +423,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         }
     }
 
-    for (auto & workspace : workspaces)
+    for (const auto & workspace : workspaces)
     {
         if (workspace.window_function_impl)
         {
@@ -449,14 +432,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'",
                     workspace.aggregate_function->getName());
             }
-            continue;
         }
-
-        workspace.supports_window_frame_subtraction = workspace.aggregate_function->supportsWindowFrameSubtraction();
-        if (shouldUseMonotonicWindowFrame(window_description.frame))
-            workspace.monotonic_window_frame_kind = workspace.aggregate_function->getMonotonicWindowFrameKind();
-        chassert(workspace.monotonic_window_frame_kind == MonotonicWindowFrameKind::None
-            || workspace.argument_column_indices.size() == 1);
     }
 }
 
@@ -1081,14 +1057,13 @@ void WindowTransform::advanceFrameEnd()
     }
 }
 
-// Adds (add=true) or subtracts (add=false) rows [rows_begin, rows_end) to/from ws's state.
-void WindowTransform::applyRangeToAggregation(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, bool add)
+// Calls func(argument_columns, first_row, past_the_end_row) for each stretch of rows
+// [rows_begin, rows_end) that lies within one block.
+template <typename F>
+void WindowTransform::forEachRowsRangeInBlocks(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, F && func)
 {
     if (rows_begin == rows_end)
         return;
-
-    const auto * a = ws.aggregate_function.get();
-    auto * buf = ws.aggregate_function_state.data();
 
     // To achieve better performance, we will have to loop over blocks and
     // rows manually, instead of using advanceRowNumber().
@@ -1121,61 +1096,297 @@ void WindowTransform::applyRangeToAggregation(WindowFunctionWorkspace & ws, RowN
         const auto past_the_end_row = block_number == rows_end.block
             ? rows_end.row : block.rows;
 
-        // We should add an addBatch analog that can accept a starting offset.
-        // For now, add the values one by one.
-        auto * columns = ws.argument_columns.data();
-        // Removing arena.get() from the loop makes it faster somehow...
-        auto * arena_ptr = arena.get();
-        if (add)
+        func(ws.argument_columns.data(), first_row, past_the_end_row);
+    }
+}
+
+// Adds rows [rows_begin, rows_end) to the given aggregate state.
+void WindowTransform::addRowsToAggregationState(WindowFunctionWorkspace & ws, AggregateDataPtr state, RowNumber rows_begin, RowNumber rows_end)
+{
+    const auto * a = ws.aggregate_function.get();
+    // Removing arena.get() from the loop makes it faster somehow...
+    auto * arena_ptr = arena.get();
+    forEachRowsRangeInBlocks(ws, rows_begin, rows_end,
+        [&](const IColumn ** columns, size_t first_row, size_t past_the_end_row)
         {
-            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+            a->addBatchSinglePlace(first_row, past_the_end_row, state, columns, arena_ptr);
+        });
+}
+
+// The result saturates at `limit`, so counting large spans just to compare against a
+// threshold stays cheap.
+UInt64 WindowTransform::countRowsBetween(RowNumber from, RowNumber to, UInt64 limit) const
+{
+    chassert(from <= to);
+    if (from.block == to.block)
+        return std::min(to.row - from.row, limit);
+
+    UInt64 count = blockRowsNumber(from) - from.row;
+    for (auto block_number = from.block + 1; block_number < to.block && count < limit; ++block_number)
+        count += blockAt(block_number).rows;
+    return std::min(count + to.row, limit);
+}
+
+char * WindowTransform::FrameAggregateTree::segmentState(size_t level, UInt64 segment)
+{
+    auto & tree_level = levels[level];
+    chassert(segment >= tree_level.begin_segment);
+    // Equality only for the slot being created in createSegment.
+    chassert(segment <= tree_level.end_segment);
+    chassert(segment >= tree_level.chunk_begin_segment);
+    const UInt64 slot = segment - tree_level.chunk_begin_segment;
+    chassert(slot / segments_per_chunk < tree_level.chunks.size());
+    return tree_level.chunks[slot / segments_per_chunk].data() + (slot % segments_per_chunk) * padded_state_size;
+}
+
+char * WindowTransform::FrameAggregateTree::createSegment(size_t level)
+{
+    auto & tree_level = levels[level];
+    const UInt64 segment = tree_level.end_segment;
+    if (tree_level.chunks.empty())
+        tree_level.chunk_begin_segment = segment;
+    if (segment == tree_level.chunk_begin_segment + tree_level.chunks.size() * segments_per_chunk)
+        tree_level.chunks.emplace_back(segments_per_chunk * padded_state_size, state_align);
+    auto * state = segmentState(level, segment);
+    function->create(state);
+    tree_level.end_segment = segment + 1;
+    return state;
+}
+
+void WindowTransform::FrameAggregateTree::destroySegments(size_t level, UInt64 begin, UInt64 end)
+{
+    if (function->hasTrivialDestructor())
+        return;
+    for (UInt64 segment = begin; segment < end; ++segment)
+        function->destroy(segmentState(level, segment));
+}
+
+// Builds the parent of the just-completed segment group, cascading up the tree.
+void WindowTransform::FrameAggregateTree::buildParents(Arena * arena_ptr)
+{
+    size_t level = 0;
+    UInt64 complete_end = frame_end_index / fanout;
+    while (complete_end != 0 && complete_end % fanout == 0)
+    {
+        const UInt64 parent = complete_end / fanout - 1;
+
+        if (levels[level].begin_segment > parent * fanout)
+        {
+            // Some children were already evicted, so the parent would start before the
+            // frame start and can never be queried; skip it. Previously built parents
+            // start even earlier, so they are stale too.
+            if (level + 1 < levels.size())
+            {
+                auto & parent_level = levels[level + 1];
+                destroySegments(level + 1, parent_level.begin_segment, parent_level.end_segment);
+                parent_level = Level(parent + 1);
+            }
+            return;
         }
-        else
+
+        if (level + 1 == levels.size())
+            levels.emplace_back(Level(parent));
+
+        chassert(levels[level + 1].end_segment == parent);
+        auto * parent_state = createSegment(level + 1);
+        for (UInt64 child = parent * fanout; child < (parent + 1) * fanout; ++child)
+            function->merge(parent_state, segmentState(level, child), arena_ptr);
+
+        ++level;
+        complete_end = parent + 1;
+    }
+}
+
+void WindowTransform::FrameAggregateTree::activate(const IAggregateFunction & function_)
+{
+    chassert(!isActive());
+    chassert(frame_end_index == 0);
+    function = &function_;
+    state_align = function_.alignOfData();
+    padded_state_size = ::Memory::alignUp(function_.sizeOfData(), state_align);
+    levels.emplace_back();
+}
+
+void WindowTransform::FrameAggregateTree::append(const IColumn ** columns, size_t first_row, size_t past_the_end_row, Arena * arena_ptr)
+{
+    size_t row = first_row;
+    while (row < past_the_end_row)
+    {
+        const UInt64 offset_in_segment = frame_end_index % fanout;
+        auto * state = offset_in_segment == 0
+            ? createSegment(0)
+            : segmentState(0, frame_end_index / fanout);
+        const size_t rows_to_add = std::min<UInt64>(fanout - offset_in_segment, past_the_end_row - row);
+        function->addBatchSinglePlace(row, row + rows_to_add, state, columns, arena_ptr);
+        row += rows_to_add;
+        frame_end_index += rows_to_add;
+        if (frame_end_index % fanout == 0)
+            buildParents(arena_ptr);
+    }
+}
+
+void WindowTransform::FrameAggregateTree::evict(UInt64 rows_passed)
+{
+    frame_start_index += rows_passed;
+
+    UInt64 span = fanout;
+    for (size_t level = 0; level < levels.size(); ++level, span *= fanout)
+    {
+        auto & tree_level = levels[level];
+        // A segment starting before the frame start can never be queried again; the
+        // trailing (possibly incomplete) level-0 segment is kept regardless.
+        UInt64 new_begin = std::min((frame_start_index + span - 1) / span, tree_level.end_segment);
+        if (level == 0)
+            new_begin = std::min(new_begin, frame_end_index / fanout);
+        if (new_begin <= tree_level.begin_segment)
+            continue;
+        destroySegments(level, tree_level.begin_segment, new_begin);
+        tree_level.begin_segment = new_begin;
+        while (!tree_level.chunks.empty() && tree_level.chunk_begin_segment + segments_per_chunk <= tree_level.begin_segment)
         {
-            for (size_t i = first_row; i < past_the_end_row; ++i)
-                a->subtract(buf, columns, i, arena_ptr);
+            tree_level.chunks.pop_front();
+            tree_level.chunk_begin_segment += segments_per_chunk;
         }
     }
 }
 
-// Maintains a monotonic deque of candidate rows for a moving min/max, so each row is
-// pushed and popped at most once (amortized O(1) per row) instead of rescanning the frame.
-void WindowTransform::updateMonotonicWindowFrame(size_t workspace_index)
+UInt64 WindowTransform::FrameAggregateTree::leadRowCount() const
 {
-    auto & ws = workspaces[workspace_index];
-    auto & state = workspace_monotonic_frames[workspace_index];
-    auto & candidates = state.candidates;
-    const auto kind = ws.monotonic_window_frame_kind;
-    const size_t argument_column_index = ws.argument_column_indices[0];
+    const UInt64 aligned_start = ::Memory::alignUp(frame_start_index, fanout);
+    return std::min(frame_end_index, aligned_start) - frame_start_index;
+}
 
-    for (RowNumber row = prev_frame_end; row < frame_end; advanceRowNumber(row))
-    {
-        const auto & new_column = *inputAt(row)[argument_column_index];
-        while (!candidates.empty())
-        {
-            const RowNumber back = candidates.back();
-            const int cmp = new_column.compareAt(row.row, back.row, *inputAt(back)[argument_column_index], /*nan_direction_hint=*/ 1);
-            if (kind == MonotonicWindowFrameKind::Min ? cmp > 0 : cmp < 0)
-                break;
-            candidates.pop_back();
-        }
-        candidates.push_back(row);
-    }
-
-    while (!candidates.empty() && candidates.front() < frame_start)
-        candidates.pop_front();
-
-    const auto front = candidates.empty() ? std::optional<RowNumber>{} : std::optional(candidates.front());
-    if (front == state.materialized_row)
+void WindowTransform::FrameAggregateTree::mergeFrame(AggregateDataPtr result, Arena * arena_ptr)
+{
+    const UInt64 covered_start = frame_start_index + leadRowCount();
+    if (covered_start == frame_end_index)
         return;
 
+    // Leading partial groups are merged while ascending the tree, trailing ones are
+    // collected and merged in reverse afterwards, keeping everything in frame order.
+    UInt64 range_begin = covered_start / fanout;
+    UInt64 range_end = (frame_end_index + fanout - 1) / fanout;
+
+    auto merge_segments = [&](size_t level, UInt64 begin, UInt64 end)
+    {
+        // Stride within each chunk instead of recomputing the address per segment.
+        while (begin < end)
+        {
+            const UInt64 slot = begin - levels[level].chunk_begin_segment;
+            const UInt64 run_end = std::min(end, begin + (segments_per_chunk - slot % segments_per_chunk));
+            const char * state = segmentState(level, begin);
+            for (; begin < run_end; ++begin, state += padded_state_size)
+                function->merge(result, state, arena_ptr);
+        }
+    };
+
+    struct SegmentRange
+    {
+        size_t level;
+        UInt64 begin;
+        UInt64 end;
+    };
+    // At most one trailing range per level; levels cannot exceed log_fanout(2^64) = 16.
+    std::array<SegmentRange, 16> trailing;
+    size_t trailing_count = 0;
+
+    size_t level = 0;
+    while (range_begin < range_end)
+    {
+        chassert(level < levels.size());
+        chassert(range_begin >= levels[level].begin_segment);
+        chassert(range_end <= levels[level].end_segment);
+
+        const UInt64 begin_aligned = ::Memory::alignUp(range_begin, fanout);
+        // Parents past the last built one keep their children represented at this level.
+        const UInt64 end_aligned = level + 1 < levels.size()
+            ? std::min(range_end / fanout, levels[level + 1].end_segment) * fanout
+            : begin_aligned;
+        if (begin_aligned >= end_aligned)
+        {
+            merge_segments(level, range_begin, range_end);
+            break;
+        }
+        if (range_begin != begin_aligned)
+            merge_segments(level, range_begin, begin_aligned);
+        if (end_aligned != range_end)
+        {
+            chassert(trailing_count < trailing.size());
+            trailing[trailing_count] = {level, end_aligned, range_end};
+            ++trailing_count;
+        }
+        range_begin = begin_aligned / fanout;
+        range_end = end_aligned / fanout;
+        ++level;
+    }
+
+    for (size_t i = trailing_count; i > 0; --i)
+        merge_segments(trailing[i - 1].level, trailing[i - 1].begin, trailing[i - 1].end);
+}
+
+void WindowTransform::FrameAggregateTree::reset()
+{
+    if (!isActive())
+        return;
+
+    for (size_t level = 0; level < levels.size(); ++level)
+        destroySegments(level, levels[level].begin_segment, levels[level].end_segment);
+
+    function = nullptr;
+    frame_start_index = 0;
+    frame_end_index = 0;
+    levels.clear();
+}
+
+void WindowTransform::frameTreeActivate(size_t workspace_index)
+{
+    auto & [tree, appended_end] = workspace_frame_trees[workspace_index];
+    tree.activate(*workspaces[workspace_index].aggregate_function);
+    appended_end = frame_start;
+}
+
+// Appends rows [appended_end, frame_end) to the tree. The pending rows are still in
+// memory: appended_end is never behind prev_frame_start, which bounds block retention.
+void WindowTransform::frameTreeAppend(size_t workspace_index)
+{
+    auto & [tree, appended_end] = workspace_frame_trees[workspace_index];
+    auto * arena_ptr = arena.get();
+    forEachRowsRangeInBlocks(workspaces[workspace_index], appended_end, frame_end,
+        [&](const IColumn ** columns, size_t first_row, size_t past_the_end_row)
+        {
+            tree.append(columns, first_row, past_the_end_row, arena_ptr);
+        });
+    appended_end = frame_end;
+}
+
+// Rebuilds ws's aggregation state as the combination of rows [frame_start, frame_end).
+void WindowTransform::frameTreeQuery(size_t workspace_index)
+{
+    auto & tree = workspace_frame_trees[workspace_index].tree;
+    auto & ws = workspaces[workspace_index];
     const auto * a = ws.aggregate_function.get();
     auto * buf = ws.aggregate_function_state.data();
+
     a->destroy(buf);
     a->create(buf);
-    if (front)
-        applyRangeToAggregation(ws, *front, nextRowNumber(*front), /*add=*/ true);
-    state.materialized_row = front;
+
+    if (const UInt64 lead_rows = tree.leadRowCount())
+    {
+        [[maybe_unused]] const auto [lead_end_row, offset_left] = moveRowNumber(frame_start, static_cast<Int64>(lead_rows));
+        chassert(offset_left == 0);
+        addRowsToAggregationState(ws, buf, frame_start, lead_end_row);
+    }
+    tree.mergeFrame(buf, arena.get());
+}
+
+void WindowTransform::resetFrameTrees()
+{
+    for (auto & workspace_tree : workspace_frame_trees)
+    {
+        workspace_tree.tree.reset();
+        workspace_tree.appended_end = {};
+    }
+    frame_trees_active = false;
 }
 
 // Update the aggregation states after the frame has changed.
@@ -1192,6 +1403,23 @@ void WindowTransform::updateAggregationState()
     chassert(partition_start <= frame_start);
     chassert(frame_end <= partition_end);
 
+    // The frame boundaries are shared by all workspaces, so the per-row facts are too:
+    // all trees activate together and evict the same rows.
+    const bool frame_start_moved = frame_start != prev_frame_start;
+    bool activate_trees = false;
+    UInt64 evicted_rows = 0;
+    if (frame_start_moved)
+    {
+        if (frame_trees_active)
+            evicted_rows = countRowsBetween(prev_frame_start, frame_start);
+        else if (countRowsBetween(frame_start, frame_end, min_frame_rows_for_aggregate_tree)
+            >= min_frame_rows_for_aggregate_tree)
+        {
+            activate_trees = true;
+            frame_trees_active = true;
+        }
+    }
+
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         auto & ws = workspaces[wi];
@@ -1201,31 +1429,33 @@ void WindowTransform::updateAggregationState()
             continue;
         }
 
-        if (ws.monotonic_window_frame_kind != MonotonicWindowFrameKind::None)
+        auto * buf = ws.aggregate_function_state.data();
+
+        if (!frame_start_moved)
         {
-            updateMonotonicWindowFrame(wi);
+            // The frame start didn't change, add the tail rows. (An active tree is
+            // left lagging; frameTreeAppend catches it up when the start moves again.)
+            addRowsToAggregationState(ws, buf, prev_frame_end, frame_end);
             continue;
         }
 
-        if (frame_start == prev_frame_start)
+        if (activate_trees)
+            frameTreeActivate(wi);
+
+        auto & tree = workspace_frame_trees[wi].tree;
+        chassert(tree.isActive() == frame_trees_active);
+        if (tree.isActive())
         {
-            // The frame start didn't change, add the tail rows.
-            applyRangeToAggregation(ws, prev_frame_end, frame_end, /*add=*/ true);
-        }
-        else if (ws.supports_window_frame_subtraction)
-        {
-            // Subtract the rows that left the frame instead of resetting and
-            // re-aggregating the whole frame.
-            applyRangeToAggregation(ws, prev_frame_start, frame_start, /*add=*/ false);
-            applyRangeToAggregation(ws, prev_frame_end, frame_end, /*add=*/ true);
+            frameTreeAppend(wi);
+            tree.evict(evicted_rows);
+            frameTreeQuery(wi);
         }
         else
         {
             const auto * a = ws.aggregate_function.get();
-            auto * buf = ws.aggregate_function_state.data();
             a->destroy(buf);
             a->create(buf);
-            applyRangeToAggregation(ws, frame_start, frame_end, /*add=*/ true);
+            addRowsToAggregationState(ws, buf, frame_start, frame_end);
         }
     }
 }
@@ -1531,8 +1761,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
             a->destroy(buf);
         }
 
-        for (auto & state : workspace_monotonic_frames)
-            state = {};
+        resetFrameTrees();
 
         // Release the arena we use for aggregate function states, so that it
         // doesn't grow without limit. Not sure if it's actually correct, maybe

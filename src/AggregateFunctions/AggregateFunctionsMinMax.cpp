@@ -16,14 +16,6 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 
-/// WindowTransform's monotonic-deque optimization compares candidate rows directly via
-/// IColumn::compareAt, bypassing SingleValueData, so only Data types whose ordering
-/// matches that comparison may opt in. Floating point stays out because compareAt has no
-/// notion of the NaN-skipping behavior SingleValueDataFixed<Float32/64> implements.
-template <typename T> struct SupportsMonotonicWindowFrame : std::false_type {};
-template <typename T> struct SupportsMonotonicWindowFrame<SingleValueDataFixed<T>> : std::bool_constant<!is_floating_point<T>> {};
-template <> struct SupportsMonotonicWindowFrame<SingleValueDataString> : std::true_type {};
-
 template <typename Data, bool isMin>
 class AggregateFunctionMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMinMax<Data, isMin>>
 {
@@ -62,14 +54,6 @@ public:
             return "min";
         else
             return "max";
-    }
-
-    MonotonicWindowFrameKind getMonotonicWindowFrameKind() const override
-    {
-        if constexpr (!SupportsMonotonicWindowFrame<Data>::value)
-            return MonotonicWindowFrameKind::None;
-        else
-            return isMin ? MonotonicWindowFrameKind::Min : MonotonicWindowFrameKind::Max;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

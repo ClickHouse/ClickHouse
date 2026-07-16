@@ -154,11 +154,6 @@ void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place
     insertResultInto(place, to, arena);
 }
 
-void IAggregateFunction::subtract(AggregateDataPtr __restrict /*place*/, const IColumn ** /*columns*/, size_t /*row_num*/, Arena * /*arena*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method subtract is not supported for {}", getName());
-}
-
 void IAggregateFunction::predictValues(
     ConstAggregateDataPtr __restrict /* place */,
     IColumn & /*to*/,

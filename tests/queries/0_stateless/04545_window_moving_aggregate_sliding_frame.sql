@@ -1,11 +1,13 @@
 -- Tags: no-fasttest
 
--- Regression test for the sliding window frame moving-aggregate optimization in
--- WindowTransform::updateAggregationState(): sum/count/avg/min/max should give the same
--- result as before, whether or not the frame start had to be recomputed incrementally.
--- We cross-check them against arraySum/length/arrayAvg/arrayMin/arrayMax over
--- groupArray(...) OVER the same frame, since groupArray does not support the
--- moving-aggregate optimization and always goes through the original full-reset path.
+-- Regression test for the sliding window frame aggregation in
+-- WindowTransform::updateAggregationState(): when the frame start advances, the
+-- aggregate state is rebuilt from a FlatFAT-style tree of partial aggregate states
+-- (FrameAggregateTree) once the frame is observed to have at least 2048 rows, and by
+-- plain reset-and-readd below that. Frame sizes here cover both paths and the crossover.
+-- Aggregates are cross-checked against array functions over groupArray(...) OVER the
+-- same frame; groupArray itself goes through the tree too (merge concatenates in frame
+-- order), and is checked against ground truth in a separate section below.
 
 DROP TABLE IF EXISTS moving_aggregate_test;
 CREATE TABLE moving_aggregate_test
@@ -21,14 +23,14 @@ CREATE TABLE moving_aggregate_test
 INSERT INTO moving_aggregate_test
 SELECT
     number,
-    number % 7,
+    number % 2,
     (cityHash64(number) % 201) - 100,
     if(number % 11 = 0, NULL, (cityHash64(number, 1) % 201) - 100),
     toString(cityHash64(number, 2) % 5),
     -- Division by 8 keeps the values exactly representable, so float sums are
     -- order-independent and comparable exactly.
     multiIf(number = 500, inf, number = 600, -inf, number = 700, nan, (toInt64(cityHash64(number, 3) % 201) - 100) / 8)
-FROM numbers(1000);
+FROM numbers(6000);
 
 SELECT
     frame_size,
@@ -152,7 +154,7 @@ FROM
     UNION ALL
 
     SELECT
-        999 AS frame_size, n,
+        100 AS frame_size, n,
         sum(value) OVER w, arraySum(groupArray(value) OVER w),
         count(value) OVER w, length(groupArray(value) OVER w),
         avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
@@ -163,12 +165,12 @@ FROM
         min(str) OVER w, arrayReduce('min', groupArray(str) OVER w),
         max(str) OVER w, arrayReduce('max', groupArray(str) OVER w)
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 999 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 100 PRECEDING AND CURRENT ROW)
 
     UNION ALL
 
     SELECT
-        10000 AS frame_size, n,
+        2500 AS frame_size, n,
         sum(value) OVER w, arraySum(groupArray(value) OVER w),
         count(value) OVER w, length(groupArray(value) OVER w),
         avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
@@ -179,14 +181,29 @@ FROM
         min(str) OVER w, arrayReduce('min', groupArray(str) OVER w),
         max(str) OVER w, arrayReduce('max', groupArray(str) OVER w)
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 10000 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+
+    UNION ALL
+
+    SELECT
+        3000 AS frame_size, n,
+        sum(value) OVER w, arraySum(groupArray(value) OVER w),
+        count(value) OVER w, length(groupArray(value) OVER w),
+        avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
+        min(value) OVER w, arrayMin(groupArray(value) OVER w),
+        max(value) OVER w, arrayMax(groupArray(value) OVER w),
+        sum(nullable_value) OVER w, arraySum(arrayFilter(x -> x IS NOT NULL, groupArray(nullable_value) OVER w)),
+        count(nullable_value) OVER w, length(arrayFilter(x -> x IS NOT NULL, groupArray(nullable_value) OVER w)),
+        min(str) OVER w, arrayReduce('min', groupArray(str) OVER w),
+        max(str) OVER w, arrayReduce('max', groupArray(str) OVER w)
+    FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 3000 PRECEDING AND CURRENT ROW)
 )
 GROUP BY frame_size
 ORDER BY frame_size;
 
--- Same check, but with PARTITION BY splitting the input into several partitions, to
--- exercise resetting the moving-aggregate state (and the min/max candidate deque) at
--- partition boundaries.
+-- Same check, but with PARTITION BY splitting the input into two partitions of 3000
+-- rows, to exercise resetting the frame aggregate tree at partition boundaries.
 SELECT
     frame_size,
     countIf(NOT (
@@ -227,14 +244,25 @@ FROM
         max(value) OVER w, arrayMax(groupArray(value) OVER w)
     FROM moving_aggregate_test
     WINDOW w AS (PARTITION BY part ORDER BY n ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
+
+    UNION ALL
+
+    SELECT
+        2500 AS frame_size, n,
+        sum(value) OVER w, arraySum(groupArray(value) OVER w),
+        count(value) OVER w, length(groupArray(value) OVER w),
+        avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
+        min(value) OVER w, arrayMin(groupArray(value) OVER w),
+        max(value) OVER w, arrayMax(groupArray(value) OVER w)
+    FROM moving_aggregate_test
+    WINDOW w AS (PARTITION BY part ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 )
 GROUP BY frame_size
 ORDER BY frame_size;
 
--- RANGE frames: sum/count/avg use the subtract path here, and the sparse ORDER BY key
--- with a bounded frame end produces consecutive frames that can be disjoint, so rows are
--- subtracted before they are added (see the subtract contract in IAggregateFunction.h).
--- avg() over an empty frame is nan while arrayAvg([]) is 0, so skip avg when c = 0.
+-- RANGE frames: the sparse ORDER BY key with a bounded frame end produces consecutive
+-- frames that can be entirely disjoint, so the frame start may jump past the previous
+-- frame end.
 SELECT
     frame_desc,
     countIf(NOT (s = s2 AND c = c2 AND (c = 0 OR a = a2 OR (isNaN(a) AND isNaN(a2))))) AS mismatches
@@ -261,8 +289,41 @@ FROM
 GROUP BY frame_desc
 ORDER BY frame_desc;
 
--- Floating point sum/avg must not use the subtract path: a transient Inf/NaN inside the
--- frame must not poison the results of later frames after the offending row leaves.
+-- RANGE frames big enough for the tree, with a dense key so every peer group has
+-- several rows (consecutive rows then share the same frame), and with a key that jumps
+-- periodically so that consecutive frames are sometimes disjoint.
+SELECT
+    frame_desc,
+    countIf(NOT (s = s2 AND c = c2 AND mn = mn2 AND u = u2)) AS mismatches
+FROM
+(
+    SELECT
+        'range_dense' AS frame_desc, n,
+        sum(value) OVER w AS s, arraySum(groupArray(value) OVER w) AS s2,
+        count(value) OVER w AS c, length(groupArray(value) OVER w) AS c2,
+        min(value) OVER w AS mn, arrayMin(groupArray(value) OVER w) AS mn2,
+        uniqExact(str) OVER w AS u, length(arrayDistinct(groupArray(str) OVER w)) AS u2
+    FROM (SELECT *, intDiv(n, 100) AS range_key FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY range_key RANGE BETWEEN 25 PRECEDING AND CURRENT ROW)
+
+    UNION ALL
+
+    SELECT
+        'range_jumping' AS frame_desc, n,
+        sum(value) OVER w, arraySum(groupArray(value) OVER w),
+        count(value) OVER w, length(groupArray(value) OVER w),
+        min(value) OVER w, arrayMin(groupArray(value) OVER w),
+        uniqExact(str) OVER w, length(arrayDistinct(groupArray(str) OVER w))
+    FROM (SELECT *, n + intDiv(n, 3000) * 8000 AS range_key FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY range_key RANGE BETWEEN 2500 PRECEDING AND CURRENT ROW)
+)
+GROUP BY frame_desc
+ORDER BY frame_desc;
+
+-- Floating point: a transient Inf/NaN inside the frame must not poison the results of
+-- later frames after the offending row leaves. The 50-row frame stays on the recompute
+-- path, the 2500-row frame goes through the tree (the segments containing the Inf/NaN
+-- rows simply stop being merged once the frame has passed them).
 SELECT
     frame_size,
     countIf(NOT (
@@ -279,7 +340,61 @@ FROM
         max(fvalue) OVER w AS mx, arrayMax(groupArray(fvalue) OVER w) AS mx2
     FROM moving_aggregate_test
     WINDOW w AS (ORDER BY n ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
+
+    UNION ALL
+
+    SELECT
+        2500 AS frame_size, n,
+        sum(fvalue) OVER w, arraySum(groupArray(fvalue) OVER w),
+        avg(fvalue) OVER w, arrayAvg(groupArray(fvalue) OVER w),
+        min(fvalue) OVER w, arrayMin(groupArray(fvalue) OVER w),
+        max(fvalue) OVER w, arrayMax(groupArray(fvalue) OVER w)
+    FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 )
-GROUP BY frame_size;
+GROUP BY frame_size
+ORDER BY frame_size;
+
+-- groupArray through the tree against ground truth: merge must concatenate the segments
+-- in frame order, so the result must be exactly the frame rows in order.
+SELECT countIf(arrayMap(x -> toUInt64(x), ga) != range(if(n < 2500, toUInt64(0), toUInt64(n - 2500)), toUInt64(n) + 1)) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        groupArray(n) OVER (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) AS ga
+    FROM moving_aggregate_test
+);
+
+-- Functions with non-trivial states and combinators through the tree, cross-checked
+-- against array functions over groupArray (itself verified above).
+SELECT countIf(NOT (u = u2 AND si = si2 AND q = q2)) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        uniqExact(value) OVER w AS u, length(arrayDistinct(groupArray(value) OVER w)) AS u2,
+        sumIf(value, value % 2 = 0) OVER w AS si, arraySum(arrayFilter(x -> x % 2 = 0, groupArray(value) OVER w)) AS si2,
+        quantileExact(value) OVER w AS q, arrayReduce('quantileExact', groupArray(value) OVER w) AS q2
+    FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+);
+
+-- Extreme signed values: the tree never negates values (rows leaving the frame simply
+-- stop being merged, there is no inverse transition), so the minimum Int64 value passing
+-- through a sliding frame must produce exact results, including after it leaves the
+-- frame. avg is checked only after the extreme row has left, because its Float64
+-- division is not exactly comparable against arrayAvg while the huge value is in frame.
+SELECT countIf(NOT (s = s2 AND mn = mn2)) + countIf(n > 2600 AND (s != 2501 OR mn != 1 OR a != 1)) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        sum(ev) OVER w AS s, arraySum(groupArray(ev) OVER w) AS s2,
+        min(ev) OVER w AS mn, arrayMin(groupArray(ev) OVER w) AS mn2,
+        avg(ev) OVER w AS a
+    FROM (SELECT n, if(n = 100, toInt64(-9223372036854775808), toInt64(1)) AS ev FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+);
 
 DROP TABLE moving_aggregate_test;
