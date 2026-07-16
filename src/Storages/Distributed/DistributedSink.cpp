@@ -502,6 +502,14 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
 
+                /// The rows pushed into a local shard are already accounted by the top-level
+                /// CountingTransform of the distributed INSERT. Detach the nested insert from
+                /// the parent's write-progress accounting so the same rows are not counted
+                /// twice (otherwise system.query_log.written_rows and
+                /// system.view_refreshes.written_rows are inflated per local shard).
+                job.local_context->setProgressCallback({});
+                job.local_context->setProcessListElement({});
+
                 /// Copying of the query AST is required to avoid race,
                 /// in case of INSERT into multiple local shards.
                 ///
@@ -817,9 +825,17 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
+        /// Detach the nested local insert from the parent's write-progress accounting: the
+        /// rows are already counted by the top-level CountingTransform of the distributed
+        /// INSERT, so reusing the parent context here would double-count them in
+        /// system.query_log.written_rows and system.view_refreshes.written_rows.
+        auto local_context = Context::createCopy(context);
+        local_context->setProgressCallback({});
+        local_context->setProcessListElement({});
+
         InterpreterInsertQuery interp(
             query_ast,
-            context,
+            local_context,
             allow_materialized,
             /* no_squash= */ false,
             /* no_destination= */ false,
