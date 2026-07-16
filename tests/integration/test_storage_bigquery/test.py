@@ -258,12 +258,14 @@ def test_selected_fields():
     requests = mock_stats()["data_requests"]
     assert all(r["params"]["selectedFields"] == "i,s" for r in requests)
 
-    # When all columns are selected, the parameter is omitted.
+    # Even when all columns are selected, the explicit field list is sent so that execution stays
+    # pinned to the analyzed schema snapshot (an empty selectedFields would mean "all current
+    # columns", which could differ from the snapshot if the remote table gains a column).
     mock_reset()
     result = node.query(f"SELECT s, i FROM {bq('test_paging')} WHERE i < 2 ORDER BY i")
     assert result == "value0\t0\nvalue1\t1\n"
     requests = mock_stats()["data_requests"]
-    assert all("selectedFields" not in r["params"] for r in requests)
+    assert all(r["params"]["selectedFields"] == "i,s" for r in requests)
 
     mock_reset()
     result = node.query(f"SELECT sum(i) FROM {bq('test_paging')}")
@@ -348,6 +350,55 @@ def test_insert_errors():
         f"INSERT INTO FUNCTION {bq('writable')} (id, ts) VALUES (2, '2024-02-03 04:05:06')"
     )
     assert node.query(f"SELECT count() FROM {bq('writable')}") == "1\n"
+
+
+def test_insert_id_present():
+    # Every streamed row carries a stable insertId of the form "<query id>-<row ordinal>", so that
+    # BigQuery can best-effort deduplicate retried rows.
+    mock_reset()
+    node.query(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')"
+    )
+    ids = [iid for r in mock_stats()["insert_requests"] for iid in r["insert_ids"]]
+    assert len(ids) == 3
+    assert all(iid for iid in ids)
+    # A single common query-id prefix plus a monotonic per-row ordinal.
+    assert len({iid.rsplit("-", 1)[0] for iid in ids}) == 1
+    assert [iid.rsplit("-", 1)[1] for iid in ids] == ["0", "1", "2"]
+
+
+def test_insert_partial_commit_dedup():
+    # Streaming inserts are not atomic across batches: a failure in a later batch leaves the earlier
+    # batches committed. Re-running the same INSERT with the same query id must not duplicate the
+    # already-committed prefix, because the stable insertIds let BigQuery deduplicate it.
+    mock_reset()
+    insert = f"""
+        INSERT INTO FUNCTION {bq('writable')}
+        SELECT
+            number, toString(number), NULL, NULL, NULL, NULL, NULL, NULL,
+            [toString(number)], tuple(number)
+        FROM numbers(1200)
+        """
+    # A single ordered stream so the row -> insertId mapping is identical on both runs.
+    settings = {"max_threads": 1, "max_insert_threads": 1}
+
+    # Reject any request once 1000 rows are already committed: the first two 500-row batches land,
+    # the third is rejected and the whole INSERT fails - but 1000 rows stay in BigQuery.
+    mock_ctl("/__fail_inserts_after__?rows=1000")
+    error = node.query_and_get_error(
+        insert, query_id="bq_partial_commit", settings=settings
+    )
+    assert "BigQuery rejected" in error
+    assert node.query(f"SELECT count() FROM {bq('writable')}") == "1000\n"
+
+    # Retry the identical INSERT with the same query id. The committed prefix is deduplicated by
+    # insertId, so exactly 1200 distinct rows end up in the table instead of 2200.
+    mock_ctl("/__fail_inserts_after__")
+    node.query(insert, query_id="bq_partial_commit", settings=settings)
+    assert (
+        node.query(f"SELECT count(), sum(id) FROM {bq('writable')}")
+        == f"1200\t{sum(range(1200))}\n"
+    )
 
 
 def test_service_account_auth():

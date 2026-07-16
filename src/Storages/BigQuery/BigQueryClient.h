@@ -62,7 +62,10 @@ public:
     /// `selected_fields` is a comma-separated list of columns, empty means all columns.
     TableDataPage listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const;
 
-    /// tabledata.insertAll (streaming insert). Throws if any row is rejected.
+    /// tabledata.insertAll (streaming insert). Throws if any row of this request is rejected.
+    /// A single `INSERT` is split into several such requests, which are not atomic with respect to
+    /// each other: a failure here does not roll back rows accepted by earlier requests. Each row may
+    /// carry a stable `insertId` for BigQuery's best-effort deduplication of retried rows.
     void insertAll(const Poco::JSON::Array::Ptr & rows) const;
 
 private:

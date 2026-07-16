@@ -120,11 +120,12 @@ private:
 class BigQuerySink : public SinkToStorage
 {
 public:
-    BigQuerySink(std::shared_ptr<BigQueryClient> client_, BigQueryFields fields_, SharedHeader sample_block)
+    BigQuerySink(std::shared_ptr<BigQueryClient> client_, BigQueryFields fields_, SharedHeader sample_block, String insert_id_prefix_)
         : SinkToStorage(sample_block)
         , client(std::move(client_))
         , fields(std::move(fields_))
         , header(sample_block)
+        , insert_id_prefix(std::move(insert_id_prefix_))
     {
     }
 
@@ -142,6 +143,17 @@ public:
 
             Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
             entry->set("json", row_json);
+
+            /// A stable `insertId` (the query id plus a monotonic row ordinal) lets BigQuery
+            /// best-effort deduplicate rows within its streaming-insert window. Streaming inserts are
+            /// not atomic across `insertAll` batches, so if a later batch fails after earlier batches
+            /// have been accepted, the earlier rows stay committed while the `INSERT` reports an error.
+            /// With a stable `insertId`, both a transport-level retry of one batch and re-running the
+            /// same `INSERT` (same query id, same input order) skip the already-committed rows instead
+            /// of duplicating them. It is omitted when there is no query id (best-effort dedup off).
+            if (!insert_id_prefix.empty())
+                entry->set("insertId", insert_id_prefix + "-" + std::to_string(row_ordinal));
+            ++row_ordinal;
 
             if (!pending_rows)
                 pending_rows = new Poco::JSON::Array;
@@ -169,6 +181,8 @@ private:
     std::shared_ptr<BigQueryClient> client;
     const BigQueryFields fields;
     SharedHeader header;
+    const String insert_id_prefix;
+    size_t row_ordinal = 0;
     Poco::JSON::Array::Ptr pending_rows;
 };
 
@@ -345,14 +359,16 @@ Pipe StorageBigQuery::read(
         if (!sample.has(name))
             checkColumnMatchesSchema(columns.getPhysical(name), all_fields);    /// throws with a proper message
 
-    String selected_fields;
-    if (selected.size() < all_fields.size())
-    {
-        Names selected_names;
-        for (const auto & field : selected)
-            selected_names.push_back(field.name);
-        selected_fields = fmt::format("{}", fmt::join(selected_names, ","));
-    }
+    /// Always send the explicit field list, even when every column is requested. An empty
+    /// `selectedFields` tells BigQuery to return all of the table's *current* columns; if the remote
+    /// table gained a column after the schema snapshot was taken (analysis time), execution would then
+    /// receive wider rows than the header expects and fail with "Malformed row". Sending the exact
+    /// analyzed field list pins execution to the same schema snapshot that analysis used.
+    Names selected_names;
+    selected_names.reserve(selected.size());
+    for (const auto & field : selected)
+        selected_names.push_back(field.name);
+    String selected_fields = fmt::format("{}", fmt::join(selected_names, ","));
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return Pipe(std::make_shared<BigQuerySource>(
@@ -380,7 +396,8 @@ SinkToStoragePtr StorageBigQuery::write(
     }
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
-    return std::make_shared<BigQuerySink>(std::move(client), std::move(sink_fields), std::make_shared<const Block>(sample_block));
+    return std::make_shared<BigQuerySink>(
+        std::move(client), std::move(sink_fields), std::make_shared<const Block>(sample_block), context->getCurrentQueryId());
 }
 
 BigQueryConfiguration StorageBigQuery::getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id)

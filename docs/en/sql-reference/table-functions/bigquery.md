@@ -133,6 +133,7 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 - Only native BigQuery tables can be read. Views and external tables require running a BigQuery query job, which this function does not do.
 - Predicates and limits are not pushed down: the whole table (only the selected columns) is downloaded. Use column selection to reduce the transferred data.
 - Rows written with streaming inserts land in the BigQuery streaming buffer and may take a while to become visible to subsequent reads.
+- Writes are not atomic. A large `INSERT` is sent to `tabledata.insertAll` in batches of 500 rows, and BigQuery commits each request independently. If a later batch is rejected after earlier batches have been accepted, the query reports an error but the already-accepted rows remain committed in BigQuery. To limit duplication, each row is sent with a stable `insertId` derived from the query id and the row's position, which BigQuery uses for best-effort deduplication within its streaming-insert window — so a transport-level retry, or re-running the same `INSERT` with the same `query_id` over the same input, does not re-insert the already-committed rows.
 
 ## Related {#related}
 

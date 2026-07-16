@@ -223,6 +223,9 @@ STATS = {
     "schema_requests": [],
 }
 FAIL_INSERTS = [False]
+# When set to an integer N, an insertAll request is rejected once the table already holds >= N rows.
+# Used to simulate a mid-INSERT failure that leaves an earlier committed prefix behind.
+FAIL_INSERTS_AFTER = [None]
 
 
 def google_error(code, status, message):
@@ -372,10 +375,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             STATS["token_requests"].clear()
             STATS["schema_requests"].clear()
             FAIL_INSERTS[0] = False
+            FAIL_INSERTS_AFTER[0] = None
             self.send_json(200, {})
             return
         if parsed.path == "/__fail_inserts__":
             FAIL_INSERTS[0] = True
+            self.send_json(200, {})
+            return
+        if parsed.path == "/__fail_inserts_after__":
+            rows = params.get("rows")
+            FAIL_INSERTS_AFTER[0] = int(rows) if rows is not None else None
             self.send_json(200, {})
             return
 
@@ -488,7 +497,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if suffix == "/insertAll":
             request = json.loads(body)
             rows = request.get("rows", [])
-            STATS["insert_requests"].append({"path": parsed.path, "rows": len(rows)})
+            STATS["insert_requests"].append(
+                {
+                    "path": parsed.path,
+                    "rows": len(rows),
+                    "insert_ids": [entry.get("insertId") for entry in rows],
+                }
+            )
 
             if FAIL_INSERTS[0]:
                 errors = [
@@ -503,9 +518,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_json(200, {"insertErrors": errors})
                 return
 
+            # Simulate a mid-INSERT failure that keeps the already-committed prefix: once the table
+            # already holds enough rows, reject this whole request (as BigQuery would a bad batch).
+            if (
+                FAIL_INSERTS_AFTER[0] is not None
+                and len(table["rows"]) >= FAIL_INSERTS_AFTER[0]
+            ):
+                errors = [
+                    {
+                        "index": i,
+                        "errors": [
+                            {"reason": "invalid", "message": "simulated failure"}
+                        ],
+                    }
+                    for i in range(len(rows))
+                ]
+                self.send_json(200, {"insertErrors": errors})
+                return
+
+            # Best-effort deduplication by insertId, mirroring BigQuery streaming inserts: a row whose
+            # insertId was already committed to this table is dropped instead of inserted again.
+            seen_insert_ids = table.setdefault("seen_insert_ids", set())
+
             errors = []
             converted = []
+            committed_insert_ids = []
             for i, entry in enumerate(rows):
+                insert_id = entry.get("insertId")
+                if insert_id is not None and insert_id in seen_insert_ids:
+                    continue
                 data = entry.get("json", {})
                 try:
                     unknown = set(data) - {field["name"] for field in table["schema"]}
@@ -523,6 +564,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             ]
                         }
                     )
+                    if insert_id is not None:
+                        committed_insert_ids.append(insert_id)
                 except ValueError as e:
                     errors.append(
                         {
@@ -534,6 +577,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_json(200, {"insertErrors": errors})
                 return
             table["rows"].extend(converted)
+            seen_insert_ids.update(committed_insert_ids)
             self.send_json(200, {"kind": "bigquery#tableDataInsertAllResponse"})
             return
 
