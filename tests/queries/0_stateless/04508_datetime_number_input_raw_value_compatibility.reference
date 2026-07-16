@@ -35,3 +35,4 @@
 2106-02-07 06:28:15
 1970-01-01 00:00:00
 -- DateTime64 compatibility: an integer wider than Int128 is out of range instead of wrapping modulo 2^128
+-- Compatibility mode still rejects a missing numeric token instead of loading the epoch

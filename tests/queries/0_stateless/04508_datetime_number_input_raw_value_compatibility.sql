@@ -89,3 +89,13 @@ SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":340282366920938463463
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":340282366920938463463374609135132064491}'); -- { serverError DECIMAL_OVERFLOW }
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":-340282366920938463463374607431768211456}'); -- { serverError DECIMAL_OVERFLOW }
 SET input_format_read_datetime_number_as_raw_value = 0;
+
+SELECT '-- Compatibility mode still rejects a missing numeric token instead of loading the epoch';
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":}'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT t FROM format(JSONEachRow, 't Nullable(DateTime)', '{"t":}'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":}'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT t FROM format(JSONEachRow, 't Nullable(DateTime64(3))', '{"t":}'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT * FROM format(JSONEachRow, 't DateTime, u UInt8', '{"t":,"u":1}'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":+}'); -- { serverError CANNOT_PARSE_NUMBER }
+SET input_format_read_datetime_number_as_raw_value = 0;

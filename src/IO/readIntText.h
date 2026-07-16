@@ -276,8 +276,10 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
 /// big-int types that never reports overflow). The whole run of digits is consumed either way, and
 /// the saturated value keeps the sign of the input, so a subsequent range check or clamp in the
 /// caller sees the value on the correct side of its bounds. Like `readIntText`, parsing stops at the
-/// first character that is not part of the number, and a sign without any digits is an error
-/// (an exception for `ReturnType = void`, `false` for `ReturnType = bool`).
+/// first character that is not part of the number. Unlike `readIntText`, which reads an empty token
+/// as zero, a token without any digits (whether empty or a bare sign) is an error (an exception for
+/// `ReturnType = void`, `false` for `ReturnType = bool`): the raw-value compatibility path must
+/// reject a missing numeric token such as `{"t":}` instead of loading it as the Unix epoch.
 template <typename ReturnType = void>
 ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
 {
@@ -289,7 +291,6 @@ ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
     constexpr Int128 max_mod_10 = std::numeric_limits<Int128>::max() % 10;
 
     bool negative = false;
-    bool has_sign = false;
     bool has_number = false;
     bool overflow = false;
     Int128 res = 0;
@@ -297,7 +298,6 @@ ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
     if (!buf.eof() && (*buf.position() == '-' || *buf.position() == '+'))
     {
         negative = *buf.position() == '-';
-        has_sign = true;
         ++buf.position();
     }
 
@@ -315,7 +315,7 @@ ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
             res = res * 10 + digit;
     }
 
-    if (has_sign && !has_number)
+    if (!has_number)
     {
         if constexpr (throw_exception)
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
