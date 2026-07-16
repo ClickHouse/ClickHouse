@@ -47,11 +47,13 @@ WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
+    bool streams_fan_out_,
+    UInt64 min_frame_rows_for_aggregate_tree_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
+    , min_frame_rows_for_aggregate_tree(min_frame_rows_for_aggregate_tree_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -74,7 +76,8 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         [&](const SharedHeader & /*header*/)
         {
             return std::make_shared<WindowTransform>(
-                input_headers.front(), output_header, window_description, window_functions);
+                input_headers.front(), output_header, window_description, window_functions,
+                min_frame_rows_for_aggregate_tree);
         });
 
     if (streams_fan_out)

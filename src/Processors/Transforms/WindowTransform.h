@@ -64,7 +64,8 @@ public:
             SharedHeader output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
-                functions);
+                functions,
+            UInt64 min_frame_rows_for_aggregate_tree_);
 
     ~WindowTransform() override;
 
@@ -330,6 +331,10 @@ public:
     // updateAggregationState()).
     bool frame_trees_active = false;
     bool any_workspace_supports_frame_tree = false;
+    // Below this observed frame size the plain reset-and-readd path is used (the trees
+    // are activated and deactivated as the frame size crosses the threshold). Comes from
+    // the `min_window_frame_rows_for_aggregate_tree` setting.
+    UInt64 min_frame_rows_for_aggregate_tree;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).

@@ -76,15 +76,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-namespace
-{
-    // Below this frame size the plain reset-and-readd path is used (the tree is
-    // activated and deactivated as the observed frame size crosses the threshold).
-    // Measured crossover: ~2000 rows for vectorized primitives (sum/min/avg over
-    // numbers), much lower for functions with expensive adds (e.g. uniqExact).
-    constexpr UInt64 min_frame_rows_for_aggregate_tree = 2048;
-}
-
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
 // [compared] with [reference] +/- offset. Return value is -1/0/+1, like in
 // sorting predicates -- -1 means [compared] is less than [reference] +/- offset.
@@ -291,12 +282,14 @@ else \
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & functions)
+        const std::vector<WindowFunctionDescription> & functions,
+        UInt64 min_frame_rows_for_aggregate_tree_)
     : IProcessor({input_header_}, {output_header_})
     , input(inputs.front())
     , output(outputs.front())
     , input_header(*input_header_)
     , window_description(window_description_)
+    , min_frame_rows_for_aggregate_tree(min_frame_rows_for_aggregate_tree_)
 {
     // Materialize all columns in header, because we materialize all columns
     // in chunks and it's convenient if they match.

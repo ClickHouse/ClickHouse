@@ -11,9 +11,11 @@ function wait_for_query_to_start()
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
 }
 
-# Run a test query that takes very long to run.
+# Run a test query that takes very long to run. The huge threshold keeps the frame
+# aggregation on the O(rows * frame_size) recompute path, otherwise the query is too
+# fast to be reliably caught by the kill below.
 query_id="01572_kill_window_function-$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (PARTITION BY number % 10 ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 99999 FOLLOWING) FROM numbers(0, 10000000) format Null;" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (PARTITION BY number % 10 ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 99999 FOLLOWING) FROM numbers(0, 10000000) format Null SETTINGS min_window_frame_rows_for_aggregate_tree = 1000000000;" >/dev/null 2>&1 &
 client_pid=$!
 echo Started
 

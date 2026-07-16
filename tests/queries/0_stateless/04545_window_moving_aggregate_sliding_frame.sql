@@ -3,8 +3,10 @@
 -- Regression test for the sliding window frame aggregation in
 -- WindowTransform::updateAggregationState(): when the frame start advances, the
 -- aggregate state is rebuilt from a FlatFAT-style tree of partial aggregate states
--- (FrameAggregateTree) once the frame is observed to have at least 2048 rows, and by
--- plain reset-and-readd below that. Frame sizes here cover both paths and the crossover.
+-- (FrameAggregateTree) once the frame is observed to have at least
+-- min_window_frame_rows_for_aggregate_tree rows, and by plain reset-and-readd below
+-- that. The threshold is lowered to 32 here so that small (i.e. cheap) frames cover
+-- both paths and the crossover; the last section runs at the default threshold.
 -- Aggregates are cross-checked against array functions over groupArray(...) OVER the
 -- same frame; groupArray itself goes through the tree too (merge concatenates in frame
 -- order), and is checked against ground truth in a separate section below.
@@ -29,8 +31,10 @@ SELECT
     toString(cityHash64(number, 2) % 5),
     -- Division by 8 keeps the values exactly representable, so float sums are
     -- order-independent and comparable exactly.
-    multiIf(number = 500, inf, number = 600, -inf, number = 700, nan, (toInt64(cityHash64(number, 3) % 201) - 100) / 8)
-FROM numbers(6000);
+    multiIf(number = 150, inf, number = 250, -inf, number = 350, nan, (toInt64(cityHash64(number, 3) % 201) - 100) / 8)
+FROM numbers(600);
+
+SET min_window_frame_rows_for_aggregate_tree = 32;
 
 SELECT
     frame_size,
@@ -170,7 +174,7 @@ FROM
     UNION ALL
 
     SELECT
-        2500 AS frame_size, n,
+        250 AS frame_size, n,
         sum(value) OVER w, arraySum(groupArray(value) OVER w),
         count(value) OVER w, length(groupArray(value) OVER w),
         avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
@@ -181,12 +185,12 @@ FROM
         min(str) OVER w, arrayReduce('min', groupArray(str) OVER w),
         max(str) OVER w, arrayReduce('max', groupArray(str) OVER w)
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 
     UNION ALL
 
     SELECT
-        3000 AS frame_size, n,
+        300 AS frame_size, n,
         sum(value) OVER w, arraySum(groupArray(value) OVER w),
         count(value) OVER w, length(groupArray(value) OVER w),
         avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
@@ -197,12 +201,12 @@ FROM
         min(str) OVER w, arrayReduce('min', groupArray(str) OVER w),
         max(str) OVER w, arrayReduce('max', groupArray(str) OVER w)
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 3000 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 300 PRECEDING AND CURRENT ROW)
 )
 GROUP BY frame_size
 ORDER BY frame_size;
 
--- Same check, but with PARTITION BY splitting the input into two partitions of 3000
+-- Same check, but with PARTITION BY splitting the input into two partitions of 300
 -- rows, to exercise resetting the frame aggregate tree at partition boundaries.
 SELECT
     frame_size,
@@ -248,14 +252,14 @@ FROM
     UNION ALL
 
     SELECT
-        2500 AS frame_size, n,
+        250 AS frame_size, n,
         sum(value) OVER w, arraySum(groupArray(value) OVER w),
         count(value) OVER w, length(groupArray(value) OVER w),
         avg(value) OVER w, arrayAvg(groupArray(value) OVER w),
         min(value) OVER w, arrayMin(groupArray(value) OVER w),
         max(value) OVER w, arrayMax(groupArray(value) OVER w)
     FROM moving_aggregate_test
-    WINDOW w AS (PARTITION BY part ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (PARTITION BY part ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 )
 GROUP BY frame_size
 ORDER BY frame_size;
@@ -303,7 +307,7 @@ FROM
         count(value) OVER w AS c, length(groupArray(value) OVER w) AS c2,
         min(value) OVER w AS mn, arrayMin(groupArray(value) OVER w) AS mn2,
         uniqExact(str) OVER w AS u, length(arrayDistinct(groupArray(str) OVER w)) AS u2
-    FROM (SELECT *, intDiv(n, 100) AS range_key FROM moving_aggregate_test)
+    FROM (SELECT *, intDiv(n, 10) AS range_key FROM moving_aggregate_test)
     WINDOW w AS (ORDER BY range_key RANGE BETWEEN 25 PRECEDING AND CURRENT ROW)
 
     UNION ALL
@@ -314,15 +318,15 @@ FROM
         count(value) OVER w, length(groupArray(value) OVER w),
         min(value) OVER w, arrayMin(groupArray(value) OVER w),
         uniqExact(str) OVER w, length(arrayDistinct(groupArray(str) OVER w))
-    FROM (SELECT *, n + intDiv(n, 3000) * 8000 AS range_key FROM moving_aggregate_test)
-    WINDOW w AS (ORDER BY range_key RANGE BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    FROM (SELECT *, n + intDiv(n, 300) * 800 AS range_key FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY range_key RANGE BETWEEN 250 PRECEDING AND CURRENT ROW)
 )
 GROUP BY frame_desc
 ORDER BY frame_desc;
 
 -- Floating point: a transient Inf/NaN inside the frame must not poison the results of
--- later frames after the offending row leaves. The 50-row frame stays on the recompute
--- path, the 2500-row frame goes through the tree (the segments containing the Inf/NaN
+-- later frames after the offending row leaves. The 20-row frame stays on the recompute
+-- path, the 250-row frame goes through the tree (the segments containing the Inf/NaN
 -- rows simply stop being merged once the frame has passed them).
 SELECT
     frame_size,
@@ -333,36 +337,36 @@ SELECT
 FROM
 (
     SELECT
-        50 AS frame_size, n,
+        20 AS frame_size, n,
         sum(fvalue) OVER w AS s, arraySum(groupArray(fvalue) OVER w) AS s2,
         avg(fvalue) OVER w AS a, arrayAvg(groupArray(fvalue) OVER w) AS a2,
         min(fvalue) OVER w AS mn, arrayMin(groupArray(fvalue) OVER w) AS mn2,
         max(fvalue) OVER w AS mx, arrayMax(groupArray(fvalue) OVER w) AS mx2
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 50 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 20 PRECEDING AND CURRENT ROW)
 
     UNION ALL
 
     SELECT
-        2500 AS frame_size, n,
+        250 AS frame_size, n,
         sum(fvalue) OVER w, arraySum(groupArray(fvalue) OVER w),
         avg(fvalue) OVER w, arrayAvg(groupArray(fvalue) OVER w),
         min(fvalue) OVER w, arrayMin(groupArray(fvalue) OVER w),
         max(fvalue) OVER w, arrayMax(groupArray(fvalue) OVER w)
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 )
 GROUP BY frame_size
 ORDER BY frame_size;
 
 -- groupArray through the tree against ground truth: merge must concatenate the segments
 -- in frame order, so the result must be exactly the frame rows in order.
-SELECT countIf(arrayMap(x -> toUInt64(x), ga) != range(if(n < 2500, toUInt64(0), toUInt64(n - 2500)), toUInt64(n) + 1)) AS mismatches
+SELECT countIf(arrayMap(x -> toUInt64(x), ga) != range(if(n < 250, toUInt64(0), toUInt64(n - 250)), toUInt64(n) + 1)) AS mismatches
 FROM
 (
     SELECT
         n,
-        groupArray(n) OVER (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) AS ga
+        groupArray(n) OVER (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW) AS ga
     FROM moving_aggregate_test
 );
 
@@ -377,7 +381,7 @@ FROM
         sumIf(value, value % 2 = 0) OVER w AS si, arraySum(arrayFilter(x -> x % 2 = 0, groupArray(value) OVER w)) AS si2,
         quantileExact(value) OVER w AS q, arrayReduce('quantileExact', groupArray(value) OVER w) AS q2
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
 -- Extreme signed values: the tree never negates values (rows leaving the frame simply
@@ -385,7 +389,7 @@ FROM
 -- through a sliding frame must produce exact results, including after it leaves the
 -- frame. avg is checked only after the extreme row has left, because its Float64
 -- division is not exactly comparable against arrayAvg while the huge value is in frame.
-SELECT countIf(NOT (s = s2 AND mn = mn2)) + countIf(n > 2600 AND (s != 2501 OR mn != 1 OR a != 1)) AS mismatches
+SELECT countIf(NOT (s = s2 AND mn = mn2)) + countIf(n > 360 AND (s != 251 OR mn != 1 OR a != 1)) AS mismatches
 FROM
 (
     SELECT
@@ -394,7 +398,7 @@ FROM
         min(ev) OVER w AS mn, arrayMin(groupArray(ev) OVER w) AS mn2,
         avg(ev) OVER w AS a
     FROM (SELECT n, if(n = 100, toInt64(-9223372036854775808), toInt64(1)) AS ev FROM moving_aggregate_test)
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
 -- The frame shrinks exactly when a higher-level segment group of the tree completes
@@ -418,7 +422,7 @@ FROM
 -- results must match a sequential re-aggregation (arrayReduce), also through
 -- combinators. The cr check skips the growing prefix, where the tail-add path reuses
 -- the state after insertResultInto finalized the compressor (pre-existing behavior).
-SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 2500 OR cr = cr2) AND gu = gu2 AND guu = guu2)) AS mismatches
+SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 250 OR cr = cr2) AND gu = gu2 AND guu = guu2)) AS mismatches
 FROM
 (
     SELECT
@@ -431,7 +435,7 @@ FROM
         groupUniqArray(2)(value) OVER w AS gu, arrayReduce('groupUniqArray(2)', groupArray(value) OVER w) AS gu2,
         groupUniqArray(value) OVER w AS guu, arrayReduce('groupUniqArray', groupArray(value) OVER w) AS guu2
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
 -- groupArrayIntersect must stay on the recompute path: the result array exposes
@@ -442,7 +446,7 @@ FROM
     SELECT
         groupArrayIntersect(arr) OVER w AS gi, arrayReduce('groupArrayIntersect', groupArray(arr) OVER w) AS gi2
     FROM (SELECT n, arrayRotateLeft(arrayMap(x -> cityHash64(x) % 100000, range(40)), toInt32(n % 40)) AS arr FROM moving_aggregate_test)
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
 -- deltaSum / deltaSumTimestamp merges are not append-equivalent (equal values or
@@ -455,7 +459,7 @@ FROM
         deltaSum(v) OVER w AS d, arrayReduce('deltaSum', groupArray(v) OVER w) AS d2,
         deltaSumTimestamp(v, t) OVER w AS dt, arrayReduce('deltaSumTimestamp', groupArray(v) OVER w, groupArray(t) OVER w) AS dt2
     FROM (SELECT n, intDiv(cityHash64(n) % 100, 10) AS v, intDiv(n, 3) AS t FROM moving_aggregate_test)
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
 -- Zero-sized aggregate states (the Nothing placeholders for only-NULL arguments) must
@@ -465,24 +469,25 @@ FROM
 (
     SELECT count(NULL) OVER w AS c, sum(toNullable(NULL)) OVER w AS s
     FROM moving_aggregate_test
-    WINDOW w AS (ORDER BY n ROWS BETWEEN 3000 PRECEDING AND CURRENT ROW)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 300 PRECEDING AND CURRENT ROW)
 );
 
 -- Float rounding over tree-sized frames may differ from sequential summation (which
 -- already depends on the block layout, on master too). Pin what is guaranteed:
 -- identical runs give identical bits, and the frame row multiset stays exact.
+-- This section runs at the default activation threshold to cover it end-to-end.
 DROP TABLE IF EXISTS float_order_results;
 CREATE TABLE float_order_results (r UInt64, c UInt64) ENGINE = Memory;
 INSERT INTO float_order_results
 SELECT groupBitXor(reinterpretAsUInt64(s)), countIf(cnt != least(n, 2999) + 1)
 FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s FROM numbers(20000)
       WINDOW w AS (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
-SETTINGS max_block_size = 123;
+SETTINGS max_block_size = 123, min_window_frame_rows_for_aggregate_tree = DEFAULT;
 INSERT INTO float_order_results
 SELECT groupBitXor(reinterpretAsUInt64(s)), countIf(cnt != least(n, 2999) + 1)
 FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s FROM numbers(20000)
       WINDOW w AS (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
-SETTINGS max_block_size = 123;
+SETTINGS max_block_size = 123, min_window_frame_rows_for_aggregate_tree = DEFAULT;
 SELECT uniqExact(r), max(c) FROM float_order_results;
 DROP TABLE float_order_results;
 

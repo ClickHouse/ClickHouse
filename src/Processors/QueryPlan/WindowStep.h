@@ -14,7 +14,8 @@ public:
     explicit WindowStep(const SharedHeader & input_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> & window_functions_,
-            bool streams_fan_out_);
+            bool streams_fan_out_,
+            UInt64 min_frame_rows_for_aggregate_tree_);
 
     String getName() const override { return "Window"; }
 
@@ -63,6 +64,7 @@ private:
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
+    UInt64 min_frame_rows_for_aggregate_tree;
 };
 
 }

@@ -157,6 +157,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsUInt64 min_window_frame_rows_for_aggregate_tree;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
@@ -1425,8 +1426,12 @@ void addWindowSteps(QueryPlan & query_plan,
         const bool streams_fan_out
             = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == window_descriptions_size);
 
-        auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out);
+        auto window_step = std::make_unique<WindowStep>(
+            query_plan.getCurrentHeader(),
+            window_description,
+            window_description.window_functions,
+            streams_fan_out,
+            settings[Setting::min_window_frame_rows_for_aggregate_tree]);
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", max_step_description_length);
         query_plan.addStep(std::move(window_step));
     }

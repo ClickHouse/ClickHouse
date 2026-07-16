@@ -1213,6 +1213,9 @@ Compile sort description to native code.
     DECLARE(UInt64, min_count_to_compile_sort_description, 3, R"(
 The number of identical sort descriptions before they are JIT-compiled
 )", 0) \
+    DECLARE(UInt64, min_window_frame_rows_for_aggregate_tree, 2048, R"(
+The minimum number of rows a sliding window frame (e.g. `ROWS BETWEEN N PRECEDING AND CURRENT ROW`) must reach before aggregation over it switches to the incremental algorithm (a tree of partial aggregate states rebuilt with `O(log N)` merges per row) instead of re-aggregating the whole frame for every row. Smaller frames use the plain re-aggregation, which is faster for them. Only aggregate functions whose `merge` is equivalent to sequential aggregation use the incremental algorithm. Setting a very large value effectively disables the incremental algorithm.
+)", 0) \
     DECLARE(UInt64, group_by_two_level_threshold, 100000, R"(
 From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.
 )", 0) \
