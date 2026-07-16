@@ -3,6 +3,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <IO/ReadBuffer.h>
 #include <cstddef>
 #include <memory>
 #include <string_view>
@@ -37,8 +38,6 @@ Pipe getSourceFromASTInsertQuery(
     ContextPtr context,
     const ASTPtr & input_function);
 
-class ReadBuffer;
-
 /// Prepares a read buffer, that allows to read inlined data
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast);
@@ -56,5 +55,25 @@ String getInsertDataSchemaMismatchDescription(
 /// explanation (if any) is appended to the exception message.
 void setInsertSchemaMismatchDiagnostic(
     IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context);
+
+/// A read buffer decorator that additionally captures a bounded prefix of the bytes read through it.
+/// Used to make the parse-error diagnostic above available for data that comes from a source which
+/// cannot be re-read once consumed and has no backing ASTInsertQuery::data (e.g. a client reading the
+/// data of an INSERT from stdin, separately from the query text).
+class PrefixCapturingReadBuffer : public ReadBuffer
+{
+public:
+    PrefixCapturingReadBuffer(ReadBuffer & in_, size_t max_bytes_to_capture_);
+
+    std::string_view getCapturedPrefix() const { return captured; }
+
+private:
+    bool nextImpl() override;
+    void captureFromCurrentBuffer();
+
+    ReadBuffer & in;
+    size_t max_bytes_to_capture;
+    String captured;
+};
 
 }

@@ -136,6 +136,7 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -2219,12 +2220,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 {
     String current_format = "Values";
 
+    const auto * insert = parsed_query->as<ASTInsertQuery>();
+
     /// Data format can be specified in the INSERT query.
-    if (const auto * insert = parsed_query->as<ASTInsertQuery>())
-    {
-        if (!insert->format.empty())
-            current_format = insert->format;
-    }
+    if (insert && !insert->format.empty())
+        current_format = insert->format;
 
     const Settings & settings = client_context->getSettingsRef();
 
@@ -2245,9 +2245,18 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         ? settings[Setting::min_insert_block_size_bytes]
         : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
 
+    /// If the data is not inline in the query text (e.g. it is read from stdin, separately from a
+    /// query given via --query), ASTInsertQuery::data is null and the parse-error diagnostic below
+    /// cannot re-read the failing bytes from the AST. In that case, capture a bounded prefix of the
+    /// data as it streams through instead.
+    bool data_is_inline = insert && insert->data;
+    std::optional<PrefixCapturingReadBuffer> capturing_buf;
+    if (!data_is_inline)
+        capturing_buf.emplace(buf, settings[Setting::input_format_max_bytes_to_read_for_schema_inference]);
+
     auto source = client_context->getInputFormat(
         current_format,
-        buf,
+        data_is_inline ? buf : static_cast<ReadBuffer &>(*capturing_buf),
         sample,
         insert_format_max_block_size_rows,
         std::nullopt,
@@ -2257,7 +2266,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 
     /// If parsing of the data fails, explain a possible structure mismatch between the data and the
     /// destination (for diagnostics only).
-    setInsertSchemaMismatchDiagnostic(*source, parsed_query, sample, client_context);
+    if (data_is_inline)
+        setInsertSchemaMismatchDiagnostic(*source, parsed_query, sample, client_context);
+    else
+        source->setParseErrorDiagnosticProvider(
+            [&capturing_buf, current_format, expected_header = sample, context = client_context]() -> String
+            {
+                return getInsertDataSchemaMismatchDescription(capturing_buf->getCapturedPrefix(), current_format, expected_header, context);
+            });
 
     Pipe pipe(source);
 

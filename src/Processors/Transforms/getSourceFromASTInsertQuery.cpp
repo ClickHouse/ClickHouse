@@ -119,6 +119,39 @@ void setInsertSchemaMismatchDiagnostic(
         });
 }
 
+PrefixCapturingReadBuffer::PrefixCapturingReadBuffer(ReadBuffer & in_, size_t max_bytes_to_capture_)
+    : ReadBuffer(nullptr, 0), in(in_), max_bytes_to_capture(max_bytes_to_capture_)
+{
+    /// Adopt whatever `in` currently has buffered (possibly already prefetched, e.g. by an earlier
+    /// eof() check), rather than assuming it starts out empty.
+    working_buffer = in.buffer();
+    pos = in.position();
+    captureFromCurrentBuffer();
+}
+
+void PrefixCapturingReadBuffer::captureFromCurrentBuffer()
+{
+    if (captured.size() >= max_bytes_to_capture)
+        return;
+
+    size_t available = static_cast<size_t>(working_buffer.end() - pos);
+    size_t to_copy = std::min(max_bytes_to_capture - captured.size(), available);
+    captured.append(pos, to_copy);
+}
+
+bool PrefixCapturingReadBuffer::nextImpl()
+{
+    in.position() = pos;
+    bool res = in.next();
+    working_buffer = in.buffer();
+    pos = in.position();
+
+    if (res)
+        captureFromCurrentBuffer();
+
+    return res;
+}
+
 InputFormatPtr getInputFormatFromASTInsertQuery(
     const ASTPtr & ast,
     bool with_buffers,
