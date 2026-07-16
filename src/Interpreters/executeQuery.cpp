@@ -1249,8 +1249,10 @@ static BlockIO executeQueryImpl(
             /// `dialect`/`polyglot_dialect` can always be changed back (and before the
             /// feature gate, to recover from a misconfigured profile). Everything else is
             /// transpiled to ClickHouse SQL up front: the transpiled text is kept alive on
-            /// the query context and becomes the query buffer, so inline INSERT data
-            /// (`data`/`end`) points into a live buffer and is processed by the normal path.
+            /// the query context, and inline INSERT data (`data`/`end`) points into that
+            /// live buffer and is processed by the normal path. `begin`/`end` (the original
+            /// query text) are deliberately left untouched, so that the logging/hashing
+            /// below still reflects what the user submitted, not the transpiled SQL.
             ParserSetQuery set_parser;
             const char * set_pos = begin;
             String set_error;
@@ -1276,11 +1278,13 @@ static BlockIO executeQueryImpl(
                 context->setTranspiledQuery(transpilePolyglotToClickHouse(
                     std::string_view(begin, static_cast<size_t>(end - begin)), source_dialect, max_query_size));
                 const String & transpiled = context->getTranspiledQuery();
-                begin = transpiled.data();
-                end = transpiled.data() + transpiled.size();
+                const char * transpiled_begin = transpiled.data();
+                const char * transpiled_end = transpiled.data() + transpiled.size();
 
-                ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                ParserQuery parser(transpiled_end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(
+                    parser, transpiled_begin, transpiled_end, "", max_query_size,
+                    settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             }
         }
         else
@@ -1436,7 +1440,11 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            /// `insert_query->data` may point into a transpiled buffer owned by the query
+            /// context (e.g. for the polyglot dialect) rather than into `[begin, end)`; only
+            /// use it to cut the logged query short when it actually falls within that range.
+            if (const auto * insert_query = out_ast->as<ASTInsertQuery>();
+                insert_query && insert_query->data && insert_query->data >= begin && insert_query->data <= end)
                 query_end = insert_query->data;
         }
 

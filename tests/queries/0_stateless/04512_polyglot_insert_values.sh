@@ -30,6 +30,14 @@ $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO b VALUES (true), (false)"
 echo "--- boolean transpile (expect: 1 2) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 
+# system.query_log stores the query as the user submitted it (for `query`/`normalized_query_hash`),
+# not the ClickHouse SQL produced by the transpiler.
+query_id="${CLICKHOUSE_DATABASE}_04512_log"
+$CLICKHOUSE_CLIENT $POLY --query_id="$query_id" -q "INSERT INTO b VALUES (true)"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+echo "--- query_log keeps the original, untranspiled query text (expect: INSERT INTO b VALUES (true)) ---"
+$CLICKHOUSE_CLIENT -q "SELECT query FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()"
+
 # Multi-statement input is still rejected in polyglot dialect.
 $CLICKHOUSE_CLIENT $POLY -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 "SYNTAX_ERROR"
 

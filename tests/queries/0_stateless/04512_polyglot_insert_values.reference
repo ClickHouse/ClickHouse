@@ -4,6 +4,8 @@
 100	5
 --- boolean transpile (expect: 1 2) ---
 1	2
+--- query_log keeps the original, untranspiled query text (expect: INSERT INTO b VALUES (true)) ---
+INSERT INTO b VALUES (true)
 SYNTAX_ERROR
 SYNTAX_ERROR
 --- no partial insert after rejected multi-statement (expect: 100 5) ---
