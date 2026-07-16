@@ -563,7 +563,7 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndNam
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
-    void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
+    bool add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard g(rw_lock);
         auto & filter = filters_by_name[key];
@@ -579,6 +579,7 @@ public:
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
         filter->finishInsert();
+        return filter->isReady();
     }
 
     void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override

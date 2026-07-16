@@ -55,7 +55,13 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
+    /// True after all build streams merged their parts of the filter (see filters_to_merge).
+    bool isReady() const { return inserts_are_finished.load(); }
+
     /// The exact distinct key values collected from the build side, as a single column.
+    /// Null when unavailable (e.g. the exact set overflowed into a bloom filter, or the
+    /// filter is negated and cannot be used as a positive predicate). Call only on a ready
+    /// filter (see isReady).
     virtual ColumnPtr getRecordedKeyValues() const { return nullptr; }
 
     /// A closed [min, max] envelope of the values inserted into the filter, if one can be computed
@@ -358,7 +364,9 @@ struct IRuntimeFilterLookup : boost::noncopyable
 
     /// Add a runtime filter under the given rendezvous key. `display_name` is the readable structural
     /// id kept only for logging; the lookup is keyed by `key`.
-    virtual void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+    /// Returns true if this call completed the filter, i.e. it merged the last missing part
+    /// and the filter became ready (see IRuntimeFilter::isReady).
+    virtual bool add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
     /// Used by HashJoin to install a SharedFixedHashTableRuntimeFilter that supersedes the
