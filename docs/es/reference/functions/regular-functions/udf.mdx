@@ -1,0 +1,534 @@
+---
+description: 'Documentación de las funciones definidas por el usuario (UDFs)'
+sidebarTitle: 'UDF'
+slug: /sql-reference/functions/udf
+title: 'Funciones definidas por el usuario (UDFs)'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="udfs-user-defined-functions">
+  # UDFs Funciones definidas por el usuario
+</div>
+
+ClickHouse admite varios tipos de funciones definidas por el usuario (UDFs):
+
+* [Executable UDFs](#executable-user-defined-functions) inician un programa o script externo (Python, Bash, etc.) y envían bloques de datos a través de STDIN / STDOUT. Úselas para integrar código o herramientas existentes sin recompilar ClickHouse. Tienen una mayor sobrecarga por llamada en comparación con las opciones dentro del proceso y son más adecuadas para lógica más pesada o cuando se requiere un entorno de ejecución diferente.
+* [SQL UDFs](#sql-user-defined-functions) se definen con `CREATE FUNCTION` únicamente en SQL. Se insertan o expanden en el plan de consulta (sin cambiar de proceso), lo que las hace ligeras e ideales para reutilizar lógica de expresiones o simplificar columnas calculadas complejas.
+* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) ejecutan código compilado en WebAssembly dentro de un entorno aislado en el proceso del servidor. Ofrecen una menor sobrecarga por llamada que los ejecutables externos, con mejor aislamiento que las extensiones nativas, lo que las hace adecuadas para algoritmos personalizados escritos en lenguajes que pueden compilarse a WASM (p. ej., C/C++/Rust).
+
+<div id="executable-user-defined-functions">
+  ## Funciones ejecutables definidas por el usuario
+</div>
+
+<PrivatePreviewBadge />
+
+<Note>
+  Esta funcionalidad está disponible en vista previa privada en ClickHouse Cloud.
+  Póngase en contacto con soporte de ClickHouse en https://clickhouse.cloud/support para obtener acceso.
+</Note>
+
+ClickHouse puede invocar cualquier programa ejecutable externo o script para procesar datos.
+
+La configuración de las funciones ejecutables definidas por el usuario puede encontrarse en uno o varios archivos XML.
+La ruta de la configuración se especifica en el parámetro [`user_defined_executable_functions_config`](/es/reference/settings/server-settings/settings#user_defined_executable_functions_config).
+
+La configuración de una función contiene las siguientes opciones:
+
+| Parámetro                     | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Obligatorio | Valor predeterminado      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------- |
+| `name`                        | Nombre de la función                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sí          | -                         |
+| `command`                     | Nombre del script que se debe ejecutar, o comando si `execute_direct` es false                                                                                                                                                                                                                                                                                                                                                                                                | Sí          | -                         |
+| `argument`                    | Descripción del argumento con el `type` y, opcionalmente, el `name` del argumento. Cada argumento se describe en un ajuste independiente. Es necesario especificar el nombre si los nombres de los argumentos forman parte de la serialización en un formato de función definida por el usuario como [Native](/es/reference/formats/Native) o [JSONEachRow](/es/reference/formats/JSON/JSONEachRow)                                                                                 | Sí          | `c` + argument&#95;number |
+| `format`                      | Un [formato](/es/reference/formats/index) en el que se pasan los argumentos al comando. Se espera que la salida del comando también use el mismo formato                                                                                                                                                                                                                                                                                                                         | Sí          | -                         |
+| `return_type`                 | El tipo del valor devuelto                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Sí          | -                         |
+| `return_name`                 | Nombre del valor devuelto. Es necesario especificar el nombre de retorno si forma parte de la serialización en un formato de función definida por el usuario como [Native](/es/reference/formats/Native) o [JSONEachRow](/es/reference/formats/JSON/JSONEachRow)                                                                                                                                                                                                                    | Opcional    | `result`                  |
+| `type`                        | Un tipo ejecutable. Si `type` está establecido en `executable`, se inicia un único comando. Si está establecido en `executable_pool`, se crea un pool de comandos                                                                                                                                                                                                                                                                                                             | Sí          | -                         |
+| `max_command_execution_time`  | Tiempo máximo de ejecución, en segundos, para procesar un bloque de datos. Este ajuste solo es válido para comandos `executable_pool`                                                                                                                                                                                                                                                                                                                                         | Opcional    | `10`                      |
+| `command_termination_timeout` | Tiempo, en segundos, durante el cual un comando debe finalizar después de que se cierre su pipe. Transcurrido ese tiempo, se envía `SIGTERM` al proceso que ejecuta el comando                                                                                                                                                                                                                                                                                                | Opcional    | `10`                      |
+| `command_read_timeout`        | Tiempo de espera para leer datos del stdout del comando, en milisegundos                                                                                                                                                                                                                                                                                                                                                                                                      | Opcional    | `10000`                   |
+| `command_write_timeout`       | Tiempo de espera para escribir datos en el stdin del comando, en milisegundos                                                                                                                                                                                                                                                                                                                                                                                                 | Opcional    | `10000`                   |
+| `pool_size`                   | Tamaño del pool de comandos                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Opcional    | `16`                      |
+| `send_chunk_header`           | Controla si se debe enviar el recuento de filas antes de enviar un fragmento de datos al proceso                                                                                                                                                                                                                                                                                                                                                                              | Opcional    | `false`                   |
+| `execute_direct`              | Si `execute_direct` = `1`, `command` se buscará dentro de la carpeta user&#95;scripts especificada por [user&#95;scripts&#95;path](/es/reference/settings/server-settings/settings#user_scripts_path). Se pueden especificar argumentos adicionales del script usando espacios en blanco como separador. Ejemplo: `script_name arg1 arg2`. Si `execute_direct` = `0`, `command` se pasa como argumento a `bin/sh -c`                                                             | Opcional    | `1`                       |
+| `lifetime`                    | Intervalo de recarga de una función, en segundos. Si está establecido en `0`, la función no se recarga                                                                                                                                                                                                                                                                                                                                                                        | Opcional    | `0`                       |
+| `deterministic`               | Si la función es determinista (devuelve el mismo resultado para la misma entrada)                                                                                                                                                                                                                                                                                                                                                                                             | Opcional    | `false`                   |
+| `stderr_reaction`             | Cómo manejar la salida de stderr del comando. Valores: `none` (ignorar), `log` (registrar inmediatamente todo stderr), `log_first` (registrar los primeros 4 KiB después de finalizar), `log_last` (registrar los últimos 4 KiB después de finalizar), `throw` (lanzar una excepción inmediatamente ante cualquier salida en stderr). Al usar `log_first` o `log_last` con un código de salida distinto de cero, el contenido de stderr se incluye en el mensaje de excepción | Opcional    | `log_last`                |
+| `check_exit_code`             | Si es true, ClickHouse comprobará el código de salida del comando. Un código de salida distinto de cero provoca una excepción                                                                                                                                                                                                                                                                                                                                                 | Opcional    | `true`                    |
+
+El comando debe leer los argumentos desde `STDIN` y escribir el resultado en `STDOUT`. El comando debe procesar los argumentos de forma iterativa. Es decir, después de procesar un fragmento de argumentos, debe esperar al siguiente fragmento.
+
+<div id="executable-user-defined-functions">
+  ## Funciones ejecutables definidas por el usuario
+</div>
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+<div id="udf-inline">
+  ### UDF a partir de un script inline
+</div>
+
+Cree `test_function_sum` manualmente, estableciendo `execute_direct` en `0` mediante una configuración XML o YAML.
+
+<Tabs>
+  <Tab title="XML">
+    Archivo `test_function.xml` (`/etc/clickhouse-server/test_function.xml` con la configuración de rutas predeterminada).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum</name>
+            <return_type>UInt64</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>lhs</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>rhs</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+            <execute_direct>0</execute_direct>
+            <deterministic>true</deterministic>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    Archivo `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` con la configuración de rutas predeterminada).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum
+      return_type: UInt64
+      argument:
+        - type: UInt64
+          name: lhs
+        - type: UInt64
+          name: rhs
+      format: TabSeparated
+      command: 'cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure ''x UInt64, y UInt64'' --query "SELECT x + y FROM table"'
+      execute_direct: 0
+      deterministic: true
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+```sql title="Query"
+SELECT test_function_sum(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum(2, 2)─┐
+│                       4 │
+└─────────────────────────┘
+```
+
+<div id="udf-python">
+  ### UDF a partir de un script de Python
+</div>
+
+En este ejemplo, creamos una UDF que lee un valor de `STDIN` y lo devuelve como una cadena.
+
+Cree `test_function` mediante una configuración XML o YAML.
+
+<Tabs>
+  <Tab title="XML">
+    Archivo `test_function.xml` (`/etc/clickhouse-server/test_function.xml` con la ruta predeterminada).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    Archivo `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` con la ruta predeterminada).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_python
+      return_type: String
+      argument:
+        - type: UInt64
+          name: value
+      format: TabSeparated
+      command: test_function.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Cree el archivo de script `test_function.py` dentro de la carpeta `user_scripts` (`/var/lib/clickhouse/user_scripts/test_function.py` con la ruta predeterminada).
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        print("Value " + line, end='')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_python(toUInt64(2));
+```
+
+```text title="Result"
+┌─test_function_python(2)─┐
+│ Value 2                 │
+└─────────────────────────┘
+```
+
+<div id="udf-stdin">
+  ### Leer dos valores de `STDIN` y devolver su suma como un objeto JSON
+</div>
+
+Cree `test_function_sum_json` con argumentos con nombre y el formato [JSONEachRow](/es/reference/formats/JSON/JSONEachRow) mediante configuración XML o YAML.
+
+<Tabs>
+  <Tab title="XML">
+    Archivo `test_function.xml` (`/etc/clickhouse-server/test_function.xml` con la ruta predeterminada).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum_json</name>
+            <return_type>UInt64</return_type>
+            <return_name>result_name</return_name>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_1</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_2</name>
+            </argument>
+            <format>JSONEachRow</format>
+            <command>test_function_sum_json.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    Archivo `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` con la ruta predeterminada).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum_json
+      return_type: UInt64
+      return_name: result_name
+      argument:
+        - type: UInt64
+          name: argument_1
+        - type: UInt64
+          name: argument_2
+      format: JSONEachRow
+      command: test_function_sum_json.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Cree el archivo de script `test_function_sum_json.py` dentro de la carpeta `user_scripts` (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` con la ruta predeterminada).
+
+```python
+#!/usr/bin/python3
+
+import sys
+import json
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        value = json.loads(line)
+        first_arg = int(value['argument_1'])
+        second_arg = int(value['argument_2'])
+        result = {'result_name': first_arg + second_arg}
+        print(json.dumps(result), end='\n')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_sum_json(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum_json(2, 2)─┐
+│                            4 │
+└──────────────────────────────┘
+```
+
+<div id="udf-parameters-in-command">
+  ### Usar parámetros en la opción `command`
+</div>
+
+Las funciones definidas por el usuario ejecutables pueden aceptar parámetros constantes configurados en la opción `command` (esto solo funciona para funciones definidas por el usuario de tipo `executable`).
+También requiere la opción `execute_direct` para garantizar que no exista ninguna vulnerabilidad por expansión de argumentos del shell.
+
+<Tabs>
+  <Tab title="XML">
+    Archivo `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` con la ruta predeterminada).
+
+    ```xml title="/etc/clickhouse-server/test_function_parameter_python.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <execute_direct>true</execute_direct>
+            <name>test_function_parameter_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    Archivo `test_function_parameter_python.yaml` (`/etc/clickhouse-server/test_function_parameter_python.yaml` con la ruta predeterminada).
+
+    ```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
+    functions:
+      type: executable
+      execute_direct: true
+      name: test_function_parameter_python
+      return_type: String
+      argument:
+        - type: UInt64
+      format: TabSeparated
+      command: test_function_parameter_python.py {test_parameter:UInt64}
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Cree el archivo de script `test_function_parameter_python.py` dentro de la carpeta `user_scripts` (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` con la ruta predeterminada).
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_parameter_python(1)(2);
+```
+
+```text title="Result"
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
+<div id="udf-shell-script">
+  ### UDF desde un script de shell
+</div>
+
+En este ejemplo, creamos un script de shell que multiplica cada valor por 2.
+
+<Tabs>
+  <Tab title="XML">
+    Archivo `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml` con la ruta predeterminada).
+
+    ```xml title="/etc/clickhouse-server/test_function_shell.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_shell</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt8</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_shell.sh</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    Archivo `test_function_shell.yaml` (`/etc/clickhouse-server/test_function_shell.yaml` con la ruta predeterminada).
+
+    ```yml title="/etc/clickhouse-server/test_function_shell.yaml"
+    functions:
+      type: executable
+      name: test_shell
+      return_type: String
+      argument:
+        - type: UInt8
+          name: value
+      format: TabSeparated
+      command: test_shell.sh
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Cree el archivo de script `test_shell.sh` dentro de la carpeta `user_scripts` (`/var/lib/clickhouse/user_scripts/test_shell.sh` con la ruta predeterminada).
+
+```bash title="/var/lib/clickhouse/user_scripts/test_shell.sh"
+#!/bin/bash
+
+while read read_data;
+    do printf "$(expr $read_data \* 2)\n";
+done
+```
+
+```sql title="Query"
+SELECT test_shell(number) FROM numbers(10);
+```
+
+```text title="Result"
+    ┌─test_shell(number)─┐
+ 1. │ 0                  │
+ 2. │ 2                  │
+ 3. │ 4                  │
+ 4. │ 6                  │
+ 5. │ 8                  │
+ 6. │ 10                 │
+ 7. │ 12                 │
+ 8. │ 14                 │
+ 9. │ 16                 │
+10. │ 18                 │
+    └────────────────────┘
+```
+
+<div id="error-handling">
+  ## Manejo de errores
+</div>
+
+Algunas funciones pueden lanzar una excepción si los datos no son válidos.
+En ese caso, la consulta se cancela y se devuelve un mensaje de error al cliente.
+En el procesamiento distribuido, cuando se produce una excepción en uno de los servidores, los demás servidores también intentan cancelar la consulta.
+
+<div id="evaluation-of-argument-expressions">
+  ## Evaluación de las expresiones de los argumentos
+</div>
+
+En casi todos los lenguajes de programación, puede que uno de los argumentos no se evalúe para ciertos operadores.
+Normalmente, se trata de los operadores `&&`, `||` y `?:`.
+En ClickHouse, los argumentos de las funciones (operadores) siempre se evalúan.
+Esto se debe a que se evalúan partes enteras de las columnas de una sola vez, en lugar de calcular cada fila por separado.
+
+<div id="performing-functions-for-distributed-query-processing">
+  ## Ejecución de funciones para el procesamiento distribuido de consultas
+</div>
+
+En el procesamiento distribuido de consultas, se realizan en servidores remotos tantas etapas del procesamiento de la consulta como sea posible, y el resto de las etapas (la fusión de resultados intermedios y todo lo posterior) se realiza en el servidor solicitante.
+
+Esto significa que las funciones pueden ejecutarse en distintos servidores.
+Por ejemplo, en la consulta `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
+
+* si una `distributed_table` tiene al menos dos segmentos, las funciones &#39;g&#39; y &#39;h&#39; se ejecutan en servidores remotos, y la función &#39;f&#39; se ejecuta en el servidor solicitante.
+* si una `distributed_table` tiene solo un segmento, todas las funciones &#39;f&#39;, &#39;g&#39; y &#39;h&#39; se ejecutan en el servidor de ese segmento.
+
+El resultado de una función normalmente no depende del servidor en el que se ejecute. Sin embargo, a veces esto sí es importante.
+Por ejemplo, las funciones que trabajan con diccionarios usan el diccionario que existe en el servidor en el que se están ejecutando.
+Otro ejemplo es la función `hostName`, que devuelve el nombre del servidor en el que se está ejecutando, para poder hacer `GROUP BY` por servidores en una consulta `SELECT`.
+
+Si una función de una consulta se ejecuta en el servidor solicitante, pero necesita ejecutarla en servidores remotos, puede envolverla en una función de agregación &#39;any&#39; o añadirla a una clave de `GROUP BY`.
+
+<div id="sql-user-defined-functions">
+  ## Funciones SQL definidas por el usuario
+</div>
+
+Las funciones personalizadas a partir de expresiones lambda se pueden crear mediante la [sentencia CREATE FUNCTION](/es/reference/statements/create/function). Para eliminar estas funciones, utilice la [sentencia DROP FUNCTION](/es/reference/statements/drop#drop-function).
+
+<div id="webassembly-user-defined-functions">
+  ## Funciones definidas por el usuario de WebAssembly
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+Las funciones definidas por el usuario (UDFs) de WebAssembly (WASM) permiten ejecutar código personalizado compilado a WebAssembly dentro del proceso del servidor de ClickHouse.
+
+<div id="quick-start">
+  ### Inicio rápido
+</div>
+
+Habilite la compatibilidad experimental con WebAssembly en la configuración de ClickHouse:
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+</clickhouse>
+```
+
+Inserte el módulo WASM compilado en la tabla del sistema:
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+Cree una función con su módulo WASM:
+
+```sql
+CREATE FUNCTION my_function
+LANGUAGE WASM
+ABI ROW_DIRECT
+FROM 'my_module'
+ARGUMENTS (x UInt32, y UInt32)
+RETURNS UInt32;
+```
+
+Utilice la función en sus consultas:
+
+```sql
+SELECT my_function(10, 20);
+```
+
+<div id="more-information">
+  ### Más información
+</div>
+
+Consulta la documentación sobre [funciones definidas por el usuario de WebAssembly](/es/reference/functions/regular-functions/wasm_udf) para más información.
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* [Funciones definidas por el usuario en ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

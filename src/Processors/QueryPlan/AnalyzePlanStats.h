@@ -57,7 +57,7 @@ public:
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
 private:
-    void collectIoStats(const Processors & processors);
+    void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
 

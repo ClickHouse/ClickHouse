@@ -130,8 +130,6 @@ protected:
 
 public:
 
-    static constexpr size_t MAX_STEP_GROUPS = 8;
-
     IProcessor();
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_);
@@ -218,12 +216,15 @@ public:
       */
     virtual int schedule();
 
-    /** This method is similar to schedule() but also returns epoll events mask
+    /** This method is similar to schedule() but also returns epoll events mask and an optional timeout.
       * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
       * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
+      *
+      * The third element is a timeout in milliseconds. If non-negative, the processor will be re-dispatched after
+      * the timeout even when the fd has not become readable. A value of -1 means "no timeout" (block until fd fires).
       */
-#ifdef OS_LINUX
-    virtual std::pair<int, uint32_t> scheduleForEvent();
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    virtual std::tuple<int, uint32_t, Int64> scheduleForEvent();
 #endif
 
     /* The method is called right after asynchronous job is done
@@ -322,10 +323,6 @@ public:
     const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
-    /// Once processor can belong to multiple groups
-    /// see AggregatingTransform as an example
-    UInt64 getElapsedNs(size_t group) const;
-    void addElapsedNs(size_t group, UInt64 ns);
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
 
@@ -425,8 +422,6 @@ protected:
     bool spillable = false;
 
 private:
-    void checkGroup(size_t group) const;
-
     /// For:
     /// - elapsed_ns
     friend class ExecutionThreadContext;
@@ -443,9 +438,6 @@ private:
     uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
     uint64_t output_wait_elapsed_ns = 0;
-    /// One processor can perform work for multiple groups
-    /// see AggregatingTranform as an example
-    std::array<UInt64, MAX_STEP_GROUPS> elapsed_by_group{};
 
     size_t stream_number = NO_STREAM;
 

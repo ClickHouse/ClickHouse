@@ -1,0 +1,90 @@
+---
+alias: []
+description: 'Documentation sur le format RowBinaryWithNamesAndTypesAndDefaults'
+input_format: true
+keywords: ['RowBinaryWithNamesAndTypesAndDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithNamesAndTypesAndDefaults
+title: 'RowBinaryWithNamesAndTypesAndDefaults'
+doc_type: 'référence'
+---
+
+import RowBinaryFormatSettings from '/snippets/fr/common-row-binary-format-settings.mdx';
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✗      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Semblable au format [`RowBinaryWithNamesAndTypes`](/fr/reference/formats/RowBinary/RowBinaryWithNamesAndTypes), mais avec un octet supplémentaire avant chaque cellule indiquant si la valeur `DEFAULT` de la colonne doit être utilisée — exactement comme dans le format [`RowBinaryWithDefaults`](/fr/reference/formats/RowBinary/RowBinaryWithDefaults). Cette combinaison prend en charge les `INSERT` avec évolution du schéma : l&#39;émetteur peut omettre des colonnes de l&#39;en-tête (elles reçoivent alors la valeur `DEFAULT` de la colonne cible) et, pour chaque colonne qu&#39;il envoie, il peut marquer certaines cellules comme « utiliser la valeur `DEFAULT` de la colonne » sans confondre cela avec `NULL`.
+
+Ce format est pris en charge uniquement en entrée.
+
+<div id="wire-format">
+  ## Format de transmission
+</div>
+
+L’en-tête est identique à [`RowBinaryWithNamesAndTypes`](/fr/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) :
+
+1. Un `VarUInt` indiquant le nombre de colonnes `N`.
+2. `N` `String` précédées de leur longueur, contenant les noms de colonnes.
+3. `N` types de colonnes — soit des noms textuels, soit un encodage binaire compact, selon les paramètres `output_format_binary_encode_types_in_binary_format` / `input_format_binary_decode_types_in_binary_format`.
+
+Après l’en-tête, chaque ligne se compose de `N` cellules. Pour chaque cellule :
+
+* Un unique octet marqueur `UInt8`.
+  * `0x01` — utilise l’expression `DEFAULT` de la colonne cible. Aucun octet de valeur ne suit.
+  * `0x00` — une valeur suit, sérialisée avec le sérialiseur `RowBinary` du type de colonne. Pour `Nullable(T)`, les octets de valeur commencent par l’octet NULL de `Nullable` (`0` pour non-NULL, `1` pour NULL), puis par la valeur interne si elle n’est pas NULL.
+
+<div id="defaults-vs-null">
+  ## Valeurs par défaut vs NULL
+</div>
+
+Le marqueur de valeur par cellule et l’octet NULL intégré à `Nullable` sont indépendants. Une colonne `Nullable(UInt32) DEFAULT 42` peut être envoyée de trois façons différentes pour chaque ligne :
+
+| Octets    | Signification                                         |
+| --------- | ----------------------------------------------------- |
+| `01`      | Utiliser `DEFAULT 42`.                                |
+| `00 01`   | Chemin de valeur, puis `NULL` via le type `Nullable`. |
+| `00 00 …` | Chemin de valeur, puis une valeur interne non nulle.  |
+
+<div id="schema-evolution">
+  ## Évolution du schéma
+</div>
+
+| Cas                                                              | Comportement                                                                                                                                                                              |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Colonne entièrement absente de l’en-tête du fichier              | Remplie dans la cible via `insertDefaultsForNotSeenColumns` ; contrôlée par `defaults_for_omitted_fields`.                                                                                |
+| Colonne présente dans l’en-tête, marqueur de cellule `0x01`      | `insertDefault` pour chaque ligne.                                                                                                                                                        |
+| Colonne présente dans l’en-tête, marqueur de cellule `0x00`      | La valeur est parsée normalement.                                                                                                                                                         |
+| Colonne supplémentaire dans l’en-tête, absente de la table cible | Ignorée silencieusement lorsque `input_format_skip_unknown_fields = 1` (le marqueur est d’abord consommé ; si `0x01`, rien d’autre ; si `0x00`, la valeur typée est parsée puis ignorée). |
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+```sql title="Query"
+SELECT * FROM format(
+    'RowBinaryWithNamesAndTypesAndDefaults',
+    'x Nullable(UInt32) DEFAULT 42',
+    unhex('01' || '0178' || '10' || hex('Nullable(UInt32)') || '01')
+);
+```
+
+```response title="Response"
+┌──x─┐
+│ 42 │
+└────┘
+```
+
+* L’en-tête comprend une colonne nommée `x` de type `Nullable(UInt32)`.
+* L’unique cellule utilise le marqueur `0x01`, ce qui signifie &quot;utiliser `DEFAULT 42`&quot;.
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+<RowBinaryFormatSettings />

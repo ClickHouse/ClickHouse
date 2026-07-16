@@ -31,6 +31,7 @@ ${CLICKHOUSE_CLIENT} --user u04409 --send_logs_level=none -q "EXPLAIN ANALYZE SE
 # second is rejected.
 echo "first non-exempt EXPLAIN ANALYZE:"
 ${CLICKHOUSE_CLIENT} --user u04409 --send_logs_level=none -q "EXPLAIN ANALYZE SELECT number FROM numbers(1)" 2>&1 | grep -o 'QUOTA_EXCEEDED'
+echo "non-exempt query exit code: ${PIPESTATUS[0]}"
 echo "second non-exempt EXPLAIN ANALYZE:"
 ${CLICKHOUSE_CLIENT} --user u04409 --send_logs_level=none -q "EXPLAIN ANALYZE SELECT number FROM numbers(1)" 2>&1 | grep -o 'QUOTA_EXCEEDED'
 

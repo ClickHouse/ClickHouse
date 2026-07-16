@@ -30,10 +30,11 @@ FROM (EXPLAIN ANALYZE
     FROM (SELECT number AS a FROM numbers(1000)) AS t1
     INNER JOIN (SELECT number AS a FROM numbers(1000)) AS t2 ON t1.a = t2.a);
 
--- Aggregating: grouping and merging stages are annotated.
+-- Aggregating is two-stage: the AggregatingTransform's own partial-aggregation stage and the
+-- final-aggregation stage of the merge processors it generates.
 SELECT
-    countIf(explain LIKE '%(grouping): time%') >= 1,
-    countIf(explain LIKE '%(merging): time%') >= 1
+    countIf(explain LIKE '%(partial aggregation): time%') >= 1,
+    countIf(explain LIKE '%(final aggregation): time%') >= 1
 FROM (EXPLAIN ANALYZE
     SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
 

@@ -106,8 +106,17 @@ bool ExecutionThreadContext::executeTask()
         /// and are not attributed to any query plan step, so there is no clock for them.
         if (const auto * step = node->processor()->getQueryPlanStep())
         {
-            clock = step_to_wall_clock_registry->find(step, group);
-            chassert(clock);
+            auto & cached_clock = node->cached_clock;
+            /// We will search in the registry only initially or when the group of the processor changed
+            if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
+                cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+
+            clock = cached_clock.wall_clock_ptr;
+            /// A processor can carry a query plan step that is not part of the plan walked by
+            /// `populateFromPlan`, so `find` legitimately returns null. This happens for processors
+            /// added at run time by `expandPipeline` (lazy reads, streaming reads, external sort, ...):
+            /// such a processor may be built from a transient nested query plan and keep that plan's
+            /// step even after the nested plan is destroyed. We simply do not time these processors.
             if (clock)
                 clock->onEnter();
         }
@@ -136,8 +145,6 @@ bool ExecutionThreadContext::executeTask()
     {
         elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
-        /// Once processor can be in two groups. See AggregatingTransform as an example
-        node->processor()->addElapsedNs(group, elapsed_ns);
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }

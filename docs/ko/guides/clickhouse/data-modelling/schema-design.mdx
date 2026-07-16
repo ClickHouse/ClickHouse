@@ -1,0 +1,373 @@
+---
+slug: /data-modeling/schema-design
+title: '스키마 설계'
+description: '쿼리 성능을 위한 ClickHouse 스키마 최적화'
+keywords: ['스키마', '스키마 설계', '쿼리 최적화']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+효과적인 스키마 설계를 이해하는 것은 ClickHouse 성능을 최적화하는 데 핵심적이며, 이를 위해서는 흔히 상충 관계가 있는 선택을 해야 합니다. 최적의 접근 방식은 처리할 쿼리뿐 아니라 데이터 업데이트 빈도, 지연 시간 요구 사항, 데이터 양과 같은 요소에 따라 달라집니다. 이 가이드는 ClickHouse 성능 최적화를 위한 스키마 설계 모범 사례와 데이터 모델링 기법을 개괄적으로 소개합니다.
+
+<div id="stack-overflow-dataset">
+  ## Stack Overflow 데이터셋
+</div>
+
+이 가이드의 예시에서는 Stack Overflow 데이터셋의 일부를 사용합니다. 여기에는 2008년부터 2024년 4월까지 Stack Overflow에서 생성된 모든 게시물, 투표, 사용자, 댓글, 배지 데이터가 포함됩니다. 이 데이터는 아래 스키마에 따라 S3 버킷 `s3://datasets-documentation/stackoverflow/parquet/`에서 Parquet 포맷으로 제공됩니다:
+
+> 표시된 기본 키와 관계는 제약 조건으로 강제되지 않으며(Parquet는 테이블 포맷이 아니라 파일 포맷임), 데이터가 어떻게 서로 연결되는지와 어떤 고유 키를 가지는지만 보여줍니다.
+
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow 스키마" />
+
+<br />
+
+Stack Overflow 데이터셋에는 서로 연관된 여러 테이블이 포함되어 있습니다. 데이터 모델링 작업을 수행할 때는 먼저 프라이머리 테이블을 로드하는 데 집중하는 것이 좋습니다. 이 테이블이 반드시 가장 큰 테이블일 필요는 없으며, 오히려 대부분의 분석 쿼리가 수행될 것으로 예상되는 테이블입니다. 이렇게 하면 ClickHouse의 주요 개념과 타입에 익숙해질 수 있으며, 특히 주로 OLTP 환경을 사용해 온 경우 더욱 중요합니다. 이후 추가 테이블을 더해 ClickHouse 기능을 최대한 활용하고 최적의 성능을 얻으려면 이 테이블을 다시 모델링해야 할 수도 있습니다.
+
+위 스키마는 이 가이드의 목적에 맞게 의도적으로 최적화하지 않았습니다.
+
+<div id="establish-initial-schema">
+  ## 초기 스키마 설정
+</div>
+
+`posts` 테이블은 대부분의 분석 쿼리의 대상이 되므로, 이 테이블의 스키마를 설정하는 데 중점을 둡니다. 이 데이터는 공개 S3 버킷 `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet`에서 제공되며, 연도별로 파일이 하나씩 있습니다.
+
+> S3에서 Parquet 포맷으로 데이터를 로드하는 것은 ClickHouse에 데이터를 적재하는 가장 일반적이고 권장되는 방법입니다. ClickHouse는 Parquet 처리에 최적화되어 있어, 초당 S3에서 수천만 개의 행을 읽고 삽입할 수 있습니다.
+
+ClickHouse는 데이터셋의 타입을 자동으로 식별하는 스키마 추론 기능을 제공합니다. 이 기능은 Parquet를 포함한 모든 데이터 포맷에서 지원됩니다. 이 기능을 활용하면 s3 테이블 함수와 [`DESCRIBE`](/ko/reference/statements/describe-table) 명령을 통해 데이터의 ClickHouse 타입을 식별할 수 있습니다. 아래 예시에서는 `stackoverflow/parquet/posts` 폴더의 모든 파일을 읽기 위해 글롭 패턴 `*.parquet`를 사용합니다.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name──────────────────┬─type───────────────────────────┐
+│ Id                    │ Nullable(Int64)               │
+│ PostTypeId            │ Nullable(Int64)               │
+│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ Score                 │ Nullable(Int64)               │
+│ ViewCount             │ Nullable(Int64)               │
+│ Body                  │ Nullable(String)              │
+│ OwnerUserId           │ Nullable(Int64)               │
+│ OwnerDisplayName      │ Nullable(String)              │
+│ LastEditorUserId      │ Nullable(Int64)               │
+│ LastEditorDisplayName │ Nullable(String)              │
+│ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
+│ Title                 │ Nullable(String)              │
+│ Tags                  │ Nullable(String)              │
+│ AnswerCount           │ Nullable(Int64)               │
+│ CommentCount          │ Nullable(Int64)               │
+│ FavoriteCount         │ Nullable(Int64)               │
+│ ContentLicense        │ Nullable(String)              │
+│ ParentId              │ Nullable(String)              │
+│ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
+│ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
+└───────────────────────┴────────────────────────────────┘
+```
+
+> [S3 테이블 함수](/ko/reference/functions/table-functions/s3)를 사용하면 S3에 있는 데이터를 ClickHouse에서 별도 적재 없이 직접 쿼리할 수 있습니다. 이 함수는 ClickHouse가 지원하는 모든 파일 포맷과 호환됩니다.
+
+이렇게 하면 아직 최적화되지 않은 초기 스키마를 얻을 수 있습니다. 기본적으로 ClickHouse는 이를 해당하는 널 허용 타입으로 매핑합니다. 간단한 `CREATE EMPTY AS SELECT` 명령으로 이러한 타입을 사용하는 ClickHouse 테이블을 생성할 수 있습니다.
+
+```sql
+CREATE TABLE posts
+ENGINE = MergeTree
+ORDER BY () EMPTY AS
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+몇 가지 중요한 사항이 있습니다:
+
+이 명령을 실행한 후에도 posts 테이블은 비어 있습니다. 아직 로드된 데이터는 없습니다.
+테이블 엔진으로 MergeTree를 지정했습니다. MergeTree는 가장 일반적으로 사용되는 ClickHouse 테이블 엔진이며, 실제로도 가장 자주 사용하게 될 가능성이 높습니다. ClickHouse에서 다양한 용도로 활용할 수 있는 만능 도구와 같은 엔진으로, PB 규모의 데이터를 처리할 수 있고 대부분의 분석 사용 사례에 적합합니다. 이와 별도로, 효율적인 업데이트를 지원해야 하는 CDC 같은 사용 사례를 위한 다른 테이블 엔진도 있습니다.
+
+`ORDER BY ()` 절은 인덱스가 없다는 뜻이며, 더 정확히는 데이터에 정렬 순서가 없다는 의미입니다. 이에 대해서는 뒤에서 더 설명하겠습니다. 지금은 모든 쿼리에 선형 스캔이 필요하다는 점만 알아두면 됩니다.
+
+테이블이 생성되었는지 확인하려면:
+
+```sql
+SHOW CREATE TABLE posts
+
+CREATE TABLE posts
+(
+        `Id` Nullable(Int64),
+        `PostTypeId` Nullable(Int64),
+        `AcceptedAnswerId` Nullable(Int64),
+        `CreationDate` Nullable(DateTime64(3, 'UTC')),
+        `Score` Nullable(Int64),
+        `ViewCount` Nullable(Int64),
+        `Body` Nullable(String),
+        `OwnerUserId` Nullable(Int64),
+        `OwnerDisplayName` Nullable(String),
+        `LastEditorUserId` Nullable(Int64),
+        `LastEditorDisplayName` Nullable(String),
+        `LastEditDate` Nullable(DateTime64(3, 'UTC')),
+        `LastActivityDate` Nullable(DateTime64(3, 'UTC')),
+        `Title` Nullable(String),
+        `Tags` Nullable(String),
+        `AnswerCount` Nullable(Int64),
+        `CommentCount` Nullable(Int64),
+        `FavoriteCount` Nullable(Int64),
+        `ContentLicense` Nullable(String),
+        `ParentId` Nullable(String),
+        `CommunityOwnedDate` Nullable(DateTime64(3, 'UTC')),
+        `ClosedDate` Nullable(DateTime64(3, 'UTC'))
+)
+ENGINE = MergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY tuple()
+```
+
+초기 스키마가 정의되었으므로, 이제 S3 테이블 함수를 사용해 데이터를 읽고 `INSERT INTO SELECT`로 데이터를 적재할 수 있습니다. 다음 예시는 8코어 ClickHouse Cloud 인스턴스에서 약 2분 만에 `posts` 데이터를 적재합니다.
+
+```sql
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 148.140 sec. Processed 59.82 million rows, 38.07 GB (403.80 thousand rows/s., 257.00 MB/s.)
+```
+
+> 위 쿼리는 6천만 개의 행을 로드합니다. ClickHouse에서는 작은 규모이지만, 인터넷 연결이 느린 경우 데이터의 일부만 로드하는 편이 나을 수 있습니다. 이는 로드할 연도를 글롭 패턴으로 지정하면 간단히 구현할 수 있습니다. 예: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` 또는 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet`. 글롭 패턴을 사용해 파일의 일부 집합을 지정하는 방법은 [여기](/ko/reference/functions/table-functions/file#globs-in-path)를 참조하십시오.
+
+<div id="optimizing-types">
+  ## 타입 최적화
+</div>
+
+ClickHouse 쿼리 성능의 핵심 요소 중 하나는 압축입니다.
+
+디스크에 저장되는 데이터가 적을수록 I/O가 줄어들고, 그만큼 쿼리와 삽입이 더 빨라집니다. 대부분의 경우 압축 알고리즘이 CPU에 유발하는 오버헤드는 I/O 감소로 얻는 이점보다 작습니다. 따라서 ClickHouse 쿼리를 빠르게 유지하려면 먼저 데이터 압축을 개선하는 데 집중해야 합니다.
+
+> ClickHouse가 데이터를 매우 효율적으로 압축하는 이유는 [이 글](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)을 참고하십시오. 요약하면, ClickHouse는 컬럼 지향 데이터베이스이므로 값이 컬럼 순서대로 기록됩니다. 이 값들이 정렬되어 있으면 동일한 값들이 서로 인접하게 배치됩니다. 압축 알고리즘은 이러한 연속적인 데이터 패턴을 활용합니다. 여기에 더해 ClickHouse는 코덱과 세분화된 데이터 타입을 제공하므로 압축 방식을 더 세밀하게 조정할 수 있습니다.
+
+ClickHouse의 압축 효율은 3가지 주요 요소의 영향을 받습니다. 정렬 키, 데이터 타입, 그리고 사용하는 코덱입니다. 이 모든 요소는 스키마를 통해 구성됩니다.
+
+압축과 쿼리 성능을 초기에 크게 개선하는 가장 쉬운 방법은 타입 최적화입니다. 스키마를 최적화할 때는 몇 가지 간단한 규칙을 적용할 수 있습니다.
+
+* **엄격한 타입 사용** - 초기 스키마에서는 분명 숫자인 많은 컬럼에 String을 사용했습니다. 올바른 타입을 사용하면 필터링과 집계 시 기대한 의미가 정확히 반영됩니다. 이는 날짜 타입에도 동일하게 적용되며, 날짜 타입은 Parquet 파일에 이미 올바르게 제공되어 있습니다.
+* **널 허용 컬럼 피하기** - 기본적으로 위 컬럼들은 Null일 수 있다고 가정되었습니다. 널 허용 타입을 사용하면 쿼리에서 빈 값과 Null 값의 차이를 구분할 수 있습니다. 이로 인해 UInt8 타입의 별도 컬럼이 생성됩니다. 이 추가 컬럼은 널 허용 컬럼을 사용할 때마다 항상 함께 처리되어야 합니다. 그 결과 저장 공간이 더 필요해지고, 거의 항상 쿼리 성능에도 부정적인 영향을 줍니다. 타입의 기본 빈 값과 Null 사이에 실제 의미 차이가 있을 때만 널 허용을 사용하십시오. 예를 들어 `ViewCount` 컬럼에서는 빈 값을 0으로 처리해도 대부분의 쿼리에 충분하며 결과에도 영향을 주지 않을 가능성이 높습니다. 빈 값을 다르게 처리해야 한다면, 대개 필터를 사용해 쿼리에서 제외할 수도 있습니다.
+* **숫자 타입에는 최소 정밀도 사용** - ClickHouse는 다양한 숫자 범위와 정밀도에 맞는 여러 숫자 타입을 제공합니다. 항상 컬럼을 표현하는 데 필요한 비트 수를 최소화하도록 하십시오. ClickHouse는 Int16처럼 크기가 다른 정수 타입뿐 아니라 최소값이 0인 부호 없는 타입도 제공합니다. 이런 타입을 사용하면 더 적은 비트로 컬럼을 표현할 수 있습니다. 예를 들어 UInt16의 최댓값은 65535로 Int16의 두 배입니다. 가능하다면 더 큰 부호 있는 타입보다 이러한 타입을 우선 사용하십시오.
+* **날짜 타입에는 최소 정밀도 사용** - ClickHouse는 여러 날짜 및 날짜-시간 타입을 지원합니다. Date와 Date32는 순수한 날짜를 저장하는 데 사용할 수 있으며, Date32는 더 많은 비트를 사용하는 대신 더 넓은 날짜 범위를 지원합니다. DateTime과 DateTime64는 날짜-시간 값을 지원합니다. DateTime은 초 단위 세분화 수준으로 제한되며 32비트를 사용합니다. 이름에서 알 수 있듯 DateTime64는 64비트를 사용하지만 나노초 단위 세분화 수준까지 지원합니다. 여기서도 마찬가지로, 쿼리에 허용되는 범위 안에서 더 거친 타입을 선택해 필요한 비트 수를 최소화하십시오.
+* **LowCardinality 사용** - 고유값 수가 적은 숫자, 문자열, Date 또는 DateTime 컬럼은 LowCardinality 타입으로 인코딩할 수 있습니다. 이 타입은 값을 딕셔너리로 인코딩해 디스크 사용량을 줄입니다. 고유값이 1만 개 미만인 컬럼에서는 이를 고려하십시오.
+* **특수한 경우에는 FixedString 사용** - 길이가 고정된 문자열은 FixedString 타입으로 인코딩할 수 있습니다. 예를 들어 언어 코드나 통화 코드가 여기에 해당합니다. 이 방식은 데이터 길이가 정확히 N바이트일 때 효율적입니다. 그 외의 경우에는 오히려 효율이 떨어질 가능성이 높으므로 LowCardinality를 사용하는 편이 더 적합합니다.
+* **데이터 검증을 위한 Enum** - Enum 타입은 열거형 타입을 효율적으로 인코딩하는 데 사용할 수 있습니다. Enum은 저장해야 하는 고유값 수에 따라 8비트 또는 16비트가 됩니다. 삽입 시점에 검증이 필요하거나(선언되지 않은 값은 거부됨), Enum 값의 자연스러운 순서를 활용하는 쿼리를 수행하려는 경우 사용을 고려하십시오. 예를 들어 사용자 응답을 담는 피드백 컬럼이 `Enum(':(' = 1, ':|' = 2, ':)' = 3)` 형태일 수 있습니다.
+
+> 팁: 모든 컬럼의 범위와 고유값 개수를 확인하려면 간단한 쿼리 `SELECT * APPLY min, * APPLY  max, * APPLY uniq FROM table FORMAT Vertical`를 사용할 수 있습니다. 이 작업은 비용이 클 수 있으므로 더 작은 데이터 부분집합에서 수행하는 것을 권장합니다. 정확한 결과를 얻으려면 숫자 값이 최소한 숫자 타입으로 정의되어 있어야 합니다. 즉, String이어서는 안 됩니다.
+
+이 간단한 규칙을 Posts 테이블에 적용하면 각 컬럼에 가장 적합한 타입을 식별할 수 있습니다.
+
+| 컬럼                      | 숫자형 여부 | 최솟값, 최댓값                                                     | 고유 값     | NULL 값 | 설명                                                                              | 최적화 유형                                                                                                                                                       |
+| ----------------------- | ------ | ------------------------------------------------------------ | -------- | ------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | 예      | 1, 8                                                         | 8        | 아니요    |                                                                                 | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | 예      | 0, 78285170                                                  | 12282094 | 예      | NULL과 0 값을 구분                                                                   | UInt32                                                                                                                                                       |
+| `CreationDate`          | 아니요    | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *        | 아니요    | 밀리초 세분화 수준이 필요하지 않으므로 DateTime을 사용합니다                                           | DateTime                                                                                                                                                     |
+| `Score`                 | 예      | -217, 34970                                                  | 3236     | 아니요    |                                                                                 | Int32                                                                                                                                                        |
+| `ViewCount`             | 예      | 2, 13962748                                                  | 170867   | 아니요    |                                                                                 | UInt32                                                                                                                                                       |
+| `Body`                  | 아니요    | -                                                            | *        | 아니요    |                                                                                 | String                                                                                                                                                       |
+| `OwnerUserId`           | 예      | -1, 4056915                                                  | 6256237  | 예      |                                                                                 | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | 아니요    | -                                                            | 181251   | 예      | NULL은 빈 문자열로 간주                                                                 | String                                                                                                                                                       |
+| `LastEditorUserId`      | 예      | -1, 9999993                                                  | 1104694  | 예      | 0은 사용되지 않는 값이므로 NULL 값으로 사용할 수 있습니다                                             | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | 아니요    | *                                                            | 70952    | 예      | NULL은 빈 문자열로 간주합니다. LowCardinality를 테스트했지만 효과가 없었습니다                            | String                                                                                                                                                       |
+| `LastEditDate`          | 아니오    | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -        | 아니오    | 밀리초 세분화 수준이 필요하지 않으므로 DateTime을 사용합니다                                           | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | 아니오    | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *        | 없음     | 밀리초 단위의 세분화 수준이 필요하지 않으므로 DateTime을 사용합니다                                       | DateTime                                                                                                                                                     |
+| `Title`                 | 아니요    | -                                                            | *        | 아니요    | NULL을 빈 문자열로 처리합니다                                                              | String                                                                                                                                                       |
+| `태그`                    | 아니오    | -                                                            | *        | 아니오    | NULL을 빈 문자열로 처리합니다                                                              | String                                                                                                                                                       |
+| `AnswerCount`           | 예      | 0, 518                                                       | 216      | 아니요    | NULL과 0을 동일하게 간주                                                                | UInt16                                                                                                                                                       |
+| `CommentCount`          | 예      | 0, 135                                                       | 100      | 아니요    | NULL과 0을 동일하게 취급                                                                | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | 예      | 0, 225                                                       | 6        | 예      | NULL과 0을 동일한 값으로 간주                                                             | UInt8                                                                                                                                                        |
+| `ContentLicense`        | 아니요    | -                                                            | 3        | 아니요    | LowCardinality가 FixedString보다 성능이 더 우수합니다                                       | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | 아니요    | *                                                            | 20696028 | 예      | NULL을 빈 문자열로 간주합니다                                                              | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | 아니오    | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -        | 예      | NULL 값의 경우 기본값으로 1970-01-01을 사용하는 것을 고려하십시오. 밀리초 단위는 필요하지 않으므로 DateTime을 사용하십시오 | DateTime                                                                                                                                                     |
+| `ClosedDate`            | 아니오    | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *        | 예      | NULL에는 기본값으로 1970-01-01을 고려하세요. 밀리초 단위의 세분화 수준은 필요하지 않으므로 DateTime을 사용하세요       | DateTime                                                                                                                                                     |
+
+<br />
+
+위 내용을 바탕으로 다음과 같은 스키마를 얻을 수 있습니다:
+
+```sql
+CREATE TABLE posts_v2
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+이전 테이블의 데이터를 읽어 이 테이블에 삽입하는 간단한 `INSERT INTO SELECT`로 데이터를 채울 수 있습니다:
+
+```sql
+INSERT INTO posts_v2 SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+새 스키마에서는 NULL 값을 전혀 유지하지 않습니다. 위의 삽입은 이를 각 타입의 기본값으로 암묵적으로 변환합니다. 정수는 0으로, 문자열은 빈 값으로 변환됩니다. 또한 ClickHouse는 모든 숫자 값을 대상 정밀도에 맞게 자동으로 변환합니다.
+ClickHouse의 프라이머리(순서 지정) 키
+OLTP 데이터베이스를 사용해 온 사용자는 ClickHouse에서 이에 해당하는 개념을 자주 찾습니다.
+
+<div id="choosing-an-ordering-key">
+  ## 순서 지정 키 선택하기
+</div>
+
+ClickHouse가 주로 사용되는 규모에서는 메모리와 디스크 효율성이 매우 중요합니다. 데이터는 파트(parts)라고 하는 청크 단위로 ClickHouse 테이블에 기록되며, 백그라운드에서 파트를 머지하는 규칙이 적용됩니다. ClickHouse에서는 각 파트가 자체 프라이머리 인덱스를 가집니다. 파트가 머지되면 병합된 파트의 프라이머리 인덱스도 함께 머지됩니다. 파트의 프라이머리 인덱스는 각 행 그룹마다 하나의 인덱스 엔트리를 가지며, 이러한 기법을 희소 인덱싱이라고 합니다.
+
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse의 희소 인덱싱" />
+
+ClickHouse에서 선택한 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서까지 결정합니다. 따라서 압축 수준에 큰 영향을 미칠 수 있고, 이는 다시 쿼리 성능에도 영향을 줄 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 순서 지정 키를 사용하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
+
+> 테이블의 모든 컬럼은 키 자체에 포함되어 있는지와 관계없이, 지정된 순서 지정 키 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`를 키로 사용하면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따릅니다. 여러 개의 순서 지정 키를 지정할 수 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.
+
+순서 지정 키를 선택하는 데 도움이 되는 몇 가지 간단한 규칙이 있습니다. 아래 항목들은 때로 서로 충돌할 수 있으므로, 순서대로 검토하십시오. 이 과정을 통해 여러 키를 식별할 수 있으며, 일반적으로 4~5개면 충분합니다.
+
+* 자주 사용하는 필터와 일치하는 컬럼을 선택하십시오. 어떤 컬럼이 `WHERE` 절에서 자주 사용된다면, 덜 자주 사용되는 컬럼보다 해당 컬럼을 키에 포함하는 것을 우선하십시오.
+  필터링할 때 전체 행의 상당 부분을 제외하는 데 도움이 되는 컬럼을 우선하면, 읽어야 하는 데이터 양을 줄일 수 있습니다.
+* 테이블의 다른 컬럼과 높은 상관관계를 가질 가능성이 큰 컬럼을 우선하십시오. 이렇게 하면 해당 값들도 연속적으로 저장될 가능성이 높아져 압축 효율이 향상됩니다.
+  순서 지정 키에 포함된 컬럼에 대한 `GROUP BY` 및 `ORDER BY` 연산도 메모리를 더 효율적으로 사용할 수 있습니다.
+
+순서 지정 키에 사용할 컬럼의 부분집합을 식별한 후에는, 컬럼을 특정 순서로 선언하십시오. 이 순서는 쿼리에서 보조 키 컬럼에 대한 필터링 효율과 테이블 데이터 파일의 압축률 모두에 큰 영향을 줄 수 있습니다. 일반적으로는 cardinality가 낮은 것부터 높은 것 순서로 키를 배치하는 것이 가장 좋습니다. 다만, 순서 지정 키에서 뒤쪽에 오는 컬럼에 대한 필터링은 tuple 앞쪽에 오는 컬럼에 대한 필터링보다 효율이 떨어진다는 점도 함께 고려해야 합니다. 이러한 특성 사이에서 균형을 맞추고 액세스 패턴을 고려하십시오(무엇보다도 다양한 방식을 테스트하는 것이 중요합니다).
+
+<div id="example">
+  ### 예시
+</div>
+
+위 지침을 `posts` 테이블에 적용해 보겠습니다. 예를 들어, 사용자가 날짜와 게시물 유형을 기준으로 필터링하는 분석을 수행하려고 한다고 가정하겠습니다.
+
+&quot;지난 3개월 동안 댓글이 가장 많이 달린 질문은 무엇인가&quot;
+
+타입은 최적화되었지만 순서 지정 키는 없는 앞서의 `posts_v2` 테이블을 사용하면, 이 질문에 대한 쿼리는 다음과 같습니다.
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v2
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
+│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
+│ 78183948 │ About memory barrier                                               │               52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+
+10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
+Peak memory usage: 429.38 MiB.
+```
+
+> 여기의 쿼리는 6천만 행 전체를 선형 스캔했는데도 매우 빠릅니다. ClickHouse는 원래 빠르니까요 :) TB 및 PB 규모에서는 순서 지정 키가 충분한 가치가 있다는 점을 일단 믿고 넘어가야 합니다!
+
+이제 `PostTypeId`와 `CreationDate` 컬럼을 순서 지정 키로 선택하겠습니다.
+
+이 예시에서는 사용자가 항상 `PostTypeId`로 필터링한다고 가정할 수 있습니다. 이 값의 카디널리티는 8이므로 순서 지정 키의 첫 번째 항목으로 적절합니다. 날짜 세분화 수준으로 필터링해도 충분할 가능성이 높고(datetime 필터에도 여전히 도움이 됨), 따라서 키의 두 번째 요소로 `toDate(CreationDate)`를 사용합니다. 이렇게 하면 날짜를 16비트로 표현할 수 있어 인덱스가 더 작아지고 필터링 속도도 빨라집니다. 마지막 키 항목은 댓글이 많은 게시물을 더 쉽게 찾을 수 있도록 `CommentCount`로 지정합니다(최종 정렬).
+
+```sql
+CREATE TABLE posts_v3
+(
+        `Id` Int32,
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime,
+        `Score` Int32,
+        `ViewCount` UInt32,
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime,
+        `LastActivityDate` DateTime,
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16,
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime,
+        `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+COMMENT 'Ordering Key'
+
+--기존 테이블에서 데이터 채우기
+
+INSERT INTO posts_v3 SELECT * FROM posts_v2
+```
+
+```response
+0 rows in set. Elapsed: 158.074 sec. Processed 59.82 million rows, 76.21 GB (378.42 thousand rows/s., 482.14 MB/s.)
+Peak memory usage: 6.41 GiB.
+```
+
+앞서 살펴본 쿼리는 응답 시간을 3배 이상 개선합니다:
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v3
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+10 rows in set. Elapsed: 0.020 sec. Processed 290.09 thousand rows, 21.03 MB (14.65 million rows/s., 1.06 GB/s.)
+```
+
+특정 타입과 적절한 순서 지정 키를 사용해 얻을 수 있는 압축 개선에 관심이 있다면 [ClickHouse에서의 압축](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)을 참조하십시오. 압축을 추가로 개선해야 한다면 [적절한 컬럼 압축 코덱 선택하기](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec) 섹션도 참고할 것을 권장합니다.
+
+<div id="next-data-modeling-techniques">
+  ## 다음: 데이터 모델링 기법
+</div>
+
+지금까지는 단일 테이블 하나만 마이그레이션했습니다. 이를 통해 ClickHouse의 몇 가지 핵심 개념을 소개할 수 있었지만, 안타깝게도 대부분의 스키마는 이렇게 단순하지 않습니다.
+
+아래에 나열된 다른 가이드에서는 ClickHouse에서 최적의 쿼리 성능을 얻을 수 있도록 더 큰 스키마를 재구성하는 여러 기법을 살펴봅니다. 이 과정 전반에서 대부분의 분석 쿼리가 수행되는 중심 테이블로 `Posts`를 유지하는 것을 목표로 합니다. 다른 테이블도 개별적으로 쿼리할 수 있지만, 대부분의 분석은 `posts`를 맥락으로 수행된다고 가정합니다.
+
+> 이 섹션에서는 다른 테이블의 최적화된 변형을 사용합니다. 이러한 스키마는 제공하지만, 간결성을 위해 어떤 결정을 내렸는지는 설명하지 않습니다. 이는 앞서 설명한 규칙을 기반으로 하며, 그 결정 과정은 독자가 유추할 수 있도록 남겨 둡니다.
+
+다음 접근 방식은 모두 읽기를 최적화하고 쿼리 성능을 높이기 위해 JOIN의 필요성을 최소화하는 것을 목표로 합니다. ClickHouse는 JOIN을 완전히 지원하지만, 최적의 성능을 위해서는 가급적 제한적으로 사용하는 것을 권장합니다(JOIN 쿼리에서 2~3개 테이블을 사용하는 정도는 괜찮습니다).
+
+> ClickHouse에는 외래 키라는 개념이 없습니다. 그렇다고 JOIN을 사용할 수 없는 것은 아니지만, 참조 무결성은 사용자가 애플리케이션 수준에서 관리해야 함을 의미합니다. ClickHouse와 같은 OLAP 시스템에서는 데이터 무결성을 데이터베이스 자체에서 강제하기보다 애플리케이션 수준이나 데이터 수집 과정에서 관리하는 경우가 많습니다. 데이터베이스 자체에서 이를 강제하면 상당한 오버헤드가 발생하기 때문입니다. 이러한 접근 방식은 더 높은 유연성과 더 빠른 데이터 삽입을 가능하게 합니다. 이는 매우 큰 데이터셋에서 읽기 및 삽입 쿼리의 속도와 확장성에 초점을 맞춘 ClickHouse의 방향성과도 일치합니다.
+
+쿼리 시점의 JOIN 사용을 최소화하기 위해 사용할 수 있는 여러 도구와 접근 방식이 있습니다:
+
+* [**데이터 비정규화**](/ko/guides/clickhouse/data-modelling/denormalization) - 테이블을 결합하고 1:1이 아닌 관계에는 복합 타입을 사용해 데이터를 비정규화합니다. 여기에는 조인을 쿼리 시점에서 삽입 시점으로 옮기는 작업이 포함되는 경우가 많습니다.
+* [**Dictionaries**](/ko/concepts/features/dictionaries/index) - Direct JOIN 및 키-값 조회를 처리하기 위한 ClickHouse 고유 기능입니다.
+* [**증분형 materialized view**](/ko/concepts/features/materialized-views/incremental-materialized-view) - 계산 비용을 쿼리 시점에서 삽입 시점으로 옮기는 ClickHouse 기능이며, 집계 값을 점진적으로 계산하는 기능도 포함합니다.
+* [**갱신 가능 구체화 뷰**](/ko/concepts/features/materialized-views/refreshable-materialized-view) - 다른 데이터베이스 제품의 materialized view와 유사하게, 쿼리 결과를 주기적으로 계산하고 그 결과를 캐시할 수 있습니다.
+
+각 가이드에서는 이러한 접근 방식을 하나씩 살펴보며, 각각이 언제 적합한지와 함께 Stack Overflow 데이터셋의 질문을 해결하는 데 이를 어떻게 적용할 수 있는지 보여 주는 예시를 제공합니다.

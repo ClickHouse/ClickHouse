@@ -32,10 +32,10 @@
                     <min>1</min>
                 </enable_analyzer>
 
-                <!-- Prevent stack overflow -->
-                <max_ast_depth>
-                    <readonly/>
-                </max_ast_depth>
+                <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
+                     max_parser_backtracks) and the max_threads cap live in
+                     limit-recursion-settings.xml, installed alongside this file and
+                     shared with the stress test. -->
 
             </constraints>
 
@@ -62,6 +62,7 @@
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+            <allow_experimental_eval_table_function>1</allow_experimental_eval_table_function>
             <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
             <allow_experimental_expire_snapshots>1</allow_experimental_expire_snapshots>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
@@ -74,7 +75,6 @@
             <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
-            <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
             <allow_experimental_object_storage_queue_hive_partitioning>1</allow_experimental_object_storage_queue_hive_partitioning>
             <allow_experimental_polyglot_dialect>1</allow_experimental_polyglot_dialect>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
@@ -82,6 +82,7 @@
             <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_unique_key>1</allow_experimental_unique_key>
+            <allow_experimental_url_wildcard_from_index_pages>1</allow_experimental_url_wildcard_from_index_pages>
             <allow_experimental_window_view>1</allow_experimental_window_view>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
@@ -114,6 +115,7 @@
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
             <enable_materialized_cte>1</enable_materialized_cte>
+            <enable_nullable_tuple_type>1</enable_nullable_tuple_type>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
             <enable_streaming_queries>1</enable_streaming_queries>

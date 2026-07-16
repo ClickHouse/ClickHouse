@@ -1,0 +1,129 @@
+---
+date: 2023-05-08
+title: "连接 ClickHouse Cloud 服务的 Python 客户端示例"
+description: "通过一个使用 clickhouse-connect 驱动程序的分步示例，了解如何使用 Python 连接到 ClickHouse Cloud 服务。"
+tags: ['语言客户端']
+keywords: ['Python', 'ClickHouse Cloud']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+本文通过一个分步示例，介绍如何开始使用 Python 连接 ClickHouse Cloud 服务。
+
+<Note>
+  请注意，Python 版本和库依赖始终在不断演进。尝试此示例时，也请务必使用当前受支持的最新驱动程序版本和 Python 环境版本。
+
+  在撰写本文时，我们使用的版本分别为 [clickhouse-connect](https://github.com/ClickHouse/clickhouse-connect) 驱动程序 `0.5.23` 和 Python `3.11.2`。
+</Note>
+
+<div id="steps">
+  ## 步骤
+</div>
+
+1. 检查 Python 版本：
+
+```
+$  python -V
+Python 3.11.2
+```
+
+2. 我们将在名为 `ch-python` 的文件夹中创建该项目：
+
+```
+$ mkdir ch-python
+$ cd ch-python
+```
+
+3. 创建一个名为 `requirements.txt` 的依赖项文件，内容如下：
+
+```
+clickhouse-connect==0.5.23
+```
+
+4. 创建一个名为 `main.py` 的 Python 源文件：
+
+```py
+import clickhouse_connect
+import sys
+import json
+
+CLICKHOUSE_CLOUD_HOSTNAME = 'HOSTNAME.clickhouse.cloud'
+CLICKHOUSE_CLOUD_USER = 'default'
+CLICKHOUSE_CLOUD_PASSWORD = 'YOUR_SECRET_PASSWORD'
+
+client = clickhouse_connect.get_client(
+    host=CLICKHOUSE_CLOUD_HOSTNAME, port=8443, username=CLICKHOUSE_CLOUD_USER, password=CLICKHOUSE_CLOUD_PASSWORD)
+
+print("connected to " + CLICKHOUSE_CLOUD_HOSTNAME + "\n")
+client.command(
+    'CREATE TABLE IF NOT EXISTS new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+
+print("table new_table created or exists already!\n")
+
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+
+print("written 2 rows to table new_table\n")
+
+QUERY = "SELECT max(key), avg(metric) FROM new_table"
+
+result = client.query(QUERY)
+
+sys.stdout.write("query: ["+QUERY + "] returns:\n\n")
+print(result.result_rows)
+```
+
+5. 创建虚拟环境：
+
+```
+chpython$ python -m venv venv
+```
+
+6. 启用虚拟环境：
+
+```
+chpython$ source venv/bin/activate
+```
+
+加载完成后，你的终端提示符前应显示 (venv)，然后安装依赖项：
+
+```
+(venv) ➜  chpython$ pip install -r requirements.txt
+Collecting certifi
+  Using cached certifi-2023.5.7-py3-none-any.whl (156 kB)
+Collecting urllib3>=1.26
+  Using cached urllib3-2.0.2-py3-none-any.whl (123 kB)
+Collecting pytz
+  Using cached pytz-2023.3-py2.py3-none-any.whl (502 kB)
+Collecting zstandard
+  Using cached zstandard-0.21.0-cp311-cp311-macosx_11_0_arm64.whl (364 kB)
+Collecting lz4
+  Using cached lz4-4.3.2-cp311-cp311-macosx_11_0_arm64.whl (212 kB)
+Installing collected packages: pytz, zstandard, urllib3, lz4, certifi, clickhouse-connect
+Successfully installed certifi-2023.5.7 clickhouse-connect-0.5.23 lz4-4.3.2 pytz-2023.3 urllib3-2.0.2 zstandard-0.21.0
+```
+
+7. 运行代码！
+
+```
+(venv) chpython$ venv/bin/python main.py
+
+connected to HOSTNAME.clickhouse.cloud
+
+table new_table created or exists already!
+
+written 2 rows to table new_table
+
+query: [SELECT max(key), avg(metric) FROM new_table] returns:
+
+[(2000, -50.9035)]
+```
+
+<Tip>
+  如果你使用的是较旧版本的 Python (例如 `3.9.6`) ，可能会遇到与 `urllib3` 库相关的 `ImportError`。
+  此时，你可以将 Python 环境升级到较新版本，或者在 requirements.txt 文件中将 `urllib3` 版本固定为 `1.26.15`。
+</Tip>

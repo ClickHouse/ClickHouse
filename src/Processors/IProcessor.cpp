@@ -8,8 +8,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX)
 #include <sys/epoll.h>
+#elif defined(OS_DARWIN)
+#include <Common/Epoll.h> /// EPOLLIN/EPOLLERR compatibility flags for the kqueue-backed Epoll
 #endif
 
 
@@ -72,10 +74,10 @@ int IProcessor::schedule()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
 
-#ifdef OS_LINUX
-std::pair<int, uint32_t> IProcessor::scheduleForEvent()
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::tuple<int, uint32_t, Int64> IProcessor::scheduleForEvent()
 {
-    return {schedule(), EPOLLIN | EPOLLERR};
+    return {schedule(), EPOLLIN | EPOLLERR, -1};
 }
 #endif
 
@@ -96,25 +98,6 @@ void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
         return;
 
     onCancel();
-}
-
-void IProcessor::checkGroup(size_t group) const
-{
-    if (group >= elapsed_by_group.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Out of bound access to array of groups in processor: size of array = {}, index = {}",
-            elapsed_by_group.size(), group);
-}
-
-UInt64 IProcessor::getElapsedNs(size_t group) const
-{
-    checkGroup(group);
-    return elapsed_by_group[group];
-}
-void IProcessor::addElapsedNs(size_t group, UInt64 ns)
-{
-    checkGroup(group);
-    elapsed_by_group[group] += ns;
 }
 
 UInt64 IProcessor::getInputPortNumber(const InputPort * input_port) const
@@ -152,13 +135,6 @@ IProcessor::PortDataCounters IProcessor::getPortDataCounters(const Port & port) 
 
     return {port.rows, port.bytes};
 }
-// IProcessor::PortDataCounters IProcessor::getOutputPortDataCounters(const OutputPort & port) const
-// {
-//     if (&port.getProcessor() != this)
-//         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port does not belong to {} processor", getName());
-
-//     return {port.rows, port.bytes};
-// }
 
 IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
 {

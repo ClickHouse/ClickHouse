@@ -1,0 +1,218 @@
+---
+description: 'Conjunto de dados com 100 milhões de vetores do LAION 5B'
+sidebarTitle: 'conjunto de dados LAION 5B'
+slug: /getting-started/example-datasets/laion-5b-dataset
+title: 'conjunto de dados LAION 5B'
+keywords: ['busca semântica', 'similaridade vetorial', 'vizinhos mais próximos aproximados', 'embeddings']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+O [conjunto de dados LAION 5b](https://laion.ai/blog/laion-5b/) contém 5,85 bilhões de embeddings de imagem-texto e
+metadados de imagem associados. Os embeddings foram gerados usando o modelo `Open AI CLIP` [ViT-L/14](https://huggingface.co/sentence-transformers/clip-ViT-L-14). A
+dimensão de cada vetor de embedding é `768`.
+
+Esse conjunto de dados pode ser usado para modelar aspectos de projeto, dimensionamento e desempenho de uma aplicação real de
+busca vetorial em grande escala. Ele pode ser usado tanto para buscas de texto para imagem quanto de imagem para imagem.
+
+<div id="dataset-details">
+  ## Detalhes do conjunto de dados
+</div>
+
+O conjunto de dados completo está disponível como uma combinação de arquivos `npy` e `Parquet` em [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/)
+
+O ClickHouse disponibilizou um subconjunto de 100 milhões de vetores em um bucket `S3`.
+O bucket `S3` contém 10 arquivos `Parquet`, cada um com 10 milhões de linhas.
+
+Recomendamos que os usuários façam primeiro uma análise de dimensionamento para estimar os requisitos de armazenamento e memória desse conjunto de dados consultando a [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
+
+<div id="steps">
+  ## Etapas
+</div>
+
+<Steps>
+  <Step>
+    ### Criar tabela
+
+    Crie a tabela `laion_5b_100m` para armazenar os embeddings e os atributos associados:
+
+    ```sql
+    CREATE TABLE laion_5b_100m
+    (
+        id UInt32,
+        image_path String,
+        caption String,
+        NSFW Nullable(String) default 'unknown',
+        similarity Float32,
+        LICENSE Nullable(String),
+        url String,
+        key String,
+        status LowCardinality(String),
+        width Int32,
+        height Int32,
+        original_width Int32,
+        original_height Int32,
+        exif Nullable(String),
+        md5 String,
+        vector Array(Float32) CODEC(NONE)
+    ) ENGINE = MergeTree ORDER BY (id)
+    ```
+
+    O `id` é apenas um inteiro incremental. Os atributos adicionais podem ser usados em predicados para compreender
+    a busca por similaridade vetorial combinada com pós-filtragem/pré-filtragem, conforme explicado na [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes)
+  </Step>
+
+  <Step>
+    ### Carregue os dados
+
+    Para carregar os dados de todos os arquivos `Parquet`, execute a seguinte instrução SQL:
+
+    ```sql
+    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_*.parquet');
+    ```
+
+    O carregamento de 100 milhões de linhas para a tabela levará alguns minutos.
+
+    Como alternativa, é possível executar instruções SQL individuais para carregar um número específico de arquivos / linhas.
+
+    ```sql
+    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet');
+    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet');
+    ⋮
+    ```
+  </Step>
+
+  <Step>
+    ### Executar uma busca de similaridade vetorial por força bruta
+
+    A busca KNN (k - Nearest Neighbours) ou busca por força bruta consiste em calcular a distância de cada vetor no conjunto de dados
+    em relação ao embedding de busca e, em seguida, ordenar as distâncias para obter os vizinhos mais próximos. Podemos usar um dos vetores
+    do próprio conjunto de dados como vetor de busca. Por exemplo:
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_100m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    O vetor na linha com id = 9999 é o embedding de uma imagem de um restaurante Deli.
+    ```
+
+    ```response title="Response" highlight={24}
+    ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+     1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
+     2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
+     3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
+     4. │ 51559839 │ https://img1.mashed.com/img/gallery/how-rich-is-the-mcalisters-deli-ceo-and-whats-the-average-pay-of-its-employees/intro-1619793841.jpg                                                                                           │
+     5. │ 22104014 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/04/Largest-McAlisters-Deli-Franchisee-to-Expand-into-Nebraska.jpg                                                                                                      │
+     6. │ 54337236 │ http://www.restaurantnews.com/wp-content/uploads/2015/11/McAlisters-Deli-Giving-Away-Gift-Cards-With-Win-One-Gift-One-Holiday-Promotion.jpg                                                                                       │
+     7. │ 20770867 │ http://www.restaurantnews.com/wp-content/uploads/2016/04/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Florida-as-Chain-Enters-New-Markets.jpg                                                                               │
+     8. │ 22493966 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/06/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Columbus-Ohio-as-Chain-Expands-feature.jpg                                                                       │
+     9. │  2224351 │ https://holttribe.com/wp-content/uploads/2019/10/60880046-879A-49E4-8E13-1EE75FB24980-900x675.jpeg                                                                                                                                │
+    10. │ 30779663 │ https://www.gannett-cdn.com/presto/2018/10/29/PMUR/685f3e50-cce5-46fb-9a66-acb93f6ea5e5-IMG_6587.jpg?crop=2166,2166,x663,y0&amp;width=80&amp;height=80&amp;fit=bounds                                                             │
+    11. │ 54939148 │ https://www.priceedwards.com/sites/default/files/styles/staff_property_listing_block/public/for-lease/images/IMG_9674%20%28Custom%29_1.jpg?itok=sa8hrVBT                                                                          │
+    12. │ 95371605 │ http://www.restaurantmagazine.com/wp-content/uploads/2015/08/McAlisters-Deli-Signs-Development-Agreement-with-Kingdom-Foods-to-Grow-in-Southern-Mississippi.jpg                                                                   │
+    13. │ 79564563 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/05/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Denver-as-Chain-Expands.jpg                                                                                      │
+    14. │ 76429939 │ http://www.restaurantnews.com/wp-content/uploads/2016/08/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Pennsylvania-as-Chain-Expands.jpg                                                                                     │
+    15. │ 96680635 │ https://img.claz.org/tc/400x320/9w3hll-UQNHGB9WFlhSGAVCWhheBQkeWh5SBAkUWh9SBgsJFxRcBUMNSR4cAQENXhJARwgNTRYcBAtDWh5WRQEJXR5SR1xcFkYKR1tYFkYGR1pVFiVyP0ImaTA                                                                        │
+    16. │ 48716846 │ http://tse2.mm.bing.net/th?id=OIP.nN2qJqGUJs_fVNdTiFyGnQHaEc                                                                                                                                                                      │
+    17. │  4472333 │ https://sgi.offerscdn.net/i/zdcs-merchants/05lG0FpXPIvsfiHnT3N8FQE.h200.w220.flpad.v22.bffffff.png                                                                                                                                │
+    18. │ 82667887 │ https://irs2.4sqi.net/img/general/200x200/11154479_OEGbrkgWB5fEGrrTkktYvCj1gcdyhZn7TSQSAqN2Yqw.jpg                                                                                                                                │
+    19. │ 57525607 │ https://knoji.com/images/logo/mcalistersdelicom.jpg                                                                                                                                                                               │
+    20. │ 15785896 │ https://www.groupnimb.com/mimg/merimg/mcalister-s-deli_1446088739.jpg                                                                                                                                                             │
+        └──────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+    20 rows in set. Elapsed: 3.968 sec. Processed 100.38 million rows, 320.81 GB (25.30 million rows/s., 80.84 GB/s.)
+    ```
+
+    Anote a latência da consulta para que possamos compará-la com a latência da consulta do ANN (usando índice vetorial).
+    Com 100 milhões de linhas, a consulta acima sem um índice vetorial pode levar alguns segundos ou minutos para ser concluída.
+  </Step>
+
+  <Step>
+    ### Criar um índice de similaridade vetorial
+
+    Execute a instrução SQL a seguir para definir e criar um índice de similaridade vetorial na coluna `vector` da tabela `laion_5b_100m`:
+
+    ```sql
+    ALTER TABLE laion_5b_100m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+
+    ALTER TABLE laion_5b_100m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ```
+
+    Os parâmetros e as considerações de desempenho para a criação do índice e a busca são descritos na [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
+    A instrução acima utiliza os valores 64 e 512, respectivamente, para os hiperparâmetros HNSW `M` e `ef_construction`.
+    Você precisa selecionar cuidadosamente os valores ideais desses parâmetros, avaliando o tempo de compilação do índice e a qualidade dos resultados de busca
+    correspondentes aos valores escolhidos.
+
+    A compilação e o salvamento do índice podem até levar algumas horas para o conjunto de dados completo de 100 milhões, dependendo do número de núcleos de CPU disponíveis e da largura de banda do armazenamento.
+  </Step>
+
+  <Step>
+    ### Execute a busca ANN
+
+    Depois que o índice de similaridade vetorial tiver sido criado, as consultas de busca vetorial usarão automaticamente o índice:
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_100m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    ```
+
+    O primeiro carregamento do índice vetorial na memória pode levar alguns segundos/minutos.
+  </Step>
+
+  <Step>
+    ### Gerar embeddings para consulta de Busca
+
+    Os vetores de embedding do dataset `LAION 5b` foram gerados com o modelo `OpenAI CLIP` `ViT-L/14`.
+
+    Um script Python de exemplo é fornecido abaixo para demonstrar como gerar programaticamente
+    vetores de embedding usando as APIs do `CLIP`. O vetor de embedding de Busca
+    é então passado como argumento para a função [`cosineDistance()`](/pt-BR/reference/functions/regular-functions/distance-functions#cosineDistance) na consulta `SELECT`.
+
+    Para instalar o pacote `clip`, consulte o [repositório GitHub da OpenAI](https://github.com/openai/clip).
+
+    ```python
+    import torch
+    import clip
+    import numpy as np
+    import sys
+    import clickhouse_connect
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-L/14", device=device)
+
+    # Buscar imagens que contenham tanto um cachorro quanto um gato
+    text = clip.tokenize(["a dog and a cat"]).to(device)
+
+    with torch.no_grad():
+        text_features = model.encode_text(text)
+        np_arr = text_features.detach().cpu().numpy()
+
+        # Insira as credenciais do ClickHouse aqui
+        chclient = clickhouse_connect.get_client()
+
+        params = {'v1': list(np_arr[0])}
+        result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+                                parameters=params)
+
+        # Escrever os resultados em uma página HTML simples que pode ser aberta no navegador. Alguns URLs podem ter se tornado obsoletos.
+        print("<html>")
+        for r in result.result_rows:
+            print("<img src = ", r[1], 'width="200" height="200">')
+        print("</html>")
+    ```
+
+    O resultado da busca acima é exibido abaixo:
+
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Resultados da busca por similaridade vetorial" size="md" />
+  </Step>
+</Steps>

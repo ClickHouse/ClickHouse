@@ -20,7 +20,7 @@
 -- MVTEncodeGeom: buffer 0 clips a point ~5px past the edge that buffer 16 keeps
 1	1
 -- MVTEncodeGeom: a polygon covering the whole tile is clipped to the tile box (buffer 0)
-[[[(0,0),(0,4096),(4096,4096),(4096,0),(0,0)]]]
+[[[(4096,0),(0,0),(0,4096),(4096,4096),(4096,0)]]]
 -- MVTEncodeGeom: a line crossing the tile edge is clipped to the buffer boundary
 [[(1638,1850),(4096,1850)]]
 -- MVTEncodeGeom: empty geometries yield NULL rather than an empty container
@@ -39,3 +39,23 @@
 1
 -- the largest valid tile index for a zoom is accepted
 1	1
+-- MVTEncodeGeom: a point that rounds onto the tile edge is kept (snapped to the grid before clipping)
+(4096,2664)
+-- MVTEncodeGeom: a sub-pixel line straddling a tile edge clips to a single edge line, not disjoint fragments
+[[(0,3639),(0,3167),(0,2664),(0,2107),(0,1461)]]
+-- MVTEncodeGeom: a self-intersecting ring inside the tile is repaired into valid polygons (it was dropped)
+MULTIPOLYGON(((1366 2550,2276 1461,455 1461,1366 2550)),((1366 2550,455 3639,2276 3639,1366 2550)))
+-- MVTEncodeGeom: a self-crossing sliver clips to a small valid polygon, not a whole-tile fill
+MULTIPOLYGON(((698 4081,701 4066,698 4079,698 4081)))
+-- MVTEncodeGeom: a self-intersecting ring crossing the tile is repaired into two valid polygons (it was emitted as one self-intersecting ring)
+MULTIPOLYGON(((2048 2493,4097 994,4097 662,-1 662,-1 994,2048 2493)),((2048 2493,-1 3992,-1 4097,4097 4097,4097 3992,2048 2493)))
+-- MVTEncodeGeom: a polygon far larger than the tile renders its in-tile portion at high zoom (clipped to the tile box)
+MULTIPOLYGON(((4097 -1,-1 -1,-1 4097,4097 4097,4097 -1)))
+-- MVTEncodeGeom: a polygon entirely outside the tile becomes NULL
+1
+-- MVTEncodeGeom: a polygon with a hole keeps the hole through clipping
+MULTIPOLYGON(((3969 -1,-1 -1,-1 4097,3969 4097,3969 -1),(1056 3767,1056 1850,2221 1850,2221 3767,1056 3767)))
+-- MVTEncodeGeom: clip=false still validates a self-intersecting polygon through wagyu (repaired into valid polygons, like PostGIS)
+MULTIPOLYGON(((1366 2550,2276 1461,455 1461,1366 2550)),((1366 2550,455 3639,2276 3639,1366 2550)))
+-- MVTEncodeGeom: clip=false validates but does not clip to the tile (the repaired geometry keeps its out-of-tile coordinates)
+MULTIPOLYGON(((2048 2493,4551 662,-455 662,2048 2493)),((2048 2493,-455 4324,4551 4324,2048 2493)))
