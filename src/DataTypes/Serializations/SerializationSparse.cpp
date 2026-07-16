@@ -68,6 +68,12 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         new_state->nested = nested ? nested->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (column_offsets)
+            callback(column_offsets);
+    }
 };
 
 void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)

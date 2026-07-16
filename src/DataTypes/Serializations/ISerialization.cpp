@@ -945,6 +945,15 @@ void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
         walk(*column);
     }
 
+    /// A column held by a substreams cache or a deserialize state is a parent too: its own subcolumn
+    /// tree can share children with a result column's subcolumn tree (e.g. `IDataType::getSubcolumn`
+    /// materializing `map.keys`/`map.values` as new `ColumnArray`s over the cached `ColumnMap`'s
+    /// `offsets`/nested column). Walk from every known holder as well, so the cache/state side of such
+    /// a shared child is counted too; `walk`'s `visited` set still descends into any given column object
+    /// only once, and the holder's own reference is already counted via `known_references`, not here.
+    for (const auto & known_reference : known_references)
+        walk(*known_reference.first);
+
     auto check = [](const IColumn * column, const References & references, size_t from_result_columns)
     {
         size_t num_references = references.total() + from_result_columns;
