@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- The empty global default session user prohibits connections without a user name
+         on every interface that has no per-endpoint override. Arrow Flight and gRPC are
+         not composable protocols, so this is the only way to enable the reject mode for
+         them. -->
+    <default_session_user></default_session_user>
+
+    <arrowflight_port>9110</arrowflight_port>
+</clickhouse>

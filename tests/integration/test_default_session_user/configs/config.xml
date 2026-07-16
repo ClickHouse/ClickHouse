@@ -4,6 +4,9 @@
     <!-- gRPC is not a composable protocol, so only the global setting applies to it. -->
     <grpc_port>9100</grpc_port>
 
+    <!-- Arrow Flight is not a composable protocol either, so only the global setting applies to it. -->
+    <arrowflight_port>9110</arrowflight_port>
+
     <!-- Serve keeper-style prometheus metrics; the composable `prometheus` endpoints
          below go through the `KeeperPrometheusHandler-factory` because of this. -->
     <prometheus>

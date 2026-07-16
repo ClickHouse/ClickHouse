@@ -12,6 +12,7 @@ import urllib.request
 from contextlib import contextmanager
 
 import grpc
+import pyarrow.flight
 import pymysql
 import pytest
 
@@ -33,6 +34,14 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.xml", "configs/cluster.xml"],
+    user_configs=["configs/users.xml"],
+)
+# A node with an empty global `default_session_user`: connections without a user name are
+# rejected on every interface. Arrow Flight and gRPC are not composable protocols, so their
+# reject mode can only be enabled globally, which needs a separate node.
+node_reject = cluster.add_instance(
+    "node_reject",
+    main_configs=["configs/config_reject.xml"],
     user_configs=["configs/users.xml"],
 )
 
@@ -206,6 +215,50 @@ def test_grpc_default_session_user():
     # An explicitly specified user is not affected.
     with assert_login_success("explicit_user", "gRPC"):
         assert grpc_query("SELECT currentUser()", user_name="explicit_user") == "explicit_user\n"
+
+
+def arrowflight_query(node, query, authorization=None):
+    """Run a query over Arrow Flight and return the single result value.
+    `authorization` is the raw value of the `authorization` header,
+    or None to send no credentials at all."""
+    client = pyarrow.flight.FlightClient(f"grpc+tcp://{node.ip_address}:9110")
+    try:
+        options = None
+        if authorization is not None:
+            options = pyarrow.flight.FlightCallOptions(headers=[(b"authorization", authorization)])
+        ticket = pyarrow.flight.Ticket(query.encode("utf-8"))
+        table = client.do_get(ticket, options).read_all()
+        return table.column(0)[0].as_py()
+    finally:
+        client.close()
+
+
+def basic_authorization(user, password=""):
+    return b"Basic " + base64.b64encode(f"{user}:{password}".encode("utf-8"))
+
+
+def test_arrowflight_default_session_user():
+    # Arrow Flight is not a composable protocol, so only the global setting applies to it:
+    # a call without an `authorization` header runs as the global default session user.
+    assert arrowflight_query(node1, "SELECT currentUser()") == "global_default_user"
+
+    # Basic credentials with an empty user name mean the default session user as well.
+    assert arrowflight_query(node1, "SELECT currentUser()", basic_authorization("")) == "global_default_user"
+
+    # An explicitly specified user is not affected.
+    assert arrowflight_query(node1, "SELECT currentUser()", basic_authorization("explicit_user")) == "explicit_user"
+
+
+def test_arrowflight_anonymous_logins_disabled():
+    # An empty global default session user prohibits Arrow Flight calls without a user
+    # name: both without the `authorization` header and with Basic credentials with an
+    # empty user name.
+    for authorization in [None, basic_authorization("")]:
+        with pytest.raises(pyarrow.flight.FlightUnauthenticatedError, match="default_session_user"):
+            arrowflight_query(node_reject, "SELECT 1", authorization)
+
+    # An explicitly specified user works as usual.
+    assert arrowflight_query(node_reject, "SELECT currentUser()", basic_authorization("explicit_user")) == "explicit_user"
 
 
 def test_native_default_session_user():
