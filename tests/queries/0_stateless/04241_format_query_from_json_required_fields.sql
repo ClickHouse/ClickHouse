@@ -47,12 +47,12 @@ SELECT formatQueryFromJSON('{"type":"RenameQuery","database":true,"elements":[]}
 
 -- SystemQuery (SCHEDULE MERGE): requires `table` and `scheduled_merge_parts`.
 -- `query_type` is the numeric position of `ASTSystemQuery::Type::SCHEDULE_MERGE` in the enum.
-SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":101}'); -- { serverError BAD_ARGUMENTS }
-SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":101,"table":{"type":"Identifier","name":"t"}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":104}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":104,"table":{"type":"Identifier","name":"t"}}'); -- { serverError BAD_ARGUMENTS }
 
 -- SystemQuery (REFRESH VIEW): requires `table`.
 -- `query_type` is the numeric position of `ASTSystemQuery::Type::REFRESH_VIEW` in the enum.
-SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":105}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":108}'); -- { serverError BAD_ARGUMENTS }
 
 -- SystemQuery: `query_type` is required (otherwise a missing key would silently deserialize as `Type::UNKNOWN`).
 SELECT formatQueryFromJSON('{"type":"SystemQuery"}'); -- { serverError BAD_ARGUMENTS }
