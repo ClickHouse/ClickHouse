@@ -468,8 +468,8 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         {"seed", "Seed for hash functions. Default: 0."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the Bloom filter state as `AggregateFunction(1, groupBloomFilter, T)` (default form) or "
-        "`AggregateFunction(1, groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(1, groupBloomFilter(1000), String)`) "
+        "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` (default form) or "
+        "`AggregateFunction(groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(groupBloomFilter(1000), String)`) "
         "when using the `-State` combinator. "
         "The `-If`, `-Array`, and `-ArrayIf` variants use the corresponding aggregate function name and argument types. "
         "Parameterized forms must resolve to the same effective `filter_size_bytes`, `num_hashes`, and `seed` when defining `AggregatingMergeTree` columns explicitly. "

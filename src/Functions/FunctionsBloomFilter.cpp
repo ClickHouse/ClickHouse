@@ -19,7 +19,7 @@ Numeric probe values may use a different numeric type than the filter value type
     )";
     FunctionDocumentation::Syntax syntax_bloomFilterContains = "bloomFilterContains(bloom_filter, value)";
     FunctionDocumentation::Arguments arguments_bloomFilterContains = {
-        {"bloom_filter", "Compatible Bloom filter state produced by `groupBloomFilterState`, `groupBloomFilterMergeState`, or a supported state-preserving combinator variant such as `groupBloomFilterIfState`, `groupBloomFilterArrayState`, or `groupBloomFilterArrayIfState`. For the default `groupBloomFilterState` form, the type is `AggregateFunction(1, groupBloomFilter, T)`; parameterized and combinator forms use the corresponding aggregate function name and argument types. The parameters must resolve to the same effective Bloom filter configuration as the state."},
+        {"bloom_filter", "Compatible Bloom filter state produced by `groupBloomFilterState`, `groupBloomFilterMergeState`, or a supported state-preserving combinator variant such as `groupBloomFilterIfState`, `groupBloomFilterArrayState`, or `groupBloomFilterArrayIfState`. For the default `groupBloomFilterState` form, declare the type as `AggregateFunction(groupBloomFilter, T)`; parameterized and combinator forms use the corresponding aggregate function name and argument types. The parameters must resolve to the same effective Bloom filter configuration as the state."},
         {"value", "Value to check for. It may be any compatible numeric type for numeric filters; the value is converted to the filter value type with an accurate cast."}
     };
     FunctionDocumentation::ReturnedValue returned_value_bloomFilterContains = {
