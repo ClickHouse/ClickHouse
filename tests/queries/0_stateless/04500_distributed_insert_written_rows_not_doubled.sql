@@ -57,3 +57,49 @@ WHERE database = currentDatabase() AND view = 'mv_04500';
 DROP TABLE mv_04500;
 DROP TABLE dist_04500;
 DROP TABLE local_04500;
+
+-- Suppressing the nested per-shard accounting must NOT leak into a downstream materialized
+-- view attached to the local shard table. A synchronous INSERT must still include the view's
+-- own writes in system.query_views_log and charge its WRITTEN_BYTES quota (the flag is only
+-- consulted by InterpreterInsertQuery, not by the view CountingTransform in
+-- InsertDependenciesBuilder::createSelect).
+DROP TABLE IF EXISTS mv_tgt_04500;
+DROP VIEW IF EXISTS mv_dl_04500;
+CREATE TABLE local_04500 (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE dist_04500 AS local_04500
+    ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_04500, rand());
+CREATE TABLE mv_tgt_04500 (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW mv_dl_04500 TO mv_tgt_04500 AS SELECT x FROM local_04500;
+
+INSERT INTO dist_04500 SELECT number FROM numbers(1000)
+    SETTINGS log_comment = '04500_dist_insert_mv', distributed_foreground_insert = 1;
+
+SYSTEM FLUSH LOGS query_log, query_views_log;
+
+-- The initial synchronous INSERT accounts the local-shard target write (1000) plus the
+-- downstream view write (1000) = 2000, matching a plain (non-distributed) INSERT into a table
+-- that has a materialized view. The point is that the per-shard write is not double-counted
+-- (would be 3000) and the view write is not dropped (would be 1000).
+SELECT written_rows, written_bytes
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query
+  AND query_kind = 'Insert'
+  AND current_database = currentDatabase()
+  AND log_comment = '04500_dist_insert_mv'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- The materialized view's own write must be reported (1000, not dropped to 0).
+SELECT sum(written_rows)
+FROM system.query_views_log
+WHERE view_name = currentDatabase() || '.mv_dl_04500';
+
+-- Physical rows: 1000 in the target, 1000 in the view target.
+SELECT count() FROM local_04500;
+SELECT count() FROM mv_tgt_04500;
+
+DROP VIEW mv_dl_04500;
+DROP TABLE mv_tgt_04500;
+DROP TABLE dist_04500;
+DROP TABLE local_04500;
