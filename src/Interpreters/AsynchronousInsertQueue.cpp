@@ -1535,10 +1535,12 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         if (!entry_parsed.empty() && entry_parsed[ei].exc)
         {
             LOG_ERROR(logger, "Failed http_column parsing for entry {}, skipping.", entry->query_id);
+            /// Capture the byte count before finish(): finish() calls resetChunk()
+            /// internally, which destroys the chunk storage that bytes points into.
+            const size_t entry_bytes = bytes->size();
             entry->finish(entry_parsed[ei].exc);
             entry_num_rows.push_back(0);
-            add_to_async_insert_log(entry, "http_column parse error at flush time", 0, bytes->size());
-            entry->resetChunk();
+            add_to_async_insert_log(entry, "http_column parse error at flush time", 0, entry_bytes);
             ++ei;
             continue;
         }
