@@ -86,6 +86,7 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -153,6 +154,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
@@ -1758,25 +1760,43 @@ static BlockIO executeQueryImpl(
                     merged_block = pulling_executor.getHeader().cloneWithColumns(std::move(mutable_cols));
                 }
 
-                /// Clone the INSERT AST, strip the SELECT sub-tree, and set format to Native.
-                /// pushQueryWithBlock internally overwrites the format field; we still set it
-                /// here to make the cloned query self-consistent before the call.
-                auto async_query = out_ast->clone();
-                auto & async_insert_q = async_query->as<ASTInsertQuery &>();
-                if (async_insert_q.select)
+                /// If the collected block exceeds the async queue size limit, fall back to a
+                /// direct synchronous write rather than materialising a huge block in the queue.
+                if (merged_block.bytes() > settings[Setting::async_insert_max_data_size].value)
                 {
-                    async_insert_q.children.erase(
-                        std::remove(
-                            async_insert_q.children.begin(),
-                            async_insert_q.children.end(),
-                            async_insert_q.select),
-                        async_insert_q.children.end());
-                    async_insert_q.select.reset();
-                }
-                async_insert_q.format = "Native";
+                    LOG_DEBUG(logger,
+                        "Setting async_insert=1, but INSERT...SELECT FROM input() will be executed "
+                        "synchronously because the payload ({} bytes) exceeds async_insert_max_data_size ({} bytes)",
+                        merged_block.bytes(), settings[Setting::async_insert_max_data_size].value);
 
-                /// pushQueryWithBlock always returns OK — there is no TOO_MUCH_DATA path
-                /// for pre-parsed blocks (unlike pushQueryWithInlinedData).
+                    /// Build only the write side of the INSERT pipeline (no SELECT, data comes from merged_block).
+                    /// Clone and strip the SELECT so the interpreter reads from format, not re-executes the SELECT.
+                    auto sync_ast = out_ast->clone();
+                    auto & sync_insert_q = sync_ast->as<ASTInsertQuery &>();
+                    sync_insert_q.select.reset();
+                    sync_insert_q.format = "Native";
+                    InterpreterInsertQuery sync_interpreter(
+                        sync_ast, context,
+                        settings[Setting::insert_allow_materialized_columns],
+                        /* no_squash */ false, /* no_destination */ false, /* async_insert */ false);
+                    auto sync_io = sync_interpreter.execute();
+                    auto source = std::make_shared<SourceFromSingleChunk>(
+                        std::make_shared<const Block>(merged_block.cloneEmpty()),
+                        Chunk(merged_block.getColumns(), merged_block.rows()));
+                    sync_io.pipeline.complete(Pipe(std::move(source)));
+                    CompletedPipelineExecutor sync_executor(sync_io.pipeline);
+                    sync_executor.execute();
+                    async_insert = false;
+                }
+                else
+                {
+                /// Keep the SELECT in the clone — preprocessInsertQuery (called inside
+                /// pushQueryWithBlock) needs query.select for table-function schema inference
+                /// via setStructureHint. The async_insert_flush flag set by preprocessInsertQuery
+                /// prevents InterpreterInsertQuery::execute() from re-running the SELECT at
+                /// flush time.
+                auto async_query = out_ast->clone();
+
                 auto result = queue->pushQueryWithBlock(async_query, std::move(merged_block), context);
 
                 // Increment InsertQuery counter for async insert via input()
@@ -1797,6 +1817,7 @@ static BlockIO executeQueryImpl(
                 const auto & table_id = insert_query->table_id;
                 if (!table_id.empty())
                     context->setInsertionTable(table_id);
+                } // else — within-limit async path
             }
             else
             {
