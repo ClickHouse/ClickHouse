@@ -318,46 +318,44 @@ static AvroDeserializer::DeserializeFn createLogicalTimeDeserializeFn(
 {
     const avro::Type physical_type = root_node->type();
     const WhichDataType target(target_type);
+    const bool target_is_time = target.isTime();
+    const bool target_is_time64 = target.isTime64();
+    const UInt32 target_scale = target_is_time64 ? getDecimalScale(*target_type) : 0;
+    /// Time and Time64(0) are both second precision.
+    const bool target_is_seconds = target_is_time || (target_is_time64 && target_scale == 0);
 
-    if (target.isTime())
+    if (target_is_seconds)
     {
         const Int64 divisor = DataTypeTime64::getScaleMultiplier(source_scale).value;
-        return [physical_type, divisor](IColumn & column, avro::Decoder & decoder)
+        return [physical_type, divisor, target_is_time](IColumn & column, avro::Decoder & decoder)
         {
             const Int64 value = decodeAvroIntOrLong(decoder, physical_type);
             const Int64 seconds = value / divisor;
-            if (seconds > std::numeric_limits<Int32>::max() || seconds < std::numeric_limits<Int32>::min())
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Avro time value {} is out of range for ClickHouse type Time",
-                    value);
-            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(seconds));
+            if (target_is_time)
+            {
+                if (seconds > std::numeric_limits<Int32>::max() || seconds < std::numeric_limits<Int32>::min())
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Avro time value {} is out of range for ClickHouse type Time",
+                        value);
+                assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(seconds));
+            }
+            else
+            {
+                assert_cast<ColumnDecimal<Time64> &>(column).insertValue(seconds);
+            }
             return true;
         };
     }
 
-    if (target.isTime64())
+    if (target_is_time64)
     {
-        const UInt32 target_scale = getDecimalScale(*target_type);
         if (target_scale < source_scale)
-        {
-            /// Time64(0) is second precision, same as Time: allow truncating division.
-            /// Other downscales (e.g. micros -> Time64(3)) still reject precision loss.
-            if (target_scale != 0)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot insert Avro time with scale {} into ClickHouse type {} without losing precision",
-                    source_scale,
-                    target_type->getName());
-
-            const Int64 divisor = DataTypeTime64::getScaleMultiplier(source_scale).value;
-            return [physical_type, divisor](IColumn & column, avro::Decoder & decoder)
-            {
-                const Int64 value = decodeAvroIntOrLong(decoder, physical_type);
-                assert_cast<ColumnDecimal<Time64> &>(column).insertValue(value / divisor);
-                return true;
-            };
-        }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot insert Avro time with scale {} into ClickHouse type {} without losing precision",
+                source_scale,
+                target_type->getName());
 
         const Int64 multiplier = DataTypeTime64::getScaleMultiplier(target_scale - source_scale).value;
         return [physical_type, multiplier](IColumn & column, avro::Decoder & decoder)
