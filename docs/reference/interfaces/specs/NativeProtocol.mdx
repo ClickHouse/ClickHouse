@@ -1001,7 +1001,7 @@ The `compression` flag in the [Query packet](#query) (field 6) toggles compressi
 
 | Setting                  | Default       | Unit   | Description |
 |--------------------------|---------------|--------|-------------|
-| `send_logs_level`        | `"fatal"`     | string | Minimum log level. Values: `"none"`, `"fatal"`, `"error"`, `"warning"`, `"information"`, `"debug"`, `"trace"`. |
+| `send_logs_level`        | `"fatal"`     | string | Minimum log level. Values: `"none"`, `"fatal"`, `"error"`, `"warning"`, `"information"`, `"debug"`, `"trace"`, `"test"`. |
 | `send_logs_source_regexp`| `""`          | string | Regex filter on the logger source. Empty = all sources pass. |
 
 Setting `send_logs_level` to anything other than `"none"` makes the server emit [Log](#log) packets during query execution.
