@@ -134,7 +134,7 @@ private:
 
         /// Local arms that are populated but hold a type flipCoordinates cannot process. Only used
         /// when variant_throw_on_type_mismatch = 0, where such arms' rows become NULL instead of throwing.
-        std::vector<bool> arm_nulled(num_variants, false);
+        std::vector<bool> arm_nulled(num_variants, false); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         bool any_nulled = false;
 
         for (size_t local_discr = 0; local_discr < num_variants; ++local_discr)
