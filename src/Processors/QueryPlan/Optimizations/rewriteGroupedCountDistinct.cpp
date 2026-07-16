@@ -143,7 +143,16 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     if (!hint || hint->sum_of_hash_table_sizes == 0 || hint->sum_of_hash_table_sizes > max_observed_group_keys)
         return false;
 
-    if (hint->merged_result_rows == 0 || hint->distinct_key_value_pairs < hint->merged_result_rows * min_avg_distinct_values_per_key)
+    /// Executions of the rewritten plan refresh `merged_result_rows`, `distinct_key_value_pairs`
+    /// and `input_rows` of this entry (see `Aggregator::Params::ResultRowsForwarding`), while the pre-merge fields
+    /// (`sum_of_hash_table_sizes` and friends) update only when the original plan runs. The
+    /// result-row bound therefore repeats the cardinality check against the refreshed field, and a
+    /// grown key count also deflates the observed overlap below — so data drift turns the rewrite
+    /// back off even when every execution runs rewritten.
+    if (hint->merged_result_rows == 0 || hint->merged_result_rows > max_observed_group_keys)
+        return false;
+
+    if (hint->distinct_key_value_pairs < hint->merged_result_rows * min_avg_distinct_values_per_key)
         return false;
 
     const auto current_width = params.max_threads;
@@ -160,12 +169,18 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
         return false;
     const auto & argument_type = input_header->getByName(argument_name).type;
 
-    /// The dedup aggregation: group by the original keys plus the argument, no aggregates.
+    /// The dedup aggregation: group by the original keys plus the argument, no aggregates. Its
+    /// result rows are the distinct (group key, argument value) pairs of the original aggregation.
     Names dedup_keys = params.keys;
     dedup_keys.push_back(argument_name);
+    auto dedup_params = cloneParamsWith(params, dedup_keys, {});
+    dedup_params.forward_result_rows_statistics
+        = {.key = stats.key,
+           .field = Aggregator::Params::ResultRowsForwarding::Field::DistinctKeyValuePairs,
+           .forward_input_rows = true};
     auto dedup_step = std::make_unique<AggregatingStep>(
         input_header,
-        cloneParamsWith(params, dedup_keys, {}),
+        std::move(dedup_params),
         GroupingSetsParamsList{},
         /*final_=*/true,
         aggregating->getMaxBlockSize(),
@@ -187,9 +202,13 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     count_aggregate.argument_names = {argument_name};
     count_aggregate.column_name = distinct_aggregate.column_name;
 
+    /// The count aggregation's result rows are the group keys of the original aggregation.
+    auto count_params = cloneParamsWith(params, params.keys, {std::move(count_aggregate)});
+    count_params.forward_result_rows_statistics
+        = {.key = stats.key, .field = Aggregator::Params::ResultRowsForwarding::Field::MergedResultRows};
     auto count_step = std::make_unique<AggregatingStep>(
         dedup_step->getOutputHeader(),
-        cloneParamsWith(params, params.keys, {std::move(count_aggregate)}),
+        std::move(count_params),
         GroupingSetsParamsList{},
         /*final_=*/true,
         aggregating->getMaxBlockSize(),
@@ -208,10 +227,11 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     if (!blocksHaveEqualStructure(*count_step->getOutputHeader(), *aggregating->getOutputHeader()))
         return false;
 
+    /// The splice destroys the original step; everything still needed from it (the argument name,
+    /// the statistics parameters) was copied out of it by value above.
     auto & dedup_node = nodes.emplace_back();
     dedup_node.step = std::move(dedup_step);
     dedup_node.children = {node.children.front()};
-    auto original_step = std::move(node.step);
     node.step = std::move(count_step);
     node.children = {&dedup_node};
 
@@ -233,32 +253,12 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
         /// `setAggregationHashTableCacheKeys` — but under the old analyzer the key may be the
         /// AST-level seed with the plan hash having failed, and then it fails here too. Same policy
         /// as there: an unserializable subtree only costs the statistics, never the query. The
-        /// created steps then keep key 0 and record nothing.
+        /// created steps then keep key 0 and record no entries of their own; the gate refresh
+        /// through `forward_result_rows_statistics` does not depend on these keys.
         LOG_TRACE(
             getLogger("QueryPlanOptimizations"),
             "Keeping the rewritten grouped count-distinct steps without statistics keys: {}",
             getCurrentExceptionMessage(/*with_stacktrace=*/false));
-    }
-
-    if (dedup_key != 0 && count_key != 0)
-    {
-        const auto count_entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(
-            StatsCollectingParams(count_key, true, stats.max_entries_for_hash_table_stats, stats.max_size_to_preallocate));
-        const auto dedup_entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(
-            StatsCollectingParams(dedup_key, true, stats.max_entries_for_hash_table_stats, stats.max_size_to_preallocate));
-        if (count_entry && dedup_entry && count_entry->merged_result_rows != 0 && dedup_entry->merged_result_rows != 0)
-        {
-            const auto groups = count_entry->merged_result_rows;
-            const auto pairs = dedup_entry->merged_result_rows;
-            const auto pair_overlap = std::min<UInt64>(dedup_entry->sum_of_hash_table_sizes / pairs, current_width);
-            if (groups > max_observed_group_keys || pairs < groups * min_avg_distinct_values_per_key
-                || pair_overlap < min_overlap)
-            {
-                node.step = std::move(original_step);
-                node.children = {dedup_node.children.front()};
-                return false;
-            }
-        }
     }
 
     if (dedup_key != 0)

@@ -895,7 +895,8 @@ IProcessor::Status AggregatingTransform::prepare()
         {
             /// The merge ran to completion, so the counted output describes the whole result.
             if (record_result_statistics && !is_result_statistics_updated && params->final
-                && params->params.stats_collecting_params.isCollectionAndUseEnabled())
+                && (params->params.stats_collecting_params.isCollectionAndUseEnabled()
+                    || params->params.forward_result_rows_statistics))
                 return Status::Ready;
 
             output.finish();
@@ -972,6 +973,25 @@ void AggregatingTransform::updateResultStatistics()
         entry->distinct_key_value_pairs = generated_distinct_key_value_pairs;
         entry->input_rows = input_rows_total;
         getHashTablesStatistics<AggregationEntry>().update(*entry, stats_params);
+    }
+
+    /// The forwarding target is the entry of an aggregation this one replaced (see the field's
+    /// comment in `Aggregator::Params`): patch the one field this aggregation observes and keep
+    /// the others as recorded.
+    if (const auto & forwarding = params->params.forward_result_rows_statistics)
+    {
+        const StatsCollectingParams target_params(
+            forwarding->key, true, stats_params.max_entries_for_hash_table_stats, stats_params.max_size_to_preallocate);
+        if (auto entry = getHashTablesStatistics<AggregationEntry>().getSizeHint(target_params))
+        {
+            if (forwarding->field == Aggregator::Params::ResultRowsForwarding::Field::MergedResultRows)
+                entry->merged_result_rows = generated_rows;
+            else
+                entry->distinct_key_value_pairs = generated_rows;
+            if (forwarding->forward_input_rows)
+                entry->input_rows = input_rows_total;
+            getHashTablesStatistics<AggregationEntry>().update(*entry, target_params);
+        }
     }
 }
 

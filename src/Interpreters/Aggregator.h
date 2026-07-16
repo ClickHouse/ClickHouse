@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -130,6 +131,32 @@ public:
         bool optimize_group_by_constant_keys = false;
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
+
+        /// Makes the aggregation additionally report its merged result-row count into one field of
+        /// the statistics entry stored under another key. Set by the grouped count-distinct plan
+        /// rewrite (see `rewriteGroupedCountDistinct.cpp`) on the two aggregations it creates: the
+        /// gate of that rewrite reads the entry recorded under the replaced aggregation's key, and
+        /// since the replaced aggregation no longer runs, each created aggregation refreshes the
+        /// field of that entry it observes — the deduplicating aggregation produces one row per
+        /// distinct (group key, argument value) pair, and the counting aggregation on top produces
+        /// one row per group key. Deliberately not serialized with the plan: on a deserialized
+        /// fragment the fields stay empty and the entry simply is not refreshed.
+        struct ResultRowsForwarding
+        {
+            enum class Field : UInt8
+            {
+                MergedResultRows,
+                DistinctKeyValuePairs,
+            };
+
+            UInt64 key = 0;
+            Field field = Field::MergedResultRows;
+
+            /// Additionally report the consumed source-row count as the entry's `input_rows`. Set
+            /// on the aggregation of the two that consumes the original aggregation's input.
+            bool forward_input_rows = false;
+        };
+        std::optional<ResultRowsForwarding> forward_result_rows_statistics;
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
