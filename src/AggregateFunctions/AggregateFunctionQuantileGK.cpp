@@ -424,7 +424,6 @@ public:
     static constexpr bool merge_is_equivalent_to_adding_rows = false;
 
 private:
-private:
     using Data = ApproxSampler<Value>;
     Data data;
 

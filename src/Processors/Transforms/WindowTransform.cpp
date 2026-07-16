@@ -1306,7 +1306,7 @@ void WindowTransform::FrameAggregateTree::mergeFrame(AggregateDataPtr result, Ar
         UInt64 end;
     };
     // At most one trailing range per level; levels cannot exceed log_fanout(2^64) = 16.
-    std::array<SegmentRange, 16> trailing;
+    std::array<SegmentRange, 16> trailing{};
     size_t trailing_count = 0;
 
     size_t level = 0;
