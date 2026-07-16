@@ -33,14 +33,11 @@ BackupFileInfos BackupCoordinationFileInfos::getFileInfos(const String & host_id
     return it->second;
 }
 
-BackupFileInfos BackupCoordinationFileInfos::getFileInfosForAllHosts() const
+void BackupCoordinationFileInfos::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
 {
     prepare();
-    BackupFileInfos res;
-    res.reserve(file_infos_for_all_hosts.size());
     for (const auto * file_info : file_infos_for_all_hosts)
-        res.emplace_back(*file_info);
-    return res;
+        callback(*file_info);
 }
 
 BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t data_file_index) const
