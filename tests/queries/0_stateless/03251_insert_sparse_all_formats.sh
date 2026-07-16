@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-detach
-# no-random-detach: long test, DETACH/ATTACH adds too much overhead
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings, no-random-detach
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
+# no-random-settings: serial loop over every I/O format on debug sits at the 600s per-test timeout; randomized query settings amplify wall-time ~3x and tip it over
+# no-random-detach: long test, DETACH/ATTACH adds too much overhead
 
 set -e
 
