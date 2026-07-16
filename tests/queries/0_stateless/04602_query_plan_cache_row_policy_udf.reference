@@ -1,0 +1,9 @@
+-- 1. row policy calling a subquery-free UDF: query IS cacheable
+-- boundary <= 3 (rows 1,2,3): 6
+-- hits after a repeat (must be 1, cached): 1
+-- 2. redefining the UDF changes the enforced boundary without a stale cache hit
+-- boundary now <= 1 (row 1), reflected immediately: 1
+-- 3. row policy calling a UDF whose body contains a subquery: query is NOT cacheable
+-- boundary = 2 (rows 1,2): 3
+-- hits after a repeat (must be 0, not cached): 0
+-- boundary now 4 (rows x <= 4), reflected immediately: 10

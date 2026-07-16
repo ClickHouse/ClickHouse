@@ -100,25 +100,43 @@ ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
     return normalized_ast;
 }
 
-/// True if the AST tree contains a subquery (a scalar `(SELECT ...)`, an `IN (SELECT ...)`, or a
-/// bare select node). Used to reject row-policy filters that read other tables: those reads are
-/// invisible as plan leaves and are not part of the AST closure walked by
-/// `ASTDependencyCollector`, so the cache cannot track or revalidate them (see `getRowPolicyInfo`).
-bool astContainsSubquery(const IAST & ast)
+/// True if the AST tree, or the body of any SQL UDF it calls (recursively, following nested UDF
+/// calls with `visited_udfs` guarding against cycles), contains a subquery (a scalar `(SELECT
+/// ...)`, an `IN (SELECT ...)`, or a bare select node). SQL UDFs are inlined into a row-policy
+/// filter at read time (see `checkRowPolicyFilterExpression` in RowPolicy.cpp for the same descent
+/// pattern), so a subquery hidden inside a UDF body is just as invisible to the plan leaves and to
+/// the AST closure walked by `ASTDependencyCollector` as one written directly into the filter.
+/// Used to reject row-policy filters that read other tables that the cache cannot track or
+/// revalidate (see `getRowPolicyInfo`).
+bool astOrCalledUdfBodiesContainSubquery(const IAST & ast, std::unordered_set<String> & visited_udfs)
 {
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
         return true;
+
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && astOrCalledUdfBodiesContainSubquery(*udf_body, visited_udfs))
+            return true;
+    }
+
     for (const auto & child : ast.children)
-        if (astContainsSubquery(*child))
+        if (astOrCalledUdfBodiesContainSubquery(*child, visited_udfs))
             return true;
     return false;
 }
 
 struct RowPolicyInfo
 {
-    /// Hash of the effective SELECT row-policy filter (empty when there is no restrictive policy).
+    /// Hash of the effective SELECT row-policy filter (empty when there is no restrictive policy),
+    /// combined with the current body of every SQL UDF it calls (recursively). Folding in the UDF
+    /// bodies makes the hash change when `CREATE OR REPLACE FUNCTION` redefines a UDF used by the
+    /// filter, even though the filter's own AST (the unexpanded call, e.g. `f(a)`) stays the same;
+    /// without this, a cache hit could keep enforcing a stale, already-replaced filter body.
     IASTHash hash{};
-    /// True when that filter contains a subquery, which makes the plan uncacheable.
+    /// True when that filter, or a UDF body it calls, contains a subquery, which makes the plan
+    /// uncacheable.
     bool has_subquery = false;
 };
 
@@ -128,8 +146,18 @@ RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & databa
     auto row_policy = context->getRowPolicyFilter(database, table, RowPolicyFilterType::SELECT_FILTER);
     if (row_policy && !row_policy->isAlwaysTrue() && row_policy->expression)
     {
-        info.hash = row_policy->expression->getTreeHash(/*ignore_aliases=*/false);
-        info.has_subquery = astContainsSubquery(*row_policy->expression);
+        std::unordered_set<String> visited_udfs;
+        info.has_subquery = astOrCalledUdfBodiesContainSubquery(*row_policy->expression, visited_udfs);
+
+        /// `visited_udfs` is the complete transitive set of called UDFs only when the traversal
+        /// above ran to completion, i.e. when it found no subquery; that is the only case where
+        /// the hash below is actually consulted (see the `has_subquery` checks at the call sites).
+        SipHash hash_state;
+        row_policy->expression->updateTreeHash(hash_state, /*ignore_aliases=*/false);
+        for (const auto & udf_name : visited_udfs)
+            if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(udf_name))
+                udf_body->updateTreeHash(hash_state, /*ignore_aliases=*/false);
+        info.hash = getSipHash128AsPair(hash_state);
     }
     return info;
 }
