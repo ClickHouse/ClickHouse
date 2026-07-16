@@ -3,7 +3,7 @@ ARG FROM_TAG=latest
 ARG REDPANDA_VERSION=v25.1.3
 FROM redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
 
-FROM clickhouse/test-base:$FROM_TAG
+FROM clickhouse/clickhouse-stateful-test:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 

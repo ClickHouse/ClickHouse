@@ -732,7 +732,9 @@ class ClickHouseProc:
                     return False
         return True
 
-    def prepare_stateful_data(self, with_s3_storage, is_db_replicated, build_type=None):
+    def prepare_stateful_data(
+        self, with_s3_storage, is_db_replicated, no_stateful=False, build_type=None
+    ):
         self.stateful_setup_error = None
         if is_db_replicated:
             print("Skip stateful data preparation for db replicated")
@@ -756,16 +758,34 @@ trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINEN
 
 MAX_EXECUTION_TIME=1800
 
-clickhouse-client --query "SHOW DATABASES"
-clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client < ./tests/docker_scripts/create.sql
+# The TPC-H / TPC-DS correctness tests (04033_tpc_ds_*, 04040_tpc_h_*) are NOT
+# tagged `stateful`, so they run even under --no-stateful and their databases
+# must always be prepared. `tpcds` uses a lazy web disk (cheap); `tpch` loads
+# SF1 from S3.
+clickhouse-client --query "CREATE DATABASE test"
 bash ./tests/docker_scripts/create_tpcds.sh
 bash ./tests/docker_scripts/create_tpch.sh
-clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM tpcds"
 clickhouse-client --query "SHOW TABLES FROM tpch"
 
-clickhouse-client --query "CREATE DATABASE test"
+# The hits/visits datasets (and the test.hits_s3 copy) are used ONLY by
+# `stateful`-tagged tests. A --no-stateful job (e.g. s3 storage) filters out
+# exactly those tests, so loading these datasets is wasted work there and is
+# skipped. The slow part is the lazy read of datasets.hits_v1/visits_v1 from
+# the web disk (real AWS S3, us-east-1); the writes into test.hits/test.hits_s3
+# go to the local minio, not real S3. Their consumers are all `stateful`-tagged,
+# so nothing that runs under --no-stateful references test.hits/test.visits/datasets.
+if [[ -z "$NO_STATEFUL" ]]; then
+clickhouse-client --query "SHOW DATABASES"
+clickhouse-client --query "CREATE DATABASE datasets"
+# create.sql attaches hits_v1/visits_v1 from the local baked store at
+# /opt/ch-stateful (shipped in clickhouse/stateless-test). Custom local disks must
+# sit under custom_local_disks_base_directory (/var/lib/clickhouse/disks/), so
+# expose the baked store there via a symlink instead of relaxing that guard.
+mkdir -p /var/lib/clickhouse/disks
+ln -sfn /opt/ch-stateful /var/lib/clickhouse/disks/stateful
+clickhouse-client < ./tests/docker_scripts/create.sql
+clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16, EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32, UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String, RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8, MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16, ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32, SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8, FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32, HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String, HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32, FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32, LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String, OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String, UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64, URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String, ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64), IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
@@ -793,17 +813,41 @@ clickhouse-client --query "CREATE TABLE test.hits_parquet (Title String, URL Str
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
+fi
 """
         command = f"MAX_INSERT_THREADS={max_insert_threads}\n" + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
+        if no_stateful:
+            # Skip the hits/visits/test.hits_s3 load (see the NO_STATEFUL guard in
+            # the script): only `stateful`-tagged tests use those tables and a
+            # --no-stateful job filters them out, so the load is pure waste there.
+            command = "NO_STATEFUL=1\n" + command
         # Run via Shell.run (bash, like Shell.check) but keep a log file so that
         # on failure we can surface the failing sub-command + its ClickHouse
         # error tail to the caller. Same success semantics as before
         # (returncode == 0). This is what makes the intermittent msan re-prepare
         # failure diagnosable in CIDB instead of a generic boolean.
         log_file = f"{temp_dir}/prepare_stateful_data.log"
+        # Loading the hits/visits datasets - the lazy read of hits_v1/visits_v1
+        # from the web disk (real AWS S3) plus the local-minio inserts - routinely
+        # takes many minutes. Shell.run streams this step's output to stdout, but the
+        # setup closure runs under Result.from_commands_run's Tee, whose
+        # DualWriter never flushes the block-buffered real stdout. With little
+        # stdout produced during the load, nothing flushes for minutes, so
+        # job.log shows a blank multi-minute gap right after the minio restart
+        # line - which reads like a hung "Restarting clickminio (timeout 60s)"
+        # when it is really data loading. Announce start/end with elapsed time
+        # and flush so the step is attributable in job.log and the gap stops
+        # masquerading as a stuck restart.
+        datasets = "tpch/tpcds" if no_stateful else "tpch/tpcds + hits/visits"
+        print(f"Preparing stateful data ({datasets})...", flush=True)
+        started_at = time.time()
         rc = Shell.run(command, log_file=log_file, verbose=True)
+        print(
+            f"Stateful data preparation finished in {time.time() - started_at:.0f}s (exit {rc})",
+            flush=True,
+        )
         if rc != 0:
             tail = ""
             try:

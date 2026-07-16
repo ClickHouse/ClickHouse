@@ -319,6 +319,14 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    # A --no-stateful run filters out every `stateful`-tagged test, i.e. exactly
+    # the tests that use the preloaded test.hits/test.visits datasets. Preparing
+    # those datasets is then wasted work (a multi-minute lazy read of hits_v1/
+    # visits_v1 from the web disk, real AWS S3), so signal prepare_stateful_data
+    # to skip it. Keyed off the actual runner flag, not a specific storage
+    # option, so any --no-stateful job wins.
+    is_no_stateful = "--no-stateful" in runner_options
+
     # If this PR only touches test files (no production/config code changed),
     # this job only needs to run if one of the changed tests would even be
     # selected here - and, when the job is also hash-batched (N/M), only the
@@ -779,6 +787,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                     build_type=build_types[0] if is_bugfix_validation else None,
                 ):
                     print(
@@ -992,6 +1001,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                             build_type=bugfix_bt,
                         ):
                             # Prefer the concrete sub-command + ClickHouse error

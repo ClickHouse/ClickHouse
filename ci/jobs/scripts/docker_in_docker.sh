@@ -31,6 +31,23 @@ echo '{
 #         > /sys/fs/cgroup/cgroup.subtree_control
 # fi
 
+# Experiment (runtime-overhead reduction): back the nested daemon's data-root
+# with tmpfs instead of the clickhouse_integration_tests_volume mounted at
+# /var/lib/docker, so the service containers' IO never touches the host disk.
+# Opt-in via DIND_TMPFS_DATA_ROOT=1. Caveats:
+#  - tmpfs pages are charged to this container's memory cgroup (the job runs
+#    with --memory), so DIND_TMPFS_SIZE plus the test working set must fit the
+#    job's memory budget or the kernel OOM killer fires;
+#  - the mount shadows the named volume, so the cross-job image cache is
+#    bypassed and every job re-pulls its service images.
+# The daemon config above pins storage-driver to overlay2, which works on
+# tmpfs; without the pin a data-root the driver dislikes silently degrades to
+# vfs (full per-layer copies) - never allow that.
+if [ "${DIND_TMPFS_DATA_ROOT:-0}" = "1" ]; then
+    mkdir -p /var/lib/docker
+    mount -t tmpfs -o "size=${DIND_TMPFS_SIZE:-32g}" tmpfs /var/lib/docker
+fi
+
 # Binding to an IP address without --tlsverify is deprecated. Startup is intentionally being slowed
 # unless --tls=false or --tlsverify=false is set
 #

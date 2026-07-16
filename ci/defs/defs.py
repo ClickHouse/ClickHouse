@@ -113,10 +113,24 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        # Bakes the hits_v1/visits_v1 stateful datasets for the stateless-test
+        # image. The name reuses a Docker Hub repository that has been dead
+        # since 2021 (the pre-praktika CI's stateful-test image): the CI robot
+        # cannot create new repositories in the clickhouse org, only push to
+        # existing ones.
+        name="clickhouse/clickhouse-stateful-test",
+        path="./ci/docker/stateful-dataset",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        # FROM clickhouse/clickhouse-stateful-test (which is FROM clickhouse/test-base) so
+        # the baked /opt/ch-stateful datasets are inherited. praktika passes the
+        # single dependency as FROM_TAG, so no digest needs to be pinned by hand.
+        depends_on=["clickhouse/clickhouse-stateful-test"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
