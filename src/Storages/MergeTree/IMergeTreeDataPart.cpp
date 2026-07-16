@@ -1826,7 +1826,10 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
     }
 
     if (!result)
+    {
         result = fallback_codec;
+        default_codec_is_approximate = true;
+    }
 
     return result;
 }

@@ -412,6 +412,15 @@ public:
 
     CompressionCodecPtr default_codec;
 
+    /// Set when `default_codec` is not known exactly: `default_compression_codec.txt` was missing or
+    /// malformed and no column's on-disk data proved the codec either, so `default_codec` is only a
+    /// best-effort guess from `checksums.txt` (see `detectDefaultCompressionCodecFromChecksums`) that
+    /// may not match the part's actual codec family or level. Consumers that use `default_codec` to
+    /// decide whether work can be skipped (e.g. `TTLRecompressMergeSelector`) must treat this as
+    /// "unknown" rather than trust the guess, so a wrong guess cannot suppress a merge that is still
+    /// needed.
+    mutable bool default_codec_is_approximate = false;
+
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
