@@ -819,12 +819,11 @@ TEST_F(UsersConfigMultipleAuthTest, OTPWithMixedAuthIncludingPassword)
 }
 
 #if USE_SSH
-/// An ssh_keys method whose every key was filtered out (empty key list, the exact state FIPS
-/// filtering produces for an all-Ed25519 method) must be DROPPED, not throw. An empty <ssh_keys/>
-/// block reaches the same "no keys left" path without depending on a FIPS build. Dropping the only
-/// method leaves the user with no authentication, so the user is skipped, but the rest of the
-/// users.xml load must still succeed - it must not abort the whole config.
-TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysUserSkippedRestOfConfigLoads)
+/// An explicitly empty <ssh_keys/> block (no <ssh_key> entry at all) is a real config mistake and
+/// must fail with BAD_ARGUMENTS, not be silently skipped. This is distinct from the FIPS-filtered
+/// case (entries present but all filtered out), which is dropped; that path only triggers on a real
+/// FIPS build (isFIPSEnabled()) and cannot be reached from a non-FIPS unit test.
+TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysBlockIsRejected)
 {
     const std::string xml_config = R"(
         <clickhouse>
@@ -832,30 +831,19 @@ TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysUserSkippedRestOfConfigLoads)
                 <ssh_only_user>
                     <ssh_keys></ssh_keys>
                 </ssh_only_user>
-                <password_user>
-                    <password>plaintext_pass</password>
-                </password_user>
             </users>
         </clickhouse>
     )";
 
     auto config = createConfigFromXML(xml_config);
-    /// Must NOT throw: the offending user is skipped, not the whole load.
-    EXPECT_NO_THROW(storage->setConfig(*config));
-
-    /// The all-empty-ssh_keys user was skipped.
-    EXPECT_FALSE(storage->tryRead<User>("ssh_only_user"));
-
-    /// The unrelated user still loaded fine.
-    auto password_user = storage->tryRead<User>("password_user");
-    ASSERT_TRUE(password_user);
-    ASSERT_EQ(password_user->authentication_methods.size(), 1);
-    EXPECT_EQ(password_user->authentication_methods[0].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
+    /// An explicitly empty ssh_keys section is a misconfiguration and must surface as an error.
+    EXPECT_THROW(storage->setConfig(*config), DB::Exception);
 }
 
-/// A user with a dropped (empty) ssh_keys method AND a valid password method keeps the password
-/// method - dropping one unusable method must not discard the user's other valid methods.
-TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysMethodDroppedOtherMethodKept)
+/// The same rejection applies inside <auth_methods>: an explicitly empty <ssh_keys/> method is a
+/// config mistake and must fail rather than be silently dropped, even when a sibling valid method
+/// exists.
+TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysMethodIsRejected)
 {
     const std::string xml_config = R"(
         <clickhouse>
@@ -871,11 +859,6 @@ TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysMethodDroppedOtherMethodKept)
     )";
 
     auto config = createConfigFromXML(xml_config);
-    EXPECT_NO_THROW(storage->setConfig(*config));
-
-    auto user = storage->tryRead<User>("test_user");
-    ASSERT_TRUE(user);
-    ASSERT_EQ(user->authentication_methods.size(), 1);
-    EXPECT_EQ(user->authentication_methods[0].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
+    EXPECT_THROW(storage->setConfig(*config), DB::Exception);
 }
 #endif

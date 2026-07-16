@@ -287,6 +287,7 @@ namespace
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
             std::vector<SSHKey> keys;
+            bool has_fips_filtered_key = false;
             for (const String& entry : entries)
             {
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
@@ -311,6 +312,7 @@ namespace
                     {
                         LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
                             "Skipping SSH key entry {} for user {} (type {}): not usable in FIPS mode", entry, user_name, type);
+                        has_fips_filtered_key = true;
                         continue;
                     }
 
@@ -327,16 +329,23 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ssh_key entry pattern type: {}", entry);
             }
 
-            /// If every configured key was filtered out above (all unusable in FIPS mode), do not
-            /// materialize an SSH_KEY method with an empty key list: it is not round-trippable
-            /// (toAST would emit "ssh_key BY" with no keys). Drop this method instead of throwing,
-            /// so a single all-Ed25519 method under FIPS does not abort the whole users.xml load or
-            /// discard a user's other valid authentication methods.
             if (keys.empty())
             {
-                LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
-                    "Dropping ssh_keys authentication method for user {}: no key usable in FIPS mode", user_name);
-                return std::nullopt;
+                /// Two distinct empty cases must not be conflated:
+                ///  - keys were present but every one was filtered out in FIPS mode: drop the
+                ///    method (return nullopt) so a single all-Ed25519 method under FIPS does not
+                ///    abort the whole users.xml load or discard a user's other valid methods, and
+                ///    so we never materialize a non-round-trippable zero-key SSH_KEY auth.
+                ///  - an explicitly empty <ssh_keys/> block (no key was present at all): that is a
+                ///    real config mistake and must still fail, not be silently skipped.
+                if (has_fips_filtered_key)
+                {
+                    LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
+                        "Dropping ssh_keys authentication method for user {}: no key usable in FIPS mode", user_name);
+                    return std::nullopt;
+                }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The 'ssh_keys' authentication method for user {} does not contain any key", user_name);
             }
 
             auth_data.setSSHKeys(std::move(keys));
