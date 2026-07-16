@@ -287,7 +287,10 @@ namespace
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
             std::vector<SSHKey> keys;
-            bool has_fips_filtered_key = false;
+            /// (base64, type) of keys filtered out in FIPS mode. Kept verbatim (not discarded) so that,
+            /// as long as at least one usable key remains, SHOW CREATE USER re-emits the skipped entries
+            /// too and copying the definition off a FIPS node does not permanently strip them.
+            std::vector<std::pair<String, String>> unusable_keys;
             for (const String& entry : entries)
             {
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
@@ -318,7 +321,7 @@ namespace
 
                         LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
                             "Skipping SSH key entry {} for user {} (type {}): not usable in FIPS mode", entry, user_name, type);
-                        has_fips_filtered_key = true;
+                        unusable_keys.emplace_back(base64_key, type);
                         continue;
                     }
 
@@ -344,7 +347,7 @@ namespace
                 ///    so we never materialize a non-round-trippable zero-key SSH_KEY auth.
                 ///  - an explicitly empty <ssh_keys/> block (no key was present at all): that is a
                 ///    real config mistake and must still fail, not be silently skipped.
-                if (has_fips_filtered_key)
+                if (!unusable_keys.empty())
                 {
                     LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
                         "Dropping ssh_keys authentication method for user {}: no key usable in FIPS mode", user_name);
@@ -354,7 +357,11 @@ namespace
                     "The 'ssh_keys' authentication method for user {} does not contain any key", user_name);
             }
 
+            /// At least one usable key remains: preserve the FIPS-filtered keys verbatim alongside it
+            /// (mirrors AuthenticationData::fromAST) so SHOW CREATE USER on a FIPS node re-emits the
+            /// skipped Ed25519 entries instead of permanently stripping them from the recreated user.
             auth_data.setSSHKeys(std::move(keys));
+            auth_data.setUnusableSSHKeys(std::move(unusable_keys));
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif

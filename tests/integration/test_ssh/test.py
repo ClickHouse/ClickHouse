@@ -34,18 +34,23 @@ def server_in_fips_mode():
 def started_cluster():
     try:
         cluster.start()
-        if server_in_fips_mode():
-            # Every test here authenticates "lucy" with an Ed25519 key, which is not
-            # FIPS-approved: UsersConfigParser drops that key on FIPS builds, so the
-            # user cannot log in. Skip the suite rather than fail the Ed25519 happy path.
-            pytest.skip("Ed25519 SSH keys are not usable in FIPS mode")
         yield cluster
 
     finally:
         cluster.shutdown()
 
 
+def skip_if_fips():
+    # Only the tests that authenticate "lucy" with an Ed25519 key are affected by FIPS:
+    # that key is not FIPS-approved, so UsersConfigParser drops it on FIPS builds and
+    # "lucy" cannot log in. Skip just those cases; the none/password SSH tests below do
+    # not depend on Ed25519 and must keep running under FIPS.
+    if server_in_fips_mode():
+        pytest.skip("Ed25519 SSH keys are not usable in FIPS mode")
+
+
 def test_simple_query_with_openssh_client(started_cluster):
+    skip_if_fips()
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
     ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "SELECT 1;"'
 
@@ -64,6 +69,7 @@ def test_simple_query_with_openssh_client(started_cluster):
 
 
 def test_no_queries_from_file(started_cluster):
+    skip_if_fips()
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
     ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "\\i /etc/passwd"'
 
@@ -80,6 +86,7 @@ def test_no_queries_from_file(started_cluster):
 
 
 def test_no_selects_into_outfile(started_cluster):
+    skip_if_fips()
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
     ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "SELECT 1 INTO OUTFILE \'/tmp/result.tsv\';"'
 
@@ -94,6 +101,7 @@ def test_no_selects_into_outfile(started_cluster):
 
 
 def test_no_inserts_from_infile(started_cluster):
+    skip_if_fips()
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
     ssh_command = f"ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv=\"max_threads=9999 format=JSONEachRow\" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 \"INSERT INTO function null('x UInt64') FROM INFILE '/etc/passwd';\""
 
@@ -108,6 +116,8 @@ def test_no_inserts_from_infile(started_cluster):
 
 
 def test_create_table(started_cluster):
+    skip_if_fips()
+
     def execute_command_and_get_output(command, input=""):
         # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
         ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "{command}"'
@@ -139,6 +149,7 @@ def test_create_table(started_cluster):
 
 
 def test_simple_query_with_paramiko(started_cluster):
+    skip_if_fips()
     pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
     client = paramiko.SSHClient()
     policy = paramiko.AutoAddPolicy()
@@ -292,6 +303,7 @@ def test_ssh_interactive_pty_with_high_fds(started_cluster):
     > 1024 fds open on the server returns the expected query result within a
     bounded time.
     """
+    skip_if_fips()
     # Inflate the server-side fd count to well above FD_SETSIZE (1024) so the
     # fds opened by the new SSH session (TCP socket, PTY master/slave, libssh
     # internal pipes) are guaranteed to land at >= 1024. We pick a margin large
