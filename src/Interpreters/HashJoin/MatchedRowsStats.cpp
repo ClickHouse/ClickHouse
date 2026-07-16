@@ -72,4 +72,3 @@ UInt64 MatchedRowsStats::getMatchedRight() const
 }
 
 }
-

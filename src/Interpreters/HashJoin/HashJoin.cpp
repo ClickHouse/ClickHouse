@@ -1598,7 +1598,7 @@ public:
 
         if (auto * stats = parent.matched_rows_stats.get())
             stats->collectNonJoined(rows_added);
-            
+
         return rows_added;
     }
 
@@ -2725,6 +2725,7 @@ void HashJoin::onBuildPhaseFinish()
             matched_rows_stats->prepareRightBitmap(data->columns);
     }
 
+    build_phase_finished = true;
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());
 }
 

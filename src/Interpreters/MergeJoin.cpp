@@ -917,7 +917,7 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
         starting_right_block = continuation.right_block;
         not_processed.reset();
     }
-    else 
+    else
     {
         /// Count the block rows only when we are processing it for the first time
         total_left_rows.fetch_add(block.rows(), std::memory_order_relaxed);

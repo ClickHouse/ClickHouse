@@ -257,8 +257,8 @@ public:
     size_t countUsed() const
     {
         size_t count = 0;
-        for(const auto & [_, flags] : per_row_flags)
-            for(const auto & flag : flags)
+        for (const auto & [_, flags] : per_row_flags)
+            for (const auto & flag : flags)
                 count += flag.load(std::memory_order_relaxed);
 
         return count;

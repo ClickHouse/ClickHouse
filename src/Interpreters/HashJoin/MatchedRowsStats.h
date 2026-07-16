@@ -73,7 +73,7 @@ constexpr RightMatchedSource rightMatchedSource(JoinKind kind, JoinStrictness st
 
 class MatchedRowsStats
 {
-public: 
+public:
 
     MatchedRowsStats(JoinKind, JoinStrictness, UInt64 right_total_);
 
@@ -99,7 +99,7 @@ private:
     std::atomic<UInt64> left_rows_total = 0;
     std::atomic<UInt64> left_rows_matched = 0;
     std::atomic<UInt64> non_joined_right_rows = 0;
-    
+
     JoinKind join_kind;
     JoinStrictness join_strictness;
 };
