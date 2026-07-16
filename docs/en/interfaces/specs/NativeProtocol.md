@@ -446,6 +446,8 @@ Steps 1–5 are identical to the plain INSERT phase. After the end-of-input term
 
 **Client implementation note.** A client that handles plain `INSERT` by draining until `EndOfStream`/`Exception` and discarding all non-`EndOfStream` packets will silently drop the `RETURNING` result. To consume the result the client must detect the `Data` header packet that arrives after the end-of-input terminator and switch into the Query-phase response loop. The simplest safe approach is to treat the post-terminator response identically to a `SELECT` response: accumulate `Data` blocks, handle `Totals`/`Extremes`, and exit on `EndOfStream` or `Exception`.
 
+**Protocol compatibility gate.** The server only enables this post-terminator result stream for clients with protocol revision `DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS` or newer. For older native clients, `INSERT ... RETURNING` is rejected with `NOT_IMPLEMENTED` before insert data is processed.
+
 **Settings restriction.** The following settings raise `NOT_IMPLEMENTED` if supplied in the `RETURNING` subquery `SETTINGS` clause, because they operate on shared query-level state that is captured at `INSERT` registration and cannot be correctly scoped to the subquery alone:
 
 | Category | Rejected settings |

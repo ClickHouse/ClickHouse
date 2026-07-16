@@ -172,6 +172,7 @@ namespace DB::ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
@@ -895,6 +896,17 @@ void TCPHandler::runImpl()
 
             if (query_state->io.pipeline.pushing())
             {
+                if (const auto * insert_query = typeid_cast<const ASTInsertQuery *>(query_state->parsed_query.get());
+                    insert_query && insert_query->returning_select
+                    && client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS)
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "INSERT ... RETURNING over native TCP requires client protocol revision {} or newer; got {}",
+                        DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS,
+                        client_tcp_protocol_version);
+                }
+
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(*query_state);
