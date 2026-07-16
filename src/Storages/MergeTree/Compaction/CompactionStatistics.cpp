@@ -112,17 +112,17 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
     return streams;
 }
 
-/// Number of on-disk column data files (.bin) a wide part physically stores: one per non-ephemeral
-/// substream. This is the ground truth for the stream count of an old part that predates
-/// columns_substreams.txt and, unlike the default serialization, it accounts for the dynamic substreams
-/// of JSON / Dynamic columns (which are written as separate files on disk but cannot be enumerated from
-/// the default serialization).
-size_t countWidePartDataFiles(const IMergeTreeDataPart & part)
+/// On-disk column data file (.bin) names a wide part physically stores: one per non-ephemeral substream.
+/// This is the ground truth for the stream layout of an old part that predates columns_substreams.txt
+/// and, unlike the default serialization, it accounts for the dynamic substreams of JSON / Dynamic
+/// columns (which are written as separate files on disk but cannot be enumerated from the default
+/// serialization).
+std::unordered_set<std::string> collectWidePartDataFileNames(const IMergeTreeDataPart & part)
 {
-    size_t data_files = 0;
+    std::unordered_set<std::string> data_files;
     for (const auto & [file_name, _] : part.checksums.files)
         if (file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
-            ++data_files;
+            data_files.insert(file_name);
     return data_files;
 }
 
@@ -139,9 +139,29 @@ size_t countPartStreams(const IMergeTreeDataPart & part)
     if (!columns_substreams.empty())
         return columns_substreams.getTotalSubstreams();
     if (part.getType() == MergeTreeDataPartType::Wide)
-        if (const size_t data_files = countWidePartDataFiles(part); data_files != 0)
+        if (const size_t data_files = collectWidePartDataFileNames(part).size(); data_files != 0)
             return data_files;
     return countColumnStreams(part.getColumns());
+}
+
+/// The .bin file names the default serialization can enumerate for a set of columns - the static skeleton
+/// already fully accounted for by countColumnStreams / the per-column union in countOutputStreams below.
+/// Named exactly the way MergeTreeDataPartWriterWide names them (ISerialization::getFileNameForStream), so
+/// they can be subtracted, name for name, from a legacy part's actual on-disk file set to recover exactly
+/// the invisible dynamic substreams (see countOutputStreams).
+std::unordered_set<std::string> collectStaticStreamFileNames(const NamesAndTypesList & columns, const ISerialization::StreamFileNameSettings & settings)
+{
+    std::unordered_set<std::string> names;
+    for (const auto & column : columns)
+    {
+        auto serialization = column.type->getDefaultSerialization();
+        serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (!ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                names.insert(ISerialization::getFileNameForStream(column, substream_path, settings));
+        }, column.type);
+    }
+    return names;
 }
 
 /// Number of on-disk column streams the merged wide part will write. Its substream set is the union of
@@ -160,11 +180,11 @@ size_t countPartStreams(const IMergeTreeDataPart & part)
 /// The per-column union can still miss dynamic substreams that live only in an old source part without
 /// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream, and
 /// tryGetColumnSubstreams returns nothing). Those old parts' dynamic streams are added back explicitly below
-/// (see unrecorded_dynamic_streams), so a mixed old/new merge with disjoint dynamic paths is not undercounted.
+/// (see unrecorded_dynamic_files), so a mixed old/new merge with disjoint dynamic paths is not undercounted.
 /// The result is also floored at the widest source part's actual stream count (countPartStreams reads an old
 /// wide part's real .bin count), since the merged part is never narrower than any single source part. For
 /// simple columns and modern parts both adjustments are no-ops.
-size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts)
+size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
 {
     size_t streams = 0;
     for (const auto & column : output_columns)
@@ -190,12 +210,18 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
     /// parts, its dynamic paths can be disjoint from theirs (old part has path 'a', new part has 'b', and the
     /// merged part writes both), so the union - which only saw the newer part's 'b' - undercounts the result.
     /// The whole-part max floor below does not close this: neither the old part nor the new part is on its own
-    /// as wide as their union. Add each old wide part's unrecorded dynamic streams to the estimate instead:
-    /// they are the part's on-disk stream count minus the streams accountable to its non-dynamic columns
-    /// (whose layout is fixed and is already covered by the union). Treating those dynamic streams as disjoint
-    /// from every other part is the safe direction for a reservation. For parts written after
-    /// columns_substreams.txt exists, and for merges of only simple columns, this adds nothing.
-    size_t unrecorded_dynamic_streams = 0;
+    /// as wide as their union. Recover each old wide part's unrecorded dynamic files - its actual .bin file
+    /// names minus the names accountable to its non-dynamic columns (collectStaticStreamFileNames; already
+    /// covered by the union above) - and UNION them across parts, by name, rather than summing their counts.
+    /// Two old parts that both physically store the same dynamic file (e.g. the same JSON path resolved to
+    /// the same type) name it identically (ISerialization::getFileNameForStream depends only on column,
+    /// path and resolved type, not on which part wrote it), and the merged part writes that stream only
+    /// once; summing per-part counts would charge it once per part instead. Treating genuinely distinct
+    /// dynamic files as disjoint from every other part is still the safe direction for a reservation. For
+    /// parts written after columns_substreams.txt exists, and for merges of only simple columns, this adds
+    /// nothing.
+    const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
+    std::unordered_set<std::string> unrecorded_dynamic_files;
     for (const auto & part : source_parts)
     {
         if (part->getType() != MergeTreeDataPartType::Wide || !part->getColumnsSubstreams().empty())
@@ -212,21 +238,21 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
         if (!has_dynamic_structure_column)
             continue;
 
-        /// Subtract every stream the default serialization can enumerate from the part's on-disk stream
-        /// count. For a column without dynamic structure that is all of its streams; for a column with
+        /// Subtract every file name the default serialization can enumerate from the part's actual on-disk
+        /// file names. For a column without dynamic structure that is all of its files; for a column with
         /// dynamic structure it is the static skeleton of its layout - and composites keep a real one:
         /// Tuple(UInt64, JSON) still has the UInt64 element stream, Array(JSON) its offsets, JSON its
         /// shared-data streams. Both kinds are already counted once by the per-column union above, so
         /// subtracting only whole non-dynamic columns (as if a dynamic-structure column had no enumerable
         /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
-        /// What remains after the subtraction is exactly the part's dynamic substreams, which nothing
-        /// else accounts for.
-        const size_t total_streams = countPartStreams(*part);
-        const size_t statically_enumerable_streams = countColumnStreams(part_columns);
-        if (total_streams > statically_enumerable_streams)
-            unrecorded_dynamic_streams += total_streams - statically_enumerable_streams;
+        /// What remains after the subtraction is exactly the part's dynamic files, which nothing else
+        /// accounts for.
+        const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
+        for (const auto & file_name : collectWidePartDataFileNames(*part))
+            if (!static_files.contains(file_name))
+                unrecorded_dynamic_files.insert(file_name);
     }
-    streams += unrecorded_dynamic_streams;
+    streams += unrecorded_dynamic_files.size();
 
     /// The merged wide part is never narrower than any single source part, so floor the estimate at the
     /// widest source part's actual stream count. For simple columns and modern parts this floor equals the
@@ -337,7 +363,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// paths that all appear in the merged part.
     const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
     const size_t output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? countOutputStreams(output_columns, future_part.parts)
+        ? countOutputStreams(output_columns, future_part.parts, settings)
         : 1;
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
