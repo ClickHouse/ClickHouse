@@ -1,0 +1,72 @@
+=== family2: repro1 ll.Date, setting OFF (throws) ===
+=== family2: repro2 a.x, setting OFF (throws) ===
+=== family2: repro1 ll.Date, setting ON ===
+D
+=== family2: repro2 a.x, setting ON ===
+X
+=== family2: repro1 GROUP BY ALL, setting ON ===
+D	1
+=== describe: 2-join star, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: qualified matcher ll.*, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+=== describe: comma-join trigger, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: explicit unique qualified identifier a.x, setting ON ===
+a.x	String					
+=== describe: explicit bare identifier x stays bare, setting ON ===
+x	String					
+=== describe: alias always wins a.x AS y, setting ON ===
+y	String					
+=== describe: real tables without aliases, setting ON ===
+ta.x	UInt8					
+ta.ka	UInt8					
+tb.kb	UInt8					
+tc.kc	UInt8					
+=== describe: real tables, explicit qualified column ta.x, setting ON ===
+ta.x	UInt8					
+=== describe: 1 join only -- unchanged even with setting ON ===
+k	UInt8					
+Date	String					
+t1.k	UInt8					
+=== describe: function projection name unchanged (ll.k + 1), setting ON ===
+plus(ll.k, 1)	UInt16					
+=== describe: SELECT * over JOIN ... USING keeps merge semantics, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t2.k	UInt8					
+=== describe: unaliased joined subquery gets no prefix (old parity), setting ON ===
+k	UInt8					
+Date	String					
+t1.k2	UInt8					
+t2.k3	UInt8					
+=== describe: 2-join star, setting OFF (today unchanged) ===
+ll.k	UInt8					
+Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: comma-join trigger, setting OFF (today unchanged) ===
+ll.k	UInt8					
+Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: real tables without aliases, setting OFF (today unchanged) ===
+x	UInt8					
+ka	UInt8					
+kb	UInt8					
+kc	UInt8					
+=== nested outer scope, setting ON ===
+D
+=== describe: ARRAY JOIN mixed with 2 joins, setting ON ===
+ll.k	UInt8					
+arr	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
