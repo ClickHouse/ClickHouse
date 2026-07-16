@@ -1,3 +1,5 @@
+import json
+import math
 import os
 import re
 
@@ -10,6 +12,32 @@ from helpers.iceberg_utils import (
     execute_spark_query_general,
     get_uuid_str,
 )
+
+
+def assert_clickhouse_spark_rows_equal(instance, spark, table_name, columns):
+    column_list = ", ".join(columns)
+    clickhouse_output = instance.query(
+        f"SELECT {column_list} FROM {table_name} ORDER BY {column_list} FORMAT JSONCompactEachRow",
+        settings={"output_format_json_quote_denormals": 1},
+    )
+    clickhouse_rows = [
+        tuple(json.loads(line))
+        for line in clickhouse_output.splitlines()
+        if line
+    ]
+
+    def normalize(value):
+        if isinstance(value, float) and math.isnan(value):
+            return "nan"
+        return value
+
+    local_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+    spark_rows = [
+        tuple(normalize(row[column]) for column in columns)
+        for row in spark.read.format("iceberg").load(local_dir).collect()
+    ]
+    assert clickhouse_rows == sorted(spark_rows)
+
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
@@ -65,6 +93,7 @@ def test_drop_partition_with_evolved_spec_is_rejected(started_cluster_iceberg_wi
 
     # And data is untouched.
     assert instance.query(f"SELECT count() FROM {table_name}") == "5\n"
+    assert_clickhouse_spark_rows_equal(instance, spark, table_name, ["tag", "k", "v"])
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
@@ -156,6 +185,7 @@ def test_drop_partition_preserves_data_file_metadata(started_cluster_iceberg_wit
     assert len(spark_after) == 2, spark_after
     for split_offsets in spark_after:
         assert split_offsets, spark_after
+    assert_clickhouse_spark_rows_equal(instance, spark, table_name, ["tag", "k", "v", "d"])
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
@@ -254,3 +284,4 @@ def test_drop_partition_on_spark_table_round_trip(started_cluster_iceberg_with_s
         instance.query(f"SELECT tag, k, v FROM {table_name} ORDER BY tag, k, v")
         == "2\tc\t20\n3\td\t30\n4\te\t40\n"
     )
+    assert_clickhouse_spark_rows_equal(instance, spark, table_name, ["tag", "k", "v"])
