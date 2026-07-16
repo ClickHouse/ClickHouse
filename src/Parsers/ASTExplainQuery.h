@@ -26,7 +26,6 @@ public:
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
         Substrait, /// 'EXPLAIN SUBSTRAIT SELECT ...'
-        Analyze, /// EXPLAIN ANALYZE ...
         WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
     };
 
@@ -43,7 +42,6 @@ public:
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
             case Substrait: return "EXPLAIN SUBSTRAIT";
-            case Analyze: return "EXPLAIN ANALYZE";
             case WhatIf: return "EXPLAIN WHATIF";
         }
     }
@@ -68,8 +66,6 @@ public:
             return CurrentTransaction;
         if (str == "EXPLAIN SUBSTRAIT")
             return Substrait;
-        if (str == "EXPLAIN ANALYZE")
-            return Analyze;
         if (str == "EXPLAIN WHATIF")
             return WhatIf;
 

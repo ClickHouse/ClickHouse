@@ -11,7 +11,6 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -145,30 +144,41 @@ Columns indexColumns(const Columns & columns, const PaddedPODArray<UInt64> & ind
     return new_columns;
 }
 
-size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
+bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
 {
-    chassert(impl.isValid());
-    const size_t start_pos = impl.getRow();
-    size_t run_end = impl.rows;
+    if (impl.isLast())
+        return false;
 
-    /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
+    size_t pos = impl.getRow();
     for (size_t i = 0; i < impl.sort_columns.size(); ++i)
     {
         const auto * nm = getNullMapData(impl.null_maps[i]);
-        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
+        if (nm && ((*nm)[pos] != (*nm)[pos + 1]))
+            return false;
 
-        if (nm)
-            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
+        if (nm && (*nm)[pos])
+            continue;
 
-        if (!ref_is_null)
-            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
-
-        if (run_end <= start_pos + 1)
-            break;
+        const auto & col = *impl.sort_columns[i];
+        if (auto cmp = col.compareAt(pos, pos + 1, col, 1); cmp != 0)
+            return false;
     }
+    return true;
+}
 
-    impl.pos = run_end;
-    return run_end - start_pos;
+size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
+{
+    chassert(impl.isValid());
+    size_t start_pos = impl.getRow();
+    while (sameNext(impl))
+    {
+        impl.next();
+    }
+    impl.next();
+
+    if (impl.isValid())
+        return impl.getRow() - start_pos;
+    return impl.rows - start_pos;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)

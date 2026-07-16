@@ -148,12 +148,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    const bool read_if_exists_otherwise_bypass
+    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
+        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
-    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
-#if ENABLE_DISTRIBUTED_CACHE
-    read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
-#endif
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
@@ -452,10 +449,9 @@ public:
                     data_part,
                     metadata_snapshot,
                     key_condition,
-                    /*part_offset_condition=*/nullptr,
-                    /*total_offset_condition=*/nullptr,
+                    /*part_offset_condition=*/{},
+                    /*total_offset_condition=*/{},
                     /*exact_ranges=*/nullptr,
-                    /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
 

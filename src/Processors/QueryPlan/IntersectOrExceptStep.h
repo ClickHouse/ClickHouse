@@ -21,7 +21,6 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     Operator getOperator() const { return current_operator; }
-    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

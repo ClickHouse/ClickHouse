@@ -11,17 +11,12 @@
 
 #include <list>
 #include <memory>
-#include <optional>
+#include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
-
-class AnalyzeStepsStats;
-
-struct PrettyNames;
-struct PrettyNamesPerPlan;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -53,7 +48,7 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
-/// Options from EXPLAIN queries based on plan.
+/// Options from EXPLAIN PLAN query.
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -78,8 +73,7 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
-    /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
-    bool processors_profile = false;
+
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -106,10 +100,7 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    /// max_type_complexity guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
-    /// (TCPHandler::receiveQueryPlan) pass the effective input_format_binary_max_type_complexity; trusted
-    /// server-to-server plans pass 0.
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
@@ -144,17 +135,13 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-
     void explainPlan(
         WriteBuffer & buffer,
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
-        const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
-        bool is_last_child_plan = true,
-        AnalyzeStepsStats * steps_to_stats = nullptr) const;
-
+        bool is_last_child_plan = true) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -203,10 +190,10 @@ private:
     struct SerializationFlags;
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
-    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;

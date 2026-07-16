@@ -1067,97 +1067,6 @@ def test_onelake_show_create_table_no_secret(
     )
 
 
-@only_onelake
-def test_onelake_system_databases_no_bearer_token(node, catalog_manager):
-    """engine_full in system.databases must not expose onelake_bearer_token."""
-
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    engine_full = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db}' "
-        f"FORMAT TSV",
-        settings={"show_data_lake_catalogs_in_system_tables": 1},
-    ).strip()
-    assert engine_full, f"Database {db} not found in system.databases"
-    assert token not in engine_full, (
-        "onelake_bearer_token leaked in engine_full of system.databases"
-    )
-    assert "[HIDDEN]" in engine_full, (
-        f"onelake_bearer_token was not masked in engine_full:\n{engine_full}"
-    )
-
-
-@only_onelake
-def test_onelake_show_create_no_bearer_token(node, catalog_manager):
-    """SHOW CREATE DATABASE must not expose onelake_bearer_token."""
-
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    result = node.query(f"SHOW CREATE DATABASE {db}").strip()
-    assert token not in result, (
-        f"onelake_bearer_token leaked in SHOW CREATE DATABASE:\n{result}"
-    )
-    assert "[HIDDEN]" in result, (
-        f"onelake_bearer_token was not masked in SHOW CREATE DATABASE:\n{result}"
-    )
-
-
-@only_onelake
-def test_onelake_show_create_table_no_bearer_token(
-    node, catalog_manager, sales_table,
-):
-    """SHOW CREATE TABLE / system.tables must not expose onelake_bearer_token."""
-
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    try:
-        full = catalog_manager.resolve_table_name(node, db, sales_table)
-        result = node.query(f"SHOW CREATE TABLE {db}.`{full}`").strip()
-        assert result, "SHOW CREATE TABLE returned empty result"
-        assert token not in result, (
-            f"onelake_bearer_token leaked in SHOW CREATE TABLE:\n{result}"
-        )
-        system_row = node.query(
-            f"SELECT engine_full FROM system.tables "
-            f"WHERE database = '{db}' AND name = '{full}' "
-            f"FORMAT TSV"
-        ).strip()
-        assert token not in system_row, (
-            f"onelake_bearer_token leaked in system.tables engine_full:\n{system_row}"
-        )
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db}")
-
-
-@only_onelake
-def test_onelake_read_with_bearer_token(node, catalog_manager, sales_table):
-    """Read table data authenticating only with onelake_bearer_token.
-
-    Exercises both the catalog Authorization header and the Azure Blob
-    StaticCredential read path (unlike the masking tests, which never
-    query data)."""
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    try:
-        full = catalog_manager.resolve_table_name(node, db, sales_table)
-        # count() alone can be served from Iceberg metadata; sum() over a
-        # data column forces an actual data-file read from OneLake blob storage.
-        count = node.query(
-            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
-        assert int(count) == 20
-        total_qty = node.query(
-            f"SELECT sum(quantity) FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
-        assert int(total_qty) == 60
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db}")
-
-
 def test_insert_into_table(node, catalog_manager, request):
     """INSERT INTO a catalog table and verify the row count increases."""
     backend = request.node.callspec.params.get("catalog_manager")
@@ -1231,29 +1140,6 @@ def test_onelake_warehouse_wrong_format(node, catalog_manager):
 
     error = node.query_and_get_error(sql)
     assert error, "Expected CREATE DATABASE to fail with malformed warehouse"
-
-
-@only_onelake
-def test_onelake_both_auth_methods_rejected(node, catalog_manager):
-    """Providing both a bearer token and client credentials is rejected."""
-
-    db = catalog_manager.make_database_name()
-    # A dummy token is enough: validation fires before any network call.
-    sql = catalog_manager.create_db_sql(db, bearer_token="dummy_token")
-
-    error = node.query_and_get_error(sql)
-    assert "exactly one" in error, error
-
-
-@only_onelake
-def test_onelake_no_auth_method_rejected(node, catalog_manager):
-    """Providing neither a bearer token nor client credentials is rejected."""
-
-    db = catalog_manager.make_database_name()
-    sql = catalog_manager.create_db_sql(db, client_id="", client_secret="")
-
-    error = node.query_and_get_error(sql)
-    assert "exactly one" in error, error
 
 
 # ---------------------------------------------------------------------------

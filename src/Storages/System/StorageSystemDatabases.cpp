@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -120,11 +119,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-    /// Data lake catalogs and remote databases are always shown in `system.databases` regardless of system-table settings.
+    /// Remote databases are always shown in system.databases regardless of show_remote_databases_in_system_tables.
     /// Listing a database name is purely local metadata and never requires expensive calls to an external service.
-    /// The settings only guard operations like `system.tables` / `system.columns` that enumerate a database's contents.
-    const auto databases = DatabaseCatalog::instance().getDatabases(
-        GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
+    /// The setting only guards operations like system.tables / system.columns that enumerate a database's contents.
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
@@ -164,6 +162,3 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabases) }

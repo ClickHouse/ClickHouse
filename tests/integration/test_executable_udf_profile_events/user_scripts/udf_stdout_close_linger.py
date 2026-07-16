@@ -4,12 +4,12 @@
 Used to validate the `check_exit_code=false` non-blocking-cleanup contract:
   - ClickHouse sees stdout EOF and considers the UDF done, so the pipeline
     completes without waiting for the child process to exit.
-  - `tryWaitWithoutStatusCheck` returns false (child still running), so
+  - `tryReapWithoutStatusCheck` returns false (child still running), so
     `executableFinished` stays false and no wait4 rusage is captured.
-  - Even so, `ExecutableUserDefinedFunctionInputBytes` and
+  - Despite no reap, `ExecutableUserDefinedFunctionInputBytes` and
     `ExecutableUserDefinedFunctionOutputBytes` are still reported because those
     counters are recorded by the pipe buffers as data streams through, independent
-    of child wait status.
+    of child reap status.
 """
 
 import os

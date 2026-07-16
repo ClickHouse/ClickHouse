@@ -223,13 +223,9 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
-    /// Tuple instead of Nullable(Tuple). Schema inference passes
-    /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
-    /// that CREATE TABLE rejects.
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
 
     bool confluent;
     const FormatSettings format_settings;

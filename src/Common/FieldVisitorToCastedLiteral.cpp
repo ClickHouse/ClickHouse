@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorToCastedLiteral.h>
-#include <Common/checkStackSize.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
@@ -147,7 +146,6 @@ String FieldVisitorToCastedLiteral::operator() (const Decimal256 & x, UInt32 sca
 
 String FieldVisitorToCastedLiteral::operator() (const Array & x) const
 {
-    checkStackSize();
     WriteBufferFromOwnString wb;
     wb << '[';
     for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
@@ -162,7 +160,6 @@ String FieldVisitorToCastedLiteral::operator() (const Array & x) const
 
 String FieldVisitorToCastedLiteral::operator() (const Tuple & x) const
 {
-    checkStackSize();
     WriteBufferFromOwnString wb;
 
     /// Single-element tuples need the explicit tuple() form, otherwise they'd
@@ -184,7 +181,6 @@ String FieldVisitorToCastedLiteral::operator() (const Tuple & x) const
 
 String FieldVisitorToCastedLiteral::operator() (const Map & x) const
 {
-    checkStackSize();
     WriteBufferFromOwnString wb;
     wb << '[';
     for (auto it = x.begin(); it != x.end(); ++it)
@@ -199,7 +195,6 @@ String FieldVisitorToCastedLiteral::operator() (const Map & x) const
 
 String FieldVisitorToCastedLiteral::operator() (const Object & x) const
 {
-    checkStackSize();
     return FieldVisitorToString()(x);
 }
 

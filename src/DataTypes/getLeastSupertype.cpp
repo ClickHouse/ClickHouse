@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -365,8 +364,6 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
 template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSupertype(const DataTypes & types)
 {
-    checkStackSize();
-
     /// Trivial cases
 
     if (types.empty())

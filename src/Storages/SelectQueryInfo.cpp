@@ -15,9 +15,6 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
-    if (query_tree)
-        return false;
-
     const auto & select = query->as<ASTSelectQuery &>();
     return select.final();
 }
@@ -70,7 +67,7 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     PrewhereInfo prewhere_info;
 
-    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
     readBinary(prewhere_info.need_filter, ctx.in);
@@ -89,7 +86,7 @@ FilterDAGInfo FilterDAGInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     FilterDAGInfo filter_dag_info;
 
-    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(filter_dag_info.column_name, ctx.in);
     readBinary(filter_dag_info.do_remove_column, ctx.in);
 
