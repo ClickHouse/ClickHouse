@@ -12,8 +12,10 @@ function wait_for_query_to_start()
 }
 
 # Run a test query that takes very long to run.
+# max_memory_usage=0: CI randomizes max_memory_usage low, so this memory-heavy window query
+# could fail with MEMORY_LIMIT_EXCEEDED before the KILL lands, instead of QUERY_WAS_CANCELLED.
 query_id="01572_kill_window_function-$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (PARTITION BY number % 10 ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 99999 FOLLOWING) FROM numbers(0, 10000000) format Null;" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (PARTITION BY number % 10 ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 99999 FOLLOWING) FROM numbers(0, 10000000) SETTINGS max_memory_usage = 0 format Null;" >/dev/null 2>&1 &
 client_pid=$!
 echo Started
 
