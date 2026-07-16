@@ -23,17 +23,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-def server_in_fips_mode():
-    # MD5 is rejected with SUPPORT_IS_DISABLED under OpenSSL FIPS mode, using the
-    # same isFIPSEnabled() signal that filters out Ed25519 SSH keys. If the query
-    # succeeds the server is not in FIPS mode.
-    try:
-        instance.query("SELECT MD5('')")
-        return False
-    except Exception:
-        return True
-
-
 def test_ecdsa():
     # ECDSA is FIPS-approved, so this works on FIPS and non-FIPS builds.
     assert (
@@ -50,23 +39,8 @@ def test_ecdsa():
 
 
 def test_ed25519():
-    if server_in_fips_mode():
-        # Ed25519 is not FIPS-approved: it is rejected before it reaches libssh,
-        # so authentication with the Ed25519 key must fail on FIPS builds.
-        with pytest.raises(Exception) as err:
-            instance.query(
-                "SELECT currentUser()",
-                user="john",
-                settings={
-                    "ssh-key-file": f"{SCRIPT_DIR}/keys/ed25519",
-                    "ssh-key-passphrase": "",
-                },
-            )
-        assert "Authentication failed" in str(err.value)
-        return
-
-    assert (
-        instance.query(
+    try:
+        result = instance.query(
             "SELECT currentUser()",
             user="john",
             settings={
@@ -74,8 +48,18 @@ def test_ed25519():
                 "ssh-key-passphrase": "",
             },
         )
-        == "john\n"
-    )
+    except Exception as err:
+        # On a FIPS-enabled client, the Ed25519 key is rejected while it is imported
+        # locally in clickhouse-client (ConnectionParameters -> SSHKeyFactory), before
+        # any network authentication, so the failure is a client-side LIBSSH_ERROR, not
+        # "Authentication failed". Keying off the client-side error (instead of probing
+        # the remote server's FIPS mode) is correct even when a FIPS client talks to a
+        # non-FIPS server.
+        assert "Ed25519 SSH keys are not supported in FIPS mode" in str(err)
+        return
+
+    # Non-FIPS client: the Ed25519 key is accepted and authentication succeeds.
+    assert result == "john\n"
 
 
 def test_rsa():
