@@ -289,7 +289,10 @@ private:
     char * getDataMutable();
     const char * getData() const;
     std::string_view getStringView() const;
-    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena);
+    /// Ensures that `large_data` has capacity for at least `size_to_reserve` bytes.
+    /// When the buffer has to be reallocated, the first `preserve_bytes` bytes of the
+    /// old buffer are copied over (used to grow the buffer incrementally while reading).
+    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena, UInt32 preserve_bytes = 0);
     void changeImpl(std::string_view value, Arena * arena);
 
 public:

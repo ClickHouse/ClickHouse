@@ -13,6 +13,7 @@
 #    include <base/extended_types.h>
 #endif
 
+#include <algorithm>
 #include <cstring>
 #include <type_traits>
 
@@ -25,6 +26,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int NOT_IMPLEMENTED;
+extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace
@@ -1257,7 +1259,7 @@ std::string_view SingleValueDataString::getStringView() const
     return std::string_view{getData(), size - 1};
 }
 
-void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
+void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena, UInt32 preserve_bytes)
 {
     if (capacity < size_to_reserve)
     {
@@ -1267,10 +1269,14 @@ void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Ar
 
         size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
         chassert(rounded_capacity <= MAX_STRING_SIZE + 1); /// rounded_capacity <= 2^31
-        capacity = static_cast<UInt32>(rounded_capacity);
 
         /// Don't free large_data here.
-        large_data = arena->alloc(capacity);
+        char * new_data = arena->alloc(static_cast<UInt32>(rounded_capacity));
+        if (preserve_bytes)
+            memcpy(new_data, large_data, preserve_bytes);
+
+        capacity = static_cast<UInt32>(rounded_capacity);
+        large_data = new_data;
     }
 }
 
@@ -1357,8 +1363,30 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     else
     {
         size = rhs_size;
-        allocateLargeDataIfNeeded(size - 1, arena);
-        buf.readStrict(large_data, size - 1);
+
+        /// `rhs_size` is taken from possibly corrupted or truncated user input and may be
+        /// arbitrarily large (up to ~2 GiB). Do not pre-allocate the whole declared size,
+        /// otherwise incomplete input with a huge declared size would attempt a huge
+        /// allocation before failing to read. Grow the buffer only as bytes actually arrive,
+        /// so such input fails with CANNOT_READ_ALL_DATA without a large allocation up front.
+        const UInt32 bytes_to_read = size - 1;
+        UInt32 bytes_read = 0;
+        while (bytes_read < bytes_to_read)
+        {
+            if (buf.eof())
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all data. Bytes read: {}. Bytes expected: {}.",
+                    bytes_read,
+                    bytes_to_read);
+
+            const UInt32 chunk = static_cast<UInt32>(std::min<size_t>(bytes_to_read - bytes_read, buf.available()));
+            allocateLargeDataIfNeeded(bytes_read + chunk, arena, bytes_read);
+            memcpy(large_data + bytes_read, buf.position(), chunk);
+            buf.position() += chunk;
+            bytes_read += chunk;
+        }
+
         readChar(last_char, buf);
     }
 
