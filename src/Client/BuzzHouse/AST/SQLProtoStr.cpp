@@ -792,6 +792,18 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
+CONV_FN(EnumDef, edef)
+{
+    ret += "(";
+    EnumDefValueToString(ret, edef.first_value());
+    for (int i = 0; i < edef.other_values_size(); i++)
+    {
+        ret += ", ";
+        EnumDefValueToString(ret, edef.other_values(i));
+    }
+    ret += ")";
+}
+
 static void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
@@ -1001,14 +1013,7 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
                         {
                             ret += edef.bits() ? "16" : "8";
                         }
-                        ret += "(";
-                        EnumDefValueToString(ret, edef.first_value());
-                        for (int i = 0; i < edef.other_values_size(); i++)
-                        {
-                            ret += ", ";
-                            EnumDefValueToString(ret, edef.other_values(i));
-                        }
-                        ret += ")";
+                        EnumDefToString(ret, edef);
                     }
                     break;
                     default: ret += "Int";
@@ -3683,9 +3688,10 @@ CONV_FN(PartitionExpr, pexpr)
     {
         case PartitionType::kPart: appendSQLStringLiteral(ret, pexpr.part()); break;
         case PartitionType::kPartition:
-            ret += "$piddef$";
+            /// The partition key value expression, e.g. `202101` or `(202101, 'x')`. It is emitted
+            /// verbatim: the generator only fills this with a re-parseable value read from
+            /// `system.parts.partition` (see FuzzConfig::tableGetRandomPartitionValue).
             ret += pexpr.partition();
-            ret += "$piddef$";
             break;
         case PartitionType::kPartitionId:
             ret += "ID ";
@@ -3811,8 +3817,10 @@ CONV_FN(Truncate, trunc)
 
 CONV_FN(CheckTable, ct)
 {
-    ret += "CHECK TABLE ";
-    ExprSchemaTableToString(ret, ct.est());
+    ret += "CHECK ";
+    ret += SQLObjectToString(ct.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, ct.object());
     if (ct.has_single_partition())
     {
         ret += " ";
@@ -4626,6 +4634,12 @@ CONV_FN(AlterItem, alter)
         case AlterType::kModifyColumn:
             ret += "MODIFY COLUMN ";
             AddColumnToString(ret, alter.modify_column());
+            break;
+        case AlterType::kAddEnumValues:
+            ret += "MODIFY COLUMN ";
+            ColumnPathToString(ret, 0, alter.add_enum_values().col());
+            ret += " ADD ENUM VALUES";
+            EnumDefToString(ret, alter.add_enum_values().new_values());
             break;
         case AlterType::kCommentColumn:
             ret += "COMMENT COLUMN ";
