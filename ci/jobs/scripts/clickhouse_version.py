@@ -23,10 +23,12 @@ SET(VERSION_STRING {string})
 
 
 class VersionType:
+    NEW = "new"
     TESTING = "testing"
     STABLE = "stable"
     LTS = "lts"
-    VALID = {TESTING, STABLE, LTS}
+    CLOUD = "cloud"
+    VALID = {NEW, TESTING, STABLE, LTS, CLOUD}
 
 
 def _read_versions() -> dict:
