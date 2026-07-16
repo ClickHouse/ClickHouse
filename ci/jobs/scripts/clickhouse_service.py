@@ -7,6 +7,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
@@ -66,6 +67,13 @@ class ClickHouseService:
         Path(self.run_path).mkdir(parents=True, exist_ok=True)
         Path(self.log_dir).mkdir(parents=True, exist_ok=True)
         Path(self.pid_file).unlink(missing_ok=True)
+
+        # This context manager is entered once per job and starts a single
+        # server on fixed shared ports. Right before that first start, clear any
+        # clickhouse-server leaked by a previous CI job on this reused runner;
+        # otherwise its held ports make this start fail
+        # (see kill_leftover_server_processes).
+        kill_leftover_server_processes()
 
         argv = [
             str(Path(temp_dir) / "clickhouse-server"),

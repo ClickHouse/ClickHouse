@@ -8,8 +8,7 @@ expect rows_read = select count()
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 5,
-    "bytes_read": 128
+    "rows_read": 5
   }
 }
 bloom filter is on for ipv6, row groups should also be read since there is only one. Below queries just make sure the data is properly returned
@@ -21,8 +20,7 @@ bloom filter is on for ipv6, row groups should also be read since there is only 
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 5,
-    "bytes_read": 128
+    "rows_read": 5
   }
 }
 {
@@ -33,8 +31,7 @@ bloom filter is on for ipv6, row groups should also be read since there is only 
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 5,
-    "bytes_read": 128
+    "rows_read": 5
   }
 }
 {
@@ -45,8 +42,7 @@ bloom filter is on for ipv6, row groups should also be read since there is only 
   ],
   "rows": 1,
   "statistics": {
-    "rows_read": 5,
-    "bytes_read": 128
+    "rows_read": 5
   }
 }
 non existent ipv6, row group should be skipped
@@ -54,23 +50,20 @@ non existent ipv6, row group should be skipped
   "data": [],
   "rows": 0,
   "statistics": {
-    "rows_read": 0,
-    "bytes_read": 0
+    "rows_read": 0
   }
 }
 {
   "data": [],
   "rows": 0,
   "statistics": {
-    "rows_read": 0,
-    "bytes_read": 0
+    "rows_read": 0
   }
 }
 {
   "data": [],
   "rows": 0,
   "statistics": {
-    "rows_read": 5,
-    "bytes_read": 128
+    "rows_read": 5
   }
 }

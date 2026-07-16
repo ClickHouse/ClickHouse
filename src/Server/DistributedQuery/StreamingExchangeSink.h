@@ -28,7 +28,7 @@ public:
     String getName() const override { return "StreamingExchangeSink(" + stream_name + ")"; }
 
     Status prepare() override;
-    std::pair<int, uint32_t> scheduleForEvent() override;
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
 
 private:
     void consume(Chunk chunk) override;
