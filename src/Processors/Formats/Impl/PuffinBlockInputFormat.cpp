@@ -335,6 +335,12 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
 
         if (blob.type == "deletion-vector-v1")
         {
+            if (blob.snapshot_id != -1 || blob.sequence_number != -1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
+                    i);
+
             if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,

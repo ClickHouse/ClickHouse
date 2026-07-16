@@ -102,6 +102,10 @@ field 'properties' must be an object
 field 'properties' must be an object
 --- dv_with_compression_codec.puffin ---
 must omit 'compression-codec'
+--- dv_nonzero_snapshot_id.puffin ---
+snapshot-id and sequence-number must be -1
+--- dv_nonzero_sequence_number.puffin ---
+snapshot-id and sequence-number must be -1
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---

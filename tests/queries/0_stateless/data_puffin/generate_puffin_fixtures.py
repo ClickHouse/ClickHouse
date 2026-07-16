@@ -55,8 +55,8 @@ def footer_json_for_blob(blob: bytes, properties: dict[str, str] | None = None) 
             {
                 "type": "deletion-vector-v1",
                 "fields": [],
-                "snapshot-id": 1,
-                "sequence-number": 1,
+                "snapshot-id": -1,
+                "sequence-number": -1,
                 "offset": 4,
                 "length": len(blob),
                 "properties": properties if properties is not None else default_dv_properties(),
@@ -429,6 +429,26 @@ def generate_invalid_cardinality_strings() -> None:
         write_fixture(name, build_puffin_file(blob, footer_json_for_blob(blob, properties)))
 
 
+def generate_invalid_dv_snapshot_sequence() -> None:
+    """Iceberg requires deletion-vector-v1 snapshot-id and sequence-number to be -1."""
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    base = json.loads(footer_json.decode("utf-8"))
+    cases = {
+        "dv_nonzero_snapshot_id.puffin": ("snapshot-id", 1),
+        "dv_nonzero_sequence_number.puffin": ("sequence-number", 1),
+    }
+    for name, (field, value) in cases.items():
+        case_payload = json.loads(json.dumps(base))
+        case_payload["blobs"][0][field] = value
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
+
 def generate_sparse_large_key() -> None:
     bitmap = pyroaring.BitMap()
     bitmap.add(SPARSE_SUB_POSITION)
@@ -583,6 +603,7 @@ def main() -> None:
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()
     generate_invalid_cardinality_strings()
+    generate_invalid_dv_snapshot_sequence()
     generate_sparse_large_key()
 
 

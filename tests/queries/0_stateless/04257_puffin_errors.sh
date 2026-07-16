@@ -102,6 +102,11 @@ done
 
 expect_meta "$DATA/dv_with_compression_codec.puffin" "must omit 'compression-codec'"
 
+for f in dv_nonzero_snapshot_id dv_nonzero_sequence_number
+do
+    expect_meta "$DATA/$f.puffin" 'snapshot-id and sequence-number must be -1'
+done
+
 echo "--- puffin_wrong_type ---"
 $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN', Puffin, 'deleted_rows Array(String)')" 2>&1 | grep -oF 'Unexpected type'
 
