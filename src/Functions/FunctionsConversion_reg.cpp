@@ -1303,7 +1303,7 @@ Conversions from other date and time types such as `Date32` or `DateTime64` foll
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "UInt*", "Float*", "Date", "DateTime", "DateTime64"}},
+        {"x", "Input value to convert.", {"String", "FixedString", "(U)Int*", "Float*", "Date", "Date32", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone for the returned `DateTime` value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Returns the converted input value.", {"DateTime"}};
