@@ -65,14 +65,9 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool has_materialized_keyword = s_materialized.ignore(pos, expected);
 
-        /// Optionally parse an engine clause for a materialized CTE:
-        ///     WITH t AS MATERIALIZED ENGINE = <Engine>[(args)] [SETTINGS ...] (subquery)
-        /// A missing ENGINE clause means the default Memory engine, so its absence is not an error.
-        ///
-        /// The engine function is parsed WITHOUT parametric parameters (`ParserFunction(false)`), and
-        /// with an explicit bare-identifier fallback for argument-less engines. This is critical: the
-        /// full parametric form would parse `ENGINE = Join(ANY, LEFT, k) (SELECT ...)` as the parametric
-        /// function `Join(ANY, LEFT, k)(SELECT ...)`, swallowing the CTE subquery as an argument list.
+        /// Optional `ENGINE = <Engine>[(args)]` before the subquery (absent => default Memory).
+        /// Parse the engine non-parametrically so `Join(ANY, LEFT, k) (subquery)` is not read as a
+        /// parametric call swallowing the subquery; fall back to a bare identifier for arg-less engines.
         ASTPtr storage_ast;
         if (has_materialized_keyword)
         {

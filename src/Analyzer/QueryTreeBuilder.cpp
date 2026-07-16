@@ -88,10 +88,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Convert the parsed `ENGINE = ...` clause of a materialized CTE into a typed descriptor.
-/// Only Memory, Join and Set are accepted; the Join strictness/kind are captured in their surface
-/// form (the setting-dependent interpretation is deferred to StorageFactory when the temporary table
-/// is created). SETTINGS and engine arguments on Memory/Set are rejected rather than silently ignored.
+/// Convert a materialized CTE `ENGINE = ...` clause into a typed descriptor (Memory, Set or Join only).
 MaterializedCTEEngine parseMaterializedCTEEngine(const ASTStorage & storage)
 {
     if (!storage.engine)
@@ -902,9 +899,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             .is_materialized = with_element->is_materialized,
             .materialized_cte_engine = {},
         };
-        /// Interpret the ENGINE clause only when the feature is enabled; otherwise a MATERIALIZED CTE
-        /// is treated as an ordinary CTE and the engine (if any) is ignored, matching the behavior of
-        /// the `is_materialized` flag itself.
+        /// When the feature is off the CTE is an ordinary one and the ENGINE clause is ignored.
         if (with_element->storage && context->getSettingsRef()[Setting::enable_materialized_cte])
             cte_data.materialized_cte_engine = parseMaterializedCTEEngine(with_element->storage->as<ASTStorage &>());
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);

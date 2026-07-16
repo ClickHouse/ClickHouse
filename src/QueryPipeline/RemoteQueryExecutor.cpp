@@ -1011,11 +1011,8 @@ void RemoteQueryExecutor::sendExternalTables()
                 auto storage_memory = std::dynamic_pointer_cast<StorageMemory>(cur);
                 if (!storage_memory)
                 {
-                    /// Materialized CTEs are registered as external tables with a well-known name prefix.
-                    /// A non-Memory materialized CTE means a Join/Set engine, which is a per-node hash
-                    /// structure that cannot be shipped to shards (and carries no getMaterializedCTE()
-                    /// back-pointer here). Fail loudly rather than silently dropping it, which would give
-                    /// wrong results on the shard.
+                    /// A non-Memory materialized CTE (Join/Set) is a per-node hash structure that can't be
+                    /// shipped to shards. Fail loudly instead of silently dropping it (wrong results).
                     if (table.first.starts_with(MaterializedCTE::table_name_prefix))
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,

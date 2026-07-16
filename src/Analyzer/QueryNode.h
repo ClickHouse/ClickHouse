@@ -155,13 +155,12 @@ public:
         is_materialized = is_materialized_value;
     }
 
-    /// Get the engine requested for a MATERIALIZED CTE (std::nullopt means the default Memory engine)
+    /// Engine requested for a MATERIALIZED CTE (nullopt = default Memory)
     const std::optional<MaterializedCTEEngine> & getMaterializedCTEEngine() const
     {
         return materialized_cte_engine;
     }
 
-    /// Set the engine requested for a MATERIALIZED CTE
     void setMaterializedCTEEngine(std::optional<MaterializedCTEEngine> engine)
     {
         materialized_cte_engine = std::move(engine);

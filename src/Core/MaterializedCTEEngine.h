@@ -10,11 +10,7 @@
 namespace DB
 {
 
-/// Parameters of the `Join` engine chosen for a materialized CTE:
-///   WITH t AS MATERIALIZED ENGINE = Join(<strictness>, <kind>, key1, ...) (subquery)
-/// The strictness is stored in its surface form (Any/All/Semi/Anti) exactly as written; the
-/// setting-dependent interpretation (e.g. Any vs RightAny via `any_join_distinct_right_table_keys`)
-/// is left to `StorageFactory` when the temporary table is created.
+/// Join engine parameters of a materialized CTE. Strictness is the surface form (Any/All/Semi/Anti).
 struct MaterializedJoinEngineParams
 {
     JoinStrictness strictness = JoinStrictness::Unspecified;
@@ -32,9 +28,7 @@ enum class MaterializedCTEEngineKind : uint8_t
     Join,
 };
 
-/// The engine (and, for Join, its parameters) requested for a materialized CTE. A missing engine
-/// clause is represented by the absence of this value (std::nullopt), which means the default Memory
-/// engine.
+/// Engine requested for a materialized CTE (std::nullopt = default Memory).
 struct MaterializedCTEEngine
 {
     MaterializedCTEEngineKind kind = MaterializedCTEEngineKind::Memory;
@@ -43,7 +37,6 @@ struct MaterializedCTEEngine
     bool operator==(const MaterializedCTEEngine &) const = default;
 };
 
-/// Mix a materialized CTE engine descriptor into a query-tree hash.
 inline void updateHash(SipHash & hash, const std::optional<MaterializedCTEEngine> & engine)
 {
     hash.update(engine.has_value());

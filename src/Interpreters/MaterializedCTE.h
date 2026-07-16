@@ -31,9 +31,7 @@ class QueryPlan;
 /// gating.
 struct MaterializedCTE
 {
-    /// Prefix of the temporary table name that backs a materialized CTE (see `temporary_table_name`).
-    /// Used to recognize such tables by name where no storage back-pointer is available
-    /// (e.g. the distributed external-tables path for non-Memory engines).
+    /// Prefix of `temporary_table_name`; used to recognize these tables by name.
     static constexpr std::string_view table_name_prefix = "_materialized_cte_";
 
     explicit MaterializedCTE(const std::string & cte_name_);
@@ -81,8 +79,7 @@ struct MaterializedCTE
     StoragePtr storage = {};
     /// Temporary table storage.
     std::optional<TemporaryTableHolder> table_holder = {};
-    /// Engine requested for the CTE (WITH t AS MATERIALIZED ENGINE=... (subquery)).
-    /// std::nullopt means the default Memory engine. Only Memory, Join and Set are accepted.
+    /// Engine requested for the CTE (std::nullopt = default Memory).
     std::optional<MaterializedCTEEngine> engine = {};
     /// Name of the CTE.
     const std::string cte_name;

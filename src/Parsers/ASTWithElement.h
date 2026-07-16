@@ -16,7 +16,7 @@ public:
 
     bool is_materialized = false; /// WITH t AS MATERIALIZED (subquery)
 
-    ASTPtr storage; /// ASTStorage with the ENGINE clause for a materialized CTE (WITH t AS MATERIALIZED ENGINE=... (subquery)); null => default Memory engine
+    ASTPtr storage; /// ASTStorage with the ENGINE clause of a materialized CTE; null => default Memory
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }

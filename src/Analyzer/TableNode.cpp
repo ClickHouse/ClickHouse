@@ -109,9 +109,7 @@ void TableNode::finalizeMaterializedCTE(TemporaryTableHolder temporary_table_hol
     auto real_storage = temporary_table_holder_.getTable();
     materialized_cte->storage = real_storage;
     materialized_cte->table_holder = std::move(temporary_table_holder_);
-    /// The storage -> MaterializedCTE back-pointer only exists on StorageMemory and is only read on
-    /// Memory/distributed paths. Join/Set materialized CTEs (local-only) recover their MaterializedCTE
-    /// via the TableNode itself, so guarding this keeps the cast from dereferencing null for them.
+    /// The back-pointer only exists on StorageMemory; Join/Set CTEs don't use it.
     if (auto * storage_memory = typeid_cast<StorageMemory *>(real_storage.get()))
         storage_memory->setMaterializedCTE(materialized_cte);
     updateStorage(std::move(real_storage), context_);
