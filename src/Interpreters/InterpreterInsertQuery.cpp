@@ -379,6 +379,18 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 {
     auto context = getContext();
 
+    /// skip_insert_counting is one-shot: it must suppress only THIS nested insert's counting
+    /// (the per-shard local INSERT of a distributed INSERT). Capture it, then clear it on the
+    /// context so it does not leak into dependent-view or delegating-storage (e.g. TimeSeries)
+    /// child inserts built below, which must still account their own writes.
+    const bool skip_insert_counting = context->getSkipInsertCounting();
+    if (skip_insert_counting)
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSkipInsertCounting(false);
+        context = mutable_context;
+    }
+
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
@@ -442,13 +454,13 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         /// counting the block before dispatching it to local shards), suppress this nested
         /// accounting: no WRITTEN_BYTES quota, no progress update. The context's process-list
         /// element is intentionally left untouched so the storage sinks still honor
-        /// KILL QUERY / max_execution_time.
-        const bool skip_counting = context->getSkipInsertCounting();
+        /// KILL QUERY / max_execution_time. Use the captured one-shot flag, not the context
+        /// (which was already cleared above so child inserts still count).
         auto counting = std::make_shared<CountingTransform>(
             in_header,
-            skip_counting ? nullptr : context->getQuota(),
+            skip_insert_counting ? nullptr : context->getQuota(),
             context->getNormalizedQueryHash());
-        if (!skip_counting)
+        if (!skip_insert_counting)
         {
             counting->setProcessListElement(context->getProcessListElement());
             counting->setProgressCallback(context->getProgressCallback());
@@ -768,6 +780,18 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 {
     auto context = getContext();
 
+    /// skip_insert_counting is one-shot: it must suppress only THIS nested insert's counting
+    /// (the per-shard local INSERT of a distributed INSERT). Capture it, then clear it on the
+    /// context so it does not leak into dependent-view or delegating-storage (e.g. TimeSeries)
+    /// child inserts built below, which must still account their own writes.
+    const bool skip_insert_counting = context->getSkipInsertCounting();
+    if (skip_insert_counting)
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSkipInsertCounting(false);
+        context = mutable_context;
+    }
+
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
@@ -848,12 +872,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     /// See the note at the other CountingTransform site: suppress nested accounting (quota and
     /// progress) when the rows are already counted by an outer pipeline, but keep the process-list
     /// element on the context so storage sinks still honor KILL QUERY / max_execution_time.
-    const bool skip_counting = context->getSkipInsertCounting();
+    /// Use the captured one-shot flag, not the context (which was already cleared above so the
+    /// dependent-view / delegating-storage chains built above still count their own writes).
     auto counting = std::make_shared<CountingTransform>(
         chain.getInputSharedHeader(),
-        skip_counting ? nullptr : context->getQuota(),
+        skip_insert_counting ? nullptr : context->getQuota(),
         context->getNormalizedQueryHash());
-    if (!skip_counting)
+    if (!skip_insert_counting)
     {
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());

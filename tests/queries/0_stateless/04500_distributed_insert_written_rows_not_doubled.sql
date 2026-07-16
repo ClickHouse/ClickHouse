@@ -103,3 +103,64 @@ DROP VIEW mv_dl_04500;
 DROP TABLE mv_tgt_04500;
 DROP TABLE dist_04500;
 DROP TABLE local_04500;
+
+-- Suppressing the nested per-shard accounting must NOT leak into a delegating storage that
+-- writes through its own nested InterpreterInsertQuery. TimeSeries is the concrete case:
+-- StorageTimeSeries::write -> TimeSeriesSink::createTargetPipeline does Context::createCopy and
+-- builds Tags/Samples/Metrics target inserts, which DO consult the flag. If it leaked, those
+-- real target writes would lose their CountingTransforms and the distributed INSERT would
+-- under-report written_rows/written_bytes versus a direct insert into the same TimeSeries table.
+SET allow_experimental_time_series_table = 1;
+
+DROP TABLE IF EXISTS ts_direct_04500;
+DROP TABLE IF EXISTS ts_local_04500;
+DROP TABLE IF EXISTS ts_dist_04500;
+
+-- Baseline: direct insert into a TimeSeries table.
+CREATE TABLE ts_direct_04500 ENGINE = TimeSeries;
+INSERT INTO ts_direct_04500 (metric_name, tags, time_series)
+    SELECT 'm' || toString(number % 50), map('h', toString(number)),
+           [(toDateTime64(number, 3), toFloat64(number))]
+    FROM numbers(1000)
+    SETTINGS log_comment = '04500_ts_direct';
+
+-- Distributed over a TimeSeries table with local shards.
+CREATE TABLE ts_local_04500 ENGINE = TimeSeries;
+CREATE TABLE ts_dist_04500 AS ts_local_04500
+    ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), ts_local_04500, rand());
+INSERT INTO ts_dist_04500 (metric_name, tags, time_series)
+    SELECT 'm' || toString(number % 50), map('h', toString(number)),
+           [(toDateTime64(number, 3), toFloat64(number))]
+    FROM numbers(1000)
+    SETTINGS log_comment = '04500_ts_dist', distributed_foreground_insert = 1;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The distributed insert must report the SAME written_rows as the direct insert: the TimeSeries
+-- child inserts (samples/tags/metrics target tables) are still counted, not suppressed by the
+-- one-shot flag. written_rows is the number of physical rows written to the three target tables
+-- (deterministic); written_bytes is not compared because the distributed path re-blocks the data,
+-- so its byte total legitimately differs from a direct insert. 1 means the row totals are equal.
+SELECT
+    (SELECT written_rows FROM system.query_log
+       WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'
+         AND current_database = currentDatabase() AND log_comment = '04500_ts_dist'
+       ORDER BY event_time_microseconds DESC LIMIT 1)
+    =
+    (SELECT written_rows FROM system.query_log
+       WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'
+         AND current_database = currentDatabase() AND log_comment = '04500_ts_direct'
+       ORDER BY event_time_microseconds DESC LIMIT 1);
+
+-- The distributed insert must count strictly more than the outer 1000 rows and charge nonzero
+-- bytes: without counting the TimeSeries child inserts it would report only 1000 (the
+-- metric_name/tags/time_series rows) and a much smaller written_bytes.
+SELECT written_rows > 1000 AND written_bytes > 0
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'
+  AND current_database = currentDatabase() AND log_comment = '04500_ts_dist'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE ts_dist_04500;
+DROP TABLE ts_local_04500;
+DROP TABLE ts_direct_04500;
