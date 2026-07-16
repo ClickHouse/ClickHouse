@@ -54,8 +54,8 @@ Explicit path to desired Iceberg metadata file, should be relative to path in ob
     DECLARE(String, iceberg_metadata_table_uuid, "", R"(
 Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path is set.
 )", 0) \
-    DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, false, R"(
-If enabled, the engine would use the metadata file with the most recent last_updated_ms json field. Does not make sense to use with iceberg_metadata_file_path.
+    DECLARE(Bool, iceberg_recent_metadata_file_by_last_updated_ms_field, true, R"(
+If enabled, the engine selects the current metadata file by the most recent `last-updated-ms` json field instead of the highest version number in the file name. This is robust to catalog-less (table function / bare path) reads of a table that was dropped and recreated at the same location: file version numbers reset on recreate, so the leftover metadata of the dropped table has a higher version and would otherwise shadow the recreated table, while `last-updated-ms` is monotonic wall-clock and correctly identifies the latest write. Set to 0 to restore the previous highest-version selection. Does not make sense to use with iceberg_metadata_file_path.
 )", 0) \
     DECLARE(UInt32, iceberg_metadata_async_prefetch_period_ms, 0, R"(
 The period in milliseconds to asynchronously prefetch the latest metadata snapshot from a remote iceberg catalog. Default is 0 - disabled.
