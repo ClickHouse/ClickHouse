@@ -2353,6 +2353,28 @@ private:
                     }
                 }
 
+                if (format_settings.try_infer_ipv4)
+                {
+                    IPv4 ipv4_value;
+                    if (IPv4Node<JSONParser>::tryParse(ipv4_value, data))
+                    {
+                        encodeDataType(getDataTypesCache().getType("IPv4"), buf);
+                        writeBinaryLittleEndian(static_cast<UInt32>(ipv4_value), buf);
+                        return true;
+                    }
+                }
+
+                if (format_settings.try_infer_ipv6)
+                {
+                    IPv6 ipv6_value;
+                    if (IPv6Node<JSONParser>::tryParse(ipv6_value, data))
+                    {
+                        encodeDataType(getDataTypesCache().getType("IPv6"), buf);
+                        writeBinary(ipv6_value, buf);
+                        return true;
+                    }
+                }
+
                 encodeDataType(getDataTypesCache().getType("String"), buf);
                 writeStringBinary(data, buf);
                 return true;

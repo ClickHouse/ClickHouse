@@ -626,6 +626,18 @@ Enabled by default.
     DECLARE(Bool, input_format_try_infer_datetimes_only_datetime64, false, R"(
 When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not DateTime types
 )", 0) \
+    DECLARE(Bool, input_format_try_infer_ipv4, false, R"(
+If enabled, ClickHouse will try to infer type `IPv4` from string fields in JSON shared data insertion.
+If the string value can be parsed as an IPv4 address, it will be stored as IPv4 instead of String.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, input_format_try_infer_ipv6, false, R"(
+If enabled, ClickHouse will try to infer type `IPv6` from string fields in JSON shared data insertion.
+If the string value can be parsed as an IPv6 address, it will be stored as IPv6 instead of String.
+
+Disabled by default.
+)", 0) \
     DECLARE(Bool, input_format_try_infer_exponent_floats, false, R"(
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0) \
