@@ -41,6 +41,9 @@ SETTINGS enable_materialized_cte = 0;
 WITH t AS MATERIALIZED ENGINE = Log (SELECT number FROM numbers(5))
 SELECT count() FROM t; -- { serverError BAD_ARGUMENTS }
 
+-- A SETTINGS clause on the engine is not parsed, so it is a syntax error.
+WITH j AS MATERIALIZED ENGINE = Join(ANY, LEFT, k) SETTINGS join_use_nulls = 1 (SELECT 1 AS k) SELECT count() FROM (SELECT 1 AS k) AS l ANY LEFT JOIN j USING (k); -- { clientError SYNTAX_ERROR }
+
 -- A Set-engine CTE cannot be read as a table (two references keep it materialized as a Set).
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
 SELECT count() FROM s AS a, s AS b; -- { serverError NOT_IMPLEMENTED }

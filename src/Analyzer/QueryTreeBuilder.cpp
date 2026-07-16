@@ -94,9 +94,6 @@ MaterializedCTEEngine parseMaterializedCTEEngine(const ASTStorage & storage)
     if (!storage.engine)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized CTE storage clause has no engine");
 
-    if (storage.settings)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SETTINGS are not supported for a materialized CTE engine");
-
     const auto & engine = *storage.engine;
     const auto & engine_name = engine.name;
 

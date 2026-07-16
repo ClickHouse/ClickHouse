@@ -8,7 +8,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserWithElement.h>
 
 
@@ -65,18 +64,16 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool has_materialized_keyword = s_materialized.ignore(pos, expected);
 
-        /// Optional `ENGINE = <Engine>[(args)]` before the subquery (absent => default Memory).
+        /// Optional `ENGINE = <Engine>[(args)]` before the subquery (absent => default Memory); no SETTINGS.
         /// Parse the engine non-parametrically so `Join(ANY, LEFT, k) (subquery)` is not read as a
         /// parametric call swallowing the subquery; fall back to a bare identifier for arg-less engines.
         ASTPtr storage_ast;
         if (has_materialized_keyword)
         {
             ParserKeyword s_engine(Keyword::ENGINE);
-            ParserKeyword s_settings(Keyword::SETTINGS);
             ParserToken s_eq(TokenType::Equals);
             ParserFunction engine_p(/*allow_function_parameters_=*/false, /*is_table_function_=*/false);
             ParserIdentifier engine_ident_p;
-            ParserSetQuery settings_p(/*parse_only_internals_=*/true);
 
             if (s_engine.ignore(pos, expected))
             {
@@ -96,13 +93,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
                 engine->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
 
-                ASTPtr settings;
-                if (s_settings.ignore(pos, expected) && !settings_p.parse(pos, settings, expected))
-                    return false;
-
                 auto storage = make_intrusive<ASTStorage>();
                 storage->set(storage->engine, engine);
-                storage->set(storage->settings, settings);
                 storage_ast = storage;
             }
         }
