@@ -10,6 +10,7 @@ namespace DB
 {
 
 class JoinStepLogical;
+class UnionStep;
 
 namespace QueryPlanOptimizations
 {
@@ -133,6 +134,17 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 /// - Expression - Union - Something -     =>     - Union - Expression - Something -
 ///                      - Something -                    - Expression - Something -
 size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
+/// Precondition shared by every rewrite that pushes a step (Expression, Distinct, Filter, ...)
+/// down through a UnionStep by cloning it into each branch. Such rewrites assume the union
+/// forwards every branch unchanged, but a branch column can match the union output only loosely
+/// (e.g. two AggregateFunction columns with the same state representation but different type
+/// names, quantileExactTuple vs quantilesExactTuple(0.9)). In that case the union coerces the
+/// branch at runtime and pushing the step down bypasses that coercion, producing branch headers
+/// that no longer match and tripping a post-optimization "Block structure mismatch" LOGICAL_ERROR.
+/// Returns true only when every branch input header is identical (same name and type name) to
+/// the union output header, i.e. the push-down is safe.
+bool canPushStepThroughUnion(const UnionStep & union_step);
 
 /// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
 /// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into

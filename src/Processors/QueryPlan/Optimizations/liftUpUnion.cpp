@@ -3,9 +3,28 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Core/Block.h>
 
 namespace DB::QueryPlanOptimizations
 {
+
+bool canPushStepThroughUnion(const UnionStep & union_step)
+{
+    const auto & union_output = *union_step.getOutputHeader();
+    for (const auto & input_header : union_step.getInputHeaders())
+    {
+        if (input_header->columns() != union_output.columns())
+            return false;
+        for (size_t col = 0; col < input_header->columns(); ++col)
+        {
+            const auto & in_col = input_header->getByPosition(col);
+            const auto & out_col = union_output.getByPosition(col);
+            if (in_col.name != out_col.name || in_col.type->getName() != out_col.type->getName())
+                return false;
+        }
+    }
+    return true;
+}
 
 size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
@@ -18,6 +37,12 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 
     auto * union_step = typeid_cast<UnionStep *>(child.get());
     if (!union_step)
+        return 0;
+
+    /// The rewrites below push the parent into every branch, assuming the union forwards each
+    /// branch unchanged. Bail out when a branch type only matches the union output loosely
+    /// (same state representation, different type name) -- see canPushStepThroughUnion.
+    if (!canPushStepThroughUnion(*union_step))
         return 0;
 
     if (auto * expression = typeid_cast<ExpressionStep *>(parent.get()))

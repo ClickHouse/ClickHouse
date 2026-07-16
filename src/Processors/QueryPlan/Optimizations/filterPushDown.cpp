@@ -1180,6 +1180,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
+        /// Cloning the filter into each branch assumes the union forwards every branch
+        /// unchanged. Bail out when a branch type matches the union output only loosely
+        /// (same state representation, different type name) -- see canPushStepThroughUnion.
+        if (!canPushStepThroughUnion(*union_step))
+            return 0;
+
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
