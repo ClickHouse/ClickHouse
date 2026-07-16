@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Continuation of 04516_identifier_matching_database_table: DDL statements under standard matching.
+# Continuation of 04549_identifier_matching_database_table: DDL statements under standard matching.
 # Unique per-run names so the test can run in parallel.
 DB_ONE="${CLICKHOUSE_DATABASE}_MatchDb"
 DB_TWO="${CLICKHOUSE_DATABASE}_MATCHDB"
