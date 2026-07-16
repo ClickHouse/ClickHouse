@@ -313,3 +313,37 @@ TEST_F(MetadataInMemoryTest, TestTruncateMissingFileToZero)
     EXPECT_EQ(metadata->getFileSize("existing_file"), 0);
     EXPECT_TRUE(metadata->getStorageObjects("existing_file").empty());
 }
+
+/// `hasPendingRemovalBlobs` must report blobs that were submitted for removal and not yet
+/// reclaimed, so `DiskObjectStorageTransaction::waitBlobRemoval` (`wait_for_blob_removal`)
+/// can actually wait for the removal queue to drain instead of returning immediately.
+TEST_F(MetadataInMemoryTest, TestPendingRemovalBlobs)
+{
+    auto metadata = getMetadataStorage();
+
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 111);
+    const DB::StoredObject unrelated_blob(DB::ObjectStorageKey::createAsAbsolute("k2").serialize(), "other", 222);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+    }
+
+    EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+    EXPECT_TRUE(metadata->hasPendingRemovalBlobs({unrelated_blob, blob}));
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({unrelated_blob}));
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({}));
+
+    /// Once the cleaner records the blob as removed, the wait condition clears.
+    EXPECT_EQ(metadata->recordAsRemoved({blob}), 1);
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+}

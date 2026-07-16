@@ -68,6 +68,7 @@ public:
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
 
 private:
     /// Per-inode state shared by all hardlinks: object list, inline data, and modification time.
@@ -104,7 +105,7 @@ private:
     /// so directories must carry timestamps just like files instead of reporting the epoch.
     mutable std::map<std::string, Poco::Timestamp> directories;
 
-    std::mutex removed_objects_mutex;
+    mutable std::mutex removed_objects_mutex;
     StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 };
 

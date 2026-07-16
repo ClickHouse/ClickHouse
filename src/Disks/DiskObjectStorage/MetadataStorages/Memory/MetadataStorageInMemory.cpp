@@ -246,6 +246,17 @@ int64_t MetadataStorageInMemory::recordAsRemoved(const StoredObjects & blobs)
     return recorded_count;
 }
 
+bool MetadataStorageInMemory::hasPendingRemovalBlobs(const StoredObjects & blobs) const
+{
+    std::lock_guard guard(removed_objects_mutex);
+
+    for (const auto & blob : blobs)
+        if (objects_to_remove.contains(blob))
+            return true;
+
+    return false;
+}
+
 /// ==================== Transaction ====================
 
 MetadataStorageInMemoryTransaction::MetadataStorageInMemoryTransaction(MetadataStorageInMemory & metadata_storage_)
