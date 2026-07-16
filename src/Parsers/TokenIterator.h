@@ -39,11 +39,17 @@ public:
         /// begin..end range: the lexer stops at begin + max_query_size, and call sites such as
         /// parseQuery (multi-statement) and ParserInsertQuery (`INSERT ... FORMAT`) pass an `end`
         /// far past the current statement. Without this bound a short header before a large
-        /// payload/script would reserve up to the cap (4M tokens ~= 96 MiB) up front. The cap also
-        /// bounds memory for a single pathologically large query.
+        /// payload/script would reserve up to the cap (4M tokens ~= 96 MiB) up front.
+        ///
+        /// max_query_size == 0 means "unlimited" (e.g. formatQuery in the client parses one
+        /// statement at a time out of the whole editor buffer with max_query_size=0). There the
+        /// begin..end bound is useless again, so fall back to a conservative default cap instead
+        /// of the whole buffer, keeping the reserve small for a short statement in front of a
+        /// large payload. A single genuinely large query in that mode just falls back to geometric
+        /// growth, which is correct, only slightly slower.
+        size_t bound = max_query_size != 0 ? max_query_size : DBMS_DEFAULT_MAX_QUERY_SIZE;
         size_t lex_bytes = end > begin ? static_cast<size_t>(end - begin) : 0;
-        if (max_query_size != 0)
-            lex_bytes = std::min<size_t>(lex_bytes, max_query_size);
+        lex_bytes = std::min<size_t>(lex_bytes, bound);
         static constexpr size_t max_reserve = 4 * 1024 * 1024;
         data.reserve(std::min<size_t>(lex_bytes / 4 + 16, max_reserve));
     }
