@@ -479,11 +479,16 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 ///
 /// 1. The unique replication consumer identifier became salted with the per-server `ServerUUID` (the
 /// `ON CLUSTER` fix, https://github.com/ClickHouse/ClickHouse/issues/58726); it used to be the bare
-/// ClickHouse object UUID for the slot, while the publication name ignored the setting. Here the
-/// pre-salt slot name embeds this object's own ClickHouse UUID, so its existence is itself proof of
-/// ownership: nothing else generates that name — except `ON CLUSTER` replicas, which shared the object
-/// UUID and therefore fought over that slot already; adopting keeps such a deployment exactly as broken
-/// as it was (never worse), and recreating the object moves it to the fixed, per-server identity.
+/// ClickHouse object UUID for the slot, while the publication name ignored the setting and was always the
+/// schema-blind form (see legacy_publication_name's construction). Here the pre-salt slot name embeds this
+/// object's own ClickHouse UUID, so its existence is itself proof of ownership: nothing else generates that
+/// name — except `ON CLUSTER` replicas, which shared the object UUID and therefore fought over that slot
+/// already; adopting keeps such a deployment exactly as broken as it was (never worse), and recreating the
+/// object moves it to the fixed, per-server identity. The pre-salt publication name carries no such proof
+/// of its own — for a non-default schema it is the same schema-blind name another engine's default-schema
+/// deployment could own — so, exactly as rename 2's schema check below, it is adopted only once every table
+/// it publishes is confirmed to belong to this engine's schema; otherwise it is left alone and a fresh
+/// salted publication is created instead.
 ///
 /// 2. The generated publication and default replication-slot names became schema-aware. Deployments
 /// created before that own the legacy, schema-blind objects. The legacy names are schema-blind and
@@ -520,6 +525,25 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
         pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = '{}'", name))};
         return !result.empty();
     };
+    /// `legacy_publication_name` is always the schema-blind name (see its construction in the constructor),
+    /// while this engine may replicate a non-default schema. A schema-blind name alone does not prove that
+    /// the publication belongs to this engine: some other engine replicating the default schema (or a
+    /// different schema targeting the same bare table) may already own an identically-named publication.
+    /// Require every table it publishes to belong to this engine's schema, exactly as the schema-aware
+    /// adoption below does — `pg_publication_tables.schemaname` reports the unqualified default schema as
+    /// `"public"`, so normalize `postgres_schema` the same way isDefaultPostgreSQLSchema() treats it.
+    auto publication_owned_by_schema = [&](const String & name)
+    {
+        const String schema = isDefaultPostgreSQLSchema(postgres_schema) ? "public" : postgres_schema;
+        pqxx::result result{tx.exec(fmt::format(
+            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", name))};
+        if (result.empty())
+            return false;
+        for (const auto & row : result)
+            if (row[0].as<std::string>() != schema)
+                return false;
+        return true;
+    };
 
     if (use_unique_replication_consumer_identifier)
     {
@@ -543,9 +567,11 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 
             /// Unlike the slot, the publication holds no replication position — it is only a named list of
             /// tables — so it is safe to create it under the salted name if neither exists. Prefer the
-            /// pre-salt publication when it is the one that exists, both to keep the deployment's identity
-            /// in one piece and not to leave it orphaned on the PostgreSQL side.
-            if (!publication_exists(publication_name) && publication_exists(legacy_publication_name))
+            /// pre-salt publication when it is the one that exists and is confirmed to belong to this
+            /// engine's schema, both to keep the deployment's identity in one piece and not to leave it
+            /// orphaned on the PostgreSQL side.
+            if (!publication_exists(publication_name) && publication_exists(legacy_publication_name)
+                && publication_owned_by_schema(legacy_publication_name))
             {
                 LOG_INFO(
                     log, "Adopting the legacy publication {} (instead of {})",
@@ -556,8 +582,9 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
         else
         {
             /// A user-managed slot: the publication is the only renamed object. Adopt the pre-salt
-            /// publication when it is the one that exists.
-            if (publication_exists(publication_name) || !publication_exists(legacy_publication_name))
+            /// publication when it is the one that exists and is confirmed to belong to this engine's schema.
+            if (publication_exists(publication_name) || !publication_exists(legacy_publication_name)
+                || !publication_owned_by_schema(legacy_publication_name))
                 return;
 
             LOG_INFO(

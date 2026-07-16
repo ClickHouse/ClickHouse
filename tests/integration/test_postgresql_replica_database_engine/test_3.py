@@ -2946,6 +2946,146 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_unique_identifier_legacy_publication_not_adopted_across_schemas(started_cluster):
+    # Regression for a gap in the unique-identifier half of adoptLegacyReplicationIdentityIfNeeded, found
+    # in review of https://github.com/ClickHouse/ClickHouse/pull/110493. With
+    # `materialized_postgresql_use_unique_replication_consumer_identifier`, the pre-salt publication name
+    # ignores the setting and is always the schema-blind `<postgres_database>_ch_publication` (see
+    # legacy_publication_name's construction), so — unlike the pre-salt slot name, which embeds this
+    # object's own ClickHouse UUID — its existence proves nothing about which engine's schema it belongs
+    # to. A database replicating a NON-default schema that loses its own salted slot and publication on
+    # attach must adopt the schema-blind pre-salt slot (still self-proving), but must NOT adopt a
+    # schema-blind pre-salt publication owned by a different, default-schema engine: switching to it would
+    # filter WAL through the wrong table list and the schema-scoped replica would miss its own schema's
+    # changes.
+    table = "uid_table"
+    schema_name = "uid_schema"
+    mat_db = "mat_uid_schema"
+    pg_db = "uid_src"
+
+    # A table in the default schema, published by a hand-crafted publication that stands in for a foreign,
+    # unrelated engine already owning the schema-blind name. No real ClickHouse object is needed for it —
+    # only the PostgreSQL-side objects the adoption logic looks at.
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_table(cursor, table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 50)"
+    )
+    foreign_publication = "postgres_database_ch_publication"
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{foreign_publication}"')
+    cursor.execute(f'CREATE PUBLICATION "{foreign_publication}" FOR TABLE ONLY "{table}"')
+
+    # A database replicating a different, non-default schema of the same PostgreSQL database, with its own
+    # table and distinct data (values >= 1000) so cross-talk with the foreign, default-schema table is
+    # detectable.
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number + 1000 FROM numbers(0, 30)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema = '{schema_name}'",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_db
+    )
+
+    # The freshly created database uses the salted identity: the slot is the object's own ClickHouse UUID
+    # salted with the server UUID, and the publication is the same salted hash (schema plays no role in
+    # either, since the unique-identifier branch takes priority — see getReplicationSlotName/getPublicationName).
+    uuid_value = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = uuid_value.lower().replace("-", "_")
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    salted_slot = slots[0]
+    assert salted_slot != presalt_slot
+
+    cursor.execute(
+        f"SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication' "
+        f"AND pubname != '{foreign_publication}'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one non-foreign publication, got {pubs}"
+    salted_publication = pubs[0]
+
+    # While the server is down — the upgrade scenario — the database loses both its own salted slot and
+    # publication, and a schema-blind pre-salt slot appears (as a deployment created before the salting
+    # would own). Its publication is deliberately NOT recreated: only the foreign, default-schema
+    # publication with that schema-blind name exists.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{salted_publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    # Rows written after the pre-salt slot was created (while the server is down) must reach the replica
+    # through it after the restart.
+    cursor.execute(
+        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(30, 49) AS g'
+    )
+    instance.start_clickhouse()
+
+    # The attach adopts the self-proving pre-salt slot, but must fail to adopt the foreign publication: a
+    # fresh salted publication is created instead, under the schema's own table list.
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_db
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 0 == int(
+        instance.query(f"SELECT countIf(value < 1000) FROM {mat_db}.{table}")
+    ), "no rows from the foreign, default-schema table must have leaked in"
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = {row[0] for row in cursor.fetchall()}
+    assert slots == {presalt_slot}, f"expected only the adopted pre-salt slot, got {slots}"
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = {row[0] for row in cursor.fetchall()}
+    assert pubs == {
+        foreign_publication,
+        salted_publication,
+    }, f"expected the foreign publication untouched and the salted one recreated, got {pubs}"
+    cursor.execute(
+        f"SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{foreign_publication}'"
+    )
+    assert [("public",)] == cursor.fetchall(), "the foreign publication must stay untouched"
+
+    # Ongoing replication flows through the adopted slot and the freshly (re)created salted publication.
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number + 1000 FROM numbers(50, 20)"
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_db
+    )
+    assert 70 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{foreign_publication}"')
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
