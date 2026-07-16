@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -221,6 +222,17 @@ void checkColumnMatchesSchema(const NameAndTypePair & column, const BigQueryFiel
             column.name, column.type->getName(), field->data_type->getName());
 }
 
+/// When the column list is inferred (no explicit `CREATE TABLE` structure), the types never
+/// pass through the SQL-parser gate that `CREATE TABLE (col Nullable(Tuple(...)))` would go
+/// through, so it must be checked explicitly here - otherwise, e.g., a `NULLABLE RECORD` field
+/// would silently persist a `Nullable(Tuple(...))` column regardless of `enable_nullable_tuple_type`.
+void validateInferredColumns(const ColumnsDescription & columns, const ContextPtr & context)
+{
+    DataTypeValidationSettings validation_settings(context->getSettingsRef());
+    for (const auto & column : columns.getAllPhysical())
+        validateDataType(column.type, validation_settings);
+}
+
 }
 
 StorageBigQuery::StorageBigQuery(
@@ -250,7 +262,9 @@ StorageBigQuery::StorageBigQuery(
     {
         /// CREATE TABLE without a column list: infer the structure right away.
         auto schema = fetchTableSchema(configuration, context_, token_provider);
-        storage_metadata.setColumns(columnsDescriptionFromBigQuerySchema(schema));
+        auto inferred_columns = columnsDescriptionFromBigQuerySchema(schema);
+        validateInferredColumns(inferred_columns, context_);
+        storage_metadata.setColumns(inferred_columns);
         {
             std::lock_guard lock(fields_mutex);
             fields = std::move(schema);

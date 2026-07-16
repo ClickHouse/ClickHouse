@@ -466,9 +466,16 @@ def test_table_engine():
     node.query("DROP TABLE bq_engine")
 
     # Writing through the engine. The `writable` table has a NULLABLE RECORD (`meta`), inferred as
-    # Nullable(Tuple(...)), so creating the table with an inferred structure needs the setting.
+    # Nullable(Tuple(...)), so creating the table with an inferred structure needs the setting -
+    # without it, the CREATE is rejected instead of silently persisting a Nullable(Tuple) column.
     mock_reset()
     node.query("DROP TABLE IF EXISTS bq_writable")
+    error = node.query_and_get_error(
+        f"CREATE TABLE bq_writable ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    assert "enable_nullable_tuple_type" in error
+
     node.query(
         f"CREATE TABLE bq_writable ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
         f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
