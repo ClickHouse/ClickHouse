@@ -571,17 +571,20 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
 {
     auto backup = restorer.getBackup();
 
-    /// backupData() always writes data.bin, even for an empty table, so a missing data.bin is not an
-    /// "empty table" case. It means the backup was created by the old implementation that stored only
-    /// metadata (see https://github.com/ClickHouse/ClickHouse/issues/109213) or is corrupted. Restoring
-    /// it as an empty table would silently reintroduce that data loss, so fail closed instead.
+    /// backupData() always writes data.bin, even for an empty table, so a data restore reaching here with
+    /// no data.bin cannot be an "empty table" case. It means one of: (a) the backup was made with
+    /// structure_only = true (metadata only, no data) and should be restored the same way, with
+    /// SETTINGS structure_only = true; (b) the backup predates EmbeddedRocksDB backing up its data
+    /// (see https://github.com/ClickHouse/ClickHouse/issues/109213); or (c) the backup is corrupted.
+    /// Restoring it as data would silently recreate an empty table, so fail closed instead.
     String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
     if (!backup->fileExists(data_file))
         throw Exception(
             ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Backup of table {} has no RocksDB data file {}. It was likely created before EmbeddedRocksDB backed "
-            "up its data (see https://github.com/ClickHouse/ClickHouse/issues/109213) or is corrupted, so restoring "
-            "it would silently produce an empty table",
+            "Backup of table {} has no RocksDB data file {}. If this backup was created with structure_only = true, "
+            "restore it with SETTINGS structure_only = true. Otherwise it predates EmbeddedRocksDB backing up its data "
+            "(see https://github.com/ClickHouse/ClickHouse/issues/109213) or is corrupted; restoring its data would "
+            "silently produce an empty table",
             getStorageID().getNameForLogs(), data_file);
 
     /// A read_only table opens its handle with OpenForReadOnly()/DBWithTTL::Open(..., read_only) over an
@@ -593,7 +596,9 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
     if (read_only && backup_has_rows)
         throw Exception(
             ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Cannot restore data into read_only EmbeddedRocksDB table {}. Restore into a writable table instead",
+            "Cannot restore data into read_only EmbeddedRocksDB table {}. To restore the data, create a writable "
+            "EmbeddedRocksDB table with the same schema and ttl, then run RESTORE ... AS <writable_table> "
+            "SETTINGS allow_different_table_def = 1",
             getStorageID().getNameForLogs());
 
     /// Unless allow_non_empty_tables is set, restoring into a table that already holds rows is rejected.
