@@ -6,9 +6,9 @@
 -- `query_plan_join_swap_table = 'false'` to force the right (compressible) table as the build side, and
 -- that is an analyzer/query-plan-only setting. Under the old analyzer it is a no-op, so the build-side
 -- choice (and therefore the per-slot footprint) is undefined and the tight `max_bytes_in_join` limit can
--- be exceeded before compression catches up (observed `SET_SIZE_LIMIT_EXCEEDED` only on the old-analyzer
--- run, while every new-analyzer config passes). The old-analyzer compression path itself is still covered
--- by 04492, which is not analyzer-pinned.
+-- be exceeded before compression catches up (observed `SET_SIZE_LIMIT_EXCEEDED` only with the analyzer
+-- disabled, while every analyzer-enabled config passes). The compression path with the analyzer disabled
+-- is still covered by 04492, which is not analyzer-pinned.
 
 -- Regression tests for the documented contract of `enable_join_in_memory_compression` beyond plain
 -- `hash`: the setting must compress the stored right-side blocks under memory pressure for
