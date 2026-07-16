@@ -1,0 +1,21 @@
+1. Default: no IP inference
+String
+192.168.1.1
+['ip']
+2. IPv4 inference enabled
+IPv4
+192.168.1.1
+['ip']
+3. IPv6 inference enabled
+IPv6
+2001:db8::1
+4. Non-IP strings stay String
+String
+String
+String
+5. Both IPv4 and IPv6 inference
+IPv4	192.168.1.1
+IPv6	2001:db8::1
+6. Typed path takes precedence
+IPv4
+10.0.0.1
