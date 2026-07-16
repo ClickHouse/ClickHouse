@@ -1116,17 +1116,6 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
             captured_storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
-    /// Guard snapshot cleanup until responsibility transfers to the task.
-    bool snapshot_cleanup_transferred = false;
-    SCOPE_EXIT({
-        if (!snapshot_cleanup_transferred && snapshot_task.snapshot != nullptr)
-        {
-            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-            snapshot_task.snapshot = KeeperStorageSnapshotPtr{};
-            captured_storage->clearGarbageAfterSnapshot();
-        }
-    });
-
     /// create snapshot task for background execution (in snapshot thread)
     snapshot_task.create_snapshot = [this, when_done, captured_storage](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
     {
@@ -1239,14 +1228,9 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                 }
             }
         }
-        {
-            /// Destroy snapshot under storage lock against the captured storage (member may differ after `apply_snapshot`).
-            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-            LOG_TRACE(log, "Clearing garbage after snapshot");
-            snapshot.reset(); /// ~KeeperStorageSnapshot -> disableSnapshotMode() on captured storage
-            captured_storage->clearGarbageAfterSnapshot();
-            LOG_TRACE(log, "Cleared garbage after snapshot");
-        }
+        LOG_TRACE(log, "Clearing garbage after snapshot");
+        snapshot.reset();
+        LOG_TRACE(log, "Cleared garbage after snapshot");
 
         when_done(snapshot_published, exception);
 
@@ -1256,7 +1240,6 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
-        snapshot_cleanup_transferred = true;
         auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
         if (snapshot_file_info && snapshot_manager_s3)
@@ -1282,15 +1265,10 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         tryLogCurrentException(log, "Failed to push snapshot task into queue");
     }
 
-    if (pushed)
-    {
-        snapshot_cleanup_transferred = true;
-    }
-    else
+    if (!pushed)
     {
         LOG_WARNING(log, "Cannot push snapshot task into queue");
-        /// Run cleanup inline so snapshot mode is disabled and `when_done(false)` fires once.
-        snapshot_cleanup_transferred = true;
+        /// Run cleanup inline so the read view is retired and `when_done(false)` fires once.
         /// push returned false, so the task was not consumed; the use-after-move is unreachable.
         /// NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
         snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/true);
@@ -1925,6 +1903,12 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getStorageStats();
+}
+
+KeeperStorage::ReadViewHolder KeeperStateMachine::getStorageReadView() const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->issueReadView();
 }
 
 uint64_t KeeperStateMachine::getNodesCount() const

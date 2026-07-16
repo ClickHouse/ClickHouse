@@ -349,39 +349,25 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size - keeper_context->getSystemNodesWithData().size(), out);
-    size_t counter = 0;
-    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
+    writeBinary(snapshot.view->nodeCount() - keeper_context->getSystemNodesWithData().size(), out);
+    for (const auto & elem : *snapshot.view)
     {
-        const auto & path = it->key;
+        const auto & path = elem.key;
 
         // write only the root system path because of digest
         if (Coordination::matchPath(path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
-        {
-            if (counter == snapshot.snapshot_container_size - 1)
-                break;
-
-            ++it;
             continue;
-        }
 
-        const auto & node = it->value;
+        const auto & node = elem.value;
 
         /// (This is guaranteed because KeeperStorageSnapshot constructor is called with nuraft's
         ///  commit_lock_ held, and therefore storage can't change between when we get storage->zxid
-        ///  and when we call storage->enableSnapshotMode().)
+        ///  and when we issue the read view.)
         if (node.stats.mzxid > snapshot.zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stats.mzxid, snapshot.zxid);
 
         writeBinary(path, out);
         writeNode(node, snapshot.version, out);
-
-        /// Last iteration: check and exit here without iterator increment. Otherwise
-        /// false positive race condition on list end is possible.
-        if (counter == snapshot.snapshot_container_size - 1)
-            break;
-
-        ++it;
     }
 
     /// Session must be saved in a sorted order,
@@ -689,23 +675,9 @@ void KeeperStorageSnapshot::deserialize(
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
-    : storage(storage_)
-    , version(version_)
-    , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
-    , session_id(storage->session_id_counter)
-    , cluster_config(cluster_config_)
-    , zxid(storage->zxid)
-    , nodes_digest(storage->nodes_digest)
+    : KeeperStorageSnapshot(
+          storage_, std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()), cluster_config_, version_)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
-    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
-    begin = storage->getSnapshotIteratorBegin();
-    session_and_timeout = storage->getActiveSessions();
-    acl_map = storage->acl_map.getMapping();
-    session_and_auth = storage->committed_session_and_auth;
-    snapshot_mode_guard.release();
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(
@@ -714,24 +686,14 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , version(version_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
+    , view(storage->issueReadView())
     , cluster_config(cluster_config_)
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
-    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
-    begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
-    snapshot_mode_guard.release();
-}
-
-KeeperStorageSnapshot::~KeeperStorageSnapshot()
-{
-    storage->disableSnapshotMode();
 }
 
 SnapshotFileInfoPtr

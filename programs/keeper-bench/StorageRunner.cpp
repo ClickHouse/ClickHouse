@@ -183,7 +183,7 @@ void StorageRunner::setupStorage()
     keeper_context->setLocalLogsPreprocessed();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
-    storage = std::make_unique<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);
+    storage = std::make_shared<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);
 
     /// Allocate one session for setup and one per generator thread.
     /// All subsequent requests from a generator use its dedicated session.
@@ -633,6 +633,7 @@ void StorageRunner::runBenchmark()
     Stopwatch period_watch;
     size_t period_idx = 0;
     bool period_had_snapshot = false;
+    std::optional<DB::KeeperStorage::ReadViewHolder> read_view;
     while (!shutdown.load(std::memory_order_relaxed))
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -646,27 +647,19 @@ void StorageRunner::runBenchmark()
             period_idx++;
 
             /// Toggle snapshot mode at period boundaries.
-            bool want_snapshot_now = snapshot_enabled.load(std::memory_order_relaxed);
+            bool want_snapshot_now = read_view.has_value();
             if (snapshot_toggle_periods > 0 && (period_idx % snapshot_toggle_periods == 0))
             {
                 std::lock_guard lock(state_machine_storage_mutex);
-                if (snapshot_enabled.load())
-                {
-                    storage->disableSnapshotMode();
-                    storage->clearGarbageAfterSnapshot();
-                    snapshot_enabled.store(false);
-                }
+                if (read_view)
+                    read_view.reset();
                 else
-                {
-                    auto version = storage->container.snapshotSizeWithVersion().second;
-                    storage->enableSnapshotMode(version);
-                    snapshot_enabled.store(true);
-                }
+                    read_view.emplace(storage->issueReadView());
             }
 
             report(elapsed_period, period_had_snapshot || want_snapshot_now);
             period_watch.restart();
-            period_had_snapshot = snapshot_enabled.load();
+            period_had_snapshot = read_view.has_value();
         }
     }
 
@@ -681,14 +674,7 @@ void StorageRunner::runBenchmark()
     if (commit_thread_handle->joinable())
         commit_thread_handle->join();
 
-    /// Disable snapshot mode before the storage is destroyed: SnapshotableHashTable's
-    /// destructor asserts !snapshot_mode via clearOutdatedNodes.
-    if (snapshot_enabled.load())
-    {
-        storage->disableSnapshotMode();
-        storage->clearGarbageAfterSnapshot();
-        snapshot_enabled.store(false);
-    }
+    read_view.reset();
 
     /// Account for the work done while draining the queues after the last period report.
     total_stats.add(takePeriodStats());

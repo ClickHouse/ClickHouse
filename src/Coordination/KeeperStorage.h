@@ -233,7 +233,7 @@ struct KeeperStorageStats
 /// Keeper state machine almost equal to the ZooKeeper's state machine.
 /// Implements all logic of operations, data changes, sessions allocation.
 /// In-memory and not thread safe.
-class KeeperStorage
+class KeeperStorage : public std::enable_shared_from_this<KeeperStorage>
 {
 public:
     using Container = SnapshotableHashTable<KeeperMemNode>;
@@ -636,19 +636,45 @@ public:
         int64_t log_idx = 0);
     void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
 
-    /// Set of methods for creating snapshots
+    /// Keeps the storage alive and retires the read view on destruction.
+    class ReadViewHolder
+    {
+    public:
+        ReadViewHolder(ReadViewHolder &&) = default;
+        ReadViewHolder & operator=(ReadViewHolder &&) = delete;
+        ReadViewHolder(const ReadViewHolder &) = delete;
+        ReadViewHolder & operator=(const ReadViewHolder &) = delete;
 
-    /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version);
+        ~ReadViewHolder()
+        {
+            if (view)
+                storage->retireReadView(std::move(view));
+        }
 
-    /// Turn off snapshot mode.
-    void disableSnapshotMode();
+        const Container::ReadView & operator*() const { return *view; }
+        const Container::ReadView * operator->() const { return view.get(); }
 
-    Container::const_iterator getSnapshotIteratorBegin() const;
+    private:
+        friend class KeeperStorage;
 
-    /// Clear outdated data from internal container.
-    void clearGarbageAfterSnapshot();
+        ReadViewHolder(std::shared_ptr<KeeperStorage> storage_, std::unique_ptr<Container::ReadView> view_)
+            : storage(std::move(storage_))
+            , view(std::move(view_))
+        {
+        }
 
+        std::shared_ptr<KeeperStorage> storage;
+        std::unique_ptr<Container::ReadView> view;
+    };
+
+    /// Issue a consistent lock-free read view of the container.
+    ReadViewHolder issueReadView();
+
+private:
+    /// Retire a view. When it is the last outstanding view, drains the accumulated stale nodes.
+    void retireReadView(std::unique_ptr<Container::ReadView> view) noexcept;
+
+public:
     KeeperResponsesForSessions setWatches(
         int64_t last_zxid,
         const std::vector<String> & watches_paths,

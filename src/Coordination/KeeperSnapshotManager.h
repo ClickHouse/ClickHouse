@@ -61,10 +61,9 @@ struct SnapshotDeserializationResult
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
-/// turned into snapshot mode. This operation is fast and KeeperStorageSnapshot
+/// captured by a lock-free MVCC-style read view. This operation is fast and KeeperStorageSnapshot
 /// class does it in constructor. It also copies iterators from storage hash table
-/// up to some log index with lock. In destructor this class turns off snapshot
-/// mode for KeeperStorage.
+/// up to some log index with lock. In destructor this class retires the read view.
 ///
 /// This representation of snapshot has to be serialized into NuRaft
 /// buffer and sent over network or saved to file.
@@ -72,10 +71,8 @@ struct SnapshotDeserializationResult
 /// Tricky to use correctly:
 ///  * During the constructor call, storage contents must not change, and up_to_log_idx_ must match
 ///    the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
-///  * At most one instance of KeeperStorageSnapshot can exist at a time, for a given KeeperStorage.
-///    NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
+///  * NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
 ///    is not called again until when_done callback is called).
-///  * Destructor must be called with storage mutex held (for the disableSnapshotMode() call).
 struct KeeperStorageSnapshot
 {
 public:
@@ -85,9 +82,6 @@ public:
         KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_);
 
     KeeperStorageSnapshot(const KeeperStorageSnapshot &) = delete;
-    KeeperStorageSnapshot(KeeperStorageSnapshot &&) = default;
-
-    ~KeeperStorageSnapshot();
 
     static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
@@ -100,11 +94,8 @@ public:
     SnapshotMetadataPtr snapshot_meta;
     /// Max session id
     int64_t session_id;
-    /// Size of snapshot container in amount of nodes after begin iterator
-    /// so we have for loop for (i = 0; i < snapshot_container_size; ++i) { doSmth(begin + i); }
-    size_t snapshot_container_size;
-    /// Iterator to the start of the storage
-    KeeperStorage::Container::const_iterator begin;
+    /// Lock-free MVCC-style read view of the storage container.
+    KeeperStorage::ReadViewHolder view;
     /// Active sessions and their timeouts
     SessionAndTimeout session_and_timeout;
     /// Sessions credentials

@@ -3726,27 +3726,17 @@ SessionAndTimeout KeeperStorage::getActiveSessions() const
     return session_and_timeout;
 }
 
-/// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-void KeeperStorage::enableSnapshotMode(size_t up_to_version)
+KeeperStorage::ReadViewHolder KeeperStorage::issueReadView()
 {
-    container.enableSnapshotMode(up_to_version);
+    auto self = shared_from_this();
+    std::lock_guard lock(storage_mutex);
+    return ReadViewHolder(std::move(self), container.issueReadView());
 }
 
-/// Turn off snapshot mode.
-void KeeperStorage::disableSnapshotMode()
+void KeeperStorage::retireReadView(std::unique_ptr<Container::ReadView> view) noexcept
 {
-    container.disableSnapshotMode();
-}
-
-KeeperStorage::Container::const_iterator KeeperStorage::getSnapshotIteratorBegin() const
-{
-    return container.begin();
-}
-
-/// Clear outdated data from internal container.
-void KeeperStorage::clearGarbageAfterSnapshot()
-{
-    container.clearOutdatedNodes();
+    std::lock_guard lock(storage_mutex);
+    container.retireReadView(std::move(view));
     stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
