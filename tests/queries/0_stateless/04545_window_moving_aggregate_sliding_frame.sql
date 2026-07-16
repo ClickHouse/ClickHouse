@@ -423,7 +423,7 @@ FROM
 -- partition start, the state is reused across rows after insertResultInto already
 -- finalized the compressor, which diverges from a fresh sequential aggregation. That is
 -- pre-existing behavior of the incremental tail-add path, unchanged from before.
-SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 2500 OR cr = cr2) AND arraySort(gu) = arraySort(gu2))) AS mismatches
+SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 2500 OR cr = cr2) AND gu = gu2 AND guu = guu2)) AS mismatches
 FROM
 (
     SELECT
@@ -433,8 +433,21 @@ FROM
         topK(3)(value) OVER w AS tk, arrayReduce('topK(3)', groupArray(value) OVER w) AS tk2,
         quantileIf(0.5)(value, value % 2 = 0) OVER w AS qi, arrayReduce('quantileIf(0.5)', groupArray(value) OVER w, groupArray(value % 2 = 0) OVER w) AS qi2,
         estimateCompressionRatio('ZSTD')(str) OVER w AS cr, arrayReduce('estimateCompressionRatio(\'ZSTD\')', groupArray(str) OVER w) AS cr2,
-        groupUniqArray(2)(value) OVER w AS gu, arrayReduce('groupUniqArray(2)', groupArray(value) OVER w) AS gu2
+        groupUniqArray(2)(value) OVER w AS gu, arrayReduce('groupUniqArray(2)', groupArray(value) OVER w) AS gu2,
+        groupUniqArray(value) OVER w AS guu, arrayReduce('groupUniqArray', groupArray(value) OVER w) AS guu2
     FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+);
+
+-- groupArrayIntersect: same set, but the result array order exposes hash-table
+-- iteration order; must stay on the recompute path. The rotated common core makes the
+-- per-row insertion order differ.
+SELECT countIf(gi != gi2) AS mismatches
+FROM
+(
+    SELECT
+        groupArrayIntersect(arr) OVER w AS gi, arrayReduce('groupArrayIntersect', groupArray(arr) OVER w) AS gi2
+    FROM (SELECT n, arrayRotateLeft(arrayMap(x -> cityHash64(x) % 100000, range(40)), toInt32(n % 40)) AS arr FROM moving_aggregate_test)
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );
 

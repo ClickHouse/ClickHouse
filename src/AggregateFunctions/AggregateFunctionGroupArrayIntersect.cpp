@@ -75,6 +75,10 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// The result array exposes hash-table iteration order, which depends on how the
+    /// input was split into states.
+    bool mergeIsEquivalentToAddingRows() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & version = this->data(place).version;
@@ -221,6 +225,10 @@ public:
     String getName() const override { return "groupArrayIntersect"; }
 
     bool allocatesMemoryInArena() const override { return true; }
+
+    /// The result array exposes hash-table iteration order, which depends on how the
+    /// input was split into states.
+    bool mergeIsEquivalentToAddingRows() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
