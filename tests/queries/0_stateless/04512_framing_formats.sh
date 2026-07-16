@@ -227,6 +227,13 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}"
     | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT 'a\rb' AS x FORMAT Vertical") \
     && echo 'Vertical payload with a carriage return round-trips' || echo 'MISMATCH'
 
+echo '--- EventStream base64-encodes SQLInsert (the table name setting is written verbatim)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_sql_insert_table_name=a%0Db${SINGLE_BLOCK}" \
+    -d "SELECT 1 FORMAT SQLInsert" \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_sql_insert_table_name=a%0Db" -d "SELECT 1 FORMAT SQLInsert") \
+    && echo 'SQLInsert payload with a carriage return in the table name round-trips' || echo 'MISMATCH'
+
 echo '--- EventStream base64-encodes Pretty and XML (values are written without escaping the carriage return)'
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
     -d "SELECT 1 FORMAT PrettyCompact"

@@ -45,7 +45,7 @@ Because the client reconstructs the payload by joining the `data` fields with a 
 Server-sent events is a text protocol that treats line breaks (including carriage returns, `\r`) as field delimiters, so a payload cannot be embedded as text if it may contain arbitrary bytes or raw carriage returns. `EventStream` base64-encodes the `data`, `totals`, and `extremes` payloads (each into a single `data:` field) in these cases:
 
 - output formats that may produce non-UTF-8 bytes: binary formats such as `Native` or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`;
-- output formats that may emit raw carriage returns from the data: `CSV` (the CSV quoting passes `\r` in a `String` value through verbatim), `XML`, `Pretty`, `Vertical`, `Prometheus` (they write values without escaping `\r`), and `Markdown` with `output_format_markdown_escape_special_characters` enabled;
+- output formats that may emit raw carriage returns from the data: `CSV` (the CSV quoting passes `\r` in a `String` value through verbatim), `XML`, `Pretty`, `Vertical`, `Prometheus` (they write values without escaping `\r`), `SQLInsert` (the `output_format_sql_insert_table_name` setting and the column names are written verbatim), and `Markdown` with `output_format_markdown_escape_special_characters` enabled;
 - output formats that may emit raw carriage returns because of the settings: `TSV` with `output_format_tsv_crlf_end_of_line` enabled (the `\r\n` row terminator), and `CustomSeparated` with a `CSV` or `XML` escaping rule or with delimiters containing `\r`.
 
 When the payloads are base64-encoded, `EventStream` signals it by adding a `payload=base64` parameter to the `Content-Type` (`text/event-stream; charset=UTF-8; payload=base64`). The client then base64-decodes those payloads; the concatenation of the decoded payloads is exactly what the output format would have produced without framing. The auxiliary JSON packets (`progress`, `log`, `profile_events`, `exception`) are never encoded. Text output formats without raw carriage returns are still embedded as plain text (no `payload=base64`).
@@ -108,5 +108,7 @@ With `JSONEachPacketBase64`, the same `data` packet looks like:
 | `log`            | A server log entry as JSON: `event_time`, `host_name`, `query_id`, `thread_id`, `priority`, `source`, `text`.   |
 | `profile_events` | An array of profile events as JSON: `host_name`, `current_time`, `thread_id`, `type` (`increment` or `gauge`), `name`, `value`. |
 | `exception`      | The exception message as JSON.                                                                                   |
+
+Unlike the `data`, `totals`, and `extremes` payloads (see the byte-exactness notes above), the string fields of the auxiliary packets (`query_id`, `text`, and `source` of `log`, `name` of `profile_events`, and the `exception` message) have no base64 escape hatch, and some of them (for example `query_id`, which is taken from the query) can hold arbitrary bytes. These fields are always sanitized to valid UTF-8, replacing invalid sequences with the replacement character (`U+FFFD`), so the auxiliary packets are always valid JSON.
 
 Processing of multiple queries at once is not implemented yet, but the design allows it: every packet can be extended with the information about the query index along multiple queries.

@@ -31,6 +31,31 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_l
 grep -o -m1 '"packet":"log","log":{"event_time":' "$result_file"
 rm "$result_file"
 
+# Auxiliary packets (`log`, `profile_events`, `exception`) are always JSON, unlike the query result
+# payload, which - depending on the framing format - may embed non-UTF-8 bytes verbatim. Some of their
+# string fields, such as `query_id` in the `log` packet, come from user input over HTTP (`HTTPHandler`
+# only strips ASCII control characters from `query_id`, not arbitrary invalid UTF-8), so they must be
+# sanitized to keep the packet - and the whole stream - valid UTF-8 / JSON.
+echo '--- log packets sanitize a non-UTF-8 query_id to valid UTF-8 JSON'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace&query_id=bad_utf8_04513_%FF" \
+    -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 FORMAT Null" | python3 -c "
+import sys, json
+try:
+    data = sys.stdin.buffer.read().decode('utf-8')
+except UnicodeDecodeError:
+    print('MISMATCH: invalid UTF-8 in response')
+else:
+    found = False
+    for line in data.splitlines():
+        if not line:
+            continue
+        packet = json.loads(line)
+        if packet.get('packet') == 'log' and packet['log']['query_id'].startswith('bad_utf8_04513_'):
+            found = True
+            break
+    print('non-UTF-8 query_id sanitized in log packets: OK' if found else 'MISMATCH: no matching log packet')
+"
+
 echo '--- log packets in EventStream'
 log_events=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&send_logs_level=trace" \
     -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 FORMAT Null" | grep -c '^event: log')
@@ -179,3 +204,28 @@ grep -qi 'payload=base64' "$header_file" || echo 'DDL EventStream no payload=bas
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513_ddl"
 rm "$result_file" "$header_file"
+
+# The framing format's finalization (`finishExecutedQuery`, `output_format->finalize`,
+# `framing->finalize`) runs after the query itself has otherwise succeeded and packets may already
+# have been streamed to the client, so it is not covered by the ordinary `catch` around query
+# execution. A failure there must still be delivered as a framed `exception` packet - not escape to
+# the generic HTTP error path, which would append a plain-text error after an already-started packet
+# stream and break the "always a stream of packets" contract.
+echo '--- a failure while finalizing the framing format is delivered as a framed exception packet'
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT framing_finalize_throw"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 1 AS x FORMAT JSONEachRow" | python3 -c "
+import sys, json
+lines = [line for line in sys.stdin.read().splitlines() if line]
+try:
+    packets = [json.loads(line) for line in lines]
+except json.JSONDecodeError:
+    print('MISMATCH: response is not valid NDJSON')
+else:
+    exceptions = [p['exception'] for p in packets if p.get('packet') == 'exception']
+    if len(exceptions) == 1 and 'Injecting fault' in exceptions[0]:
+        print('finalization failure delivered as a framed exception packet: OK')
+    else:
+        print('MISMATCH:', [p.get('packet') for p in packets])
+"
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_finalize_throw"

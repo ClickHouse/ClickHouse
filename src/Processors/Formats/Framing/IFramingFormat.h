@@ -116,6 +116,14 @@ protected:
 
     static std::string_view getPacketKindName(FramedPacketKind kind);
 
+    /// Writes `s` as a JSON string, replacing invalid UTF-8 sequences with the replacement character.
+    /// Auxiliary packets (`log`, `profile_events`, `exception`) are always JSON, unlike the query result
+    /// payload, which - depending on the framing format - may embed non-UTF-8 bytes verbatim (`EventStream`
+    /// and `JSONEachPacketString` with a text output format) or byte-exactly (base64). Auxiliary packets have
+    /// no such escape hatch, and some of their string fields (for example `query_id` in the `log` packet)
+    /// can come from user input, so they must always be sanitized to keep the packet valid JSON.
+    static void writeJSONStringValidUTF8(std::string_view s, WriteBuffer & buf, const FormatSettings & settings);
+
     /// Helpers to represent single entries of auxiliary packets as JSON objects.
     void writeLogRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;
     void writeProfileEventRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;

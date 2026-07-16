@@ -96,7 +96,7 @@ void FramingFormatEventStream::writeProfileEventsPacket(const Block & block)
 void FramingFormatEventStream::writeExceptionPacket(const String & message)
 {
     writeCString("event: exception\ndata: {\"exception\":", out);
-    writeJSONString(message, out, format_settings);
+    writeJSONStringValidUTF8(message, out, format_settings);
     writeCString("}\n\n", out);
 }
 
