@@ -15,7 +15,9 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <base/Decimal.h>
+#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 
 namespace DB
@@ -26,7 +28,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    }
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
 class FunctionIcebergHash final : public IFunction
@@ -162,6 +165,53 @@ public:
                 result_data[i] = hashLong(value_int);
             }
         }
+        else if (which.isTime())
+        {
+            /// Iceberg time: hashLong(microsecsFromMidnight(v)).
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const Int64 seconds = column->getInt(i);
+                Int64 microseconds = 0;
+                if (common::mulOverflow(seconds, Int64(1'000'000), microseconds))
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Time value {} is out of range for Iceberg time hash (microseconds since midnight)",
+                        seconds);
+                result_data[i] = hashLong(microseconds);
+            }
+        }
+        else if (which.isTime64())
+        {
+            /// Iceberg time has microsecond precision only (no time_ns).
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const auto & source_col = checkAndGetColumn<ColumnTime64>(*wrapper_column);
+            const UInt32 scale = source_col.getScale();
+            if (scale > 6)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported scale for Time64 in icebergHash: Iceberg time is microsecond precision only (scale <= 6), got {}",
+                    scale);
+            }
+            const Int64 multiplier = DataTypeTime64::getScaleMultiplier(6 - scale).value;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const Int64 ticks = source_col.getElement(i & idx_mask).convertTo<Int64>();
+                Int64 microseconds = 0;
+                if (common::mulOverflow(ticks, multiplier, microseconds))
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Time64 value {} is out of range for Iceberg time hash (microseconds since midnight)",
+                        ticks);
+                result_data[i] = hashLong(microseconds);
+            }
+        }
         else if (which.isDecimal())
         {
             const IColumn * wrapper_column = arguments[0].column.get();
@@ -278,7 +328,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Syntax syntax = "icebergHash(value)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "Time64", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit Murmur3 hash, x86 variant, seeded with 0", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
@@ -374,7 +424,7 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Arguments arguments =
     {
         {"N", "The number of buckets, modulo.", {"const (U)Int*"}},
-        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "Time64", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit hash of the source value.", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
