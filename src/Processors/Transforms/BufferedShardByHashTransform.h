@@ -43,7 +43,10 @@ struct BufferedShardByHashBudget
     /// Guards `shared_object_refcounts` and the accounting updates to `total_buffered_bytes`.
     std::mutex mutex;
     /// Total resident buffered bytes across all scatters of the stage. Updated under `mutex` together with the
-    /// table; the admission checks read it locklessly (a best-effort guardrail read is enough).
+    /// table; the admission checks read it locklessly, so every update must land as ONE atomic operation on the
+    /// net difference - in particular the post-split reconciliation (charge the exact post-split objects,
+    /// release the provisional pre-split charge) must never expose an intermediate value where both charges of
+    /// one block are counted at once, or a concurrent scatter would fail the query on a transient artifact.
     std::atomic<Int64> total_buffered_bytes{0};
     /// One entry per physical buffer (by pointer) currently referenced by at least one live charge across the
     /// whole stage - any scatter's block shard chunks or transient pre-split `pending_input_chunk`. This is what
@@ -180,8 +183,12 @@ private:
     /// exactly once for as long as any of them still holds it.
     void chargeColumnAndDescendants(const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes);
     /// Reverses `chargeColumnAndDescendants` for every object in `touched`: releases this charge's reference to
-    /// each, and once an object's refcount reaches zero (no buffered charge references it any longer), subtracts
-    /// its cached bytes from the shared counter and forgets it. Takes `budget->mutex` itself.
+    /// each, and once an object's refcount reaches zero (no buffered charge references it any longer), forgets
+    /// it. Returns the total cached bytes of the objects released, which the caller must subtract from the
+    /// shared counter (in one atomic update, possibly combined with a charge it registers in the same critical
+    /// section - see `generateOutputChunks`). The caller must hold `budget->mutex`.
+    Int64 releaseTouchedObjectsUnlocked(const std::vector<const void *> & touched);
+    /// Same, but takes `budget->mutex` itself and subtracts the released bytes from the shared counter.
     void releaseTouchedObjects(const std::vector<const void *> & touched);
 
     /// Charge the just-pulled input chunk's measured size against the shared budget, before it is split. So the

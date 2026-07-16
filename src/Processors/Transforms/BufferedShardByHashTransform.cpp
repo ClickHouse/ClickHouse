@@ -112,19 +112,26 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
     total_bytes += self_bytes;
 }
 
-void BufferedShardByHashTransform::releaseTouchedObjects(const std::vector<const void *> & touched)
+Int64 BufferedShardByHashTransform::releaseTouchedObjectsUnlocked(const std::vector<const void *> & touched)
 {
-    std::lock_guard lock(budget->mutex);
+    Int64 released_bytes = 0;
     for (const void * ptr : touched)
     {
         auto it = budget->shared_object_refcounts.find(ptr);
         chassert(it != budget->shared_object_refcounts.end());
         if (--it->second.refcount == 0)
         {
-            budget->total_buffered_bytes.fetch_sub(it->second.bytes, std::memory_order_relaxed);
+            released_bytes += it->second.bytes;
             budget->shared_object_refcounts.erase(it);
         }
     }
+    return released_bytes;
+}
+
+void BufferedShardByHashTransform::releaseTouchedObjects(const std::vector<const void *> & touched)
+{
+    std::lock_guard lock(budget->mutex);
+    budget->total_buffered_bytes.fetch_sub(releaseTouchedObjectsUnlocked(touched), std::memory_order_relaxed);
 }
 
 void BufferedShardByHashTransform::reclaimPortResidentChunks()
@@ -503,24 +510,29 @@ void BufferedShardByHashTransform::generateOutputChunks()
             ++enqueued_chunks;
         }
 
-        /// The block keeps its buffers (including any shared dictionaries) alive as long as any of its shard
-        /// chunks is buffered, so the bytes are part of the block's charge and released with it (when its last
-        /// shard chunk drains).
-        if (enqueued_chunks > 0)
-            budget->total_buffered_bytes.fetch_add(block_bytes, std::memory_order_relaxed);
+        /// Release the provisional pre-split charge now that the exact post-split objects are registered above -
+        /// any buffer this block shares with the pre-split chunk (unchanged by the split, e.g. a `LowCardinality`
+        /// dictionary or a `ColumnConst` payload) was just re-registered, so its refcount is already at least 2
+        /// and releasing the pre-split reference here only drops it back to what this block itself holds.
+        ///
+        /// The whole reconciliation is published as ONE atomic update of the net difference: the admission
+        /// checks in prepare() read the counter without taking `budget->mutex`, so a sibling scatter must never
+        /// observe an intermediate state where the pre-split charge and the post-split charge of this block are
+        /// both counted at once - it would arm `budget_exceeded` and fail the query on a transient
+        /// reconciliation artifact rather than on bytes actually buffered. The block keeps its buffers
+        /// (including any shared dictionaries) alive as long as any of its shard chunks is buffered, so
+        /// `block_bytes` is part of the block's charge and released with it (when its last shard chunk drains).
+        /// When nothing was enqueued (every row went to an already-finished output) `block_bytes` is zero and
+        /// this just releases the pre-split charge.
+        const Int64 released_bytes = releaseTouchedObjectsUnlocked(pending_input_touched);
+        budget->total_buffered_bytes.fetch_add(block_bytes - released_bytes, std::memory_order_relaxed);
     }
+    pending_input_touched.clear();
 
     if (enqueued_chunks > 0)
         block_budgets[block_id].touched_objects = std::move(block_touched);
     /// Otherwise no shard chunk was buffered (every row went to an already-finished output): nothing above was
     /// registered, so there is nothing to release for this block.
-
-    /// Release the provisional pre-split charge now that the exact post-split objects are registered above -
-    /// any buffer this block shares with the pre-split chunk (unchanged by the split, e.g. a `LowCardinality`
-    /// dictionary or a `ColumnConst` payload) was just re-registered, so its refcount is already at least 2 and
-    /// releasing the pre-split reference here only drops it back to what this block itself holds.
-    releaseTouchedObjects(pending_input_touched);
-    pending_input_touched.clear();
 }
 
 }
