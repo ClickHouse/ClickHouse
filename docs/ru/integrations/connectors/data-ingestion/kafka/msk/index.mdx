@@ -1,0 +1,193 @@
+---
+sidebarTitle: 'Amazon MSK с коннектором Kafka Sink'
+slug: /integrations/kafka/cloud/amazon-msk/
+description: 'Официальный коннектор Kafka от ClickHouse для Amazon MSK'
+keywords: ['интеграция', 'Kafka', 'amazon msk', 'синк', 'коннектор']
+title: 'Интеграция Amazon MSK с ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/6lKI_WlQ3-s"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+> Примечание: Политика, показанная в видео, слишком разрешительная и предназначена только для быстрого старта. Ниже приведены рекомендации IAM по принципу наименьших привилегий.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Предполагается, что:
+
+* вы знакомы с [ClickHouse Connector Sink](/ru/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink),
+* вы знакомы с Amazon MSK и коннекторами MSK. Рекомендуем ознакомиться с руководствами Amazon MSK [Getting Started](https://docs.aws.amazon.com/msk/latest/developerguide/getting-started.html) и [MSK Connect](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect.html).
+
+<div id="the-official-kafka-connector-from-clickhouse-with-amazon-msk">
+  ## Официальный коннектор Kafka от ClickHouse для Amazon MSK
+</div>
+
+<div id="gather-your-connection-details">
+  ### Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="steps">
+  ### Шаги
+</div>
+
+1. Убедитесь, что вы знакомы с [ClickHouse Connector Sink](/ru/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
+2. [Создайте экземпляр MSK](https://docs.aws.amazon.com/msk/latest/developerguide/create-cluster.html).
+3. [Создайте и назначьте роль IAM](https://docs.aws.amazon.com/msk/latest/developerguide/create-client-iam-role.html).
+4. Скачайте файл `jar` со [страницы релизов ClickHouse Connect Sink](https://github.com/ClickHouse/clickhouse-kafka-connect/releases).
+5. Установите скачанный файл `jar` на [странице Custom plugin](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-plugins.html) в консоли Amazon MSK.
+6. Если коннектор подключается к общедоступному экземпляру ClickHouse, [включите доступ в интернет](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-internet-access.html).
+7. Укажите в конфигурации имя топика, имя хоста экземпляра ClickHouse и пароль.
+
+```yml
+connector.class=com.clickhouse.kafka.connect.ClickHouseSinkConnector
+tasks.max=1
+topics=<topic_name>
+ssl=true
+security.protocol=SSL
+hostname=<hostname>
+database=<database_name>
+password=<password>
+ssl.truststore.location=/tmp/kafka.client.truststore.jks
+port=8443
+value.converter.schemas.enable=false
+value.converter=org.apache.kafka.connect.json.JsonConverter
+exactlyOnce=true
+username=default
+schemas.enable=false
+```
+
+<div id="iam-least-privilege">
+  ## Рекомендуемые разрешения IAM (принцип наименьших привилегий)
+</div>
+
+Используйте минимальный набор разрешений, необходимый для вашей конфигурации. Начните с приведённого ниже базового набора и добавляйте разрешения для дополнительных сервисов только если действительно их используете.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "MSKClusterAccess",
+      "Effect": "Allow",
+      "Action": [
+        "kafka:DescribeCluster",
+        "kafka:GetBootstrapBrokers",
+        "kafka:DescribeClusterV2",
+        "kafka:ListClusters",
+        "kafka:ListClustersV2"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KafkaAuthorization",
+      "Effect": "Allow",
+      "Action": [
+        "kafka-cluster:Connect",
+        "kafka-cluster:DescribeCluster",
+        "kafka-cluster:DescribeGroup",
+        "kafka-cluster:DescribeTopic",
+        "kafka-cluster:ReadData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OptionalGlueSchemaRegistry",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetSchema*",
+        "glue:ListSchemas",
+        "glue:ListSchemaVersions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OptionalSecretsManager",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:<region>:<account-id>:secret:<your-secret-name>*"
+      ]
+    },
+    {
+      "Sid": "OptionalS3Read",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::<your-bucket>/<optional-prefix>/*"
+    }
+  ]
+}
+```
+
+* Используйте блок Glue только в том случае, если используете AWS Glue Schema Registry.
+* Используйте блок Secrets Manager только в том случае, если получаете учетные данные или truststore из Secrets Manager. Ограничьте ARN.
+* Используйте блок S3 только в том случае, если загружаете артефакты (например, truststore) из S3. Ограничьте доступ бакетом/префиксом.
+
+См. также: [лучшие практики Kafka — IAM](/ru/integrations/clickpipes/kafka/best-practices#iam).
+
+<div id="performance-tuning">
+  ## Настройка производительности
+</div>
+
+Один из способов повысить производительность — настроить размер батча и количество записей, считываемых из Kafka, добавив в конфигурацию **воркера** следующее:
+
+```yml
+consumer.max.poll.records=[NUMBER OF RECORDS]
+consumer.max.partition.fetch.bytes=[NUMBER OF RECORDS * RECORD SIZE IN BYTES]
+```
+
+Конкретные значения будут зависеть от желаемого количества записей и размера записи. Например, по умолчанию используются следующие значения:
+
+```yml
+consumer.max.poll.records=500
+consumer.max.partition.fetch.bytes=1048576
+```
+
+Более подробную информацию — как о реализации, так и о других важных аспектах — можно найти в официальной документации [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) и
+[Amazon MSK](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-workers.html#msk-connect-create-custom-worker-config).
+
+<div id="notes-on-networking-for-msk-connect">
+  ## Примечания по сетевой конфигурации для MSK Connect
+</div>
+
+Чтобы MSK Connect мог подключаться к ClickHouse, мы рекомендуем размещать ваш кластер MSK в частной подсети с настроенным Private NAT для доступа в интернет. Инструкции по настройке приведены ниже. Обратите внимание: публичные подсети поддерживаются, но не рекомендуются, поскольку в этом случае придется постоянно назначать Elastic IP-адрес вашему ENI; [подробнее см. в документации AWS](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-internet-access.html)
+
+1. **Создайте частную подсеть:** Создайте новую подсеть в вашем VPC и обозначьте ее как частную. Эта подсеть не должна иметь прямого доступа в интернет.
+2. **Создайте NAT Gateway:** Создайте NAT Gateway в публичной подсети вашего VPC. NAT Gateway позволяет экземплярам в частной подсети подключаться к интернету или другим сервисам AWS, но не позволяет инициировать входящие соединения из интернета к этим экземплярам.
+3. **Обновите таблицу маршрутизации:** Добавьте маршрут, направляющий трафик, предназначенный для интернета, через NAT Gateway.
+4. **Проверьте конфигурацию Security Group и сетевых ACL:** Настройте ваши [security groups](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html) и [сетевые ACL (списки управления доступом)](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html), чтобы разрешить необходимый трафик.
+   1. От ENI воркеров MSK Connect к брокерам MSK по порту TLS (обычно 9094).
+   2. От ENI воркеров MSK Connect к конечной точке ClickHouse: 9440 (native TLS) или 8443 (HTTPS).
+   3. Разрешите входящий трафик в SG брокера от SG воркеров MSK Connect.
+   4. Для самоуправляемого ClickHouse откройте порт, настроенный на вашем сервере (по умолчанию 8123 для HTTP).
+5. **Привяжите Security Group к MSK:** Убедитесь, что эти security groups привязаны к вашему кластеру MSK и воркерам MSK Connect.
+6. **Подключение к ClickHouse Cloud:**
+   1. Публичная конечная точка + список разрешенных IP-адресов: требуется исходящий NAT-доступ из частных подсетей.
+   2. Частное подключение там, где оно доступно (например, пиринг VPC/PrivateLink/VPN). Убедитесь, что в VPC включены DNS hostnames/DNS resolution и что DNS может разрешить частную конечную точку.
+7. **Проверьте подключение (краткий чек-лист):**
+   1. Из среды коннектора выполните разрешение bootstrap DNS MSK и установите TLS‑соединение с портом брокера.
+   2. Установите TLS‑соединение с ClickHouse на порту 9440 (или 8443 для HTTPS).
+   3. Если вы используете сервисы AWS (Glue/Secrets Manager), разрешите исходящий трафик к этим конечным точкам.

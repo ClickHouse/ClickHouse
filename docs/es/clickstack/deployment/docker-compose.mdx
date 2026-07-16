@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/deployment/docker-compose
+title: 'Docker Compose'
+description: 'Despliegue de ClickStack Open Source con Docker Compose - la pila de observabilidad de ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'Despliegue de HyperDX con Docker', 'Guía de despliegue de ClickStack', 'OpenTelemetry Docker Compose']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import JSONSupport from '/snippets/es/_json_support.mdx';
+
+Todos los componentes de ClickStack Open Source se distribuyen por separado como imágenes de Docker individuales:
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry collector (OTel)**
+* **MongoDB**
+
+Estas imágenes pueden combinarse y desplegarse localmente con Docker Compose.
+
+Docker Compose expone puertos adicionales para observabilidad e ingestión según la configuración predeterminada de `otel-collector`:
+
+* `13133`: endpoint de comprobación de estado para la extensión `health_check`
+* `24225`: receptor de Fluentd para la ingestión de logs
+* `4317`: receptor OTLP gRPC (estándar para trazas, logs y métricas)
+* `4318`: receptor OTLP HTTP (alternativa a gRPC)
+* `8888`: endpoint de métricas de Prometheus para supervisar el propio OpenTelemetry collector
+
+Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen que el OpenTelemetry collector esté listo para producción para distintas necesidades de ingestión.
+
+<div id="suitable-for">
+  ### Adecuado para
+</div>
+
+* Pruebas locales
+* Pruebas de concepto
+* Implementaciones en producción en las que no se requiere tolerancia a fallos y un solo servidor basta para alojar todos los datos de ClickHouse
+* Al implementar ClickStack, pero alojando ClickHouse por separado; por ejemplo, con ClickHouse Cloud.
+
+<div id="deployment-steps">
+  ## Pasos de despliegue
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Clona el repositorio
+
+    Para desplegar con Docker Compose, clona el repositorio de ClickStack, sitúate en el directorio y ejecuta `docker-compose up`:
+
+    ```shell
+    git clone https://github.com/ClickHouse/ClickStack.git
+    docker compose up
+    ```
+  </Step>
+
+  <Step>
+    ### Accede a la UI de HyperDX
+
+    Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
+
+    Crea un usuario e introduce un nombre de usuario y una contraseña que cumplan los requisitos.
+
+    Al hacer clic en `Create`, se crearán fuentes de datos para la instancia de ClickHouse desplegada con Docker Compose.
+
+    <Info>
+      **Sobrescribir la conexión predeterminada**
+
+      Puedes sobrescribir la conexión predeterminada a la instancia integrada de ClickHouse. Para obtener más información, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    </Info>
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
+
+    Para ver un ejemplo de uso de una instancia alternativa de ClickHouse, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+  </Step>
+
+  <Step>
+    ### Completa los detalles de conexión
+
+    Para conectarte a la instancia de ClickHouse desplegada, solo tienes que hacer clic en **Create** y aceptar la configuración predeterminada.
+
+    Si prefieres conectarte a tu propio **clúster externo de ClickHouse**, por ejemplo, ClickHouse Cloud, puedes introducir manualmente tus credenciales de conexión.
+
+    Si se te solicita crear una fuente, conserva todos los valores predeterminados y completa el campo `Table` con el valor `otel_logs`. El resto de la configuración debería detectarse automáticamente, por lo que podrás hacer clic en `Save New Source`.
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Crear fuente de logs" size="md" />
+  </Step>
+</Steps>
+
+<div id="modifying-settings">
+  ## Modificar la configuración de compose
+</div>
+
+Puede modificar la configuración de la pila, como la versión utilizada, mediante el archivo de variables de entorno:
+
+```shell
+user@example-host clickstack % cat .env
+
+# Usado por docker-compose.yml
+IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
+ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-otel-collector
+CODE_VERSION=2.8.0
+IMAGE_VERSION_SUB_TAG=.8.0
+IMAGE_VERSION=2
+IMAGE_NIGHTLY_TAG=2-nightly
+IMAGE_LATEST_TAG=latest
+
+# Configurar URLs de dominio
+HYPERDX_API_PORT=8000 #opcional (no debe estar en uso por otros servicios)
+HYPERDX_APP_PORT=8080
+HYPERDX_APP_URL=http://localhost
+HYPERDX_LOG_LEVEL=debug
+HYPERDX_OPAMP_PORT=4320
+
+# Configuración de Otel/ClickHouse
+HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
+```
+
+<div id="configuring-collector">
+  ### Configuración del OpenTelemetry collector
+</div>
+
+La configuración del OTel collector puede modificarse si es necesario; consulta [&quot;Modificar la configuración&quot;](/es/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
+
+<div id="using-clickhouse-cloud">
+  ## Uso de ClickHouse Cloud
+</div>
+
+Esta distribución puede utilizarse con ClickHouse Cloud, pero es diferente de [Managed ClickStack](/es/clickstack/deployment/managed). En esta configuración, administras tú mismo la UI de ClickStack mientras usas ClickHouse Cloud solo para compute y Storage. Salvo que tengas un motivo concreto para operar la UI de forma independiente, te recomendamos usar Managed ClickStack, que incluye authentication integrada y funciones Enterprise adicionales, y evita que tengas que administrar tú mismo la UI de ClickStack.
+
+Debes:
+
+* Eliminar el servicio de ClickHouse del archivo `docker-compose.yml`. Esto es opcional si estás haciendo pruebas, ya que la instancia de ClickHouse implementada simplemente se ignorará, aunque consumirá recursos locales innecesariamente. Si eliminas el servicio, asegúrate de quitar también cualquier referencia a él, como `depends_on`.
+
+* Modificar el OTel collector para que use una instancia de ClickHouse Cloud configurando las variables de entorno `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` y `CLICKHOUSE_PASSWORD` en el archivo compose. En concreto, añade las variables de entorno al servicio OTel collector:
+
+  ```shell
+  otel-collector:
+      image: ${OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
+      environment:
+        CLICKHOUSE_ENDPOINT: '<CLICKHOUSE_ENDPOINT>' # endpoint HTTPS aquí
+        CLICKHOUSE_USER: '<CLICKHOUSE_USER>'
+        CLICKHOUSE_PASSWORD: '<CLICKHOUSE_PASSWORD>'
+        HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: ${HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}
+        HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+        OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+      ports:
+        - '13133:13133' # extensión health_check
+        - '24225:24225' # receptor Fluentd
+        - '4317:4317' # receptor OTLP gRPC
+        - '4318:4318' # receptor OTLP HTTP
+        - '8888:8888' # extensión de métricas
+      restart: always
+      networks:
+        - internal
+  ```
+
+  `CLICKHOUSE_ENDPOINT` debe ser el endpoint HTTPS de ClickHouse Cloud, incluido el puerto `8443`; por ejemplo, `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+* Al conectarte a la UI de HyperDX y crear una connection a ClickHouse, usa tus credentials de Cloud.
+
+<JSONSupport />

@@ -1,0 +1,75 @@
+---
+alias: []
+description: 'JSONAsString フォーマットのリファレンス'
+input_format: true
+keywords: ['JSONAsString']
+output_format: false
+slug: /interfaces/formats/JSONAsString
+title: 'JSONAsString'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✗  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+このフォーマットでは、1 つの JSONオブジェクトが 1 つの値として解釈されます。
+入力に複数の JSONオブジェクトがある場合 (カンマ区切り) 、それぞれが別個の行として解釈されます。
+入力データが `[]` で囲まれている場合は、JSONオブジェクトの配列として解釈されます。
+
+<Note>
+  このフォーマットを解析できるのは、型が [String](/ja/reference/data-types/string) の単一フィールドを持つテーブルのみです。
+  残りのカラムは [`DEFAULT`](/ja/reference/statements/create/table#default) または [`MATERIALIZED`](/ja/reference/statements/create/view#materialized-view) のいずれかに設定するか、
+  省略する必要があります。
+</Note>
+
+JSONオブジェクト全体を String にシリアライズしたら、[JSON functions](/ja/reference/functions/regular-functions/json-functions) を使って処理できます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="basic-example">
+  ### 基本例
+</div>
+
+```sql title="Query"
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+```response title="Response"
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
+```
+
+<div id="an-array-of-json-objects">
+  ### JSONオブジェクトの配列
+</div>
+
+```sql title="Query"
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+```response title="Response"
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
