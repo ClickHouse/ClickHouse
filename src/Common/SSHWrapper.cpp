@@ -330,6 +330,59 @@ void SSHKeyFactory::validatePublicKeyFormat(const String & base64_key, const Str
         throw Exception(ErrorCodes::LIBSSH_ERROR,
             "SSH public key type mismatch: declared '{}' but the key encodes '{}'", type_name, String(embedded_type));
 
+    /// SSH certificate carriers (ssh-ed25519-cert-v01, sk-ssh-ed25519-cert-v01) are NOT a flat sequence of
+    /// length-prefixed strings: they interleave fixed-width uint64/uint32 fields (serial, cert type) between
+    /// the strings (OpenSSH PROTOCOL.certkeys). The generic string-sequence parse below would misread those
+    /// integers as string length prefixes, so a genuine certificate would be rejected here while a minimal
+    /// bogus blob (type string + one short string) would slip through the lenient "unknown type" branch. That
+    /// makes a stored cert's validity depend on the node's FIPS mode. Validate the certificate structure
+    /// explicitly. Only the Ed25519 cert families reach this validator (they are the FIPS-unusable set).
+    {
+        std::string_view t(type_name);
+        bool is_ed25519_cert = (t == "ssh-ed25519-cert-v01@openssh.com");
+        bool is_sk_ed25519_cert = (t == "sk-ssh-ed25519-cert-v01@openssh.com");
+        if (is_ed25519_cert || is_sk_ed25519_cert)
+        {
+            auto fail = [&]
+            {
+                throw Exception(ErrorCodes::LIBSSH_ERROR,
+                    "Bad SSH public key of type {}: invalid certificate wire format", type_name);
+            };
+            auto read_string = [&](std::string_view & out)
+            {
+                if (!readSSHWireString(data, out))
+                    fail();
+            };
+            auto skip_bytes = [&](size_t n)
+            {
+                if (data.size() < n)
+                    fail();
+                data.remove_prefix(n);
+            };
+            std::string_view field;
+            read_string(field);                 /// nonce
+            read_string(field);                 /// public key
+            if (field.size() != 32)             /// raw Ed25519 public key is exactly 32 bytes
+                fail();
+            if (is_sk_ed25519_cert)
+                read_string(field);             /// application (security-key variant only)
+            skip_bytes(8);                       /// serial (uint64)
+            skip_bytes(4);                       /// cert type (uint32)
+            read_string(field);                 /// key id
+            read_string(field);                 /// valid principals
+            skip_bytes(8);                       /// valid after (uint64)
+            skip_bytes(8);                       /// valid before (uint64)
+            read_string(field);                 /// critical options
+            read_string(field);                 /// extensions
+            read_string(field);                 /// reserved
+            read_string(field);                 /// signature key
+            read_string(field);                 /// signature
+            if (!data.empty())                   /// no trailing bytes allowed
+                fail();
+            return;
+        }
+    }
+
     /// Validate the full wire structure for the declared type, not only the leading type string. Otherwise a
     /// blob that carries just the length-prefixed type name (e.g. base64("\0\0\0\x0bssh-ed25519")) with no key
     /// body would pass here while makePublicKeyFromBase64 rejects it on a non-FIPS node, making validity depend

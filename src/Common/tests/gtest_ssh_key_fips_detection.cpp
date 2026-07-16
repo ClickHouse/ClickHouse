@@ -297,4 +297,35 @@ TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsEd25519TrailingBytes)
         DB::Exception);
 }
 
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsBogusEd25519Cert)
+{
+    /// A certificate carrier (ssh-ed25519-cert-v01@openssh.com) is FIPS-unusable and reaches this validator on
+    /// the preserve/skip paths. Its wire format interleaves fixed-width uint64/uint32 fields between strings, so
+    /// the generic string-sequence parse cannot validate it. This minimal blob (correct 32-byte type string +
+    /// one 4-byte string "aaaa", nothing else) is rejected by ssh_pki_import_pubkey_base64 on a non-FIPS node,
+    /// so the format-only check must reject it too, otherwise the definition's validity would depend on the
+    /// node's FIPS mode. Before the explicit cert validator it slipped through the lenient "unknown type"
+    /// branch (one non-empty field was enough).
+    EXPECT_THROW(
+        SSHKeyFactory::validatePublicKeyFormat(
+            "AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAABGFhYWE=",
+            "ssh-ed25519-cert-v01@openssh.com"),
+        DB::Exception);
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatAcceptsWellFormedEd25519Cert)
+{
+    /// A genuine ssh-ed25519-cert-v01@openssh.com key (ssh-keygen -s CA -I id -n principal user.pub). The generic
+    /// string-sequence parse would misread its embedded serial/type integers and reject it; the explicit cert
+    /// validator accepts it, keeping validity independent of FIPS mode.
+    static constexpr const char * ED25519_CERT_BASE64 =
+        "AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIOWtVVCZp3wRMz4Su+1/0maPxfrUSI+weWIts+/XHgp5AAAAIH0F"
+        "widmbXJZMRA6NnvA90GEV6DJLNM4yExC5hrWveC/AAAAAAAAAAAAAAABAAAABnRlc3RpZAAAAAgAAAAEbHVjeQAAAAAAAAAA////////"
+        "//8AAAAAAAAAggAAABVwZXJtaXQtWDExLWZvcndhcmRpbmcAAAAAAAAAF3Blcm1pdC1hZ2VudC1mb3J3YXJkaW5nAAAAAAAAABZwZXJt"
+        "aXQtcG9ydC1mb3J3YXJkaW5nAAAAAAAAAApwZXJtaXQtcHR5AAAAAAAAAA5wZXJtaXQtdXNlci1yYwAAAAAAAAAAAAAAMwAAAAtzc2gt"
+        "ZWQyNTUxOQAAACDDATn+jqx9bHUzQamjZnh86tqwhYB+OTBLNB8YajNSkgAAAFMAAAALc3NoLWVkMjU1MTkAAABAH5MtnhOr+SrWMIlM"
+        "pgzrNvp+fXma+grDV/7CPG1YHr7oT4zVsVDOHaOI7BVHHrBMekQ+mW1y2YsuckzUU969Ag==";
+    EXPECT_NO_THROW(SSHKeyFactory::validatePublicKeyFormat(ED25519_CERT_BASE64, "ssh-ed25519-cert-v01@openssh.com"));
+}
+
 #endif
