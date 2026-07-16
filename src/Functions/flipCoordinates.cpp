@@ -4,15 +4,23 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool variant_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
@@ -26,6 +34,17 @@ class FunctionFlipCoordinates final : public IFunction
 public:
     static constexpr auto name = "flipCoordinates";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFlipCoordinates>(); }
+
+    FunctionFlipCoordinates()
+    {
+        /// Mirror the default Variant adaptor: when variant_throw_on_type_mismatch is disabled, a
+        /// populated arm whose type flipCoordinates cannot process yields NULL rows instead of throwing.
+        if (CurrentThread::isInitialized())
+        {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+        }
+    }
 
     String getName() const override { return name; }
 
@@ -113,6 +132,11 @@ private:
         Columns new_variants;
         new_variants.reserve(num_variants);
 
+        /// Local arms that are populated but hold a type flipCoordinates cannot process. Only used
+        /// when variant_throw_on_type_mismatch = 0, where such arms' rows become NULL instead of throwing.
+        std::vector<bool> arm_nulled(num_variants, false);
+        bool any_nulled = false;
+
         for (size_t local_discr = 0; local_discr < num_variants; ++local_discr)
         {
             const ColumnPtr & sub_column = column_variant->getVariantPtrByLocalDiscriminator(local_discr);
@@ -137,6 +161,16 @@ private:
             {
                 flipped = executeForArray(sub_column, array_type);
             }
+            else if (!throw_on_type_mismatch)
+            {
+                /// variant_throw_on_type_mismatch = 0: mirror the default Variant adaptor and null out
+                /// this populated unsupported arm rather than throwing. Its rows are reassigned to
+                /// NULL_DISCRIMINATOR below; keep an empty column so no discriminator references its data.
+                arm_nulled[local_discr] = true;
+                any_nulled = true;
+                new_variants.push_back(sub_column->cloneEmpty());
+                continue;
+            }
             else
             {
                 throw Exception(
@@ -149,8 +183,30 @@ private:
             new_variants.push_back(std::move(flipped));
         }
 
+        if (!any_nulled)
+            return ColumnVariant::create(
+                column_variant->getLocalDiscriminatorsPtr(),
+                column_variant->getOffsetsPtr(),
+                new_variants,
+                local_to_global);
+
+        /// Rebuild the local discriminators, turning rows that point at a nulled arm into NULLs. The
+        /// original offsets are reused: they are never read for NULL_DISCRIMINATOR rows, and rows of the
+        /// surviving (flipped) arms keep their unchanged offsets since those arms keep their size.
+        const auto & old_discriminators = column_variant->getLocalDiscriminators();
+        auto new_discriminators_col = ColumnVariant::ColumnDiscriminators::create();
+        auto & new_discriminators = new_discriminators_col->getData();
+        new_discriminators.reserve(old_discriminators.size());
+        for (auto discr : old_discriminators)
+        {
+            if (discr != ColumnVariant::NULL_DISCRIMINATOR && arm_nulled[discr])
+                new_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+            else
+                new_discriminators.push_back(discr);
+        }
+
         return ColumnVariant::create(
-            column_variant->getLocalDiscriminatorsPtr(),
+            std::move(new_discriminators_col),
             column_variant->getOffsetsPtr(),
             new_variants,
             local_to_global);
@@ -221,6 +277,10 @@ private:
         auto result = ColumnArray::create(result_nested, offsets_column);
         return result;
     }
+
+    /// Snapshot of variant_throw_on_type_mismatch at construction. When false, a populated Variant arm
+    /// of an unsupported type yields NULL rows instead of ILLEGAL_TYPE_OF_ARGUMENT.
+    bool throw_on_type_mismatch = true;
 };
 
 REGISTER_FUNCTION(FlipCoordinates)
