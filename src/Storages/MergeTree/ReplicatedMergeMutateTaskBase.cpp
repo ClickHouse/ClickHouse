@@ -228,6 +228,15 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             if (!finalize(part_log_writer))
                 return execute_fetch(/* need_to_check_missing = */true);
 
+            /// A task that survived a transient reconnection has only deposited its result for
+            /// reuse; it must not remove the queue entry, so that a follow-up attempt can pick the
+            /// result up, re-validate it against the current ZooKeeper state, and commit it.
+            if (isDetachedSurvivor())
+            {
+                state = State::SUCCESS;
+                return false;
+            }
+
             return remove_processed_entry();
         }
         case State::SUCCESS :

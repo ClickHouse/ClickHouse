@@ -30,7 +30,8 @@ BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
         case Type::Moving:
             return getContext()->getBackgroundMoveTaskSchedulingSettings();
         case Type::Streaming:
-            return getContext()->getBackgroundStreamingTaskSchedulingSettings();
+            /// TODO(michicosun): Change to streaming-specific settings.
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
     }
 }
 
@@ -117,18 +118,7 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-    {
-        switch (type)
-        {
-        case Type::DataProcessing:
-        case Type::Moving:
-            holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        }
-    }
+        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }
@@ -138,7 +128,7 @@ void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
     storage_id = new_id;
 }
 
-void BackgroundJobsAssignee::finish()
+void BackgroundJobsAssignee::finish(bool is_transient)
 {
     /// Move the holder to a local variable under the lock, then release the lock
     /// before calling deactivate(). We cannot hold holder_mutex during deactivate()
@@ -156,7 +146,9 @@ void BackgroundJobsAssignee::finish()
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        /// Only merge/mutate tasks are allowed to survive a transient reconnect, because their
+        /// (potentially expensive) computation does not touch ZooKeeper until commit time.
+        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id, is_transient);
         getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }

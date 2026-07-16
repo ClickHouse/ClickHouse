@@ -6012,9 +6012,14 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     LOG_TRACE(log, "Finished preparing for shutdown");
 }
 
-void StorageReplicatedMergeTree::partialShutdown()
+void StorageReplicatedMergeTree::partialShutdown(bool is_transient)
 {
     ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
+
+    /// Set this before cancelling the merges blocker below, so that a mutation that is allowed to
+    /// survive the reconnect does not abort its compute in the window before it detaches itself.
+    if (is_transient)
+        transient_reconnect_in_progress = true;
 
     partial_shutdown_called = true;
     partial_shutdown_event.set();
@@ -6036,11 +6041,57 @@ void StorageReplicatedMergeTree::partialShutdown()
         auto fetch_lock = fetcher.blocker.cancel();
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover.moves_blocker.cancel();
-        background_operations_assignee.finish();
-        background_streaming_assignee.finish();
+        /// Both assignees remove this storage's tasks from every background executor (including the
+        /// shared merge/mutate one), so both must be told it is a transient shutdown; otherwise the
+        /// second call would cancel a mutation that the first call let survive.
+        background_operations_assignee.finish(is_transient);
+        background_streaming_assignee.finish(is_transient);
     }
 
+    /// By now, every merge/mutate task that decided to survive the reconnect has detached itself
+    /// (its is_surviving flag is set), so it no longer relies on this flag to keep going.
+    if (is_transient)
+        transient_reconnect_in_progress = false;
+
     LOG_TRACE(log, "Threads finished");
+}
+
+bool StorageReplicatedMergeTree::reservePrecomputedMutation(const String & new_part_name)
+{
+    std::lock_guard lock(precomputed_mutations_mutex);
+    if (precomputed_mutation_parts.contains(new_part_name))
+        return false;
+    return mutations_being_computed_by_survivor.insert(new_part_name).second;
+}
+
+void StorageReplicatedMergeTree::depositPrecomputedMutation(const String & new_part_name, PreservedMutationPart preserved)
+{
+    std::lock_guard lock(precomputed_mutations_mutex);
+    mutations_being_computed_by_survivor.erase(new_part_name);
+    precomputed_mutation_parts.insert_or_assign(new_part_name, std::move(preserved));
+}
+
+void StorageReplicatedMergeTree::releasePrecomputedMutationReservation(const String & new_part_name)
+{
+    std::lock_guard lock(precomputed_mutations_mutex);
+    mutations_being_computed_by_survivor.erase(new_part_name);
+}
+
+std::optional<StorageReplicatedMergeTree::PreservedMutationPart> StorageReplicatedMergeTree::takePrecomputedMutation(const String & new_part_name)
+{
+    std::lock_guard lock(precomputed_mutations_mutex);
+    auto it = precomputed_mutation_parts.find(new_part_name);
+    if (it == precomputed_mutation_parts.end())
+        return {};
+    auto result = std::move(it->second);
+    precomputed_mutation_parts.erase(it);
+    return result;
+}
+
+bool StorageReplicatedMergeTree::isPartBeingComputedBySurvivor(const String & new_part_name) const
+{
+    std::lock_guard lock(precomputed_mutations_mutex);
+    return mutations_being_computed_by_survivor.contains(new_part_name);
 }
 
 void StorageReplicatedMergeTree::shutdown(bool)
@@ -6348,16 +6399,6 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef()[Setting::select_sequential_consistency]);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
-}
-
-MergeTreeData::DataPartsVector
-StorageReplicatedMergeTree::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
-{
-    DataPartsVector parts;
-    foreachActiveParts(
-        [&](auto & part) { parts.push_back(part); },
-        query_context->getSettingsRef()[Setting::select_sequential_consistency]);
-    return parts;
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(ContextPtr query_context) const
@@ -6793,8 +6834,6 @@ void StorageReplicatedMergeTree::alter(
 
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     StorageInMemoryMetadata future_metadata = *metadata_snapshot;
-    /// Snapshot the sorting key before applying commands, to compare with the resolved future one.
-    KeyDescription old_sorting_key = future_metadata.sorting_key;
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
@@ -6860,9 +6899,7 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    /// Only re-verify the sorting key on ALTERs that can actually change it (see StorageMergeTree::alter).
-    if (!query_settings[Setting::allow_suspicious_primary_key]
-        && MergeTreeData::sortingKeyChanged(old_sorting_key, future_metadata.sorting_key))
+    if (!query_settings[Setting::allow_suspicious_primary_key])
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }
@@ -8318,7 +8355,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         ++try_no;
     } while (!missing_parts.empty());
 
-    LOG_TRACE(log, "Fetch took {:.3f} sec. ({} tries)", watch.elapsedSeconds(), try_no);
+    LOG_TRACE(log, "Fetch took {} sec. ({} tries)", watch.elapsedSeconds(), try_no);
 }
 
 

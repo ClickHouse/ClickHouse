@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MutationCommands.h>
+#include <atomic>
 
 
 namespace DB
@@ -51,6 +52,20 @@ public:
     }
 
     const HardlinkedFiles & getHardlinkedFiles() const;
+
+    /// Allow this mutation to keep running (instead of being aborted) while a transient ZooKeeper
+    /// session re-establishment is in progress. `is_surviving`/`transient_reconnect`/`shutdown_called`
+    /// are storage-owned flags; the mutation compute keeps going while a reconnect is in progress or
+    /// after it has detached itself as a survivor, and only aborts on a real shutdown or a KILL.
+    void enableSurvivalAcrossTransientReconnect(
+        const std::atomic<bool> * is_surviving,
+        const std::atomic<bool> * transient_reconnect,
+        const std::atomic<bool> * shutdown_called);
+
+    /// Move out the guard that keeps the temporary part directory alive, so a caller can keep the
+    /// finished-but-not-committed part around (e.g. to reuse it after a reconnect) after the task
+    /// is destroyed. Must be called only after the result is ready.
+    scope_guard releaseTemporaryDirectoryLock();
 
 private:
 

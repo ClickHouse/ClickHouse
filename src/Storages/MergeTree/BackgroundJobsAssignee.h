@@ -63,7 +63,10 @@ public:
     void start();
     void trigger();
     void postpone();
-    void finish();
+    /// If `is_transient` is true (a ZooKeeper session re-establishment rather than a full
+    /// shutdown), in-flight merge/mutate tasks are given a chance to survive the reconnect
+    /// instead of being cancelled (see MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage).
+    void finish(bool is_transient = false);
 
     /// Update the cached storage ID after a table rename,
     /// so that finish() can correctly find tasks belonging to this storage.

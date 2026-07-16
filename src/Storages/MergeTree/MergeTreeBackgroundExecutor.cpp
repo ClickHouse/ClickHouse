@@ -205,7 +205,7 @@ static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query
 }
 
 template <class Queue>
-void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
+void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id, bool is_transient)
 {
     std::vector<TaskRuntimeDataPtr> tasks_to_cancel;
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;
@@ -215,16 +215,43 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         /// Erase storage related tasks from pending and select active tasks to wait for
         tasks_to_cancel = pending.removeTasks(id);
 
+        /// On a transient shutdown, a task that is currently between steps (i.e. in the
+        /// pending queue rather than mid-step) may also opt to survive the reconnect.
+        /// Put such tasks back so the pool keeps executing them.
+        if (is_transient)
+        {
+            std::vector<TaskRuntimeDataPtr> tasks_to_keep;
+            for (auto & item : tasks_to_cancel)
+            {
+                if (item->task && item->task->tryDetachForTransientReconnect())
+                    tasks_to_keep.push_back(std::move(item));
+            }
+            std::erase(tasks_to_cancel, nullptr);
+            for (auto & item : tasks_to_keep)
+            {
+                pending.push(std::move(item));
+                has_tasks.notify_one();
+            }
+        }
+
         tasks_to_wait.reserve(active.size());
         for (auto & item : active)
         {
             /// Use cached storage_id because task may be null during destruction
             /// (resetTask already called but item still in active queue).
-            if (item->storage_id == id)
-            {
-                item->is_currently_deleting = true;
-                tasks_to_wait.push_back(item);
-            }
+            if (item->storage_id != id)
+                continue;
+
+            /// On a transient shutdown (ZooKeeper session re-establishment) give the task
+            /// a chance to detach itself from the replication queue and keep running, so
+            /// that already-performed work is not thrown away. Such a task stays in `active`
+            /// and finishes on its own; a subsequent full shutdown will still find and
+            /// cancel it here (with is_transient == false).
+            if (is_transient && item->task && item->task->tryDetachForTransientReconnect())
+                continue;
+
+            item->is_currently_deleting = true;
+            tasks_to_wait.push_back(item);
         }
     }
 

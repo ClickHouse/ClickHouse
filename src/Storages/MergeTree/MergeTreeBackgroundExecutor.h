@@ -331,7 +331,12 @@ public:
     size_t getMaxTasksCount() const;
 
     bool trySchedule(ExecutableTaskPtr task);
-    void removeTasksCorrespondingToStorage(StorageID id);
+    /// Remove (cancel and wait for) all tasks belonging to the given storage.
+    /// If `is_transient` is true (a ZooKeeper session re-establishment rather than a full
+    /// shutdown), each active task is first offered a chance to detach and survive the
+    /// reconnect via IExecutableTask::tryDetachForTransientReconnect(); tasks that take it
+    /// are left running instead of being cancelled and waited for.
+    void removeTasksCorrespondingToStorage(StorageID id, bool is_transient = false);
     void wait();
 
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.

@@ -2130,6 +2130,12 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if ((*it)->currently_executing)
             continue;
 
+        /// A mutation that survived a transient Keeper reconnection is still computing this target
+        /// part outside of the queue. Do not schedule a duplicate task for it; once the survivor
+        /// deposits its result, this entry becomes selectable again and the result is reused.
+        if (storage.isPartBeingComputedBySurvivor((*it)->new_part_name))
+            continue;
+
         if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
         {
             entry = *it;

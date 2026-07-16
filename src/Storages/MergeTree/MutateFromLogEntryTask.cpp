@@ -16,6 +16,8 @@ namespace ProfileEvents
     extern const Event MutationCommitMilliseconds;
     extern const Event MutationTotalMilliseconds;
     extern const Event ReplicatedPartMutations;
+    extern const Event MutationsSurvivedKeeperReconnect;
+    extern const Event MutationsReusedPrecomputedParts;
 }
 
 namespace DB
@@ -33,6 +35,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
+    extern const MergeTreeSettingsBool reuse_precomputed_mutations_after_keeper_reconnect;
 }
 
 namespace FailPoints
@@ -44,6 +47,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = storage.getSettings();
+    survival_enabled = (*storage_settings_ptr)[MergeTreeSetting::reuse_precomputed_mutations_after_keeper_reconnect];
     LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
 
     FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_in_prepare);
@@ -232,9 +236,50 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         PartLogElement::MUTATE_PART_START, {}, 0,
         entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log, {});
 
+    mutation_metadata_version = metadata_snapshot->getMetadataVersion();
+
+    /// If a previous attempt of this exact mutation survived a transient Keeper reconnection and
+    /// deposited its finished result, reuse it instead of re-computing the whole part. This is
+    /// fail-closed: the result is only reused if the source part and table metadata are unchanged,
+    /// and it still goes through the normal commit path (which re-validates against ZooKeeper).
+    if (survival_enabled)
+    {
+        if (auto preserved = storage.takePrecomputedMutation(entry.new_part_name))
+        {
+            if (preserved->source_part_name == source_part_name
+                && preserved->metadata_version == mutation_metadata_version)
+            {
+                LOG_INFO(log, "Reusing the pre-computed result for mutation of part {} that survived a ZooKeeper reconnection.",
+                    entry.new_part_name);
+                new_part = preserved->part;
+                reused_hardlinked_files = std::move(preserved->hardlinked_files);
+                reused_temporary_directory_lock = std::move(preserved->temporary_directory_lock);
+                reused_precomputed_part = true;
+
+                for (auto & item : future_mutated_part->parts)
+                    priority.value += item->getBytesOnDisk();
+
+                return PrepareResult{
+                    .prepared_successfully = true,
+                    .need_to_check_missing_part_in_fetch = true,
+                    .part_log_writer = part_log_writer,
+                };
+            }
+
+            LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the source part or the table "
+                "metadata changed after the reconnection, will re-compute it.", entry.new_part_name);
+            /// `preserved` goes out of scope: its temporary directory lock is released and the
+            /// leftover part directory is cleaned up as an old temporary directory.
+        }
+    }
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
+
+    if (survival_enabled)
+        mutate_task->enableSurvivalAcrossTransientReconnect(
+            &is_surviving_reconnect, &storage.getTransientReconnectFlag(), &storage.getShutdownCalledFlag());
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)
@@ -250,31 +295,50 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
-    new_part = mutate_task->getFuture().get();
+    /// A task that survived a transient reconnection does not commit its result here; it deposits
+    /// it so that a follow-up attempt can re-validate and commit it.
+    if (is_surviving_reconnect.load())
+        return depositPrecomputedResultForReuse();
 
-    auto & data_part_storage = new_part->getDataPartStorage();
+    HardlinkedFiles hardlinked_files;
+
+    if (reused_precomputed_part)
+    {
+        /// `new_part` was adopted from a previously-computed (deposited) result in prepare(); it is
+        /// already finalized on disk, so there is nothing to compute here.
+        hardlinked_files = std::move(reused_hardlinked_files);
+        ProfileEvents::increment(ProfileEvents::MutationsReusedPrecomputedParts);
+
+        storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
+    }
+    else
+    {
+        new_part = mutate_task->getFuture().get();
+
+        auto & data_part_storage = new_part->getDataPartStorage();
 
 #if CLICKHOUSE_CLOUD
-    new_part->is_prewarmed = true;
-    data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+        new_part->is_prewarmed = true;
+        data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
 #endif
 
-    if (data_part_storage.hasActiveTransaction())
-        data_part_storage.precommitTransaction();
+        if (data_part_storage.hasActiveTransaction())
+            data_part_storage.precommitTransaction();
 
-    storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
+        storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 
-    /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
-    /// The task holds RAII guards for temporary part directories (TemporaryParts).
-    /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution
-    /// falls back to fetching the part from another replica. The fetch may use
-    /// cloneAndLoadDataPart with the same "tmp_clone_" prefix, which would try to
-    /// register the same temporary part name in TemporaryParts — causing a
-    /// LOGICAL_ERROR if the old guard is still alive. Resetting the task here
-    /// releases these guards before the fallback fetch can run.
-    auto hardlinked_files = mutate_task->getHardlinkedFiles();
-    mutate_task->updateProfileEvents();
-    mutate_task.reset();
+        /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
+        /// The task holds RAII guards for temporary part directories (TemporaryParts).
+        /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution
+        /// falls back to fetching the part from another replica. The fetch may use
+        /// cloneAndLoadDataPart with the same "tmp_clone_" prefix, which would try to
+        /// register the same temporary part name in TemporaryParts — causing a
+        /// LOGICAL_ERROR if the old guard is still alive. Resetting the task here
+        /// releases these guards before the fallback fetch can run.
+        hardlinked_files = mutate_task->getHardlinkedFiles();
+        mutate_task->updateProfileEvents();
+        mutate_task.reset();
+    }
 
     Stopwatch commit_watch;
 
@@ -329,6 +393,87 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
     write_part_log({});
+
+    return true;
+}
+
+
+bool MutateFromLogEntryTask::tryDetachForTransientReconnect()
+{
+    /// Only mutations for which the feature is enabled and which have work in progress worth
+    /// preserving may survive. A not-yet-started task (no mutate_task) or one that is already
+    /// reusing a previously-computed result is not eligible.
+    if (!survival_enabled || !mutate_task || reused_precomputed_part)
+        return false;
+
+    /// This may be called more than once for the same task during a single partial shutdown
+    /// (each background assignee removes the storage's tasks from the shared executor). If we
+    /// already detached as a survivor, keep saying "yes" so the task is left running.
+    if (is_surviving_reconnect.load())
+        return true;
+
+    /// Reserve the target part name so the queue does not schedule a duplicate task for it while we
+    /// keep computing. If it is already reserved or deposited, don't try to survive again.
+    if (!storage.reservePrecomputedMutation(entry.new_part_name))
+        return false;
+
+    survivor_reservation_guard = [this, name = entry.new_part_name]()
+    {
+        storage.releasePrecomputedMutationReservation(name);
+    };
+
+    is_surviving_reconnect.store(true);
+
+    /// Detach from the replication queue: releasing the "currently executing" holder empties
+    /// `future_parts`, so the queue can be reinitialized cleanly during the reconnect. The queue
+    /// entry (and its ZooKeeper node) remains; it is re-selected only after we deposit our result
+    /// (guarded by the reservation above via isPartBeingComputedBySurvivor()).
+    if (selected_entry)
+        selected_entry->currently_executing_holder.reset();
+
+    LOG_INFO(log, "Mutation of part {} will keep running to survive a transient ZooKeeper reconnection.",
+        entry.new_part_name);
+
+    return true;
+}
+
+
+bool MutateFromLogEntryTask::depositPrecomputedResultForReuse()
+{
+    new_part = mutate_task->getFuture().get();
+
+    auto & data_part_storage = new_part->getDataPartStorage();
+
+#if CLICKHOUSE_CLOUD
+    new_part->is_prewarmed = true;
+    data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+#endif
+
+    if (data_part_storage.hasActiveTransaction())
+        data_part_storage.precommitTransaction();
+
+    StorageReplicatedMergeTree::PreservedMutationPart preserved;
+    preserved.hardlinked_files = mutate_task->getHardlinkedFiles();
+    /// Keep the temporary directory alive so the deposited part is not cleaned up before it is reused.
+    preserved.temporary_directory_lock = mutate_task->releaseTemporaryDirectoryLock();
+    preserved.part = new_part;
+    preserved.source_part_name = entry.source_parts.at(0);
+    preserved.metadata_version = mutation_metadata_version;
+
+    mutate_task->updateProfileEvents();
+    mutate_task.reset();
+
+    storage.depositPrecomputedMutation(entry.new_part_name, std::move(preserved));
+
+    /// The reservation is now represented by the deposited entry; don't release it in the destructor.
+    survivor_reservation_guard.release();
+
+    /// Prevent cancel() from deleting the part we just handed off for reuse.
+    new_part = nullptr;
+
+    LOG_INFO(log, "Kept the pre-computed result for mutation of part {} after a transient ZooKeeper reconnection; "
+        "it will be committed by a follow-up attempt if the assignment is still valid.", entry.new_part_name);
+    ProfileEvents::increment(ProfileEvents::MutationsSurvivedKeeperReconnect);
 
     return true;
 }

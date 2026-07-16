@@ -38,6 +38,15 @@ public:
 
     virtual void onCompleted() = 0;
     virtual void cancel() noexcept = 0;
+
+    /// Called by the background executor when a storage undergoes a transient shutdown
+    /// (e.g. a ZooKeeper session re-establishment) rather than a full shutdown.
+    /// A task may return true to indicate that it detached itself from the storage's
+    /// replication queue and will keep running independently (surviving the reconnect),
+    /// in which case the executor leaves it alone instead of cancelling it.
+    /// The default is false: the task is cancelled as usual.
+    virtual bool tryDetachForTransientReconnect() { return false; }
+
     virtual StorageID getStorageID() const = 0;
     virtual String getQueryId() const = 0;
     virtual Priority getPriority() const = 0;

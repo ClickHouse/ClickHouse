@@ -56,6 +56,11 @@ protected:
     virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
+    /// True if this task detached itself from the replication queue to survive a transient
+    /// ZooKeeper reconnection. Such a task finishes by depositing its result for reuse and must
+    /// not remove the queue entry (the follow-up attempt commits the result and removes the entry).
+    virtual bool isDetachedSurvivor() const { return false; }
+
     void maybeSleepBeforeZeroCopyLock(uint64_t estimated_space_for_result);
 
     /// Will execute a part of inner MergeTask or MutateTask

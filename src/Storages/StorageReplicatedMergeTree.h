@@ -1,5 +1,9 @@
 #pragma once
 
+#include <map>
+#include <optional>
+#include <set>
+
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -123,7 +127,11 @@ public:
     /// Partial shutdown called if we loose connection to zookeeper.
     /// Table can also recover after partial shutdown and continue
     /// to work. This method can be called regularly.
-    void partialShutdown();
+    /// `is_transient` is true when the shutdown is caused by a ZooKeeper session
+    /// re-establishment (the table stays alive and recovers) rather than a full
+    /// shutdown; in that case in-flight mutations may be allowed to survive it
+    /// (see `reuse_precomputed_mutations_after_keeper_reconnect`).
+    void partialShutdown(bool is_transient = false);
 
     /// These two methods are called during final table shutdown (DROP/DETACH/overall server shutdown).
     /// The shutdown process is split into two methods to make it more soft and fast. In database shutdown()
@@ -172,10 +180,6 @@ public:
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     MutationCounters getMutationCounters() const override;
-
-protected:
-    DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
-public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -375,6 +379,38 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
+    /// Support for surviving a transient Keeper reconnection during a mutation, see
+    /// `reuse_precomputed_mutations_after_keeper_reconnect`. When a mutation task detaches
+    /// itself from the replication queue to keep running across the reconnect, it first
+    /// reserves the target part name so the queue does not schedule a duplicate task for it,
+    /// then deposits the finished (but not yet committed) temporary part. The next attempt
+    /// picks the deposited part up and commits it instead of re-computing the mutation.
+    struct PreservedMutationPart
+    {
+        MutableDataPartPtr part;
+        /// Keeps the temporary part directory from being cleaned up while it waits to be reused.
+        scope_guard temporary_directory_lock;
+        HardlinkedFiles hardlinked_files;
+        String source_part_name;
+        Int64 metadata_version = -1;
+    };
+
+    /// Returns true if the reservation was made; false if the part is already reserved or deposited.
+    bool reservePrecomputedMutation(const String & new_part_name);
+    /// Move a reserved part into the "ready to reuse" state.
+    void depositPrecomputedMutation(const String & new_part_name, PreservedMutationPart preserved);
+    /// Release a reservation without depositing anything (the survivor failed or was cancelled).
+    void releasePrecomputedMutationReservation(const String & new_part_name);
+    /// Pop a deposited part for reuse; returns nullopt if there is none.
+    std::optional<PreservedMutationPart> takePrecomputedMutation(const String & new_part_name);
+    /// True while a survivor is still computing this part (reserved but not yet deposited). Used
+    /// by the queue to avoid scheduling a duplicate mutation task for the same target part.
+    bool isPartBeingComputedBySurvivor(const String & new_part_name) const;
+    /// Best-effort: whether a transient Keeper reconnection is currently in progress.
+    bool isTransientReconnectInProgress() const { return transient_reconnect_in_progress.load(); }
+    const std::atomic<bool> & getTransientReconnectFlag() const { return transient_reconnect_in_progress; }
+    const std::atomic<bool> & getShutdownCalledFlag() const { return shutdown_called; }
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -483,6 +519,18 @@ private:
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> shutdown_prepared_called {false};
     std::optional<ShutdownDeadline> shutdown_deadline;
+
+    /// Set while a transient ZooKeeper session re-establishment is being processed. Mutations that
+    /// are allowed to survive it check this flag so that their compute is not aborted in the short
+    /// window between the merges blocker being cancelled and them detaching from the queue.
+    std::atomic<bool> transient_reconnect_in_progress {false};
+
+    /// State for reusing a mutation result across a transient Keeper reconnection.
+    mutable std::mutex precomputed_mutations_mutex;
+    /// Target part names currently being computed by a detached (surviving) mutation task.
+    std::set<String> mutations_being_computed_by_survivor;
+    /// Finished-but-not-committed mutation results, keyed by target part name, ready to be reused.
+    std::map<String, PreservedMutationPart> precomputed_mutation_parts;
 
     /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
     mutable std::mutex flush_and_shutdown_mutex;

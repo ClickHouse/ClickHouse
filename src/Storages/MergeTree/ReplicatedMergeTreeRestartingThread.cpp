@@ -379,7 +379,10 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shutdown)
 {
     setReadonly(/* on_shutdown = */ part_of_full_shutdown);
-    storage.partialShutdown();
+    /// When the restarting thread triggers a partial shutdown that is not part of a full shutdown,
+    /// it is a transient ZooKeeper session re-establishment after which the table recovers. In that
+    /// case in-flight mutations are allowed to survive it (see partialShutdown / the executor).
+    storage.partialShutdown(/* is_transient = */ !part_of_full_shutdown);
 }
 
 

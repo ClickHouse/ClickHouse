@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <atomic>
 
 namespace DB
 {
@@ -38,6 +39,11 @@ public:
             new_part->removeIfNeeded();
     }
 
+    /// Called by the background executor on a transient ZooKeeper reconnection. If this mutation is
+    /// allowed to survive it and has work in progress, detach from the replication queue and keep
+    /// running so the already-performed computation is not thrown away.
+    bool tryDetachForTransientReconnect() override;
+
 private:
 
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
@@ -46,8 +52,18 @@ private:
 
     bool executeInnerTask() override
     {
+        /// When reusing a previously-computed result there is no computation to run.
+        if (reused_precomputed_part)
+            return false;
         return mutate_task->execute();
     }
+
+    bool isDetachedSurvivor() const override { return is_surviving_reconnect.load(); }
+
+    /// Deposit the finished-but-not-committed result so it can be reused after the reconnect,
+    /// instead of committing it here. Returns true (the base class then leaves the queue entry
+    /// in place for the follow-up attempt to pick up).
+    bool depositPrecomputedResultForReuse();
 
     Priority priority;
 
@@ -66,6 +82,22 @@ private:
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
     MutateTaskPtr mutate_task;
+
+    /// Support for surviving a transient Keeper reconnection (see
+    /// `reuse_precomputed_mutations_after_keeper_reconnect`).
+    /// Whether the setting is enabled for this table (captured in prepare()).
+    bool survival_enabled{false};
+    /// Set when this task detached itself and is computing the result to be reused later.
+    std::atomic<bool> is_surviving_reconnect{false};
+    /// Metadata version at prepare() time, recorded to re-validate a reused result.
+    Int64 mutation_metadata_version{-1};
+    /// Releases the reservation of the target part name if the survivor fails before depositing.
+    scope_guard survivor_reservation_guard;
+
+    /// Set when prepare() adopted a previously-computed result instead of re-computing it.
+    bool reused_precomputed_part{false};
+    HardlinkedFiles reused_hardlinked_files;
+    scope_guard reused_temporary_directory_lock;
 };
 
 
