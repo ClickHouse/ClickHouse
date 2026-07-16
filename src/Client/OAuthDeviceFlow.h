@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 
@@ -15,6 +16,21 @@ struct OAuthDeviceFlowEndpoints
     std::string token_endpoint;
 };
 
+/// Parsed OAuth error object (RFC 6749 Section 5.2).
+struct OAuthError
+{
+    std::string error;
+    std::string error_description;
+};
+
+/// How a confidential client authenticates to the device/token endpoints.
+enum class OAuthClientAuthMethod
+{
+    None, /// Public client: only `client_id` in the body
+    Basic, /// `client_secret_basic` (HTTP Basic)
+    Post, /// `client_secret_post` (`client_secret` in the body)
+};
+
 /// Remove trailing slashes from an OAuth issuer / authorization-server base URL.
 std::string normalizeOAuthIssuerURL(std::string issuer);
 
@@ -22,7 +38,11 @@ std::string normalizeOAuthIssuerURL(std::string issuer);
 std::vector<std::string> buildOAuthDiscoveryURLs(const std::string & issuer);
 
 /// Parse `device_authorization_endpoint` and `token_endpoint` from a discovery JSON document.
+/// If `grant_types_supported` is present, requires the RFC 8628 device_code grant type.
 std::optional<OAuthDeviceFlowEndpoints> parseOAuthDiscoveryDocument(const std::string & json_body);
+
+/// Returns true when discovery metadata lists (or omits) support for the device_code grant.
+bool discoverySupportsDeviceCodeGrant(const std::string & json_body);
 
 /// Auth0-compatible endpoint layout used when discovery is unavailable.
 OAuthDeviceFlowEndpoints auth0StyleOAuthEndpoints(const std::string & issuer);
@@ -33,14 +53,37 @@ OAuthDeviceFlowEndpoints applyOAuthEndpointOverrides(
     const std::string & device_authorization_endpoint_override,
     const std::string & token_endpoint_override);
 
-/// Resolve the browser verification URL from a device-authorization response.
-/// Prefers `verification_uri_complete`, otherwise builds from `verification_uri` + `user_code`.
-std::string resolveDeviceVerificationURI(
-    const std::string & verification_uri_complete,
+/// Percent-encode a single `application/x-www-form-urlencoded` component.
+std::string encodeFormComponent(const std::string & value);
+
+/// Build an `application/x-www-form-urlencoded` body. Empty values are omitted.
+std::string buildFormUrlEncodedBody(const std::vector<std::pair<std::string, std::string>> & fields);
+
+/// Parse RFC 6749 Section 5.2 error JSON; returns nullopt if not parseable.
+std::optional<OAuthError> parseOAuthErrorResponse(const std::string & json_body);
+
+/// Format a human-readable OAuth error for exceptions / logs.
+std::string formatOAuthError(const OAuthError & error);
+std::string formatOAuthError(const std::string & response_body, int status, const std::string & reason);
+
+/// RFC 8628 Section 3.3 user instructions: always show short verification_uri + user_code.
+/// When `verification_uri_complete` is set, also mention the shortcut URL.
+std::string formatDeviceLoginInstructions(
     const std::string & verification_uri,
-    const std::string & user_code);
+    const std::string & user_code,
+    const std::string & verification_uri_complete);
+
+/// URL to open in a browser: prefer complete URI, else short verification_uri.
+std::string browserVerificationURL(
+    const std::string & verification_uri_complete,
+    const std::string & verification_uri);
+
+/// RFC 8628 Section 3.5: on connection timeout/failure, double the interval (cap at 60s).
+int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds);
 
 /// Default device-code scope used when `--oauth-scope` is not set (Auth0 / Cloud compatible).
 inline constexpr const char * default_oauth_device_code_scope = "openid profile email offline_access";
+
+inline constexpr const char * oauth_device_code_grant_type = "urn:ietf:params:oauth:grant-type:device_code";
 
 }

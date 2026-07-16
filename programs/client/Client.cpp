@@ -486,10 +486,12 @@ void Client::login()
     JWTProviderOptions options;
     options.auth_url = getClientConfiguration().getString("oauth-url", "");
     options.client_id = getClientConfiguration().getString("oauth-client-id", "");
+    options.client_secret = getClientConfiguration().getString("oauth-client-secret", "");
     options.audience = getClientConfiguration().getString("oauth-audience", "");
     options.scope = getClientConfiguration().getString("oauth-scope", "");
     options.device_authorization_endpoint = getClientConfiguration().getString("oauth-device-uri", "");
     options.token_endpoint = getClientConfiguration().getString("oauth-token-uri", "");
+    options.client_auth_method = getClientConfiguration().getString("oauth-client-auth", "");
 
     const bool has_explicit_endpoints
         = !options.device_authorization_endpoint.empty() && !options.token_endpoint.empty();
@@ -820,6 +822,8 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("login", po::bool_switch(), "Use OAuth 2.0 device authorization grant to login")
         ("oauth-url", po::value<std::string>(), "OAuth / OIDC issuer base URL (used for endpoint discovery)")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
+        ("oauth-client-secret", po::value<std::string>(), "Optional client secret for confidential OAuth clients")
+        ("oauth-client-auth", po::value<std::string>(), "Confidential client auth method: basic (default) or post")
         ("oauth-audience", po::value<std::string>(), "Optional audience parameter for the device authorization request (Auth0-style)")
         ("oauth-scope", po::value<std::string>(), "OAuth scope for the device authorization request")
         ("oauth-device-uri", po::value<std::string>(), "Explicit device authorization endpoint (skips discovery when set with --oauth-token-uri)")
@@ -1005,6 +1009,10 @@ void Client::processOptions(
         config().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
         config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.contains("oauth-client-secret"))
+        config().setString("oauth-client-secret", options["oauth-client-secret"].as<std::string>());
+    if (options.contains("oauth-client-auth"))
+        config().setString("oauth-client-auth", options["oauth-client-auth"].as<std::string>());
     if (options.contains("oauth-audience"))
         config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
     if (options.contains("oauth-scope"))

@@ -3,7 +3,10 @@
 #if USE_JWT_CPP && USE_SSL
 #include <config.h>
 
+#include <Client/OAuthDeviceFlow.h>
+
 #include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Timestamp.h>
 #include <Poco/URI.h>
@@ -21,10 +24,13 @@ struct JWTProviderOptions
 {
     std::string auth_url; /// OAuth / OIDC issuer base URL (`--oauth-url`)
     std::string client_id;
+    std::string client_secret; /// Optional confidential client secret (`--oauth-client-secret`)
     std::string audience;
     std::string scope; /// Empty => default Auth0 / Cloud compatible scope
     std::string device_authorization_endpoint; /// Optional explicit override (`--oauth-device-uri`)
     std::string token_endpoint; /// Optional explicit override (`--oauth-token-uri`)
+    /// `basic` (default when secret is set) or `post`. Ignored when secret is empty.
+    std::string client_auth_method;
 };
 
 class JWTProvider
@@ -50,16 +56,22 @@ protected:
     /// Resolve device + token endpoints via overrides, OIDC/OAuth discovery, or Auth0-style fallback.
     void ensureOAuthEndpointsResolved();
 
+    OAuthClientAuthMethod resolveClientAuthMethod() const;
+    void applyClientAuthentication(Poco::Net::HTTPRequest & request, std::string & body) const;
+
     static std::unique_ptr<Poco::Net::HTTPSClientSession> createHTTPSession(const Poco::URI & uri);
     static void openURLInBrowser(const std::string & url);
+    static void tryPrintQRCode(const std::string & url, std::ostream & out);
     static std::string httpGet(const Poco::URI & uri);
     void storeAccessTokenFromResponse(const Poco::JSON::Object::Ptr & token_object);
 
     // Configuration
     std::string oauth_url;
     std::string oauth_client_id;
+    std::string oauth_client_secret;
     std::string oauth_audience;
     std::string oauth_scope;
+    std::string oauth_client_auth_method;
     std::string oauth_device_authorization_endpoint_override;
     std::string oauth_token_endpoint_override;
     std::string resolved_device_authorization_endpoint;

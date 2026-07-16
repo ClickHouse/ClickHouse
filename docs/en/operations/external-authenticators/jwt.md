@@ -201,7 +201,9 @@ For ClickHouse Cloud endpoints, the client automatically performs token exchange
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
 
-For a custom IdP, pass the OIDC issuer as `--oauth-url`. The client discovers `device_authorization_endpoint` and `token_endpoint` from the issuer's `/.well-known/openid-configuration` (and related OAuth metadata URLs). If discovery fails, it falls back to Auth0-style paths (`/oauth/device/code`, `/oauth/token`) for compatibility with existing Auth0 / ClickHouse Cloud setups.
+For a custom IdP, pass the OIDC issuer as `--oauth-url`. The client discovers `device_authorization_endpoint` and `token_endpoint` from the issuer's `/.well-known/openid-configuration` (and related OAuth metadata URLs). If `grant_types_supported` is present, it must include `urn:ietf:params:oauth:grant-type:device_code`. If discovery fails, the client falls back to Auth0-style paths (`/oauth/device/code`, `/oauth/token`) for compatibility with existing Auth0 / ClickHouse Cloud setups.
+
+During login the client always prints the short `verification_uri` and `user_code` (RFC 8628). When the IdP also returns `verification_uri_complete`, that shortcut URL is printed, opened in a browser, and rendered as a terminal QR code when the `qrencode` tool is available. Confidential clients may pass `--oauth-client-secret` with `--oauth-client-auth basic|post`.
 
 ```bash
 # Microsoft Entra ID (issuer URL, not the device endpoint itself)
