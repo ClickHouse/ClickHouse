@@ -27,6 +27,9 @@ delayed completion: the entry does not carry run=1
 delayed completion (params changed): the query is kept
 delayed completion (params changed): the live param edit survives
 delayed completion (params changed): the entry does not carry run=1
+delayed completion (multi-query): the live draft survives
+delayed completion (multi-query): the completed run's result is still kept
+delayed completion (multi-query): the entry does not carry run=1
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 reload after a color toggle over a draft: the draft is restored as editor text

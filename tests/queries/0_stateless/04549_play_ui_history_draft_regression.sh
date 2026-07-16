@@ -30,6 +30,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     newer, unrun draft (or its live parameter edits) typed while the run was still in
 #     flight: `saveHistory` must leave the live editor/params alone and drop `run=1` on the
 #     entry it produces, even though it still keeps the completed run's own result snapshot.
+#     Pinned for both a single query and a "Run all" of several, the latter driving the real
+#     `postMulti` (not just `saveHistory`) so a regression in its own launch-time snapshot
+#     (`launch_query_text`) is caught too, not only one in `saveHistory`'s guard.
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects (including a minimal in-memory
 # IndexedDB), asserting on the observable state: history entries, the active tab, the
@@ -69,12 +72,29 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     'buildHistoryParams', 'writeHistoryEntry', 'tabReflectsRun', 'refreshCurrentHistoryEntry',
     'saveHistory', 'syncHistory', 'resolveTabForState',
     /// The persistence + startup-reconciliation surface exercised by the reload cases below.
-    'loadFromDb', 'persist', 'persistColorModes', 'reconcileStartup'];
+    'loadFromDb', 'persist', 'persistColorModes', 'reconcileStartup',
+    /// The real multi-query completion path, so the delayed-completion case below actually
+    /// exercises `postMulti`'s own use of its launch-time `launch_query_text` argument instead
+    /// of re-deriving a snapshot the same way `saveHistory` does -- a regression in how `postAll`/
+    /// `postOne` capture and thread that argument through would go uncaught otherwise.
+    'postMulti'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
 
+/// Queued resolvers for in-flight `postImpl` calls made by the real `postMulti` under test
+/// (see `startMultiRun`/`finishMultiRun`); each one hangs until `resolvePendingPostImpl` below
+/// releases it, so a test can type a draft in the gap between launching a multi-query run and
+/// its completion, exactly like a real network round-trip that outlives a keystroke.
+let pendingPostImpl = [];
+function resolvePendingPostImpl()
+{
+    const pending = pendingPostImpl;
+    pendingPostImpl = [];
+    for (const resolve of pending) resolve();
+}
+
 const sandbox = {
-    console, URL, TextEncoder, TextDecoder,
+    console, URL, TextEncoder, TextDecoder, AbortController, performance,
     btoa: s => Buffer.from(s, 'binary').toString('base64'),
     atob: s => Buffer.from(s, 'base64').toString('binary'),
     /// `scheduleSave` must arm its debounce timer without the save ever firing,
@@ -83,15 +103,37 @@ const sandbox = {
     /// Globals the extracted functions expect (normally declared elsewhere in the page).
     tabs: [], activeTabId: null, tabSeq: 0, tabTitleSeq: 0,
     request_num: 0, params_restore_pending_token: -1,
-    controller: null, multiQueryControllers: [],
-    save_timer: null, column_color_modes: {},
+    controller: null, multiQueryControllers: [], multiQueryContainer: null,
+    save_timer: null, column_color_modes: {}, elapsed_ns: 0, last_query_start: 0,
     /// With `run=1` propagation enabled, the test can assert that refreshing an entry
     /// from an unrun draft drops the auto-run marker.
     run_immediately: true,
     user_elem: { value: '' },
     query_area: { value: '', focus() {} },
-    document: { title: '', documentElement: { style: { setProperty() {} } } },
+    document: {
+        title: '', documentElement: { style: { setProperty() {} } },
+        /// `postMulti` only ever toggles `.style.display` on these and creates plain
+        /// containers / `query-result` elements for its per-statement progress listeners.
+        getElementById: () => ({ style: {} }),
+        createElement: tag => tag === 'query-result'
+            ? { style: {}, rowCount: 0, elapsedNs: 0, incompleteResult: false, addEventListener() {} }
+            : { style: {}, innerHTML: '', appendChild() {} },
+    },
     location: { origin: 'http://localhost:8123', pathname: '/play', href: 'http://localhost:8123/play' },
+    /// `postMulti`'s own rendering; the tab/history bookkeeping it drives is the real code.
+    resultEl: { style: {}, parentElement: { insertBefore() {} } },
+    progressEl: { start() {}, finish() {}, clear() {}, updateText() {}, updateProgress() {}, style: { setProperty() {} } },
+    logoEl: { style: {} },
+    clear: () => {},
+    /// `postMulti` calls this with `params_restore_pending = false` in every case the tests
+    /// below drive, matching the real one's behavior for that argument.
+    resolveRunParams: () => sandbox.getParamValues(),
+    /// Stands in for the network round-trip: hangs until `resolvePendingPostImpl` above
+    /// releases it, always reporting a successful, non-image, non-raw text result.
+    postImpl: (posted_request_num, query) => new Promise(resolve => pendingPostImpl.push(() => resolve({
+        cancelled: false, is_error: false, response_ok: true, format: 'JSONCompact',
+        reply: 'result of ' + query, is_table: false, is_raw: false, is_chart: false, is_image: false,
+    }))),
     /// The live parameter inputs, keyed by name; `getParamValues` snapshots them like the
     /// real one reads the `param_*` DOM inputs.
     param_inputs: {},
@@ -253,6 +295,27 @@ function startRun(q)
 async function finishRun(started)
 {
     sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1 });
+    await drain();
+}
+
+/// Like `startRun`, but drives the REAL `postMulti` (not a `saveHistory` snapshot re-created by
+/// the test) with two SELECTs, so the `postImpl` calls it makes hang until `finishMultiRun`
+/// resolves them below. This is what actually pins `postMulti`'s own `launch_query_text` handling:
+/// a regression that made it re-read `query_area.value` instead would go uncaught by `startRun`/
+/// `finishRun`, which never call `postMulti` at all.
+function startMultiRun(editorText)
+{
+    type(editorText);
+    const parsed = editorText.split(';').map(query => ({ query: query.trim(), is_select: true }));
+    return sandbox.postMulti(sandbox.request_num, parsed, false, editorText);
+}
+
+/// Complete a run started with `startMultiRun`: release its `postImpl` calls and await `postMulti`
+/// itself before letting the caller inspect the tab/history it produced.
+async function finishMultiRun(promise)
+{
+    resolvePendingPostImpl();
+    await promise;
     await drain();
 }
 
@@ -438,6 +501,20 @@ async function reload()
     assert_eq('delayed completion (params changed): the query is kept', active().query, 'SELECT {x:Int32}');
     assert_params('delayed completion (params changed): the live param edit survives', active().params, { x: '9' });
     assert_eq('delayed completion (params changed): the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+
+    /// Same hazard again, but through the REAL `postMulti` (a "Run all" of more than one
+    /// statement) instead of a `saveHistory` snapshot the test re-creates by hand: this is what
+    /// pins `postMulti`'s own `launch_query_text` argument (see `startMultiRun`/`finishMultiRun`).
+    /// A regression that made `postMulti` re-read `query_area.value` at completion time instead
+    /// of using its launch-time argument would stamp the live draft below as `run=1`.
+    reset();
+    await run('SELECT 0');
+    const inFlightMulti = startMultiRun('SELECT 1; SELECT 2');
+    type('SELECT 3 -- typed while the multi-query run was still in flight');
+    await finishMultiRun(inFlightMulti);
+    assert_eq('delayed completion (multi-query): the live draft survives', active().query, 'SELECT 3 -- typed while the multi-query run was still in flight');
+    assert_eq("delayed completion (multi-query): the completed run's result is still kept", active().result && active().result.multi && active().result.multi.length, 2);
+    assert_eq('delayed completion (multi-query): the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
