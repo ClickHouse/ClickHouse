@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstring>
 #include <type_traits>
+#include <vector>
 
 
 namespace DB
@@ -23,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int CANNOT_READ_ALL_DATA;
 extern const int LOGICAL_ERROR;
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int NOT_IMPLEMENTED;
@@ -1375,31 +1377,35 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         }
         else
         {
-            /// The value spans more than what is currently buffered. Grow a plain heap buffer
-            /// while reading instead of the arena: ordinary reallocation frees the previous
-            /// buffer as it grows, so a truncated/corrupt state never keeps more than one live
-            /// copy around. Once the whole value has been read and validated, copy it into the
-            /// arena in a single allocation.
-            String scratch;
+            /// The value spans more than what is currently buffered. Never allocate for bytes
+            /// that are not yet proven to exist: a truncated state whose actual data is large,
+            /// but still short of the declared size, must not trigger a speculative allocation
+            /// approaching the declared size - under a memory limit that would flip the error
+            /// from CANNOT_READ_ALL_DATA to MEMORY_LIMIT_EXCEEDED. So accumulate the value in
+            /// chunks, each sized exactly to the bytes already sitting in the read buffer, and
+            /// copy them into the arena in a single allocation only after the whole value has
+            /// been read.
+            std::vector<String> chunks;
             UInt32 bytes_read = 0;
             while (bytes_read < bytes_to_read)
             {
-                /// Grow geometrically (at least ×2), and reserve at least enough to drain what
-                /// is currently buffered in a single read.
-                UInt64 new_size = std::max<UInt64>({
-                    static_cast<UInt64>(bytes_read) + 1,
-                    static_cast<UInt64>(scratch.size()) * 2,
-                    static_cast<UInt64>(bytes_read) + buf.available()});
-                new_size = std::min<UInt64>(new_size, bytes_to_read);
-                scratch.resize(new_size);
+                if (buf.eof())
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes_read, bytes_to_read);
 
-                UInt32 chunk = static_cast<UInt32>(new_size) - bytes_read;
-                buf.readStrict(scratch.data() + bytes_read, chunk);
-                bytes_read += chunk;
+                size_t chunk_size = std::min<size_t>(buf.available(), bytes_to_read - bytes_read);
+                chunks.emplace_back(buf.position(), chunk_size);
+                buf.position() += chunk_size;
+                bytes_read += static_cast<UInt32>(chunk_size);
             }
 
             allocateLargeDataIfNeeded(bytes_to_read, arena);
-            memcpy(large_data, scratch.data(), bytes_to_read);
+            char * out = large_data;
+            for (const auto & chunk : chunks)
+            {
+                memcpy(out, chunk.data(), chunk.size());
+                out += chunk.size();
+            }
         }
 
         readChar(last_char, buf);
