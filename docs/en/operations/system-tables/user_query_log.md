@@ -17,6 +17,12 @@ only the rows whose initiating user is equal to `currentUser()` (the initiating 
 Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can
 inspect their own queries without being given access to the queries of others.
 
+This is only supported when the query log is stored locally. If `query_log.engine` is configured as
+`Distributed` or any other engine that delegates reads to another server, `system.user_query_log` refuses
+to read from it and throws an exception, because the required access check cannot be enforced across a
+ClickHouse-protocol server boundary. In that case, disable the table with
+`query_log.enable_user_query_log = 0`.
+
 The table can be disabled with the `query_log.enable_user_query_log` server setting. If the query log
 is not configured, or its table has not been created yet, `system.user_query_log` is empty.
 

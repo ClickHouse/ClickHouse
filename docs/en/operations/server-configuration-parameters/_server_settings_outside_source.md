@@ -1342,7 +1342,7 @@ Queries are logged in the [system.query_log](/operations/system-tables/query_log
 
 <SystemLogParameters/>
 
-The `enable_user_query_log` parameter (enabled by default) creates [`system.user_query_log`](/operations/system-tables/user_query_log), which shows every user their own records of the configured query log table without requiring access to the table itself.
+The `enable_user_query_log` parameter (enabled by default) creates [`system.user_query_log`](/operations/system-tables/user_query_log), which shows every user their own records of the configured query log table without requiring access to the table itself. This only works when the query log is stored locally: if `engine` delegates to another server (for example, `Distributed`), disable `enable_user_query_log`, since `system.user_query_log` cannot enforce the per-user access check across a ClickHouse-protocol server boundary and refuses to read from such a backend.
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
