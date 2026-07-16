@@ -76,3 +76,15 @@ INSERT INTO test_geom2 VALUES
     (3, readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));
 SELECT id, toTypeName(flipCoordinates(geom)) FROM test_geom2 ORDER BY id;
 DROP TABLE test_geom2;
+
+-- Issue #110680 follow-up: a Variant with an empty non-geometry arm must not throw.
+-- ColumnVariant keeps an empty subcolumn for every declared alternative; only populated
+-- (geometry) arms are flipped, so an unused String arm is left untouched.
+SELECT toTypeName(flipCoordinates(CAST(CAST((1.0, 2.0), 'Point') AS Variant(Point, String))));
+SELECT flipCoordinates(CAST(CAST((1.0, 2.0), 'Point') AS Variant(Point, String)));
+
+DROP TABLE IF EXISTS test_geom3;
+CREATE TABLE test_geom3 (id UInt32, geom Variant(Point, String)) ENGINE = Memory;
+INSERT INTO test_geom3 VALUES (1, CAST((10.0, 20.0), 'Point')), (2, CAST((30.0, 40.0), 'Point'));
+SELECT id, flipCoordinates(geom), toTypeName(flipCoordinates(geom)) FROM test_geom3 ORDER BY id;
+DROP TABLE test_geom3;

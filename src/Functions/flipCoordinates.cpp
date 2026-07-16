@@ -118,6 +118,16 @@ private:
             const ColumnPtr & sub_column = column_variant->getVariantPtrByLocalDiscriminator(local_discr);
             const DataTypePtr & sub_type = variant_types[local_to_global[local_discr]];
 
+            /// ColumnVariant keeps an empty subcolumn for every declared alternative, even ones with
+            /// no rows in the current block. Leave such arms untouched: they carry no data to flip and
+            /// may be non-geometry types (e.g. String in Variant(Point, String)) that flipCoordinates
+            /// cannot process. Only arms with rows in this block are flipped.
+            if (sub_column->empty())
+            {
+                new_variants.push_back(sub_column);
+                continue;
+            }
+
             ColumnPtr flipped;
             if (checkAndGetDataType<DataTypeTuple>(sub_type.get()))
             {
