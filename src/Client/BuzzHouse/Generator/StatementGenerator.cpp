@@ -882,9 +882,16 @@ void StatementGenerator::generateNextTablePartition(
 
         if ((table_has_partitions = ((allow_parts == 2 || rg.nextMediumNumber() < 76) && fc.tableHasPartitions(detached, dname, tname))))
         {
+            String pval;
+
             if (allow_parts == 2 || (allow_parts == 1 && rg.nextBool()))
             {
                 pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), detached, false, dname, tname));
+            }
+            else if (!detached && rg.nextBool() && !(pval = fc.tableGetRandomPartitionValue(rg.nextInFullRange(), dname, tname)).empty())
+            {
+                /// Partition key value form, e.g. `DROP PARTITION 202101` / `DROP PARTITION (202101, 'x')`
+                pexpr->set_partition(pval);
             }
             else
             {
@@ -987,21 +994,40 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
 
 void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable * ct)
 {
-    if (systemTables.empty() || rg.nextMediumNumber() < 91)
-    {
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    SQLObjectName * cot = ct->mutable_object();
+    const uint32_t check_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t check_system_table = 1 * static_cast<uint32_t>(!systemTables.empty());
+    const uint32_t check_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
 
-        t.setName(ct->mutable_est(), false);
-        if (rg.nextBool())
-        {
-            generateNextTablePartition(rg, 1, rg.nextSmallNumber() < 3, false, t, ct->mutable_single_partition()->mutable_partition());
-        }
-    }
-    else
-    {
-        /// Check system table
-        rg.pickRandomly(systemTables).setName(ct->mutable_est());
-    }
+    rg.pickWeighted(
+        {{check_table,
+          [&]
+          {
+              const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+              ct->set_sobject(SQLObject::TABLE);
+              t.setName(cot->mutable_est(), false);
+              if (rg.nextBool())
+              {
+                  generateNextTablePartition(
+                      rg, 1, rg.nextSmallNumber() < 3, false, t, ct->mutable_single_partition()->mutable_partition());
+              }
+          }},
+         {check_system_table,
+          [&]
+          {
+              /// Check system table
+              ct->set_sobject(SQLObject::TABLE);
+              rg.pickRandomly(systemTables).setName(cot->mutable_est());
+          }},
+         {check_database,
+          [&]
+          {
+              const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+
+              ct->set_sobject(SQLObject::DATABASE);
+              d->setName(cot->mutable_database());
+          }}});
     if (rg.nextSmallNumber() < 3)
     {
         SettingValues * vals = ct->mutable_setting_values();
@@ -1704,6 +1730,16 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const bool has_projs = nprojs > 0;
         const bool has_constrs = nconstrs > 0;
         const bool has_col_settings = !allColumnSettings.at(t.engine.value).empty();
+        bool has_enum_col = false;
+
+        for (const auto & [_, val] : t.cols)
+        {
+            if (getColumnEnumType(val.tp.get()))
+            {
+                has_enum_col = true;
+                break;
+            }
+        }
 
         rg.pickWeighted({
             /// Order by
@@ -1974,6 +2010,23 @@ std::optional<String> StatementGenerator::alterSingleTable(
              }},
             {2 * static_cast<uint32_t>(no_oracle && has_idxs),
              [&] { ati->mutable_drop_index()->set_value(fc.tableGetRandomIndex(rg.nextInFullRange(), dname_idx, tname_idx)); }},
+            {4 * static_cast<uint32_t>(no_oracle && no_peer && has_enum_col),
+             [&]
+             {
+                 std::vector<String> enum_keys;
+                 for (const auto & [key, val] : t.cols)
+                 {
+                     if (getColumnEnumType(val.tp.get()))
+                         enum_keys.emplace_back(key);
+                 }
+                 const String & ekey = rg.pickRandomly(enum_keys);
+                 /// Match the column's width so numbers land in range more often (not value tracking).
+                 const bool bits16 = getColumnEnumType(t.cols.at(ekey).tp.get())->size == 16;
+                 AddEnumValues * aev = ati->mutable_add_enum_values();
+
+                 aev->mutable_col()->mutable_col()->set_column(ekey);
+                 setRandomEnumValues(rg, bits16, aev->mutable_new_values());
+             }},
             /// Column properties/settings
             {2,
              [&]
@@ -2444,7 +2497,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     {
         att->set_as_replicated(rg.nextBool());
     }
-    if (rg.nextSmallNumber() < 3)
+    if (rg.nextMediumNumber() < 6)
     {
         generateSettingValues(rg, formatSettings, att->mutable_setting_values());
     }
@@ -2499,7 +2552,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     setClusterClause(rg, cluster, det->mutable_cluster());
     det->set_permanently(det->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 4);
     det->set_sync(rg.nextSmallNumber() < 4);
-    if (rg.nextSmallNumber() < 3)
+    if (rg.nextMediumNumber() < 6)
     {
         generateSettingValues(rg, formatSettings, det->mutable_setting_values());
     }
@@ -3319,7 +3372,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::LightDelete)] = has_mergeable_mt;
     SQLMask[static_cast<size_t>(SQLOp::Truncate)] = has_databases || has_tables;
     SQLMask[static_cast<size_t>(SQLOp::OptimizeTable)] = has_tables;
-    SQLMask[static_cast<size_t>(SQLOp::CheckTable)] = has_tables;
+    SQLMask[static_cast<size_t>(SQLOp::CheckTable)] = has_databases || has_tables;
     SQLMask[static_cast<size_t>(SQLOp::DescTable)] = !in_parallel;
     SQLMask[static_cast<size_t>(SQLOp::Exchange)] = this->fc.enable_renames && !in_parallel
         && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
