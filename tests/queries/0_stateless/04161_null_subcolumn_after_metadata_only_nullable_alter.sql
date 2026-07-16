@@ -88,3 +88,39 @@ SELECT count(x) FROM t_null_sub_mem SETTINGS optimize_functions_to_subcolumns = 
 SELECT id, x, x.null FROM t_null_sub_mem ORDER BY id;
 
 DROP TABLE t_null_sub_mem;
+
+-- apply_mutations_on_fly: an on-fly UPDATE produces the full `x` in an earlier pipeline step,
+-- then a metadata-only MODIFY COLUMN makes it Nullable. The later step reads only `x.null`; it
+-- must be derived from the parent produced by the on-fly step (null-map = 0), not default-filled
+-- to all-NULL (issue #110555 corner case).
+DROP TABLE IF EXISTS t_null_sub_amof;
+CREATE TABLE t_null_sub_amof (id UInt8, x UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
+
+INSERT INTO t_null_sub_amof VALUES (1, 5);
+SYSTEM STOP MERGES t_null_sub_amof;
+ALTER TABLE t_null_sub_amof UPDATE x = 0 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_null_sub_amof MODIFY COLUMN x Nullable(UInt8) SETTINGS mutations_sync = 0, alter_sync = 0;
+INSERT INTO t_null_sub_amof VALUES (2, NULL);
+
+SELECT 'apply_mutations_on_fly';
+SELECT count() FROM t_null_sub_amof WHERE x IS NULL SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_null_sub_amof WHERE x IS NULL SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+SELECT id, x, x.null FROM t_null_sub_amof ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+
+DROP TABLE t_null_sub_amof;
+
+-- Tuple subcolumn that STILL exists in the old block type after a sibling element's
+-- metadata-only type change. Reading `t.a` must extract it directly and must NOT cast the whole
+-- tuple (which would throw on the non-convertible old `b` value). Memory engine keeps the
+-- pre-ALTER block, so this exercises the old-type-still-has-subcolumn path.
+DROP TABLE IF EXISTS t_tuple_elem_mem;
+CREATE TABLE t_tuple_elem_mem (id UInt8, t Tuple(a UInt8, b String)) ENGINE = Memory;
+
+INSERT INTO t_tuple_elem_mem VALUES (1, (7, 'x'));
+ALTER TABLE t_tuple_elem_mem MODIFY COLUMN t Tuple(a UInt8, b UInt64);
+
+SELECT 'tuple element';
+SELECT t.a FROM t_tuple_elem_mem;
+
+DROP TABLE t_tuple_elem_mem;

@@ -378,8 +378,17 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// fillMissingColumns() must be called after reading but before any filterings because
     /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
     /// fillMissingColumns() fixes this.
+    ///
+    /// Columns produced by earlier chain steps (e.g. a full column materialized by an on-fly
+    /// mutation under `apply_mutations_on_fly`) are advertised in `previous_header`. Pass their
+    /// names so that a requested subcolumn whose parent is among them (schema-evolved
+    /// metadata-only ALTER) is deferred to evaluateMissingDefaults - which sees the parent via
+    /// `additional_columns` below - instead of being default-filled with a wrong all-NULL map.
+    NameSet previous_step_columns;
+    for (const auto & col : previous_header)
+        previous_step_columns.insert(col.name);
     bool should_evaluate_missing_defaults = false;
-    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows);
+    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
 
     if (result.total_rows_per_granule != num_read_rows)
     {

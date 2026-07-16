@@ -48,13 +48,19 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
     auto subcolumn_name = requested_subcolumn.getSubcolumnName();
     bool is_dynamic = elem->type->hasDynamicStructure() || requested_column_type->hasDynamicStructure();
 
-    /// Cast to the requested storage type first, then extract the subcolumn, when the block's
-    /// column type differs from the requested one. This is required when:
+    /// Cast the whole parent to the requested storage type first, then extract the subcolumn,
+    /// ONLY when the block's column type differs from the requested one AND either:
     ///  - the requested subcolumn is dynamic (its data can change after cast), or
-    ///  - the block predates a metadata-only `ALTER MODIFY COLUMN` (e.g. `T` -> `Nullable(T)`),
-    ///    so the block column lacks the subcolumn while the requested type has it. Extracting
-    ///    from the converted column yields the correct value (e.g. an all-0 `.null` map).
-    if (!elem->type->equals(*requested_column_type))
+    ///  - the block's (older) type lacks the requested subcolumn while the requested type has it,
+    ///    i.e. after a metadata-only `ALTER MODIFY COLUMN` (e.g. `T` -> `Nullable(T)`,
+    ///    or `Variant(...)` gaining an element). Extracting from the converted column yields the
+    ///    correct value (e.g. an all-0 `.null` map).
+    /// For subcolumns that already exist in the block's type (e.g. a tuple element after a sibling
+    /// element's type changed), we must NOT cast the whole parent: a non-convertible sibling value
+    /// would throw before we ever extract the still-readable subcolumn. Fall through to extract the
+    /// subcolumn directly and cast only that.
+    bool block_type_has_subcolumn = elem->type->tryGetSubcolumnType(subcolumn_name) != nullptr;
+    if (!elem->type->equals(*requested_column_type) && (is_dynamic || !block_type_has_subcolumn))
     {
         auto cast_column = castColumn({elem->column->decompress(), elem->type, ""}, requested_column_type);
         auto elem_column = requested_column_type->tryGetSubcolumn(subcolumn_name, cast_column);
@@ -71,7 +77,12 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         return castColumn({elem_column, elem_type, ""}, requested_subcolumn.type);
     }
 
-    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column->decompress());
+    /// Unwrap a possible ColumnConst before extracting the subcolumn: subcolumn extraction
+    /// (e.g. `SerializationNullable::enumerateStreams`) `assert_cast`s the column to its concrete
+    /// class and would trip on a `ColumnConst` wrapper. This can happen when the column comes from
+    /// an earlier pipeline step that produced a constant (e.g. an on-fly `UPDATE x = 0`).
+    auto source_column = elem->column->decompress()->convertToFullColumnIfConst();
+    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, source_column);
     auto elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
 
     if (!elem_type || !elem_column)

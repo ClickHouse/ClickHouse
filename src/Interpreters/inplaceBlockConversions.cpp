@@ -425,7 +425,8 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    bool share_nested_offsets,
+    const NameSet & additional_available_columns)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -463,9 +464,16 @@ void fillMissingColumns(
         /// (e.g. the Memory engine) treat this as the terminal fill, so leaving the column null
         /// would trip their non-null assertion; for those the correct value is already produced
         /// upstream (see `tryGetSubcolumnFromBlock`) or must be default-filled below.
+        ///
+        /// The parent may be read by THIS step (`available_columns`) or produced by an EARLIER
+        /// step (`additional_available_columns`, e.g. the full `x` materialized by an on-fly
+        /// `UPDATE` under `apply_mutations_on_fly`). In both cases the follow-up
+        /// `evaluateMissingDefaults` sees the parent and can derive the subcolumn from it, so we
+        /// must defer in both cases rather than default-fill an all-NULL `.null` map here.
         if (storage_snapshot
             && requested_column->isSubcolumn()
-            && available_columns.contains(requested_column->getNameInStorage()))
+            && (available_columns.contains(requested_column->getNameInStorage())
+                || additional_available_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
