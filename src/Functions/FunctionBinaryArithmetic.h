@@ -1457,6 +1457,7 @@ class FunctionBinaryArithmetic : public IFunction
 
             bool datetime_is_const = isColumnConst(*datetime_arg.column);
             const IColumn * datetime_col_ptr = nullptr;
+            ColumnPtr datetime_col_holder;
             Decimal64 datetime_const_val{0};
             UInt32 datetime_scale = 0;
 
@@ -1498,7 +1499,8 @@ class FunctionBinaryArithmetic : public IFunction
                 {
                     /// regular DateTime - convert to DateTime64 with result scale
                     auto target_type = std::make_shared<DataTypeDateTime64>(scale);
-                    datetime_col_ptr = castColumn(datetime_arg, target_type).get();
+                    datetime_col_holder = castColumn(datetime_arg, target_type);
+                    datetime_col_ptr = datetime_col_holder.get();
                     datetime_scale = scale;
                 }
             }
@@ -1506,6 +1508,7 @@ class FunctionBinaryArithmetic : public IFunction
             /// process Time column
             bool time_is_const = isColumnConst(*time_arg.column);
             const IColumn * time_col_ptr = nullptr;
+            ColumnPtr time_col_holder;
             Decimal64 time_const_val{0};
             UInt32 time_scale = 0;
 
@@ -1547,7 +1550,8 @@ class FunctionBinaryArithmetic : public IFunction
                 {
                     /// regular Time - convert to Time64 with result scale
                     auto target_type = std::make_shared<DataTypeTime64>(scale);
-                    time_col_ptr = castColumn(time_arg, target_type).get();
+                    time_col_holder = castColumn(time_arg, target_type);
+                    time_col_ptr = time_col_holder.get();
                     time_scale = scale;
                 }
             }
