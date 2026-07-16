@@ -458,7 +458,13 @@ void fillMissingColumns(
         /// (metadata-only `ALTER MODIFY COLUMN T -> Nullable(T)`). Leave it null for
         /// evaluateMissingDefaults to extract from the converted parent, instead of filling it
         /// from the storage-type default (which gives a wrong all-NULL `.null` map here).
-        if (requested_column->isSubcolumn()
+        /// Only defer when a `storage_snapshot` is present: that is the signal the caller runs a
+        /// follow-up `evaluateMissingDefaults` pass (the MergeTree reader). Callers without it
+        /// (e.g. the Memory engine) treat this as the terminal fill, so leaving the column null
+        /// would trip their non-null assertion; for those the correct value is already produced
+        /// upstream (see `tryGetSubcolumnFromBlock`) or must be default-filled below.
+        if (storage_snapshot
+            && requested_column->isSubcolumn()
             && available_columns.contains(requested_column->getNameInStorage()))
             continue;
 

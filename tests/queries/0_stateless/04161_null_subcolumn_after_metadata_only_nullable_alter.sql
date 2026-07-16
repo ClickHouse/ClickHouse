@@ -69,3 +69,22 @@ SELECT count() FROM t_null_sub_evolved WHERE x IS NULL SETTINGS optimize_functio
 SELECT id, x, x.null FROM t_null_sub_evolved ORDER BY id;
 
 DROP TABLE t_null_sub_evolved;
+
+-- Memory engine: MODIFY COLUMN is metadata-only (in-RAM blocks are not rewritten), so a block
+-- inserted before the ALTER holds non-nullable data with no `.null` substream. Reading `.null`
+-- must derive it from the converted parent (null-map = 0), not crash and not return NULL.
+DROP TABLE IF EXISTS t_null_sub_mem;
+CREATE TABLE t_null_sub_mem (id UInt8, x UInt256) ENGINE = Memory;
+
+INSERT INTO t_null_sub_mem VALUES (1, 42);
+ALTER TABLE t_null_sub_mem MODIFY COLUMN x Nullable(UInt256);
+INSERT INTO t_null_sub_mem VALUES (2, NULL);
+
+SELECT 'memory';
+SELECT count() FROM t_null_sub_mem WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_null_sub_mem WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_null_sub_mem WHERE x IS NOT NULL SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count(x) FROM t_null_sub_mem SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, x, x.null FROM t_null_sub_mem ORDER BY id;
+
+DROP TABLE t_null_sub_mem;

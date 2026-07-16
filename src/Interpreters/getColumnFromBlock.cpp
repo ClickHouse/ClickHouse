@@ -46,9 +46,15 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         return nullptr;
 
     auto subcolumn_name = requested_subcolumn.getSubcolumnName();
-    /// If requested subcolumn is dynamic, we should first perform cast and then
-    /// extract the subcolumn, because the data of dynamic subcolumn can change after cast.
-    if ((elem->type->hasDynamicStructure() || requested_column_type->hasDynamicStructure()) && !elem->type->equals(*requested_column_type))
+    bool is_dynamic = elem->type->hasDynamicStructure() || requested_column_type->hasDynamicStructure();
+
+    /// Cast to the requested storage type first, then extract the subcolumn, when the block's
+    /// column type differs from the requested one. This is required when:
+    ///  - the requested subcolumn is dynamic (its data can change after cast), or
+    ///  - the block predates a metadata-only `ALTER MODIFY COLUMN` (e.g. `T` -> `Nullable(T)`),
+    ///    so the block column lacks the subcolumn while the requested type has it. Extracting
+    ///    from the converted column yields the correct value (e.g. an all-0 `.null` map).
+    if (!elem->type->equals(*requested_column_type))
     {
         auto cast_column = castColumn({elem->column->decompress(), elem->type, ""}, requested_column_type);
         auto elem_column = requested_column_type->tryGetSubcolumn(subcolumn_name, cast_column);
@@ -57,7 +63,12 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         if (!elem_type || !elem_column)
             return nullptr;
 
-        return elem_column;
+        /// For dynamic subcolumns the data already matches the requested subcolumn type after
+        /// the cast above, so return it directly (an extra cast could alter the data).
+        if (is_dynamic)
+            return elem_column;
+
+        return castColumn({elem_column, elem_type, ""}, requested_subcolumn.type);
     }
 
     auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column->decompress());
