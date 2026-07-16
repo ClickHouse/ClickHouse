@@ -719,6 +719,68 @@ TEST(UniqueKeyEncoding, Decimal64Ordering)
 }
 
 /// ---------------------------------------------------------------------------
+/// Wide signed integers (Int128 / Int256) — exercise the multi-limb sign-flip
+/// path in ColumnVector::appendUniqueKeyEncodedValue where the high byte is
+/// XOR'd with 0x80 after big-endian transform.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, Int128Ordering)
+{
+    auto col = ColumnInt128::create();
+    col->insert(Field(Int128(std::numeric_limits<Int64>::min())));
+    col->insert(Field(Int128(-1)));
+    col->insert(Field(Int128(0)));
+    col->insert(Field(Int128(1)));
+    col->insert(Field(Int128(std::numeric_limits<Int64>::max())));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Int128 adjacent pair " << i;
+    /// Cross-check extremes.
+    EXPECT_TRUE(agrees(cols, 0, cols[0]->size() - 1));
+}
+
+TEST(UniqueKeyEncoding, Int256Ordering)
+{
+    auto col = ColumnInt256::create();
+    col->insert(Field(Int256(std::numeric_limits<Int64>::min())));
+    col->insert(Field(Int256(-1)));
+    col->insert(Field(Int256(0)));
+    col->insert(Field(Int256(1)));
+    col->insert(Field(Int256(std::numeric_limits<Int64>::max())));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Int256 adjacent pair " << i;
+    EXPECT_TRUE(agrees(cols, 0, cols[0]->size() - 1));
+}
+
+/// ---------------------------------------------------------------------------
+/// Wide decimals (Decimal128 / Decimal256) — same sign-flip pattern applied
+/// via ColumnDecimal. Verify negative-to-positive ordering is preserved.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, Decimal128Ordering)
+{
+    auto col = ColumnDecimal<Decimal128>::create(0, /*scale=*/4);
+    for (Int64 raw : {Int64(-1000000), Int64(-1), Int64(0), Int64(1), Int64(1000000)})
+        col->insert(DecimalField<Decimal128>(Decimal128(raw), 4));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Decimal128 adjacent pair " << i;
+}
+
+TEST(UniqueKeyEncoding, Decimal256Ordering)
+{
+    auto col = ColumnDecimal<Decimal256>::create(0, /*scale=*/4);
+    for (Int64 raw : {Int64(-1000000), Int64(-1), Int64(0), Int64(1), Int64(1000000)})
+        col->insert(DecimalField<Decimal256>(Decimal256(raw), 4));
+
+    Columns cols{std::move(col)};
+    for (size_t i = 0; i + 1 < cols[0]->size(); ++i)
+        EXPECT_TRUE(agrees(cols, i, i + 1)) << "Decimal256 adjacent pair " << i;
+}
+
+/// ---------------------------------------------------------------------------
 /// Date / Date32 / DateTime / DateTime64.
 /// ---------------------------------------------------------------------------
 TEST(UniqueKeyEncoding, DateVariants)
@@ -1061,4 +1123,39 @@ TEST(UniqueKeyEncoding, LowCardinalityThrowsNotImplemented)
     Columns cols;
     cols.push_back(std::move(col));
     expectEncodeRowThrowsNotImplemented(cols, "LowCardinality(String)");
+}
+
+/// ---------------------------------------------------------------------------
+/// Nullable wrapping unsupported types with all-NULL rows. Before the eager
+/// probe in ColumnNullable::appendUniqueKeyEncodedValue, an all-NULL block
+/// would skip the nested column's serializeAsComparable entirely, silently
+/// accepting unsupported nested types. These regressions pin that the probe
+/// catches them.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, NullableLowCardinalityAllNullThrowsNotImplemented)
+{
+    auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto nested = type_lc->createColumn();
+    nested->insertDefault();
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(1)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols;
+    cols.push_back(std::move(col));
+    expectEncodeRowThrowsNotImplemented(cols, "Nullable(LowCardinality(String)) all-NULL");
+}
+
+TEST(UniqueKeyEncoding, NullableArrayAllNullThrowsNotImplemented)
+{
+    auto type_arr = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    auto nested = type_arr->createColumn();
+    nested->insertDefault();
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(1)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols;
+    cols.push_back(std::move(col));
+    expectEncodeRowThrowsNotImplemented(cols, "Nullable(Array(UInt64)) all-NULL");
 }
