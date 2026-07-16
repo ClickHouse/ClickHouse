@@ -3294,8 +3294,9 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
     fuzzClusterFunctionArguments(*fn);
 }
 
-/// Fuzz the connection argument of cluster/remote-family table functions in place:
-/// cluster()/clusterAllReplicas() take a named cluster, remote()/remoteSecure() a host descriptor.
+/// Fuzz the connection argument of cluster/remote/url-family table functions in place:
+/// cluster()/clusterAllReplicas() and urlCluster() take a named cluster, remote()/remoteSecure() a
+/// host descriptor, and url()/urlCluster() a URL.
 void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
 {
     static const std::unordered_set<String> cluster_funcs = {"cluster", "clusterAllReplicas"};
@@ -3303,49 +3304,69 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
 
     const bool is_cluster = cluster_funcs.contains(fn.name);
     const bool is_remote = remote_funcs.contains(fn.name);
-    if ((!is_cluster && !is_remote) || !fn.arguments || fn.arguments->children.empty() || fuzz_rand() % 5 != 0)
+    const bool is_url = fn.name == "url";
+    const bool is_url_cluster = fn.name == "urlCluster";
+    if ((!is_cluster && !is_remote && !is_url && !is_url_cluster) || !fn.arguments || fn.arguments->children.empty()
+        || fuzz_rand() % 5 != 0)
         return;
 
-    auto & first_arg = fn.arguments->children.front();
+    auto & args = fn.arguments->children;
     if (is_cluster)
-        first_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+        args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+    else if (is_remote)
+        args.front() = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor());
+    else if (is_url)
+        args.front() = make_intrusive<ASTLiteral>(makeFuzzedUrl());
     else
-        first_arg = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor());
+    {
+        /// urlCluster(cluster_name, URL, ...): fuzz both the cluster and the URL.
+        args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+        if (args.size() >= 2)
+            args[1] = make_intrusive<ASTLiteral>(makeFuzzedUrl());
+    }
+}
+
+/// A brace expansion of 1..4 items — a {m..n} range or an {a,b,...} enumeration. Shared by the remote
+/// host descriptor and the url() path fuzzing.
+String QueryFuzzer::makeBraceExpansion()
+{
+    const UInt64 count = fuzz_rand() % 4 + 1; /// number of items (1..4)
+    const UInt64 start = fuzz_rand() % 4 + 1; /// starting value (1..4)
+
+    if (fuzz_rand() % 2 == 0)
+        return "{" + std::to_string(start) + ".." + std::to_string(start + count - 1) + "}";
+
+    String braces = "{";
+    for (UInt64 i = 0; i < count; ++i)
+    {
+        if (i)
+            braces += ",";
+        braces += std::to_string(start + i);
+    }
+    braces += "}";
+    return braces;
 }
 
 /// Build a syntactically valid IPv4 or IPv6 host descriptor for remote()/remoteSecure(): the last
-/// group uses brace expansion of 1..4 hosts ({m..n} or {a,b,...}), with an optional port. IPv4
-/// expansions all resolve to loopback (127.0.0.0/8); IPv6 uses [::N] (only ::1 is loopback, the rest
-/// exercise connection-failover). Either way the host count stays bounded.
+/// group uses brace expansion of 1..4 hosts, with an optional port. IPv4 expansions all resolve to
+/// loopback (127.0.0.0/8); IPv6 uses [::N] (only ::1 is loopback, the rest exercise connection-
+/// failover). Either way the host count stays bounded.
 String QueryFuzzer::makeRemoteHostDescriptor()
 {
-    const UInt64 count = fuzz_rand() % 4 + 1; /// number of hosts in the brace expansion (1..4)
-    const UInt64 start = fuzz_rand() % 4 + 1; /// starting last group (1..4)
-
-    String braces;
-    if (fuzz_rand() % 2 == 0)
-    {
-        /// Range form: {m..n}
-        braces = "{" + std::to_string(start) + ".." + std::to_string(start + count - 1) + "}";
-    }
-    else
-    {
-        /// Enumerated form: {a,b,...}
-        braces = "{";
-        for (UInt64 i = 0; i < count; ++i)
-        {
-            if (i)
-                braces += ",";
-            braces += std::to_string(start + i);
-        }
-        braces += "}";
-    }
-
+    const String braces = makeBraceExpansion();
     /// IPv6 addresses are bracketed so the optional :port stays unambiguous.
     String descriptor = fuzz_rand() % 2 == 0 ? "[::" + braces + "]" : "127.0.0." + braces;
     if (fuzz_rand() % 2 == 0)
         descriptor += ":9000";
     return descriptor;
+}
+
+/// Build a syntactically valid loopback URL for url()/urlCluster() over the local HTTP interface,
+/// with a brace-expanded path segment (1..4 globs — the same syntax url() accepts) and http/https.
+String QueryFuzzer::makeFuzzedUrl()
+{
+    const String scheme = fuzz_rand() % 2 == 0 ? "http" : "https";
+    return scheme + "://127.0.0.1:8123/data" + makeBraceExpansion();
 }
 
 /// Rewrite a plain local table reference into a self-referential distributed read over loopback

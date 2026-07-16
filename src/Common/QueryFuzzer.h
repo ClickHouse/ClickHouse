@@ -254,7 +254,9 @@ private:
     void fuzzTableName(ASTTableExpression & table);
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    String makeBraceExpansion();
     String makeRemoteHostDescriptor();
+    String makeFuzzedUrl();
     void wrapTableAsDistributed(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
