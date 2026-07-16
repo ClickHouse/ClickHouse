@@ -1397,7 +1397,7 @@ namespace
 
         LOG_INFO(
             log,
-            "Finished call {} in {} secs. (including reading by client: {}, writing by client: {})",
+            "Finished call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
             getCallName(call_type),
             query_time.elapsedSeconds(),
             static_cast<double>(waited_for_client_reading) / 1000000000ULL,
