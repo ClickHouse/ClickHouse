@@ -290,15 +290,15 @@ struct TextIndexHeader
     {
         Initial = 0,
         WithCodec = 1,
+        /// Positions: has_positions and positions-codec bytes in the header. Redefined in place
+        /// while phrase search is experimental; parts written by earlier experimental builds must be rebuilt.
         WithPositions = 2,
-        WithPositionsCodec = 3,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// Persisted for version >= WithPositions.
+    /// has_positions and positions_codec (TextIndexPositionCodec::Encoding as UInt8) are persisted for version >= WithPositions.
     bool has_positions = false;
-    /// Positions on-disk codec (TextIndexPositionCodec::Encoding as UInt8); persisted for version >= WithPositionsCodec, else defaults to Raw.
     UInt8 positions_codec = 0;
     DictionarySparseIndex sparse_index;
 };

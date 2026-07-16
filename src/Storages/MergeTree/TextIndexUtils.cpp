@@ -575,12 +575,9 @@ void MergeTextIndexesTask::finalize()
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 
-    /// Match the write path: only pfor merged parts bump to WithPositionsCodec; raw positional parts keep WithPositions.
     const auto positions_encoding = TextIndexPositionCodec::parseEncoding(params.positions_codec);
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        !params.positions ? TextIndexHeader::Version::WithCodec
-        : positions_encoding == TextIndexPositionCodec::Encoding::Pfor ? TextIndexHeader::Version::WithPositionsCodec
-                                                                       : TextIndexHeader::Version::WithPositions);
+        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
     TextIndexSerialization::serializeHeader(
         sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions,
         static_cast<UInt8>(positions_encoding), index_stream->compressed_hashing);

@@ -1185,10 +1185,10 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
     writeVarUInt(codec_type, ostr);
 
     if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositions))
+    {
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
-
-    if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositionsCodec))
         writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
+    }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
     /// The write path never calls optimize, so expect the raw columns here.
@@ -1209,7 +1209,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositionsCodec))
+    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1231,11 +1231,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
-    }
 
-    /// Older WithPositions parts predate pfor, so their positions are Raw (the default).
-    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithPositionsCodec))
-    {
         UInt64 positions_codec = 0;
         readVarUInt(positions_codec, istr);
         if (positions_codec > static_cast<UInt64>(TextIndexPositionCodec::Encoding::Pfor))
@@ -1541,13 +1537,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         positions_stream = it->second;
     }
 
-    /// Only pfor parts persist a codec byte (WithPositionsCodec); raw positional parts keep the older
-    /// WithPositions header so a table on the default raw layout stays readable by servers that predate the codec byte.
     const auto positions_encoding = TextIndexPositionCodec::parseEncoding(params.positions_codec);
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        !params.positions ? TextIndexHeader::Version::WithCodec
-        : positions_encoding == TextIndexPositionCodec::Encoding::Pfor ? TextIndexHeader::Version::WithPositionsCodec
-                                                                       : TextIndexHeader::Version::WithPositions);
+        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
