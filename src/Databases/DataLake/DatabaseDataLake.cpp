@@ -131,6 +131,7 @@ namespace FailPoints
 {
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
+    extern const char datalake_try_get_table_throw[];
 }
 
 namespace
@@ -632,6 +633,14 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         return nullptr;
     });
 
+    /// Simulate a per-table metadata resolution failure (throws), so tests can exercise the
+    /// graceful-degradation path in getTablesIteratorWithHint that keeps the table in the
+    /// listing with a null storage object instead of aborting the whole scan.
+    fiu_do_on(FailPoints::datalake_try_get_table_throw,
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Injected metadata resolution failure for table '{}'", name);
+    });
+
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
@@ -908,7 +917,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
-    return getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+    /// General-purpose iterator. Consumers such as StorageMerge dereference the storage
+    /// object of every row unconditionally, so a null-storage row would hang or crash them.
+    /// Keep the original contract: propagate the error when metadata access is required,
+    /// otherwise drop the unresolved table. Null-storage rows are confined to
+    /// getTablesIteratorWithHint (system.tables), which null-guards every consumer.
+    return getTablesIteratorImpl(
+        context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {}, /*keep_unresolved_tables*/ false);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
@@ -916,6 +931,20 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded,
     const TablesFilter & tables_filter) const
+{
+    /// system.tables path: keep a row for a table whose metadata cannot be resolved, with a
+    /// null storage object, so metadata-dependent columns degrade to defaults instead of the
+    /// whole scan aborting. StorageSystemTables null-guards every storage-dependent column.
+    return getTablesIteratorImpl(
+        context_, filter_by_table_name, skip_not_loaded, tables_filter, /*keep_unresolved_tables*/ true);
+}
+
+DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool skip_not_loaded,
+    const TablesFilter & tables_filter,
+    bool keep_unresolved_tables) const
 {
     Tables tables;
     DB::Names iceberg_tables;
@@ -946,7 +975,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
             futures.emplace_back(promises.back()->get_future());
 
             pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, promise=promises.back()]() mutable
+                [this, table_name, skip_not_loaded, context_, keep_unresolved_tables, promise=promises.back()]() mutable
                 {
                     StoragePtr storage = nullptr;
                     try
@@ -960,16 +989,37 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
                         {
                             auto error_code = getCurrentExceptionCode();
                             auto error_message = getCurrentExceptionMessage(true, false, true, true);
-                            auto enhanced_message = fmt::format(
-                                "Received error {} while fetching table metadata for existing table '{}'. "
-                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
-                                error_code,
-                                table_name,
-                                error_message);
-                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
-                                error_code,
-                                enhanced_message)));
-                            return;
+                            if (keep_unresolved_tables)
+                            {
+                                /// system.tables path: a single table's metadata failing to
+                                /// resolve must not abort the whole listing nor silently omit
+                                /// the table. Keep a row for it with a null storage object;
+                                /// metadata-dependent columns come back as defaults/NULL. Direct
+                                /// access (SELECT ... FROM db.table) still surfaces the real error.
+                                LOG_WARNING(
+                                    log,
+                                    "Received error {} while fetching table metadata for existing table '{}'. "
+                                    "Keeping it in the listing with unresolved metadata. Error: {}",
+                                    error_code,
+                                    table_name,
+                                    error_message);
+                            }
+                            else
+                            {
+                                /// General-purpose path: consumers dereference the storage
+                                /// unconditionally, so propagate the error rather than hand
+                                /// them a null-storage row.
+                                auto enhanced_message = fmt::format(
+                                    "Received error {} while fetching table metadata for existing table '{}'. "
+                                    "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
+                                    error_code,
+                                    table_name,
+                                    error_message);
+                                promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                    error_code,
+                                    enhanced_message)));
+                                return;
+                            }
                         }
                         else
                             tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
@@ -995,13 +1045,22 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
+        /// futures[future_index].get() rethrows for the general-purpose path when metadata
+        /// access is required (see the per-table catch above), preserving the original
+        /// abort-on-error contract for consumers that dereference the storage unconditionally.
         auto table_ptr = futures[future_index].get();
-        if (table_ptr)
-        {
-            [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
-            chassert(inserted);
-        }
         future_index++;
+
+        /// For the system.tables path keep a row even when the storage could not be resolved
+        /// (table_ptr is null), so the table still shows up with default/NULL metadata columns
+        /// instead of being dropped or aborting the scan. For every other consumer drop the
+        /// unresolved table (require_metadata_access=0 case) to keep the iterator's contract
+        /// that every row has a valid storage object.
+        if (!keep_unresolved_tables && !table_ptr)
+            continue;
+
+        [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
+        chassert(inserted);
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
