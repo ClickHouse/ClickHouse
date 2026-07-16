@@ -80,64 +80,73 @@ def main():
             results=results,
             config_hooks=config_hooks,
         ):
-            if not info.is_local_run:
-                if not ch.start_log_exports(check_start_time=stop_watch.start_time):
-                    print("WARNING: Failed to start log export")
+            try:
+                if not info.is_local_run:
+                    if not ch.start_log_exports(
+                        check_start_time=stop_watch.start_time
+                    ):
+                        print("WARNING: Failed to start log export")
 
-            results.append(
-                r := Result.from_commands_run(
-                    name="Load the data",
-                    command="clickhouse-client --time < ./ci/jobs/scripts/clickbench/create.sql",
+                results.append(
+                    r := Result.from_commands_run(
+                        name="Load the data",
+                        command="clickhouse-client --time < ./ci/jobs/scripts/clickbench/create.sql",
+                    )
                 )
-            )
-            if not r.is_ok():
-                raise RuntimeError(f"[{r.name}] failed: {r.info}")
+                if not r.is_ok():
+                    raise RuntimeError(f"[{r.name}] failed: {r.info}")
 
-            print("Queries")
-            stop_watch_ = Utils.Stopwatch()
-            TRIES = 3
-            QUERY_NUM = 1
+                print("Queries")
+                stop_watch_ = Utils.Stopwatch()
+                TRIES = 3
+                QUERY_NUM = 1
 
-            with open(
-                "./ci/jobs/scripts/clickbench/queries.sql", "r"
-            ) as queries_file:
-                query_results = []
-                for query in queries_file:
-                    query = query.strip()
-                    timing = []
+                with open(
+                    "./ci/jobs/scripts/clickbench/queries.sql", "r"
+                ) as queries_file:
+                    query_results = []
+                    for query in queries_file:
+                        query = query.strip()
+                        timing = []
 
-                    for i in range(1, TRIES + 1):
-                        query_id = f"q{QUERY_NUM}-{i}"
-                        res, out, time_err = Shell.get_res_stdout_stderr(
-                            f'clickhouse-client --query_id {query_id} --time --format Null --query "{query}" --progress 0',
-                            verbose=True,
-                        )
-                        timing.append(time_err)
-                        query_results.append(
-                            Result(
-                                name=f"{QUERY_NUM}_{i}",
-                                status=Result.Status.OK,
-                                duration=float(time_err),
+                        for i in range(1, TRIES + 1):
+                            query_id = f"q{QUERY_NUM}-{i}"
+                            res, out, time_err = Shell.get_res_stdout_stderr(
+                                f'clickhouse-client --query_id {query_id} --time --format Null --query "{query}" --progress 0',
+                                verbose=True,
                             )
-                        )
-                    print(timing)
-                    QUERY_NUM += 1
+                            timing.append(time_err)
+                            query_results.append(
+                                Result(
+                                    name=f"{QUERY_NUM}_{i}",
+                                    status=Result.Status.OK,
+                                    duration=float(time_err),
+                                )
+                            )
+                        print(timing)
+                        QUERY_NUM += 1
 
-            results.append(
-                Result.create_from(
-                    name="Queries", results=query_results, stopwatch=stop_watch_
+                results.append(
+                    Result.create_from(
+                        name="Queries", results=query_results, stopwatch=stop_watch_
+                    )
                 )
-            )
+            finally:
+                # Flush the final benchmark queries' system-log records and
+                # detach the replication views while the server is still up:
+                # ClickHouseService.__exit__ SIGTERMs the server on block exit,
+                # so this must run inside the context, not after it. Matches
+                # SQLStorm and the stateless tests, which never stop the server
+                # before flushing. The `finally` also covers the mid-run error
+                # path (e.g. a failed "Load the data") so partial log rows are
+                # still exported before the exception propagates.
+                if not info.is_local_run:
+                    ch.stop_log_exports()
     except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
         results.append(
             Result(name="Job error", status=Result.Status.FAIL, info=str(e))
         )
-
-    # Flush the final benchmark queries' system-log records and detach the
-    # replication views - same as SQLStorm and the stateless tests.
-    if not info.is_local_run:
-        ch.stop_log_exports()
 
     Result.create_from(
         results=results,
