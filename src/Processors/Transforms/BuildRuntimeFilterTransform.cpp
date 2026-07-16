@@ -1,10 +1,10 @@
-#include <Processors/Transforms/BuildRuntimeFilterTransform.h>
-#include <Processors/Chunk.h>
+#include <algorithm>
 #include <Columns/IColumn.h>
-#include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <algorithm>
+#include <Interpreters/Context.h>
+#include <Processors/Chunk.h>
+#include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 
 
 namespace DB
@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
@@ -29,6 +29,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
+    bool can_use_minmax_filter,
     std::optional<UInt64> distinct_keys_hint_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
@@ -46,9 +47,22 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
 
     if (allow_to_use_not_exact_filter_)
     {
-        if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        if (can_use_minmax_filter && isNativeNumber(filter_column_target_type))
         {
-            built_filter = std::make_unique<ApproximateRuntimeFilter>(
+            built_filter = createApproximateNumericRuntimeFilter(
+                filters_to_merge_,
+                filter_column_target_type,
+                pass_ratio_threshold_for_disabling_,
+                blocks_to_skip_before_reenabling_,
+                bloom_filter_bytes_,
+                exact_values_limit_,
+                bloom_filter_hash_functions_,
+                max_ratio_of_set_bits_in_bloom_filter_,
+                distinct_keys_hint_);
+        }
+        else if (ApproximateGenericRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        {
+            built_filter = std::make_unique<ApproximateGenericRuntimeFilter>(
                 filters_to_merge_,
                 filter_column_target_type,
                 pass_ratio_threshold_for_disabling_,

@@ -1,12 +1,11 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <Interpreters/ExpressionAnalyzer.h>
-
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
-
-#include <Columns/ColumnNullable.h>
-
+#include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB

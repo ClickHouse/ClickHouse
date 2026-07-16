@@ -103,14 +103,15 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
-    bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
-    bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    bool distributed_plan_execute_locally = false; /// Run all distributed plan tasks locally (debugging)
+    bool distributed_plan_single_stage = false; /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
     UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
     String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
-    bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
+    bool distributed_plan_force_shuffle_aggregation
+        = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
 
@@ -183,7 +184,9 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
+    Float64 join_runtime_bloom_filter_max_estimated_ratio_of_set_bits = 1.0;
     bool join_runtime_filter_size_from_hash_table_stats = false;
+    bool join_runtime_filter_use_minmax = false;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
@@ -194,8 +197,8 @@ struct QueryPlanOptimizationSettings
     ///
     /// We should not have the number of threads in query plan.
     /// The information about threads should be available only at the moment we build pipeline.
-    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
-    /// It should be relativaly simple to fix, but I will do it later.
+    /// Currently, it is used by ConcurrentHashJoin: it requires the number of threads in ctor.
+    /// It should be relatively simple to fix, but I will do it later.
     size_t max_threads;
 
     size_t max_parallel_replicas = 1;

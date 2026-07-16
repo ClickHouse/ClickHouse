@@ -5,11 +5,12 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Set.h>
 
-#include <base/types.h>
-#include <boost/noncopyable.hpp>
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -25,6 +26,11 @@ class IRuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<IRuntimeFilter>;
 using RuntimeFilterConstPtr = std::shared_ptr<const IRuntimeFilter>;
+
+/// Runtime filter exact-set single-value shortcuts must not use SQL equality for types where JOIN/Set
+/// membership uses key semantics that differ from ordinary comparison, most importantly floating-point
+/// NaN values. Tuple types are checked recursively.
+bool runtimeFilterTypeContainsFloat(const DataTypePtr & type);
 
 struct RuntimeFilterStats
 {
@@ -54,14 +60,18 @@ public:
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
+    UInt64 getBuildRows() const { return build_rows.load(); }
     void setFullyDisabled() { is_fully_disabled = true; }
+    bool isFullyDisabled() const { return is_fully_disabled.load(); }
+
+    virtual String getModeForLogs() const { return "unknown"; }
+    virtual String getExtraInfoForLogs() const { return {}; }
 
     Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
     const DataTypePtr & getFilterColumnTargetType() const { return filter_column_target_type; }
 
 protected:
-
     IRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
@@ -71,7 +81,8 @@ protected:
         , filter_column_target_type(filter_column_target_type_)
         , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
         , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
-    {}
+    {
+    }
 
     /// Checks if a block of rows should be skipped because this filter was disabled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -83,6 +94,7 @@ protected:
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
 
+    std::atomic<UInt64> build_rows = 0;
     std::atomic<bool> inserts_are_finished = false;
 
     const Float64 pass_ratio_threshold_for_disabling = 0.7;
@@ -100,30 +112,31 @@ template <bool negate>
 class RuntimeFilterBase : public IRuntimeFilter
 {
 public:
-
     RuntimeFilterBase(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
-        UInt64 exact_values_limit_
-    )
-        : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
+        UInt64 exact_values_limit_)
+        : IRuntimeFilter(
+              filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
         , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type))
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
     {
-        ColumnsWithTypeAndName set_header = { ColumnWithTypeAndName(filter_column_target_type, String()) };
+        ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type, String())};
         exact_values->setHeader(set_header);
-        exact_values->fillSetElements();    /// Save the values, not just hashes
+        exact_values->fillSetElements(); /// Save the values, not just hashes
     }
 
     void insert(ColumnPtr values) override
     {
         if (inserts_are_finished)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
+
+        build_rows += values->size();
 
         if (is_full)
             return;
@@ -143,9 +156,10 @@ public:
             return;
         }
 
-        /// If only 1 element in the set then use " == const" instead of set lookup
-        /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
-        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
+        /// If only 1 element in the set then use " == const" instead of set lookup.
+        /// But if the argument is Nullable or contains Float, fall back to Set: it handles NULLs and
+        /// uses the same NaN membership semantics as JOIN keys.
+        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls && !runtimeFilterTypeContainsFloat(filter_column_target_type))
         {
             values_count = ValuesCount::ONE;
             single_element_column = exact_values->getSetElements().front();
@@ -158,7 +172,6 @@ public:
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
 
 protected:
-
     UInt64 getBytesLimit() const noexcept { return bytes_limit; }
 
     bool isFull() const noexcept { return is_full; }
@@ -170,6 +183,8 @@ protected:
     }
 
     void releaseExactValues() { exact_values.reset(); }
+
+    ColumnPtr lookupInExactSet(const ColumnWithTypeAndName & values) const { return RuntimeFilterBase<negate>::findImpl(values); }
 
 private:
     enum class ValuesCount
@@ -203,14 +218,22 @@ public:
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
-        UInt64 exact_values_limit_
-    )
-        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
-    {}
+        UInt64 exact_values_limit_)
+        : RuntimeFilterBase(
+              filters_to_merge_,
+              filter_column_target_type_,
+              pass_ratio_threshold_for_disabling_,
+              blocks_to_skip_before_reenabling_,
+              bytes_limit_,
+              exact_values_limit_)
+    {
+    }
 
     void merge(const IRuntimeFilter * source) override;
 
     void finishInsertImpl() override;
+
+    String getModeForLogs() const override { return "exact"; }
 };
 
 class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
@@ -222,23 +245,32 @@ public:
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
-        UInt64 exact_values_limit_
-    )
-        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
-    {}
+        UInt64 exact_values_limit_)
+        : RuntimeFilterBase(
+              filters_to_merge_,
+              filter_column_target_type_,
+              pass_ratio_threshold_for_disabling_,
+              blocks_to_skip_before_reenabling_,
+              bytes_limit_,
+              exact_values_limit_)
+    {
+    }
 
     void merge(const IRuntimeFilter * source) override;
+
+    String getModeForLogs() const override { return "exact_not_contains"; }
 };
 
 /// As long as the number of unique values is small they are stored in a Set but when it grows beyond the limit
 /// the values are moved into a BloomFilter.
-class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
+class ApproximateGenericRuntimeFilter : public RuntimeFilterBase<false>
 {
     using Base = RuntimeFilterBase<false>;
+
 public:
     static bool isDataTypeSupported(const DataTypePtr & data_type);
 
-    ApproximateRuntimeFilter(
+    ApproximateGenericRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
         Float64 pass_ratio_threshold_for_disabling_,
@@ -260,9 +292,24 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const IRuntimeFilter * source) override;
 
+    String getModeForLogs() const override;
+    String getExtraInfoForLogs() const override;
+
+protected:
+    virtual void insertIntoApproximateSet(ColumnPtr values, size_t row);
+
+    void mergeImpl(const ApproximateGenericRuntimeFilter * source);
+
+    bool isApproximate() const { return bloom_filter != nullptr; }
+
+    bool lookupInBloomFilter(ColumnPtr values, size_t row) const;
+
+    void switchToApproximateSet();
+
+    bool isBloomFilterWorthwhile() const;
+
 private:
     void insertIntoBloomFilter(ColumnPtr values);
-    void switchToBloomFilter();
 
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
@@ -274,6 +321,59 @@ private:
 
     BloomFilterPtr bloom_filter;
 };
+
+/// Runtime filter that can switch to a bloom filter guarded by a minmax range when the number
+/// of unique values exceeds the exact-set limit. If the bloom filter becomes saturated, the
+/// range is kept as a standalone safe over-approximation. It is used for numeric columns only.
+template <typename T>
+class ApproximateNumericRuntimeFilter : public ApproximateGenericRuntimeFilter
+{
+    using Base = ApproximateGenericRuntimeFilter;
+
+public:
+    ApproximateNumericRuntimeFilter(
+        size_t filters_to_merge_,
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        UInt64 bytes_limit_,
+        UInt64 exact_values_limit_,
+        UInt64 bloom_filter_hash_functions_,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        std::optional<UInt64> distinct_keys_hint_);
+
+    void finishInsertImpl() override;
+
+    ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+
+    void merge(const IRuntimeFilter * source) override;
+
+    String getModeForLogs() const override;
+    String getExtraInfoForLogs() const override;
+
+private:
+    void insertIntoApproximateSet(ColumnPtr values, size_t row) override;
+
+    bool mayContain(T value) const;
+
+    T min_value;
+    T max_value;
+    bool has_comparable_value = false;
+    bool has_nan = false;
+    bool use_range_only = false;
+};
+
+/// Factory function that dispatches on the data type to create the correct `ApproximateNumericRuntimeFilter` instantiation
+UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilter(
+    size_t filters_to_merge,
+    const DataTypePtr & filter_column_target_type,
+    Float64 pass_ratio_threshold_for_disabling,
+    UInt64 blocks_to_skip_before_reenabling,
+    UInt64 bytes_limit,
+    UInt64 exact_values_limit,
+    UInt64 bloom_filter_hash_functions,
+    Float64 max_ratio_of_set_bits_in_bloom_filter,
+    std::optional<UInt64> distinct_keys_hint);
 
 /// Runtime filter that delegates probe to a function captured at publication time.
 /// Used to share an already-built data structure (e.g. HashJoin's FixedHashMap)
@@ -292,11 +392,13 @@ public:
         ProbeFn probe_fn_);
 
     /// All "build" entry points are no-ops: the data was built inside HashJoin already.
-    void insert(ColumnPtr) override {}
-    void merge(const IRuntimeFilter *) override {}
+    void insert(ColumnPtr) override { }
+    void merge(const IRuntimeFilter *) override { }
+
+    String getModeForLogs() const override { return "shared_fixed_hash"; }
 
 protected:
-    void finishInsertImpl() override {}
+    void finishInsertImpl() override { }
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
 
 private:
@@ -322,7 +424,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
     virtual RuntimeFilterConstPtr find(const String & name) const = 0;
 
     /// Log various RuntimeFilter usage statistics such as number of filtered rows
-    virtual void logStats() const {}
+    virtual void logStats() const { }
 };
 
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
