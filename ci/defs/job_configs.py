@@ -377,6 +377,32 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    cfi_build_job = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI,
+            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
+    )
+    cfi_integration_jobs = common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_cfi, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_CFI],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
+    cfi_stress_job = common_stress_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_CFI],
+        ),
+    )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
@@ -1526,7 +1552,7 @@ class JobConfigs:
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
-        name=JobNames.JEPSEN_KEEPER,
+        name=JobNames.JEPSEN_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
