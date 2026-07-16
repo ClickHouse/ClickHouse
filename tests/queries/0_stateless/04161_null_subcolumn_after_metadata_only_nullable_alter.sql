@@ -124,3 +124,21 @@ SELECT 'tuple element';
 SELECT t.a FROM t_tuple_elem_mem;
 
 DROP TABLE t_tuple_elem_mem;
+
+-- Deep subcolumn `t.a.null` where the tuple element `a` gains nullability while a SIBLING element
+-- `b` gets a non-convertible metadata-only type change. Deriving `t.a.null` must descend to the
+-- `t.a` branch and cast only that, NOT cast the whole tuple (which would throw on the old `b`
+-- value). Memory keeps the pre-ALTER block, exercising the old-type-lacks-subcolumn path deeply.
+DROP TABLE IF EXISTS t_deep_tuple_mem;
+CREATE TABLE t_deep_tuple_mem (id UInt8, t Tuple(a UInt8, b String)) ENGINE = Memory;
+
+INSERT INTO t_deep_tuple_mem VALUES (1, (7, 'x'));
+ALTER TABLE t_deep_tuple_mem MODIFY COLUMN t Tuple(a Nullable(UInt8), b UInt64);
+INSERT INTO t_deep_tuple_mem VALUES (2, (NULL, 9));
+
+SELECT 'deep tuple';
+SELECT t.a.null FROM t_deep_tuple_mem ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT isNull(t.a) FROM t_deep_tuple_mem ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, t.a, t.a.null FROM t_deep_tuple_mem ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_deep_tuple_mem;
