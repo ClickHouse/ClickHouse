@@ -285,6 +285,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
 
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, source->objects, ReaderExecutor::Options{
+            .window_size = block_size,
             .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
             .block_size = block_size,
             .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,

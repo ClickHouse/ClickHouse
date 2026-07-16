@@ -35,6 +35,7 @@ class EncryptionHeaderCache;
 class ReaderExecutor
 {
 public:
+    static constexpr size_t DEFAULT_WINDOW_SIZE = 4 * 1024 * 1024; /// 4 MiB
     static constexpr size_t DEFAULT_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
@@ -44,7 +45,10 @@ public:
     /// the caller fills these from settings on the `use_reader_executor` path.
     struct Options
     {
+        /// Bytes served per read window (the unit `readNextWindow` returns).
+        size_t window_size = DEFAULT_WINDOW_SIZE;
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK;
+        /// Discard-chunk size for connection skip/drain.
         size_t block_size = DEFAULT_BLOCK_SIZE;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
@@ -197,30 +201,29 @@ private:
         return !offset_map.hasUnknownSize() && position >= totalSize();
     }
 
-    /// Clamp the estimator's run-anchored predicted end to `[logical_pos, file end]`.
-    size_t clampReach(size_t predicted_end, size_t logical_pos) const;
+    /// Clamp the estimator's run-anchored predicted end (physical) to `[phys_pos, physical file end]`.
+    size_t clampReach(size_t predicted_end, size_t phys_pos) const;
     /// Open a long connection now? True when a slot budget is configured, none is held,
     /// and the estimator predicts the read continues past this window.
     bool shouldOpenLongConnection() const;
     /// Acquire a slot and open a held connection on `object` at `object_offset`; false if
     /// no slot was available (caller falls back to a one-shot read).
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
-    /// Serve one window (<= `want`) from the held connection, bridging a small leading gap;
-    /// releases the connection if it reaches its bound. Precondition: `canContinue`.
-    size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Read `want` bytes at object-local `object_offset` from the source: reuse the held long
-    /// connection when it can continue, else drop it and open a fresh one (or fall back to a
-    /// one-shot read). Records `BytesFromSource`. The single source-read entry point for both the
-    /// direct path and the cache miss path.
-    size_t readSource(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Serve `want` bytes at object-local `object_offset` through the cache chain: serve the cached
-    /// prefix, read the miss remainder from the source via `readSource`, then populate every tier's
-    /// miss cells with the assembled window. `object_file_offset` is this object's start in the file
-    /// (cache coordinates are file-level). Precondition: `!cache_chain.empty()`.
-    size_t serveThroughCaches(
-        const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst);
+    /// Read up to `want` bytes at object-local `object_offset` from the source into `block_size`
+    /// chunks, returning them as a `ChainedBuffers` at file offsets `file_base + k`. Reuses the held
+    /// long connection when it can continue, else opens a fresh one (or a one-shot read); feeds the
+    /// fetched range to `fetch_tracker`. The single source-read entry point for both the direct path
+    /// and the cache miss path. A short return is fine (EOF / the object's end).
+    ChainedBuffers readSource(const StoredObject & object, size_t object_offset, size_t want, size_t file_base);
+    /// Serve the window through the cache chain: if it starts on a cache hit, return that contiguous
+    /// hit run (zero-copy, populating nothing); else fetch the remainder (expanded to the overlapping
+    /// miss cells' aligned edges) from the source, populate those cells, and return the requested
+    /// slice. A short return is fine -- the next call resolves the rest. `object_file_offset` is this
+    /// object's start in the file (cache coordinates are file-level). Precondition: `!cache_chain.empty()`.
+    ChainedBuffers serveThroughCaches(
+        const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
@@ -230,10 +233,15 @@ private:
     /// Decrypt `size` bytes in place at logical `logical_offset` via the reentrant
     /// `decryptor`. No-op without SSL / with no layers.
     void decryptInPlaceIfNeeded(char * data, size_t size, size_t logical_offset);
+    /// Return a plaintext copy of `cipher`, decrypting each node at its (logical) offset; the
+    /// plaintext path returns `cipher` untouched (zero-copy). Nodes may alias cache buffers, so the
+    /// decrypted copy never writes through them.
+    ChainedBuffers decryptWindow(ChainedBuffers && cipher);
 
     std::shared_ptr<IFileBasedSourceReader> source;
     OffsetMap offset_map;
     String log_file_path;
+    size_t window_size;
     size_t block_size;
     size_t position = 0;
     bool reached_eof = false;
@@ -243,7 +251,7 @@ private:
     /// Held source connection reused across sequential windows; empty when none is open.
     std::optional<LongConnection> long_conn;
     /// Forward-reach estimator, fed `recordReadRange`/`recordSeek`; drives the open-long decision.
-    ReadContinuityTracker continuity_tracker;
+    ReadContinuityTracker fetch_tracker;
     /// Connection-reuse budget; null disables long connections (the stateless path).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
     /// Global encryption-header cache; null disables caching (url / non-disk reads).

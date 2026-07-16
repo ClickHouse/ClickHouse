@@ -122,8 +122,9 @@ ReaderExecutor::ReaderExecutor(
     const StoredObjects & objects,
     Options options)
     : source(std::move(source_))
+    , window_size(options.window_size ? options.window_size : DEFAULT_WINDOW_SIZE)
     , block_size(options.block_size ? options.block_size : DEFAULT_BLOCK_SIZE)
-    , continuity_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
+    , fetch_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
     , long_connection_limit(std::move(options.long_connection_limit))
     , encryption_header_cache(std::move(options.encryption_header_cache))
     , cache_chain(std::move(options.cache_chain))
@@ -219,12 +220,12 @@ ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, L
     }
 }
 
-size_t ReaderExecutor::clampReach(size_t predicted_end, size_t logical_pos) const
+size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
 {
-    /// Bound the run-anchored predicted end to `[logical_pos, file end]`.
-    size_t end = std::max(predicted_end, logical_pos);
+    /// Bound the run-anchored predicted end (physical) to `[phys_pos, physical file end]`.
+    size_t end = std::max(predicted_end, phys_pos);
     if (!offset_map.hasUnknownSize())
-        end = std::min(end, totalSize());
+        end = std::min(end, offset_map.totalSize());
     return end;
 }
 
@@ -232,8 +233,9 @@ bool ReaderExecutor::shouldOpenLongConnection() const
 {
     if (long_conn || !long_connection_limit)
         return false;
-    /// Open a long connection when the predicted run end runs past this window.
-    return clampReach(continuity_tracker.predictedEnd(), position) > position + block_size;
+    /// Open a long connection when the predicted run end runs past this window (physical coords).
+    const size_t phys = position + data_start_offset;
+    return clampReach(fetch_tracker.predictedEnd(), phys) > phys + window_size;
 }
 
 bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t object_offset)
@@ -251,7 +253,8 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
     /// reads ahead only as far as the pattern predicts (no full-object over-read when just a
     /// slice is used). Reuse spans this bound; once the read runs past it the connection completes
     /// (pool-reusable) and the next window opens a fresh, longer one as the run keeps growing.
-    const size_t forward = clampReach(continuity_tracker.predictedEnd(), position) - position;
+    const size_t phys = position + data_start_offset;
+    const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
         read_until_obj = std::min<size_t>(read_until_obj, object.bytes_size);
@@ -275,22 +278,6 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
     return true;
 }
 
-size_t ReaderExecutor::serveFromLongConnection(size_t object_offset, size_t want, char * dst)
-{
-    if (object_offset > long_conn->current_position)
-    {
-        /// Bridge a small forward gap by discarding it on the open stream.
-        const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_size);
-        stats.add(Stats::BytesFromSource, skipped);
-        stats.add(Stats::LongConnectionBytes, skipped);
-    }
-    const size_t got = long_conn->readInto(dst, want);
-    stats.add(Stats::LongConnectionBytes, got);
-    if (long_conn->atBound())
-        long_conn.reset();   /// fully read to its bound -> pool-reusable, release the slot
-    return got;
-}
-
 size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst)
 {
     auto buffer = source->open(object);
@@ -303,30 +290,80 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
-size_t ReaderExecutor::readSource(const StoredObject & object, size_t object_offset, size_t want, char * dst)
+ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t object_offset, size_t want, size_t file_base)
 {
-    size_t got = 0;
+    ChainedBuffers chain;
+    size_t got_total = 0;
+
+    /// Fill `block_size`-sized nodes from `read_chunk` (reads <= n bytes into dst), appending each at
+    /// its file offset; stop on a short chunk (EOF / the read bound).
+    auto fill = [&](auto && read_chunk)
+    {
+        while (got_total < want)
+        {
+            const size_t chunk = std::min(block_size, want - got_total);
+            auto block = std::make_shared<OwnedChainedBuffer>(chunk);
+            const size_t n = read_chunk(block->data(), chunk);
+            if (n > 0)
+            {
+                chain.append(ChainedBufferNode{std::move(block), 0, n, file_base + got_total});
+                got_total += n;
+            }
+            if (n < chunk)
+                break;
+        }
+    };
+    auto from_long_conn = [&](char * dst, size_t n)
+    {
+        const size_t g = long_conn->readInto(dst, n);
+        stats.add(Stats::LongConnectionBytes, g);
+        return g;
+    };
+
     if (long_conn && long_conn->servesObject(object.remote_path)
         && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
     {
         stats.add(Stats::LongConnectionHits);
-        got = serveFromLongConnection(object_offset, want, dst);
+        if (object_offset > long_conn->current_position)
+        {
+            /// Bridge a small forward gap by discarding it on the open stream.
+            const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_size);
+            stats.add(Stats::BytesFromSource, skipped);
+            stats.add(Stats::LongConnectionBytes, skipped);
+        }
+        fill(from_long_conn);
+        if (long_conn->atBound())
+            long_conn.reset();   /// read to its bound -> pool-reusable, release the slot
     }
     else
     {
         if (long_conn)
             dropLongConnection();
         if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
-            got = serveFromLongConnection(object_offset, want, dst);
+        {
+            fill(from_long_conn);
+            if (long_conn && long_conn->atBound())
+                long_conn.reset();
+        }
         else
-            got = readOneShot(object, object_offset, want, dst);
+        {
+            auto buffer = source->open(object);
+            if (buffer->supportsRightBoundedReads())
+                buffer->setReadUntilPosition(object_offset + want);
+            if (object_offset > 0)
+                buffer->seek(static_cast<off_t>(object_offset), SEEK_SET);
+            stats.add(Stats::SourceRequests);
+            fill([&](char * dst, size_t n) { return readIntoBlock(*buffer, dst, n); });
+        }
     }
-    stats.add(Stats::BytesFromSource, got);
-    return got;
+
+    stats.add(Stats::BytesFromSource, got_total);
+    fetch_tracker.recordReadRange(file_base, got_total);
+    return chain;
 }
 
-size_t ReaderExecutor::serveThroughCaches(
-    const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst)
+ChainedBuffers ReaderExecutor::serveThroughCaches(
+    const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want)
 {
     chassert(!cache_chain.empty());
     /// Cache coordinates are FILE-LEVEL; `object_file_offset` is this object's start in the file.
@@ -340,71 +377,58 @@ size_t ReaderExecutor::serveThroughCaches(
         views.emplace_back(cache.get(), cache->planResidencyView(object, object_file_offset, window));
     }
 
-    /// Serve the contiguous cached prefix, fastest tier first; stop at the first byte no tier holds.
-    size_t served = 0;
-    while (served < want)
+    /// Window start is a cache hit: return that contiguous hit run (zero-copy, populating nothing).
+    /// A short return is fine -- the next call resolves the rest.
+    for (const auto & [cache, view] : views)
     {
-        const size_t frontier = window.offset + served;
-        CacheReader * reader = nullptr;
-        size_t hit_end = frontier;
-        for (const auto & [cache, view] : views)
-        {
-            for (const auto & hit : view->hits())
-            {
-                /// A hit is readable in full: the probe split any partial segment at its write offset.
-                if (hit.reader && hit.range.offset <= frontier && frontier < hit.range.end())
-                {
-                    reader = hit.reader.get();
-                    hit_end = std::min(hit.range.end(), window.end());
-                    break;
-                }
-            }
-            if (reader)
-                break;
-        }
-        if (!reader)
-            break;
-        const ByteRange sub{frontier, hit_end - frontier};
-        reader->read(sub).copyTo(dst + served, sub);
-        served += sub.size;
+        for (const auto & hit : view->hits())
+            /// A hit is readable in full: the probe split any partial segment at its write offset.
+            if (hit.reader && hit.range.offset <= window.offset && window.offset < hit.range.end())
+                return hit.reader->read(ByteRange{window.offset, std::min(hit.range.end(), window.end()) - window.offset});
     }
 
-    /// Read the miss remainder from the source, object-local.
-    size_t total = served;
-    if (served < want)
-        total += readSource(object, object_offset + served, want - served, dst + served);
-
-    /// Populate every tier's miss cells with the assembled window (fills the miss, promotes the prefix up).
-    if (total > 0)
-    {
-        auto block = std::make_shared<OwnedChainedBuffer>(total);
-        std::memcpy(block->data(), dst, total);
-        ChainedBuffers assembled;
-        assembled.append(ChainedBufferNode{std::move(block), 0, total, window.offset});
-        const ByteRange filled{window.offset, total};
-
-        for (auto & [cache, view] : views)
-        {
-            cache->openWriteBuffers(object, object_file_offset, *view);
-            for (const auto & m : view->misses())
+    /// Window start is a miss: fetch the remainder expanded to the overlapping miss cells' aligned
+    /// edges so each cell is populated whole. Head expansion may precede the connection frontier;
+    /// `readSource` then falls back to a one-shot read (the long connection is forward-only).
+    size_t fetch_lo = window.offset;
+    size_t fetch_hi = window.end();
+    for (const auto & [cache, view] : views)
+        for (const auto & m : view->misses())
+            if (m.range.offset < window.end() && window.offset < m.range.end())
             {
-                if (!m.writer)
-                    continue;
-                const size_t lo = std::max(m.range.offset, filled.offset);
-                const size_t hi = std::min(m.range.end(), filled.end());
-                if (lo >= hi)
-                    continue;
-                const ByteRange write_range{lo, hi - lo};
-                if (!assembled.covers(write_range))
-                    continue;
-                auto claim = m.writer->claim(write_range);
-                stats.add(Stats::CachePopulateRequests);
-                m.writer->write(assembled.slice(write_range));
+                fetch_lo = std::min(fetch_lo, m.range.offset);
+                fetch_hi = std::max(fetch_hi, m.range.end());
             }
+    fetch_lo = std::max(fetch_lo, object_file_offset);
+    if (!offset_map.hasUnknownSize())
+        fetch_hi = std::min<size_t>(fetch_hi, object_file_offset + object.bytes_size);
+
+    ChainedBuffers fetched = readSource(object, fetch_lo - object_file_offset, fetch_hi - fetch_lo, fetch_lo);
+    const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
+
+    /// Populate the covering miss cells straight from the fetch buffer (no window-wide copy).
+    for (auto & [cache, view] : views)
+    {
+        cache->openWriteBuffers(object, object_file_offset, *view);
+        for (const auto & m : view->misses())
+        {
+            if (!m.writer)
+                continue;
+            const size_t lo = std::max(m.range.offset, fetch_lo);
+            const size_t hi = std::min(m.range.end(), fetched_end);
+            if (lo >= hi)
+                continue;
+            const ByteRange write_range{lo, hi - lo};
+            if (!fetched.covers(write_range))
+                continue;
+            auto claim = m.writer->claim(write_range);
+            stats.add(Stats::CachePopulateRequests);
+            m.writer->write(fetched.slice(write_range));
         }
     }
 
-    return total;
+    /// Return the requested window slice out of the fetched data.
+    return fetched.slice(window);
 }
 
 void ReaderExecutor::dropLongConnection()
@@ -565,11 +589,11 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// Clamp the block to the object boundary so a window never straddles two
     /// objects; the next call continues in the next object. Unknown total size
     /// means stream a full block and let a short read mark EOF.
-    size_t want = block_size;
+    size_t want = window_size;
     if (!offset_map.hasUnknownSize())
     {
         const size_t remaining_in_object = object.bytes_size - object_offset;
-        want = std::min(block_size, remaining_in_object);
+        want = std::min(window_size, remaining_in_object);
         if (want == 0)
         {
             reached_eof = true;
@@ -582,44 +606,52 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (read_until && *read_until - position < want)
         want = *read_until - position;
 
-    auto block = std::make_shared<OwnedChainedBuffer>(want);
+    /// The served bytes come back as a ChainedBuffers at FILE (physical) offsets -- zero-copy for
+    /// cache hits, block-chunked for source reads. A short window is fine: the next call continues.
+    ChainedBuffers chain = cache_chain.empty()
+        ? readSource(object, object_offset, want, /*file_base=*/position_physical)
+        : serveThroughCaches(object, segment->logical_offset, object_offset, want);
 
-    size_t got = 0;
-    if (!cache_chain.empty())
-        got = serveThroughCaches(object, segment->logical_offset, object_offset, want, block->data());
-    else
-        got = readSource(object, object_offset, want, block->data());
-
+    const size_t got = chain.empty() ? 0 : chain.range().size;
+    if (got == 0)
+    {
+        /// Nothing served: end of the file. A held connection is done, not an incomplete drop.
+        reached_eof = true;
+        long_conn.reset();
+        /// A known-size source that ends before its declared total is truncated/corrupt.
+        if (!offset_map.hasUnknownSize() && position < totalSize())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "ReaderExecutor: source ended at {} of {} bytes for {}",
+                position, totalSize(), object.remote_path);
+        return {};
+    }
     stats.add(Stats::RequestedBytes, got);
 
-    if (offset_map.hasUnknownSize())
-    {
-        /// At unknown total size a short read is the only EOF signal.
-        if (got == 0)
-        {
-            reached_eof = true;
-            long_conn.reset();   /// at EOF the connection is done, not an incomplete drop
-            return {};
-        }
-    }
-    else if (got < want)
-    {
-        /// The object is shorter than its declared size — truncated or corrupt.
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "ReaderExecutor: read {} of {} bytes at offset {} from {} (declared size {})",
-            got, want, position, object.remote_path, object.bytes_size);
-    }
-
-    continuity_tracker.recordReadRange(position, got);
-
-    /// Decrypt the freshly-read, uniquely-owned block in place at its logical offset. CTR is
-    /// position-addressable, so decrypting just this window is exact.
-    decryptInPlaceIfNeeded(block->data(), got, position);
-
-    ChainedBuffers chain;
-    chain.append(ChainedBufferNode{std::move(block), 0, got, position});
+    /// Rebase from physical to logical (the header sits at the file front), then decrypt each node
+    /// at its logical offset. CTR is position-addressable, so per-node decryption is exact.
+    chain.shift(-static_cast<ssize_t>(data_start_offset));
+    chain = decryptWindow(std::move(chain));
     position += got;
     return chain;
+}
+
+ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
+{
+    if (!needsDecryption() || cipher.empty())
+        return std::move(cipher);
+
+    /// Nodes may alias cache buffers (shared, still encrypted), so decrypt into fresh copies rather
+    /// than through them.
+    StatTimer decrypt_timer(stats, Stats::DecryptMicroseconds);
+    ChainedBuffers plain;
+    for (const auto & node : cipher.getNodes())
+    {
+        auto block = std::make_shared<OwnedChainedBuffer>(node.size);
+        std::memcpy(block->data(), node.data(), node.size);
+        decryptInPlaceIfNeeded(block->data(), node.size, node.range().offset);
+        plain.append(ChainedBufferNode{std::move(block), 0, node.size, node.range().offset});
+    }
+    return plain;
 }
 
 void ReaderExecutor::seek(size_t new_position)
@@ -627,7 +659,7 @@ void ReaderExecutor::seek(size_t new_position)
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
     /// Feed the estimator; a held connection that can't continue to `new_position` is dropped
     /// lazily by the next `readNextWindow` (its `canContinue` check).
-    continuity_tracker.recordSeek(new_position);
+    fetch_tracker.recordSeek(new_position + data_start_offset);
     position = new_position;
     reached_eof = false;
 }
