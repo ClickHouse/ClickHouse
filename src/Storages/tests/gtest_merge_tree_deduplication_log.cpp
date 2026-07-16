@@ -4,6 +4,8 @@
 
 #include <Disks/DiskLocal.h>
 #include <Disks/WriteMode.h>
+#include <IO/SwapHelper.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteSettings.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
@@ -44,6 +46,59 @@ public:
 
     size_t write_count = 0;
     const size_t fail_on_write;
+};
+
+/// Wraps an already open file writer and throws on a chosen `next()` (flush) call,
+/// simulating a transient I/O failure while writing to it - as opposed to failing
+/// while opening a new file during rotation. The flush counter is shared across
+/// every writer the owning disk creates (passed in by reference), so the fault
+/// fires exactly once overall, even though rolling back a failed insert opens a
+/// fresh writer via `rotate`.
+class FailingOnNthFlushWriteBuffer : public WriteBufferFromFileDecorator
+{
+public:
+    FailingOnNthFlushWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, size_t & flush_count_, size_t fail_on_flush_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), flush_count(flush_count_), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+private:
+    void nextImpl() override
+    {
+        ++flush_count;
+        if (flush_count == fail_on_flush)
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        /// Same delegation `WriteBufferFromFileDecorator::nextImpl` does, inlined
+        /// here because that method is private in the base class.
+        SwapHelper swap(*this, *impl);
+        impl->next();
+    }
+
+    size_t & flush_count;
+    const size_t fail_on_flush;
+};
+
+/// A DiskLocal whose writer throws on a chosen `next()` (flush) call, simulating a
+/// transient I/O failure while writing a record to the currently open deduplication
+/// log file. The count is shared across all writers this disk creates (including
+/// ones opened by `rotate` while rolling back a failed insert), so the fault fires
+/// exactly once for the disk's lifetime.
+class DiskThrowingOnNthFlush : public DiskLocal
+{
+public:
+    DiskThrowingOnNthFlush(const String & name_, const String & path_, size_t fail_on_flush_)
+        : DiskLocal(name_, path_), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        return std::make_unique<FailingOnNthFlushWriteBuffer>(DiskLocal::writeFile(path, buf_size, mode, settings), flush_count, fail_on_flush);
+    }
+
+    size_t flush_count = 0;
+    const size_t fail_on_flush;
 };
 
 }
@@ -131,6 +186,92 @@ TEST(MergeTreeDeduplicationLog, RotationFailureRollsBackPublishedBlockIds)
         /// The rolled back "block2" must not have been re-published by the replay:
         /// the retry of the failed insert must be accepted...
         EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
+
+        /// ...and only then deduplicate as usual.
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: a failure while writing one of the ADD records to the
+/// currently open log file (as opposed to a failure while rotating to a new
+/// file) cancels `current_writer`, which then refuses further writes. The
+/// rollback must rotate to a fresh writer before it can persist the compensating
+/// DROP records for the block IDs that were already published.
+TEST(MergeTreeDeduplicationLog, WriteFailureRollsBackPublishedBlockIds)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_write_failure/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    /// A large deduplication window keeps the log from rotating on its own, so the
+    /// same writer stays open across the calls below and the injected failure hits
+    /// a write into the already open file, not the creation of a new one.
+    auto disk = std::make_shared<DiskThrowingOnNthFlush>("faulty", work_dir, /*fail_on_flush=*/ 3);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+    log.load();
+
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    /// Flush #1: succeeds.
+    log.addPart({"block1"}, part("all_1_1_0"));
+
+    /// Flush #2 (for "block2") succeeds, flush #3 (for "block3") is injected to fail:
+    /// "block2" was already published when the insert of "block3" aborts it.
+    EXPECT_ANY_THROW(log.addPart({"block2", "block3"}, part("all_2_2_0")));
+
+    /// Both must be retryable: "block2" because it got rolled back, "block3"
+    /// because it never got published in the first place.
+    EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
+    EXPECT_TRUE(log.addPart({"block3"}, part("all_2_2_0")).empty());
+
+    /// The log must still be usable (the rollback rotated to a fresh writer).
+    EXPECT_NO_THROW(log.addPart({"block2", "block3"}, part("all_2_2_0")));
+
+    /// And now that the retry has committed, it deduplicates as usual.
+    EXPECT_FALSE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: block IDs rolled back after a write failure (as opposed to a
+/// rotation failure) must not survive a server restart either.
+TEST(MergeTreeDeduplicationLog, WriteFailureRollsBackPublishedBlockIdsAfterRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_write_failure_rollback/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskThrowingOnNthFlush>("faulty", work_dir, /*fail_on_flush=*/ 3);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// "block2" gets published, then the write for "block3" fails and rolls
+        /// "block2" back.
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3"}, part("all_2_2_0")));
+
+        /// Finalize the current log as on a graceful shutdown.
+        log.shutdown();
+    }
+
+    {
+        /// "Restart" with a healthy disk: replay the log from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+
+        /// The rolled back "block2" must not have been re-published by the replay:
+        /// the retry of the failed insert must be accepted...
+        EXPECT_TRUE(log.addPart({"block2", "block3"}, part("all_2_2_0")).empty());
 
         /// ...and only then deduplicate as usual.
         EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());

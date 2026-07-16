@@ -313,12 +313,22 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
             deduplication_map.erase(block_ids[i]);
 
         /// Best effort: write compensating DROP records, so that replaying the log
-        /// on server startup does not re-publish the rolled back block IDs. `rotate`
-        /// is exception-safe, so `current_writer` still points to a live writer;
-        /// but if the disk keeps failing, we can only log the error here - the
-        /// exception that caused the rollback is rethrown below either way.
+        /// on server startup does not re-publish the rolled back block IDs.
         try
         {
+            /// If the exception came from `rotateAndDropIfNeeded` itself, `rotate`
+            /// is exception-safe and `current_writer` still points to the previous,
+            /// live writer. But if it came from `writeRecord` failing to write one
+            /// of the ADD records above, `current_writer` is now canceled: `next()`
+            /// cancels the buffer on any `nextImpl()` exception, and a canceled
+            /// buffer refuses further writes. Rotate to a fresh writer in that case;
+            /// `rotate` tolerates an already canceled `current_writer` (it only logs
+            /// and moves on when finalizing it fails) and always opens a new log
+            /// file, so this is also safe - if redundant - when `current_writer` is
+            /// still live.
+            if (current_writer->isCanceled())
+                rotate();
+
             for (size_t i = 0; i < published; ++i)
             {
                 MergeTreeDeduplicationLogRecord record;
