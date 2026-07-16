@@ -86,6 +86,16 @@ for reader in 1 0; do
     echo "=== struct_int128_binary_garbage_under_null, native_reader=$reader"
     $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_int128_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(n Int128))')
         SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
+
+    # Without the nullable-tuple setting the struct is read as a plain Tuple: its null map is dropped
+    # and the NULL row becomes a visible one, which must show type defaults, not the hidden bytes.
+    # The numeric type hint additionally selects the raw date32 read that skips the range check.
+    echo "=== struct_date32_garbage_under_null as Tuple(d Int32), native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_date32_garbage_under_null.arrow', 'Arrow', 's Tuple(d Int32)')
+        SETTINGS input_format_arrow_use_native_reader = $reader"
+    echo "=== struct_date32_garbage_under_null as Tuple(d Date32), native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_date32_garbage_under_null.arrow', 'Arrow', 's Tuple(d Date32)')
+        SETTINGS input_format_arrow_use_native_reader = $reader"
 done
 
 for f in list_date32_garbage_in_null_slot_range fixed_size_list_date32_garbage_in_null_slot_range map_date32_garbage_in_null_slot_range; do

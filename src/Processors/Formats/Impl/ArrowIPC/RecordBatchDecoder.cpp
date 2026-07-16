@@ -469,6 +469,16 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 if (date32_as_number)
                 {
                     fillFixed<ColumnInt32>(*column, rows, values, sizeof(Int32));
+                    /// The raw read skips the range check, but invisible slots still hold undefined
+                    /// bytes that must not surface as values (a dropped struct null map turns such
+                    /// rows into visible ones); default them like the checked branch below does.
+                    if (invisible_rows)
+                    {
+                        auto & data = assert_cast<ColumnInt32 &>(*column).getData();
+                        for (size_t i = 0; i < rows; ++i)
+                            if ((*invisible_rows)[i])
+                                data[i] = 0;
+                    }
                     break;
                 }
                 /// Otherwise enforce the same range/overflow contract as the library reader

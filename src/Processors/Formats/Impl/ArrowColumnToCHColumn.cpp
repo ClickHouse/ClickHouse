@@ -1047,7 +1047,18 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
             if (chunk.length() == 0)
                 continue;
             const auto * raw_data = getValidatedBuffer<Int32>(chunk, column_name);
+            const size_t chunk_base = column_data.size();
             column_data.insert_assume_reserved(raw_data, raw_data + chunk.length());
+            /// The raw read skips the range check, but invisible slots still hold undefined bytes
+            /// that must not surface as values (a dropped struct null map turns such rows into
+            /// visible ones); default them like the range-checked branch above does.
+            const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
+            if (invisible)
+            {
+                for (size_t i = 0, length = static_cast<size_t>(chunk.length()); i < length; ++i)
+                    if (invisible[i])
+                        column_data[chunk_base + i] = 0;
+            }
         }
     }
     return {std::move(internal_column), internal_type, column_name};
