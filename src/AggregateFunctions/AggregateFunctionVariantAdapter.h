@@ -266,6 +266,24 @@ public:
         nested_function->insertMergeResultInto(place, to, arena);
     }
 
+    /// Forward the ML prediction hooks (used by evalMLMethod via ColumnAggregateFunction::predictValues), so that
+    /// a model such as stochasticLinearRegression/stochasticLogisticRegression trained over a Variant argument can
+    /// still predict. The prediction arguments are the feature columns passed to evalMLMethod, not the training
+    /// arguments the adapter converts, so they are forwarded unconverted; the state is shared with the nested
+    /// function as-is, so the place needs no adjustment either.
+    DataTypePtr getReturnTypeToPredict() const override { return nested_function->getReturnTypeToPredict(); }
+
+    void predictValues(
+        ConstAggregateDataPtr __restrict place,
+        IColumn & to,
+        const ColumnsWithTypeAndName & arguments,
+        size_t offset,
+        size_t limit,
+        ContextPtr context) const override
+    {
+        nested_function->predictValues(place, to, arguments, offset, limit, context);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
