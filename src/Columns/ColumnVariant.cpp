@@ -438,12 +438,7 @@ void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
         return;
     }
 
-    /// Prefix the value with the global discriminator. A named Variant may legitimately contain
-    /// alternatives with the same underlying storage layout (e.g. `Geometry` has `LineString`/`Ring`
-    /// as `Array(Point)` and `MultiLineString`/`Polygon` as `Array(Array(Point))`), which render to
-    /// the same value string. The discriminator is the only thing that tells them apart, so without
-    /// it two constants differing only in their alternative collapse to one action node in the DAG.
-    /// Global (not local) so the name is stable across initiator and secondary servers.
+    /// Include the global discriminator in the result so values of different variants get different names.
     if (options.notFull(name_buf))
         name_buf << static_cast<size_t>(globalDiscriminatorByLocal(discr)) << '_';
 

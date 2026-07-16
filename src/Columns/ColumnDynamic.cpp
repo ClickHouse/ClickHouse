@@ -324,13 +324,7 @@ void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
         return;
     }
 
-    /// Prefix the value with its dynamic type name. A Dynamic's runtime type is part of the value,
-    /// but the underlying value string alone does not encode it, so two constants that differ only
-    /// in their dynamic type (e.g. UInt8(1) vs UInt16(1), or Array(UInt8) vs Array(UInt16)) render
-    /// to the same string and collapse to a single action node in the DAG (addConstantIfNecessary
-    /// dedups by name). The type name (not the numeric discriminator) is required: the discriminator
-    /// is per-column, so independently built single-type Dynamic constants both place their type at
-    /// discriminator 0. This mirrors updateHashWithValue, which already hashes the type name.
+    /// Include the type name in the result so values of different types get different names.
     if (options.notFull(name_buf))
         name_buf << getTypeNameAt(n) << '_';
 
