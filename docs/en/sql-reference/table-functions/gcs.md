@@ -65,7 +65,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 ## Examples {#examples}
 
-Selecting the first two rows from the table from GCS file `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
+Selecting the first two rows from the GCS file `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. The compression method is detected automatically from the `.gz` file extension:
 
 ```sql
 SELECT *
@@ -80,7 +80,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-The similar but from file with `gzip` compression method:
+The same query as above, but with the `gzip` compression method specified explicitly instead of relying on autodetection:
 
 ```sql
 SELECT *

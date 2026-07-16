@@ -1,0 +1,33 @@
+---
+description: 'MOVE access entity ステートメントの説明'
+sidebarTitle: 'MOVE'
+slug: /sql-reference/statements/move
+title: 'MOVE access entity ステートメント'
+doc_type: 'reference'
+---
+
+このステートメントを使用すると、アクセスエンティティをあるアクセスストレージから別のアクセスストレージに移動できます。
+
+構文:
+
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+```
+
+現在、ClickHouse には 5 種類のアクセスストレージがあります。
+
+* `local_directory`
+* `memory`
+* `replicated`
+* `users_xml` (ro)
+* `ldap` (ro)
+
+例:
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```

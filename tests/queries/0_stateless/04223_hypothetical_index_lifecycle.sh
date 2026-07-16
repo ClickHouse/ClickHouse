@@ -6,6 +6,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# materialize_statistics_on_insert is randomized in CI. When on, the auto-statistics of the
+# indexed columns are materialized on INSERT and prune the baseline, flipping the hypothetical
+# index source from applicability_only to statistical. Pin it off so the hypothetical-index
+# logic is measured in isolation.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --materialize_statistics_on_insert=0"
+
 # State is session-scoped, so each scenario sets up and asserts within one invocation.
 
 # A fresh session has no hypothetical indexes

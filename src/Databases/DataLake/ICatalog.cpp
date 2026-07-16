@@ -1,9 +1,13 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <iterator>
+#include <tuple>
 
 #include <Common/FailPoint.h>
 #include <Poco/URI.h>
@@ -308,6 +312,55 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
+}
+
+DB::Names ICatalog::getTables(const TableNameFilter & filter) const
+{
+    switch (filter.kind)
+    {
+        case TableNameFilter::Kind::All:
+            return getTables();
+
+        case TableNameFilter::Kind::Equals:
+        {
+            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
+            const auto pos = filter.value.rfind('.');
+            if (pos == std::string::npos)
+                return getTables();
+            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+        }
+
+        case TableNameFilter::Kind::Like:
+        {
+            /// Every table name matching `pattern` must start with the pattern's
+            /// fixed prefix — the literal part before the first LIKE wildcard
+            /// (`%`/`_`) — extracted here the same way `KeyCondition` prunes ranges.
+            /// A namespace `N` can hold such a table (full name `N + "." + <...>`)
+            /// only if `N + "."` and the fixed prefix are consistent, i.e. one is a
+            /// prefix of the other. This never rejects a namespace `LIKE` could match
+            /// (the fixed prefix is a *necessary* prefix of any match), so no
+            /// `system.tables` row is dropped; a looser match only costs an extra
+            /// table listing.
+            const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
+
+            /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
+            /// Calling getTables() is better as its parallel.
+            if (fixed_prefix.empty())
+                return getTables();
+
+            DB::Names result;
+            for (const auto & namespace_name : getNamespaces())
+            {
+                const std::string namespace_prefix = namespace_name + ".";
+                if (!startsWith(namespace_prefix, fixed_prefix) && !startsWith(fixed_prefix, namespace_prefix))
+                    continue;
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+    }
+    return {};
 }
 
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const

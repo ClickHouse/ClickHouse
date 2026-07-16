@@ -101,6 +101,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning a deterministic HTTP 400, which the url table function never retries.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_bad_request AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/bad_request', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -137,6 +145,22 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
+        # used to test that transient network failures are retried like the url table function.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_flaky AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/flaky', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_flaky AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
 
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
@@ -155,8 +179,8 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
 
 def test_generate_content_basic(started_cluster):
     result = instance.query(
-        "SELECT aiGenerate('hello world')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiGenerate('hello world', map('credentials', 'ai_mock'))",
+        settings=AI_SETTINGS,
     )
     assert result.strip() == "hello world"
 
@@ -165,10 +189,23 @@ def test_generate_content_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('row1'), ('row2'), ('row3')")
     result = instance.query(
-        "SELECT aiGenerate(x) FROM test_input ORDER BY x",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiGenerate(x, map('credentials', 'ai_mock')) FROM test_input ORDER BY x",
+        settings=AI_SETTINGS,
     )
     assert result.strip().split("\n") == ["row1", "row2", "row3"]
+
+
+def test_generate_uses_text_default_credentials(started_cluster):
+    """End-to-end default-credentials path: with no `credentials` in the call, a real (non-empty)
+    request must actually use `ai_function_text_default_credentials`, not just resolve it for the
+    zero-row fast path. The mock echoes the input back, so a wiring bug would show up here."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('row1'), ('row2')")
+    result = instance.query(
+        "SELECT aiGenerate(x) FROM test_input ORDER BY x",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert result.strip().split("\n") == ["row1", "row2"]
 
 
 def test_generate_content_profile_events(started_cluster):
@@ -176,8 +213,8 @@ def test_generate_content_profile_events(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
     qid = unique_query_id("gen_content_events")
     instance.query(
-        "SELECT aiGenerate(x) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiGenerate(x, map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -194,8 +231,8 @@ def test_generate_content_null_input(started_cluster):
         "INSERT INTO test_input_nullable VALUES (NULL), ('hello'), (NULL)"
     )
     result = instance.query(
-        "SELECT aiGenerate(x) FROM test_input_nullable",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiGenerate(x, map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert lines.count("\\N") == 2
@@ -204,16 +241,16 @@ def test_generate_content_null_input(started_cluster):
 
 def test_generate_content_error_throw(started_cluster):
     error = instance.query_and_get_error(
-        "SELECT aiGenerate('hello')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_error"},
+        "SELECT aiGenerate('hello', map('credentials', 'ai_error'))",
+        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
 def test_generate_content_error_graceful(started_cluster):
     result = instance.query(
-        "SELECT aiGenerate('hello')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_error", "ai_function_throw_on_error": 0},
+        "SELECT aiGenerate('hello', map('credentials', 'ai_error'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -230,8 +267,8 @@ def test_generate_without_api_key(started_cluster):
     """A named collection that omits `api_key` resolves and runs end-to-end, and the
     provider sends no `Authorization` header (rather than an empty/dummy token)."""
     result = instance.query(
-        "SELECT aiGenerate('no key here')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_no_key"},
+        "SELECT aiGenerate('no key here', map('credentials', 'ai_no_key'))",
+        settings=AI_SETTINGS,
     )
     assert result.strip() == "no key here"
     assert "authorization" not in last_request()["headers"]
@@ -240,11 +277,81 @@ def test_generate_without_api_key(started_cluster):
 def test_generate_with_api_key_sends_auth_header(started_cluster):
     """A keyed collection forwards the key as a `Bearer` `Authorization` header."""
     result = instance.query(
-        "SELECT aiGenerate('with key')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiGenerate('with key', map('credentials', 'ai_mock'))",
+        settings=AI_SETTINGS,
     )
     assert result.strip() == "with key"
     assert last_request()["headers"].get("authorization") == "Bearer test-key"
+
+
+def test_generate_model_override_with_default_credentials(started_cluster):
+    """`map('model', ...)` overrides the collection's model on the actual request, even when the
+    collection itself is selected via `ai_function_text_default_credentials` rather than the map."""
+    instance.query(
+        "SELECT aiGenerate('hi', map('model', 'override-model'))",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert json.loads(last_request()["body"])["model"] == "override-model"
+
+
+def test_embed_model_override_with_default_credentials(started_cluster):
+    """Same for aiEmbed: `map('model', ...)` overrides the embedding model on the request, with the
+    collection selected via `ai_function_embedding_default_credentials`."""
+    instance.query(
+        "SELECT aiEmbed('hi', map('model', 'override-embed-model'))",
+        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+    )
+    assert json.loads(last_request()["body"])["model"] == "override-embed-model"
+
+
+def test_generate_empty_model_override_with_default_credentials(started_cluster):
+    """An explicitly empty `model` in the params map overrides the collection's model: the resolver
+    honors presence, not content, so `map('model', '')` sends an empty model (letting an endpoint
+    pick one), even though the collection selected via the default setting defines `test-model`."""
+    instance.query(
+        "SELECT aiGenerate('hi', map('model', ''))",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert json.loads(last_request()["body"])["model"] == ""
+
+
+# Setting every credential/config key in the params map at once. `ai_mock` carries an api_key,
+# `ai_no_key` does not, so the auth header proves which collection was actually contacted.
+_ALL_PARAMS_QUERY = (
+    "SELECT aiGenerate('hi', map("
+    "'credentials', 'ai_mock', 'model', 'map-model', 'max_tokens', '7', "
+    "'temperature', '0.9', 'system_prompt', 'be terse'))"
+)
+
+
+def _assert_all_params_applied():
+    req = last_request()
+    body = json.loads(req["body"])
+    # `credentials` picked `ai_mock` (keyed) — proves the map won over any default setting.
+    assert req["headers"].get("authorization") == "Bearer test-key"
+    assert body["model"] == "map-model"
+    assert body["max_tokens"] == 7
+    assert abs(body["temperature"] - 0.9) < 1e-4
+    assert body["messages"][0]["role"] == "system"
+    assert body["messages"][0]["content"] == "be terse"
+
+
+def test_generate_all_map_params_override_setting(started_cluster):
+    """Every param passed in the map overrides a default-credentials setting that points at a
+    different collection: `credentials` (proven via the auth header) plus `model` / `max_tokens` /
+    `temperature` / `system_prompt` all take effect."""
+    instance.query(
+        _ALL_PARAMS_QUERY,
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_no_key"},
+    )
+    _assert_all_params_applied()
+
+
+def test_generate_all_map_params_without_setting(started_cluster):
+    """The same map, with no default-credentials setting at all: the map supplies everything,
+    including `credentials`, and all keys take effect."""
+    instance.query(_ALL_PARAMS_QUERY, settings=AI_SETTINGS)
+    _assert_all_params_applied()
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +365,8 @@ def test_classify_basic(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('I love this product!')")
     result = instance.query(
-        "SELECT aiClassify(x, ['positive', 'negative', 'neutral']) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiClassify(x, ['positive', 'negative', 'neutral'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
     )
     # Mock returns first enum value; postProcessResponse extracts "category" from JSON
     assert result.strip() == "positive"
@@ -271,8 +378,8 @@ def test_classify_multiple_rows(started_cluster):
         "INSERT INTO test_input VALUES ('great'), ('terrible'), ('okay')"
     )
     result = instance.query(
-        "SELECT aiClassify(x, ['positive', 'negative', 'neutral']) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiClassify(x, ['positive', 'negative', 'neutral'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     # All rows get the first enum value from the mock
@@ -285,8 +392,8 @@ def test_classify_profile_events(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     qid = unique_query_id("classify_events")
     instance.query(
-        "SELECT aiClassify(x, ['cat_a', 'cat_b']) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiClassify(x, ['cat_a', 'cat_b'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -298,8 +405,8 @@ def test_classify_null_input(started_cluster):
     instance.query("TRUNCATE TABLE test_input_nullable")
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
     result = instance.query(
-        "SELECT aiClassify(x, ['a', 'b']) FROM test_input_nullable",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiClassify(x, ['a', 'b'], map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert len(lines) == 2
@@ -318,8 +425,8 @@ def test_extract_simple_instruction(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The price is $42.99')")
     result = instance.query(
-        "SELECT aiExtract(x, 'the price') FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiExtract(x, 'the price', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
     )
     # Mock returns {"result": "<user_message>"}, postProcess extracts the value
     assert result.strip() == "The price is $42.99"
@@ -331,8 +438,8 @@ def test_extract_json_schema(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('John is 30 years old')")
     result = instance.query(
-        """SELECT aiExtract(x, '{"name": "person name", "age": "person age"}') FROM test_input""",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        """SELECT aiExtract(x, '{"name": "person name", "age": "person age"}', map('credentials', 'ai_mock')) FROM test_input""",
+        settings=AI_SETTINGS,
     )
     # Mock returns {"name": "<user_msg>", "age": "<user_msg>"}
     # postProcessResponse returns raw JSON since there's no single "result" field
@@ -346,8 +453,8 @@ def test_extract_multiple_rows(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('text1'), ('text2'), ('text3')")
     qid = unique_query_id("extract_events")
     instance.query(
-        "SELECT aiExtract(x, 'main topic') FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiExtract(x, 'main topic', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -359,8 +466,8 @@ def test_extract_null_input(started_cluster):
     instance.query("TRUNCATE TABLE test_input_nullable")
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('some text')")
     result = instance.query(
-        "SELECT aiExtract(x, 'key info') FROM test_input_nullable",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiExtract(x, 'key info', map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert "\\N" in lines
@@ -377,8 +484,8 @@ def test_translate_basic(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('Hello world')")
     result = instance.query(
-        "SELECT aiTranslate(x, 'French') FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiTranslate(x, 'French', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
     )
     assert result.strip() == "Hello world"
 
@@ -387,8 +494,8 @@ def test_translate_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('one'), ('two'), ('three')")
     result = instance.query(
-        "SELECT aiTranslate(x, 'Spanish') FROM test_input ORDER BY x",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiTranslate(x, 'Spanish', map('credentials', 'ai_mock')) FROM test_input ORDER BY x",
+        settings=AI_SETTINGS,
     )
     assert result.strip().split("\n") == ["one", "three", "two"]
 
@@ -397,8 +504,8 @@ def test_translate_with_instructions(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('Hello')")
     result = instance.query(
-        "SELECT aiTranslate(x, 'German', 'Use formal tone') FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiTranslate(x, 'German', map('credentials', 'ai_mock', 'instructions', 'Use formal tone')) FROM test_input",
+        settings=AI_SETTINGS,
     )
     assert result.strip() == "Hello"
 
@@ -418,8 +525,8 @@ def test_translate_profile_events(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     qid = unique_query_id("translate_events")
     instance.query(
-        "SELECT aiTranslate(x, 'Japanese') FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiTranslate(x, 'Japanese', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -431,8 +538,8 @@ def test_translate_null_input(started_cluster):
     instance.query("TRUNCATE TABLE test_input_nullable")
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('hello')")
     result = instance.query(
-        "SELECT aiTranslate(x, 'French') FROM test_input_nullable",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_mock"},
+        "SELECT aiTranslate(x, 'French', map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert "\\N" in lines
@@ -455,8 +562,21 @@ def parse_embedding(s):
 def test_embed_basic(started_cluster):
     """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
     result = instance.query(
+        "SELECT aiEmbed('hello', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+    )
+    vec = parse_embedding(result)
+    assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
+    assert any(v != 0.0 for v in vec)
+
+
+def test_embed_uses_embedding_default_credentials(started_cluster):
+    """End-to-end default-credentials path for embeddings: with no `credentials` in the call, a real
+    (non-empty) request must actually use `ai_function_embedding_default_credentials`. Confirms the
+    embedding default is applied on the request path, not only for the zero-row fast path."""
+    result = instance.query(
         "SELECT aiEmbed('hello')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
+        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
     assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
@@ -468,8 +588,8 @@ def test_embed_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input ORDER BY x",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
+        settings=AI_SETTINGS,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
     assert len(rows) == 3
@@ -481,8 +601,8 @@ def test_embed_multiple_rows(started_cluster):
 def test_embed_with_dimensions(started_cluster):
     """The `dimensions` argument is forwarded to the provider and honored in the response."""
     result = instance.query(
-        "SELECT aiEmbed('hello world', 16)",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
+        "SELECT aiEmbed('hello world', map('credentials', 'ai_embed', 'dimensions', '16'))",
+        settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
     assert len(vec) == 16
@@ -496,8 +616,8 @@ def test_embed_null_and_empty_input(started_cluster):
     )
     qid = unique_query_id("embed_null_empty")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input_nullable ORDER BY x NULLS FIRST",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
@@ -522,8 +642,8 @@ def test_embed_profile_events_token_accounting(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('abc'), ('de'), ('fghi')")
     qid = unique_query_id("embed_tokens")
     instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -542,8 +662,8 @@ def test_embed_batching(started_cluster):
     )
     qid = unique_query_id("embed_batch")
     instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed", "ai_function_embedding_max_batch_size": 2},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -556,8 +676,8 @@ def test_embed_batching(started_cluster):
 def test_embed_error_throw(started_cluster):
     """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed('hello')",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed_error"},
+        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_error'))",
+        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
@@ -567,9 +687,9 @@ def test_embed_error_graceful(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed_error')) FROM test_input",
         settings={
-            **AI_SETTINGS, "ai_function_credentials": "ai_embed_error",
+            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -581,8 +701,8 @@ def test_embed_error_graceful(started_cluster):
 def test_embed_duplicate_index_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed_dup_index", "ai_function_max_retries": 0},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
     assert "duplicates" in error or "duplicate" in error.lower()
@@ -591,8 +711,8 @@ def test_embed_duplicate_index_rejected(started_cluster):
 def test_embed_wrong_count_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed_wrong_count", "ai_function_max_retries": 0},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
 
@@ -602,8 +722,8 @@ def test_embed_empty_input_table(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     qid = unique_query_id("embed_zero_rows")
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_credentials": "ai_embed"},
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert result.strip() == ""
@@ -622,9 +742,9 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # Each batch costs `sum(len(text))` input tokens. With batch_size=1 and rows
     # of length 5 ("row_0".."row_3"), the second batch pushes us over a 5-token cap.
     result = instance.query(
-        "SELECT aiEmbed(x) FROM test_input",
+        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS, "ai_function_credentials": "ai_embed",
+            **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -641,3 +761,190 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # value due to a quota cut, matching the documented `AIRowsSkipped` semantics.
     assert int(events["rows_processed"]) == 1
     assert int(events["rows_skipped"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Retry on transient network errors (like the url table function)
+# ---------------------------------------------------------------------------
+
+
+def set_flaky(count):
+    """Arm the mock's flaky endpoints to fail their next `count` requests with a dropped
+    connection (a transient network error). `count=0` disarms them."""
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/set-flaky?count={count}"]
+    )
+
+
+def test_generate_retries_on_network_error(started_cluster):
+    """A transient network failure (connection dropped without a response) is retried, matching
+    the url table function. With enough retries the call recovers and ultimately succeeds."""
+    set_flaky(2)
+    qid = unique_query_id("gen_retry_net")
+    result = instance.query(
+        "SELECT aiGenerate('recover me', map('credentials', 'ai_flaky'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == "recover me"
+    events = get_profile_events(qid)
+    # 2 failed attempts + 1 successful attempt for the single row.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 1
+
+
+def test_generate_network_error_not_retried_when_disabled(started_cluster):
+    """With `ai_function_max_retries = 0`, a network failure is surfaced rather than retried."""
+    set_flaky(10)
+    try:
+        error = instance.query_and_get_error(
+            "SELECT aiGenerate('no retry', map('credentials', 'ai_flaky'))",
+            settings={
+                **AI_SETTINGS,
+                "ai_function_max_retries": 0,
+            },
+        )
+        assert error  # a network/IO error is raised instead of a result
+    finally:
+        set_flaky(0)
+
+
+def test_embed_retries_on_network_error(started_cluster):
+    """The embedding path retries transient network failures too."""
+    set_flaky(2)
+    qid = unique_query_id("embed_retry_net")
+    result = instance.query(
+        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_flaky'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+        },
+        query_id=qid,
+    )
+    vec = parse_embedding(result)
+    assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Provider HTTP-status retry policy (matches the url table function):
+# deterministic client errors (400/401/403/404/405/501) are surfaced immediately,
+# transient/server-side errors (5xx, …) are retried.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_deterministic_http_error_not_retried(started_cluster):
+    """A deterministic provider HTTP status (400 Bad Request) is surfaced immediately and is NOT
+    retried, even with `ai_function_max_retries` enabled — exactly like the url table function,
+    which never retries 400/401/403/404/405/501. Only a single API call is made."""
+    qid = unique_query_id("gen_400_no_retry")
+    result = instance.query(
+        "SELECT aiGenerate('bad request', map('credentials', 'ai_bad_request'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+            "ai_function_throw_on_error": 0,
+        },
+        query_id=qid,
+    )
+    # Non-retriable error with throw_on_error = 0: the row is skipped, producing an empty result.
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1  # exactly one call: the 400 was not retried
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_generate_deterministic_http_error_throws(started_cluster):
+    """With the default `ai_function_throw_on_error = 1`, the deterministic 400 surfaces as
+    `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER` rather than being retried away."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('bad request', map('credentials', 'ai_bad_request'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+        },
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_generate_server_error_is_retried(started_cluster):
+    """Counterpart to the 400 case: an HTTP 500 is a transient/server-side error, so it IS retried
+    (1 initial attempt + `ai_function_max_retries` retries), matching the url table function."""
+    qid = unique_query_id("gen_500_retried")
+    result = instance.query(
+        "SELECT aiGenerate('server error', map('credentials', 'ai_error'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 2,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_throw_on_error": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3  # 1 + 2 retries
+    assert int(events["rows_skipped"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# The API-call quota bounds retries: `ai_function_max_api_calls_per_query` caps the
+# total number of HTTP requests per query, including retried requests, so a flaky
+# endpoint cannot dispatch `1 + ai_function_max_retries` requests for a single row/batch.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_retry_respects_api_call_quota(started_cluster):
+    """An HTTP 500 is retriable, but the API-call quota is enforced before every attempt — including
+    retries. With `ai_function_max_api_calls_per_query = 1` and `ai_function_max_retries = 5`, only a
+    single request is dispatched (the quota stops the retries), not `1 + 5`."""
+    qid = unique_query_id("gen_quota_caps_retries")
+    result = instance.query(
+        "SELECT aiGenerate('server error', map('credentials', 'ai_error'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_max_api_calls_per_query": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    # Without the per-attempt quota check this would be 6 (1 initial + 5 retries).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_embed_retry_respects_api_call_quota(started_cluster):
+    """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
+    retried past `ai_function_max_api_calls_per_query`."""
+    qid = unique_query_id("embed_quota_caps_retries")
+    result = instance.query(
+        "SELECT aiEmbed('server error', map('credentials', 'ai_embed_error'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_max_retries": 5,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_max_api_calls_per_query": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    # The single live row is skipped (empty array) because its batch never succeeded.
+    assert parse_embedding(result) == []
+    events = get_profile_events(qid)
+    # Without the per-attempt quota check this would be 6 (1 initial + 5 retries).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1

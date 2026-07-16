@@ -1,0 +1,405 @@
+/* Beta Badge */
+.betaBadge {
+    background-color: #E5FFFB;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #004237;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.betaIcon {
+    margin-right: 8px;
+}
+
+.betaIcon svg path {
+    fill: #004237;
+}
+
+.betaBadge a {
+    color: black;
+}
+
+.dark .betaBadge {
+    background-color: #1A332D;
+    color: #66FFE5;
+}
+
+.dark .betaBadge a {
+    color: #66FFE5;
+}
+
+.dark .betaIcon svg path {
+    fill: #66FFE5;
+}
+
+/* ClickHouse Supported Badge */
+.ClickHouseSupportedBadge {
+    background-color: #faff69;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #161517;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.ClickHouseSupportedIcon {
+    margin-right: 8px;
+}
+
+.ClickHouseSupportedIcon svg path {
+    fill: #282828;
+}
+
+.ClickHouseSupportedBadge a {
+    color: black;
+}
+
+.dark .ClickHouseSupportedBadge {
+    background-color: #faff69;
+    color: #161517;
+}
+
+.dark .ClickHouseSupportedBadge a {
+    color: #161517;
+}
+
+.dark .ClickHouseSupportedIcon svg path {
+    fill: #161517;
+}
+
+/* Cloud Not Supported Badge */
+.cloudNotSupportedBadge {
+    background-color: #F6E5FF;
+    color: #660099;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.cloudNotSupportedIcon {
+    margin-right: 8px;
+}
+
+.cloudNotSupportedIcon svg path {
+    stroke: #660099;
+}
+
+.dark .cloudNotSupportedBadge {
+    background-color: #33004D;
+    color: #EECCFF;
+}
+
+.dark .cloudNotSupportedIcon svg path {
+    stroke: #EECCFF;
+}
+
+/* Cloud Only Badge */
+.cloudBadge {
+    background-color: #DAE6FC;
+    color: #061D48;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.dark .cloudBadge {
+    background-color: #061D48;
+    color: #DAE6FC;
+}
+
+.cloudIcon {
+    margin-right: 8px;
+}
+
+.cloudIcon svg path {
+    stroke: #061D48;
+}
+
+.dark .cloudIcon svg path {
+    stroke: #DAE6FC;
+}
+
+/* Community Maintained Badge */
+.CommunityMaintainedBadge {
+    background-color: #69afff;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #ffffff;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.CommunityMaintainedIcon {
+    margin-right: 8px;
+}
+
+.CommunityMaintainedIcon svg path {
+    fill: #ffffff;
+    stroke: none;
+}
+
+.CommunityMaintainedBadge a {
+    color: #69afff;
+}
+
+.CommunityMaintainedBadge svg path {
+    color: #69afff;
+}
+
+.dark .CommunityMaintainedBadge {
+    background-color: #69afff;
+    color: #ffffff;
+}
+
+.dark .CommunityMaintainedBadge a {
+    color: #ffffff;
+}
+
+.dark .CommunityMaintainedIcon svg path {
+    fill: #ffffff;
+    stroke: none;
+}
+
+/* Deprecated Badge */
+.deprecatedBadge {
+    background-color: #DFDFDF;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.deprecatedIcon {
+    margin-right: 8px;
+}
+
+.deprecatedBadge a {
+    color: black;
+}
+
+.dark .deprecatedBadge {
+    background-color: #414141;
+    color: #000000;
+}
+
+.dark .deprecatedBadge a {
+    color: #000000;
+}
+
+.deprecatedIcon svg path {
+    stroke: #53575F;
+}
+
+.dark .deprecatedIcon svg path {
+    stroke: #E6E7E9;
+}
+
+/* Enterprise Plan Feature Badge */
+.enterprisePlanFeatureContainer {
+    background-color: #F6F7FA;
+    border-radius: 4px;
+    border: 1px solid #E6E7E9;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.enterprisePlanFeatureContainer p {
+    margin: 0;
+    padding: 0;
+}
+
+.enterprisePlanFeatureBadge {
+    background-color: #008A0B;
+    border-style: solid;
+    border: 1px;
+    border-color: #437EEF;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    color: #FFFFFF;
+    display: inline-flex;
+    padding: 2px 12px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.dark .enterprisePlanFeatureContainer {
+    background-color: #F6F7FA;
+    border: 1px solid #414141;
+}
+
+.dark .enterprisePlanFeatureBadge {
+    background-color: #99FFA1;
+    color: #1F1F1C;
+}
+
+/* Experimental Badge */
+.experimentalBadge {
+    background-color: #FFEDD8;
+    border-radius: 16px;
+    color: black;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.experimentalIcon {
+    margin-right: 8px;
+}
+
+.experimentalBadge a {
+    color: black;
+}
+
+.dark .experimentalBadge {
+    background-color: #E9D5FF;
+    color: #000000;
+}
+
+.dark .experimentalBadge a {
+    color: #000000;
+}
+
+.experimentalIcon svg path {
+    stroke: #4F2B00;
+}
+
+.dark .experimentalIcon svg path {
+    stroke: #000000;
+}
+
+/* Partner Badge */
+.PartnerBadge {
+    background-color: #990073;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #ffffff;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.PartnerBadgeIcon {
+    margin-right: 8px;
+}
+
+.PartnerBadgeIcon svg path {
+    fill: #fbc9ef;
+    stroke: #990073;
+}
+
+.PartnerBadge a {
+    color: #990073;
+}
+
+.PartnerBadge svg path {
+    color: #990073;
+}
+
+.dark .PartnerBadge {
+    background-color: #990073;
+    color: #fbeff8;
+}
+
+.dark .PartnerBadge a {
+    color: #fbeff8;
+}
+
+.dark .PartnerBadgeIcon svg path {
+    fill: #990073;
+    stroke: #fbeff8;
+}
+
+/* Private Preview Badge */
+.privatePreviewBadge {
+    background-color: #F4FF66;
+    color: #4A4D00;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.dark .privatePreviewBadge {
+    background-color: #3C4601;
+    color: #FEFFC2;
+}
+
+.privatePreviewIcon {
+    margin-right: 8px;
+}
+
+.privatePreviewIcon svg path {
+    stroke: #4A4D00;
+}
+
+.dark .privatePreviewIcon svg path {
+    stroke: #FEFFC2;
+}
+
+/* Scale Plan Feature Badge */
+.scalePlanFeatureContainer {
+    background-color: #F6F7FA;
+    border-radius: 4px;
+    border: 1px solid #E6E7E9;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.scalePlanFeatureContainer p {
+    margin: 0;
+    padding: 0;
+}
+
+.scalePlanFeatureBadge {
+    background-color: #1D64EC;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    color: #FFFFFF;
+    display: inline-flex;
+    padding: 2px 12px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.dark .scalePlanFeatureContainer {
+    background-color: #1F1F1C;
+    border: 1px solid #414141;
+}
+
+.dark .scalePlanFeatureBadge {
+    background-color: #1D64EC;
+    color: #FFFFFF;
+}

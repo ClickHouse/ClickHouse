@@ -823,7 +823,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
         /// still be subject to these checks.
-        storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
+        storage_settings->loadFromQuery(
+            *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
@@ -1558,7 +1560,7 @@ For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter in
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](./textindexes.md) for details.
+See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
 :::
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
@@ -1630,7 +1632,7 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](./textindexes.md) for details.
+See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
 :::
 
 ```text title="Syntax"
@@ -1647,11 +1649,11 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](/engines/table-engines/mergetree-family/textindexes) for details.
 
 #### Vector similarity {#vector-similarity}
 
-Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
+Supports approximate nearest neighbor search, see [here](/engines/table-engines/mergetree-family/annindexes) for details.
 
 ### Functions support {#functions-support}
 
@@ -2395,6 +2397,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 - `TDigest`
 
+    :::warning
+    Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
+    :::
+
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
     Syntax: `tdigest`
@@ -2406,6 +2412,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     Syntax: `uniq`
 
 - `CountMin`
+
+    :::warning
+    Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
+    :::
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
@@ -3763,8 +3773,8 @@ The settings for rollup are defined by the [graphite_rollup](../../../operations
 
 Rollup configuration structure:
 
-      required-columns
-      patterns
+- required-columns
+- patterns
 
 ### Required columns {#required-columns}
 

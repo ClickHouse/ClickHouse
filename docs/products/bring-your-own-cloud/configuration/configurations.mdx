@@ -1,0 +1,104 @@
+---
+title: 'Infrastructure configuration'
+slug: /cloud/reference/byoc/configurations
+sidebarTitle: 'Infrastructure configuration'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'infrastructure', 'configuration']
+description: 'Configure load balancers, node groups, and other BYOC infrastructure components'
+doc_type: 'reference'
+---
+
+This page describes the various infrastructure configuration options available for your BYOC deployment. These configurations allow you to customize networking, security, and compute resources to meet your specific requirements.
+
+## Load Balancers {#load-balancers}
+
+BYOC deployments utilize **Network Load Balancers (NLBs)** to manage and route traffic to your ClickHouse services. You can choose between *public* and *private* load balancer endpoints based on your networking model.
+
+| Load Balancer Type   | ClickHouse-managed Dedicated VPC | Customer-managed VPC       |
+|--------------------- |:-------------------------------:|:--------------------------:|
+| **Public NLB**       | Enabled by default               | Disabled by default        |
+| **Private NLB**      | Disabled by default              | Enabled by default         |
+
+**Public Load Balancer:**  
+- Provides public (internet-facing) access to your ClickHouse services.
+- Typically enabled by default when using a ClickHouse-managed dedicated VPC.
+- Disabled by default when using a customer-managed VPC for enhanced security.
+
+**Private Load Balancer:**  
+- Provides private (internal) access, accessible only from within your connected networks.
+- Typically enabled by default when using a customer-managed VPC.
+- Disabled by default when using a ClickHouse-managed dedicated VPC.
+
+You can work with **ClickHouse Cloud Support** to adjust which endpoints are enabled based on your requirements.
+
+### Private Load Balancer Security Group for AWS {#private-load-balancer-security-group}
+
+If you choose to use a private load balancer for your BYOC deployment, you must ensure the appropriate security group rules are in place to permit access from your intended private networks (such as peered VPCs). By default, the security group only allows traffic within the VPC.
+
+To set up the security group for your private load balancer:
+
+**Contact ClickHouse Support** to request inbound security group rule changes that allow traffic from your specific source networks:
+
+- **VPC Peering**: Request rules to permit traffic from your peered VPCs’ CIDR ranges.
+- **PrivateLink**: No security group changes required, as traffic isn't governed by the load balancer's security group.
+- **Other network setups**: Specify your scenario so support can assist accordingly.
+
+<Note>
+All changes to private load balancer security groups must be performed by ClickHouse Support. This ensures configuration consistency and avoids conflicts within the ClickHouse Cloud-managed environment.
+</Note>
+
+## PrivateLink or Private Service Connect {#privatelink-or-private-service-connect}
+
+For maximum network isolation and security, BYOC deployments can use **AWS PrivateLink** or **GCP Private Service Connect**. These options allow your applications to connect privately to ClickHouse Cloud services without requiring VPC peering or exposing endpoints to the public internet.
+
+For step-by-step setup instructions, see the [Private Networking Setup guide](/products/bring-your-own-cloud/onboarding/network).
+
+## Kubernetes API Private Connection {#k8s-api-private-connection}
+
+By default, the Kubernetes API server endpoint for your BYOC cluster is accessible from the public internet, but access is restricted with IP filtering to allow only ClickHouse NAT Gateway IPs. For stronger security, you can restrict the Kubernetes API server so that it is accessible exclusively through private network connections using Tailscale.
+
+<Note>
+If you rely solely on Tailscale for private connectivity, there is a risk that ClickHouse Support will lose access to your environment if the Tailscale agent becomes unavailable. This could delay troubleshooting or support response times.
+</Note>
+
+**Contact ClickHouse Support** to request configuration of a private API endpoint.
+
+## Node Groups {#node-groups}
+
+Kubernetes node groups are collections of compute instances that provide the resources required for running your ClickHouse services in a BYOC deployment. ClickHouse Cloud manages these node groups, handling both their configuration and scaling automatically.
+
+### Default Configuration {#default-configuration}
+
+BYOC clusters are provisioned with two primary node group types:
+
+- **System Node Group**  
+  Hosts essential system workloads—such as the ClickHouse Operator, Istio (for service mesh), monitoring components (Prometheus, Grafana, AlertManager), cluster autoscaler, and other core services. These nodes typically use standard x86 instance types.
+
+- **Workload Node Groups**  
+  Dedicated to ClickHouse data workloads, including servers and keeper services. By default, workload nodes run on ARM-based instances, providing an efficient balance of performance and cost. However, they can also be configured with alternative CPU/memory profiles or switched to x86 architecture on request.
+
+### Customizing Node Groups {#customizing-node-groups}
+
+Need specialized resources or architectures? The following customizations are available—contact ClickHouse Support to discuss and implement:
+
+- **Instance type selection**  
+  Choose specific instance types to satisfy requirements such as performance, compliance, high memory/CPU, or to utilize reserved resources.
+- **CPU/Memory ratios**  
+  Adjust the compute profile for your workload node groups as needed.
+- **Architecture**  
+  Switch workload node groups from ARM to x86 if required.
+
+> **Note:** Spot (preemptable) instances are _not_ supported; all BYOC node groups run on on-demand instances by default.
+
+<Note>
+All node group customization and configuration changes must be coordinated through ClickHouse Support. This ensures compatibility, stability, and optimal performance.
+</Note>
+
+### Automatic Scaling {#auto-scaling}
+
+Cluster node groups scale automatically through the cluster autoscaler, according to:
+
+- Pod resource requests and limits
+- Overall cluster capacity and utilization
+- ClickHouse service scaling demands
+
+No manual intervention is needed. ClickHouse Cloud handles ongoing resource and scaling management for your deployment.

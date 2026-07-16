@@ -1,0 +1,10 @@
+---
+title: Table des paramètres du serveur
+---
+
+Pour chaque serveur, les paramètres suivants sont définis :
+
+| Paramètre | Description                                                                                                                                                                                                                                                                                                                                                                                                             | Valeur par défaut |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `host`    | L’adresse du serveur distant. Vous pouvez utiliser soit le nom de domaine, soit l’adresse IPv4 ou IPv6. Si vous spécifiez le nom de domaine, le serveur effectue une requête DNS au démarrage, et le résultat de la résolution est conservé tant que le serveur est en cours d’exécution. Si la requête DNS échoue, le serveur ne démarre pas. Si vous modifiez l’enregistrement DNS, vous devez redémarrer le serveur. | -                 |
+| `port`    | Le port TCP utilisé pour l’activité de messagerie (`tcp_port` dans la config, généralement défini sur 9000). À ne pas confondre avec `http_port`.                                                                                                                                                                                                                                                                       | -                 |

@@ -846,7 +846,7 @@ struct SetupNodeCollector
         if (snapshot_result.storage == nullptr)
         {
             std::cerr << "No initial snapshot found" << std::endl;
-            initial_storage = std::make_unique<Coordination::KeeperMemoryStorage>(
+            initial_storage = std::make_unique<Coordination::KeeperStorage>(
                 /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
             initial_storage->initializeSystemNodes();
         }
@@ -985,7 +985,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
+        DB::KeeperStorageSnapshot snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;
@@ -993,9 +993,9 @@ struct SetupNodeCollector
 
     std::mutex nodes_mutex;
     DB::KeeperContextPtr keeper_context;
-    std::shared_ptr<Coordination::KeeperMemoryStorage> initial_storage;
+    std::shared_ptr<Coordination::KeeperStorage> initial_storage;
     std::unordered_set<std::string> nodes_created_during_replay;
-    std::optional<Coordination::KeeperSnapshotManager<Coordination::KeeperMemoryStorage>> snapshot_manager;
+    std::optional<Coordination::KeeperSnapshotManager> snapshot_manager;
     bool new_nodes = false;
 };
 

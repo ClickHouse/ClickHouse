@@ -1,0 +1,67 @@
+---
+slug: /faq/operations/delete-old-data
+title: '¿Es posible eliminar registros antiguos de una tabla de ClickHouse?'
+toc_hidden: true
+toc_priority: 20
+description: 'Esta página responde a la pregunta de si es posible eliminar registros antiguos de una tabla de ClickHouse'
+doc_type: 'reference'
+keywords: ['eliminar datos', 'TTL', 'retención de datos', 'limpieza', 'ciclo de vida de los datos']
+---
+
+La respuesta corta es “sí”. ClickHouse cuenta con varios mecanismos que permiten liberar espacio en disco al eliminar datos antiguos. Cada mecanismo está pensado para distintos escenarios.
+
+<div id="ttl">
+  ## TTL
+</div>
+
+ClickHouse permite eliminar automáticamente valores cuando se cumple alguna condición. Esta condición se configura como una expresión basada en cualquier columna, normalmente simplemente con un desplazamiento estático sobre cualquier columna de timestamp.
+
+La principal ventaja de este enfoque es que no necesita ningún sistema externo para activarse; una vez configurado el TTL, la eliminación de datos se realiza automáticamente en segundo plano.
+
+<Note>
+  TTL también puede usarse para mover datos no solo a [/dev/null](https://en.wikipedia.org/wiki/Null_device), sino también entre distintos sistemas de almacenamiento, por ejemplo, de SSD a HDD.
+</Note>
+
+Más detalles sobre [cómo configurar TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
+
+<div id="delete-from">
+  ## DELETE FROM
+</div>
+
+[DELETE FROM](/es/reference/statements/delete) permite ejecutar consultas DELETE estándar en ClickHouse. Las filas que coinciden con la cláusula de filtro se marcan como eliminadas y se excluyen de los conjuntos de resultados posteriores. La limpieza de las filas se realiza de forma asíncrona.
+
+<Note>
+  DELETE FROM está disponible de forma general a partir de la versión 23.3. En versiones anteriores, es experimental y debe habilitarse con:
+
+  ```sql
+  SET allow_experimental_lightweight_delete = true;
+  ```
+</Note>
+
+<div id="alter-delete">
+  ## ALTER DELETE
+</div>
+
+ALTER DELETE elimina filas mediante operaciones por lotes asíncronas. A diferencia de DELETE FROM, las consultas que se ejecuten después de ALTER DELETE y antes de que se completen las operaciones por lotes incluirán las filas marcadas para su eliminación. Para obtener más información, consulte la documentación de [ALTER DELETE](/es/reference/statements/alter/delete).
+
+`ALTER DELETE` puede ejecutarse para eliminar datos antiguos de forma flexible. Si necesita hacerlo con regularidad, el principal inconveniente es la necesidad de contar con un sistema externo que envíe la consulta. También hay algunas consideraciones de rendimiento, ya que las mutaciones reescriben partes completas aunque solo se vaya a eliminar una sola fila.
+
+Este es el enfoque más habitual para que su sistema basado en ClickHouse cumpla con el [GDPR](https://gdpr-info.eu).
+
+Más información sobre las [mutaciones](/es/reference/statements/alter/index#mutations).
+
+<div id="drop-partition">
+  ## ELIMINAR PARTICIÓN
+</div>
+
+`ALTER TABLE ... DROP PARTITION` ofrece una forma eficiente de eliminar una partición completa. No es tan flexible y requiere que se configure un esquema de particionado adecuado al crear la tabla, pero aun así cubre los casos más comunes. Al igual que las mutaciones, para un uso habitual debe ejecutarse desde un sistema externo.
+
+Más detalles sobre la [gestión de particiones](/es/reference/statements/alter/partition).
+
+<div id="truncate">
+  ## TRUNCATE
+</div>
+
+Eliminar todos los datos de una tabla es una medida bastante drástica, pero en algunos casos puede ser justo lo que necesita.
+
+Más detalles sobre el [truncado de tablas](/es/reference/statements/truncate).

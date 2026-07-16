@@ -91,6 +91,7 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
 #include <Storages/System/StorageSystemRowPolicies.h>
+#include <Storages/System/StorageSystemMaskingPolicies.h>
 #include <Storages/System/StorageSystemQuotas.h>
 #include <Storages/System/StorageSystemQuotaLimits.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
@@ -194,7 +195,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types along with their embedded documentation.");
     attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
     attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
-    attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the uniform components of the system (functions, table engines, data types, etc.) into a single table, with the reference documentation rendered as Markdown.");
+    attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the components of the system (functions, table engines, data types, settings, profile events, metrics, system tables, etc.) into a single table, with the reference documentation rendered as Markdown and the path to the source file where it is defined.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
@@ -208,6 +209,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles", "Contains properties of configured setting profiles.");
     attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements", "Describes the content of each settings profile configured on the server. Including settings constraints, roles and users for which the settings are applied, and parent settings profiles.");
     attach<StorageSystemRowPolicies>(context, system_database, "row_policies", "Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.");
+    attach<StorageSystemMaskingPolicies>(context, system_database, "masking_policies", "Contains information about masking policies. Masking policies can only be created and applied in ClickHouse Cloud; in open-source builds this table is always empty.");
     attach<StorageSystemQuotas>(context, system_database, "quotas", "Contains information about quotas.");
     attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits", "Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.");
     attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage", "Contains quota usage by the current user: how much is used and how much is left.");

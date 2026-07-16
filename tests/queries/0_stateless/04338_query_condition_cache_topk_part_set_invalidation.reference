@@ -1,0 +1,31 @@
+--- DESC LIMIT 5 ground truth (QCC off): top rows all come from partition 0
+999007
+998007
+997007
+996007
+995007
+--- Warm run records partition 1 granules as skippable under the TopK salt
+999007
+998007
+997007
+996007
+995007
+1
+--- Cached run, same part set: must match ground truth
+999007
+998007
+997007
+996007
+995007
+--- After DROP PARTITION: ground truth (QCC off) comes from partition 1
+499007
+498007
+497007
+496007
+495007
+--- QCC on must not reuse granule decisions recorded under the old part set
+499007
+498007
+497007
+496007
+495007

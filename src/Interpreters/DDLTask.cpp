@@ -14,6 +14,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -327,6 +328,21 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
         auto settings_changes = *entry.settings;
         query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
+
+        /// `BACKUP`/`RESTORE ON CLUSTER` runs a per-host continuation on every replica through this DDL
+        /// queue, and those hosts derive their S3 credentials from `s3_allow_server_credentials_in_user_queries`.
+        /// The initiator's value travels in the entry, but the clamp above silently drops it on a host whose
+        /// (default, no-user) profile pins the setting `readonly`, so an on-cluster backup started by a trusted
+        /// profile fails. The initiator has already opened the same backup destination under its own, properly
+        /// constrained, settings, so honor its decision here rather than re-clamping it. Restricted to backup
+        /// and restore because they are the only on-cluster operations whose worker side re-resolves S3
+        /// credentials from the session setting; every other DDL keeps the strict clamp. An untrusted initiator
+        /// cannot smuggle a `1` in: its own `readonly` constraint keeps the entry value at `0`.
+        if (query && query->as<ASTBackupQuery>())
+        {
+            if (const auto * value = entry.settings->tryGet("s3_allow_server_credentials_in_user_queries"))
+                query_context->setSetting("s3_allow_server_credentials_in_user_queries", *value);
+        }
     }
 
     return query_context;

@@ -20,10 +20,13 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -39,6 +42,7 @@
 #include <Core/ServerSettings.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketDefs.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -98,6 +102,12 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char zk_send_thread_request_window_throw[];
+    extern const char zk_send_thread_operations_insert_throw[];
 }
 
 }
@@ -525,6 +535,14 @@ ZooKeeper::ZooKeeper(
             requests_queue.finish();
             socket.shutdown();
         }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// On macOS, shutdown() on an already-disconnected socket returns ENOTCONN; this is benign here.
+            if (e.code() == POCO_ENOTCONN)
+                LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
+            else
+                tryLogCurrentException(log);
+        }
         catch (...)
         {
             tryLogCurrentException(log);
@@ -862,6 +880,35 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
+                    /// Until the request is registered in `operations` below, the local `info` is the
+                    /// only owner of its callback. If anything in between throws (span finalize,
+                    /// addRootPath, the map insert), `info` is destroyed while unwinding and the
+                    /// callback never runs. Async callers that capture a std::promise (e.g.
+                    /// asyncTryExistsNoThrow) would then get a broken promise, and ~promise() throwing
+                    /// future_error from a destructor aborts the server. Satisfy the callback with an
+                    /// error in that window instead. The completion itself allocates, so block
+                    /// MEMORY_LIMIT_EXCEEDED inside the guard rather than prebuilding the response.
+                    bool callback_registered = false;
+                    SCOPE_EXIT({
+                        if (callback_registered || !info.callback)
+                            return;
+                        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                        try
+                        {
+                            ZooKeeperResponsePtr response = info.request->makeResponse();
+                            response->error = info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED;
+                            response->xid = info.request->xid;
+                            info.callback(*response);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log);
+                        }
+                    });
+
+                    fiu_do_on(FailPoints::zk_send_thread_request_window_throw,
+                        { throw Exception::fromMessage(Error::ZBADARGUMENTS, "Injected fault in sendThread request window"); });
+
                     info.request->spans.maybeFinalize(
                         KeeperSpan::ClientRequestsQueue,
                         [&]
@@ -880,12 +927,23 @@ void ZooKeeper::sendThread()
                     /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
                     /// to avoid a data race: receiveThread reads from operations concurrently,
                     /// and the request object is shared via shared_ptr.
+                    ///
+                    /// Register in `operations` before bumping the in-flight metric: if the insert
+                    /// throws (e.g. allocation failure), the metric was never added, so finalize()'s
+                    /// subtraction of operations.size() stays balanced and the request is not counted
+                    /// forever. Each add corresponds 1:1 with an entry that lives in `operations`.
                     if (info.request->xid != close_xid)
                     {
-                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
-                        operations[info.request->xid] = info;
+                        fiu_do_on(FailPoints::zk_send_thread_operations_insert_throw,
+                            { throw Exception::fromMessage(Error::ZBADARGUMENTS, "Injected fault at sendThread operations insert"); });
+                        if (operations.insert_or_assign(info.request->xid, info).second)
+                            CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                     }
+
+                    /// Ownership of the callback is now with `operations` (or the request is a close
+                    /// with no callback): receiveEvent() or finalize() will satisfy it. Disarm the guard.
+                    callback_registered = true;
 
                     if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {
@@ -1383,6 +1441,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             /// This will also wakeup the receiving thread.
             socket.shutdown();
         }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// On macOS, shutdown() on an already-disconnected socket returns ENOTCONN; this is benign here.
+            if (e.code() == POCO_ENOTCONN)
+                LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
+            else
+                tryLogCurrentException(log);
+        }
         catch (...)
         {
             /// We must continue to execute all callbacks, because the user is waiting for them.
@@ -1851,34 +1917,26 @@ void ZooKeeper::list(
     bool with_stat,
     bool with_data)
 {
-    std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-
     if (with_stat || with_data)
-    {
         if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
 
-        auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
-        list_with_stats_request->list_request_type = list_request_type;
-        list_with_stats_request->with_stat = with_stat;
-        list_with_stats_request->with_data = with_data;
-        request = std::move(list_with_stats_request);
-    }
-    else if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
-    {
-        if (list_request_type != ListRequestType::ALL)
+    if (list_request_type != ListRequestType::ALL)
+        if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
 
-        request = std::make_shared<ZooKeeperListRequest>();
-    }
-    else
-    {
-        auto filtered_list_request = std::make_shared<ZooKeeperFilteredListRequest>();
-        filtered_list_request->list_request_type = list_request_type;
-        request = std::move(filtered_list_request);
-    }
-
+    auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path;
+
+    if (list_request_type != ListRequestType::ALL)
+        request->list_request_type = list_request_type;
+
+    if (with_stat || with_data)
+    {
+        request->list_request_type = list_request_type;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+    }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
 

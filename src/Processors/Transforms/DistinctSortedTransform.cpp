@@ -1,5 +1,7 @@
 #include <Processors/Transforms/DistinctSortedTransform.h>
 
+#include <Core/SortCursor.h>
+
 namespace DB
 {
 
@@ -202,26 +204,28 @@ bool DistinctSortedTransform::buildFilter(
     }
 
     bool has_new_data = false;
-    { /// handle 0-indexed row to avoid index check in loop below
-        const auto emplace_result = state.emplaceKey(method.data, 0, variants.string_pool);
-        if (emplace_result.isInserted())
-            has_new_data = true;
-        filter[0] = emplace_result.isInserted();
-    }
-    for (size_t i = 1; i < rows; ++i)
+
+    for (size_t run_begin = 0; run_begin < rows;)
     {
-        /// Compare i-th row and i-1-th row,
-        /// If rows are not equal, we can clear HashSet
-        if (!rowsEqual(clearing_hint_columns, i, clearing_hint_columns, i - 1))
+        /// A new run means the clearing key changed from the previous run, so the set can be cleared.
+        /// The first run (run_begin == 0) may continue the previous chunk, whose boundary is handled above.
+        if (run_begin != 0)
             method.data.clear();
 
-        const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-        if (emplace_result.isInserted())
-            has_new_data = true;
+        const size_t run_end = getEqualRangeEndAssumeSorted(clearing_hint_columns, run_begin, rows, -1);
 
-        /// Emit the record if there is no such key in the current set yet.
-        /// Skip it otherwise.
-        filter[i] = emplace_result.isInserted();
+        for (size_t i = run_begin; i < run_end; ++i)
+        {
+            const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            if (emplace_result.isInserted())
+                has_new_data = true;
+
+            /// Emit the record if there is no such key in the current set yet.
+            /// Skip it otherwise.
+            filter[i] = emplace_result.isInserted();
+        }
+
+        run_begin = run_end;
     }
     return has_new_data;
 }

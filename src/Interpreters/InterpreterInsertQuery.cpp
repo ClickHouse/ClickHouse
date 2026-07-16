@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool parallel_view_processing;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
@@ -103,7 +104,6 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -129,7 +129,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
-        quota->checkExceeded(QuotaType::WRITTEN_BYTES);
+        quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_BYTES);
 
     const Settings & settings = getContext()->getSettingsRef();
     max_threads = getMaxThreadsForAvailableMemory(
@@ -357,7 +357,7 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
     return !(settings[Setting::distributed_foreground_insert] && table->isRemote());
 }
 
-static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
@@ -367,9 +367,11 @@ static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> ge
     /// Find reading steps for remote replicas and remove them,
     /// When building local pipeline, the local replica will be registered in the returned coordinator,
     /// and announce its snapshot. The snapshot will be used to assign read tasks to involved replicas
-    /// So, the remote pipelines, which will be created later, should use the same coordinator
-    auto parallel_replicas_coordinator = ClusterProxy::dropReadFromRemoteInPlan(plan);
-    return  {interpreter.buildQueryPipeline(), parallel_replicas_coordinator};
+    /// So, the remote pipelines, which will be created later, should use the same coordinator.
+    /// The connection pools and local replica index decided here are returned too, so the remote pass
+    /// reuses the exact same replica set rather than recomputing liveness from a fresh snapshot.
+    auto parallel_replicas_info = ClusterProxy::dropReadFromRemoteInPlan(plan);
+    return {interpreter.buildQueryPipeline(), std::move(parallel_replicas_info)};
 }
 
 
@@ -436,7 +438,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota());
+        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());
 
@@ -468,13 +470,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (!squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 context->getSettingsRef()[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -514,13 +515,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -532,6 +532,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addChains(std::move(sink_chains));
 
     pipeline.setMaxThreads(max_threads);
+    // Cap to 1 when parallel_view_processing=0. Pipe::max_parallel_streams is a watermark that
+    // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
+    pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
     pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
@@ -647,15 +650,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 }
 
 
-std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
-    auto [pipeline_builder, coordinator]
+    auto [pipeline_builder, parallel_replicas_info]
         = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
     auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder);
-    return {std::move(local_pipeline), coordinator};
+    return {std::move(local_pipeline), std::move(parallel_replicas_info)};
 }
 
 
@@ -733,8 +736,16 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
         && settings[Setting::parallel_replicas_prefer_local_replica])
     {
-        auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
+        auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+        auto coordinator = parallel_replicas_info.coordinator;
+        auto local_replica_index = parallel_replicas_info.local_replica_index;
+        return ClusterProxy::executeInsertSelectWithParallelReplicas(
+            query,
+            context,
+            std::move(local_pipeline),
+            std::move(coordinator),
+            std::move(parallel_replicas_info.connection_pools),
+            local_replica_index);
     }
 
     return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);
@@ -785,7 +796,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 chain.getInputSharedHeader())
         );
     }
@@ -820,11 +830,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 chain.getInputSharedHeader()));
     }
 
-    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
+    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota(), context->getNormalizedQueryHash());
     counting->setProcessListElement(context->getProcessListElement());
     counting->setProgressCallback(context->getProgressCallback());
     chain.addSource(std::move(counting));
@@ -834,7 +843,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // Pipeline ceiling: simple upper bound on parallelism. Actual slot grants are
     // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
     // does not translate into reserved-but-unused slots.
-    pipeline.setNumThreads(max_threads);
+    // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
+    const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
+    pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)

@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE t (c UInt64) ENGINE=MergeTree;
 
 INSERT INTO t SELECT * FROM numbers(999);
@@ -7,7 +8,8 @@ SET enable_analyzer = 1,
     enable_parallel_replicas = 0,
     use_skip_indexes_for_top_k = 0,
     use_top_k_dynamic_filtering = 0,
-    query_plan_optimize_join_order_limit = 10; -- CI may inject 0, disabling join order optimization which skips relation label population (no [N] row counts)
+    query_plan_optimize_join_order_limit = 10,
+    query_plan_optimize_join_order_randomize = 0;
 
 
 SELECT '-------------- Limit < table size -------------';

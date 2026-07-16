@@ -455,7 +455,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        (void)std::filesystem::remove_all(metadata_base_path);
+        disk->removeRecursive(metadata_base_path);
     }
     catch (...)
     {
@@ -1094,6 +1094,12 @@ bool StorageFileLog::updateFileInfos()
 
                     onFileAppeared(file_name, inode);
 
+                    /// An added file is read from offset 0, so any on-disk meta
+                    /// under this name is stale. Drop it to stay consistent with
+                    /// the pos-0 meta set below, else serialize() sees a larger
+                    /// stored offset and raises LOGICAL_ERROR.
+                    disk->removeFileIfExists(getFullMetaPath(file_name));
+
                     if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                         it->second = FileMeta{.file_name = file_name};
                     else
@@ -1137,8 +1143,12 @@ bool StorageFileLog::updateFileInfos()
                     {
                         auto old_name = it->second.file_name;
                         it->second.file_name = file_name;
-                        if (std::filesystem::exists(getFullMetaPath(old_name)))
-                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        /// Meta paths are relative to the disk root, so go through the disk abstraction:
+                        /// std::filesystem would resolve them against the process CWD and silently skip
+                        /// the rename, leaving a stale meta file that collides when the name is reused
+                        /// (e.g. a logrotate rename chain processed in one batch).
+                        if (disk->existsFile(getFullMetaPath(old_name)))
+                            disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
                     /// May move from other place, adding new meta info
                     else

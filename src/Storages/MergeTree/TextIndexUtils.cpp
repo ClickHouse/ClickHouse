@@ -10,11 +10,14 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -23,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
@@ -351,7 +355,14 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     size_t part_index = segments[source_num].part_index;
 
     for (auto & offset : offsets)
-        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
+    {
+        UInt64 new_offset = (*merged_part_offsets)[part_index, offset];
+        if (new_offset > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                new_offset, std::numeric_limits<UInt32>::max());
+        offset = static_cast<UInt32>(new_offset);
+    }
 
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
@@ -365,8 +376,34 @@ void MergeTextIndexesTask::flushPostingList()
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
+    /// Serialize position data if positions are enabled.
+    if (params.positions && !output_positions.empty())
+    {
+        auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+
+        /// Entries from multiple source parts may interleave after doc_id remapping.
+        std::sort(output_positions.begin(), output_positions.end());
+
+        size_t out = 0;
+        for (size_t i = 1; i < output_positions.size(); ++i)
+        {
+            if (output_positions[out].sameBucket(output_positions[i]))
+                output_positions[out].mergeBitmap(output_positions[i]);
+            else
+                output_positions[++out] = output_positions[i];
+        }
+        output_positions.resize(out + 1);
+
+        token_info.header |= PostingsSerialization::Flags::HasPositions;
+        token_info.position_offset = positions_stream->plain_hashing.count();
+        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+
+        TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
+    }
+
     output_infos.push_back(token_info);
     output_postings.clear();
+    output_positions.clear();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -472,6 +509,38 @@ bool MergeTextIndexesTask::executeStep()
             output_postings |= *posting;
         }
 
+        /// Read and merge position data if positions are enabled.
+        if (params.positions)
+        {
+            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
+            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            {
+                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+                auto * pos_data_buffer = pos_stream->getDataBuffer();
+                pos_stream->seekToMark({token_info.position_offset, 0});
+
+                PODArray<RoaringishEntry> position_entries;
+                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+
+                /// Adjust doc_ids if merging parts with offset remapping.
+                if (merged_part_offsets)
+                {
+                    size_t part_index = segments[current->order].part_index;
+                    for (auto & entry : position_entries)
+                    {
+                        UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
+                        if (new_doc_id > std::numeric_limits<UInt32>::max())
+                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                                new_doc_id, std::numeric_limits<UInt32>::max());
+                        entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
+                    }
+                }
+
+                output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
+            }
+        }
+
         if (!current->isLast())
         {
             queue.next();
@@ -496,7 +565,10 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
+
+    auto serialization_version = static_cast<MergeTreeIndexVersion>(
+        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
+    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

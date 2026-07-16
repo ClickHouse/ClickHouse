@@ -84,9 +84,11 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool set_attach_flag)
 {
-    ast_create_query.attach = true;
+    if (set_attach_flag)
+        ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())

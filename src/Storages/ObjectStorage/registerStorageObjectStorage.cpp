@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -80,6 +81,25 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
+
+    /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
+    /// definition resolves to server-managed credentials (e.g. a named collection later re-bound to
+    /// `use_environment_credentials = 1`, or a server `<s3>` `role_arn` added afterwards) must not silently
+    /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
+    /// refused. Flagging the load lets `getClient` downgrade such a table to an anonymous client (so the server
+    /// still starts and the table is merely inaccessible) instead of escalating, controlled by the server
+    /// setting `s3_load_table_anonymously_if_credentials_restricted`.
+    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
+
+    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
+    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
+    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
+    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
+    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
+    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
+        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+        configuration->force_anonymous_load_fallback = true;
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
@@ -227,12 +247,14 @@ Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting 
 Example of `HIVE` partition strategy:
 
 ```sql
-arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
+create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
 
-arthur :) insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
+insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
 
-arthur :) select _path, * from azure_table;
+select _path, * from azure_table;
+```
 
+```text
 ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
 │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
 │ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
@@ -298,7 +320,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
 - `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
-- `storage_class_name` - Options: `STANDARD` or `INTELLIGENT_TIERING`, allow to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -350,11 +372,11 @@ Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting 
 Example of `HIVE` partition strategy:
 
 ```sql
-arthur :) CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
+CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
 PARTITION BY (year, country);
 
-arthur :) INSERT INTO t_03363_parquet VALUES
+INSERT INTO t_03363_parquet VALUES
     (2022, 'USA', 1),
     (2022, 'Canada', 2),
     (2023, 'USA', 3),
@@ -367,8 +389,10 @@ arthur :) INSERT INTO t_03363_parquet VALUES
     (2024, 'CN', 10),
     (2025, '', 11);
 
-arthur :) select _path, * from t_03363_parquet;
+select _path, * from t_03363_parquet;
+```
 
+```text
 ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
 │ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
 │ test/t_03363_parquet/year=2024/country=France/7329604473323302912.parquet  │ 2024 │ France  │       5 │
@@ -2241,11 +2265,13 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 Once you have created a table using the DeltaLake table engine, you can insert data into it with:
 
 ```sql
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 
 INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
 ```
+
+Delta Lake writes are a Beta feature disabled by default and must be enabled with `SET allow_delta_lake_writes = 1;` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1;`).
 
 :::note
 Writing using the table engine is supported only through delta kernel.

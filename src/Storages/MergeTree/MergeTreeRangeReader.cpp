@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
@@ -69,6 +70,36 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
     });
 
     return can_inplace;
+}
+
+FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
+    : const_description(*column_)
+{
+    if (const auto * sparse = typeid_cast<const ColumnSparse *>(column_.get()))
+    {
+        const auto & values = sparse->getValuesColumn();
+        const bool sparse_uint8 = typeid_cast<const ColumnUInt8 *>(&values) != nullptr;
+        const auto * nullable = typeid_cast<const ColumnNullable *>(&values);
+        const bool sparse_nullable_uint8 = nullable != nullptr
+            && typeid_cast<const ColumnUInt8 *>(&nullable->getNestedColumn()) != nullptr;
+        if (sparse_uint8 || sparse_nullable_uint8)
+        {
+            SparseFilterDescription sparse_desc(*column_);
+            sparse_indices = sparse_desc.filter_indices;
+            /// `filter_indices` aliases either the sparse column's offsets (non-nullable path)
+            /// or the freshly-allocated `valid_offsets` column (nullable path). Keep whichever
+            /// owns the storage alive.
+            if (sparse_desc.valid_offsets)
+                sparse_indices_holder = std::move(sparse_desc.valid_offsets);
+            else
+                sparse_indices_holder = column_;
+        }
+    }
+
+    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    FilterDescription desc(*col);
+    column = desc.data_holder ? desc.data_holder : col;
+    data = desc.data;
 }
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
@@ -647,7 +678,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         return;
 
     NumRows zero_tails;
-    auto total_zero_rows_in_tails = countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules_);
+    auto total_zero_rows_in_tails = filter.isSparse()
+        ? countZeroTailsFromSparse(*filter.getSparseIndices(), zero_tails, can_read_incomplete_granules_)
+        : countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules_);
 
     LOG_TEST(log, "ReadResult::optimize() before: {}", dumpInfo());
 
@@ -671,7 +704,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         setFilterConstTrue();
         return;
     }
-    /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
+    /// Shrinking a tail ends the current delayed read and forces a fresh seek
+    /// for the next granule, so it only pays off when enough rows are dropped
+    /// to outweigh the extra seek and misaligned filesystem-cache segment.
     if (2 * total_zero_rows_in_tails > filter.size())
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
@@ -777,6 +812,39 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
         zero_tails.push_back(zero_tail);
         total_zero_rows_in_tails += zero_tails.back();
         filter_data += rows_to_read;
+    }
+
+    return total_zero_rows_in_tails;
+}
+
+size_t MergeTreeRangeReader::ReadResult::countZeroTailsFromSparse(
+    const ColumnUInt64 & sparse_indices, NumRows & zero_tails, bool can_read_incomplete_granules_) const
+{
+    zero_tails.resize(0);
+    zero_tails.reserve(rows_per_granule.size());
+
+    const auto & idx = sparse_indices.getData();
+    size_t total_zero_rows_in_tails = 0;
+    size_t granule_start = 0;
+    const auto * it = idx.begin();
+
+    for (auto rows_to_read : rows_per_granule)
+    {
+        const size_t granule_end = granule_start + rows_to_read;
+        const auto * it_end = std::lower_bound(it, idx.end(), granule_end);
+        size_t zero_tail = 0;
+        if (it == it_end)
+            zero_tail = rows_to_read;
+        else
+            zero_tail = granule_end - (*(it_end - 1) + 1);
+
+        if (!can_read_incomplete_granules_ && zero_tail != rows_to_read)
+            zero_tail = 0;
+
+        zero_tails.push_back(zero_tail);
+        total_zero_rows_in_tails += zero_tail;
+        it = it_end;
+        granule_start = granule_end;
     }
 
     return total_zero_rows_in_tails;
@@ -1434,7 +1502,9 @@ void MergeTreeRangeReader::updatePerformanceCounters(size_t num_rows_read)
 {
     ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows_read);
     ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows_read);
-    performance_counters->rows_read += num_rows_read;
+    /// Null when predicate_statistics_sample_rate = 0 (default): skip the counter work.
+    if (performance_counters)
+        performance_counters->rows_read += num_rows_read;
 }
 
 static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
@@ -1701,7 +1771,11 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
+        /// Null when predicate_statistics_sample_rate = 0 (default). countBytesInFilter()
+        /// is an O(rows) scan that the following optimize() does not otherwise need, so
+        /// keep it behind the guard.
+        if (performance_counters)
+            performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
         result.optimize(current_filter, can_read_incomplete_granules, false);
 
         if (prewhere_info->need_filter && !result.filterWasApplied())

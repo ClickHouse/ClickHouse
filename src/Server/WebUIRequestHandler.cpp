@@ -70,6 +70,22 @@ constexpr unsigned char resource_processors_profile_html[] =
 {
 #embed "../../programs/server/processors_profile.html"
 };
+constexpr unsigned char resource_docs_html[] =
+{
+#embed "../../programs/server/docs.html"
+};
+constexpr unsigned char resource_marked_js[] =
+{
+#embed "../../programs/server/js/marked.min.js"
+};
+constexpr unsigned char resource_katex_js[] =
+{
+#embed "../../programs/server/js/katex.min.js"
+};
+constexpr unsigned char resource_katex_css[] =
+{
+#embed "../../programs/server/js/katex.min.css"
+};
 
 
 namespace DB
@@ -135,6 +151,9 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         {"/js/addon-fit.min.js", resource_addon_fit_js, std::size(resource_addon_fit_js), "application/javascript; charset=UTF-8"},
         {"/js/addon-web-links.min.js", resource_addon_web_links_js, std::size(resource_addon_web_links_js), "application/javascript; charset=UTF-8"},
         {"/js/viz-standalone.js", resource_viz_standalone_js, std::size(resource_viz_standalone_js), "application/javascript; charset=UTF-8"},
+        {"/js/marked.min.js", resource_marked_js, std::size(resource_marked_js), "application/javascript; charset=UTF-8"},
+        {"/js/katex.min.js", resource_katex_js, std::size(resource_katex_js), "application/javascript; charset=UTF-8"},
+        {"/js/katex.min.css", resource_katex_css, std::size(resource_katex_css), "text/css; charset=UTF-8"},
     };
 
     for (const auto & resource : resources)
@@ -166,6 +185,29 @@ void SchemaWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 void ProcessorsProfileWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_processors_profile_html), std::size(resource_processors_profile_html)}, http_response_headers_override);
+}
+
+void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    std::string html(reinterpret_cast<const char *>(resource_docs_html), std::size(resource_docs_html));
+
+    /// Replace links to external JavaScript/CSS files (the Marked Markdown renderer and the
+    /// KaTeX math renderer) with embedded files served from the same origin.
+    /// This keeps the page self-contained and, more importantly, avoids executing third-party
+    /// network code in the ClickHouse HTTP origin, which handles user credentials.
+    /// The original CDN links are kept in the source so the page also works when opened as a
+    /// local file (file://) against a remote server, mirroring the `dashboard.html` handling.
+
+    static re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js)";
+    RE2::Replace(&html, marked_url, "/js/marked.min.js");
+
+    static re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js)";
+    RE2::Replace(&html, katex_js_url, "/js/katex.min.js");
+
+    static re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css)";
+    RE2::Replace(&html, katex_css_url, "/js/katex.min.css");
+
+    handle(request, response, html, http_response_headers_override);
 }
 
 std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const

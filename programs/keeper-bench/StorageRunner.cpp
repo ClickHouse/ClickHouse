@@ -181,7 +181,6 @@ void StorageRunner::setupStorage()
     settings->loadFromConfig("storage.coordination_settings", *config_ptr);
     keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper=*/true, settings);
     keeper_context->setLocalLogsPreprocessed();
-    keeper_context->setRocksDBOptions();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
     storage = std::make_unique<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);
@@ -611,6 +610,9 @@ void StorageRunner::runBenchmark()
     shared_context = DB::Context::createShared();
     global_context = DB::Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
+    /// Set the config before setApplicationType: it loads server settings from the context's
+    /// config, and keeper-bench has no Poco::Util::Application to provide a global one.
+    global_context->setConfig(config_ptr);
     global_context->setApplicationType(DB::Context::ApplicationType::KEEPER);
 
     setupStorage();

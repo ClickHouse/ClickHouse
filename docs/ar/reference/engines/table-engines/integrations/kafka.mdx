@@ -1,0 +1,376 @@
+---
+description: 'يمكن استخدام محرك جدول Kafka للعمل مع Apache Kafka، إذ يتيح لك النشر إلى
+  تدفقات البيانات أو الاشتراك فيها، وتنظيم تخزين متحمّل للأعطال، ومعالجة التدفقات
+  فور توفرها.'
+sidebarTitle: 'Kafka'
+slug: /engines/table-engines/integrations/kafka
+title: 'محرك جدول Kafka'
+keywords: ['Kafka', 'محرك جدول']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<Tip>
+  إذا كنت تستخدم ClickHouse Cloud، فنوصي باستخدام [ClickPipes](/ar/integrations/clickpipes/home) بدلاً منه. يوفّر ClickPipes دعماً أصيلاً للاتصالات عبر الشبكات الخاصة، مع إمكانية توسيع نطاق إدخال البيانات وموارد المجموعة بشكل مستقل، إلى جانب مراقبة شاملة لبثّ بيانات Kafka إلى ClickHouse.
+</Tip>
+
+* نشر تدفقات البيانات أو الاشتراك فيها.
+* تنظيم تخزين متحمّل للأعطال.
+* معالجة التدفقات فور توفّرها.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
+    ...
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'host:port',
+    kafka_topic_list = 'topic1,topic2,...',
+    kafka_group_name = 'group_name',
+    kafka_format = 'data_format'[,]
+    [kafka_security_protocol = '',]
+    [kafka_sasl_mechanism = '',]
+    [kafka_sasl_username = '',]
+    [kafka_sasl_password = '',]
+    [kafka_autodetect_client_rack = '',]
+    [kafka_schema = '',]
+    [kafka_num_consumers = N,]
+    [kafka_max_block_size = 0,]
+    [kafka_skip_broken_messages = N,]
+    [kafka_commit_every_batch = 0,]
+    [kafka_client_id = '',]
+    [kafka_poll_timeout_ms = 0,]
+    [kafka_poll_max_batch_size = 0,]
+    [kafka_flush_interval_ms = 0,]
+    [kafka_consumer_reschedule_ms = 0,]
+    [kafka_thread_per_consumer = 0,]
+    [kafka_handle_error_mode = 'default',]
+    [kafka_commit_on_select = false,]
+    [kafka_consumer_acquire_timeout_ms = 30000,]
+    [kafka_max_rows_per_message = 1,]
+    [kafka_compression_codec = '',]
+    [kafka_compression_level = -1];
+```
+
+المعلمات المطلوبة:
+
+* `kafka_broker_list` — قائمة من الوسطاء مفصولة بفواصل (على سبيل المثال، `localhost:9092`).
+* `kafka_topic_list` — قائمة بموضوعات Kafka.
+* `kafka_group_name` — مجموعة من مستهلكي Kafka. تُتتبَّع إزاحات القراءة لكل مجموعة بشكل منفصل. إذا كنت لا تريد تكرار الرسائل في العنقود، فاستخدم اسم المجموعة نفسه في كل مكان.
+* `kafka_format` — تنسيق الرسائل. يستخدم نفس الصياغة المستخدمة في دالة SQL ‏`FORMAT`، مثل `JSONEachRow`. لمزيد من المعلومات، راجع قسم [التنسيقات](/ar/reference/formats/index).
+
+المعلمات الاختيارية:
+
+* `kafka_security_protocol` - البروتوكول المستخدم للتواصل مع الوسطاء. القيم الممكنة: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
+* `kafka_sasl_mechanism` - آلية SASL المستخدمة للمصادقة. القيم الممكنة: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_username` - اسم مستخدم SASL للاستخدام مع الآليتين `PLAIN` و `SASL-SCRAM-..`.
+* `kafka_sasl_password` - كلمة مرور SASL للاستخدام مع الآليتين `PLAIN` و `SASL-SCRAM-..`.
+* `kafka_schema` — معلمة يجب استخدامها إذا كانت الصيغة تتطلب تعريف مخطط. على سبيل المثال، يتطلب [Cap&#39;n Proto](https://capnproto.org/) مسار ملف المخطط واسم الكائن الجذر `schema.capnp:Message`.
+* `kafka_schema_registry_skip_bytes` — عدد البايتات التي يجب تخطيها من بداية كل رسالة عند استخدام schema registry مع رؤوس envelope (مثل AWS Glue Schema Registry الذي يتضمن envelope بحجم 19 بايتًا). النطاق: `[0, 255]`. القيمة الافتراضية: `0`.
+* `kafka_num_consumers` — عدد المستهلكين لكل جدول. حدِّد عددًا أكبر من المستهلكين إذا كان معدل النقل لمستهلك واحد غير كافٍ. يجب ألا يتجاوز العدد الإجمالي للمستهلكين عدد partitions في الـ topic، إذ لا يمكن إسناد أكثر من مستهلك واحد لكل partition، كما يجب ألا يزيد على عدد الأنوية الفعلية على الخادم الذي نُشر عليه ClickHouse. القيمة الافتراضية: `1`.
+* `kafka_max_block_size` — الحد الأقصى لحجم الدفعة (بالرسائل) لكل poll. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
+* `kafka_skip_broken_messages` — مقدار سماحية محلل رسائل Kafka تجاه الرسائل غير المتوافقة مع المخطط في كل block. إذا كانت `kafka_skip_broken_messages = N` فإن engine يتخطى *N* من رسائل Kafka التي يتعذر parse لها (الرسالة تعادل row واحدة من البيانات). القيمة الافتراضية: `0`.
+* `kafka_commit_every_batch` — نفِّذ commit لكل batch تم استهلاكها ومعالجتها بدلًا من commit واحد بعد كتابة block كامل. القيمة الافتراضية: `0`.
+* `kafka_client_id` — معرّف Client. يكون فارغًا افتراضيًا.
+* `kafka_poll_timeout_ms` — المهلة الزمنية لعملية poll واحدة من Kafka. القيمة الافتراضية: [stream&#95;poll&#95;timeout&#95;ms](/ar/reference/settings/session-settings#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — الحد الأقصى لعدد الرسائل التي يمكن جلبها في Kafka poll واحدة. القيمة الافتراضية: [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
+* `kafka_flush_interval_ms` — المهلة الزمنية لتفريغ البيانات من Kafka. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_consumer_reschedule_ms` — فترة إعادة الجدولة عند توقف stream processing في Kafka (على سبيل المثال، عندما لا تتوفر رسائل للاستهلاك). يتحكم هذا الإعداد في التأخير قبل أن يعيد consumer محاولة polling. يجب ألا تتجاوز هذه القيمة `kafka_consumers_pool_ttl_ms`. القيمة الافتراضية: `500` ميلي ثانية.
+* `kafka_thread_per_consumer` — يوفّر thread مستقلًا لكل consumer. عند التمكين، يقوم كل consumer بتفريغ البيانات بشكل مستقل، in parallel (وإلا فستُدمج rows من عدة consumers لتشكيل block واحد). القيمة الافتراضية: `0`.
+* `kafka_handle_error_mode` — كيفية التعامل مع errors في Kafka engine. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشلنا في parse رسالة)، stream (سيتم حفظ رسالة الاستثناء والرسالة الخام في virtual columns `_error` و `_raw_message`)، dead&#95;letter&#95;queue (سيتم حفظ البيانات المرتبطة بالخطأ في system.dead&#95;letter&#95;queue).
+* `kafka_commit_on_select` —  نفِّذ commit للرسائل عند تنفيذ استعلام select. القيمة الافتراضية: `false`.
+* `kafka_consumer_acquire_timeout_ms` — المهلة الزمنية بالميلي ثانية للحصول على Kafka consumer أثناء استعلامات `SELECT` المباشرة على جدول من نوع `Kafka2` (مع تخزين offset مستند إلى Keeper). عند تشغيل عدة استعلامات `SELECT` مباشرة ومتزامنة على الجدول نفسه، يجب أن ينتظر كل منها حتى يصبح المستهلكون متاحين. تمنع هذه المهلة حالات deadlocks عندما تحتفظ queries بمجموعات فرعية مختلفة من المستهلكين. القيمة الافتراضية: `30000`.
+* `kafka_max_rows_per_message` — الحد الأقصى لعدد rows التي تُكتب في رسالة kafka واحدة للصيغ المعتمدة على row. القيمة الافتراضية: `1`.
+* `kafka_autodetect_client_rack` — يضبط تلقائيًا المعلَمة `client.rack` في `librdkafka` لتفضيل نسخ Kafka المتماثلة الأقرب.
+  المصادر المدعومة:
+  `AWS_ZONE_ID` لمعرّف منطقة التوافر في AWS IMDSv2، على سبيل المثال `euc1-az1`;
+  `AWS_ZONE_NAME` لاسم منطقة التوافر في AWS IMDSv2، على سبيل المثال `eu-central-1a`;
+  `GCP_ZONE` لمنطقة خدمة البيانات الوصفية في GCP، على سبيل المثال `europe-central2-a`;
+  `CLICKHOUSE` لاستخدام الاكتشاف الداخلي في ClickHouse، والذي قد يعتمد على البيانات الوصفية السحابية أو الإعدادات;
+  `AWS_ZONE_NAME_THEN_GCP_ZONE` لتجربة `AWS_ZONE_NAME` ثم `GCP_ZONE`.
+  القيمة الافتراضية: سلسلة فارغة، معطّل.
+  نصيحة: تستخدم البيئات المختلفة تنسيقات مختلفة لمناطق التوافر. يستخدم Amazon MSK عادةً معرّفات المناطق، لذا يُفضَّل `AWS_ZONE_ID`. ويستخدم Confluent Cloud عادةً أسماء المناطق، لذا يُفضَّل `AWS_ZONE_NAME`. إذا لم تكن متأكدًا، فاستخدم `AWS_ZONE_NAME_THEN_GCP_ZONE` أو تحقّق من قيمة `broker.rack` في عنقودك.
+  ملاحظة: يجب تهيئة وسطاء Kafka باستخدام `broker.rack` و `replica.selector.class=org.apache.kafka.common.replica.RackAwareReplicaSelector`.
+* `kafka_compression_codec` — برنامج ترميز الضغط المستخدَم لإنتاج الرسائل. القيم المدعومة: سلسلة فارغة، `none`، `gzip`، `snappy`، `lz4`، `zstd`. في حالة السلسلة الفارغة، لا يضبط الجدول برنامج ترميز الضغط، وبالتالي ستُستخدم القيم من ملفات الإعداد أو القيمة الافتراضية من `librdkafka`. القيمة الافتراضية: سلسلة فارغة.
+* `kafka_compression_level` — مَعلَمة مستوى الضغط للخوارزمية المحددة بواسطة kafka&#95;compression&#95;codec. تؤدي القيم الأعلى إلى ضغط أفضل على حساب زيادة استخدام CPU. ويعتمد النطاق القابل للاستخدام على الخوارزمية: `[0-9]` لـ `gzip`؛ و`[0-12]` لـ `lz4`؛ و`0` فقط لـ `snappy`؛ و`[0-12]` لـ `zstd`؛ و`-1` = مستوى الضغط الافتراضي المعتمد على برنامج الترميز. القيمة الافتراضية: `-1`.
+* `kafka_map_virtual_columns_on_write` — إذا كان مُمكّنًا، فستُربَط الأعمدة ذات الأسماء الخاصة `_key` و`_timestamp` و`_headers.name` و`_headers.value` في مخطط الجدول ببيانات Kafka الوصفية المقابلة للرسالة عند `INSERT`، وتُستبعَد من حمولة الرسالة. راجع [ربط الأعمدة ببيانات Kafka الوصفية للرسائل](#mapping-columns-to-kafka-message-metadata). القيمة الافتراضية: `false`.
+
+أمثلة:
+
+```sql
+  CREATE TABLE queue (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
+
+  SELECT * FROM queue LIMIT 5;
+
+  CREATE TABLE queue2 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka SETTINGS kafka_broker_list = 'localhost:9092',
+                            kafka_topic_list = 'topic',
+                            kafka_group_name = 'group1',
+                            kafka_format = 'JSONEachRow',
+                            kafka_num_consumers = 4;
+
+  CREATE TABLE queue3 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1')
+              SETTINGS kafka_format = 'JSONEachRow',
+                       kafka_num_consumers = 4;
+```
+
+<details markdown="1">
+  <summary>طريقة متقادمة لإنشاء جدول</summary>
+
+  <Note>
+    لا تستخدم هذه الطريقة في المشاريع الجديدة. وإذا أمكن، فانقل المشاريع القديمة إلى الطريقة الموضحة أعلاه.
+  </Note>
+
+  ```sql
+  Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
+        [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+  ```
+</details>
+
+<Info>
+  لا يدعم محرك جدول Kafka الأعمدة التي تحتوي على [قيمة افتراضية](/ar/reference/statements/create/table#default_values). وإذا كنت بحاجة إلى أعمدة ذات قيمة افتراضية، فيمكنك إضافتها على مستوى العرض المادي (انظر أدناه).
+</Info>
+
+<div id="description">
+  ## الوصف
+</div>
+
+تُتَابَع الرسائل المُسلَّمة تلقائيًا، لذلك لا تُحتسَب كل رسالة في المجموعة إلا مرة واحدة فقط. إذا أردت الحصول على البيانات مرتين، فأنشئ نسخة من الجدول باسم مجموعة مختلف.
+
+المجموعات مرنة ومتزامنة على مستوى العنقود. على سبيل المثال، إذا كان لديك 10 موضوعات و5 نُسخ من جدول في عنقود، فستحصل كل نسخة على موضوعين. وإذا تغيّر عدد النُّسخ، فستُعاد إعادة توزيع الـ موضوعات على النُّسخ تلقائيًا. اقرأ المزيد عن ذلك على http://kafka.apache.org/intro.
+
+يُوصى بأن يكون لكل Kafka موضوع مجموعة مستهلكين مخصّصة له، بما يضمن اقترانًا حصريًا بين الـ موضوع والمجموعة، وخصوصًا في البيئات التي قد تُنشأ فيها الـ موضوعات وتُحذف ديناميكيًا (مثلًا في الاختبار أو staging).
+
+لا يُعد `SELECT` مفيدًا كثيرًا لقراءة الرسائل (إلا لأغراض debugging)، لأن كل رسالة لا يمكن قراءتها إلا مرة واحدة فقط. والأكثر عملية هو إنشاء تدفقات real-time باستخدام العرض المادي. وللقيام بذلك:
+
+1. استخدم الـ محرك لإنشاء مستهلك Kafka واعتبره تدفق بيانات.
+2. أنشئ جدولًا بالبنية المطلوبة.
+3. أنشئ العرض المادي يحوّل البيانات من الـ محرك ويضعها في جدول أُنشئ مسبقًا.
+
+عندما ينضم `MATERIALIZED VIEW` إلى الـ محرك، يبدأ في جمع البيانات في الخلفية. يتيح لك ذلك الاستمرار في تلقي الرسائل من Kafka وتحويلها إلى الـ تنسيق المطلوب باستخدام `SELECT`.
+يمكن لجدول Kafka واحد أن يحتوي على أي عدد تريده من العرض المادي. وهي لا تقرأ البيانات من جدول Kafka مباشرةً، بل تتلقى سجلات جديدة (على هيئة blocks). وبهذه الطريقة يمكنك الكتابة إلى عدة جداول بمستويات مختلفة من التفصيل (مع التجميع - aggregation أو بدونه).
+
+مثال:
+
+```sql
+  CREATE TABLE queue (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
+
+  CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM queue GROUP BY day, level;
+
+  SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+لتحسين الأداء، تُجمَّع الرسائل المستلمة في كتل بحجم [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size). وإذا لم تتكوّن الكتلة خلال [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms) مللي ثانية، فستُكتب البيانات إلى الجدول بغض النظر عن اكتمال الكتلة.
+
+لإيقاف تلقي بيانات الـ موضوع أو لتغيير منطق التحويل، افصل العرض المادي:
+
+```sql
+  DETACH TABLE consumer;
+  ATTACH TABLE consumer;
+```
+
+إذا كنت تريد تغيير الجدول الهدف باستخدام `ALTER`، فنوصي بتعطيل العرض المادي لتجنب حدوث أي تعارض بين الجدول الهدف والبيانات التي ينتجها العرض.
+
+<div id="configuration">
+  ## التهيئة
+</div>
+
+على غرار GraphiteMergeTree، يدعم محرك Kafka التهيئة الموسَّعة باستخدام ملف إعدادات ClickHouse. هناك مفتاحا تهيئة يمكنك استخدامهما: مفتاح عام (ضمن `<kafka>`) ومفتاح على مستوى الـموضوع (ضمن `<kafka><kafka_topic>`). تُطبَّق التهيئة العامة أولًا، ثم تُطبَّق التهيئة على مستوى الـموضوع (إن وُجدت).
+
+```xml
+  <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
+    <debug>cgrp</debug>
+    <statistics_interval_ms>3000</statistics_interval_ms>
+
+    <kafka_topic>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
+    </kafka_topic>
+
+    <!-- Settings for consumer -->
+    <consumer>
+        <auto_offset_reset>smallest</auto_offset_reset>
+        <kafka_topic>
+            <name>logs</name>
+            <fetch_min_bytes>100000</fetch_min_bytes>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <fetch_min_bytes>50000</fetch_min_bytes>
+        </kafka_topic>
+    </consumer>
+
+    <!-- Settings for producer -->
+    <producer>
+        <kafka_topic>
+            <name>logs</name>
+            <retry_backoff_ms>250</retry_backoff_ms>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <retry_backoff_ms>400</retry_backoff_ms>
+        </kafka_topic>
+    </producer>
+  </kafka>
+```
+
+للاطلاع على قائمة بخيارات التهيئة المتاحة، راجع [مرجع تكوين librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). استخدم الشرطة السفلية (`_`) بدلًا من النقطة في تكوين ClickHouse. على سبيل المثال، ستُكتب `check.crcs=true` على النحو التالي: `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-kerberos-support">
+  ### دعم Kerberos
+</div>
+
+للتعامل مع Kafka المتوافق مع Kerberos، أضِف العنصر الفرعي `security_protocol` بالقيمة `sasl_plaintext`. ويكفي الحصول على تذكرة منح التذاكر الخاصة بـ Kerberos وتخزينها مؤقتًا عبر إمكانات نظام التشغيل.
+يمكن لـ ClickHouse الاحتفاظ ببيانات اعتماد Kerberos باستخدام ملف keytab. راعِ العناصر الفرعية `sasl_kerberos_service_name` و`sasl_kerberos_keytab` و`sasl_kerberos_principal`.
+
+مثال:
+
+```xml
+<!-- Kerberos-aware Kafka -->
+<kafka>
+  <security_protocol>SASL_PLAINTEXT</security_protocol>
+  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+</kafka>
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_topic` — موضوع Kafka. نوع البيانات: `LowCardinality(String)`.
+* `_key` — مفتاح الرسالة. نوع البيانات: `String`.
+* `_offset` — إزاحة الرسالة. نوع البيانات: `UInt64`.
+* `_timestamp` — الطابع الزمني للرسالة. نوع البيانات: `Nullable(DateTime)`.
+* `_timestamp_ms` — الطابع الزمني للرسالة بالمللي ثانية. نوع البيانات: `Nullable(DateTime64(3))`.
+* `_partition` — قسم موضوع Kafka. نوع البيانات: `UInt64`.
+* `_headers.name` — مصفوفة مفاتيح ترويسات الرسالة. نوع البيانات: `Array(String)`.
+* `_headers.value` — مصفوفة قيم ترويسات الرسالة. نوع البيانات: `Array(String)`.
+
+أعمدة افتراضية إضافية عندما تكون قيمة `kafka_handle_error_mode='stream'`:
+
+* `_raw_message` - الرسالة الخام التي تعذّر تحليلها بنجاح. نوع البيانات: `String`.
+* `_error` - رسالة الاستثناء التي حدثت أثناء تعذّر التحليل. نوع البيانات: `String`.
+
+ملاحظة: لا تتم تعبئة العمودين الافتراضيين `_raw_message` و `_error` إلا عند حدوث استثناء أثناء التحليل، ويظلان فارغين دائمًا إذا تم تحليل الرسالة بنجاح.
+
+<div id="mapping-columns-to-kafka-message-metadata">
+  ## ربط الأعمدة بالبيانات الوصفية لرسائل Kafka
+</div>
+
+عند إنتاج الرسائل باستخدام `INSERT INTO`، يستخدم محرك Kafka دائمًا عمودًا باسم `_key` (من النوع `String`) كمفتاح لرسالة Kafka وعمودًا باسم `_timestamp` (من النوع `DateTime`) كطابع زمني لرسالة Kafka، إذا كانت هذه الأعمدة موجودة في الجدول. وبشكل افتراضي، تظهر هذه الأعمدة أيضًا في حمولة الرسالة المُنتَجة إلى جانب الأعمدة الأخرى.
+
+عند استخدام `kafka_map_virtual_columns_on_write = 1`، يتغير السلوك:
+
+* `_key` (النوع `String`) — يُربَط بمفتاح رسالة Kafka.
+* `_timestamp` (النوع `DateTime`) — يُربَط بالطابع الزمني لرسالة Kafka.
+* `_headers.name` (النوع `Array(String)`) و `_headers.value` (النوع `Array(String)`) — يُربَطان بترويسات رسالة Kafka. ويتحوّل كل زوج `(_headers.name[i], _headers.value[i])` إلى ترويسة Kafka واحدة. ونظرًا إلى أن `_headers.name` و `_headers.value` يشتركان في البادئة Nested `_headers`، يشترط ClickHouse أن يكون حجم المصفوفتين متطابقًا في كل صف.
+
+لا تُستبعَد الأعمدة التي تحمل هذه الأسماء من **حمولة الرسالة** إلا إذا كانت أنواعها مطابقة للأنواع المذكورة أعلاه؛ وإلا فإنها تبقى ضمن الحمولة، لذلك تظل المخططات التي صادف أنها تعيد استخدام هذه الأسماء لبيانات غير مرتبطة تعمل كما هي.
+
+مثال:
+
+```sql
+CREATE TABLE kafka_out
+(
+    event_json String,
+    `_key` String,
+    `_timestamp` DateTime,
+    `_headers.name` Array(String),
+    `_headers.value` Array(String)
+)
+ENGINE = Kafka
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'events',
+    kafka_group_name = 'events-producer',
+    kafka_format = 'JSONEachRow',
+    kafka_map_virtual_columns_on_write = 1;
+
+INSERT INTO kafka_out VALUES
+    ('{"a":1}', 'session-42', now(), ['source', 'trace_id'], ['api', 'abc-123']);
+```
+
+تحتوي رسالة Kafka الناتجة على البيانات `{"event_json":"{\"a\":1}"}`، والمفتاح `session-42`، والطابع الزمني الحالي، ورأسين `source=api` و`trace_id=abc-123`.
+
+<div id="data-formats-support">
+  ## دعم تنسيقات البيانات
+</div>
+
+يدعم محرك Kafka جميع [التنسيقات](/ar/reference/formats/index) التي يدعمها ClickHouse.
+يعتمد عدد الصفوف في رسالة Kafka واحدة على ما إذا كان التنسيق يستند إلى الصفوف أو إلى الكتل:
+
+* في التنسيقات المستندة إلى الصفوف، يمكن التحكم في عدد الصفوف في رسالة Kafka واحدة عبر تعيين `kafka_max_rows_per_message`.
+* في التنسيقات المستندة إلى الكتل، لا يمكن تقسيم block إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في block واحد باستخدام الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
+
+<div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
+  ## محرك لتخزين الإزاحات المعتمدة في ClickHouse Keeper
+</div>
+
+<ExperimentalBadge />
+
+إذا كان `allow_experimental_kafka_offsets_storage_in_keeper` مفعّلًا، فيمكن عندئذٍ تحديد إعدادين إضافيين لمحرك جدول Kafka:
+
+* يحدّد `kafka_keeper_path` المسار إلى الجدول في ClickHouse Keeper
+* يحدّد `kafka_replica_name` اسم النسخة المتماثلة في ClickHouse Keeper
+
+إما أن يُحدَّد الإعدادان معًا أو لا يُحدَّد أيٌّ منهما. وعند تحديدهما معًا، سيُستخدم محرك Kafka جديد وتجريبي. لا يعتمد هذا المحرك الجديد على تخزين الإزاحات المعتمدة في Kafka، بل يخزّنها في ClickHouse Keeper. وما يزال يحاول تثبيت الإزاحات في Kafka، لكنه لا يعتمد على تلك الإزاحات إلا عند إنشاء الجدول. وفي أي حالة أخرى (مثل إعادة تشغيل الجدول أو استعادته بعد حدوث خطأ)، ستُستخدم الإزاحات المخزّنة في ClickHouse Keeper كإزاحة لمواصلة استهلاك الرسائل. وإلى جانب الإزاحة المعتمدة، يخزّن أيضًا عدد الرسائل التي استُهلكت في الدفعة الأخيرة، بحيث إذا فشلت عملية `insert`، فسيُستهلك العدد نفسه من الرسائل، مما يتيح إزالة التكرار عند الحاجة.
+
+مثال:
+
+```sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
+  kafka_replica_name = '{replica}'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+<div id="known-limitations">
+  ### القيود المعروفة
+</div>
+
+نظرًا لأن المحرك الجديد لا يزال تجريبيًا، فهو غير جاهز للاستخدام في بيئة الإنتاج بعد. هناك بعض القيود المعروفة في هذا التنفيذ:
+
+* قد يؤدي حذف الجدول بسرعة ثم إعادة إنشائه، أو تحديد مسار ClickHouse Keeper نفسه لمحركات مختلفة، إلى حدوث مشكلات. وكأفضل ممارسة، يمكنك استخدام `{uuid}` في `kafka_keeper_path` لتجنب تعارض المسارات.
+* لضمان القراءات القابلة للتكرار، لا يمكن استهلاك الرسائل من عدة أقسام على خيط تنفيذ واحد. ومن ناحية أخرى، يجب إجراء `poll` على مستهلكي Kafka بانتظام للحفاظ على نشاطهم. ونتيجةً لهذين الشرطين، قررنا السماح بإنشاء عدة مستهلكين فقط إذا كان `kafka_thread_per_consumer` مُمكّنًا؛ وإلا فسيكون من المعقد جدًا تجنب المشكلات المرتبطة بإجراء `poll` للمستهلكين بانتظام.
+
+**راجع أيضًا**
+
+* [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [system.kafka&#95;consumers](/ar/reference/system-tables/kafka_consumers)

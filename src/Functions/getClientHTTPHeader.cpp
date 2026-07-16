@@ -91,6 +91,16 @@ The setting is not enabled by default for security reasons, because some headers
 
 HTTP headers are case sensitive for this function.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
+
+`getClientHTTPHeader` reads the headers of the current request, so it returns a non-empty value only when the query is sent over the HTTP interface.
+For example, supply the header with the request and read it back over HTTP:
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+The command above returns `application/x-www-form-urlencoded`.
 )";
     FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
     FunctionDocumentation::Arguments arguments = {
@@ -101,12 +111,13 @@ If the function is used in the context of a distributed query, it returns non-em
         {
             "Usage example",
             R"(
-SELECT getClientHTTPHeader('Content-Type');
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
             )",
             R"(
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+
             )"
         }
     };

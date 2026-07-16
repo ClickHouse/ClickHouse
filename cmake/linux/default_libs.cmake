@@ -6,7 +6,11 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
 include (cmake/compiler_rt_link.cmake)
 
-option (ENABLE_LLVM_LIBC_MATH "Use math from llvm-libc instead of glibc" ON)
+# `libllvmlibc` supplies both the math functions and the SIMD memory functions
+# (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
+# x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
+# which then carries a versioned glibc symbol again (no portability shim).
+option (ENABLE_LLVM_LIBC_MATH "Use math and memory functions from llvm-libc instead of glibc" ON)
 if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_LLVM_LIBC_MATH OFF)
 endif()
@@ -15,6 +19,10 @@ if (ENABLE_LLVM_LIBC_MATH)
     link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+
+    if (NOT SANITIZE)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
+    endif()
 endif()
 
 if (OS_ANDROID)

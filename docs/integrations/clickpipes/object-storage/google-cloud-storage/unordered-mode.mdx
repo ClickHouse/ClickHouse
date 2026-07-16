@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'Configure unordered mode'
+title: 'Configuring unordered mode for continuous ingestion'
+slug: /integrations/clickpipes/object-storage/gcs/unordered-mode
+description: 'Step-by-step guide to configure unordered mode for continuous ingestion in GCS ClickPipes.'
+doc_type: 'guide'
+---
+
+By default, the GCS ClickPipe assumes files are added to a bucket in [lexicographical order](/integrations/clickpipes/object-storage/google-cloud-storage/overview#continuous-ingestion-lexicographical-order). It's possible to configure a GCS ClickPipe to ingest files that don't have an implicit order by setting up a [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription connected to the bucket. This allows ClickPipes to listen for `OBJECT_FINALIZE` notifications and ingest any new files regardless of the file naming convention.
+
+<Note>
+Unordered mode is **not** supported for public buckets. It requires **Service Account** authentication and a [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription connected to the bucket.
+</Note>
+
+## How it works {#how-it-works}
+
+In this mode, the GCS ClickPipe does an initial load of **all files** in the selected path, and then listens for object notifications via the Pub/Sub subscription that match the specified path. Any message for a previously seen file, file not matching the path, or event of a different type will be **ignored**. It is **not possible** to start ingestion from a specific file or point in time — ClickPipes will always load all files in the selected path.
+
+Various types of failures can occur when ingesting data, which can result in partial inserts or duplicate data. Object Storage ClickPipes are resilient to insert failures and provide exactly-once semantics using temporary staging tables. Data is first inserted into a staging table; if something goes wrong, the staging table is truncated and the insert is retried from a clean state. Only once an insert completes successfully are the partitions moved to the target table.
+
+<Steps>
+<Step title="Create a Google Cloud Pub/Sub topic" id="create-pubsub-topic">
+
+**1.** In the Google Cloud Console, navigate to **Pub/Sub > Topics > Create topic**. Create a new topic with a default subscription and note the **Topic Name**.
+
+<Warning>
+**One subscription per ClickPipe**
+
+Each ClickPipe needs its own dedicated Pub/Sub subscription. Within a single subscription, Pub/Sub delivers each message to only one subscriber: if two or more ClickPipes (or any other application) consume the same subscription, each notification is received by only one of them, and files are silently skipped by the pipes that never receive it. This applies even if the ClickPipes use different path patterns — a pipe that receives a notification for a non-matching file discards it, and no other pipe will ever see it. To ingest from the same bucket with multiple ClickPipes, create a separate subscription on the topic for each ClickPipe.
+</Warning>
+
+**2.** Configure a GCS bucket notification that publishes [`OBJECT_FINALIZE` events](https://docs.cloud.google.com/storage/docs/pubsub-notifications) to the Pub/Sub topic created above.
+
+**2.1.** This step cannot be performed in the Google Cloud Console, so you must use the `gcloud` client or your preferred programmatic interface for Google Cloud. For example, using `gcloud`:
+
+  ```bash
+  # Create a Pub/Sub notification for new objects in the bucket
+  gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
+    --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
+    --event-types="OBJECT_FINALIZE" \
+    --payload-format="json"
+
+  # List the Pub/Sub notifications in the bucket
+  gcloud storage buckets notifications describe
+  ```
+</Step>
+<Step title="Configure a service account" id="configure-service-account">
+
+**1.** Configure a [service account](http://docs.cloud.google.com/iam/docs/keys-create-delete) with the [required permissions](/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) to allow ClickPipes to list and fetch objects in the specified bucket, as well as consume and monitor notifications from the Pub/Sub subscription.
+
+**1.1.** This step can be performed in the Google Cloud Console, using the `gcloud` client or your preferred programmatic interface for Google Cloud. For example, using `gcloud`:
+
+  ```bash
+  # 1. Grant read access to the GCS bucket
+  gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
+    --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="roles/storage.objectViewer"
+
+  # 2. Grant read access to the Pub/Sub subscription
+  gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+    --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="roles/pubsub.subscriber"
+
+  # 3. Grant permission to get the Pub/Sub subscription metadata
+  gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+    --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="roles/pubsub.viewer"
+  ```
+</Step>
+<Step title="Create a ClickPipe with unordered mode" id="create-clickpipe">
+
+**1.** In the ClickHouse Cloud console, navigate to **Data Sources > Create ClickPipe** and select **Google Cloud Storage**. Enter the details to connect to your GCS bucket. Under **Authentication method**, choose **Service Account** and provide the `.json` service account key.
+
+**2.** Toggle on **Continuous ingestion**, then select **Any order** as the ingestion mode and provide the **Pub/Sub subscription** name for the subscription connected to your bucket. The subscription must be used exclusively by this ClickPipe — see [Create a Google Cloud Pub/Sub topic](#create-pubsub-topic). The subscription name must follow the following format:
+
+```text
+projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
+```
+
+**3.** Click **Incoming data**. Define a **Sorting key** for the target table. Make any necessary adjustments to the mapped schema, then configure a role for the ClickPipes database user.
+
+**4.** Review the configuration and click **Create ClickPipe**. ClickPipes will perform an initial scan of your bucket to load all existing files that match the specified path, and will then begin processing files as new `OBJECT_FINALIZE` events arrive in the topic.
+</Step>
+</Steps>

@@ -1,0 +1,288 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/concepts
+title: 'ClickStack と Elastic の対応する概念'
+sidebarTitle: '対応する概念'
+description: '対応する概念 - ClickStack と Elastic'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="elastic-vs-clickstack">
+  ## Elastic Stack vs ClickStack
+</div>
+
+Elastic Stack と ClickStack はどちらもオブザーバビリティプラットフォームの中核的な役割を担いますが、それぞれの設計思想は異なります。主な役割は次のとおりです。
+
+* **UI and Alerting**: データのクエリ、ダッシュボードの構築、アラートの管理を行うためのツール。
+* **Storage and Query Engine**: オブザーバビリティデータの保存と分析クエリの実行を担うバックエンドシステム。
+* **Data Collection and ETL**: テレメトリーデータを収集し、インジェスト前に処理するエージェントとパイプライン。
+
+以下の表は、各スタックでこれらの役割にどのコンポーネントが対応するかを示しています。
+
+| **Role**                       | **Elastic Stack**                                        | **ClickStack**                                              | **Comments**                                                                                                                                                  |
+| ------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **UI &amp; Alerting**          | **Kibana** — ダッシュボード、検索、アラート                             | **ClickStack UI (HyperDX)** — リアルタイム UI、検索、アラート             | どちらも、可視化やアラート管理を含む主要なユーザーインターフェイスとして機能します。ClickStack UI はオブザーバビリティ向けに特化して設計されており、OpenTelemetry のセマンティクスと密接に結び付いています。                                          |
+| **Storage &amp; Query Engine** | **Elasticsearch** — 転置索引を備えた JSON ドキュメントストア              | **ClickHouse** — ベクトル化エンジンを備えたカラム指向データベース                   | Elasticsearch は検索に最適化された転置索引を使用し、ClickHouse は構造化データおよび半構造化データに対する高速分析のために列指向ストレージと SQL を使用します。                                                                |
+| **Data Collection**            | **Elastic Agent**, **Beats** (e.g. Filebeat, Metricbeat) | **OpenTelemetry Collector** (edge + gateway)                | Elastic は、Fleet で管理されるカスタムシッパーと統合エージェントをサポートしています。ClickStack は OpenTelemetry を基盤としており、ベンダーニュートラルなデータ収集と処理を可能にします。                                             |
+| **Instrumentation SDKs**       | **Elastic APM agents** (proprietary)                     | **OpenTelemetry SDKs** (distributed by ClickStack)          | Elastic の SDK は Elastic Stack に密接に結び付いています。ClickStack は、主要言語における logs、メトリクス、traces 向けに OpenTelemetry SDKs を基盤としています。                                          |
+| **ETL / Data Processing**      | **Logstash**, ingest pipelines                           | **OpenTelemetry Collector** + ClickHouse materialized view | Elastic はデータ変換に ingest pipelines と Logstash を使用します。ClickStack は、materialized view と OTel collector processors によってコンピュートを insert time に移し、データを効率的かつ段階的に変換します。 |
+| **Architecture Philosophy**    | 垂直統合型で proprietary なエージェントとフォーマット                        | オープン標準ベースで疎結合なコンポーネント                                       | Elastic は緊密に統合されたエコシステムを構築します。ClickStack は、柔軟性とコスト効率を高めるため、モジュール性と標準 (OpenTelemetry、SQL、object storage) を重視しています。                                             |
+
+ClickStack は、収集から UI まで一貫して OpenTelemetry ネイティブであり、オープン標準と相互運用性を重視しています。これに対して Elastic は、proprietary なエージェントとフォーマットを備えた、より垂直統合型の密結合なエコシステムを提供します。
+
+**Elasticsearch** と **ClickHouse** は、それぞれのスタックにおいてデータの保存、処理、クエリ実行を担う中核エンジンであるため、その違いを理解することは重要です。これらのシステムは、オブザーバビリティアーキテクチャ全体の性能、スケーラビリティ、柔軟性を支えています。次のセクションでは、データモデル、インジェスト処理、クエリ実行、ストレージ管理の違いを含め、Elasticsearch と ClickHouse の主な相違点を詳しく見ていきます。
+
+<div id="elasticsearch-vs-clickhouse">
+  ## Elasticsearch と ClickHouse
+</div>
+
+ClickHouse と Elasticsearch では、データの整理やクエリに用いる基盤となるモデルは異なりますが、多くの中核概念は似た役割を担っています。このセクションでは、Elastic に慣れている方に向けて主要な対応関係を示し、ClickHouse でそれに相当する概念を整理します。用語は異なっていても、オブザーバビリティのワークフローの大半は ClickStack で再現でき、多くの場合、より効率的に実現できます。
+
+<div id="core-structural-concepts">
+  ### 中核となる構造概念
+</div>
+
+| **Elasticsearch** | **ClickHouse / SQL**   | **説明**                                                                                                                                                                                                                                                                                             |
+| ----------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Field**         | **Column**             | 特定の型の1つ以上の値を保持する、データの基本単位です。Elasticsearch のフィールドには、プリミティブだけでなく配列やオブジェクトも格納できます。1つのフィールドに設定できる型は1つだけです。ClickHouse も配列やオブジェクト (`Tuples`, `Maps`, `Nested`) をサポートしており、さらに [`Variant`](/ja/reference/data-types/variant) や [`Dynamic`](/ja/reference/data-types/dynamic) のような動的型により、1つのカラムに複数の型を持たせることもできます。 |
+| **Document**      | **Row**                | フィールド (カラム) の集合です。Elasticsearch のドキュメントは、データに応じて新しいフィールドが動的に追加されるため、デフォルトでより柔軟です (型はデータから推論されます) 。一方、ClickHouse の行はデフォルトではスキーマに従うため、ユーザーは行のすべてのカラム、またはその一部を挿入する必要があります。ClickHouse の [`JSON`](/ja/guides/clickhouse/data-formats/json/intro) 型では、挿入されたデータに基づいて同様の半構造化 Dynamic カラムを動的に作成できます。           |
+| **Index**         | **Table**              | クエリ実行とストレージの単位です。どちらのシステムでも、クエリは行やドキュメントを格納するインデックスまたはテーブルに対して実行されます。                                                                                                                                                                                                                              |
+| *Implicit*        | Schema (SQL)           | SQL のスキーマは、テーブルをネームスペースにまとめる仕組みで、多くの場合アクセス制御に使われます。Elasticsearch と ClickHouse にはスキーマはありませんが、どちらもロールと RBAC によって行レベルおよびテーブルレベルのセキュリティをサポートしています。                                                                                                                                                     |
+| **Cluster**       | **Cluster / Database** | Elasticsearch のクラスターは、1つ以上のインデックスを管理するランタイムインスタンスです。ClickHouse では、database が論理ネームスペース内でテーブルを整理し、Elasticsearch におけるクラスターと同様の論理的なグループ化を提供します。ClickHouse クラスターは、Elasticsearch と同様に分散ノードの集合ですが、データそのものとは切り離されており、独立しています。                                                                              |
+
+<div id="data-modeling-and-flexibility">
+  ### データモデリングと柔軟性
+</div>
+
+Elasticsearch は、[dynamic mappings](https://www.elastic.co/docs/manage-data/data-store/mapping/dynamic-mapping) によるスキーマの柔軟性で知られています。フィールドはドキュメントのインジェスト時に作成され、スキーマが指定されていない限り、型は自動的に推論されます。ClickHouse はデフォルトではより厳格で、テーブルは明示的なスキーマで定義されますが、[`Dynamic`](/ja/reference/data-types/dynamic)、[`Variant`](/ja/reference/data-types/variant)、[`JSON`](/ja/guides/clickhouse/data-formats/json/intro) 型によって柔軟性も備えています。これらにより、半構造化データを取り込むことができ、Elasticsearch と同様に動的なカラム作成や型推論が可能になります。同様に、[`Map`](/ja/reference/data-types/map) 型では任意のキー・バリューのペアを格納できますが、キーと値にはそれぞれ単一の型が適用されます。
+
+型の柔軟性に対する ClickHouse のアプローチは、より明示的で制御しやすいものです。型の競合によってインジェストエラーが発生することがある Elasticsearch とは異なり、ClickHouse では [`Variant`](/ja/reference/data-types/variant) カラムに複数の型が混在するデータを格納でき、[`JSON`](/ja/guides/clickhouse/data-formats/json/intro) 型を使ってスキーマの進化にも対応できます。
+
+[`JSON`](/ja/guides/clickhouse/data-formats/json/intro) を使用しない場合、スキーマは静的に定義されます。行に値が指定されていない場合は、[`Nullable`](/ja/reference/data-types/nullable) として定義するか (ClickStack では使用されません) 、その型のデフォルト値 (たとえば `String` なら空文字列) が使用されます。
+
+<div id="ingestion-and-transformation">
+  ### インジェストと変換
+</div>
+
+Elasticsearch では、インデックス作成前にドキュメントを変換するために、プロセッサ (例: `enrich`、`rename`、`grok`) を含む ingest pipeline を使用します。ClickHouse では、同様の機能を [**インクリメンタルmaterialized view**](/ja/concepts/features/materialized-views/incremental-materialized-view) で実現できます。これにより、入力データを [フィルタリングや変換](/ja/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation) したり、[エンリッチ](/ja/concepts/features/materialized-views/incremental-materialized-view#lookup-table) したりして、その結果をターゲットテーブルに insert できます。materialized view の出力のみを保存したい場合は、`Null` table engine にデータを insert することもできます。つまり、保持されるのは materialized view の結果だけで、元のデータは破棄されるため、ストレージ容量を節約できます。
+
+エンリッチについては、Elasticsearch は、ドキュメントにコンテキストを追加するための専用の [enrich processor](https://www.elastic.co/docs/reference/enrich-processor/enrich-processor) をサポートしています。ClickHouse では、[**dictionaries**](/ja/concepts/features/dictionaries/index) を [クエリ時](/ja/concepts/features/dictionaries/index#query-time-enrichment) と [インジェスト時](/ja/concepts/features/dictionaries/index#index-time-enrichment) の両方で使用して、行をエンリッチできます。たとえば、[IP を場所に対応付ける](/ja/guides/use-cases/observability/build-your-own/schema-design#using-ip-dictionaries) ことや、INSERT 時に [ユーザーエージェントのルックアップ](/ja/guides/use-cases/observability/build-your-own/schema-design#using-regex-dictionaries-user-agent-parsing) を適用することができます。
+
+<div id="query-languages">
+  ### クエリ言語
+</div>
+
+Elasticsearch は、[DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl)、[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql)、[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql)、[KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene スタイル) クエリを含む、[複数のクエリ言語](https://www.elastic.co/docs/explore-analyze/query-filter/languages)をサポートしていますが、join のサポートは限定的で、[`ES|QL`](https://www.elastic.co/guide/en/elasticsearch/reference/8.x/esql-commands.html#esql-lookup-join) 経由で利用できるのは **left outer joins** のみです。ClickHouse は、[すべての join タイプ](/ja/reference/statements/select/join#supported-types-of-join)、[window functions](/ja/reference/functions/window-functions/index)、サブクエリ (相関サブクエリを含む) 、CTE を含む **完全な SQL 構文** をサポートしています。これは、オブザーバビリティシグナルとビジネスデータまたはインフラストラクチャデータを相関付ける必要がある場合に大きな利点となります。
+
+ClickStack では、ClickHouse バックエンド経由で完全な SQL をサポートするとともに、移行しやすいように [Lucene 互換の検索インターフェイスを UI で提供しています](/ja/clickstack/features/search)。この構文は、[Elastic query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) の構文に近いものです。この構文の正確な比較については、[&quot;Searching in ClickStack and Elastic&quot;](/ja/clickstack/migration/elastic/search) を参照してください。
+
+<div id="file-formats-and-interfaces">
+  ### ファイルフォーマットとインターフェイス
+</div>
+
+Elasticsearch は JSON (および[限定的な CSV サポート](https://www.elastic.co/docs/reference/enrich-processor/csv-processor)) でのインジェストをサポートしています。ClickHouse は Parquet、Protobuf、Arrow、CSV などを含む **70 種類以上のファイルフォーマット**をサポートしており、インジェストとエクスポートの両方で利用できます。これにより、外部のパイプラインやツールとの統合が容易になります。
+
+どちらのシステムも REST API を提供していますが、ClickHouse はさらに、低レイテンシかつ高スループットなやり取りのための **ネイティブプロトコル**も提供しています。ネイティブインターフェイスは、HTTP よりも効率的にクエリの進行状況、圧縮、ストリーミングをサポートしており、ほとんどの本番環境でのインジェストでデフォルトとして使われています。
+
+<div id="indexing-and-storage">
+  ### インデックスとストレージ
+</div>
+
+<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+
+シャーディングの概念は、Elasticsearch のスケーラビリティモデルの根幹を成しています。各 ① [**インデックス**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) は **分片** に分割され、各分片はディスク上にセグメントとして保存される物理的な Lucene インデックスです。分片は、耐障害性を高めるためにレプリカ分片と呼ばれる 1 つ以上の物理コピーを持つことができます。スケーラビリティのために、分片とレプリカは複数のノードに分散できます。単一の分片 ② は、1 つ以上の不変なセグメントで構成されます。セグメントは Lucene の基本的なインデックス構造です。Lucene は、Elasticsearch の基盤となっている Java ライブラリであり、インデックス作成と検索機能を提供します。
+
+<Info>
+  **Elasticsearch における挿入処理**
+
+  Ⓐ 新しく挿入されたドキュメントは、まずメモリ内のインデックスバッファに入り、このバッファはデフォルトで 1 秒ごとにフラッシュされます。フラッシュされたドキュメントの送信先分片はルーティング式によって決定され、その分片に対して新しいセグメントがディスクに書き込まれます。クエリ効率を向上させ、削除または更新されたドキュメントを物理的に削除できるようにするため、セグメントはバックグラウンドで継続的により大きなセグメントへマージされ、最大サイズの 5 GB に達するまで統合されます。ただし、より大きなセグメントへのマージを強制することも可能です。
+</Info>
+
+Elasticsearch は、[JVM ヒープとメタデータのオーバーヘッド](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead)を踏まえ、分片のサイズをおおむね [50 GB または 2 億ドキュメント](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards) にすることを推奨しています。また、[分片あたり 20 億ドキュメント](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit) という厳格な上限もあります。Elasticsearch はクエリを分片ごとに並列実行しますが、各分片は **単一スレッド** で処理されるため、過度なシャーディングはコストが高いだけでなく、かえって逆効果になります。そのため、シャーディングはスケーリングと本質的に密接に結び付いており、性能を拡張するにはより多くの分片 (およびノード) が必要になります。
+
+Elasticsearch は高速な検索のために、すべてのフィールドを [**転置索引**](https://www.elastic.co/docs/manage-data/data-store/index-basics) にインデックス化し、必要に応じて集計、ソート、スクリプト化されたフィールドアクセスのために [**doc values**](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/doc-values) を使用します。数値フィールドと Geo フィールドでは、地理空間データや数値・日付範囲の検索に [Block K-D trees](https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf) が使われます。
+
+重要なのは、Elasticsearch は元の完全なドキュメントを [`_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field) に保存する点です (`LZ4`、`Deflate`、または `ZSTD` で圧縮) 。一方、ClickHouse は別個のドキュメント表現を保存しません。データはクエリ時にカラムから再構築されるため、ストレージ容量を節約できます。Elasticsearch でも [Synthetic `_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source) を使えば同様のことが可能ですが、いくつかの[制約](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source-restrictions)があります。また、`_source` を無効化することにも、ClickHouse には当てはまらない[影響](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#include-exclude)があります。
+
+Elasticsearch では、[index mappings](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html) (ClickHouse におけるテーブルスキーマに相当) が、フィールドの型と、その永続化およびクエリに使用されるデータ構造を制御します。
+
+これに対して ClickHouse は **カラム指向** です。つまり、各カラムは独立して保存されますが、常にテーブルの主キー / ordering key に従ってソートされます。この並び順により、[スパースプライマリ索引](/ja/concepts/core-concepts/primary-indexes) が機能し、ClickHouse はクエリ実行時にデータを効率よくスキップできます。クエリが主キーフィールドでフィルタする場合、ClickHouse は各カラムの関連する部分だけを読み取るため、ディスク I/O を大幅に削減し、すべてのカラムに完全な索引がなくても高い性能を実現できます。
+
+<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+
+ClickHouse はさらに、選択したカラムに対して索引データを事前計算することでフィルタリングを高速化する [**スキップ索引**](/ja/concepts/features/performance/skip-indexes/skipping-indexes) もサポートしています。これらは明示的に定義する必要がありますが、性能を大幅に向上させることがあります。さらに、ClickHouse ではカラムごとに [圧縮コーデック](/ja/guides/use-cases/observability/build-your-own/schema-design#using-codecs) と圧縮アルゴリズムを指定できます。これは Elasticsearch ではサポートされていません (Elasticsearch の [圧縮](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) は `_source` の JSON 保存にのみ適用されます) 。
+
+ClickHouse もシャーディングをサポートしていますが、そのモデルは **垂直スケーリング** を優先するよう設計されています。単一の分片で **数兆行** を格納でき、メモリ、CPU、ディスクの余力がある限り、高い性能を維持できます。Elasticsearch とは異なり、分片ごとの **厳密な行数上限** はありません。ClickHouse の分片は論理的なもので、実質的には個別のテーブルであり、データセットが単一ノードの容量を超えない限り、パーティション化は不要です。これは通常、ディスク容量の制約によって発生し、その場合にのみ、水平スケールアウトが必要になった時点でシャーディング ① が導入されるため、複雑さとオーバーヘッドを抑えられます。この場合、Elasticsearch と同様に、1 つの分片がデータの一部を保持します。単一の分片内のデータは、③ 複数のデータ構造を含む ② 不変のデータパーツの集合として構成されます。
+
+ClickHouse の分片内の処理は **完全に並列化** されており、ノード間でのデータ移動に伴うネットワークコストを避けるため、できるだけ垂直スケーリングすることが推奨されます。
+
+<Info>
+  **ClickHouse における挿入処理**
+
+  ClickHouse の挿入は、**デフォルトでは同期的** です。つまり、書き込みはコミット後にのみ確認応答されます。ただし、Elastic のようなバッファリングやバッチ処理に合わせて、**非同期挿入** に設定することもできます。[asynchronous data inserts](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) を使用する場合、Ⓐ 新たに挿入された行はまず Ⓑ メモリ内の挿入バッファに入り、これはデフォルトで 200 ミリ秒ごとにフラッシュされます。複数の分片を使用する場合は、新たに挿入された行を対象の分片へルーティングするために [分散テーブル](/ja/reference/engines/table-engines/special/distributed) が使用されます。新しいパーツがその分片のディスク上に書き込まれます。
+</Info>
+
+<div id="distribution-and-replication">
+  ### 分散とレプリケーション
+</div>
+
+Elasticsearch と ClickHouse はどちらも、スケーラビリティと耐障害性を確保するためにクラスター、分片、レプリカを使用しますが、その実装モデルと性能特性には大きな違いがあります。
+
+Elasticsearch は、レプリケーションに **primary-secondary** モデルを採用しています。データがプライマリ分片に書き込まれると、1 つ以上のレプリカに同期的にコピーされます。これらのレプリカもそれぞれ完全な分片であり、冗長性を確保するために各ノードへ分散配置されます。Elasticsearch では、必要なすべてのレプリカが処理を確認して初めて書き込みが成功として返されます。これはほぼ **逐次整合性** を実現するモデルですが、完全に同期される前はレプリカから **ダーティリード** が発生する可能性があります。**master node** はクラスター全体の調整役として、分片の割り当て、ヘルス管理、リーダー選出を担います。
+
+一方、ClickHouse はデフォルトで **eventual consistency** を採用しており、その協調は ZooKeeper の軽量な代替である **Keeper** が担います。書き込みは任意のレプリカに直接送ることも、自動的にレプリカを選択する [**分散テーブル**](/ja/reference/engines/table-engines/special/distributed) 経由で送ることもできます。レプリケーションは非同期で、変更は書き込みの確認後に他のレプリカへ伝播されます。より厳密な保証が必要な場合、ClickHouse は [**逐次整合性** をサポート](/ja/get-started/migrate/postgres/appendix#sequential-consistency) しており、この場合はレプリカ全体でコミットされた後にのみ書き込みが確認されます。ただし、このモードは性能への影響が大きいため、実際にはあまり使われません。分散テーブルは複数の分片にまたがるアクセスを単一の入り口にまとめ、`SELECT` クエリをすべての分片に転送して結果をマージします。`INSERT` 操作では、データを各分片に均等にルーティングして負荷を分散します。ClickHouse のレプリケーションは非常に柔軟で、任意のレプリカ (分片のコピー) が書き込みを受け付けられ、すべての変更は他のレプリカへ非同期に同期されます。このアーキテクチャにより、障害時やメンテナンス中でもクエリ提供を中断せずに済み、再同期も自動で処理されるため、データレイヤーで primary-secondary を強制する必要がありません。
+
+<Info>
+  **ClickHouse Cloud**
+
+  **ClickHouse Cloud** では、アーキテクチャとして shared-nothing のコンピュートモデルが採用されており、単一の **分片がオブジェクトストレージに支えられます**。これにより、従来のレプリカベースの高可用性を置き換え、1 つの分片を **複数のノードから同時に読み書きできる** ようになります。ストレージとコンピュートを分離することで、明示的なレプリカ管理なしに弾力的なスケーリングが可能になります。
+</Info>
+
+要約すると:
+
+* **Elastic**: 分片は JVM メモリに結び付いた物理的な Lucene 構造です。分片を過剰に増やすと性能低下を招きます。レプリケーションは同期的で、master node によって調整されます。
+* **ClickHouse**: 分片は論理的で、垂直方向にスケールでき、ローカル実行の効率も非常に高くなっています。レプリケーションは非同期ですが (逐次的にすることも可能) 、協調の仕組みは軽量です。
+
+要するに、ClickHouse は、必要に応じて強い整合性保証を提供しつつ、分片調整の必要性を最小限に抑えることで、大規模環境でもシンプルさと高性能を両立しています。
+
+<div id="deduplication-and-routing">
+  ### 重複排除とルーティング
+</div>
+
+Elasticsearch は `_id` に基づいてドキュメントの重複を排除し、それに応じて分片にルーティングします。ClickHouse はデフォルトの行識別子を保存しませんが、**挿入時の重複排除**をサポートしているため、失敗した insert を安全に再試行できます。より細かく制御したい場合は、`ReplacingMergeTree` やその他のテーブルエンジンを使って、特定のカラムに基づく重複排除を行えます。
+
+Elasticsearch のインデックスルーティングでは、特定のドキュメントが常に特定の分片にルーティングされるようになっています。ClickHouse では、**分片キー**を定義するか、`Distributed` テーブルを使用することで、同様のデータ局所性を実現できます。
+
+<div id="aggregations-execution-model">
+  ### 集計と実行モデル
+</div>
+
+どちらのシステムもデータの集計をサポートしていますが、ClickHouse は統計、近似、特化した分析関数などを含む、[より多くの関数](/ja/reference/functions/aggregate-functions/reference-index)を提供しています。
+
+オブザーバビリティのユースケースでは、集計の最も一般的な用途の 1 つは、特定のログメッセージやイベントがどれくらいの頻度で発生するかを数えることです (頻度が異常な場合はアラートします) 。
+
+ClickHouse の `SELECT count(*) FROM ... GROUP BY ...` SQLクエリに相当する Elasticsearch の機能は、[terms aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html) で、これは Elasticsearch の [bucket aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html) の 1 つです。
+
+ClickHouse の `count(*)` を使った `GROUP BY` と Elasticsearch の terms aggregation は、機能面では概ね同等ですが、実装、パフォーマンス、結果の品質には大きな違いがあります。
+
+Elasticsearch におけるこの集計は、クエリ対象のデータが複数の分片にまたがる場合、[&quot;top-N&quot; クエリの結果を推定します](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (たとえば、件数上位 10 件のホスト) 。この推定によって速度は向上しますが、正確性が損なわれる可能性があります。この誤差は、[`doc_count_error_upper_bound` を確認](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error)し、`shard_size` パラメータを増やすことで抑えられますが、その代償としてメモリ使用量の増加とクエリパフォーマンスの低下が生じます。
+
+Elasticsearch では、すべてのバケット集約に対して [`size` 設定](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size) も必要です。上限を明示的に設定せずに、すべての一意なグループを返す方法はありません。高カーディナリティの集計では、[`max_buckets` 制限](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets) に達するおそれがあるほか、[composite 集約](https://www.elastic.co/docs/reference/aggregations/bucket/composite-aggregation) を使ったページネーションが必要になる場合がありますが、これはしばしば複雑で非効率です。
+
+これに対して ClickHouse は、追加の設定なしで正確な集計を実行します。`count(*)` のような関数は設定調整を必要とせずに正確な結果を返すため、クエリの挙動がよりシンプルで予測しやすくなります。
+
+ClickHouse には size の制限がありません。大規模なデータセットに対して、上限なしの group-by クエリを実行できます。メモリのしきい値を超えた場合、ClickHouse は[ディスクにスピルできます](/ja/reference/statements/select/group-by#group-by-in-external-memory)。主キーのプレフィックスでグループ化する集計はとくに効率的で、最小限のメモリ消費で実行できることがよくあります。
+
+<div id="execution-model">
+  #### 実行モデル
+</div>
+
+上記の違いは、Elasticsearch と ClickHouse の実行モデルに起因しています。両者は、クエリ実行と並列化に対して根本的に異なるアプローチを取っています。
+
+ClickHouse は、最新のハードウェアで効率を最大限に引き出せるよう設計されています。デフォルトでは、ClickHouse は N 個の CPU コアを持つマシン上で、N 本の同時実行レーンを使って SQL クエリを実行します。
+
+<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="ClickHouse の実行" size="lg" />
+
+単一ノード上では、実行レーンがデータを独立した範囲に分割し、CPU スレッド間で並行して処理できるようにします。これには、フィルタリング、集計、ソートが含まれます。各レーンのローカル結果は最終的にマージされ、クエリに LIMIT 句が含まれている場合は、limit 演算子が適用されます。
+
+クエリ実行は、さらに次の方法で並列化されます。
+
+1. **SIMD ベクトル化**: 列指向データに対する操作では [CPU SIMD 命令](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (例: [AVX512](https://en.wikipedia.org/wiki/AVX-512)) を使用し、値をバッチ処理できます。
+2. **クラスター レベルの並列化**: 分散構成では、各ノードがローカルでクエリ処理を実行します。[部分集計状態](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) はクエリを開始したノードにストリーミングされ、そこでマージされます。クエリの `GROUP BY` キーが分片キーと一致していれば、マージは[最小限に抑えるか、完全に回避することも可能です](/ja/reference/settings/session-settings#distributed_group_by_no_merge)。
+
+<br />
+
+このモデルにより、コアやノードをまたいで効率的にスケールできるため、ClickHouse は大規模な分析処理に適しています。*部分集計状態* を使用することで、異なるスレッドやノードからの中間結果を精度を損なうことなくマージできます。
+
+一方 Elasticsearch では、多くの集計で、利用可能な CPU コア数にかかわらず、通常は 1 分片あたり 1 スレッドが割り当てられます。これらのスレッドは分片ローカルな top-N の結果を返し、それがコーディネーティングノードでマージされます。このアプローチでは、システムリソースを十分に活用できないことがあり、特に頻出する項目が複数の分片に分散している場合、グローバル集計で不正確さが生じる可能性があります。精度は `shard_size` パラメータを増やすことで向上できますが、その代償としてメモリ使用量とクエリレイテンシが増加します。
+
+<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Elasticsearch の実行" size="lg" />
+
+要するに、ClickHouse はより細粒度の並列化と、ハードウェアリソースをより細かく制御できる実行方式によって集計やクエリを実行するのに対し、Elasticsearch はより制約の多い分片ベースの実行に依存しています。
+
+各技術における集計の仕組みの詳細については、ブログ記事 [&quot;ClickHouse vs. Elasticsearch: Count 集計の仕組み&quot;](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#elasticsearch) をご覧になることをお勧めします。
+
+<div id="data-management">
+  ### データ管理
+</div>
+
+Elasticsearch と ClickHouse では、時系列のオブザーバビリティデータを管理する考え方が根本的に異なります。特に、データ保持、ロールオーバー、階層化ストレージに関してその違いが顕著です。
+
+<div id="lifecycle-vs-ttl">
+  #### インデックス ライフサイクル管理とネイティブ TTL の比較
+</div>
+
+Elasticsearch では、長期的なデータ管理は **Index Lifecycle Management (ILM)** と **Data Streams** によって行います。これらの機能を使うと、インデックスをいつロールオーバーするか (たとえば一定のサイズや経過時間に達したとき) 、古いインデックスをいつ低コストのストレージ (たとえば warm tier や cold tier) へ移動するか、そして最終的にいつ削除するかを定めるポリシーを定義できます。これは、Elasticsearch が **リシャーディングをサポートしておらず**、分片を性能を落とさずに無制限に拡大することもできないためです。分片サイズを管理し、効率的に削除できるようにするには、新しいインデックスを定期的に作成して古いものを削除する必要があります。つまり、実質的にはインデックスレベルでデータをローテーションすることになります。
+
+一方、ClickHouse は異なるアプローチを取ります。データは通常 **単一のテーブル** に格納され、カラムまたはパーティションレベルの **有効期限 (TTL) 式** を使って管理されます。データを **日付でパーティション分割** することで、新しいテーブルを作成したりインデックスのロールオーバーを行ったりしなくても、効率的に削除できます。データが古くなって TTL 条件を満たすと、ClickHouse が自動的に削除するため、ローテーション管理のための追加のインフラストラクチャは不要です。
+
+<div id="storage-tiers">
+  #### ストレージ階層と hot-warm アーキテクチャ
+</div>
+
+Elasticsearch は **hot-warm-cold-frozen** ストレージアーキテクチャをサポートしており、データは性能特性の異なるストレージ階層間で移動されます。これは通常、ILM を通じて設定され、クラスター内のノードロールと結び付けられます。
+
+ClickHouse は、`MergeTree` のようなネイティブのテーブルエンジンによって **階層型ストレージ** をサポートしており、カスタムルールに基づいて古いデータを異なる **ボリューム** (例: SSD から HDD、さらにオブジェクトストレージへ) 間で自動的に移動できます。これにより、Elastic の hot-warm-cold アプローチを再現できますが、複数のノードロールやクラスターを管理する複雑さはありません。
+
+<Info>
+  **ClickHouse Cloud**
+
+  **ClickHouse Cloud** では、これはさらにシームレスです。すべてのデータは **オブジェクトストレージ (例: S3)&#x20;**&#x20;に保存され、コンピュートは分離されています。データはクエリされるまでオブジェクトストレージに保持され、クエリ時にローカル (または分散キャッシュ) に取得されてキャッシュされます。これにより、Elastic の frozen tier と同等のコスト特性を実現しつつ、より優れた性能特性を得られます。このアプローチでは、データをストレージ階層間で移動する必要がないため、hot-warm アーキテクチャは不要になります。
+</Info>
+
+<div id="rollups-vs-incremental-aggregates">
+  ### ロールアップとインクリメンタル集計の比較
+</div>
+
+Elasticsearch では、**ロールアップ**や**集計**は [**transforms**](https://www.elastic.co/guide/en/elasticsearch/reference/current/transforms.html) と呼ばれる仕組みで実現されます。これは、**スライディングウィンドウ**モデルを使って、固定間隔 (たとえば 1 時間ごと、日ごと) で時系列データを要約するために用いられます。これらは、あるインデックスのデータを集計し、その結果を別の **rollup index** に書き込む定期実行のバックグラウンド job として設定されます。これにより、高カーディナリティの生データを繰り返しスキャンせずに済むため、長期間を対象とするクエリのコストを抑えられます。
+
+次の図は transforms の動作を抽象的に示したものです (なお、事前に集計値を計算したい同じ bucket に属するすべての document を青色で表しています) :
+
+<Image img="/images/use-cases/observability/es-transforms.webp" alt="Elasticsearch transforms" size="lg" />
+
+Continuous transforms は、設定可能な確認間隔 (デフォルト値は 1 分の transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)) に基づく transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) を使用します。上の図では、① 確認間隔が経過すると新しい checkpoint が作成されると仮定しています。すると Elasticsearch は transforms の source index に変更があるかを確認し、前回の checkpoint 以降に追加された 3 つの新しい `blue` document (11、12、13) を検出します。そのため、source index は既存のすべての `blue` document を対象にフィルタリングされ、[composite 集約](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (結果の [pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) を利用するため) によって集計値が再計算されます (そして宛先 index は、以前の集計値を含む document を置き換える document で更新されます) 。同様に ② と ③ でも、変更を確認し、同じ `blue` bucket に属する既存のすべての document から集計値を再計算することで、新しい checkpoint が処理されます。
+
+一方、ClickHouse は根本的に異なるアプローチを取ります。定期的にデータを再集計するのではなく、ClickHouse は **インクリメンタルmaterialized view** をサポートしており、データを **挿入時** に変換・集計します。新しいデータがソーステーブルに書き込まれると、materialized view は新たに **挿入** された block に対してのみ、あらかじめ定義された SQL の集計クエリを実行し、その集計結果をターゲットテーブルに書き込みます。
+
+このモデルは、ClickHouse が [**partial aggregate states**](/ja/reference/data-types/aggregatefunction) をサポートしていることで実現されています。これは、保存して後からマージできる集計関数の中間表現です。これにより、高速にクエリでき、更新コストも低い部分集計結果を維持できます。データの到着時に集計が行われるため、高コストな定期 job を実行したり、古いデータを再度要約したりする必要はありません。
+
+次に、インクリメンタルmaterialized view の仕組みを抽象的に示します (なお、事前に集計値を計算したい同じグループに属するすべての行を青色で表しています) :
+
+<Image img="/images/use-cases/observability/ch-mvs.webp" alt="ClickHouse Materialized Views" size="lg" />
+
+上の図では、materialized view のソーステーブルには、同じグループに属するいくつかの `blue` 行 (1〜10) を格納した data part がすでに含まれています。このグループについては、view のターゲットテーブルにも、`blue` グループの [部分集計状態](https://www.youtube.com/watch?v=QDAJTKZT8y4) を格納した data part がすでに存在します。新しい行を伴う ① ② ③ のソーステーブルへの insert が行われると、各 insert ごとに対応するソーステーブルの data part が作成され、同時に、新たに挿入された行の各 block に対してのみ 部分集計状態 が計算され、data part の形で materialized view のターゲットテーブルに挿入されます。④ バックグラウンドでの part merge の際に 部分集計状態 がマージされ、インクリメンタルなデータ集計が実現されます。
+
+なお、[aggregate functions](/ja/reference/functions/aggregate-functions/reference-index) は、その aggregate function [combinators](https://www.youtube.com/watch?v=7ApwD0cfAFI) との組み合わせも含めて、すべて (90 種類以上) が [部分集計状態](/ja/reference/data-types/aggregatefunction) をサポートしています。
+
+Elasticsearch と ClickHouse におけるインクリメンタル集計の、より具体的な比較については、この [example](https://github.com/ClickHouse/examples/tree/main/blog-examples/clickhouse-vs-elasticsearch/continuous-data-transformation#continuous-data-transformation-example) を参照してください。
+
+ClickHouse のアプローチには、次のような利点があります:
+
+* **常に最新の集計**: materialized view は常にソーステーブルと同期されています。
+* **バックグラウンドジョブ不要**: 集計はクエリ時ではなく挿入時に行われます。
+* **優れたリアルタイム性能**: 最新の集計結果が即座に必要なオブザーバビリティのワークロードやリアルタイム分析に最適です。
+* **組み合わせ可能**: materialized view は、より複雑なクエリ高速化戦略に向けて、他のビューやテーブルと重ねたり結合したりできます。
+* **異なる有効期限 (TTL)**: materialized view のソーステーブルとターゲットテーブルには、それぞれ異なる TTL 設定を適用できます。
+
+このモデルは、クエリごとに数十億件の生レコードをスキャンすることなく、1 分ごとのエラー率、レイテンシ、Top-N の内訳といったメトリクスを計算する必要があるオブザーバビリティのユースケースで、特に強力です。
+
+<div id="lakehouse-support">
+  ### レイクハウスのサポート
+</div>
+
+ClickHouse と Elasticsearch では、レイクハウスとのインテグレーションに対するアプローチが根本的に異なります。ClickHouse は本格的なクエリ実行エンジンであり、[Iceberg](/ja/reference/functions/table-functions/iceberg) や [Delta Lake](/ja/reference/functions/table-functions/deltalake) などのレイクハウスフォーマットに対してクエリを実行できるだけでなく、[AWS Glue](/ja/guides/use-cases/data-warehousing/glue-catalog) や [Unity catalog](/ja/guides/use-cases/data-warehousing/unity-catalog) などのデータレイクのカタログともインテグレーションできます。これらのフォーマットは [Parquet](/ja/reference/formats/Parquet/Parquet) ファイルを効率的にクエリできることを前提としており、ClickHouse はこれを完全にサポートしています。ClickHouse は Iceberg と Delta Lake の両方のテーブルを直接読み取れるため、最新のデータレイクアーキテクチャとシームレスに統合できます。
+
+一方、Elasticsearch は内部データフォーマットと Lucene ベースのストレージエンジンに強く結び付いています。レイクハウスフォーマットや Parquet ファイルを直接クエリできないため、最新のデータレイクアーキテクチャに組み込むには制約があります。Elasticsearch では、クエリを実行する前に、データを独自フォーマットに変換して読み込む必要があります。
+
+ClickHouse のレイクハウス機能は、単にデータを読み取るだけにとどまりません。
+
+* **データカタログインテグレーション**: ClickHouse は [AWS Glue](/ja/guides/use-cases/data-warehousing/glue-catalog) などのデータカタログとのインテグレーションをサポートしており、オブジェクトストレージ内のテーブルを自動的に検出してアクセスできます。
+* **オブジェクトストレージのサポート**: データを移動させることなく、[S3](/ja/reference/engines/table-engines/integrations/s3)、[GCS](/ja/reference/functions/table-functions/gcs)、[Azure Blob Storage](/ja/reference/engines/table-engines/integrations/azureBlobStorage) 上のデータをクエリできるネイティブサポート。
+* **クエリフェデレーション**: [external dictionaries](/ja/concepts/features/dictionaries/index) や [table functions](/ja/reference/functions/table-functions/index) を使用して、レイクハウステーブル、従来型データベース、ClickHouse テーブルなど、複数のログソースにまたがるデータを相関付ける機能。
+* **増分ロード**: [S3Queue](/ja/reference/engines/table-engines/integrations/s3queue) や [ClickPipes](/ja/integrations/clickpipes/home) などの機能を使用して、レイクハウステーブルからローカルの [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルへの継続的なロードをサポートします。
+* **パフォーマンス最適化**: パフォーマンス向上のため、[cluster functions](/ja/reference/functions/table-functions/cluster) を使用してレイクハウスデータに対する分散クエリ実行を行います。
+
+これらの機能により、ClickHouse はレイクハウスアーキテクチャを採用する組織に適した選択肢となり、データレイクの柔軟性と列指向データベースの高い性能の両方を活用できます。

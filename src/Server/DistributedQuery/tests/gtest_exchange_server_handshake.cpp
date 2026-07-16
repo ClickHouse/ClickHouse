@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <IO/WriteBufferFromString.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -24,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int PROTOCOL_VERSION_MISMATCH;
+    extern const int AUTHENTICATION_FAILED;
 }
 }
 
@@ -72,7 +74,7 @@ TEST(ExchangeServerHandshake, MismatchedVersionRejectedBeforeParsingBody)
     {
         try
         {
-            ExchangeServer::handleConnection(server_side, connections, log);
+            ExchangeServer::handleConnection(server_side, connections, log, {});
         }
         catch (const Exception & e)
         {
@@ -131,7 +133,7 @@ namespace
         Poco::Net::StreamSocket client(listener.address());
         Poco::Net::StreamSocket server_side = listener.acceptConnection();
         listener.close();
-        return {std::move(client), std::move(server_side)};
+        return {client, server_side};
     }
 }
 
@@ -198,6 +200,132 @@ TEST(ExchangeConnectionsRendezvous, ConnectionAfterReleaseRejected)
     auto future = connections->getConnection("query", "stream");
     EXPECT_TRUE(future->isReady());
     EXPECT_ANY_THROW(future->getSocket());
+}
+
+namespace
+{
+    /// Drive a v3 SourceHello carrying `jwt_token` over `client`, run the server-side
+    /// handshake (with `authenticate`) on `server_side`, and return the error code thrown
+    /// by `handleConnection` (nullopt on success). The token captured by `authenticate`
+    /// is what the source actually serialized into SourceHello.
+    std::optional<int> runJwtHandshake(
+        Poco::Net::StreamSocket client,
+        Poco::Net::StreamSocket server_side,
+        const ExchangeConnectionsPtr & connections,
+        const String & jwt_token,
+        const ExchangeConnectionAuthenticator & authenticate)
+    {
+        using namespace StreamingExchangeProtocol;
+        auto log = getLogger("ExchangeServerHandshakeTest");
+
+        std::optional<int> caught_code;
+        std::thread server_thread([&]
+        {
+            try
+            {
+                ExchangeServer::handleConnection(server_side, connections, log, authenticate);
+            }
+            catch (const Exception & e)
+            {
+                caught_code = e.code();
+            }
+        });
+
+        WriteBufferFromOwnString body;
+        SourceHelloBody source_hello{
+            .source_version = PROTOCOL_VERSION,
+            .query_id = "query",
+            .stream_name = "stream",
+            .jwt_token = jwt_token,
+        };
+        source_hello.write(body);
+        body.finalize();
+        const std::string & body_str = body.str();
+
+        PacketHeader header{.packet_type = PacketType::SourceHello, .bytes_size = body_str.size()};
+        client.sendBytes(&header, sizeof(header));
+        client.sendBytes(body_str.data(), static_cast<int>(body_str.size()));
+
+        server_thread.join();
+        client.close();
+        return caught_code;
+    }
+}
+
+/// A valid token (per the injected authenticator) is accepted, the connection is
+/// registered, and the token the source sent round-trips to the authenticator.
+TEST(ExchangeServerHandshake, ValidJwtAcceptedAndRegistered)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server_side] = makeConnectedPair();
+
+    String seen_token;
+    ExchangeConnectionAuthenticator authenticate = [&](const String & token) { seen_token = token; };
+
+    auto code = runJwtHandshake(client, server_side, connections, "good-token", authenticate);
+    EXPECT_FALSE(code.has_value());
+    EXPECT_EQ(seen_token, "good-token");
+
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_TRUE(future->isReady());
+    EXPECT_NO_THROW(future->getSocket());
+}
+
+/// When the authenticator rejects (throws), the connection must NOT be registered.
+TEST(ExchangeServerHandshake, RejectedJwtNotRegistered)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server_side] = makeConnectedPair();
+
+    ExchangeConnectionAuthenticator authenticate = [](const String & token)
+    {
+        if (token != "good-token")
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "bad exchange token");
+    };
+
+    auto code = runJwtHandshake(client, server_side, connections, "bad-token", authenticate);
+    ASSERT_TRUE(code.has_value());
+    EXPECT_EQ(*code, ErrorCodes::AUTHENTICATION_FAILED);
+
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_FALSE(future->isReady());
+}
+
+/// Default (empty) authenticator: the token is ignored and the connection is registered,
+/// so a deployment that does not configure authentication is unaffected by the protocol bump.
+TEST(ExchangeServerHandshake, NoAuthenticatorIgnoresToken)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server_side] = makeConnectedPair();
+
+    auto code = runJwtHandshake(client, server_side, connections, "whatever", {});
+    EXPECT_FALSE(code.has_value());
+
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_TRUE(future->isReady());
+    EXPECT_NO_THROW(future->getSocket());
+}
+
+/// A require-JWT authenticator rejects a peer that sends an empty token, so enabling auth
+/// closes the door on un-credentialed connections.
+TEST(ExchangeServerHandshake, RequireJwtRejectsTokenlessSource)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server_side] = makeConnectedPair();
+
+    ExchangeConnectionAuthenticator require_token = [](const String & token)
+    {
+        if (token.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "missing exchange token");
+    };
+
+    auto code = runJwtHandshake(client, server_side, connections,
+        /*jwt_token=*/"", require_token);
+    ASSERT_TRUE(code.has_value());
+    EXPECT_EQ(*code, ErrorCodes::AUTHENTICATION_FAILED);
+
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_FALSE(future->isReady());
 }
 
 #endif

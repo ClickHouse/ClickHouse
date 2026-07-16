@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/splunk
+keywords: ['Splunk', 'intégration', 'visualisation de données']
+description: 'Connecter les tableaux de bord Splunk à ClickHouse'
+title: 'Connecter Splunk à ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<Tip>
+  Vous cherchez à stocker les journaux d’audit ClickHouse dans Splunk ? Suivez le guide [&quot;Stocker les journaux d’audit ClickHouse Cloud dans Splunk&quot;](/fr/integrations/connectors/data-integrations/integrations/splunk).
+</Tip>
+
+Splunk est une technologie populaire pour la sécurité et l’observabilité. C’est aussi un puissant moteur de recherche et de création de tableaux de bord. Il existe des centaines d’applications Splunk pour répondre à différents cas d’usage.
+
+Pour ClickHouse, nous nous appuyons plus précisément sur la [Splunk DB Connect App](https://splunkbase.splunk.com/app/2686), qui offre une intégration simple avec le très performant ClickHouse JDBC driver pour interroger directement les tables dans ClickHouse.
+
+Cette intégration est idéale si vous utilisez ClickHouse pour des sources de données volumineuses, comme des données binaires NetFlow, Avro ou Protobuf, le DNS, les journaux de flux VPC et d’autres logs OTel, que vous pouvez partager avec votre équipe dans Splunk pour effectuer des recherches et créer des tableaux de bord. Avec cette approche, les données ne sont pas ingérées dans la couche d’indexation de Splunk : elles sont simplement interrogées directement depuis ClickHouse, comme avec d’autres intégrations de visualisation telles que [Metabase](https://www.metabase.com/) ou [Superset](https://superset.apache.org/).
+
+<div id="goal">
+  ## Objectif​
+</div>
+
+Dans ce guide, nous utiliserons le ClickHouse JDBC driver pour connecter ClickHouse à Splunk. Nous installerons une version locale de Splunk Enterprise, mais sans indexer de données. Nous utiliserons plutôt les fonctions de recherche via le moteur de requête DB Connect.
+
+Grâce à ce guide, vous pourrez créer un tableau de bord connecté à ClickHouse similaire à celui-ci :
+
+<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="Tableau de bord Splunk affichant des visualisations des données des taxis de New York" />
+
+<Note>
+  Ce guide utilise le [jeu de données New York City Taxi](/fr/get-started/sample-datasets/nyc-taxi). Vous pouvez également utiliser de nombreux autres jeux de données disponibles dans [notre documentation](http://localhost:3000/docs/getting-started/example-datasets).
+</Note>
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+Avant de commencer, vous aurez besoin de :
+
+* Splunk Enterprise pour utiliser les fonctions du search head
+* Les éléments requis de [Java Runtime Environment (JRE)](https://docs.splunk.com/Documentation/DBX/3.16.0/DeployDBX/Prerequisites) installés sur votre système d’exploitation ou dans votre conteneur
+* [Splunk DB Connect](https://splunkbase.splunk.com/app/2686)
+* D’un accès Admin ou SSH au système d’exploitation de votre instance Splunk Enterprise
+* Des informations de connexion ClickHouse (voir [ici](/fr/integrations/connectors/data-visualization/metabase-and-clickhouse#1-gather-your-connection-details) si vous utilisez ClickHouse Cloud)
+
+<div id="install-and-configure-db-connect-on-splunk-enterprise">
+  ## Installer et configurer DB Connect sur Splunk Enterprise
+</div>
+
+Vous devez d&#39;abord installer le Java Runtime Environment sur votre instance Splunk Enterprise. Si vous utilisez Docker, vous pouvez exécuter la commande `microdnf install java-11-openjdk`.
+
+Notez le chemin `java_home` : `java -XshowSettings:properties -version`.
+
+Assurez-vous que DB Connect App est installé sur Splunk Enterprise. Vous pouvez le trouver dans la section Apps de l’interface Web Splunk :
+
+* Connectez-vous à Splunk Web, puis accédez à Apps &gt; Find More Apps
+* Utilisez la zone de recherche pour trouver DB Connect
+* Cliquez sur le bouton vert &quot;Install&quot; à côté de Splunk DB Connect
+* Cliquez sur &quot;Restart Splunk&quot;
+
+Si vous rencontrez des problèmes lors de l’installation de DB Connect App, veuillez consulter [ce lien](https://splunkbase.splunk.com/app/2686) pour obtenir des instructions supplémentaires.
+
+Une fois que vous avez vérifié que DB Connect App est installé, ajoutez le chemin `java_home` à DB Connect App dans Configuration -&gt; Settings, puis cliquez sur save, puis sur reset.
+
+<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="Page des paramètres de Splunk DB Connect affichant la configuration de Java Home" />
+
+<div id="configure-jdbc-for-clickhouse">
+  ## Configurer JDBC pour ClickHouse
+</div>
+
+Téléchargez le [fichier JAR du ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java/releases/) et copiez-le dans le dossier DB Connect Drivers à l’emplacement suivant :
+
+```bash
+$SPLUNK_HOME/etc/apps/splunk_app_db_connect/drivers
+```
+
+Afin de vous assurer que toutes les dépendances requises sont disponibles pour l’application DB Connect App, téléchargez l’un des éléments suivants :
+
+```text
+- clickhouse-jdbc-<VERSION>-shaded-all.jar (if VERSION < 0.9.0)
+- clickhouse-jdbc-<VERSION>-all-dependencies.jar (if VERSION >= 0.9.0)
+```
+
+Vous devez ensuite modifier la configuration des types de connexion dans `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf` afin d’y ajouter les détails de la classe du ClickHouse JDBC driver. Ajoutez la section suivante à `db_connection_types.conf` :
+
+```text
+[ClickHouse]
+displayName = ClickHouse
+serviceClass = com.splunk.dbx2.DefaultDBX2JDBC
+jdbcUrlFormat = jdbc:ch://<host>:<port>/<database>
+jdbcUrlSSLFormat = jdbc:ch://<host>:<port>/<database>?ssl=true
+jdbcDriverClass = com.clickhouse.jdbc.ClickHouseDriver
+ui_default_catalog = $database$
+```
+
+Redémarrez Splunk avec `$SPLUNK_HOME/bin/splunk restart`.
+
+Revenez à l’application DB Connect App, puis accédez à Configuration &gt; Settings &gt; Drivers. Vous devriez voir une coche verte à côté de ClickHouse :
+
+<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="Page des pilotes de Splunk DB Connect montrant le pilote ClickHouse correctement installé" />
+
+<div id="connect-splunk-search-to-clickhouse">
+  ## Connecter la recherche Splunk à ClickHouse
+</div>
+
+Accédez à DB Connect App Configuration -&gt; Databases -&gt; Identities, puis créez une identité pour votre instance ClickHouse.
+
+Créez une nouvelle connexion à ClickHouse depuis Configuration -&gt; Databases -&gt; Connections, puis sélectionnez &quot;New Connection&quot;.
+
+<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Bouton de nouvelle connexion de Splunk DB Connect" />
+
+<br />
+
+Renseignez les informations de l’hôte ClickHouse et assurez-vous que &quot;Enable SSL&quot; est coché :
+
+<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="Page de configuration de la connexion Splunk pour ClickHouse" />
+
+Après avoir enregistré la connexion, vous aurez correctement connecté ClickHouse à Splunk !
+
+<Note>
+  Si vous recevez une erreur, assurez-vous d’avoir ajouté l’adresse IP de votre instance Splunk à l’IP Access List de ClickHouse Cloud. Consultez [la documentation](/fr/products/cloud/guides/security/connectivity/setting-ip-filters) pour plus d’informations.
+</Note>
+
+<div id="run-a-sql-query">
+  ## Exécuter une requête SQL
+</div>
+
+Nous allons maintenant exécuter une requête SQL pour vérifier que tout fonctionne correctement.
+
+Sélectionnez vos informations de connexion dans le SQL Explorer, dans la section DataLab de DB Connect App. Nous utilisons la table `trips` pour cette démonstration :
+
+<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="SQL Explorer de Splunk sélectionnant la connexion à ClickHouse" />
+
+Exécutez une requête SQL sur la table `trips` qui renvoie le nombre total d’enregistrements de la table :
+
+<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="Exécution d’une requête SQL dans Splunk affichant le nombre d’enregistrements dans la table trips" />
+
+Si votre requête s’exécute correctement, vous devriez voir les résultats.
+
+<div id="create-a-dashboard">
+  ## Créer un tableau de bord
+</div>
+
+Créons un tableau de bord qui combine SQL et le puissant Splunk Processing Language (SPL).
+
+Avant de poursuivre, vous devez d&#39;abord [désactiver les garde-fous DPL](https://docs.splunk.com/Documentation/Splunk/9.2.1/Security/SPLsafeguards?ref=hk#Deactivate_SPL_safeguards).
+
+Exécutez la requête suivante, qui affiche les 10 quartiers comptant le plus grand nombre de prises en charge :
+
+```sql
+dbxquery query="SELECT pickup_ntaname, count(*) AS count
+FROM default.trips GROUP BY pickup_ntaname
+ORDER BY count DESC LIMIT 10;" connection="chc"
+```
+
+Sélectionnez l’onglet de visualisation pour afficher le graphique en colonnes créé :
+
+<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="Visualisation d’un graphique en colonnes Splunk montrant les 10 principaux quartiers de prise en charge" />
+
+Nous allons maintenant créer un tableau de bord en cliquant sur Save As &gt; Save to a Dashboard.
+
+Ajoutons une autre requête qui affiche le tarif moyen en fonction du nombre de passagers.
+
+```sql
+dbxquery query="SELECT passenger_count,avg(total_amount)
+FROM default.trips GROUP BY passenger_count;" connection="chc"
+```
+
+Cette fois, créons une visualisation sous forme de graphique en barres et enregistrons-la sur le tableau de bord précédent.
+
+<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="Graphique en barres Splunk montrant le tarif moyen selon le nombre de passagers" />
+
+Enfin, ajoutons une requête supplémentaire qui montre la corrélation entre le nombre de passagers et la distance du trajet :
+
+```sql
+dbxquery query="SELECT passenger_count, toYear(pickup_datetime) AS year,
+round(trip_distance) AS distance, count(* FROM default.trips)
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC; " connection="chc"
+```
+
+Voici à quoi devrait ressembler notre tableau de bord final :
+
+<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="Tableau de bord Splunk final avec plusieurs visualisations des données de taxis de New York" />
+
+<div id="time-series-data">
+  ## Données de séries temporelles
+</div>
+
+Splunk dispose de centaines de fonctions intégrées que les tableaux de bord peuvent utiliser pour la visualisation et la présentation de données de séries temporelles. Cet exemple combine SQL et SPL pour créer une requête capable de traiter des données de séries temporelles dans Splunk
+
+```sql
+dbxquery query="SELECT time, orig_h, duration
+FROM "demo"."conn" WHERE time >= now() - interval 1 HOURS" connection="chc"
+| eval time = strptime(time, "%Y-%m-%d %H:%M:%S.%3Q")
+| eval _time=time
+| timechart avg(duration) as duration by orig_h
+| eval duration=round(duration/60)
+| sort - duration:
+```
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+Si vous souhaitez en savoir plus sur Splunk DB Connect et sur la création de tableaux de bord, veuillez consulter la [documentation Splunk](https://docs.splunk.com/Documentation).

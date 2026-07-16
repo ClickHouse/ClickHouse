@@ -1497,7 +1497,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return true;
                 }
 
-                layers.back().arr.push_back(literal->value);
+                /// Move the just-finished nested collection into its parent instead of copying it.
+                /// `literal` is a local that is discarded right after (only the outermost layer is
+                /// kept as `node`), so moving its value out is safe. Copying here made parsing a
+                /// deeply nested literal such as `[[[ ... ]]]` quadratic in its depth.
+                layers.back().arr.push_back(std::move(literal->value));
                 continue;
             }
             if (pos->type == TokenType::Comma)

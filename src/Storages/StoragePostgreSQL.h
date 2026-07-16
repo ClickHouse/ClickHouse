@@ -5,6 +5,7 @@
 #if USE_LIBPQXX
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/TableNameOrQuery.h>
 
 namespace Poco
 {
@@ -28,7 +29,7 @@ public:
     StoragePostgreSQL(
         const StorageID & table_id_,
         postgres::PoolWithFailoverPtr pool_,
-        const String & remote_table_name_,
+        const TableNameOrQuery & remote_table_or_query_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
@@ -61,7 +62,7 @@ public:
         String username = "default";
         String password;
         String database;
-        String table;
+        TableNameOrQuery table_or_query;
         String schema;
         String on_conflict;
 
@@ -75,12 +76,12 @@ public:
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
-        const String & table,
+        const TableNameOrQuery & table_or_query,
         const String & schema,
         const ContextPtr & context_);
 
 private:
-    String remote_table_name;
+    TableNameOrQuery remote_table_or_query;
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;

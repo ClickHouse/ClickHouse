@@ -145,7 +145,10 @@ if (SANITIZE STREQUAL "memory")
 elseif (SANITIZE STREQUAL "thread")
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
-elseif (SANITIZE STREQUAL "address")
+elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
+    # Rust has no UBSan, so the combined ASan+UBSan build applies only ASan. Besides the
+    # instrumentation itself, `-Zsanitizer=address` arms wasmtime's `cfg(asan)` guard, preventing
+    # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
@@ -206,6 +209,22 @@ if (NOT SANITIZE STREQUAL "")
 codegen-units = 4")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
+endif()
+
+# The vendored Rust crates otherwise build with cargo's default dev profile (full DWARF debug=2 +
+# incremental). debug=1 is cargo's "limited" level: line tables plus function/scope info - so Rust
+# backtraces still resolve file:line - but no type or variable-level info; and dropping the
+# incremental cache stops target/debug/incremental growing unbounded across rebuilds. On by default
+# to keep Debug build dirs lean; set -DREDUCE_RUST_DEBUG_INFO=OFF for full DWARF + incremental when
+# stepping into the crates. Affects Debug only (Release uses profile.release, where this is inert).
+option(REDUCE_RUST_DEBUG_INFO "Build vendored Rust crates with reduced debug info (cargo debug=1, the \"limited\" level) and no incremental caches" ON)
+if (REDUCE_RUST_DEBUG_INFO)
+    set(RUST_DEV_PROFILE "[profile.dev]
+debug = 1
+incremental = false
+")
+else()
+    set(RUST_DEV_PROFILE "")
 endif()
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags

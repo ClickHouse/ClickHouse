@@ -1,0 +1,41 @@
+---
+description: '列STATISTICSの操作に関するドキュメント'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: '列STATISTICSの操作'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+以下の操作が利用できます。
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - テーブルのメタデータにSTATISTICSの定義を追加します。
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - テーブルのメタデータ内のSTATISTICSの定義を変更します。
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - 指定したカラムのメタデータからSTATISTICSを削除し、指定したカラムについてすべてのパーツ内のSTATISTICSオブジェクトを削除します。
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - 指定したカラムについて、すべてのパーツ内のSTATISTICSオブジェクトを削除します。STATISTICSオブジェクトは `ALTER TABLE MATERIALIZE STATISTICS` を使用して再構築できます。
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - カラムのSTATISTICSを再構築します。これは [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
+
+最初の 2 つのコマンドは、メタデータの変更またはファイルの削除のみを行うため、軽量です。
+
+また、これらはレプリケーションに対応しており、ZooKeeper 経由でSTATISTICSメタデータが同期されます。
+
+<div id="example">
+  ## 例:
+</div>
+
+2つのカラムに2種類のSTATISTICSを追加する例:
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  STATISTICSは、[`*MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブル ([Replicated](/ja/reference/engines/table-engines/mergetree-family/replication) などのバリアントを含む) でのみサポートされています。
+</Note>

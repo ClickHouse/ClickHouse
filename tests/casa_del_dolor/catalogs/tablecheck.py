@@ -1,4 +1,5 @@
 import logging
+import re
 import traceback
 import random
 from pyspark.sql import SparkSession
@@ -17,8 +18,23 @@ from pyspark.sql.types import (
     DecimalType,
 )
 
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    # Excluded from cross-engine comparison for the same reason as TimestampType
+    _TEMPORAL_NTZ_TYPES = (TimestampNTZType,)
+except ImportError:
+    _TEMPORAL_NTZ_TYPES = ()
+
 from .laketables import SparkTable, LakeFormat
 from integration.helpers.client import Client
+
+# Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
+# still compared instead of silently dropped (Spark CONCAT/COLLECT_LIST and ClickHouse
+# `||`/groupArray both discard NULL row hashes). ASCII so string ordering stays identical
+# across engines; the compared types are numeric/bool/array-of-those, which never produce
+# this literal, so it cannot collide with a real value.
+_NULL_SENTINEL = "<NULL>"
 
 
 class SparkAndClickHouseCheck:
@@ -44,11 +60,40 @@ class SparkAndClickHouseCheck:
                 VarcharType,
                 TimestampType,
                 DateType,
-            ),
+            )
+            + _TEMPORAL_NTZ_TYPES,
         ):
-            # Map type is not comparable in Spark, Struct is complicated
+            # Map type is not comparable in Spark, Struct is complicated.
+            # TIMESTAMP_NTZ is excluded like TimestampType: its string form differs
+            # between Spark and ClickHouse (fractional seconds, precision), so hashing
+            # it across engines yields spurious mismatches.
             return False
         return True
+
+    def _clickhouse_engine_matches(self, client, table: SparkTable):
+        expected_by_format = {
+            LakeFormat.Iceberg: "Iceberg",
+            LakeFormat.DeltaLake: "DeltaLake",
+            LakeFormat.Paimon: "Paimon",
+        }
+        expected = expected_by_format.get(table.lake_format)
+        # Read the declared engine from the DDL rather than system.tables.engine:
+        # with lazy_load_tables, system.tables reports StorageTableProxy's name
+        # ("TableProxy") until the table is first materialized, which is not an
+        # engine swap. SHOW CREATE reflects the real (possibly REPLACEd) engine
+        # without forcing a load.
+        ddl = client.query(f"SHOW CREATE TABLE {table.get_clickhouse_path()};")
+        ddl = ddl if isinstance(ddl, str) else ""
+        match = re.search(r"ENGINE\s*=\s*([A-Za-z0-9_]+)", ddl)
+        if not match:
+            # Could not determine the engine: proceed with the check rather than
+            # silently skip it. An unparseable SHOW CREATE shape is a diagnostic
+            # gap, not evidence that the engine is wrong.
+            return True, ddl.strip()
+        engine = match.group(1)
+        if expected is None:
+            return True, engine
+        return engine.startswith(expected), engine
 
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
@@ -68,6 +113,13 @@ class SparkAndClickHouseCheck:
                 command=cluster.client_bin_path,
             )
 
+            engine_ok, ch_engine = self._clickhouse_engine_matches(client, table)
+            if not engine_ok:
+                self.logger.warning(
+                    f"Skipping check for {table.get_clickhouse_path()}: ClickHouse engine is '{ch_engine}', but the descriptor expects {table.lake_format.name}"
+                )
+                return True
+
             # There is multithreading, so time travel is now required
             if table.lake_format == LakeFormat.Iceberg:
                 result = spark.sql(
@@ -75,7 +127,7 @@ class SparkAndClickHouseCheck:
                 ).collect()
                 snapshots = [r.snapshot_id for r in result]
                 timestamps = [r.committed_at for r in result]
-            else:
+            elif table.lake_format == LakeFormat.DeltaLake:
                 result = spark.sql(
                     f"DESCRIBE HISTORY {table.get_table_full_path()};"
                 ).collect()
@@ -129,14 +181,22 @@ class SparkAndClickHouseCheck:
             )
 
             # Spark hash
-            # Convert all columns to string and concatenate. Remove trailing 0 for decimals
+            # Convert all columns to string and concatenate, wrapping each in COALESCE so a
+            # NULL keeps the row (otherwise CONCAT yields NULL and COLLECT_LIST drops it).
+            # Decimals: match ClickHouse `toString`, which trims trailing zeros only in the
+            # fractional part and drops a bare decimal point. A blunt TRIM TRAILING '0' would
+            # also strip significant zeros (e.g. "10" -> "1"), causing false mismatches.
+            def spark_col_expr(col) -> str:
+                s = f"CAST({col.column_name} AS STRING)"
+                if isinstance(col.spark_type, DecimalType):
+                    s = (
+                        f"CASE WHEN {s} LIKE '%.%' "
+                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {s})) ELSE {s} END"
+                    )
+                return f"COALESCE({s}, '{_NULL_SENTINEL}')"
+
             spark_strings = {
-                col.column_name: (
-                    f"TRIM(TRAILING '0' FROM CAST({col.column_name} AS STRING))"
-                    if isinstance(col.spark_type, DecimalType)
-                    else f"CAST({col.column_name} AS STRING)"
-                )
-                for col in order_by_cols
+                col.column_name: spark_col_expr(col) for col in order_by_cols
             }
             concat_cols = ", '||', ".join([col.column_name for col in order_by_cols])
             # Generate hash using SQL
@@ -155,11 +215,13 @@ class SparkAndClickHouseCheck:
             # ClickHouse hash
             # Convert all columns to string and concatenate
             # ClickHouse arrays as strings don't have a space after the comma, add it
+            # Wrap in coalesce with the same sentinel as the Spark side so NULL rows are kept
+            # and compared rather than dropped by groupArray.
             clickhouse_strings = {
                 col.column_name: (
-                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']'"
+                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
                     if isinstance(col.spark_type, (ArrayType))
-                    else f"toString({col.column_name})"
+                    else f"coalesce(toString({col.column_name}), '{_NULL_SENTINEL}')"
                 )
                 for col in order_by_cols
             }

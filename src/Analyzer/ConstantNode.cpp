@@ -5,6 +5,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/FieldToDataType.h>
@@ -95,19 +96,14 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", constant_value: ";
-    if (mask_id)
-    {
-        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            buffer << "[HIDDEN]";
-        else
-            buffer << "[HIDDEN id: " << mask_id << "]";
-    }
+    if (isMasked())
+        buffer << getMaskString();
     else
         buffer << getValue().dump();
 
     buffer << ", constant_value_type: " << constant_value.getType()->getName();
 
-    if (!mask_id && getSourceExpression())
+    if (!isMasked() && getSourceExpression())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -116,7 +112,16 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
 void ConstantNode::convertToNullable()
 {
-    constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
+    /// Use the LowCardinality-aware variant so that a `LowCardinality(T)` key becomes
+    /// `LowCardinality(Nullable(T))` rather than being left unchanged (a plain `Nullable`
+    /// cannot wrap `LowCardinality`). This keeps the analyzer in sync with `ColumnNode`,
+    /// `FunctionNode` and the planner, which all use `makeNullableOrLowCardinalityNullableSafe`
+    /// when `group_by_use_nulls` is enabled. Otherwise the declared key type would stay
+    /// non-Nullable while the runtime produces a Nullable column, leading to a logical error.
+    const auto & column = constant_value.getColumn();
+    constant_value
+        = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
+           makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
@@ -138,7 +143,9 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    result->mask_id = mask_id;
+    return result;
 }
 
 template <typename F>
