@@ -16,6 +16,8 @@ exceeds declared cardinality
 Puffin footer LZ4 content size
 --- missing_lz4_content_size.puffin ---
 Puffin footer LZ4 frame must declare content size
+--- lz4_trailing_bytes.puffin ---
+trailing bytes
 --- missing_snapshot_id.puffin ---
 missing required field
 --- missing_sequence_number.puffin ---

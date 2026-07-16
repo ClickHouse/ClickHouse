@@ -199,6 +199,18 @@ def generate_missing_lz4_content_size() -> None:
     )
 
 
+def generate_lz4_trailing_bytes() -> None:
+    """Valid single LZ4 frame plus trailing garbage; FooterPayloadSize includes the junk."""
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    footer_payload = lz4.frame.compress(footer_json, store_size=True) + b"GARBAGE"
+    footer_length = struct.pack("<i", len(footer_payload))
+    flags = bytes([0x01, 0x00, 0x00, 0x00])
+    write_fixture(
+        "lz4_trailing_bytes.puffin",
+        PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
 def generate_missing_required_fields() -> None:
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     payload = json.loads(footer_json.decode("utf-8"))
@@ -394,6 +406,7 @@ def main() -> None:
     generate_invalid_bitmap_key()
     generate_inflated_lz4_content_size(spark_fixture)
     generate_missing_lz4_content_size()
+    generate_lz4_trailing_bytes()
     generate_missing_required_fields()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()

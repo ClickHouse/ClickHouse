@@ -165,6 +165,12 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
             dst_offset,
             frame_info.contentSize);
 
+    if (src_remaining != 0)
+        throw Exception(
+            ErrorCodes::LZ4_DECODER_FAILED,
+            "Puffin footer LZ4 frame has {} trailing bytes",
+            src_remaining);
+
     result.resize(dst_offset);
     return result;
 }

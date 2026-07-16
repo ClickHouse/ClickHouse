@@ -33,6 +33,9 @@ $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_siz
 echo "--- missing_lz4_content_size.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/missing_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 frame must declare content size'
 
+echo "--- lz4_trailing_bytes.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/lz4_trailing_bytes.puffin', PuffinMetadata)" 2>&1 | grep -oF 'trailing bytes'
+
 for PUFFIN_FILE in \
     "$DATA/missing_snapshot_id.puffin" \
     "$DATA/missing_sequence_number.puffin" \
