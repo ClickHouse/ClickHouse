@@ -119,7 +119,7 @@ bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & i
 {
     T x{};
 
-    bool parsed;
+    bool parsed = false;
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
     {
         if (!settings.values.deserialize_text_state)
