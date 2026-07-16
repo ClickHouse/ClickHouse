@@ -1,4 +1,5 @@
 
+#include <charconv>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -166,6 +167,23 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
+/// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
+/// std::stoi throws std::out_of_range for values above INT_MAX, which would surface as an
+/// opaque STD_EXCEPTION (see issue #109612) instead of a clean BAD_ARGUMENTS.
+static Int32 parseMetadataVersion(const String & version_str, const String & file_name)
+{
+    Int32 version = 0;
+    const char * begin = version_str.data();
+    const char * end = begin + version_str.size();
+    auto [ptr, ec] = std::from_chars(begin, end, version);
+    if (ec != std::errc{} || ptr != end)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Version number is not a valid 32-bit integer",
+            file_name);
+    return version;
+}
+
 static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
@@ -209,7 +227,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             file_name);
 
     return MetadataFileWithInfo{
-        .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .version = parseMetadataVersion(version_str, file_name),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -347,7 +367,7 @@ bool writeMetadataFileAndVersionHint(
         {
             if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
             {
-                old_version = std::stoi(version_hint_value);
+                old_version = parseMetadataVersion(version_hint_value, version_hint_value);
             }
             else
             {
