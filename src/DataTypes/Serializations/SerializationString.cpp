@@ -866,7 +866,10 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
     data.resize(initial_size + bytes_to_read);
     column = std::move(mutable_column);
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
+    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
+    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
+    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows - rows_offset);
     settings.path.pop_back();
 }
 
