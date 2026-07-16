@@ -328,7 +328,7 @@ void RestoreCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, c
             std::string election_path = fs::path(dir_path) / escapeForFileName(election_id);
             auto code = zk->tryCreate(election_path, "", zkutil::CreateMode::Persistent);
             if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-                zkutil::KeeperException::fromPath(code, election_path);
+                throw zkutil::KeeperException::fromPath(code, election_path);
         });
 }
 

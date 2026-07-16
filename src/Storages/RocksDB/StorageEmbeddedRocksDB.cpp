@@ -550,12 +550,15 @@ private:
 };
 
 /// Election id used to pick a single owner among tables sharing one rocksdb_dir. A writable table (there
-/// is at most one, enforced by RocksDB's LOCK) always sorts above every read_only table, so it is elected
-/// when present. Its handle also sees the freshest data (including the unflushed memtable), which is what
-/// the backup must capture. The table uuid keeps ids unique across tables with the same writability.
+/// is at most one, enforced by RocksDB's LOCK) always sorts above every read_only table (the leading
+/// "1_rw"/"0_ro" tag dominates the comparison), so it is elected when present. Its handle also sees the
+/// freshest data (including the unflushed memtable), which is what the backup must capture. The
+/// fully-qualified table name keeps ids unique across distinct tables: unlike the storage uuid it is never
+/// Nil for Ordinary-database tables (InterpreterCreateQuery clears the uuid there), so two unrelated
+/// EmbeddedRocksDB tables never collide on one election znode.
 String StorageEmbeddedRocksDB::backupElectionId() const
 {
-    return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", toString(getStorageID().uuid));
+    return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", getStorageID().getFullTableName());
 }
 
 void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
