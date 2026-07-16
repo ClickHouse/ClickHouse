@@ -15,44 +15,33 @@
 namespace DB
 {
 
-/// Bounded keep-alive cache of open cache-segment readers, at most one per
-/// segment path. The readers are held only as ANCHORS, never read through:
-/// keeping a recently-used reader alive keeps its `OpenedFile` alive, so the
-/// next `createReadBufferFromFileBase` is an `OpenedFileCache` hit (no `open`
-/// syscall). `CacheBase` is internally synchronized.
+/// Keep-alive anchors for recently-used cache-segment readers, one per segment path: holding a
+/// reader keeps its `OpenedFile` alive, so the next open is an `OpenedFileCache` hit (no syscall).
 using ReaderAnchorCache = CacheBase<String, ReadBufferFromFileBase>;
 
-/// One held cache-segment reader, reused across windows by the sequential read
-/// path. A caller either takes the held reader (exclusive until check-in) or
-/// opens its own fresh one - the reader is never used by two threads at once,
-/// which is what makes this safe under the concurrent `readBigAt` fan-out
-/// (the slot just degrades to fresh readers there).
+/// One held cache-segment reader reused across sequential windows. Never used by two threads at
+/// once (the concurrent fan-out just degrades to fresh readers).
 struct StreamingReaderSlot
 {
-    /// Take the held reader ONLY when it is free, for `p`, AND already sitting
-    /// at `offset` - the next read must be exactly contiguous, because a reused
-    /// reader must never be `seek`-ed: it was last driven in external-buffer
-    /// (`set`) mode, whose stale working-buffer coordinates make `seek`'s
-    /// in-buffer shortcut mis-position.
+    /// Take the held reader only when free, for `p`, and already at `offset`: a reused reader must
+    /// not be `seek`-ed (it was last driven in external-buffer mode, whose stale coordinates
+    /// mis-position the in-buffer seek shortcut).
     std::shared_ptr<ReadBufferFromFileBase> tryCheckout(const String & p, size_t offset);
 
-    /// Return `r` as the held reader for `p`, positioned at `next_pos`, free.
     void checkin(const String & p, std::shared_ptr<ReadBufferFromFileBase> r, size_t next_pos);
 
-    /// Drop the held reader (e.g. a read threw): never reuse a faulted reader.
+    /// Never reuse a faulted reader (e.g. a read threw).
     void abandon();
 
     std::mutex mutex;
     String path;
     std::shared_ptr<ReadBufferFromFileBase> reader;
-    /// File offset the held reader is positioned at.
     size_t next_position = 0;
     bool checked_out = false;
 };
 
-/// `CacheReader` over one resident range, backed by a read-only
-/// `FileSegmentsHolder` shared by all hit buffers of the view (keeps the
-/// segments pinned for the view's lifetime).
+/// `CacheReader` over one resident range, backed by a read-only `FileSegmentsHolder` shared by the
+/// view's hit buffers (pins the segments for the view's lifetime).
 class DiskCacheReader : public CacheReader
 {
 public:
@@ -75,17 +64,13 @@ private:
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
     StreamingReaderSlot * stream_slot = nullptr;
-    /// The owning view's deferred-bump list: each `read` records its `sub`
-    /// here for the LRU bump in `~DiskCacheView`. Not owned; the view outlives
-    /// this buffer.
+    /// The owning view's deferred-LRU-bump list; not owned (the view outlives this reader).
     VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink = nullptr;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
-/// `CacheWriter` over one cache-aligned miss range. Owns its OWN
-/// `FileSegmentsHolder` (one `getOrSet`, built by `openWriteBuffers`), appends
-/// across windows and is finalized at destruction - the holder's destructor
-/// shrinks a partial segment to its downloaded size.
+/// `CacheWriter` over one cache-aligned miss range. Owns its `FileSegmentsHolder`, appends across
+/// windows, and is finalized at destruction (the holder shrinks a partial segment to its size).
 class DiskCacheWriter : public CacheWriter
 {
 public:
@@ -116,18 +101,15 @@ private:
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderPtr holder;
     IntervalSet committed_ranges;
-    /// Guards `committed_ranges` only. Per-segment write exclusion is the FileCache
-    /// downloader (`getOrSetDownloader`), but the worker and the foreground can append
-    /// disjoint segments of the SAME writer concurrently, racing this `IntervalSet`.
+    /// The worker and the foreground can append disjoint segments of this writer concurrently, so
+    /// this guards `committed_ranges` (per-segment write exclusion is the FileCache downloader).
     mutable std::mutex committed_mutex;
     ByteRange aligned_range;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 
-/// `CacheView` from `DiskCacheProvider::planResidencyView`. Holds the shared
-/// read-only holder plus the deferred-LRU-bump context; its destructor runs
-/// the bump over all ranges the read buffers recorded. Misses carry
-/// `writer == nullptr`.
+/// `CacheView` from `DiskCacheProvider::planResidencyView`; its destructor runs the deferred LRU
+/// bump over the ranges the read buffers recorded.
 class DiskCacheView : public CacheView
 {
 public:
@@ -137,8 +119,7 @@ public:
 
     ~DiskCacheView() override;
 
-    /// `hit_entries` / `miss_entries` are inherited from `CacheView`.
-    /// Appended to by the owned read buffers' `read` calls; consumed by the dtor.
+    /// Appended by the read buffers' `read` calls; consumed by the dtor's LRU bump.
     VectorWithMemoryTracking<ByteRange> hits_to_touch;
 
 private:
@@ -148,22 +129,14 @@ private:
 };
 
 
-/// `ICacheProvider` wrapping FileCache. Safe for concurrent use (the
-/// `readBigAt` fan-out shares one provider): lookups only read immutable
-/// members and the internally-locked `FileCache`; the shared mutable state
-/// (`ReaderAnchorCache`, `StreamingReaderSlot`) is internally synchronized.
-///
-/// Cache identity per object: `custom_cache_key` when set (single-object,
-/// etag-keyed flow), else `FileCacheKey::fromPath(object.remote_path)`
-/// (multi-object gather mode). Origin: `custom_origin` when set, else the
-/// per-object `Data`/`System` classification by file extension.
+/// `ICacheProvider` wrapping FileCache; safe to share across the concurrent fan-out (its mutable
+/// state -- `ReaderAnchorCache`, `StreamingReaderSlot`, `FileCache` -- is internally synchronized).
+/// Cache key: `custom_cache_key` if set, else `FileCacheKey::fromPath(object.remote_path)`.
 class DiskCacheProvider : public ICacheProvider
 {
 public:
-    /// `query_id` enforces `filesystem_cache_max_download_size`: the provider
-    /// keeps a `QueryContextHolder` alive so `tryReserve` (inside
-    /// `CacheWriter::write`) finds the per-query budget. Empty `query_id`
-    /// means no per-query limit.
+    /// `query_id` (empty = no per-query limit) keeps a `QueryContextHolder` alive so `tryReserve`
+    /// in `write` finds the per-query `filesystem_cache_max_download_size` budget.
     DiskCacheProvider(
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
@@ -176,44 +149,29 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
-    /// One `cache->get` (no segment creation): each resident sub-range becomes
-    /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A
-    /// concurrently-DOWNLOADING segment credits its committed prefix as a hit
-    /// and misses only the tail. Miss runs are TILED into optimal fill cells
-    /// (`optimalFillCell`) on the absolute grid; a cut never falls inside an
-    /// EXISTING segment, so each emitted range maps to whole cells and
-    /// `openWriteBuffers` never hands two writers the same segment.
+    /// One `cache->get` (no creation): resident sub-ranges become hits, gaps become writer-null miss
+    /// cells tiled on the boundary grid so a cut never falls inside an existing segment.
     CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
 
-    /// One `getOrSet` per surviving miss cell; the held holder is owned by each writer.
+    /// One `getOrSet` per surviving miss cell; the holder is owned by each writer.
     void openWriteBuffers(
         const StoredObject & object, size_t object_file_offset, CacheView & view) override;
 
 private:
-    /// The cache boundary grid: the quantum of segment starts/extents (as
-    /// `getOrSet` resolves it).
+    /// The cache boundary grid (the quantum of segment starts/extents).
     size_t resolvedBoundaryAlignment() const;
-    /// The extent virgin miss runs are tiled into: the S3-optimal request size
-    /// (~8 MiB - past it the per-request cost is amortized and larger cells
-    /// mostly risk dying partial at query end), clamped to the cache's max
-    /// segment size and kept a multiple of the boundary grid.
+    /// The extent virgin miss runs are tiled into: the S3-optimal request size, clamped to the
+    /// cache's max segment size and kept a multiple of the boundary grid.
     size_t optimalFillCell() const;
 
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
-    /// Forwarded into each `DiskCacheReader` so cache-file reads honour
-    /// `max_local_read_bandwidth`.
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
-    /// Keeps the per-query budget context registered for the provider's
-    /// lifetime (see the constructor doc).
     FileCache::QueryContextHolderPtr query_context_holder;
-    /// Keep-alive anchors for recently-used cache-segment readers; see
-    /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;
-    /// See `StreamingReaderSlot`.
     StreamingReaderSlot streaming_slot;
     LoggerPtr log = getLogger("DiskCacheProvider");
 };
