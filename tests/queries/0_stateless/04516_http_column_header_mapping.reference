@@ -89,6 +89,8 @@ remote-event	remote
 --- async: DEFAULT expression referencing injected column (no explicit column list)
 7	8	default-no-list
 5	6	default-test
+--- sync: bad header value with input_format_defaults_for_omitted_fields=1
+BAD_QUERY_PARAMETER
 --- async: multi-header middle-entry failure isolation (alter)
 --- async: multi-header middle-entry failure isolation (results)
 aa	first	entry1

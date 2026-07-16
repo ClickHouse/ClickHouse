@@ -332,6 +332,19 @@ do_default_tests() {
 }
 
 run_modes do_default_tests
+
+# Sync-only: a bad header value with input_format_defaults_for_omitted_fields=1
+# must still produce BAD_QUERY_PARAMETER. The table has b DEFAULT a+1, so
+# columns->hasDefaults() is true and getSourceFromASTInsertQuery also parses the
+# header value. HTTPHeaderColumnsTransform is constructed first, so its
+# BAD_QUERY_PARAMETER wrap fires before the raw parse in getSourceFromInputFormat.
+echo "--- sync: bad header value with input_format_defaults_for_omitted_fields=1"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-A: not-a-number' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-A=a&input_format_defaults_for_omitted_fields=1" \
+    -d '{"payload":"x"}' \
+    | expect_match 'BAD_QUERY_PARAMETER'
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 
 # ── Async schema drift and per-entry failure isolation ────────────────────────
