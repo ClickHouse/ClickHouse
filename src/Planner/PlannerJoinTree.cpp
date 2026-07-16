@@ -1706,14 +1706,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-                    /// `row_level_filter` is only consumed by `storage->read()`, which is skipped when building a
-                    /// logical plan (a storage-agnostic `ReadFromTableStep` placeholder is used instead, see below);
-                    /// materialization later calls `storage->read()` afresh with a bare `SelectQueryInfo` that never
-                    /// carries it over, so the policy would be silently dropped. Route it through the WHERE-filter
-                    /// path instead (like `prewhere_actions` already does above), which becomes an explicit
-                    /// `FilterStep` that survives materialization unchanged.
+                    /// For the query plan cache, `row_level_filter` is only consumed by `storage->read()`, which is
+                    /// skipped when building a cacheable logical plan (a storage-agnostic `ReadFromTableStep`
+                    /// placeholder is used instead, see below); materialization later calls `storage->read()` afresh
+                    /// with a bare `SelectQueryInfo` that never carries it over, so the policy would be silently
+                    /// dropped. Route it through the WHERE-filter path instead (like `prewhere_actions` already does
+                    /// above), which becomes an explicit `FilterStep` that survives materialization unchanged.
+                    /// This must be gated on `cacheable_logical_plan`, not `build_logical_plan`: the latter is also
+                    /// set for parallel-replicas and distributed local plans, which do carry `row_level_filter`
+                    /// through their own materialization and must keep using PREWHERE (moving the row policy out of
+                    /// PREWHERE there breaks index/mark estimation, e.g. `03006_parallel_replicas_prewhere`).
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (storage->supportsPrewhere() && !select_query_options.build_logical_plan)
+                    if (storage->supportsPrewhere() && !select_query_options.cacheable_logical_plan)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
