@@ -599,6 +599,13 @@ html:not(.dark) .pagination-prev:hover {
     border-color: #535353;
 }
 
+/* Mintlify gives the pagination card's inner flex wrapper its own page-level
+   background. Keep it transparent so the complete button uses the parent
+   card color in both its resting and hover states. */
+#pagination > a > div {
+    background: transparent !important;
+}
+
 /* Previous card: keep chevron + label together on the left (maple's
    justify-between would otherwise spread them across the card) */
 #pagination > a:has(svg.lucide-chevron-left) {
@@ -838,13 +845,48 @@ html:not(.dark) .pagination-prev:hover {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
-       scroll container's scrollbar track spans its whole padding box, so
-       padding-top would leave the scrollbar flush against — visually touching —
-       the search/Ask AI buttons. A margin pushes the scroll box itself (and
-       therefore the top of its scrollbar) down below that row, so the scrollbar
-       no longer exceeds the first nav item. */
-    margin-top: 0.5rem;
+    /* Mintlify inserts an empty `mt-8` list before the first real menu item.
+       Move that spacing outside the scrolling box so the scrollbar track starts
+       level with the first item instead of directly below search and Ask AI. */
+    margin-top: 2.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+#navigation-items > ul.list-none.mt-8:first-child:empty {
+    margin-top: 0 !important;
+}
+
+#navigation-items::-webkit-scrollbar {
+    width: 5px;
+}
+
+#navigation-items::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#navigation-items::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #d1d5db;
+}
+
+#navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+.dark #navigation-items,
+:is(.dark) #navigation-items {
+    scrollbar-color: #52525b transparent;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb {
+    background: #52525b;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb:hover,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #71717a;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -2734,17 +2776,18 @@ html:not(.dark) [data-callout-type] [data-component-part="callout-content"] code
     color: lch(82.069 27.695 22.026 / 0.75);
 }
 
-/* Keep icons dark on hover in light mode */
-html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Keep leading brand/mask icons dark on hover in light mode. The trailing SVG
+   on external links is an unboxed arrow and must not receive this background. */
+html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #1a1a1a !important;
 }
 
-/* Make icons yellow on hover in dark mode */
-.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Make leading brand/mask icons yellow on hover in dark mode */
+.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #FAFF69 !important;
 }
 
@@ -2943,6 +2986,50 @@ html:not(.dark) .card a {
 
 .goal-card-link:hover .ch-external-arrow {
     transform: rotate(-45deg);
+}
+
+/* Langfuse opens outside the docs site. Replace Mintlify's high-emphasis tile
+   with one small, unboxed external-link glyph. */
+a.nav-dropdown-item[href^="https://langfuse.com/docs"],
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: #9ca3af !important;
+    opacity: 0.6 !important;
+    transition: color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #2563eb !important;
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    color: #71717a !important;
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #fdff75 !important;
 }
 
 /* ============================================

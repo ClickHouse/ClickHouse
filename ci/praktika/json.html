@@ -339,6 +339,11 @@
             text-decoration: underline;
         }
 
+        .status-column a {
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
         th, td {
             padding: 8px;
             border: 1px solid var(--table-border-color);
@@ -1612,16 +1617,20 @@
 
                 if (column === 'status') {
                     const value_ = value ? value.toLowerCase() : "";
-                    const span = document.createElement('span');
-                    span.className = getStatusClass(value_);
-                    span.textContent = value_;
+                    const clickable = (result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0);
+                    const statusEl = clickable ? document.createElement('a') : document.createElement('span');
+                    statusEl.className = getStatusClass(value_);
+                    statusEl.textContent = value_;
                     td.classList.add('status-column');
                     row.dataset.status = value_;
-                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0) || (Array.isArray(result.results) && result.results.length > 0)) {
-                        span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.results, result.links));
+                    if (clickable) {
+                        statusEl.href = '#';
+                        statusEl.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            toggleInfoRow(row, result.info, result.results, result.links);
+                        });
                     }
-                    td.appendChild(span);
+                    td.appendChild(statusEl);
                     row.style.display = shouldShowRow(filter, row.dataset.status) ? '' : 'none';
                 } else if (column === 'name') {
                     const statusValue = result["status"] ? result["status"].toLowerCase() : "";
