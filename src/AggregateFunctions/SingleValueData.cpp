@@ -1360,41 +1360,46 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         size = rhs_size;
 
         /// A corrupted or truncated state may carry an arbitrarily large size prefix (up to
-        /// ~2 GiB). Pre-allocating `size - 1` bytes in one shot would waste memory and, more
-        /// importantly, could trigger MEMORY_LIMIT_EXCEEDED before we even notice that the
-        /// buffer does not actually contain that many bytes. Grow the destination gradually
-        /// instead, so a short buffer fails with the expected CANNOT_READ_ALL_DATA while only
-        /// as much memory as the data really occupies gets allocated.
+        /// ~2 GiB). We must not trust it and preallocate `size - 1` bytes in the arena upfront:
+        /// a short buffer would then fail with CANNOT_READ_ALL_DATA only after that huge
+        /// allocation already succeeded (or blown the memory limit).
         /// See 02477_single_value_data_string_regression.
         const UInt32 bytes_to_read = size - 1;
-        UInt32 bytes_read = 0;
-        while (bytes_read < bytes_to_read)
+
+        if (buf.available() >= bytes_to_read)
         {
-            if (capacity <= bytes_read)
+            /// The common case: the whole value is already sitting in the read buffer.
+            /// Allocate exactly once, directly in the arena - same as before this fix.
+            allocateLargeDataIfNeeded(bytes_to_read, arena);
+            buf.readStrict(large_data, bytes_to_read);
+        }
+        else
+        {
+            /// The value spans more than what is currently buffered. Grow a plain heap buffer
+            /// while reading instead of the arena: ordinary reallocation frees the previous
+            /// buffer as it grows, so a truncated/corrupt state never keeps more than one live
+            /// copy around. Once the whole value has been read and validated, copy it into the
+            /// arena in a single allocation.
+            String scratch;
+            UInt32 bytes_read = 0;
+            while (bytes_read < bytes_to_read)
             {
-                /// Grow geometrically (at least ×2) to keep the total work linear, and reserve
-                /// at least enough to drain what is currently buffered in a single read. The
-                /// `+ 1` term guarantees progress even if the buffer is momentarily empty, and
-                /// we never reserve more than the whole value needs.
-                UInt64 bytes_to_reserve = std::max<UInt64>({
+                /// Grow geometrically (at least ×2), and reserve at least enough to drain what
+                /// is currently buffered in a single read.
+                UInt64 new_size = std::max<UInt64>({
                     static_cast<UInt64>(bytes_read) + 1,
-                    static_cast<UInt64>(capacity) * 2,
+                    static_cast<UInt64>(scratch.size()) * 2,
                     static_cast<UInt64>(bytes_read) + buf.available()});
-                bytes_to_reserve = std::min<UInt64>(bytes_to_reserve, bytes_to_read);
+                new_size = std::min<UInt64>(new_size, bytes_to_read);
+                scratch.resize(new_size);
 
-                size_t rounded_capacity = roundUpToPowerOfTwoOrZero(bytes_to_reserve);
-                chassert(rounded_capacity <= MAX_STRING_SIZE + 1); /// rounded_capacity <= 2^31
-
-                char * new_large_data = arena->alloc(rounded_capacity);
-                if (bytes_read)
-                    memcpy(new_large_data, large_data, bytes_read);
-                large_data = new_large_data;
-                capacity = static_cast<UInt32>(rounded_capacity);
+                UInt32 chunk = static_cast<UInt32>(new_size) - bytes_read;
+                buf.readStrict(scratch.data() + bytes_read, chunk);
+                bytes_read += chunk;
             }
 
-            UInt32 chunk = std::min(capacity, bytes_to_read) - bytes_read;
-            buf.readStrict(large_data + bytes_read, chunk);
-            bytes_read += chunk;
+            allocateLargeDataIfNeeded(bytes_to_read, arena);
+            memcpy(large_data, scratch.data(), bytes_to_read);
         }
 
         readChar(last_char, buf);
