@@ -1,0 +1,10 @@
+unique pairs never fire
+0	100000
+1
+duplicated pairs stay on across rewritten executions
+0	5000
+2
+0	5000
+2
+0	5000
+2

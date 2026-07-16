@@ -42,6 +42,20 @@ constexpr UInt64 max_observed_group_keys = 1000000;
 /// and the winners have 1700+, so the bound sits between break-even and the winners.
 constexpr UInt64 min_avg_distinct_values_per_key = 500;
 
+/// The lower bound on the data duplication: the average number of source rows per distinct
+/// (group key, argument value) pair. The rewrite's added cost grows with the number of distinct
+/// pairs — they are the entries of the deduplicating hash table and the rows the count step
+/// consumes — while both plans read the same input, so the fewer source rows collapse into each
+/// pair, the less the rewrite has left to win. The requirement falls with the execution width
+/// because the rewrite's other saving, turning the serial merge of the per-thread tables into a
+/// parallel one, grows with width: measured locally, at 4 threads the break-even sits at ~8 rows
+/// per pair, at 16 threads at ~4, and at 64 threads the ClickBench winners (4.7+ rows per pair)
+/// win 1.35-1.63x with margin below them. The requirement is
+/// `width_scaled_rows_per_pair_requirement / width` clamped to these bounds.
+constexpr UInt64 min_required_avg_rows_per_pair = 3;
+constexpr UInt64 max_required_avg_rows_per_pair = 8;
+constexpr UInt64 width_scaled_rows_per_pair_requirement = 64;
+
 /// Overlap: in how many per-thread hash tables the same group key appears, on average.
 ///
 /// Every aggregating thread builds a private hash table from its share of the rows, so a group
@@ -156,6 +170,13 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
         return false;
 
     const auto current_width = params.max_threads;
+    const auto required_rows_per_pair = std::clamp<UInt64>(
+        width_scaled_rows_per_pair_requirement / std::max<UInt64>(current_width, 1),
+        min_required_avg_rows_per_pair,
+        max_required_avg_rows_per_pair);
+    if (hint->input_rows < hint->distinct_key_value_pairs * required_rows_per_pair)
+        return false;
+
     const auto observed_overlap = std::min<UInt64>(hint->sum_of_hash_table_sizes / hint->merged_result_rows, current_width);
     const auto min_overlap = std::clamp<UInt64>(
         std::min<UInt64>(hint->merged_hash_tables, current_width) / 2,
@@ -269,11 +290,12 @@ bool tryRewriteGroupedCountDistinct(QueryPlan::Node & node, QueryPlan::Nodes & n
     LOG_DEBUG(
         getLogger("QueryPlanOptimizations"),
         "Rewrote uniqExact({}) into a count over a deduplicating aggregation (observed group keys: {}, thread overlap: {}x, "
-        "avg distinct values per key: {})",
+        "avg distinct values per key: {}, avg rows per pair: {})",
         argument_name,
         hint->merged_result_rows,
         hint->sum_of_hash_table_sizes / hint->merged_result_rows,
-        hint->distinct_key_value_pairs / hint->merged_result_rows);
+        hint->distinct_key_value_pairs / hint->merged_result_rows,
+        hint->input_rows / hint->distinct_key_value_pairs);
     return true;
 }
 

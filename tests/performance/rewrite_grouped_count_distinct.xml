@@ -5,10 +5,10 @@
          the rewritten plan got slower (the firing query) or the gate started firing on a shape
          where the rewrite loses (the non-firing queries). -->
 
-    <!-- Few groups shared by every reading thread with a large distinct set per group: the shape
-         the rewrite is for, and it must fire. -->
+    <!-- Few groups shared by every reading thread, a large distinct set per group, and every
+         (key, value) pair occurring many times: the shape the rewrite is for, and it must fire. -->
     <create_query>CREATE TABLE t_cd_shared (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO t_cd_shared SELECT intHash32(number) % 2000, intHash64(number) % 8192 FROM numbers_mt(30000000)</fill_query>
+    <fill_query>INSERT INTO t_cd_shared SELECT intHash32(number) % 2000, intHash64(number) % 1024 FROM numbers_mt(30000000)</fill_query>
 
     <!-- Clustered group keys at the gate's boundary: each key is read by one thread only, so there
          is no cross-thread set duplication and the rewrite would lose ~1.4x — the overlap condition

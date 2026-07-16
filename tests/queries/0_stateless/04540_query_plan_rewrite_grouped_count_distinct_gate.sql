@@ -32,9 +32,10 @@ SET max_threads = 4;
 SELECT 'the rewritten runs refresh the gate: unfavorable data drift turns the rewrite back off';
 -- The inserted rows make the group keys millions and the per-key distinct sets singletons — the
 -- shape where the rewrite loses. The first query after the insert still runs rewritten (the gate
--- decided from the stale entry), but it records the drifted shape under the created steps' keys,
--- and the next plan steps aside. The drift run must use the aggregate's output: wrapping it in
--- `count()` would let the unused-column removal drop the `uniqExact` entirely.
+-- decided from the stale entry), but its created aggregations record the drifted group-key and
+-- pair counts back onto the original aggregation's entry, and the next plan steps aside. The
+-- drift run must use the aggregate's output: wrapping it in `count()` would let the unused-column
+-- removal drop the `uniqExact` entirely.
 INSERT INTO t_cd_gate SELECT 10 + number, 's_unique', 'l' FROM numbers(2000000);
 SELECT k, uniqExact(s) FROM t_cd_gate GROUP BY k ORDER BY k LIMIT 1;
 SELECT count() FROM (EXPLAIN SELECT k, uniqExact(s) FROM t_cd_gate GROUP BY k) WHERE explain LIKE '%Aggregating%';
