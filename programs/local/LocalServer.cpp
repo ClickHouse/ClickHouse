@@ -1574,6 +1574,10 @@ void LocalServer::processConfig()
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
 
+    /// Initialize a dummy encryption header cache (0 size disables it; still needed so
+    /// system.server_settings can report its size).
+    global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
+
     /// Initialize a dummy query result cache.
     global_context->setQueryResultCache(0, 0, 0, 0);
 

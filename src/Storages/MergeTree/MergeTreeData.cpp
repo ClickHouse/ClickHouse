@@ -345,6 +345,11 @@ namespace ServerSetting
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
 }
 
+namespace FailPoints
+{
+    extern const char create_empty_part_inject_stale_dir[];
+}
+
 namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
@@ -7508,6 +7513,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const BackupSettings & backup_settings,
     const ContextPtr & local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::backupParts");
     MergeTreeData::PartsBackupEntries res;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
@@ -11542,21 +11548,32 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
+
+    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
+    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
+    {
+        new_data_part_storage->createDirectories();
+    });
+
+    /// The directory may already exist as a stale leftover: a previous covering operation
+    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted
+    /// after the directory is created but before the part is renamed to its persistent name
+    /// (e.g. a rolled-back transaction with a deferred rename, or a crash). The in-memory
+    /// `tmp_dir_holder` acquired above guarantees no concurrent operation owns this name right
+    /// now (getTemporaryPartDirectoryHolder throws otherwise), so an existing directory can only
+    /// be such a leftover and is safe to remove. This mirrors the regular INSERT path in
+    /// MergeTreeDataWriter, which reclaims a stale temporary directory instead of failing. Done
+    /// before beginTransaction() so the removal is not staged in the part's own (not yet started)
+    /// write transaction.
+    if (new_data_part_storage->exists())
+    {
+        LOG_WARNING(log, "Removing old temporary directory {}", new_data_part_storage->getFullPath());
+        new_data_part_storage->removeRecursive();
+    }
+
     new_data_part_storage->beginTransaction();
 
     SyncGuardPtr sync_guard;
-
-    /// The name could be non-unique in case of stale files from previous runs.
-    if (new_data_part_storage->exists())
-    {
-        /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
-        /// New part have to capture its name, therefore there is no concurrentcy in directory creation
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "New empty part is about to materialize but the directory already exist"
-                        ", new part {}"
-                        ", directory {}",
-                        new_part_name, new_data_part_storage->getFullPath());
-    }
 
     new_data_part_storage->createDirectories();
 
@@ -11746,6 +11763,19 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
         if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
+}
+
+bool MergeTreeData::sortingKeyChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key)
+{
+    /// getName(), not IDataType::equals(): equals() ignores the SimpleAggregateFunction wrapper.
+    if (old_sorting_key.column_names != new_sorting_key.column_names)
+        return true;
+    if (old_sorting_key.data_types.size() != new_sorting_key.data_types.size())
+        return true;
+    for (size_t i = 0; i < old_sorting_key.data_types.size(); ++i)
+        if (old_sorting_key.data_types[i]->getName() != new_sorting_key.data_types[i]->getName())
+            return true;
+    return false;
 }
 
 size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept

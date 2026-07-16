@@ -189,14 +189,7 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
-        /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
-        /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
-        /// The catalog is built lazily on first use instead; this is where the user-provided
-        /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
-        /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
-        /// validated and the original parsed header is kept.
-        DB::HTTPHeaderEntries header_to_check{auth_header.value()};
-        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+        validateAuthHeaders(auth_header.value());
     }
     config = loadConfig();
 }
@@ -257,6 +250,18 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
+void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
+{
+    /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+    /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+    /// The catalog is built lazily on first use instead; this is where the user-provided
+    /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+    /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+    /// validated and the original parsed header is kept.
+    DB::HTTPHeaderEntries header_to_check{header};
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+}
+
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
@@ -296,6 +301,7 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
     const std::string & onelake_client_secret,
+    const std::string & bearer_token_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
@@ -303,13 +309,24 @@ OneLakeCatalog::OneLakeCatalog(
     : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
     , tenant_id(onelake_tenant_id)
 {
-    client_id = onelake_client_id;
-    client_secret = onelake_client_secret;
-    update_token_if_expired = true;
-    // Get token before loading config so getAuthHeaders() can work
-    if (!client_id.empty() && !client_secret.empty())
+    if (!bearer_token_.empty())
     {
-        access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+        /// Pre-obtained token scoped to https://storage.azure.com. Used for both catalog header
+        /// and Azure Blob access. Does not support refresh.
+        bearer_token = bearer_token_;
+        auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + bearer_token);
+        validateAuthHeaders(auth_header.value());
+    }
+    else
+    {
+        client_id = onelake_client_id;
+        client_secret = onelake_client_secret;
+        update_token_if_expired = true;
+        // Get token before loading config so getAuthHeaders() can work
+        if (!client_id.empty() && !client_secret.empty())
+        {
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+        }
     }
     config = loadConfig();
 }
@@ -319,6 +336,11 @@ DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
     auto headers = RestCatalog::getAuthHeaders(update_token);
     headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
     return headers;
+}
+
+String OneLakeCatalog::getBearerToken() const
+{
+    return bearer_token;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const
@@ -765,6 +787,16 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
+bool RestCatalog::hasFlatNamespaces() const
+{
+    /// Catalogs whose namespaces are single-level and which ignore the `parent` filter when listing
+    /// namespaces. For these, sub-namespace listing is skipped (see `parseNamespaces`) so that an echo
+    /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
+    const auto type = getCatalogType();
+    return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+}
+
 RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
 {
     Poco::URI::QueryParameters base_params;
@@ -874,11 +906,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
-            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
-            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
-            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
-            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
+            /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
+            /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
+            /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
+            /// return other top-level namespaces instead. Skip all sub-namespace results to avoid
+            /// constructing fake multi-level paths like "ns1.ns2" (and, for BigLake, an HTTP 400) and,
+            /// in turn, the unbounded recursion that fake children would cause in getNamespacesRecursive.
+            if (hasFlatNamespaces() && !base_namespace.empty())
             {
                 continue;
             }
@@ -892,17 +926,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
         /// Empty / null / missing token all mean "no more pages".
         ///
-        /// BigLake-non-empty-base-namespace short-circuit: when the BigLake quirk
-        /// above drops every returned entry (because BigLake ignores `parent`
-        /// and returns unrelated top-level namespaces), continuing pagination
-        /// just burns O(pages) REST calls per parent namespace without ever
-        /// contributing to the result. Treat the first page as terminal by
-        /// leaving `next_page_token` empty (already cleared at function entry)
-        /// so the outer `listChildNamespaces` loop returns immediately.
-        const bool biglake_drops_all_entries
-            = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-            && !base_namespace.empty();
-        if (!biglake_drops_all_entries
+        /// Flat-namespace short-circuit: when the skip above drops every returned entry (because a
+        /// flat-namespace catalog ignores `parent` and returns unrelated top-level namespaces),
+        /// continuing pagination just burns O(pages) REST calls per parent namespace without ever
+        /// contributing to the result. Treat the first page as terminal by leaving `next_page_token`
+        /// empty (already cleared at function entry) so the outer `listChildNamespaces` loop returns immediately.
+        const bool flat_namespace_drops_all_entries = hasFlatNamespaces() && !base_namespace.empty();
+        if (!flat_namespace_drops_all_entries
             && object->has("next-page-token")
             && !object->isNull("next-page-token"))
         {

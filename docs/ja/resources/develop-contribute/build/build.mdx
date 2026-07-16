@@ -66,8 +66,8 @@ GCC やその他のコンパイラはサポートされていません。
 </div>
 
 <Note>
-  Rust は ClickHouse のオプションの依存関係です。
-  Rust がインストールされていない場合、ClickHouse の一部機能はコンパイルに含まれません。
+Rust は ClickHouse のオプションの依存関係です。
+Rust がインストールされていない場合、ClickHouse の一部機能はコンパイルに含まれません。
 </Note>
 
 まず、公式の [Rust ドキュメント](https://www.rust-lang.org/tools/install) の手順に従って `rustup` をインストールしてください。
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-  ## ClickHouse をビルドする
+## ClickHouse をビルドする
 </div>
 
 ビルド成果物をすべて格納するため、`ClickHouse` 内に `build` という別のディレクトリを作成することを推奨します。
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-  gdb などのデバッガを使用する場合は、上記のコマンドに `-D DEBUG_O_LEVEL="0"` を追加して、すべてのコンパイラ最適化を無効にしてください。これにより、変数の表示やアクセスに対する gdb の動作を妨げる要因を取り除けます。
+gdb などのデバッガを使用する場合は、上記のコマンドに `-D DEBUG_O_LEVEL="0"` を追加して、すべてのコンパイラ最適化を無効にしてください。これにより、変数の表示やアクセスに対する gdb の動作を妨げる要因を取り除けます。
 </Note>
 
 ビルドするには、ninja を実行します:
@@ -133,16 +133,17 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-  `clickhouse-server`、`clickhouse-client`、および同様のバイナリは、ビルド完了後、`programs/` ディレクトリ内で `clickhouse` 実行可能ファイルを指すシンボリックリンクになります。
-
-  :::tip
-  CMake には、上記コマンドのショートカットがあります。
-
-  ```sh
-  cmake -S . -B build  # ビルドを設定。リポジトリのトップレベルディレクトリから実行
-  cmake --build build  # コンパイル
-  ```
+`clickhouse-server`、`clickhouse-client`、および同様のバイナリは、ビルド完了後、`programs/` ディレクトリ内で `clickhouse` 実行可能ファイルを指すシンボリックリンクになります。
 </Note>
+
+<Tip>
+CMake には、上記コマンドのショートカットがあります。
+
+```sh
+cmake -S . -B build  # ビルドを設定。リポジトリのトップレベルディレクトリから実行
+cmake --build build  # コンパイル
+```
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## ClickHouse 実行可能ファイルの実行

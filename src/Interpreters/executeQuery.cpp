@@ -242,6 +242,22 @@ namespace FailPoints
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
+    extern const char trigger_sanitizer_error[];
+}
+
+static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
+{
+#if defined(ADDRESS_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    [[maybe_unused]] volatile char c = data[16];
+#elif defined(THREAD_SANITIZER)
+    std::mutex mutex;
+    mutex.unlock();
+#elif defined(MEMORY_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    if (data[7] == 42)
+        __builtin_trap();
+#endif
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -1004,7 +1020,7 @@ void logExceptionBeforeStart(
     }
 }
 
-static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1466,7 +1482,14 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
             if (txn->getState() == MergeTreeTransaction::COMMITTED)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
-            bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
+            /// `EXPLAIN ANALYZE` executes the inner `SELECT`, so after a transaction has failed it must
+            /// be rejected exactly like the query it wraps. Other `EXPLAIN` kinds do not execute the
+            /// inner query (they only print a plan) and stay special, as do transaction-control
+            /// statements so that a failed transaction can still be rolled back.
+            const auto * explain_query = out_ast ? out_ast->as<ASTExplainQuery>() : nullptr;
+            const bool is_executing_explain_analyze = explain_query && explain_query->getKind() == ASTExplainQuery::Analyze;
+            bool is_special_query = out_ast
+                && (out_ast->as<ASTTransactionControl>() || (explain_query && !is_executing_explain_analyze));
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
@@ -2388,6 +2411,11 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         {
             std::vector<int> v;
             (void)v[0];
+        });
+
+        fiu_do_on(FailPoints::trigger_sanitizer_error,
+        {
+            triggerSanitizerError();
         });
     }
 

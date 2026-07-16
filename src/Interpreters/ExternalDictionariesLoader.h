@@ -42,6 +42,8 @@ public:
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
 
+    std::optional<bool> isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
+
     static void resetAll();
 
 protected:

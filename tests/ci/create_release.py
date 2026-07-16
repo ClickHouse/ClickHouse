@@ -107,6 +107,7 @@ import argparse
 import dataclasses
 import json
 import os
+import sys
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
@@ -236,26 +237,6 @@ class ReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
         return self
 
-    @staticmethod
-    def _is_empty_patch_release(patch: int, tweak: int) -> bool:
-        """
-        Whether a patch release would be empty and must be refused.
-
-        For a patch release the tweak equals the number of commits since the
-        previous release tag (see `Git.tweak`), so `tweak == 1` means the only
-        commit on top of the previous release is the automated post-release
-        version bump — there is nothing to release (e.g. `v25.8.28.1-lts`).
-
-        The exception is `patch == 1`: that is the first user-facing
-        `stable`/`lts` release of a freshly cut branch. Its previous tag is the
-        non-user-facing `vX.Y.1.1-new`, and the single automated
-        `testing -> stable/lts` version-update commit also yields `tweak == 1`.
-        That release is legitimate and must be allowed. The post-release bump
-        always increments `patch`, so an already-published branch is always at
-        `patch >= 2` on a rerun.
-        """
-        return tweak == 1 and patch != 1
-
     def prepare(
         self,
         commit_ref: str,
@@ -311,7 +292,17 @@ class ReleaseInfo:
                 # do not tag, so skip the check. This is checked before the
                 # out-of-order check below because "nothing to release" is the
                 # more fundamental condition.
-                if not _skip_out_of_order_check and self._is_empty_patch_release(
+                #
+                # The guard lives in `ci/jobs/scripts/release_checks.py` so the
+                # `CI Tests` unit suite can exercise it without this module's
+                # release-only dependencies. This script runs from `tests/ci`
+                # with repo root off `sys.path`, so add it and import lazily.
+                repo_root = str(Path(__file__).resolve().parents[2])
+                if repo_root not in sys.path:
+                    sys.path.append(repo_root)
+                from ci.jobs.scripts.release_checks import is_empty_patch_release
+
+                if not _skip_out_of_order_check and is_empty_patch_release(
                     version.patch, version.tweak
                 ):
                     raise RuntimeError(
