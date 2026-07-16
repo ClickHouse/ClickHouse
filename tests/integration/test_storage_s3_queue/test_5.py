@@ -1540,6 +1540,8 @@ def test_persistent_processing(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 10,
             "cleanup_interval_min_ms": 100,
@@ -1608,6 +1610,8 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -1893,6 +1897,8 @@ def test_deduplication(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -2045,6 +2051,8 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
         file_format="parquet",
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,

@@ -97,7 +97,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     ///
                     /// But this is deprecated format, so this is OK.
 
-                    bool is_null = false;
+                    bool is_null;
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
@@ -245,18 +245,15 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2"))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
     return {0 /* unknown */, {}};
 }
@@ -466,12 +463,12 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(
-    const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+    const IndexDescription & index)
 {
     return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
-void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
+void minmaxIndexValidator(const IndexDescription & index, bool attach)
 {
     if (attach)
         return;
@@ -485,16 +482,13 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                 column.type->getName(), column.name);
         }
 
-        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        if (isDynamic(column.type) || isVariant(column.type))
         {
-            if (isDynamic(type) || isVariant(type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
-                    "with different data types. Consider using typed subcolumns or cast column to a specific data type",
-                    column.type->getName(), column.name);
-        };
-        check_not_dynamic_or_variant(*column.type);
-        column.type->forEachChild(check_not_dynamic_or_variant);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{} data type of column {} is not allowed in minmax index because the column of that type can contain values with different data "
+                "types. Consider using typed subcolumns or cast column to a specific data type",
+                column.type->getName(), column.name);
+        }
     }
 }
 

@@ -8,6 +8,7 @@
 
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
@@ -54,6 +55,11 @@ namespace Setting
     extern const SettingsFloat opentelemetry_start_trace_probability;
     extern const SettingsFloatAuto opentelemetry_start_keeper_trace_probability;
 }
+
+namespace FailPoints
+{
+    extern const char keeper_fault_on_watch_request[];
+}
 }
 
 
@@ -62,6 +68,16 @@ namespace zkutil
 
 namespace
 {
+    /// Fail point that fails all requests with watches but allows requests without watches.
+    bool shouldInjectWatchFault(const Coordination::WatchCallbackPtrOrEventPtr & watch_callback)
+    {
+        if (!watch_callback)
+            return false;
+        bool inject = false;
+        fiu_do_on(DB::FailPoints::keeper_fault_on_watch_request, { inject = true; });
+        return inject;
+    }
+
     float calculateOpenTelemetryProbability()
     {
         const auto global_context = DB::Context::getGlobalContextInstance();
@@ -101,7 +117,7 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-static UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
+UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 {
     std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
         {
@@ -392,6 +408,9 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    bool with_stat,
                                    bool with_data)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -690,6 +709,9 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -752,6 +774,9 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 Coordination::Error ZooKeeper::getImpl(
     const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -1359,7 +1384,7 @@ namespace
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition, ProfileEvents::Event triggered_event)
+bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
@@ -1383,7 +1408,6 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             }
         };
     });
-    watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
     /// fashion with a wait condition which returns false by the time this
@@ -2210,7 +2234,7 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, L
 String getSequentialNodeName(const String & prefix, UInt64 number)
 {
     /// NOTE Sequential counter in ZooKeeper is Int32.
-    chassert(number < std::numeric_limits<Int32>::max());
+    assert(number < std::numeric_limits<Int32>::max());
     constexpr size_t seq_node_digits = 10;
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;

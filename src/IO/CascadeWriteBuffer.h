@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBuffer.h>
 
 #include <functional>
@@ -32,8 +31,8 @@ class CascadeWriteBuffer : public WriteBuffer
 public:
 
     using WriteBufferConstructor = std::function<WriteBufferPtr (const WriteBufferPtr & prev_buf)>;
-    using WriteBufferConstructors = VectorWithMemoryTracking<WriteBufferConstructor>;
-    using WriteBufferPtrs = VectorWithMemoryTracking<WriteBufferPtr>;
+    using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
+    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
 
     explicit CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
 

@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-static ColumnsDescription getStructureOfRemoteTableInShard(
+ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,

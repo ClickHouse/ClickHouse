@@ -24,6 +24,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
@@ -59,7 +60,7 @@ namespace
 template <typename From, typename To>
 Field convertNumericTypeImpl(const Field & from)
 {
-    To result{};
+    To result;
     if (!accurate::convertNumeric(from.safeGet<From>(), result))
         return {};
     return result;
@@ -394,7 +395,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             else if (scale_from < scale_to)
             {
-                Int64 result = 0;
+                Int64 result;
                 if (common::mulOverflow(value, scale_multiplier_diff.value, result))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
                         src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
@@ -819,6 +820,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
+    checkStackSize();
+
     if (from_value.isNull())
         return from_value;
 

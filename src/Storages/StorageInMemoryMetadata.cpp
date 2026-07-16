@@ -20,7 +20,6 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 
@@ -162,7 +161,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
-    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
+    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
 
@@ -929,8 +928,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             bool valid_index = true;
             try
             {
-                static const MergeTreeSettings default_settings;
-                MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+                MergeTreeIndexFactory::instance().validate(index, false);
             }
             catch (const Exception & e)
             {
@@ -974,8 +972,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
 
         const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
-        static const MergeTreeSettings default_settings;
-        MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+        MergeTreeIndexFactory::instance().validate(index, false);
 
         secondary_indices.push_back(std::move(index));
     };

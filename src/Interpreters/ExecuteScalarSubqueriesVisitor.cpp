@@ -1,6 +1,5 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>

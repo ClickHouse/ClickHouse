@@ -1,6 +1,5 @@
 #include <Planner/PlannerJoins.h>
 
-#include <Columns/ColumnConst.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -249,7 +248,7 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     return table_sides;
 }
 
-static const ActionsDAG::Node * appendExpression(
+const ActionsDAG::Node * appendExpression(
     ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context,
@@ -267,7 +266,7 @@ static const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
-static void buildJoinClauseImpl(
+void buildJoinClauseImpl(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -434,7 +433,7 @@ static void buildJoinClauseImpl(
     }
 }
 
-static JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
+JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
 {
     JoinClauses result;
     for (const auto & rhs_clause : rhs)
@@ -448,7 +447,7 @@ static JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses &
     return result;
 }
 
-static void buildSimpleJoinClause(
+void buildSimpleJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -472,7 +471,7 @@ static void buildSimpleJoinClause(
         join_clause);
 }
 
-static void buildJoinClause(
+void buildJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -529,7 +528,7 @@ static void buildJoinClause(
         join_clause);
 }
 
-static JoinClauses buildJoinClauses(
+JoinClauses buildJoinClauses(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -667,7 +666,7 @@ static JoinClauses buildJoinClauses(
     return std::move(built_clauses.at(join_expression.get()));
 }
 
-static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
+std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     ActionsDAG & left_join_actions,
     ActionsDAG & right_join_actions,
     ActionsDAG & post_join_actions,
@@ -742,7 +741,7 @@ static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     return std::make_pair(std::move(join_clauses), has_residual_filters);
 }
 
-static JoinClausesAndActions buildJoinClausesAndActions(
+JoinClausesAndActions buildJoinClausesAndActions(
     const ColumnsWithTypeAndName & left_table_expression_columns,
     const ColumnsWithTypeAndName & right_table_expression_columns,
     const JoinNode & join_node,
@@ -802,7 +801,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
-    bool has_residual_filters = false;
+    bool has_residual_filters;
 
     std::tie(result.join_clauses, has_residual_filters) = buildAllJoinClauses(
         left_join_actions,
@@ -866,7 +865,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
             add_necessary_name_if_needed(JoinTableSide::Right, dag_filter_condition_node->result_name);
         }
 
-        chassert(join_clause.getLeftKeyNodes().size() == join_clause.getRightKeyNodes().size());
+        assert(join_clause.getLeftKeyNodes().size() == join_clause.getRightKeyNodes().size());
         size_t join_clause_key_nodes_size = join_clause.getLeftKeyNodes().size();
 
         for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
@@ -985,8 +984,8 @@ static JoinClausesAndActions buildJoinClausesAndActions(
         if (!which_type.isUInt8())
         {
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            auto true_col = uint8_ty->createColumnConst(0, 1);
-            const auto * true_node = &result.residual_join_expressions_actions->addColumn(std::move(true_col), uint8_ty, "true");
+            auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
+            const auto * true_node = &result.residual_join_expressions_actions->addColumn(true_col);
             result.residual_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
         }
     }
@@ -1044,7 +1043,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
-static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
+std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
 {

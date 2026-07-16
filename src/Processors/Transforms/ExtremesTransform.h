@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class ExtremesTransform final : public ISimpleTransform
+class ExtremesTransform : public ISimpleTransform
 {
 
 public:

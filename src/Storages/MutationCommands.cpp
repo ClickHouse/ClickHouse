@@ -56,87 +56,10 @@ bool MutationCommand::affectsAllColumns() const
         || type == REWRITE_PARTS;
 }
 
-namespace
-{
-
-boost::intrusive_ptr<ASTAlterCommand> parseAlterCommand(const String & ast_text, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
-{
-    if (ast_text.empty())
-        return nullptr;
-
-    ParserAlterCommandList p_alter_commands;
-    auto commands_ast = parseQuery(
-        p_alter_commands, ast_text.data(), ast_text.data() + ast_text.length(),
-        "mutation command", 0, max_parser_depth, max_parser_backtracks);
-
-    if (commands_ast->children.size() != 1)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected exactly one ALTER command parsed from mutation command text, got {}",
-            commands_ast->children.size());
-
-    auto child = std::move(commands_ast->children[0]);
-    auto * alter = child->as<ASTAlterCommand>();
-    if (!alter)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Parsed mutation command is not an ASTAlterCommand: {}",
-            child->formatForErrorMessage());
-
-    return boost::intrusive_ptr<ASTAlterCommand>(alter);
-}
-
-}
-
-boost::intrusive_ptr<const ASTAlterCommand> MutationCommand::ast() const
-{
-    return parseAlterCommand(ast_text, max_parser_depth, max_parser_backtracks);
-}
-
-MutationCommand::MutableAst::MutableAst(MutationCommand & owner_)
-    : owner(owner_)
-    , ast(parseAlterCommand(owner_.ast_text, owner_.max_parser_depth, owner_.max_parser_backtracks))
-{
-}
-
-MutationCommand::MutableAst::~MutableAst() noexcept
-{
-    /// Catch forgotten `commit` calls in debug; in release the edits are dropped silently.
-    chassert(committed || !ast);
-}
-
-void MutationCommand::MutableAst::commit()
-{
-    committed = true;
-    if (!ast)
-        return;
-    owner.ast_text = ast->formatWithSecretsOneLine();
-}
-
-std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter)
-{
-    std::unordered_map<String, ASTPtr> result;
-    if (!alter.update_assignments)
-        return result;
-    for (const auto & child : alter.update_assignments->children)
-    {
-        const auto & assignment = child->as<ASTAssignment &>();
-        result.emplace(assignment.column_name, assignment.expression());
-    }
-    return result;
-}
-
-std::optional<MutationCommand> MutationCommand::parse(
-    const ASTAlterCommand & command,
-    bool parse_alter_commands,
-    bool with_pure_metadata_commands,
-    UInt64 max_parser_depth,
-    UInt64 max_parser_backtracks)
+std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & command, bool parse_alter_commands, bool with_pure_metadata_commands)
 {
     MutationCommand res;
-    res.ast_text = command.formatWithSecretsOneLine();
-    res.max_parser_depth = max_parser_depth;
-    res.max_parser_backtracks = max_parser_backtracks;
+    res.ast = command.clone();
     if (with_pure_metadata_commands)
     {
         res.type = ALTER_WITHOUT_MUTATION;
@@ -146,16 +69,22 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (command.type == ASTAlterCommand::DELETE)
     {
         res.type = DELETE;
+        res.predicate = command.predicate->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
     if (command.type == ASTAlterCommand::UPDATE)
     {
         res.type = UPDATE;
-        NameSet seen_columns;
+        res.predicate = command.predicate->clone();
+        if (command.partition)
+            res.partition = command.partition->clone();
         for (const ASTPtr & assignment_ast : command.update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
-            if (!seen_columns.insert(assignment.column_name).second)
+            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
+            if (!insertion.second)
                 throw Exception(
                     ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN,
                     "Multiple assignments in the single statement to column {}",
@@ -166,22 +95,32 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (command.type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
         res.type = APPLY_DELETED_MASK;
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
     else if (command.type == ASTAlterCommand::APPLY_PATCHES)
     {
         res.type = APPLY_PATCHES;
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
         res.type = MATERIALIZE_INDEX;
+        if (command.partition)
+            res.partition = command.partition->clone();
+        res.predicate = nullptr;
         res.index_name = command.index->as<ASTIdentifier &>().name();
         return res;
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
         res.type = MATERIALIZE_STATISTICS;
+        if (command.partition)
+            res.partition = command.partition->clone();
+        res.predicate = nullptr;
         if (command.statistics_decl)
         {
             res.statistics_columns = command.statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
@@ -191,12 +130,17 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (command.type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
         res.type = MATERIALIZE_PROJECTION;
+        if (command.partition)
+            res.partition = command.partition->clone();
+        res.predicate = nullptr;
         res.projection_name = command.projection->as<ASTIdentifier &>().name();
         return res;
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
         res.type = MATERIALIZE_COLUMN;
+        if (command.partition)
+            res.partition = command.partition->clone();
         res.column_name = getIdentifierName(command.column);
         return res;
     }
@@ -228,6 +172,8 @@ std::optional<MutationCommand> MutationCommand::parse(
     {
         res.type = MutationCommand::Type::DROP_COLUMN;
         res.column_name = getIdentifierName(command.column);
+        if (command.partition)
+            res.partition = command.partition->clone();
         if (command.clear_column)
             res.clear = true;
 
@@ -237,6 +183,8 @@ std::optional<MutationCommand> MutationCommand::parse(
     {
         res.type = MutationCommand::Type::DROP_INDEX;
         res.column_name = command.index->as<ASTIdentifier &>().name();
+        if (command.partition)
+            res.partition = command.partition->clone();
         if (command.clear_index)
             res.clear = true;
         return res;
@@ -244,6 +192,8 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_STATISTICS)
     {
         res.type = MutationCommand::Type::DROP_STATISTICS;
+        if (command.partition)
+            res.partition = command.partition->clone();
         if (command.clear_statistics)
             res.clear = true;
         if (command.statistics_decl)
@@ -254,6 +204,8 @@ std::optional<MutationCommand> MutationCommand::parse(
     {
         res.type = MutationCommand::Type::DROP_PROJECTION;
         res.column_name = command.projection->as<ASTIdentifier &>().name();
+        if (command.partition)
+            res.partition = command.partition->clone();
         if (command.clear_projection)
             res.clear = true;
         return res;
@@ -268,11 +220,15 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (command.type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         res.type = MATERIALIZE_TTL;
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
     if (command.type == ASTAlterCommand::REWRITE_PARTS)
     {
         res.type = REWRITE_PARTS;
+        if (command.partition)
+            res.partition = command.partition->clone();
         return res;
     }
 
@@ -287,11 +243,7 @@ boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_met
     for (const MutationCommand & command : *this)
     {
         if (!command.isPureMetadataCommand() || with_pure_metadata_commands)
-        {
-            auto parsed = command.ast();
-            if (parsed)
-                res->children.emplace_back(const_cast<ASTAlterCommand *>(parsed.get()));
-        }
+            res->children.push_back(command.ast->clone());
     }
     return res;
 }
@@ -317,6 +269,7 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
         auto command = MutationCommand::parse(*command_ast, true, with_pure_metadata_commands);
         if (!command)
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
+        command->ast = child;
         push_back(std::move(*command));
     }
 }
@@ -361,13 +314,8 @@ NameSet MutationCommands::getAllUpdatedColumns() const
 {
     NameSet res;
     for (const auto & command : *this)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            continue;
-        for (const auto & child : alter->update_assignments->children)
-            res.insert(child->as<ASTAssignment &>().column_name);
-    }
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+            res.insert(column_name);
     return res;
 }
 

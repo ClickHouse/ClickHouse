@@ -1,10 +1,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <iterator>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/QueueWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <queue>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -60,7 +57,7 @@ QueryPipeline::QueryPipeline()
 }
 
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
-QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
 QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)
@@ -158,9 +155,9 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
-    VectorWithMemoryTracking<IProcessor *> processors;
-    MapWithMemoryTracking<LimitTransform *, VectorWithMemoryTracking<size_t>> limit_candidates;
-    UnorderedSetWithMemoryTracking<IProcessor *> visited;
+    std::vector<IProcessor *> processors;
+    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
+    std::unordered_set<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
@@ -170,7 +167,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ssize_t limit_input_port;
     };
 
-    QueueWithMemoryTracking<QueuedEntry> queue;
+    std::queue<QueuedEntry> queue;
 
     queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
@@ -243,7 +240,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 6.
-            if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor))
+            if (typeid_cast<LimitByTransform *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);
@@ -661,7 +658,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
 {
-    chassert(pulling());
+    assert(pulling());
 
     /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is to write
     /// each chunk into the query result cache. All transforms hold a refcounted reference to the same query result cache writer object.

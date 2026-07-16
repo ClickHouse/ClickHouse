@@ -3,10 +3,10 @@
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <memory>
+#include <vector>
 
 class SipHash;
 
@@ -122,6 +122,6 @@ private:
 };
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 }

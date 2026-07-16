@@ -22,7 +22,6 @@ instance = cluster.add_instance(
         "configs/kafka.xml",
         "configs/named_collection.xml",
         "configs/dead_letter_queue.xml",
-        "configs/disable_insertion.xml"
     ],
     user_configs=["configs/users.xml"],
     with_kafka=True,
@@ -587,23 +586,10 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
         """
     )
 
-    # Parallel reading of 8 consumers reaches 64 polls in ~8s; sequential reading
-    # is gated by kafka_poll_timeout_ms=1000 to ~1 poll/sec, so it cannot reach 64
-    # polls in under ~64s on any build. Slow builds (sanitizer/coverage/debug)
-    # inflate the parallel path's wall-clock well past 30s under CI batch load, so
-    # use a larger timeout there while staying below the ~64s sequential floor that
-    # would catch a regression to sequential reads.
-    poll_timeout = (
-        60
-        if instance.is_built_with_sanitizer()
-        or instance.is_built_with_llvm_coverage()
-        or instance.is_debug_build()
-        else 30
-    )
     instance.wait_for_log_line(
         f"{kafka_table}.*Polled batch of [0-9]+.*read_consumers_in_parallel",
         repetitions=64,
-        timeout=poll_timeout,
+        timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
     )
 
     cancel.set()
@@ -3882,113 +3868,6 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
     instance.query(create_query)
 
 
-def test_message_queue_disable_insertion(kafka_cluster):
-    suffix = k.random_string(6)
-    kafka_table = f"message_queue_disable_insertion_{suffix}"
-    topic_name = f"disable_insertion_{suffix}"
-
-    # Verify the setting defaults to false
-    assert (
-        "false"
-        == instance.query(
-            "SELECT getServerSetting('message_queue_disable_insertion')"
-        ).strip()
-    )
-
-    try:
-        # Enable message_queue_disable_insertion via config replacement + reload
-        instance.replace_in_config(
-            "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "0",
-            "1",
-        )
-        instance.query("SYSTEM RELOAD CONFIG")
-
-        assert (
-            "true"
-            == instance.query(
-                "SELECT getServerSetting('message_queue_disable_insertion')"
-            ).strip()
-        )
-
-        # Create Kafka table, destination MergeTree table, and MV
-        instance.query(
-            f"""
-            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
-                ENGINE = Kafka
-                SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{topic_name}',
-                         kafka_group_name = '{topic_name}',
-                         kafka_format = 'JSONEachRow',
-                         kafka_flush_interval_ms = 1000;
-            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
-                ENGINE = MergeTree()
-                ORDER BY key;
-            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
-                SELECT * FROM test.{kafka_table};
-        """
-        )
-
-        # Produce messages while insertion is disabled
-        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
-        k.kafka_produce(kafka_cluster, topic_name, messages)
-
-        # Wait a bit — no rows should appear because insertion is disabled
-        time.sleep(10)
-        assert 0 == int(
-            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
-        )
-
-        assert instance.contains_in_log("Message queue insertion is disabled")
-
-        # Direct INSERT INTO the Kafka table (producer write) must still work
-        instance.query(
-            f"INSERT INTO test.{kafka_table} FORMAT JSONEachRow"
-            ' {"key": 999, "value": 999}'
-        )
-
-        # Re-enable insertion
-        instance.replace_in_config(
-            "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
-        )
-        instance.query("SYSTEM RELOAD CONFIG")
-
-        assert (
-            "false"
-            == instance.query(
-                "SELECT getServerSetting('message_queue_disable_insertion')"
-            ).strip()
-        )
-
-        # Rows should now flow through (10 original + 1 from direct INSERT)
-        expected_rows = 11
-        for _ in range(100):
-            count = int(
-                instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
-            )
-            if count == expected_rows:
-                break
-            time.sleep(1)
-
-        assert expected_rows == int(
-            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
-        )
-    finally:
-        instance.replace_in_config(
-            "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
-        )
-        instance.query("SYSTEM RELOAD CONFIG")
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS test.{kafka_table}_mv;
-            DROP TABLE IF EXISTS test.{kafka_table}_dst;
-            DROP TABLE IF EXISTS test.{kafka_table};
-        """
-        )
 def test_kafka2_commit_on_select_semantics(kafka_cluster):
     """Test that kafka_commit_on_select controls whether offsets are committed after direct SELECT."""
 

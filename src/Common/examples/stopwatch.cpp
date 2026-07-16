@@ -2,7 +2,6 @@
 #include <thread>
 #include <iostream>
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleStopwatch(int, char **)

@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
-#include <base/sort.h>
 
 #include <Core/Field.h>
 #include <Common/logger_useful.h>
@@ -356,11 +355,11 @@ struct PartsRangesIterator
     }
 
     Values value;
-    bool in_reverse_order{};
-    MarkRange range{};
-    size_t part_index{};
-    EventType event{};
-    bool selected{}; /// Whether this range was selected or rejected in skip index filtering
+    bool in_reverse_order;
+    MarkRange range;
+    size_t part_index;
+    EventType event;
+    bool selected; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex
@@ -669,12 +668,12 @@ SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_par
     auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
     auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
 
-    ::stableSort(
+    std::stable_sort(
         non_intersecting_ranges_in_data_parts.begin(),
         non_intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
 
-    ::stableSort(
+    std::stable_sort(
         intersecting_ranges_in_data_parts.begin(),
         intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
@@ -853,7 +852,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
                 i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
         }
 
-        ::stableSort(
+        std::stable_sort(
             layer.begin(),
             layer.end(),
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
@@ -930,7 +929,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
     return filters;
 }
 
-static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
+RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;
@@ -1093,7 +1092,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     }
 
     auto result_final_ranges = result.getCurrentRangesInDataParts();
-    ::stableSort(
+    std::stable_sort(
         result_final_ranges.begin(),
         result_final_ranges.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });

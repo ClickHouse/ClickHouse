@@ -230,25 +230,22 @@ void StatementGenerator::generateDerivedTable(
 
 void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc)
 {
-    ObjectStoreFunc * ofunc = nullptr;
-    MySQLFunc * myfunc = nullptr;
-
     if ((usage == TableFunctionUsage::EngineReplace && t.isMySQLEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasMySQLPeer()))
     {
         const ServerCredentials & sc = fc.mysql_server.value();
+        MySQLFunc * mfunc = tfunc->mutable_mysql();
 
-        myfunc = tfunc->mutable_mysql();
-        myfunc->set_rdatabase(sc.database);
-        myfunc->set_rtable(t.getBaseName());
+        mfunc->set_rdatabase(sc.database);
+        mfunc->set_rtable(t.getBaseName());
         if (!sc.named_collection.empty())
         {
-            myfunc->set_named_collection(sc.named_collection);
+            mfunc->set_named_collection(sc.named_collection);
         }
         else
         {
-            myfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-            myfunc->set_user(sc.user);
-            myfunc->set_password(sc.password);
+            mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+            mfunc->set_user(sc.user);
+            mfunc->set_password(sc.password);
         }
     }
     else if (
@@ -283,6 +280,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (usage == TableFunctionUsage::EngineReplace && t.isEngineReplaceable())
     {
         Expr * structure = nullptr;
+        ObjectStoreFunc * ofunc = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
         if (t.isOnS3() || t.isOnAzure() || t.isOnLocal())
@@ -308,18 +306,33 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeS3;
                         break;
                     case TableEngineValues::AzureBlobStorage:
-                    case TableEngineValues::AzureQueue: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage; break;
-                    case TableEngineValues::IcebergAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure; break;
-                    case TableEngineValues::DeltaLakeAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure; break;
-                    case TableEngineValues::IcebergLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal; break;
-                    case TableEngineValues::DeltaLakeLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal; break;
+                    case TableEngineValues::AzureQueue:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage;
+                        break;
+                    case TableEngineValues::IcebergAzure:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure;
+                        break;
+                    case TableEngineValues::DeltaLakeAzure:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure;
+                        break;
+                    case TableEngineValues::IcebergLocal:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal;
+                        break;
+                    case TableEngineValues::DeltaLakeLocal:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal;
+                        break;
                     case TableEngineValues::PaimonS3:
                         val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonS3;
                         break;
-                    case TableEngineValues::PaimonAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure; break;
-                    case TableEngineValues::PaimonLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal; break;
-                    default: UNREACHABLE();
+                    case TableEngineValues::PaimonAzure:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure;
+                        break;
+                    case TableEngineValues::PaimonLocal:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal;
+                        break;
+                    default:
+                        UNREACHABLE();
                 }
             }
             else
@@ -396,7 +409,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             structure = rg.nextMediumNumber() < 96 ? ufunc->mutable_structure() : nullptr;
             if (structure)
             {
-                addRandomHTTPHeaders(rg, tfunc);
+                addRandomHTTPHeaders(rg, ufunc);
             }
         }
         else if (t.isRedisEngine())
@@ -481,8 +494,15 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         if (ofunc)
         {
+            const auto & engineSettings = allTableSettings.at(
+                t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
+
             setObjectStoreParams<SQLTable, ObjectStoreFunc>(rg, t, ofunc);
-            addRandomHTTPHeaders(rg, tfunc);
+            addRandomHTTPHeaders(rg, ofunc);
+            if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
+            {
+                generateSettingValues(rg, engineSettings, ofunc->mutable_setting_values());
+            }
         }
     }
     else if (usage == TableFunctionUsage::ClusterCall)
@@ -538,19 +558,6 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     {
         UNREACHABLE();
     }
-    if (ofunc || myfunc)
-    {
-        static const std::unordered_map<String, CHSetting> mySQLTFSettings = {{"enable_compression", trueOrFalseSetting}};
-        const auto & engineSettings = myfunc
-            ? mySQLTFSettings
-            : allTableSettings.at(
-                  t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
-
-        if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
-        {
-            generateSettingValues(rg, engineSettings, tfunc->mutable_setting_values());
-        }
-    }
 }
 
 template <TableRequirement req>
@@ -580,7 +587,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
     {
         /// Use generateRandomStructure function
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-        sfc->mutable_func()->set_catalog_func("generateRandomStructure");
+        sfc->mutable_func()->set_catalog_func(FUNCgenerateRandomStructure);
 
         /// Number of columns parameter
         sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(ncols));
@@ -716,6 +723,10 @@ String StatementGenerator::getNextHTTPURL(RandomGenerator & rg, const bool secur
     if (rg.nextSmallNumber() < 4)
     {
         ret += "send_progress_in_http_headers=1&";
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        ret += "decompress=1&";
     }
     if (rg.nextSmallNumber() < 4)
     {
@@ -1113,8 +1124,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             String url;
             String buf;
             bool first = true;
-            TableFunction * tf = tof->mutable_tfunc();
-            URLFunc * ufunc = tf->mutable_url();
+            URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
             const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
             const std::optional<String> & cluster = tt.getCluster();
             const OutFormat outf = rg.nextBool()
@@ -1155,7 +1165,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
                 ufunc->set_outformat(outf);
             }
             ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-            addRandomHTTPHeaders(rg, tf);
+            addRandomHTTPHeaders(rg, ufunc);
             addTableRelation(rg, rg.nextMediumNumber() < 4, rel_name, tt);
         }
         break;
@@ -1357,28 +1367,28 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     }
 }
 
-static const std::unordered_map<BinaryOperator, std::string> binopToFunc{
-    {BinaryOperator::BINOP_LE, "less"},
-    {BinaryOperator::BINOP_LEQ, "lessOrEquals"},
-    {BinaryOperator::BINOP_GR, "greater"},
-    {BinaryOperator::BINOP_GREQ, "greaterOrEquals"},
-    {BinaryOperator::BINOP_EQ, "equals"},
-    {BinaryOperator::BINOP_EQEQ, "equals"},
-    {BinaryOperator::BINOP_NOTEQ, "notEquals"},
-    {BinaryOperator::BINOP_LEGR, "notEquals"},
-    {BinaryOperator::BINOP_LEEQGR, "isNotDistinctFrom"},
-    {BinaryOperator::BINOP_IS_DISTINCT_FROM, "isDistinctFrom"},
-    {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, "isNotDistinctFrom"},
-    {BinaryOperator::BINOP_AND, "and"},
-    {BinaryOperator::BINOP_OR, "or"},
-    {BinaryOperator::BINOP_CONCAT, "concat"},
-    {BinaryOperator::BINOP_STAR, "multiply"},
-    {BinaryOperator::BINOP_SLASH, "divide"},
-    {BinaryOperator::BINOP_PERCENT, "modulo"},
-    {BinaryOperator::BINOP_PLUS, "plus"},
-    {BinaryOperator::BINOP_MINUS, "minus"},
-    {BinaryOperator::BINOP_DIV, "divide"},
-    {BinaryOperator::BINOP_MOD, "modulo"}};
+static const std::unordered_map<BinaryOperator, SQLFunc> binopToFunc{
+    {BinaryOperator::BINOP_LE, SQLFunc::FUNCless},
+    {BinaryOperator::BINOP_LEQ, SQLFunc::FUNClessOrEquals},
+    {BinaryOperator::BINOP_GR, SQLFunc::FUNCgreater},
+    {BinaryOperator::BINOP_GREQ, SQLFunc::FUNCgreaterOrEquals},
+    {BinaryOperator::BINOP_EQ, SQLFunc::FUNCequals},
+    {BinaryOperator::BINOP_EQEQ, SQLFunc::FUNCequals},
+    {BinaryOperator::BINOP_NOTEQ, SQLFunc::FUNCnotEquals},
+    {BinaryOperator::BINOP_LEGR, SQLFunc::FUNCnotEquals},
+    {BinaryOperator::BINOP_LEEQGR, SQLFunc::FUNCisNotDistinctFrom},
+    {BinaryOperator::BINOP_IS_DISTINCT_FROM, SQLFunc::FUNCisDistinctFrom},
+    {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, SQLFunc::FUNCisNotDistinctFrom},
+    {BinaryOperator::BINOP_AND, SQLFunc::FUNCand},
+    {BinaryOperator::BINOP_OR, SQLFunc::FUNCor},
+    {BinaryOperator::BINOP_CONCAT, SQLFunc::FUNCconcat},
+    {BinaryOperator::BINOP_STAR, SQLFunc::FUNCmultiply},
+    {BinaryOperator::BINOP_SLASH, SQLFunc::FUNCdivide},
+    {BinaryOperator::BINOP_PERCENT, SQLFunc::FUNCmodulo},
+    {BinaryOperator::BINOP_PLUS, SQLFunc::FUNCplus},
+    {BinaryOperator::BINOP_MINUS, SQLFunc::FUNCminus},
+    {BinaryOperator::BINOP_DIV, SQLFunc::FUNCdivide},
+    {BinaryOperator::BINOP_MOD, SQLFunc::FUNCmodulo}};
 
 void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
@@ -1490,7 +1500,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstr
         for (uint32_t i = 0; i < nclauses; i++)
         {
             /// Determine the target node for this individual clause, advancing expr to the rhs for the next iteration
-            Expr * clause_target = nullptr;
+            Expr * clause_target;
 
             if (i == nclauses - 1)
             {
@@ -1537,7 +1547,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstr
                     /// Sometimes do the function call instead
                     SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
 
-                    sfc->mutable_func()->set_catalog_func("not");
+                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
                     clause_target = sfc->add_args()->mutable_expr();
                 }
             }
@@ -1663,23 +1673,22 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         }
         break;
         case PredOp::UnaryExpr: {
-            /// truth expr
+            /// Is null expr
             Expr * isexpr = nullptr;
 
             if (rg.nextSmallNumber() < 8)
             {
-                ExprTruthTests * enull = expr->mutable_comp_expr()->mutable_expr_truth_tests();
+                ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
 
                 enull->set_not_(rg.nextBool());
-                if (rg.nextSmallNumber() < 3)
-                    enull->set_truth_value(static_cast<ExprTruthTests_TruthValueTest>(rg.nextSmallNumber() % 4));
                 isexpr = enull->mutable_expr();
             }
             else
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto nullFuncs = {"isNull", "isNullable", "isNotNull", "isZeroOrNull"};
+                static const auto nullFuncs
+                    = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
                 isexpr = sfc->add_args()->mutable_expr();
@@ -1706,7 +1715,8 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto likeFuncs = {"like", "notLike", "ilike", "notILike", "match"};
+                static const auto likeFuncs
+                    = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
@@ -1763,7 +1773,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto inFuncs = {"in", "notIn", "globalIn", "globalNotIn"};
+                static const auto inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
@@ -1815,7 +1825,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
         {
             /// Establish clause_target for this iteration: do AND/OR split first,
             /// then apply NOT only to the current clause (not the entire remaining chain).
-            Expr * clause_target = nullptr;
+            Expr * clause_target;
             if (i == nclauses - 1)
             {
                 clause_target = expr;
@@ -1860,7 +1870,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                     /// Sometimes do the function call instead
                     SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
 
-                    sfc->mutable_func()->set_catalog_func("not");
+                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
                     clause_target = sfc->add_args()->mutable_expr();
                 }
             }
@@ -2597,7 +2607,7 @@ void StatementGenerator::generateSelect(
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
     if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextMediumNumber() < 35)
     {
-        generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sel->mutable_setting_values());
+        generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
     }
     this->levels.erase(this->current_level);
     this->ctes.erase(this->current_level);

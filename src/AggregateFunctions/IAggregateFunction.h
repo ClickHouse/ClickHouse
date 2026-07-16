@@ -14,6 +14,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
+#include "config.h"
 
 #include <cstddef>
 #include <memory>
@@ -424,19 +425,7 @@ public:
 
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
-
-    /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
-
-    /// Whether DataTypeAggregateFunction::getName() should print parameters with ::Type
-    /// suffixes so the type name round-trips losslessly. Default false.
-    virtual bool shouldPrintParametersWithTypes() const
-    {
-        /// Combinators propagate the wrapped function's answer.
-        if (auto nested = getNestedFunction())
-            return nested->shouldPrintParametersWithTypes();
-        return false;
-    }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -490,7 +479,7 @@ public:
     IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
         : IAggregateFunction(argument_types_, parameters_, result_type_) {}
 
-    AddFunc getAddressOfAddFunction() const final { return &addFree; }
+    AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
     void addManyDefaults(
         AggregateDataPtr __restrict place,
@@ -528,7 +517,7 @@ public:
         }
     }
 
-    void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const final // NOLINT
+    void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const override // NOLINT
     {
         for (size_t i = start; i < size; ++i)
             static_cast<const Derived *>(this)->serialize(data[i], buf, version);
@@ -541,7 +530,7 @@ public:
         size_t limit,
         ReadBuffer & buf,
         std::optional<size_t> version,
-        Arena * arena) const final
+        Arena * arena) const override
     {
         for (size_t i = 0; i < limit; ++i)
         {
@@ -782,7 +771,7 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
-        size_t place_offset) const noexcept final
+        size_t place_offset) const noexcept override
     {
         for (size_t i = row_begin; i < row_end; ++i)
         {
@@ -851,7 +840,7 @@ public:
         std::function<void(AggregateDataPtr &)> init,
         const UInt8 * key,
         const IColumn ** columns,
-        Arena * arena) const final
+        Arena * arena) const override
     {
         const Derived & func = *static_cast<const Derived *>(this);
 

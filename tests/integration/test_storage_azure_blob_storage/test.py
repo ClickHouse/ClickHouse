@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import functools
 import gzip
 import io
 import json
@@ -21,7 +20,6 @@ from azure.storage.blob import (
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV, assert_logs_contain_with_retry
-from helpers.utility import SafeThread
 
 
 @pytest.fixture(scope="module")
@@ -474,27 +472,8 @@ def test_azure_glob_scheherazade(cluster):
     query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
     assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
     azure_query(node, "DROP TABLE test_glob_select_scheherazade")
-
-    drop_jobs = []
-
-    def drop_tales(names):
-        for name in names:
-            azure_query(node, f"DROP TABLE {name}")
-
-    # SafeThread re-raises a worker's exception on join(); a raw threading.Thread
-    # would swallow it, letting cleanup fail silently and leak the table.
-    for start in range(0, len(used_names), nights_per_job):
-        drop_jobs.append(
-            SafeThread(
-                target=functools.partial(
-                    drop_tales, used_names[start : start + nights_per_job]
-                )
-            )
-        )
-        drop_jobs[-1].start()
-
-    for job in drop_jobs:
-        job.join()
+    for name in used_names:
+        azure_query(node, f"DROP TABLE {name}")
 
 
 @pytest.mark.parametrize(

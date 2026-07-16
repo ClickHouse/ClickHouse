@@ -131,6 +131,10 @@ public:
     /// projections where all entries are valid query-level outputs.
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
 
+    /// Check if column is always zero. True if it's definite, false if we can't say for sure.
+    /// Call it only after subqueries for sets were executed.
+    bool checkColumnIsAlwaysFalse(const String & column_name) const;
+
     ExpressionActionsPtr clone() const;
 
 private:

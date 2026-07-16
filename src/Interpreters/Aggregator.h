@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
+#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -11,8 +12,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -190,7 +190,6 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
@@ -325,7 +324,7 @@ private:
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -361,7 +360,7 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable std::unique_ptr<ThreadPool> thread_pool;
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */

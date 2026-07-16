@@ -23,8 +23,7 @@ extern const int UNSUPPORTED_METHOD;
 class LibArchiveReader::StreamInfo
 {
 public:
-    /// `buf` is intentionally left uninitialized — it is filled by `read` before use.
-    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0)
         : read_buffer(std::move(read_buffer_)), archive_size(archive_size_) { }
 
     static ssize_t read(struct archive *, void * client_data, const void ** buff)
@@ -80,7 +79,7 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     size_t archive_size;
-    char buf[DBMS_DEFAULT_BUFFER_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by `read` before use
+    char buf[DBMS_DEFAULT_BUFFER_SIZE];
     std::exception_ptr stored_exception;
 };
 
@@ -161,7 +160,7 @@ public:
         return valid;
     }
 
-    Strings getAllFiles(NameFilter filter)
+    std::vector<std::string> getAllFiles(NameFilter filter)
     {
         std::unique_ptr<LibArchiveReader::StreamInfo> rs
             = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function(), archive_size) : nullptr;
@@ -171,7 +170,7 @@ public:
 
         Entry entry = nullptr;
 
-        Strings files;
+        std::vector<std::string> files;
         int error = readNextHeader(archive, &entry, rs.get());
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
@@ -539,12 +538,12 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-Strings LibArchiveReader::getAllFiles()
+std::vector<std::string> LibArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-Strings LibArchiveReader::getAllFiles(NameFilter filter)
+std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
 {
     Handle handle = acquireHandle();
     return handle.getAllFiles(filter);

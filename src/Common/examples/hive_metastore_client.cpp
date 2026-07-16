@@ -4,7 +4,6 @@
 #include <thrift/transport/TSocket.h>
 #include <thrift/transport/TTransportUtils.h>
 #include <ThriftHiveMetastore.h>
-#include <Examples/clickhouse_examples.h>
 
 
 using namespace std;

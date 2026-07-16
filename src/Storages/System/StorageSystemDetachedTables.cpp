@@ -28,7 +28,7 @@ namespace DB
 namespace
 {
 
-class DetachedTablesBlockSource final : public ISource
+class DetachedTablesBlockSource : public ISource
 {
 public:
     DetachedTablesBlockSource(

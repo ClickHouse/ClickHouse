@@ -238,16 +238,6 @@ public:
         return server->getKeeperLogInfo();
     }
 
-    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const
-    {
-        return server->getClusterMembersInfo();
-    }
-
-    std::vector<KeeperChangelogStatus> getChangelogsStatus() const
-    {
-        return server->getChangelogsStatus();
-    }
-
     /// Request to be leader.
     bool requestLeader()
     {

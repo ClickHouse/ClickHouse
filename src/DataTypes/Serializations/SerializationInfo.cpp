@@ -230,7 +230,7 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
 
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
 {
-    UInt8 type = 0;
+    UInt8 type;
     readBinary(type, in);
     auto maybe_type = magic_enum::enum_cast<KindStackBinarySerializationType>(type);
     if (!maybe_type)
@@ -255,11 +255,11 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
             break;
         case KindStackBinarySerializationType::COMBINATION:
         {
-            size_t num_kinds = 0;
+            size_t num_kinds;
             readVarUInt(num_kinds, in);
             for (size_t i = 0; i != num_kinds; ++i)
             {
-                UInt8 kind = 0;
+                UInt8 kind;
                 readBinary(kind, in);
                 auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind);
                 if (!maybe_kind)

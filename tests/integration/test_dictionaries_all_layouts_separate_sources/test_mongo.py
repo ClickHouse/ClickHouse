@@ -8,6 +8,9 @@ from helpers.external_sources import SourceMongo
 
 from .common import *
 
+simple_tester = None
+complex_tester = None
+ranged_tester = None
 test_name = "mongo"
 
 

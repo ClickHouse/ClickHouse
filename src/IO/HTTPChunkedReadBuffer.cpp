@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace
-{
-    constexpr size_t chunk_footer_size = 2;
-}
-
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -61,11 +56,9 @@ bool HTTPChunkedReadBuffer::nextImpl()
     if (!in)
         return false;
 
-    if (need_read_chunk_footer)
-    {
+    /// The footer of previous chunk.
+    if (count())
         readChunkFooter();
-        need_read_chunk_footer = false;
-    }
 
     size_t chunk_size = readChunkHeader();
     if (0 == chunk_size)
@@ -89,40 +82,10 @@ bool HTTPChunkedReadBuffer::nextImpl()
         working_buffer = Buffer(memory.data(), memory.data() + chunk_size);
     }
 
-    /// Avoid leaving only the current chunk footer buffered. Otherwise a readiness check would see the footer
-    /// and the following read could still block while waiting for the next chunk header.
-    if (in->available() >= chunk_footer_size)
-        readChunkFooter();
-    else
-        need_read_chunk_footer = true;
+    /// NOTE: We postpone reading the footer to the next iteration, because it may not be completely in buffer,
+    ///       but we need to keep the current data in buffer available.
 
     return true;
-}
-
-bool HTTPChunkedReadBuffer::poll(size_t timeout_microseconds)
-{
-    if (hasPendingData())
-        return true;
-
-    if (!in)
-        return true;
-
-    if (need_read_chunk_footer)
-    {
-        if (in->available() < chunk_footer_size)
-        {
-            if (in->available() == 0 && !in->poll(timeout_microseconds))
-                return false;
-
-            if (in->available() < chunk_footer_size)
-                return false;
-        }
-
-        readChunkFooter();
-        need_read_chunk_footer = false;
-    }
-
-    return in->poll(timeout_microseconds);
 }
 
 }
