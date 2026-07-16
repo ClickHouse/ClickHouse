@@ -64,8 +64,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    bool mergeIsEquivalentToAddingRows() const override { return true; }
-
     String getName() const override { return "deltaSumTimestamp"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<ValueType>>(); }

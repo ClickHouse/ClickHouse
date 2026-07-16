@@ -445,6 +445,19 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );
 
+-- deltaSum / deltaSumTimestamp merges are not append-equivalent (equal values or
+-- timestamps at a state boundary are mishandled), so they must stay on the recompute
+-- path; the repeated adjacent values / timestamps here hit segment boundaries.
+SELECT countIf(d != d2 OR dt != dt2) AS mismatches
+FROM
+(
+    SELECT
+        deltaSum(v) OVER w AS d, arrayReduce('deltaSum', groupArray(v) OVER w) AS d2,
+        deltaSumTimestamp(v, t) OVER w AS dt, arrayReduce('deltaSumTimestamp', groupArray(v) OVER w, groupArray(t) OVER w) AS dt2
+    FROM (SELECT n, intDiv(cityHash64(n) % 100, 10) AS v, intDiv(n, 3) AS t FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+);
+
 -- Zero-sized aggregate states (the Nothing placeholders for only-NULL arguments) must
 -- stay on the recompute path.
 SELECT countIf(c != 0 OR s IS NOT NULL) AS mismatches
