@@ -278,6 +278,7 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
 
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
+    stop_watch = Utils.Stopwatch()
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
 
@@ -365,7 +366,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     try:
         _GH_Auth(force=True)
     except Exception as e:
-        print(f"WARNING: Failed to auth with GH: [{e}]")
+        message = f"Failed to auth with GH: [{e}]"
+        print(f"ERROR: {message}")
+        env.add_workflow_error(message)
+        return Result.create_from(
+            name=job_name,
+            status=Result.Status.ERROR,
+            stopwatch=stop_watch,
+            info=message,
+        )
 
     # refresh PR data
     if env.PR_NUMBER > 0:

@@ -42,8 +42,6 @@ TEXT_CONTENT_EXTENSIONS = [
     ".jsonl",
 ]
 
-DOCKERHUB_USERNAME = "robotclickhouse"
-DOCKERHUB_SECRET = "dockerhub_robot_password"
 # Single JSON secret used by praktika docker login: {"username":..., "password":...}
 SECRET_DOCKER_REGISTRY = "clickhouse-dockerhub-registry"
 
@@ -52,10 +50,6 @@ CI_DB_TABLE_NAME = "checks"
 # Single JSON connection secret used by praktika CIDB:
 # {"url": ..., "user": ..., "password": ...}
 SECRET_CI_DB_CONNECTION = "clickhouse-test-stat-connection"
-# Legacy per-field secrets (kept for backward compatibility / other consumers).
-SECRET_CI_DB_URL = "clickhouse-test-stat-url"
-SECRET_CI_DB_USER = "clickhouse-test-stat-login"
-SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
 USE_CUSTOM_GH_AUTH = True
 # Use the project's native token minter (deployed via github_token_minters);
