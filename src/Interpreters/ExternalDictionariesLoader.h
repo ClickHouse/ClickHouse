@@ -35,6 +35,11 @@ public:
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".
+    /// Read from the dictionary configuration, so it works without loading the dictionary. Throws for
+    /// a definition whose layout element does not have exactly one child, like loading it would.
+    std::string getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr context) const;
+
     void assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr context) const;
 
     /// Reloads all previously tried-to-load dictionaries in topological order
