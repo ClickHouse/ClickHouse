@@ -353,7 +353,7 @@ Set to `0` to disable this limit.
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
 
-Cloud default value: `0`.
+Cloud default value: `1`.
 )", 0) \
     DECLARE(MaxThreads, max_download_threads, 4, R"(
 The maximum number of threads to download data (e.g. for URL engine).
