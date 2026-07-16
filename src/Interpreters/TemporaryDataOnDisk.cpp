@@ -60,6 +60,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
@@ -74,7 +75,29 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     if (settings.compression_codec.empty())
         return CompressionCodecFactory::instance().get("LZ4");
 
-    return CompressionCodecFactory::instance().get(settings.compression_codec);
+    auto codec = CompressionCodecFactory::instance().get(settings.compression_codec);
+
+    /// Temporary files hold raw serialized data with no column type, which bypasses the
+    /// `allow_experimental_codecs` gate and the per-column type checks of column-level codecs. An
+    /// experimental codec, or a codec that requires the column type to compress (e.g. `PCO`), would
+    /// otherwise be accepted here and only fail later, at the first external sort/join/aggregation
+    /// spill, with a confusing message. Reject such codecs up front, mirroring the validation of the
+    /// `marks_compression_codec` / `primary_key_compression_codec` MergeTree settings, which are
+    /// likewise applied to untyped streams.
+    if (codec->isExperimental())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'temporary_files_codec' cannot use the experimental codec {}. Experimental codecs can only be "
+            "specified per column (with the 'allow_experimental_codecs' setting enabled)",
+            settings.compression_codec);
+    if (codec->requiresColumnTypeToCompress())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'temporary_files_codec' cannot use the codec {} because it requires a column type and the setting "
+            "is applied to untyped data",
+            settings.compression_codec);
+
+    return codec;
 }
 
 }
