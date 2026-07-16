@@ -1446,7 +1446,7 @@ The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHous
 
 `0x9f` (PCO) carries a self-describing body written by the `PCO` codec:
 
-```
+```text
 [1 byte:  W]        ← element width in bytes (1, 2, 4 or 8); high bit 0x80 = "stored"
 [1 byte:  B]        ← number of leading raw bytes = uncompressed_size mod W
 [B bytes]           ← the raw leading partial value (as in Gorilla/FPC)
