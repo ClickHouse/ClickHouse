@@ -101,6 +101,10 @@ echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_
 ```
 
 The command above returns `application/x-www-form-urlencoded`.
+
+The function can also be used inside `INSERT ... SELECT FROM input(...)` queries sent over HTTP.
+In that case it is evaluated eagerly at request time, before any buffering occurs, so the header
+value is always available even when `async_insert = 1` routes the insert through the async queue.
 )";
     FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
     FunctionDocumentation::Arguments arguments = {
@@ -109,7 +113,7 @@ The command above returns `application/x-www-form-urlencoded`.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the header.", {"String"}};
     FunctionDocumentation::Examples examples = {
         {
-            "Usage example",
+            "Read a header from an HTTP request",
             R"(
 -- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
 -- no request headers, so the function returns an empty string. See the description above
@@ -119,6 +123,22 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
             R"(
 
             )"
+        },
+        {
+            "Capture an HTTP header as a column in an async INSERT",
+            R"(
+-- Webhook receiver: store the event type and signature from GitHub headers alongside the payload.
+-- The function is evaluated at request time, so the header is captured before async buffering.
+INSERT INTO github.events (event_type, signature, event)
+SELECT
+    getClientHTTPHeader('X-GitHub-Event'),
+    getClientHTTPHeader('X-Hub-Signature-256'),
+    event
+FROM input('event JSON')
+SETTINGS async_insert = 1, wait_for_async_insert = 1, allow_get_client_http_header = 1
+FORMAT JSONAsObject
+            )",
+            ""
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
