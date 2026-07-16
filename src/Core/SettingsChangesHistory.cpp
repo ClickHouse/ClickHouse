@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"allow_experimental_projection_text_index", false, false, "New setting that gates the experimental projection-based text index (`PROJECTION ... TYPE text(...)`). Off by default; users must opt in before creating or attaching a table or projection that uses this on-disk format."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
@@ -91,7 +92,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"allow_experimental_projection_text_index", false, false, "New setting that gates the experimental projection-based text index (`PROJECTION ... TYPE text(...)`). Off by default; users must opt in before creating or attaching a table or projection that uses this on-disk format."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
