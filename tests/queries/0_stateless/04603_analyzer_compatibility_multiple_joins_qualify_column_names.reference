@@ -39,7 +39,7 @@ t1.k	UInt8
 === describe: function projection name unchanged (ll.k + 1), setting ON ===
 plus(ll.k, 1)	UInt16					
 === describe: SELECT * over JOIN ... USING keeps merge semantics, setting ON ===
-ll.k	UInt8					
+k	UInt8					
 ll.Date	String					
 t2.k	UInt8					
 === describe: unaliased joined subquery gets no prefix (old parity), setting ON ===

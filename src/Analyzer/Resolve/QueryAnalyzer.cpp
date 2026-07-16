@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
+    extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
@@ -1622,6 +1623,46 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 
     size_t additional_column_qualification_parts_size = additional_column_qualification_parts.size();
     const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
+
+    /** Compatibility mode that mimics the old analyzer's multiple-joins rewrite
+      * (`JoinToSubqueryTransformVisitor` with `multiple_joins_try_to_keep_original_names = false`):
+      * when there are two or more JOINs, every matcher-expanded column is unconditionally
+      * qualified with a single-part prefix (`<qualifier>.<column>`) regardless of whether the
+      * bare name would be ambiguous. The qualifier is the table expression alias, a temporary
+      * table name, the bare table name (without database), or a CTE name; if none is available
+      * (e.g. an unaliased joined subquery) the column keeps its unqualified name.
+      */
+    bool force_qualification = scope.joins_count >= 2
+        && scope.context->getSettingsRef()[Setting::analyzer_compatibility_multiple_joins_qualify_column_names];
+
+    if (force_qualification)
+    {
+        std::string forced_qualifier;
+        if (table_expression_node->hasAlias())
+            forced_qualifier = table_expression_node->getAlias();
+        else if (auto * table_node = table_expression_node->as<TableNode>())
+        {
+            if (!table_node->getTemporaryTableName().empty())
+                forced_qualifier = table_node->getTemporaryTableName();
+            else
+                forced_qualifier = table_node->getStorageID().getTableName();
+        }
+        else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
+            forced_qualifier = query_node->getCTEName();
+        else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
+            forced_qualifier = union_node->getCTEName();
+
+        for (const auto & column_node : column_nodes)
+        {
+            const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
+            if (forced_qualifier.empty())
+                node_to_projection_name.emplace(column_node, column_name);
+            else
+                node_to_projection_name.emplace(column_node, forced_qualifier + '.' + column_name);
+        }
+
+        return;
+    }
 
     /** For each matched column node iterate over additional column qualifications and apply them if column needs to be qualified.
       * To check if column needs to be qualified we check if column name can bind to any other table expression in scope or to scope aliases.
