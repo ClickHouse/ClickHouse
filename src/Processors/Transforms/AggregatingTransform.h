@@ -72,6 +72,10 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
+    /// Source rows consumed by all the participating transforms together. Each transform adds its
+    /// count before bumping `num_finished`, so the last one to finish reads the complete total.
+    std::atomic<UInt64> total_input_rows = 0;
+
     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
@@ -169,6 +173,10 @@ private:
     /// pairs — recorded into the statistics entry alongside the group count.
     const bool track_distinct_key_value_pairs;
     UInt64 generated_distinct_key_value_pairs = 0;
+
+    /// The source rows all the participating transforms consumed, captured from `many_data` at the
+    /// same moment the merge is prepared — recorded into the statistics entry with the counts above.
+    UInt64 input_rows_total = 0;
 
     /// Whether this transform's completed output may be recorded as the aggregation's result
     /// statistics.

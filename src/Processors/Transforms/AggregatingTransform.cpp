@@ -970,6 +970,7 @@ void AggregatingTransform::updateResultStatistics()
     {
         entry->merged_result_rows = generated_rows;
         entry->distinct_key_value_pairs = generated_distinct_key_value_pairs;
+        entry->input_rows = input_rows_total;
         getHashTablesStatistics<AggregationEntry>().update(*entry, stats_params);
     }
 }
@@ -1048,6 +1049,7 @@ void AggregatingTransform::initGenerate()
             params->aggregator.writeToTemporaryFile(variants);
     }
 
+    many_data->total_input_rows += src_rows;
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
     {
         /// Note: we reset aggregation state here to release memory earlier.
@@ -1071,6 +1073,7 @@ void AggregatingTransform::initGenerate()
         if (!skip_merging)
         {
             record_result_statistics = true;
+            input_rows_total = many_data->total_input_rows.load();
 
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));

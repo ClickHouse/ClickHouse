@@ -47,19 +47,21 @@ struct AggregationEntry
             || median_hash_table_size < new_entry.median_hash_table_size
             || new_entry.merged_hash_tables != merged_hash_tables
             || new_entry.merged_result_rows != merged_result_rows
-            || new_entry.distinct_key_value_pairs != distinct_key_value_pairs;
+            || new_entry.distinct_key_value_pairs != distinct_key_value_pairs
+            || new_entry.input_rows != input_rows;
     }
 
     std::string dump() const
     {
         return fmt::format(
             "sum_of_hash_table_sizes={}, median_hash_table_size={}, merged_result_rows={}, merged_hash_tables={}, "
-            "distinct_key_value_pairs={}",
+            "distinct_key_value_pairs={}, input_rows={}",
             sum_of_hash_table_sizes,
             median_hash_table_size,
             merged_result_rows,
             merged_hash_tables,
-            distinct_key_value_pairs);
+            distinct_key_value_pairs,
+            input_rows);
     }
 
     /// The entry counts of the per-stream partial hash tables, summed up. An upper bound on the
@@ -80,6 +82,11 @@ struct AggregationEntry
     /// values over the result rows, so it is recorded only when `uniqExact` is the single aggregate
     /// and stays 0 otherwise.
     size_t distinct_key_value_pairs = 0;
+
+    /// How many source rows the aggregation consumed. Together with `distinct_key_value_pairs`
+    /// this gives the average number of rows per distinct pair — how duplicated the argument
+    /// values are in the data.
+    size_t input_rows = 0;
 };
 
 struct HashJoinEntry
