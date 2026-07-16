@@ -8,11 +8,8 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
-<<<<<<< HEAD
 #include <DataTypes/DataTypesDecimal.h>
-=======
 #include <DataTypes/DataTypeDateTime64.h>
->>>>>>> master
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -690,6 +687,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             if (scale <= 6)
                 return wrap_with_logical_type("long");
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         case TypeIndex::DateTime64:
         {
             if (getDecimalScale(*type) != 6)
