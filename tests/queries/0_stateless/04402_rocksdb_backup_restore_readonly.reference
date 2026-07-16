@@ -4,7 +4,7 @@ EMPTY_READONLY_RESTORE_OK
 CANNOT_RESTORE_TABLE
 POPULATED_READONLY_RESTORE_ALLOWED
 100
-shared rw after truncate	0
+shared ro before restore	0
 SHARED_DIR_RESTORE_OK
 shared rw restored	300	44850
 shared ro sees data	300	44850

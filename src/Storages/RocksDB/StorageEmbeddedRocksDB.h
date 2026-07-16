@@ -124,6 +124,7 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void finalizeRestoreFromBackup() override;
 
     const RocksDBSettings & getSettings() const { return *storage_settings.get(); }
 

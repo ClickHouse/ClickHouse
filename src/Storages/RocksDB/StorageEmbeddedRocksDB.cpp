@@ -648,6 +648,25 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
         });
 }
 
+void StorageEmbeddedRocksDB::finalizeRestoreFromBackup()
+{
+    /// A read_only handle snapshots the RocksDB directory at open time. When tables share one rocksdb_dir,
+    /// the read_only sibling's handle was opened during createAndCheckTables(), before the writable owner
+    /// replayed the rows in a data restore task, so it still serves the pre-restore snapshot. finalizeTables()
+    /// runs after every data restore task has completed, so reopen the read_only handle here to observe the
+    /// restored data (the writable owner needs no reopen: it wrote through its own live handle).
+    if (!read_only)
+        return;
+
+    std::lock_guard lock(rocksdb_ptr_mx);
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
+    initDB();
+}
+
 void StorageEmbeddedRocksDB::restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables)
 {
     String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;

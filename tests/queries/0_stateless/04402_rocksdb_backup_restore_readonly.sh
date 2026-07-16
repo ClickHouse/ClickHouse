@@ -106,26 +106,32 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_ro_pop SYNC"
 # tests/integration/test_rocksdb_read_only). BACKUP DATABASE dumps the shared RocksDB only once, from the
 # writable owner; the read_only sibling references that single data.bin instead of dumping an independent
 # snapshot. On restore the writable owner replays the data once and the read_only sibling contributes no
-# write, so the {rw, ro} pair restores cleanly (no spurious read_only rejection) and both see the data.
-# See https://github.com/ClickHouse/ClickHouse/pull/109327
+# write, so the {rw, ro} pair restores cleanly (no spurious read_only rejection). The read_only sibling's
+# handle, opened before the owner replayed the rows, is refreshed by finalizeRestoreFromBackup() so it
+# observes the restored data with no manual reopen. See https://github.com/ClickHouse/ClickHouse/pull/109327
+#
+# The read_only handle is opened while the shared directory is still EMPTY, so its live snapshot holds 0
+# rows and stays at 0 across the writable table's later inserts (a read_only handle does not see writes made
+# through another handle). That makes the post-restore read a genuine discriminator: the restored data (300
+# rows) differs from the read_only sibling's stale snapshot (0 rows), so the sibling reports the restored
+# count only if its handle was actually refreshed.
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_shared SYNC"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_shared"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_shared.rw (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SHARED}') PRIMARY KEY k"
-$CLICKHOUSE_CLIENT -q "INSERT INTO ${CLICKHOUSE_DATABASE}_shared.rw SELECT number, 'v' || toString(number) FROM numbers(300)"
+# Open the read_only sibling over the still-empty directory: its live snapshot is 0 rows.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_shared.ro (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SHARED}', 1) PRIMARY KEY k"
+$CLICKHOUSE_CLIENT -q "INSERT INTO ${CLICKHOUSE_DATABASE}_shared.rw SELECT number, 'v' || toString(number) FROM numbers(300)"
+# The read_only handle does not observe the writable table's live writes: it still snapshots 0 rows.
+$CLICKHOUSE_CLIENT -q "SELECT 'shared ro before restore', count() FROM ${CLICKHOUSE_DATABASE}_shared.ro"
 $CLICKHOUSE_CLIENT -q "BACKUP DATABASE ${CLICKHOUSE_DATABASE}_shared TO ${BACKUP_NAME_SHARED} FORMAT Null"
 
-# Lose the data (TRUNCATE keeps a valid RocksDB directory that the read_only handle can still open), then
-# restore in place: the writable owner recovers all rows and the restore does not fail on the read_only
-# sibling.
-$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ${CLICKHOUSE_DATABASE}_shared.rw"
-$CLICKHOUSE_CLIENT -q "SELECT 'shared rw after truncate', count() FROM ${CLICKHOUSE_DATABASE}_shared.rw"
+# Restore in place (the writable table already holds the 300 rows, so allow_non_empty_tables is required).
+# The writable owner replays the shared data once and the restore does not fail on the read_only sibling.
 $CLICKHOUSE_CLIENT -q "RESTORE DATABASE ${CLICKHOUSE_DATABASE}_shared FROM ${BACKUP_NAME_SHARED} SETTINGS allow_non_empty_tables = 1 FORMAT Null" 2>&1 \
     | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "SHARED_DIR_RESTORE_OK"
 $CLICKHOUSE_CLIENT -q "SELECT 'shared rw restored', count(), sum(k) FROM ${CLICKHOUSE_DATABASE}_shared.rw"
-# The read_only table snapshots the directory at open time; re-attach it to observe the restored data.
-$CLICKHOUSE_CLIENT -q "DETACH TABLE ${CLICKHOUSE_DATABASE}_shared.ro"
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}_shared.ro"
+# The read_only sibling now observes the restored data with no manual reopen: finalizeRestoreFromBackup()
+# refreshed its handle after the owner replayed the rows (without that refresh it would still report 0).
 $CLICKHOUSE_CLIENT -q "SELECT 'shared ro sees data', count(), sum(k) FROM ${CLICKHOUSE_DATABASE}_shared.ro"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_shared SYNC"
 
