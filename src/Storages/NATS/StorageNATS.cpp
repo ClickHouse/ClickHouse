@@ -50,6 +50,7 @@ namespace Setting
 
 namespace NATSSetting
 {
+    extern const NATSSettingsString nats_credentials;
     extern const NATSSettingsString nats_credential_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
     extern const NATSSettingsString nats_format;
@@ -112,6 +113,7 @@ StorageNATS::StorageNATS(
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
+    auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
 
     configuration =
     {
@@ -121,6 +123,7 @@ StorageNATS::StorageNATS(
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
         .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
+        .credentials = nats_credentials.empty() ? getContext()->getConfigRef().getString("nats.credentials", "") : nats_credentials,
         .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
@@ -798,6 +801,9 @@ void registerStorageNATS(StorageFactory & factory)
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
+        if ((*nats_settings)[NATSSetting::nats_credential_file].changed && (*nats_settings)[NATSSetting::nats_credentials].changed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
+
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
@@ -847,6 +853,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_handle_error_mode = 'default']
@@ -875,6 +882,7 @@ Optional parameters:
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
 - `nats_credential_file` - Path to a NATS credentials file.
+- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
 - `nats_handle_error_mode` — How to handle errors for NATS engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).

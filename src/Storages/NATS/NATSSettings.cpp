@@ -37,6 +37,7 @@ namespace ErrorCodes
     DECLARE(String, nats_password, "", "NATS password", 0) \
     DECLARE(String, nats_token, "", "NATS token", 0) \
     DECLARE(String, nats_credential_file, "", "Path to a NATS credentials file", 0) \
+    DECLARE(String, nats_credentials, "", "NATS credentials content with user JWT and seed", 0) \
     DECLARE(UInt64, nats_startup_connect_tries, 5, "Number of connect tries at startup", 0) \
     DECLARE(UInt64, nats_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
     DECLARE(StreamingHandleErrorMode, nats_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for NATS engine. Possible values: default (throw an exception after nats_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
