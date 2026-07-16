@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <cerrno>
+#include <climits>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -82,10 +83,11 @@ void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> ca
             /// equivalent, which behaves like dup() and would reintroduce the leak), a plain
             /// path-based open() of a device file always creates an independent OFD. On Linux,
             /// /proc/self/fd/<fd> resolves to that path without needing readlink(); on Darwin,
-            /// fcntl(F_GETPATH) recovers it explicitly. Other platforms, and a failed re-open on
-            /// these two, fall back to the bounded blocking write below. The descriptor is kept for
-            /// the lifetime of this buffer, so repeated hook installations (one per query in the
-            /// client) reuse it.
+            /// fcntl(F_GETPATH) recovers it explicitly; elsewhere (e.g. FreeBSD, which has neither)
+            /// ttyname_r() recovers it portably - the re-open is attempted only for a terminal, so
+            /// it is always applicable. A failed re-open falls back to the bounded blocking write
+            /// below. The descriptor is kept for the lifetime of this buffer, so repeated hook
+            /// installations (one per query in the client) reuse it.
 #if defined(OS_LINUX)
             if (is_tty && nonblocking_write_fd < 0)
             {
@@ -97,6 +99,13 @@ void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> ca
             {
                 char tty_path[PATH_MAX];
                 if (0 == ::fcntl(fd, F_GETPATH, tty_path))
+                    nonblocking_write_fd = ::open(tty_path, O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
+            }
+#else
+            if (is_tty && nonblocking_write_fd < 0)
+            {
+                char tty_path[PATH_MAX];
+                if (0 == ::ttyname_r(fd, tty_path, sizeof(tty_path)))
                     nonblocking_write_fd = ::open(tty_path, O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
             }
 #endif

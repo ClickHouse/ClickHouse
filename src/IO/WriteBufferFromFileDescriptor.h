@@ -98,10 +98,11 @@ protected:
     /// when the sink is a tty. O_NONBLOCK cannot simply be set on `fd`: the flag is a property of
     /// the open file description, which a terminal fd shares with fd 2 and the parent shell, so
     /// toggling it there leaks to unrelated writers (that broke the progress rendering once - see
-    /// 3f8b12c2736). Re-opening the terminal via /proc/self/fd (Linux) yields an independent open
-    /// file description, so O_NONBLOCK on it affects nobody else. -1 when unavailable (not a
-    /// terminal, non-Linux, or the re-open failed) - the responsive path then falls back to
-    /// poll() + a blocking write capped at PIPE_BUF.
+    /// 3f8b12c2736). Re-opening the terminal by its path - recovered via /proc/self/fd (Linux),
+    /// fcntl(F_GETPATH) (Darwin) or ttyname_r() (elsewhere, e.g. FreeBSD) - yields an independent
+    /// open file description, so O_NONBLOCK on it affects nobody else. -1 when unavailable (not a
+    /// terminal, or the re-open failed) - the responsive path then falls back to poll() + a
+    /// blocking write capped at PIPE_BUF.
     int nonblocking_write_fd = -1;
 
     void finalizeImpl() override;
