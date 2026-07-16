@@ -19,12 +19,34 @@ using namespace DB;
 namespace
 {
 
+/// Tags data chunks with their epoch. On seal chunks additionally carries the runtime filter
+/// payload collected from the build side: here a [min, max] envelope, in the real version
+/// possibly a set or a bloom filter. The payload is state, not data, so it lives in the
+/// chunk info and the seal chunk itself is empty.
 struct EpochInfo : public ChunkInfoCloneable<EpochInfo>
 {
+    struct Envelope
+    {
+        UInt64 min = 0;
+        UInt64 max = 0;
+    };
+
     explicit EpochInfo(size_t epoch_) : epoch(epoch_) {}
+    EpochInfo(size_t epoch_, std::optional<Envelope> envelope_) : epoch(epoch_), envelope(envelope_), is_seal(true) {}
     EpochInfo(const EpochInfo & other) = default;
+
     size_t epoch;
+    /// Empty optional on a seal means the epoch has no build rows: the probe side may skip it.
+    std::optional<Envelope> envelope;
+    bool is_seal = false;
 };
+
+Chunk makeSeal(size_t epoch, std::optional<EpochInfo::Envelope> envelope)
+{
+    Chunk seal(Columns{ColumnUInt64::create()}, 0);
+    seal.getChunkInfos().add(std::make_shared<EpochInfo>(epoch, envelope));
+    return seal;
+}
 
 Block epochHeader()
 {
@@ -62,7 +84,9 @@ protected:
         if (++next_chunk == chunks_per_epoch)
         {
             next_chunk = 0;
-            ++next_epoch;
+            /// Odd epochs have no build rows at all: they must still be sealed by the
+            /// collector (punctuation liveness) and skipped by the reader.
+            next_epoch += 2;
         }
         return chunk;
     }
@@ -80,8 +104,11 @@ private:
 class EpochBuildCollector : public IProcessor
 {
 public:
-    EpochBuildCollector()
+    /// The collector knows the epoch schedule (in the real version: the planner's split
+    /// points), so it can seal epochs the build side has no rows for.
+    explicit EpochBuildCollector(size_t total_epochs_)
         : IProcessor({std::make_shared<const Block>(epochHeader())}, {std::make_shared<const Block>(epochHeader())})
+        , total_epochs(total_epochs_)
     {
     }
 
@@ -113,9 +140,9 @@ public:
 
         if (input.isFinished())
         {
-            if (current_epoch)
+            if (next_epoch_to_seal < total_epochs)
             {
-                sealCurrentEpoch();
+                sealUpTo(total_epochs);
                 return Status::Ready;
             }
             output.finish();
@@ -138,29 +165,40 @@ public:
         auto info = pulled.getChunkInfos().get<EpochInfo>();
         chassert(info);
 
-        if (current_epoch && *current_epoch != info->epoch)
-            sealCurrentEpoch();
+        /// Everything before the chunk's epoch is finished (build chunks arrive in epoch
+        /// order), including epochs with no build rows.
+        sealUpTo(info->epoch);
 
-        current_epoch = info->epoch;
-        rows_ingested += pulled.getNumRows();
+        const auto & data = assert_cast<const ColumnUInt64 &>(*pulled.getColumns().front()).getData();
+        for (auto v : data)
+        {
+            if (!envelope)
+                envelope = EpochInfo::Envelope{v, v};
+            envelope->min = std::min(envelope->min, v);
+            envelope->max = std::max(envelope->max, v);
+        }
         pulled = Chunk();
     }
 
     std::vector<size_t> sealed_epochs;
 
 private:
-    void sealCurrentEpoch()
+    /// Seal all epochs before `epoch`: the current one with its collected envelope,
+    /// the ones the build side had no rows for with an empty payload.
+    void sealUpTo(size_t epoch)
     {
-        auto seal = makeChunk(*current_epoch, /*rows=*/ 1, /*seed=*/ 0);
-        sealed_epochs.push_back(*current_epoch);
-        ready_seals.push_back(std::move(seal));
-        current_epoch.reset();
-        rows_ingested = 0;
+        while (next_epoch_to_seal < epoch)
+        {
+            ready_seals.push_back(makeSeal(next_epoch_to_seal, std::exchange(envelope, std::nullopt)));
+            sealed_epochs.push_back(next_epoch_to_seal);
+            ++next_epoch_to_seal;
+        }
     }
 
+    const size_t total_epochs;
     Chunk pulled;
-    std::optional<size_t> current_epoch;
-    size_t rows_ingested = 0;
+    size_t next_epoch_to_seal = 0;
+    std::optional<EpochInfo::Envelope> envelope;
     std::deque<Chunk> ready_seals;
 };
 
@@ -221,10 +259,21 @@ public:
             return;
 
         auto info = seal.getChunkInfos().get<EpochInfo>();
-        chassert(info);
-        read_epochs.push_back(info->epoch);
+        chassert(info && info->is_seal);
 
-        /// The "read": in the real version this cuts + refines + reads epoch ranges from the pool.
+        /// An epoch with no build rows is never read at all.
+        if (!info->envelope)
+        {
+            skipped_epochs.push_back(info->epoch);
+            seal = Chunk();
+            return;
+        }
+
+        read_epochs.push_back(info->epoch);
+        envelopes.push_back(*info->envelope);
+
+        /// The "read": in the real version this cuts + refines (with the envelope) + reads
+        /// the epoch ranges from the pool.
         for (size_t i = 0; i < chunks_per_read; ++i)
             ready_data.push_back(makeChunk(info->epoch, /*rows=*/ 4, /*seed=*/ i));
 
@@ -232,6 +281,8 @@ public:
     }
 
     std::vector<size_t> read_epochs;
+    std::vector<size_t> skipped_epochs;
+    std::vector<EpochInfo::Envelope> envelopes;
 
 private:
     const size_t chunks_per_read;
@@ -248,7 +299,7 @@ TEST(SealDrivenReading, GatingThroughPipelineEdge)
     constexpr size_t chunks_per_read = 2;
 
     auto source = std::make_shared<FakeBuildSource>(num_epochs, chunks_per_epoch);
-    auto collector = std::make_shared<EpochBuildCollector>();
+    auto collector = std::make_shared<EpochBuildCollector>(num_epochs);
     auto reader = std::make_shared<ReadOnSealTransform>(chunks_per_read);
 
     auto pipe = Pipe(source);
@@ -270,15 +321,31 @@ TEST(SealDrivenReading, GatingThroughPipelineEdge)
         ASSERT_EQ(chunk.getNumRows(), 4);
     }
 
-    /// Every epoch was sealed exactly once, in order.
+    /// Every epoch was sealed exactly once, in order — including the odd ones the build
+    /// side had no rows for.
     ASSERT_EQ(collector->sealed_epochs.size(), num_epochs);
-    /// The reader saw seals in order and read every epoch exactly once.
-    ASSERT_EQ(reader->read_epochs, collector->sealed_epochs);
     for (size_t e = 0; e < num_epochs; ++e)
-        ASSERT_EQ(reader->read_epochs[e], e);
+        ASSERT_EQ(collector->sealed_epochs[e], e);
 
-    /// Data arrives in epoch order, `chunks_per_read` chunks per epoch.
-    ASSERT_EQ(produced_epochs.size(), num_epochs * chunks_per_read);
+    /// The reader read exactly the even epochs (in order) and skipped the odd ones without
+    /// reading anything.
+    const size_t even_epochs = (num_epochs + 1) / 2;
+    ASSERT_EQ(reader->read_epochs.size(), even_epochs);
+    ASSERT_EQ(reader->skipped_epochs.size(), num_epochs - even_epochs);
+    for (size_t i = 0; i < reader->read_epochs.size(); ++i)
+    {
+        size_t epoch = reader->read_epochs[i];
+        ASSERT_EQ(epoch, i * 2);
+        /// The envelope covers exactly the build values of the epoch.
+        ASSERT_EQ(reader->envelopes[i].min, epoch * 1000000);
+        ASSERT_GE(reader->envelopes[i].max, epoch * 1000000);
+        ASSERT_LT(reader->envelopes[i].max, (epoch + 1) * 1000000);
+    }
+    for (size_t i = 0; i < reader->skipped_epochs.size(); ++i)
+        ASSERT_EQ(reader->skipped_epochs[i], i * 2 + 1);
+
+    /// Data arrives in epoch order, `chunks_per_read` chunks per read epoch.
+    ASSERT_EQ(produced_epochs.size(), even_epochs * chunks_per_read);
     for (size_t i = 0; i < produced_epochs.size(); ++i)
-        ASSERT_EQ(produced_epochs[i], i / chunks_per_read);
+        ASSERT_EQ(produced_epochs[i], (i / chunks_per_read) * 2);
 }
