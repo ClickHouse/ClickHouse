@@ -20,6 +20,8 @@
 #include <Common/randomSeed.h>
 
 
+class QueryFuzzer_AggregateFunctionVersionPreserved_Test;
+
 namespace DB
 {
 
@@ -49,6 +51,9 @@ class SettingsChanges;
  */
 class QueryFuzzer
 {
+    /// Grants the regression test access to makeAggregateFunctionType (see #109713 review).
+    friend class ::QueryFuzzer_AggregateFunctionVersionPreserved_Test;
+
 public:
     explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
         : seed(0)
@@ -259,8 +264,14 @@ private:
     /// Builds an (Simple)AggregateFunction type from a name / argument types / parameters, re-validating via
     /// the factory (and, for the simple form, checkSupportedFunctions). Returns nullptr if the aggregate
     /// rejects the arguments. Shared by fuzzDataType and getRandomType so the factory + build logic lives in
-    /// one place.
-    DataTypePtr makeAggregateFunctionType(const String & name, const DataTypes & argument_types, const Array & parameters, bool simple);
+    /// one place. version carries the serialization version parsed from the source AST (empty for
+    /// SimpleAggregateFunction, which is never versioned) so a mutated versioned state keeps its version.
+    DataTypePtr makeAggregateFunctionType(
+        const String & name,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        bool simple,
+        std::optional<size_t> version = std::nullopt);
     /// Builds a DateTime / DateTime64 type, occasionally with an explicit valid timezone (otherwise no explicit
     /// timezone). For DateTime64 the scale is passed in. Shared by fuzzDataType and getRandomType so the valid
     /// timezone set lives in one place.

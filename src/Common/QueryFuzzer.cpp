@@ -3065,7 +3065,9 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         changed |= fuzzAggregateParameters(new_parameters);
         if (changed)
         {
-            if (auto fuzzed = makeAggregateFunctionType(new_name, new_arg_types, new_parameters, /*simple=*/false))
+            /// Keep the leading serialization version (AggregateFunction(1, ...)) parsed from the source AST.
+            if (auto fuzzed = makeAggregateFunctionType(
+                    new_name, new_arg_types, new_parameters, /*simple=*/false, type_aggr->getVersionIfExplicit()))
                 return fuzzed;
         }
         return type;
@@ -3135,7 +3137,7 @@ DataTypePtr QueryFuzzer::makeRandomObject(
 }
 
 DataTypePtr QueryFuzzer::makeAggregateFunctionType(
-    const String & name, const DataTypes & argument_types, const Array & parameters, bool simple)
+    const String & name, const DataTypes & argument_types, const Array & parameters, bool simple, std::optional<size_t> version)
 {
     try
     {
@@ -3146,7 +3148,8 @@ DataTypePtr QueryFuzzer::makeAggregateFunctionType(
             DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(func);
             return createSimpleAggregateFunctionType(func, argument_types, parameters);
         }
-        return std::make_shared<DataTypeAggregateFunction>(func, argument_types, parameters);
+        /// Preserve the source serialization version (AggregateFunction(1, ...)); empty keeps the default.
+        return std::make_shared<DataTypeAggregateFunction>(func, argument_types, parameters, version);
     }
     catch (...) // NOLINT(bugprone-empty-catch) Ok: the aggregate may reject the given argument types
     {

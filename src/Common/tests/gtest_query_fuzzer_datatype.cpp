@@ -1,12 +1,17 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Common/QueryFuzzer.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Core/Defines.h>
+
+#include "gtest_global_register.h"
 
 using namespace DB;
 
@@ -114,4 +119,34 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         ASSERT_NE(nullptr, parsed) << type_name;
         EXPECT_TRUE(dataTypeRoundTrips(parsed)) << type_name;
     }
+}
+
+/// Regression test for the #109713 review point: rebuilding a versioned AggregateFunction state under
+/// the fuzzer must preserve the serialization version parsed from the source AST, instead of resetting
+/// it to std::nullopt (which normalizes to the function's current default). groupBitmap is versioned
+/// with a default version of 1, so an explicit version 0 is a value the default would silently overwrite.
+TEST(QueryFuzzer, AggregateFunctionVersionPreserved)
+{
+    tryRegisterAggregateFunctions();
+
+    QueryFuzzer fuzzer;
+    const DataTypes arg_types = {std::make_shared<DataTypeUInt32>()};
+
+    /// An explicit version threaded through makeAggregateFunctionType is kept verbatim on the rebuilt type.
+    for (size_t version : {size_t(0), size_t(1)})
+    {
+        auto rebuilt = fuzzer.makeAggregateFunctionType("groupBitmap", arg_types, Array{}, /*simple=*/false, version);
+        ASSERT_NE(nullptr, rebuilt) << "version=" << version;
+        const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(rebuilt.get());
+        ASSERT_NE(nullptr, aggr) << "version=" << version;
+        EXPECT_EQ(std::optional<size_t>(version), aggr->getVersionIfExplicit()) << "version=" << version;
+        EXPECT_EQ(version, aggr->getVersion()) << "version=" << version;
+    }
+
+    /// No explicit version stays empty (the type serializes with the function's default version).
+    auto rebuilt = fuzzer.makeAggregateFunctionType("groupBitmap", arg_types, Array{}, /*simple=*/false, std::nullopt);
+    ASSERT_NE(nullptr, rebuilt);
+    const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(rebuilt.get());
+    ASSERT_NE(nullptr, aggr);
+    EXPECT_EQ(std::nullopt, aggr->getVersionIfExplicit());
 }
