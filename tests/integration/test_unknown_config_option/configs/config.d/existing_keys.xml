@@ -26,6 +26,14 @@
     <distributed_ddl_keeper_max_backoff_ms>5000</distributed_ddl_keeper_max_backoff_ms>
     <schema_inference_cache_max_elements_for_hdfs>1024</schema_inference_cache_max_elements_for_hdfs>
     <schema_inference_cache_max_elements_for_local>1024</schema_inference_cache_max_elements_for_local>
+    <!-- Read directly by `Context::getBackgroundStreamingTaskSchedulingSettings`. -->
+    <background_streaming_processing_pool_thread_sleep_seconds>10</background_streaming_processing_pool_thread_sleep_seconds>
+    <background_streaming_processing_pool_thread_sleep_seconds_random_part>1.0</background_streaming_processing_pool_thread_sleep_seconds_random_part>
+    <background_streaming_processing_pool_thread_sleep_seconds_if_nothing_to_do>0.1</background_streaming_processing_pool_thread_sleep_seconds_if_nothing_to_do>
+    <background_streaming_processing_pool_task_sleep_seconds_when_no_work_min>10</background_streaming_processing_pool_task_sleep_seconds_when_no_work_min>
+    <background_streaming_processing_pool_task_sleep_seconds_when_no_work_max>600</background_streaming_processing_pool_task_sleep_seconds_when_no_work_max>
+    <background_streaming_processing_pool_task_sleep_seconds_when_no_work_multiplier>1.1</background_streaming_processing_pool_task_sleep_seconds_when_no_work_multiplier>
+    <background_streaming_processing_pool_task_sleep_seconds_when_no_work_random_part>1.0</background_streaming_processing_pool_task_sleep_seconds_when_no_work_random_part>
     <resource_overload_warnings>
         <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
     </resource_overload_warnings>
