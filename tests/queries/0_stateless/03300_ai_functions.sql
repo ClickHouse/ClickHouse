@@ -407,43 +407,43 @@ SELECT '-- aiTranslate: with instructions and temperature';
 SELECT count() FROM (SELECT aiTranslate(x, 'French', map('instructions', 'keep proper nouns', 'temperature', '0.3')) AS result FROM tab);
 
 -- =============================================================================
--- 17. aiMask
+-- 17. aiRedact
 -- =============================================================================
 
-SELECT '-- aiMask: registered';
-SELECT name FROM system.functions WHERE name = 'aiMask';
+SELECT '-- aiRedact: registered';
+SELECT name FROM system.functions WHERE name = 'aiRedact';
 
-SELECT '-- aiMask: too few arguments';
-SELECT aiMask(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT aiMask('hello'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiRedact: too few arguments';
+SELECT aiRedact(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiRedact('hello'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- aiMask: too many arguments';
-SELECT aiMask('x', ['email'], map('temperature', '0.0'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT '-- aiRedact: too many arguments';
+SELECT aiRedact('x', ['email'], map('temperature', '0.0'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- aiMask: non-constant categories';
-SELECT aiMask(x, [x]) FROM tab; -- { serverError ILLEGAL_COLUMN }
+SELECT '-- aiRedact: non-constant categories';
+SELECT aiRedact(x, [x]) FROM tab; -- { serverError ILLEGAL_COLUMN }
 
-SELECT '-- aiMask: wrong type for categories (not array)';
-SELECT aiMask(x, 'email,phone') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT '-- aiRedact: wrong type for categories (not array)';
+SELECT aiRedact(x, 'email,phone') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT '-- aiMask: wrong type for categories (Array of non-String)';
-SELECT aiMask(x, [1, 2, 3]) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT '-- aiRedact: wrong type for categories (Array of non-String)';
+SELECT aiRedact(x, [1, 2, 3]) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- An empty category list is valid and means "redact all detected PII".
-SELECT '-- aiMask: empty categories array accepted (mask all)';
-SELECT count() FROM (SELECT aiMask(x, []) AS result FROM tab);
-SELECT count() FROM (SELECT aiMask(x, CAST([], 'Array(String)')) AS result FROM tab);
+-- An empty category list is valid and falls back to the default PII categories.
+SELECT '-- aiRedact: empty categories array accepted (default categories)';
+SELECT count() FROM (SELECT aiRedact(x, []) AS result FROM tab);
+SELECT count() FROM (SELECT aiRedact(x, CAST([], 'Array(String)')) AS result FROM tab);
 
-SELECT '-- aiMask: return type';
-DROP TABLE IF EXISTS _03300_ret_mask;
-CREATE TABLE _03300_ret_mask ENGINE = Memory AS
-    SELECT aiMask(x, ['email']) AS result FROM tab;
+SELECT '-- aiRedact: return type';
+DROP TABLE IF EXISTS _03300_ret_redact;
+CREATE TABLE _03300_ret_redact ENGINE = Memory AS
+    SELECT aiRedact(x, ['email']) AS result FROM tab;
 SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_mask';
-DROP TABLE IF EXISTS _03300_ret_mask;
+    WHERE database = currentDatabase() AND table = '_03300_ret_redact';
+DROP TABLE IF EXISTS _03300_ret_redact;
 
-SELECT '-- aiMask: with replacement and temperature';
-SELECT count() FROM (SELECT aiMask(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
+SELECT '-- aiRedact: with replacement and temperature';
+SELECT count() FROM (SELECT aiRedact(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
 -- 18. aiEmbed
@@ -585,17 +585,17 @@ INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(translation) FROM _03300_translate_default;
 DROP TABLE _03300_translate_default;
 
-SELECT '-- aiMask: DEFAULT survives INSERT (no exception)';
-DROP TABLE IF EXISTS _03300_mask_default;
-CREATE TABLE _03300_mask_default
+SELECT '-- aiRedact: DEFAULT survives INSERT (no exception)';
+DROP TABLE IF EXISTS _03300_redact_default;
+CREATE TABLE _03300_redact_default
 (
     id UInt32,
     doc String,
-    masked String DEFAULT aiMask(doc, ['email'])
+    masked String DEFAULT aiRedact(doc, ['email'])
 ) ENGINE = MergeTree ORDER BY id;
-INSERT INTO _03300_mask_default (id, doc) VALUES (1, 'hello world');
-SELECT id, length(masked) FROM _03300_mask_default;
-DROP TABLE _03300_mask_default;
+INSERT INTO _03300_redact_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(masked) FROM _03300_redact_default;
+DROP TABLE _03300_redact_default;
 
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;

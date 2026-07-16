@@ -23,7 +23,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`, `aiMask`) vs the `aiEmbed` function, which require different endpoints and usually use different models.
+AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the `aiEmbed` function, which require different endpoints and usually use different models.
 
 Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
@@ -61,7 +61,7 @@ A function resolves the named collection to use from, in order:
 
 1. the `credentials` key of its parameter map, when present;
 2. otherwise the applicable default-credentials setting:
-   - [`ai_function_text_default_credentials`](/operations/settings/settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`, `aiMask`);
+   - [`ai_function_text_default_credentials`](/operations/settings/settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`, `aiRedact`);
    - [`ai_function_embedding_default_credentials`](/operations/settings/settings#ai_function_embedding_default_credentials) for `aiEmbed`.
 
 If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint and model differ from an embeddings one.

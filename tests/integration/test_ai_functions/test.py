@@ -109,7 +109,7 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
-        # Endpoint returning HTTP 200 with plain, non-JSON content, used to check that aiMask rejects a
+        # Endpoint returning HTTP 200 with plain, non-JSON content, used to check that aiRedact rejects a
         # response that is not a `{"masked_text": ...}` object.
         instance.query(
             f"CREATE NAMED COLLECTION ai_rawtext AS "
@@ -556,18 +556,18 @@ def test_translate_null_input(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# aiMask
+# aiRedact
 # ---------------------------------------------------------------------------
 
 
-def test_mask_basic(started_cluster):
-    """aiMask sends a response_format with a single `masked_text` field."""
+def test_redact_basic(started_cluster):
+    """aiRedact sends a response_format with a single `masked_text` field."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query(
         "INSERT INTO test_input VALUES ('customer John Doe, john@doe.org')"
     )
     result = instance.query(
-        "SELECT aiMask(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
+        "SELECT aiRedact(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
         settings=AI_SETTINGS,
     )
     # Mock returns {"masked_text": "<user_message>"}; postProcess extracts the value.
@@ -578,23 +578,23 @@ def test_mask_basic(started_cluster):
     assert "email" in sent and "name" in sent
 
 
-def test_mask_all_categories_empty_array(started_cluster):
+def test_redact_all_categories_empty_array(started_cluster):
     """An empty categories array is accepted and means 'redact every detected category'."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('some text with pii')")
     result = instance.query(
-        "SELECT aiMask(x, [], map('credentials', 'ai_mock')) FROM test_input",
+        "SELECT aiRedact(x, [], map('credentials', 'ai_mock')) FROM test_input",
         settings=AI_SETTINGS,
     )
     assert result.strip() == "some text with pii"
 
 
-def test_mask_replacement_forwarded(started_cluster):
+def test_redact_replacement_forwarded(started_cluster):
     """The `replacement` token is embedded in the system prompt sent to the provider."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('redact me')")
     instance.query(
-        "SELECT aiMask(x, ['email'], map('credentials', 'ai_mock', 'replacement', '<<HIDDEN>>')) FROM test_input",
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock', 'replacement', '<<HIDDEN>>')) FROM test_input",
         settings=AI_SETTINGS,
     )
     body = json.loads(last_request()["body"])
@@ -602,12 +602,12 @@ def test_mask_replacement_forwarded(started_cluster):
     assert "<<HIDDEN>>" in body["messages"][0]["content"]
 
 
-def test_mask_multiple_rows(started_cluster):
+def test_redact_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
     qid = unique_query_id("mask_events")
     instance.query(
-        "SELECT aiMask(x, ['email'], map('credentials', 'ai_mock')) FROM test_input",
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -616,11 +616,11 @@ def test_mask_multiple_rows(started_cluster):
     assert int(events["rows_processed"]) == 3
 
 
-def test_mask_null_input(started_cluster):
+def test_redact_null_input(started_cluster):
     instance.query("TRUNCATE TABLE test_input_nullable")
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
     result = instance.query(
-        "SELECT aiMask(x, ['email'], map('credentials', 'ai_mock')) FROM test_input_nullable",
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input_nullable",
         settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
@@ -629,29 +629,29 @@ def test_mask_null_input(started_cluster):
     assert "text" in lines
 
 
-def test_mask_error_graceful(started_cluster):
+def test_redact_error_graceful(started_cluster):
     """With ai_function_throw_on_error = 0, a provider error yields an empty string."""
     result = instance.query(
-        "SELECT aiMask('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
 
-def test_mask_error_throw(started_cluster):
+def test_redact_error_throw(started_cluster):
     """By default (`ai_function_throw_on_error = 1`) a provider error propagates."""
     error = instance.query_and_get_error(
-        "SELECT aiMask('secret', ['email'], map('credentials', 'ai_error'))",
+        "SELECT aiRedact('secret', ['email'], map('credentials', 'ai_error'))",
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
-def test_mask_rejects_unverified_response(started_cluster):
+def test_redact_rejects_unverified_response(started_cluster):
     """A provider that returns HTTP 200 with content that is not a `{"masked_text": ...}`
     object is rejected (MALFORMED_AI_PROVIDER_RESPONSE)."""
     error = instance.query_and_get_error(
-        "SELECT aiMask('secret John Doe', ['name'], map('credentials', 'ai_rawtext'))",
+        "SELECT aiRedact('secret John Doe', ['name'], map('credentials', 'ai_rawtext'))",
         settings=AI_SETTINGS,
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error

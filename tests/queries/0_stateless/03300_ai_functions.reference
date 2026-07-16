@@ -94,19 +94,19 @@ aiTranslate
 result	String
 -- aiTranslate: with instructions and temperature
 0
--- aiMask: registered
-aiMask
--- aiMask: too few arguments
--- aiMask: too many arguments
--- aiMask: non-constant categories
--- aiMask: wrong type for categories (not array)
--- aiMask: wrong type for categories (Array of non-String)
--- aiMask: empty categories array accepted (mask all)
+-- aiRedact: registered
+aiRedact
+-- aiRedact: too few arguments
+-- aiRedact: too many arguments
+-- aiRedact: non-constant categories
+-- aiRedact: wrong type for categories (not array)
+-- aiRedact: wrong type for categories (Array of non-String)
+-- aiRedact: empty categories array accepted (default categories)
 0
 0
--- aiMask: return type
+-- aiRedact: return type
 result	String
--- aiMask: with replacement and temperature
+-- aiRedact: with replacement and temperature
 0
 -- aiEmbed: registered
 aiEmbed
@@ -140,6 +140,6 @@ result	Array(Float32)
 1	0
 -- aiTranslate: DEFAULT survives INSERT (no exception)
 1	0
--- aiMask: DEFAULT survives INSERT (no exception)
+-- aiRedact: DEFAULT survives INSERT (no exception)
 1	0
 -- Re-disabled blocks function
