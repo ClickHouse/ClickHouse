@@ -5,13 +5,53 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-908883",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-909740",
       "email": "support@clickhouse.com"
     }
   },
   "servers": [
     {
       "url": "https://api.clickhouse.cloud"
+    }
+  ],
+  "security": [
+    {
+      "basicAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Organization"
+    },
+    {
+      "name": "User management"
+    },
+    {
+      "name": "Billing"
+    },
+    {
+      "name": "Role Management"
+    },
+    {
+      "name": "Service"
+    },
+    {
+      "name": "Backup"
+    },
+    {
+      "name": "OpenAPI"
+    },
+    {
+      "name": "Prometheus"
+    },
+    {
+      "name": "ClickPipes"
+    },
+    {
+      "name": "ClickStack"
+    },
+    {
+      "name": "Postgres"
     }
   ],
   "paths": {
@@ -14901,6 +14941,13 @@
             "type": "boolean",
             "example": false
           },
+          "serverId": {
+            "description": "Optional MySQL server_id the pipe declares itself as in the MySQL replication topology. Must be unique across replicas connected to the source. If omitted, one is assigned automatically.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295,
+            "example": 4242
+          },
           "settings": {
             "$ref": "#/components/schemas/ClickPipeMySQLPipeSettings"
           },
@@ -14987,6 +15034,13 @@
             "description": "Skip TLS certificate verification for the MySQL connection. Use with caution in production environments.",
             "type": "boolean",
             "example": false
+          },
+          "serverId": {
+            "description": "Optional MySQL server_id the pipe declares itself as in the MySQL replication topology. Must be unique across replicas connected to the source. If omitted, one is assigned automatically.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295,
+            "example": 4242
           },
           "tableMappings": {
             "type": "array",
@@ -15078,6 +15132,16 @@
               "null"
             ],
             "example": false
+          },
+          "serverId": {
+            "description": "Optional MySQL server_id the pipe declares itself as in the MySQL replication topology. Must be unique across replicas connected to the source. If omitted, one is assigned automatically.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 4294967295,
+            "example": 4242
           },
           "settings": {
             "$ref": "#/components/schemas/ClickPipePatchMySQLPipeSettings"
@@ -16582,20 +16646,12 @@
             "description": "Maximum memory per replica (Gb) during this window. A range in vertical; in horizontal it equals minReplicaMemoryGb (memory is fixed while the replica count scales).",
             "type": "number"
           },
-          "replicaMemoryGb": {
-            "description": "Fixed memory per replica (Gb) during this window. Present only for horizontal entries (equal to minReplicaMemoryGb/maxReplicaMemoryGb); vertical entries omit it.",
-            "type": "number"
-          },
-          "numReplicas": {
-            "description": "Fixed replica count during this window. Present only for vertical entries; horizontal entries use minReplicas/maxReplicas instead.",
-            "type": "integer"
-          },
           "minReplicas": {
-            "description": "Minimum number of replicas during this window. Present only for horizontal entries, where the replica count scales between minReplicas and maxReplicas; vertical entries use numReplicas instead.",
+            "description": "Minimum number of replicas during this window. For a horizontal entry the replica count scales between minReplicas and maxReplicas; for a vertical entry minReplicas and maxReplicas are equal and report the fixed replica count (both omitted when the entry stored no count).",
             "type": "integer"
           },
           "maxReplicas": {
-            "description": "Maximum number of replicas during this window. Present only for horizontal entries, where the replica count scales between minReplicas and maxReplicas; vertical entries use numReplicas instead.",
+            "description": "Maximum number of replicas during this window. For a horizontal entry the replica count scales between minReplicas and maxReplicas; for a vertical entry minReplicas and maxReplicas are equal and report the fixed replica count (both omitted when the entry stored no count).",
             "type": "integer"
           },
           "idleScaling": {
@@ -24683,6 +24739,7 @@
           "restoring_backup",
           "finalizing_restore",
           "unavailable",
+          "stopped",
           "deleting"
         ]
       },
@@ -26671,46 +26728,6 @@
       }
     }
   },
-  "security": [
-    {
-      "basicAuth": []
-    }
-  ],
-  "tags": [
-    {
-      "name": "Organization"
-    },
-    {
-      "name": "User management"
-    },
-    {
-      "name": "Billing"
-    },
-    {
-      "name": "Role Management"
-    },
-    {
-      "name": "Service"
-    },
-    {
-      "name": "Backup"
-    },
-    {
-      "name": "OpenAPI"
-    },
-    {
-      "name": "Prometheus"
-    },
-    {
-      "name": "ClickPipes"
-    },
-    {
-      "name": "ClickStack"
-    },
-    {
-      "name": "Postgres"
-    }
-  ],
   "x-tagGroups": [
     {
       "name": "Organization",
