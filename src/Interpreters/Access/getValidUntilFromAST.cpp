@@ -131,8 +131,9 @@ namespace DB
         /// an entity written by an older version (a bare local-time string, resolved in the server time
         /// zone, as before), or a hand-edited stored definition. All of these go through the same
         /// bounds checks: a hand-edited definition must fail to load rather than silently resolve to
-        /// a different deadline (the entity is skipped and the error is logged), the same way
-        /// `CREATE`/`ALTER USER` reject the value at query time.
+        /// a different deadline, the same way `CREATE`/`ALTER USER` reject the value at query time.
+        /// (The server still starts: the directory scan skips a broken definition with a logged
+        /// error, and a lazy per-entity read reports the error to the operation that touches it.)
         ///
         /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
         /// year field of `0` means "not specified", so it is silently replaced with the current

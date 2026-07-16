@@ -98,11 +98,12 @@ TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
 {
     /// `deserializeAccessEntity` is the entry point used to load stored access entities. The stored
     /// encoding never contains a deadline outside the representable range, so such a value can only
-    /// come from a hand-edited definition - and it must fail to load (the storage skips the entity
-    /// and logs the error) instead of silently resolving to a different deadline: best-effort parsing
-    /// substitutes the current year for an explicit year `0000`, and a pre-1900 deadline would come
-    /// back clamped after the next serialization round-trip. This mirrors the checks `CREATE`/`ALTER
-    /// USER ... VALID UNTIL` perform at query time.
+    /// come from a hand-edited definition - and it must fail to load instead of silently resolving
+    /// to a different deadline: best-effort parsing substitutes the current year for an explicit
+    /// year `0000`, and a pre-1900 deadline would come back clamped after the next serialization
+    /// round-trip. This mirrors the checks `CREATE`/`ALTER USER ... VALID UNTIL` perform at query
+    /// time. The server still starts: the directory scan skips a broken definition with a logged
+    /// error, and a lazy per-entity read reports the error to the operation that touches it.
     for (const char * definition :
          {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '0000-01-01 00:00:00 UTC';",
           "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1899-12-31 23:59:59 UTC';"})
