@@ -34,29 +34,6 @@
 namespace
 {
 
-class SilkEnvironment : public ::testing::Environment
-{
-public:
-    void SetUp() override
-    {
-        /// TODO(mstetsyuk): Silk::initializeFiberScheduler and Silk::destroyFiberScheduler are coming in another PR.
-        silk::initialize();
-        silk::FiberScheduler::Options options;
-        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
-        options.fiberStackSize = 320 * 1024;
-        silk::FiberScheduler::initialize(&options);
-    }
-
-    void TearDown() override
-    {
-        silk::FiberScheduler::destroy();
-        silk::destroy();
-    }
-};
-
-::testing::Environment * const silk_env = ::testing::AddGlobalTestEnvironment(new SilkEnvironment);
-
-
 struct PlainPolicy
 {
     using Listener = Poco::Net::ServerSocket;
@@ -86,6 +63,22 @@ template <typename Policy>
 class SilkFiberSocketTest : public ::testing::Test
 {
 protected:
+    static void SetUpTestSuite()
+    {
+        /// Initialize silk only for this suite; global env setup breaks unrelated filtered runs.
+        silk::initialize();
+        silk::FiberScheduler::Options options;
+        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
+        options.fiberStackSize = 320 * 1024;
+        silk::FiberScheduler::initialize(&options);
+    }
+
+    static void TearDownTestSuite()
+    {
+        silk::FiberScheduler::destroy();
+        silk::destroy();
+    }
+
     Policy policy;
 };
 
