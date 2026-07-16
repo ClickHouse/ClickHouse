@@ -25,6 +25,8 @@ namespace ProfileEvents
     extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexPositionsDecodeMicroseconds;
     extern const Event TextIndexPhraseMatchMicroseconds;
+    extern const Event TextIndexPositionsSegmentsDecoded;
+    extern const Event TextIndexPositionsSegmentsSkipped;
 }
 
 namespace DB
@@ -877,6 +879,7 @@ public:
     const PositionList & readSegment(size_t idx) override
     {
         ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsSegmentsDecoded);
 
         const auto & meta = directory.segments[idx];
         stream->seekToMark({meta.offset, 0});
@@ -965,10 +968,12 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                     source_ptrs.push_back(sources.back().get());
                 }
 
+                size_t segments_skipped = 0;
                 {
                     ProfileEventTimeIncrement<Microseconds> match_watch(ProfileEvents::TextIndexPhraseMatchMicroseconds);
-                    matching = TextIndexPhraseSearch::phraseSearchStreaming(source_ptrs);
+                    matching = TextIndexPhraseSearch::phraseSearchStreaming(source_ptrs, &segments_skipped);
                 }
+                ProfileEvents::increment(ProfileEvents::TextIndexPositionsSegmentsSkipped, segments_skipped);
             }
 
             return std::make_shared<TextIndexPostingsCacheCell>(
