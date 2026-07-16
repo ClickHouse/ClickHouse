@@ -31,6 +31,31 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_l
 grep -o -m1 '"packet":"log","log":{"event_time":' "$result_file"
 rm "$result_file"
 
+# Auxiliary packets (`log`, `profile_events`, `exception`) are always JSON, unlike the query result
+# payload, which - depending on the framing format - may embed non-UTF-8 bytes verbatim. Some of their
+# string fields, such as `query_id` in the `log` packet, come from user input over HTTP (`HTTPHandler`
+# only strips ASCII control characters from `query_id`, not arbitrary invalid UTF-8), so they must be
+# sanitized to keep the packet - and the whole stream - valid UTF-8 / JSON.
+echo '--- log packets sanitize a non-UTF-8 query_id to valid UTF-8 JSON'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace&query_id=bad_utf8_04513_%FF" \
+    -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 FORMAT Null" | python3 -c "
+import sys, json
+try:
+    data = sys.stdin.buffer.read().decode('utf-8')
+except UnicodeDecodeError:
+    print('MISMATCH: invalid UTF-8 in response')
+else:
+    found = False
+    for line in data.splitlines():
+        if not line:
+            continue
+        packet = json.loads(line)
+        if packet.get('packet') == 'log' and packet['log']['query_id'].startswith('bad_utf8_04513_'):
+            found = True
+            break
+    print('non-UTF-8 query_id sanitized in log packets: OK' if found else 'MISMATCH: no matching log packet')
+"
+
 echo '--- log packets in EventStream'
 log_events=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&send_logs_level=trace" \
     -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 FORMAT Null" | grep -c '^event: log')

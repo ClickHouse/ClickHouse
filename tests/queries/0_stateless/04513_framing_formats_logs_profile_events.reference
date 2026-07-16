@@ -5,6 +5,8 @@ profile_events packets: OK
 --- log packets
 log packets: OK
 "packet":"log","log":{"event_time":
+--- log packets sanitize a non-UTF-8 query_id to valid UTF-8 JSON
+non-UTF-8 query_id sanitized in log packets: OK
 --- log packets in EventStream
 log events: OK
 --- profile events in EventStream are a single JSON array

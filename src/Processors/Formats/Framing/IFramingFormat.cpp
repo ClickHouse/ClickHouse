@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/CurrentThread.h>
@@ -168,6 +169,12 @@ static void writeDateTimeWithMicrosecondsJSON(UInt32 datetime, UInt32 microsecon
     writeChar('"', buf);
 }
 
+void IFramingFormat::writeJSONStringValidUTF8(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
+{
+    WriteBufferValidUTF8 validating_buf(buf);
+    writeJSONString(s, validating_buf, settings);
+}
+
 void IFramingFormat::writeLogRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const
 {
     const auto & event_time = assert_cast<const ColumnUInt32 &>(*block.getByName("event_time").column).getData();
@@ -182,17 +189,17 @@ void IFramingFormat::writeLogRowJSON(const Block & block, size_t row_num, WriteB
     writeCString("{\"event_time\":", buf);
     writeDateTimeWithMicrosecondsJSON(event_time[row_num], event_time_microseconds[row_num], buf);
     writeCString(",\"host_name\":", buf);
-    writeJSONString(log_host_name.getDataAt(row_num), buf, format_settings);
+    writeJSONStringValidUTF8(log_host_name.getDataAt(row_num), buf, format_settings);
     writeCString(",\"query_id\":", buf);
-    writeJSONString(query_id.getDataAt(row_num), buf, format_settings);
+    writeJSONStringValidUTF8(query_id.getDataAt(row_num), buf, format_settings);
     writeCString(",\"thread_id\":\"", buf);
     writeIntText(thread_id[row_num], buf);
     writeCString("\",\"priority\":\"", buf);
     writeString(InternalTextLogsQueue::getPriorityName(priority[row_num]), buf);
     writeCString("\",\"source\":", buf);
-    writeJSONString(source.getDataAt(row_num), buf, format_settings);
+    writeJSONStringValidUTF8(source.getDataAt(row_num), buf, format_settings);
     writeCString(",\"text\":", buf);
-    writeJSONString(text.getDataAt(row_num), buf, format_settings);
+    writeJSONStringValidUTF8(text.getDataAt(row_num), buf, format_settings);
     writeChar('}', buf);
 }
 
@@ -206,7 +213,7 @@ void IFramingFormat::writeProfileEventRowJSON(const Block & block, size_t row_nu
     const auto & value = assert_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
     writeCString("{\"host_name\":", buf);
-    writeJSONString(event_host_name.getDataAt(row_num), buf, format_settings);
+    writeJSONStringValidUTF8(event_host_name.getDataAt(row_num), buf, format_settings);
     writeCString(",\"current_time\":\"", buf);
     writeDateTimeText(current_time[row_num], buf);
     writeCString("\",\"thread_id\":\"", buf);
@@ -214,7 +221,7 @@ void IFramingFormat::writeProfileEventRowJSON(const Block & block, size_t row_nu
     writeCString("\",\"type\":\"", buf);
     writeCString(type[row_num] == ProfileEvents::Type::GAUGE ? "gauge" : "increment", buf);
     writeCString("\",\"name\":", buf);
-    writeJSONString(name.getDataAt(row_num), buf, format_settings);
+    writeJSONStringValidUTF8(name.getDataAt(row_num), buf, format_settings);
     writeCString(",\"value\":\"", buf);
     writeIntText(value[row_num], buf);
     writeCString("\"}", buf);

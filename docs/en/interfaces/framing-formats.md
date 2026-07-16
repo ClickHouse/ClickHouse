@@ -109,4 +109,6 @@ With `JSONEachPacketBase64`, the same `data` packet looks like:
 | `profile_events` | An array of profile events as JSON: `host_name`, `current_time`, `thread_id`, `type` (`increment` or `gauge`), `name`, `value`. |
 | `exception`      | The exception message as JSON.                                                                                   |
 
+Unlike the `data`, `totals`, and `extremes` payloads (see the byte-exactness notes above), the string fields of the auxiliary packets (`query_id`, `text`, and `source` of `log`, `name` of `profile_events`, and the `exception` message) have no base64 escape hatch, and some of them (for example `query_id`, which is taken from the query) can hold arbitrary bytes. These fields are always sanitized to valid UTF-8, replacing invalid sequences with the replacement character (`U+FFFD`), so the auxiliary packets are always valid JSON.
+
 Processing of multiple queries at once is not implemented yet, but the design allows it: every packet can be extended with the information about the query index along multiple queries.

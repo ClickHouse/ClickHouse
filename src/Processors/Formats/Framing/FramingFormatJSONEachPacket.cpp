@@ -60,7 +60,7 @@ void FramingFormatJSONEachPacket::writeProfileEventsPacket(const Block & block)
 void FramingFormatJSONEachPacket::writeExceptionPacket(const String & message)
 {
     writeCString("{\"packet\":\"exception\",\"exception\":", out);
-    writeJSONString(message, out, format_settings);
+    writeJSONStringValidUTF8(message, out, format_settings);
     writeCString("}\n", out);
 }
 
