@@ -482,7 +482,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         if (ofunc)
         {
             setObjectStoreParams<SQLTable, ObjectStoreFunc>(rg, t, ofunc);
-            addRandomHTTPHeaders(rg, tfunc);
+            /// Custom HTTP headers only apply to HTTP-based (S3-family) object stores; forwarding them
+            /// into the Azure SDK or local-file paths breaks the transport (e.g. Accept-Encoding).
+            if (t.isOnS3())
+                addRandomHTTPHeaders(rg, tfunc);
         }
     }
     else if (usage == TableFunctionUsage::ClusterCall)
