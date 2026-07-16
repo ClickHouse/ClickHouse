@@ -516,14 +516,14 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
-SELECT 'Test support_phrase_search argument.';
+SELECT 'Test positions argument.';
 
-SELECT '-- support_phrase_search argument is experimental';
+SELECT '-- positions argument is experimental';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
@@ -531,33 +531,33 @@ ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS allow_experimental_text_index_phrase_search = 1;
+SETTINGS allow_experimental_text_index_positions = 1;
 
 DROP TABLE tab;
 
-SELECT '-- support_phrase_search argument is must be 0 or 1';
+SELECT '-- positions argument is must be 0 or 1';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 2)
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 2)
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_experimental_text_index_positions = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 'abc')
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 'abc')
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_experimental_text_index_positions = 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Types are incorrect.';
 

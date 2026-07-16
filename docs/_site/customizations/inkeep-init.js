@@ -64,7 +64,7 @@
     ['products/clickhouse-private', 'ClickHouse Private'],
     ['products/managed-postgres', 'Managed Postgres'],
     ['products/agentic-data-stack', 'Agentic Data Stack'],
-    ['chdb', 'chDB'],
+    ['products/chdb', 'chDB'],
     ['products/kubernetes-operator', 'Kubernetes Operator'],
     ['clickstack', 'ClickStack'],
     ['integrations/clickpipes', 'ClickPipes'],
