@@ -11,6 +11,7 @@ from env_helper import GITHUB_REPOSITORY
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from report import SUCCESS
+from s3_helper import S3Helper
 
 
 def parse_args():
@@ -91,6 +92,38 @@ class AutoReleaseInfo:
         return AutoReleaseInfo(releases=releases)
 
 
+def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool:
+    """Whether the release build uploaded packages for this exact commit.
+
+    A commit can pass the CI checks above (`check_wf_completed` + no
+    `get_failed_statuses`) while its release build was deduplicated by the CI
+    cache — reported as `skipped`, which is not a *failed* status — so nothing
+    was uploaded under this commit's own prefix. `CreateRelease` downloads
+    packages strictly from `REFs/<branch>/<commit_sha>/build_<arch>_release/`
+    (see `ci/jobs/create_release.py` `PackageDownloader`), so it would 404 on
+    such a commit. Only accept a commit whose per-SHA build prefix actually
+    holds artifacts.
+    """
+    major, minor = (int(x) for x in release_branch.split(".")[:2])
+    is_new_ci = (major >= 25 and minor >= 3) or major > 25
+    prefix = f"REFs/{release_branch}" if is_new_ci else release_branch
+    build_dirs = (
+        ("build_amd_release", "build_arm_release")
+        if is_new_ci
+        else ("package_release", "package_aarch64")
+    )
+    s3 = S3Helper()
+    for build_dir in build_dirs:
+        s3_prefix = f"{prefix}/{commit_sha}/{build_dir}/"
+        if not s3.list_prefix(s3_prefix):
+            print(
+                f"No release artifacts under [s3://.../{s3_prefix}] — the release "
+                f"build for this commit was skipped/cached; not releasable"
+            )
+            return False
+    return True
+
+
 def _prepare(token):
     assert len(token) > 10
     os.environ["GH_TOKEN"] = token
@@ -157,11 +190,7 @@ def _prepare(token):
                 continue
 
             failed_jobs = GH.get_failed_statuses(token=token, commit_sha=commit)
-            if not failed_jobs:
-                commit_sha = commit
-                commit_ci_status = SUCCESS
-                break
-            else:
+            if failed_jobs:
                 print(
                     f"CI failed for [{commit}]: {failed_jobs} - check previous commit"
                 )
@@ -169,6 +198,26 @@ def _prepare(token):
                 if not description:
                     description = f"Failed jobs: {failed_jobs}"
                 commits_to_branch_head += 1
+                continue
+
+            # CI is green, but "no failed jobs" also passes when the release
+            # build was deduplicated by the CI cache (reported `skipped`, not
+            # `failed`) and no packages were uploaded under this commit's SHA.
+            # Releasing such a commit fails later in CreateRelease's package
+            # download, so require the artifacts to actually be present.
+            if not _release_build_artifacts_ready(pr.head.ref, commit):
+                print(
+                    f"CI green for [{commit}] but release build artifacts are "
+                    f"missing - check previous commit"
+                )
+                if not description:
+                    description = "Release build artifacts missing (build skipped/cached)"
+                commits_to_branch_head += 1
+                continue
+
+            commit_sha = commit
+            commit_ci_status = SUCCESS
+            break
 
         ready = False
         if commit_ci_status == SUCCESS and commit_sha:
