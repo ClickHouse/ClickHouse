@@ -33,32 +33,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
             CurrentMetrics::ParquetEncoderThreadsScheduled,
             format_settings.max_threads);
 
-    using C = FormatSettings::ParquetCompression;
-    switch (format_settings.parquet.output_compression_method)
-    {
-        case C::NONE: options.compression = CompressionMethod::None; break;
-        case C::SNAPPY: options.compression = CompressionMethod::Snappy; break;
-        case C::ZSTD: options.compression = CompressionMethod::Zstd; break;
-        case C::LZ4: options.compression = CompressionMethod::Lz4; break;
-        case C::GZIP: options.compression = CompressionMethod::Gzip; break;
-        case C::BROTLI: options.compression = CompressionMethod::Brotli; break;
-    }
-    options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
-    options.output_string_as_string = format_settings.parquet.output_string_as_string;
-    options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
-    options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
-    options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
-    options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
-    options.data_page_size = format_settings.parquet.data_page_size;
-    options.write_batch_size = format_settings.parquet.write_batch_size;
-    options.write_page_index = format_settings.parquet.write_page_index;
-    options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
-    options.write_checksums = format_settings.parquet.write_checksums;
-    options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
-    options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
-    options.write_geometadata = format_settings.parquet.write_geometadata;
-    options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
-    options.use_dictionary_encoding = options.max_dictionary_size > 0;
+    options = writeOptionsFromFormatSettings(format_settings);
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
         schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
