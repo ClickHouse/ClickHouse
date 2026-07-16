@@ -128,16 +128,20 @@ def main():
                     name="Queries", results=query_results, stopwatch=stop_watch_
                 )
             )
+
+            # Flush the final benchmark queries' system-log records and detach
+            # the replication views while the server is still up: the enclosing
+            # `ClickHouseService.__exit__` SIGTERMs it on block exit, and every
+            # step runs against the local server (`SYSTEM FLUSH LOGS`, then
+            # `SYSTEM FLUSH DISTRIBUTED` and the drops of the `_sender`/
+            # `_watcher` tables). Symmetric with `start_log_exports` above.
+            if not info.is_local_run:
+                ch.stop_log_exports()
     except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
         results.append(
             Result(name="Job error", status=Result.Status.FAIL, info=str(e))
         )
-
-    # Flush the final benchmark queries' system-log records and detach the
-    # replication views - same as SQLStorm and the stateless tests.
-    if not info.is_local_run:
-        ch.stop_log_exports()
 
     Result.create_from(
         results=results,
