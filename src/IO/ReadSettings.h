@@ -152,6 +152,8 @@ struct ReadSettings
     {
         bool enabled = false;
         bool use_long_connections = true;
+        size_t window_size = 4 * 1_MiB;
+        size_t block_size = 1_MiB;
         size_t min_bytes_for_seek = 2 * 1_MiB;
         size_t max_tail_for_drain = 1_MiB;
     };

@@ -220,7 +220,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
 
     /// Only local files and object storage are supported; other sources fall back.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
-    size_t block_size = 0;
     /// Read-through cache chain (front = fastest); populated below, once the source is chosen.
     CacheChain cache_chain;
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
@@ -228,7 +227,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
             source->objects.size(), local_src->path);
         source_reader = std::make_shared<LocalSourceReader>(settings);
-        block_size = settings.local_fs_settings.buffer_size;
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
@@ -249,7 +247,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         LOG_DEBUG(log, "build: using ReaderExecutor for object storage, {} objects, gather={}",
             source->objects.size(), gather);
         source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
-        block_size = settings.remote_fs_settings.buffer_size;
     }
 
     if (!source_reader)
@@ -285,9 +282,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
 
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, source->objects, ReaderExecutor::Options{
-            .window_size = block_size,
+            .window_size = settings.reader_executor.window_size,
             .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
-            .block_size = block_size,
+            .block_size = settings.reader_executor.block_size,
             .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
             .long_connection_limit = long_connection_limit,
             /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).

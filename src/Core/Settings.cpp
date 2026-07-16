@@ -766,6 +766,10 @@ Reuse a bounded long source connection across windows in the experimental `Reade
 Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
 Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_window_size, 4194304, R"(
+Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_block_size, 1048576, R"(
+Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
