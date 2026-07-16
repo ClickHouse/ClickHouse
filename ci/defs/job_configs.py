@@ -55,6 +55,7 @@ fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./ci/jobs/fast_test.py",
         "./ci/jobs/scripts/clickhouse_proc.py",
+        "./ci/jobs/scripts/server_cleanup.py",
         "./tests/queries/0_stateless/",
         "./tests/config/",
         "./tests/clickhouse-test",
@@ -103,6 +104,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/praktika/cidb.py",
@@ -558,6 +560,21 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
+    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
+    # the merge group state (the PR merged with the current `master`), so a PR
+    # whose last CI run predates test-infrastructure changes on `master` (e.g.
+    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
+    # queue instead of breaking `master`. Runs on the `amd_binary` build the
+    # merge queue produces anyway; merge-queue runs use a reduced iteration
+    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
+    # latency bounded.
+    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -627,6 +644,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/queries",
             ],
         ),
@@ -1315,15 +1333,23 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    clickbench_master_jobs = Job.Config(
+    clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickbench.py",
+                # ClickBench starts the server via `ClickHouseService`, which
+                # clears leftover processes through `server_cleanup.py`. Track
+                # both so changes to the shared start path reschedule the job.
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
+                "./ci/jobs/scripts/clickhouse_service.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/praktika/result.py",
+                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
@@ -1456,6 +1482,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqltest_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
@@ -1469,6 +1496,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqllogic_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqllogic/",
             ],
         ),
@@ -1483,6 +1511,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqlstorm/",
             ],
         ),
@@ -1520,6 +1549,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],

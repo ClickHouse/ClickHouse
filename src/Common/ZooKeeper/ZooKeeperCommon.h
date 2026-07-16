@@ -253,6 +253,8 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
             return OpNum::CreateTTL;
         if (include_stats)
             return OpNum::Create2;
+        if (is_container)
+            return OpNum::CreateContainer;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
     }
 
@@ -310,6 +312,13 @@ struct ZooKeeperCreateTTLResponse final : ZooKeeperCreate2Response
     using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
 
     OpNum getOpNum() const override { return OpNum::CreateTTL; }
+};
+
+struct ZooKeeperCreateContainerResponse final : ZooKeeperCreate2Response
+{
+    using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
+
+    OpNum getOpNum() const override { return OpNum::CreateContainer; }
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
