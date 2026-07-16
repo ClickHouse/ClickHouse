@@ -90,7 +90,8 @@ public:
         double best_latency = 0;
         for (const auto & backend : candidates)
         {
-            double latency = backend->checkLatencyMs() > 0 ? backend->checkLatencyMs() : backend->connectLatencyMs();
+            double raw_latency = backend->checkLatencyMs() > 0 ? backend->checkLatencyMs() : backend->connectLatencyMs();
+            double latency = raw_latency / backend->config().weight;
             if (!best || latency < best_latency)
             {
                 best = backend;
