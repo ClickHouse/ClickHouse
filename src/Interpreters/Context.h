@@ -825,7 +825,7 @@ public:
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setFilesystemCachesPath(const String & path);
-    void setFilesystemCacheUser(const String & user);
+    void setFilesystemCacheUser(const String & user) const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -1590,12 +1590,14 @@ public:
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
     BackgroundSchedulePool & getIcebergSchedulePool() const;
+    BackgroundSchedulePool & getStreamingSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1692,7 +1694,7 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the new analyzer in mutations.
+    /// Server-wide override for the analyzer in mutations.
     /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
     /// Set from the main config reload callback.
     void setMutationsUseAnalyzerOverride(std::optional<bool> value);
