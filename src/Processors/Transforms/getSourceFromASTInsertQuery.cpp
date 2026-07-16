@@ -57,7 +57,8 @@ String getInsertDataSchemaMismatchDescription(
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// If we cannot even infer the schema of the data, there is nothing useful to report.
+        /// This is a best-effort diagnostic: if we cannot even infer the schema of the data, there
+        /// is nothing useful to report, so it is Ok to ignore the exception.
         return {};
     }
 
