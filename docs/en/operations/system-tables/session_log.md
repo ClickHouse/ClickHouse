@@ -32,7 +32,7 @@ Contains information about all successful and failed login and logout events.
 - `settings` ([Array(Tuple(LowCardinality(String), String))](/sql-reference/data-types/array)) — Settings that were changed when the client logged in/out.
 - `client_address` ([IPv6](/sql-reference/data-types/ipv6)) — The IP address that was used to log in/out.
 - `client_port` ([UInt16](/sql-reference/data-types/int-uint)) — The client port that was used to log in/out.
-- `interface` ([Enum8('TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9)](/sql-reference/data-types/enum)) — The interface from which the login was initiated.
+- `interface` ([Enum8('TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10)](/sql-reference/data-types/enum)) — The interface from which the login was initiated.
 - `client_hostname` ([String](/sql-reference/data-types/string)) — The hostname of the client machine where the clickhouse-client or another TCP client is run.
 - `client_name` ([String](/sql-reference/data-types/string)) — The clickhouse-client or another TCP client name.
 - `client_revision` ([UInt32](/sql-reference/data-types/int-uint)) — Revision of the clickhouse-client or another TCP client.

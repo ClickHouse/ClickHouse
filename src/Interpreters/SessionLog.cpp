@@ -124,6 +124,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
             {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
+            {"ArrowFlight",            static_cast<Int8>(Interface::ARROW_FLIGHT)},
         });
     static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
 
