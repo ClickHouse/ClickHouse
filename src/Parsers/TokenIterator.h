@@ -28,14 +28,13 @@ private:
     /// Small initial capacity so short statements (single-statement headers, empty/trivial
     /// queries) never allocate more than a few hundred bytes.
     static constexpr size_t initial_reserve_tokens = 16;
-    /// Growth factor applied to the token buffer when it fills up. Larger than the standard
-    /// std::vector doubling so the number of reallocations (each relocating all previously lexed
-    /// tokens) is roughly halved for queries with huge literals, while keeping the buffer's peak
-    /// over-allocation bounded to a small multiple of the tokens actually stored.
+    /// Geometric growth factor applied to the token buffer when it fills up. Larger than the
+    /// standard std::vector doubling so the number of reallocations (each relocating all previously
+    /// lexed tokens) is a few times smaller for queries with huge literals, while keeping the
+    /// buffer's peak over-allocation bounded to this small multiple of the tokens actually stored.
+    /// The growth stays geometric for arbitrarily large statements, so the total relocation cost is
+    /// O(N) in the number of tokens (never fixed-step, which would be O(N^2)).
     static constexpr size_t token_buffer_growth_factor = 4;
-    /// Cap on how many tokens a single growth step may add, so one reallocation cannot over-reserve
-    /// by an unbounded amount even for very large statements (65536 tokens * sizeof(Token) ~= 1.5 MiB).
-    static constexpr size_t max_reserve_step = DBMS_DEFAULT_MAX_QUERY_SIZE / 4;
 
 public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
@@ -76,13 +75,17 @@ public:
                 /// the text the parser will actually request tokens for). Growing on the stored
                 /// token count sidesteps both: peak capacity is always within a small factor of the
                 /// tokens actually kept, so token-sparse statements and short headers in front of
-                /// large payloads never over-allocate, while dense literals still get large,
-                /// infrequent reservations.
+                /// large payloads never over-allocate.
+                ///
+                /// The step stays geometric (multiply the capacity) for arbitrarily large
+                /// statements rather than switching to a fixed increment past some threshold, so
+                /// the total relocation cost for a truly large literal is O(N), matching or beating
+                /// the standard vector doubling.
                 if (data.size() == data.capacity())
                 {
                     size_t new_capacity = data.empty()
                         ? initial_reserve_tokens
-                        : data.capacity() + std::min<size_t>(data.capacity() * (token_buffer_growth_factor - 1), max_reserve_step);
+                        : data.capacity() * token_buffer_growth_factor;
                     data.reserve(new_capacity);
                 }
 
