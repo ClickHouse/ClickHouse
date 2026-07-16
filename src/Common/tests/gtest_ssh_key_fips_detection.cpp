@@ -328,4 +328,33 @@ TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatAcceptsWellFormedEd25519Cert)
     EXPECT_NO_THROW(SSHKeyFactory::validatePublicKeyFormat(ED25519_CERT_BASE64, "ssh-ed25519-cert-v01@openssh.com"));
 }
 
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsEd25519CertWithJunkSignatureKey)
+{
+    /// A cert whose outer wire structure is well-formed but whose nested `signature key` blob is junk (a raw
+    /// 4-byte string, not an SSH public-key blob) must be rejected. ssh-keygen -Lf rejects such a carrier as an
+    /// "invalid certificate signing key"; only checking that the field exists let it reach the FIPS import path.
+    EXPECT_THROW(
+        SSHKeyFactory::validatePublicKeyFormat(
+            "AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgERERERERERERERER"
+            "EREREREREREREREREREREREREREAAAAAAAAAAAAAAAEAAAAGdGVzdGlkAAAACAAAAARsdWN5AAAAAAAAAAD//////////wAA"
+            "AAAAAAAAAAAAAAAAAARhYWFhAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEAzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMz"
+            "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMz",
+            "ssh-ed25519-cert-v01@openssh.com"),
+        DB::Exception);
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsEd25519CertWithJunkSignature)
+{
+    /// A cert with a well-formed nested signing key but a junk `signature` blob (raw bytes, not type + signature
+    /// wire strings) must be rejected for the same reason: ssh-keygen -Lf treats it as invalid, so the
+    /// format-only check must not let it through to the FIPS-unusable import.
+    EXPECT_THROW(
+        SSHKeyFactory::validatePublicKeyFormat(
+            "AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAgERERERERERERERERERER"
+            "EREREREREREREREREREREREAAAAAAAAAAAAAAAEAAAAGdGVzdGlkAAAACAAAAARsdWN5AAAAAAAAAAD//////////wAAAAAAAAAA"
+            "AAAAAAAAADMAAAALc3NoLWVkMjU1MTkAAAAgIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIAAAAEYmJiYg==",
+            "ssh-ed25519-cert-v01@openssh.com"),
+        DB::Exception);
+}
+
 #endif

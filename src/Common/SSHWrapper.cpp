@@ -359,6 +359,29 @@ void SSHKeyFactory::validatePublicKeyFormat(const String & base64_key, const Str
                     fail();
                 data.remove_prefix(n);
             };
+            /// A nested blob (the signature key and the signature) is itself a sequence of wire strings whose
+            /// first string names an algorithm: the signature key is a public-key blob (type + key fields) and
+            /// the signature is type + signature bytes. Only checking that these outer fields exist (as this
+            /// validator did before) let a certificate with a junk signing key / signature pass while
+            /// ssh-keygen -Lf rejects it. Require the nested blob to fully decompose into wire strings with a
+            /// non-empty leading type and at least one more non-empty field, so malformed carriers are rejected.
+            auto require_nested_blob = [&](std::string_view nested)
+            {
+                std::string_view nested_type;
+                if (!readSSHWireString(nested, nested_type) || nested_type.empty())
+                    fail();
+                bool saw_nonempty_field = false;
+                while (!nested.empty())
+                {
+                    std::string_view nested_field;
+                    if (!readSSHWireString(nested, nested_field))
+                        fail();
+                    if (!nested_field.empty())
+                        saw_nonempty_field = true;
+                }
+                if (!saw_nonempty_field)
+                    fail();
+            };
             std::string_view field;
             read_string(field);                 /// nonce
             read_string(field);                 /// public key
@@ -376,7 +399,9 @@ void SSHKeyFactory::validatePublicKeyFormat(const String & base64_key, const Str
             read_string(field);                 /// extensions
             read_string(field);                 /// reserved
             read_string(field);                 /// signature key
+            require_nested_blob(field);          /// reject a junk signing key
             read_string(field);                 /// signature
+            require_nested_blob(field);          /// reject a junk signature
             if (!data.empty())                   /// no trailing bytes allowed
                 fail();
             return;
