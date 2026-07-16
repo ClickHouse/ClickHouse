@@ -187,6 +187,7 @@ void MergeTreeDeduplicationLog::rotate()
     /// `finalize` disallows calling it on a canceled buffer (it throws a logical
     /// error, which aborts the process in debug and sanitizer builds), so skip it
     /// in that case: a canceled buffer has nothing left to flush or sync anyway.
+    std::exception_ptr finalize_error;
     try
     {
         if (current_writer && !current_writer->isCanceled())
@@ -194,16 +195,32 @@ void MergeTreeDeduplicationLog::rotate()
             current_writer->finalize();
             current_writer->sync();
         }
-    } catch (...)
+    }
+    catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while finalizing MergeTree deduplication log on path " + existing_logs[current_log_number].path + "; the last " + DB::toString(existing_logs[current_log_number].entries_count) + " records may not have reached durable storage");
+        /// A no-op in both possible states (a failed `finalize` cancels the buffer
+        /// itself, and `cancel` does nothing on a finalized buffer whose `sync`
+        /// failed), but keeps the writer safely destructible no matter what threw.
         if (current_writer)
             current_writer->cancel();
+        finalize_error = std::current_exception();
     }
 
     current_log_number = new_log_number;
     existing_logs.emplace(current_log_number, MergeTreeDeduplicationLogNameDescription{new_path, 0});
     current_writer = std::move(new_writer);
+
+    /// A failure to finalize or sync the previous log file means the records
+    /// written to it may never have reached durable storage, so the failure must
+    /// propagate: `addPart` publishes block IDs - and its caller commits the part -
+    /// only if the rotation succeeds, and a committed insert whose only `ADD`
+    /// record is lost would be forgotten after a restart, wrongly accepting - and
+    /// duplicating - a retry of the same block. Rethrow only after switching over
+    /// to the new writer, so the log itself stays usable and `addPart` can still
+    /// write compensating `DROP` records during its rollback.
+    if (finalize_error)
+        std::rethrow_exception(finalize_error);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
@@ -321,16 +338,17 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// not publish the rolled back block IDs either.
         try
         {
-            /// If the exception came from `rotateAndDropIfNeeded` itself, `rotate`
-            /// is exception-safe and `current_writer` still points to the previous,
-            /// live writer. But if it came from `writeRecord` failing to write one
-            /// of the ADD records above, `current_writer` is now canceled: `next()`
-            /// cancels the buffer on any `nextImpl()` exception, and a canceled
-            /// buffer refuses further writes. Rotate to a fresh writer in that case;
-            /// `rotate` tolerates an already canceled `current_writer` (it only logs
-            /// and moves on when finalizing it fails) and always opens a new log
-            /// file, so this is also safe - if redundant - when `current_writer` is
-            /// still live.
+            /// If the exception came from `writeRecord` failing to write one of the
+            /// ADD records above, `current_writer` is now canceled: `next()` cancels
+            /// the buffer on any `nextImpl()` exception, and a canceled buffer
+            /// refuses further writes. Rotate to a fresh writer in that case;
+            /// `rotate` skips finalizing an already canceled `current_writer` and
+            /// always opens a new log file. If the exception came from
+            /// `rotateAndDropIfNeeded` instead, `current_writer` is live: either
+            /// still the previous writer (opening the new log file failed, and
+            /// nothing changed) or a fresh one (the new log file was opened, but
+            /// finalizing the previous one failed and `rotate` rethrew that failure
+            /// after switching over), so the DROP records below go to it directly.
             if (current_writer->isCanceled())
                 rotate();
 

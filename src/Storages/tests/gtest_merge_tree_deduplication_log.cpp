@@ -18,6 +18,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int CANNOT_FSYNC;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 }
@@ -99,6 +100,53 @@ public:
 
     size_t flush_count = 0;
     const size_t fail_on_flush;
+};
+
+/// Wraps an already open file writer and throws on a chosen `sync()` call,
+/// simulating an fsync failure while finalizing the previous log file during
+/// rotation - after all the writes to it succeeded. The counter is shared across
+/// every writer the owning disk creates, so the fault fires exactly once overall.
+class FailingOnNthSyncWriteBuffer : public WriteBufferFromFileDecorator
+{
+public:
+    FailingOnNthSyncWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, size_t & sync_count_, size_t fail_on_sync_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), sync_count(sync_count_), fail_on_sync(fail_on_sync_)
+    {
+    }
+
+    void sync() override
+    {
+        ++sync_count;
+        if (sync_count == fail_on_sync)
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected sync failure");
+        WriteBufferFromFileDecorator::sync();
+    }
+
+private:
+    size_t & sync_count;
+    const size_t fail_on_sync;
+};
+
+/// A DiskLocal whose writer throws on a chosen `sync()` call. The deduplication
+/// log syncs a writer only when rotating away from it, so this simulates losing
+/// the just-written records of the previous log file to an fsync failure while
+/// the rotation itself (creating the new file) succeeds.
+class DiskThrowingOnNthSync : public DiskLocal
+{
+public:
+    DiskThrowingOnNthSync(const String & name_, const String & path_, size_t fail_on_sync_)
+        : DiskLocal(name_, path_), fail_on_sync(fail_on_sync_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        return std::make_unique<FailingOnNthSyncWriteBuffer>(DiskLocal::writeFile(path, buf_size, mode, settings), sync_count, fail_on_sync);
+    }
+
+    size_t sync_count = 0;
+    const size_t fail_on_sync;
 };
 
 }
@@ -311,6 +359,102 @@ TEST(MergeTreeDeduplicationLog, WriteFailureRollsBackPublishedBlockIdsAfterResta
         /// The rolled back "block2" must not have been re-published by the replay:
         /// the retry of the failed insert must be accepted...
         EXPECT_TRUE(log.addPart({"block2", "block3"}, part("all_2_2_0")).empty());
+
+        /// ...and only then deduplicate as usual.
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: a failure to finalize or sync the previous log file during
+/// rotation means the ADD records just written to it may never have reached
+/// durable storage, so the insert must fail (and roll back) rather than report
+/// success. Otherwise the part is committed, but after a restart the
+/// deduplication log has forgotten it, and a retry of the same insert is
+/// wrongly accepted and duplicates the data.
+TEST(MergeTreeDeduplicationLog, RotationSyncFailureFailsInsert)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_sync_failure/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    /// The deduplication log syncs a writer only in `rotate`, and the first
+    /// rotation with a live previous writer is the one triggered by the second
+    /// add below, so sync #1 is exactly the finalization of the log file holding
+    /// the ADD record for "block2".
+    auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    /// deduplication_window == 1 gives rotate_interval == 2, so the log rotates quickly.
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+    log.load();
+
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    /// First add does not rotate yet.
+    log.addPart({"block1"}, part("all_1_1_0"));
+
+    /// The ADD record for "block2" is written, but syncing the old log file
+    /// during the rotation that follows fails: the record may be lost, so the
+    /// insert must fail instead of being treated as durably recorded.
+    EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+
+    /// The failed insert must not have published "block2": the caller aborts
+    /// the insert before the part is committed, so a client retry of the same
+    /// block must be accepted, not deduplicated against a part that never
+    /// became active.
+    EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
+
+    /// And now that the retry has committed the block, it deduplicates as usual.
+    EXPECT_FALSE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+
+    /// The log must still be usable: the rotation switched over to the new
+    /// writer before propagating the failure.
+    EXPECT_NO_THROW(log.addPart({"block3"}, part("all_3_3_0")));
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: the rollback of an insert that failed on syncing the old
+/// log file during rotation must survive a server restart. The compensating
+/// DROP records go to the newly opened log file, so replaying the logs must not
+/// re-publish the rolled back block IDs even when the original ADD records did
+/// reach the disk (in this test the injected failure is only in `sync`, so
+/// they always do).
+TEST(MergeTreeDeduplicationLog, RotationSyncFailureRollsBackAfterRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_sync_failure_rollback/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// Syncing the old log file fails during the rotation, so the insert of
+        /// "block2" is aborted and rolled back.
+        EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+
+        /// Finalize the current log as on a graceful shutdown.
+        log.shutdown();
+    }
+
+    {
+        /// "Restart" with a healthy disk: replay the log from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// The rolled back "block2" must not have been re-published by the
+        /// replay: the retry of the failed insert must be accepted...
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
 
         /// ...and only then deduplicate as usual.
         EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());
