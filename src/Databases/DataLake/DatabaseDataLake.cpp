@@ -1441,6 +1441,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     {
                         if (!has_client_id)
                             throw_invalid_auth();
+
+                        /// The refresh token grant always goes to the Entra ID token endpoint,
+                        /// which accepts parameters only in the request body; the query-parameter
+                        /// flavor selected by this setting cannot work there.
+                        if (!database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`oauth_server_use_request_body = 0` is not supported together with `onelake_refresh_token`: "
+                                "the Entra ID token endpoint accepts parameters only in the request body");
                     }
                     else if (!has_client_id || !has_client_secret)
                         throw_invalid_auth();

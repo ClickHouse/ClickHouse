@@ -740,6 +740,10 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     });
 
     /// https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token
+    /// Unlike `retrieveAccessToken`, `oauth_server_use_request_body` is not consulted here:
+    /// the Entra ID token endpoint accepts parameters only in the request body, so the
+    /// query-parameter flavor cannot work (`oauth_server_use_request_body = 0` is rejected
+    /// for refresh-token databases when they are created).
     Poco::URI url;
     if (!oauth_server_uri.empty())
         url = Poco::URI(oauth_server_uri);

@@ -1899,6 +1899,16 @@ def test_alter_database_settings_onelake_refresh_token(started_cluster):
     )
     assert "BAD_ARGUMENTS" in error
 
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', oauth_server_use_request_body = 0
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "oauth_server_use_request_body" in error
+
     node.query(
         f"""
         ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
