@@ -74,23 +74,33 @@ grep -o -m1 '^event: data' "$result_file"
 grep -o -m1 '^event: exception' "$result_file"
 
 echo '--- a query that disables framing is refused client-side, not sent as a plain request'
-# The guard expression is extracted from the served page (as above for `rejection_pattern`), so it
-# cannot drift from the code it pins, and exercised directly under node.
-disables_framing_expr="$(echo "$page" | sed -n "s/^ *const user_disables_framing = \(.*\);$/\1/p")"
-[ -n "$disables_framing_expr" ] && echo 'disables-framing guard extracted: OK'
-node -e "
-function disables_framing(query) { return ${disables_framing_expr}; }
-const cases = [
-    [\"SELECT 1\", false],
-    [\"SELECT 1 SETTINGS framing_output_format = 'None'\", true],
-    [\"select 1 settings framing_output_format='none'\", true],
-    [\"SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'\", false],
-];
-let ok = true;
-for (const [query, expected] of cases) {
-    if (disables_framing(query) !== expected) { ok = false; console.log('MISMATCH', JSON.stringify(query)); }
-}
-console.log(ok ? 'disables-framing guard: OK' : 'disables-framing guard: FAIL');
-"
+# The guard regex literal is extracted from the served page (as above for `rejection_pattern`), so
+# it cannot drift from the code it pins, and exercised directly. The check uses `python3` (always
+# available in the test environment - unlike `node`); the guard uses only regex constructs whose
+# behavior is identical in JavaScript and Python (`\b`, `\s`, an optional quote, the `i` flag).
+disables_framing_regex="$(echo "$page" | sed -n "s#^ *const user_disables_framing = \(/.*/[a-z]*\)\.test(query);\$#\1#p")"
+[ -n "$disables_framing_regex" ] && echo 'disables-framing guard extracted: OK'
+python3 - "$disables_framing_regex" <<'PY'
+import re, sys
+literal = sys.argv[1]  # a JavaScript regex literal: /pattern/flags
+assert literal.startswith('/'), literal
+last = literal.rfind('/')
+pattern, flags = literal[1:last], literal[last + 1:]
+rx = re.compile(pattern, re.IGNORECASE if 'i' in flags else 0)
+def disables_framing(query):
+    return rx.search(query) is not None
+cases = [
+    ("SELECT 1", False),
+    ("SELECT 1 SETTINGS framing_output_format = 'None'", True),
+    ("select 1 settings framing_output_format='none'", True),
+    ("SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'", False),
+]
+ok = True
+for query, expected in cases:
+    if disables_framing(query) != expected:
+        ok = False
+        print('MISMATCH', repr(query))
+print('disables-framing guard: OK' if ok else 'disables-framing guard: FAIL')
+PY
 
 rm -f "$result_file" "$header_file"
