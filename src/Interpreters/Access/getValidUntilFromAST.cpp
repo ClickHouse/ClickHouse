@@ -116,51 +116,52 @@ namespace DB
         time_t time = 0;
         ReadBufferFromString in(valid_until_str);
 
-        if (context)
+        /// No query context means we are deserializing a stored access entity (`ATTACH USER` coming
+        /// from replicated or disk access storage). Post-epoch deadlines are serialized as zero-padded
+        /// Unix timestamp strings (see `AuthenticationData::toAST`), which denote the same instant
+        /// regardless of the server time zone and are read here as plain integers.
+        if (!context && std::all_of(valid_until_str.begin(), valid_until_str.end(), isNumericASCII))
         {
-            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
-            /// year field of `0` means "not specified", so it is silently replaced with the current
-            /// (or previous) year instead of being kept as-is - see the `!year` fallback in
-            /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). That would make the
-            /// bound check below pass on a deadline the caller never asked for. The documented `VALID
-            /// UNTIL` syntax (docs/en/sql-reference/statements/create/user.md) is always a delimited
-            /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
-            /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
-            /// through the "year omitted" fallback.
-            if (valid_until_str.starts_with("0000") && (valid_until_str.size() == 4 || !isNumericASCII(valid_until_str[4])))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
-
-            /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
-            /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
-            const auto & time_zone = DateLUT::instance("");
-            const auto & utc_time_zone = DateLUT::instance("UTC");
-
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
-
-            /// Deadlines before this bound cannot be represented exactly in the stored access entity
-            /// encoding, so accepting them here would only be discovered later, as a silently clamped
-            /// value after a restart or replication round-trip (see `AuthenticationData::toAST`).
-            if (time < MIN_VALID_UNTIL_TIME)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
+            readIntText(time, in);
+            return time;
         }
-        else
-        {
-            /// No query context means we are deserializing a stored access entity (`ATTACH USER` coming
-            /// from replicated or disk access storage). Post-epoch deadlines are serialized as zero-padded
-            /// Unix timestamp strings (see `AuthenticationData::toAST`), which denote the same instant
-            /// regardless of the server time zone and are read here as plain integers. Everything else is
-            /// in the `YYYY-MM-DD hh:mm:ss[ UTC]` datetime form: pre-1970 deadlines carry an explicit
-            /// `UTC` suffix, which best-effort parsing honours, and entities written by older versions
-            /// store a bare local-time string, which is resolved in the server time zone, as before.
-            if (std::all_of(valid_until_str.begin(), valid_until_str.end(), isNumericASCII))
-                readIntText(time, in);
-            else
-                parseDateTimeBestEffort(time, in, DateLUT::instance(""), DateLUT::instance("UTC"));
-        }
+
+        /// Everything else is in the `YYYY-MM-DD hh:mm:ss[ UTC]` datetime form: a `VALID UNTIL` value
+        /// coming from a query, a stored pre-1970 deadline (which carries an explicit `UTC` suffix),
+        /// an entity written by an older version (a bare local-time string, resolved in the server time
+        /// zone, as before), or a hand-edited stored definition. All of these go through the same
+        /// bounds checks: a hand-edited definition must fail to load rather than silently resolve to
+        /// a different deadline (the entity is skipped and the error is logged), the same way
+        /// `CREATE`/`ALTER USER` reject the value at query time.
+        ///
+        /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
+        /// year field of `0` means "not specified", so it is silently replaced with the current
+        /// (or previous) year instead of being kept as-is - see the `!year` fallback in
+        /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). That would make the
+        /// bound check below pass on a deadline the caller never asked for. The documented `VALID
+        /// UNTIL` syntax (docs/en/sql-reference/statements/create/user.md) is always a delimited
+        /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
+        /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
+        /// through the "year omitted" fallback.
+        if (valid_until_str.starts_with("0000") && (valid_until_str.size() == 4 || !isNumericASCII(valid_until_str[4])))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
+
+        /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
+        /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
+        const auto & time_zone = DateLUT::instance("");
+        const auto & utc_time_zone = DateLUT::instance("UTC");
+
+        parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+
+        /// Deadlines before this bound cannot be represented exactly in the stored access entity
+        /// encoding, so accepting them here would only be discovered later, as a silently clamped
+        /// value after a restart or replication round-trip (see `AuthenticationData::toAST`).
+        if (time < MIN_VALID_UNTIL_TIME)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
 
         return time;
     }

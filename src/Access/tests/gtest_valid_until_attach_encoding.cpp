@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <Access/AccessEntityIO.h>
 #include <Access/AuthenticationData.h>
+#include <Access/User.h>
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
@@ -88,4 +92,36 @@ TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
     EXPECT_EQ(serializedValidUntil(-1), "1969-12-31 23:59:59 UTC");
     EXPECT_EQ(serializedValidUntil(-2208988800), "1900-01-01 00:00:00 UTC");
     EXPECT_EQ(serializedValidUntil(-62135596800), "1900-01-01 00:00:00 UTC");
+}
+
+TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
+{
+    /// `deserializeAccessEntity` is the entry point used to load stored access entities. The stored
+    /// encoding never contains a deadline outside the representable range, so such a value can only
+    /// come from a hand-edited definition - and it must fail to load (the storage skips the entity
+    /// and logs the error) instead of silently resolving to a different deadline: best-effort parsing
+    /// substitutes the current year for an explicit year `0000`, and a pre-1900 deadline would come
+    /// back clamped after the next serialization round-trip. This mirrors the checks `CREATE`/`ALTER
+    /// USER ... VALID UNTIL` perform at query time.
+    for (const char * definition :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '0000-01-01 00:00:00 UTC';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1899-12-31 23:59:59 UTC';"})
+    {
+        try
+        {
+            deserializeAccessEntity(definition);
+            FAIL() << "expected the deadline to be rejected: " << definition;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("too far in the past")) << e.message();
+        }
+    }
+
+    /// The earliest representable deadline itself still loads, exactly.
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1900-01-01 00:00:00 UTC';");
+    const auto * user = typeid_cast<const User *>(entity.get());
+    ASSERT_NE(user, nullptr);
+    ASSERT_EQ(user->authentication_methods.size(), 1u);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), -2208988800);
 }
