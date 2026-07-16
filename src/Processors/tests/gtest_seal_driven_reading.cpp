@@ -202,14 +202,55 @@ private:
     std::deque<Chunk> ready_seals;
 };
 
-/// Consumes seal chunks and only then "reads" the sealed epoch (a fake stand-in for cutting,
-/// refining and reading the epoch ranges from a MergeTree read pool), emitting the data chunks.
+/// The seam the real MergeTree implementation fills: cut the epoch's ranges from the pool,
+/// refine them with the seal payload (PR 1 refiner contract), read incrementally.
+/// An empty chunk from readNext means the epoch is exhausted.
+class IEpochReader
+{
+public:
+    virtual ~IEpochReader() = default;
+    virtual void startEpoch(size_t epoch, const EpochInfo::Envelope & envelope) = 0;
+    virtual Chunk readNext() = 0;
+};
+
+class FakeEpochReader : public IEpochReader
+{
+public:
+    explicit FakeEpochReader(size_t chunks_per_read_) : chunks_per_read(chunks_per_read_) {}
+
+    void startEpoch(size_t epoch, const EpochInfo::Envelope & envelope) override
+    {
+        read_epochs.push_back(epoch);
+        envelopes.push_back(envelope);
+        current_epoch = epoch;
+        chunks_left = chunks_per_read;
+    }
+
+    Chunk readNext() override
+    {
+        if (!chunks_left)
+            return {};
+        --chunks_left;
+        return makeChunk(current_epoch, /*rows=*/ 4, /*seed=*/ chunks_per_read - chunks_left - 1);
+    }
+
+    std::vector<size_t> read_epochs;
+    std::vector<EpochInfo::Envelope> envelopes;
+
+private:
+    const size_t chunks_per_read;
+    size_t current_epoch = 0;
+    size_t chunks_left = 0;
+};
+
+/// Consumes seal chunks and only then reads the sealed epoch through IEpochReader,
+/// one chunk per work() call, emitting the data chunks.
 class ReadOnSealTransform : public IProcessor
 {
 public:
-    explicit ReadOnSealTransform(size_t chunks_per_read_)
+    explicit ReadOnSealTransform(std::shared_ptr<IEpochReader> epoch_reader_)
         : IProcessor({std::make_shared<const Block>(epochHeader())}, {std::make_shared<const Block>(epochHeader())})
-        , chunks_per_read(chunks_per_read_)
+        , epoch_reader(std::move(epoch_reader_))
     {
     }
 
@@ -232,12 +273,14 @@ public:
             return Status::PortFull;
         }
 
-        if (!ready_data.empty())
+        if (ready_chunk)
         {
-            output.push(std::move(ready_data.front()));
-            ready_data.pop_front();
+            output.push(std::move(ready_chunk));
             return Status::PortFull;
         }
+
+        if (reading_epoch)
+            return Status::Ready;
 
         if (input.isFinished())
         {
@@ -255,39 +298,39 @@ public:
 
     void work() override
     {
-        if (!seal)
+        if (reading_epoch)
+        {
+            ready_chunk = epoch_reader->readNext();
+            if (!ready_chunk)
+                reading_epoch = false;
             return;
+        }
 
+        chassert(seal);
         auto info = seal.getChunkInfos().get<EpochInfo>();
         chassert(info && info->is_seal);
 
         /// An epoch with no build rows is never read at all.
-        if (!info->envelope)
+        if (info->envelope)
+        {
+            epoch_reader->startEpoch(info->epoch, *info->envelope);
+            reading_epoch = true;
+        }
+        else
         {
             skipped_epochs.push_back(info->epoch);
-            seal = Chunk();
-            return;
         }
-
-        read_epochs.push_back(info->epoch);
-        envelopes.push_back(*info->envelope);
-
-        /// The "read": in the real version this cuts + refines (with the envelope) + reads
-        /// the epoch ranges from the pool.
-        for (size_t i = 0; i < chunks_per_read; ++i)
-            ready_data.push_back(makeChunk(info->epoch, /*rows=*/ 4, /*seed=*/ i));
 
         seal = Chunk();
     }
 
-    std::vector<size_t> read_epochs;
     std::vector<size_t> skipped_epochs;
-    std::vector<EpochInfo::Envelope> envelopes;
 
 private:
-    const size_t chunks_per_read;
+    const std::shared_ptr<IEpochReader> epoch_reader;
     Chunk seal;
-    std::deque<Chunk> ready_data;
+    Chunk ready_chunk;
+    bool reading_epoch = false;
 };
 
 }
@@ -300,7 +343,8 @@ TEST(SealDrivenReading, GatingThroughPipelineEdge)
 
     auto source = std::make_shared<FakeBuildSource>(num_epochs, chunks_per_epoch);
     auto collector = std::make_shared<EpochBuildCollector>(num_epochs);
-    auto reader = std::make_shared<ReadOnSealTransform>(chunks_per_read);
+    auto epoch_reader = std::make_shared<FakeEpochReader>(chunks_per_read);
+    auto reader = std::make_shared<ReadOnSealTransform>(epoch_reader);
 
     auto pipe = Pipe(source);
     pipe.addTransform(collector);
@@ -330,16 +374,16 @@ TEST(SealDrivenReading, GatingThroughPipelineEdge)
     /// The reader read exactly the even epochs (in order) and skipped the odd ones without
     /// reading anything.
     const size_t even_epochs = (num_epochs + 1) / 2;
-    ASSERT_EQ(reader->read_epochs.size(), even_epochs);
+    ASSERT_EQ(epoch_reader->read_epochs.size(), even_epochs);
     ASSERT_EQ(reader->skipped_epochs.size(), num_epochs - even_epochs);
-    for (size_t i = 0; i < reader->read_epochs.size(); ++i)
+    for (size_t i = 0; i < epoch_reader->read_epochs.size(); ++i)
     {
-        size_t epoch = reader->read_epochs[i];
+        size_t epoch = epoch_reader->read_epochs[i];
         ASSERT_EQ(epoch, i * 2);
         /// The envelope covers exactly the build values of the epoch.
-        ASSERT_EQ(reader->envelopes[i].min, epoch * 1000000);
-        ASSERT_GE(reader->envelopes[i].max, epoch * 1000000);
-        ASSERT_LT(reader->envelopes[i].max, (epoch + 1) * 1000000);
+        ASSERT_EQ(epoch_reader->envelopes[i].min, epoch * 1000000);
+        ASSERT_GE(epoch_reader->envelopes[i].max, epoch * 1000000);
+        ASSERT_LT(epoch_reader->envelopes[i].max, (epoch + 1) * 1000000);
     }
     for (size_t i = 0; i < reader->skipped_epochs.size(); ++i)
         ASSERT_EQ(reader->skipped_epochs[i], i * 2 + 1);
