@@ -18,6 +18,12 @@
                 <object_storage_type>borrow_from_cache</object_storage_type>
                 <cache_name>borrowed_cache</cache_name>
             </borrowed_disk>
+            <borrowed_disk_ro>
+                <type>object_storage</type>
+                <object_storage_type>borrow_from_cache</object_storage_type>
+                <cache_name>borrowed_cache</cache_name>
+                <read_only>1</read_only>
+            </borrowed_disk_ro>
         </disks>
         <policies>
             <borrowed_policy>
@@ -27,6 +33,13 @@
                     </main>
                 </volumes>
             </borrowed_policy>
+            <borrowed_policy_ro>
+                <volumes>
+                    <main>
+                        <disk>borrowed_disk_ro</disk>
+                    </main>
+                </volumes>
+            </borrowed_policy_ro>
         </policies>
     </storage_configuration>
 

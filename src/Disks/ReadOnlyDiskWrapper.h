@@ -19,6 +19,7 @@ public:
     DiskTransactionPtr createTransaction() override { return delegate->createTransaction(); }
     const String & getName() const override { return delegate->getName(); }
     const String & getPath() const override { return delegate->getPath(); }
+    bool isPathOnLocalFilesystem() const override { return delegate->isPathOnLocalFilesystem(); }
     std::optional<UInt64> getTotalSpace() const override { return delegate->getTotalSpace(); }
     std::optional<UInt64> getAvailableSpace() const override { return delegate->getAvailableSpace(); }
     std::optional<UInt64> getUnreservedSpace() const override { return delegate->getUnreservedSpace(); }
