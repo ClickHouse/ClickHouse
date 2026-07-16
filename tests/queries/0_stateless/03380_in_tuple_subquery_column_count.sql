@@ -1,5 +1,5 @@
 -- Validate that IN checks column count mismatch between left tuple and right subquery during analysis.
--- The validation lives in the new analyzer, so force it on regardless of the CI variant.
+-- The validation lives in the analyzer, so force it on regardless of the CI variant.
 -- https://github.com/ClickHouse/ClickHouse/issues/74442
 
 SET enable_analyzer = 1;
