@@ -122,6 +122,11 @@ private:
         PostgreSQLProtocol::Messaging::CommandComplete::Command command);
 
     static bool isEmptyQuery(const String & query);
+    /// Transaction-control statements (BEGIN [READ ONLY], START TRANSACTION, COMMIT, ROLLBACK, ...) that
+    /// ClickHouse does not implement but that libpq/pqxx clients send around every statement. They are
+    /// acknowledged without execution so that such clients (including ClickHouse's own `postgresql` table
+    /// function/engine pointed at another ClickHouse instance) can talk to the PostgreSQL wire protocol.
+    static bool isTransactionControlQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
 
     void initializeSystemTables(ContextMutablePtr query_context);

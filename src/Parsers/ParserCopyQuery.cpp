@@ -103,6 +103,13 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
+    /// `COPY (query) TO STDOUT` - remember the inner query so that it can be executed as-is. Unwrap the
+    /// subquery node so that the stored text is a runnable top-level query rather than `(SELECT ...)`.
+    if (const auto * subquery_ast = name_or_expr->as<ASTSubquery>())
+        copy_element->subquery = subquery_ast->children.at(0)->formatWithSecretsOneLine();
+    else
+        copy_element->subquery = name_or_expr->formatWithSecretsOneLine();
+
     saved_pos = pos;
     if (s_to.ignore(pos, expected))
     {

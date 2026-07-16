@@ -24,6 +24,9 @@ public:
     } type{};
 
     String table_name;
+    /// When the query is of the form `COPY (query) TO STDOUT` - used by libpq/pqxx to stream an
+    /// arbitrary result set - this holds the SQL text of the inner query to run instead of `table_name`.
+    String subquery;
     Strings column_names;
     enum class Formats : uint8_t
     {

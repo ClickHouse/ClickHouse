@@ -9,8 +9,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Poco/String.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
+#include <boost/algorithm/string/trim.hpp>
+#include <array>
+#include <cstring>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
 #include <Common/Exception.h>
@@ -557,7 +561,11 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             columns_to_select.pop_back();
         }
 
-        auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name);
+        /// `COPY (query) TO STDOUT` streams the result of an arbitrary query (this is how libpq/pqxx read
+        /// result sets); `COPY table TO STDOUT` streams a whole table.
+        auto select_query = copy_query->subquery.empty()
+            ? fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name)
+            : copy_query->subquery;
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
@@ -566,16 +574,38 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
+        Int32 rows_count = 0;
         while (executor->pull(block))
         {
             output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate moved vector
             format_ptr->write(materializeBlock(block));
             format_ptr->flush();
             output_buffer.finalize();
-            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
+            rows_count += static_cast<Int32>(block.rows());
+
+            /// PostgreSQL's COPY protocol expects one CopyData message per row, and libpq/pqxx rely on this
+            /// (they do not re-split a message into rows). The TSV output of a block holds rows separated by
+            /// newlines - and newlines inside values are escaped - so split on '\n' and emit each row,
+            /// including its terminating newline, as its own CopyData message.
+            size_t line_start = 0;
+            for (size_t i = 0; i < result_buf.size(); ++i)
+            {
+                if (result_buf[i] == '\n')
+                {
+                    VectorWithMemoryTracking<char> line(result_buf.begin() + line_start, result_buf.begin() + i + 1);
+                    message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(std::move(line)));
+                    line_start = i + 1;
+                }
+            }
             result_buf.clear();
         }
-        message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse(), true);
+        /// A COPY TO STDOUT must be terminated by CopyDone, then CommandComplete ("COPY n"), then
+        /// ReadyForQuery (sent by the caller). libpq/pqxx report an error if CommandComplete is missing.
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse());
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::CommandComplete(
+                PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY, rows_count),
+            true);
         return true;
     }
 
@@ -595,9 +625,9 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        bool psycopg2_cond = query->query == "BEGIN" || query->query == "COMMIT"; // psycopg2 starts and ends queries with BEGIN/COMMIT commands
+        bool transaction_control_cond = isTransactionControlQuery(query->query); // clients wrap statements in BEGIN/COMMIT/ROLLBACK etc.
         bool jdbc_cond = query->query.contains("SET extra_float_digits") || query->query.contains("SET application_name"); // jdbc starts with setting this parameter
-        if (psycopg2_cond || jdbc_cond)
+        if (transaction_control_cond || jdbc_cond)
         {
             message_transport->send(
                 PostgreSQLProtocol::Messaging::CommandComplete(
@@ -979,6 +1009,33 @@ bool PostgreSQLHandler::isEmptyQuery(const String & query)
     return regex.match(query);
 }
 
+bool PostgreSQLHandler::isTransactionControlQuery(const String & query)
+{
+    String normalized = query;
+    /// Trim surrounding whitespace and a single trailing semicolon.
+    boost::trim(normalized);
+    if (!normalized.empty() && normalized.back() == ';')
+    {
+        normalized.pop_back();
+        boost::trim(normalized);
+    }
+    Poco::toUpperInPlace(normalized);
+
+    static constexpr std::array prefixes = {"BEGIN", "START TRANSACTION", "COMMIT", "END", "ROLLBACK", "ABORT"};
+    for (const auto * prefix : prefixes)
+    {
+        /// Match either the bare keyword or the keyword followed by a separator, so that we do not
+        /// swallow unrelated identifiers such as `ENDPOINT` while still accepting `BEGIN READ ONLY`.
+        if (normalized == prefix)
+            return true;
+        const size_t prefix_len = std::strlen(prefix);
+        if (normalized.size() > prefix_len && normalized.starts_with(prefix)
+            && (normalized[prefix_len] == ' ' || normalized[prefix_len] == '\t'))
+            return true;
+    }
+    return false;
+}
+
 Int32 PostgreSQLHandler::parseNumberColumns(const std::vector<char> & output)
 {
     Int32 result = 0;
@@ -1030,8 +1087,18 @@ SELECT * FROM VALUES(
     (1114, 11, 'timestamp', 0, 0, 'b', 253, 0, 0, 'D')
 ))");
 
+    /// `pg_namespace`, `pg_class` and `pg_attribute` combine a fixed set of built-in catalog rows (used by
+    /// client type introspection) with rows derived from ClickHouse's own `system.databases`, `system.tables`
+    /// and `system.columns`, so that databases, tables and columns of this server are visible through the
+    /// PostgreSQL catalog. The OIDs are deterministic hashes: a namespace OID is a function of the database
+    /// name and a relation OID is a function of the (database, table) pair, so that `pg_class.relnamespace`
+    /// and `pg_attribute.attrelid` line up with `pg_namespace.oid` and `pg_class.oid` respectively. Hash
+    /// ranges are offset (namespaces into [1e9, 2e9), relations into [2e9, 3e9)) to avoid colliding with the
+    /// small built-in OIDs. In addition, tables of the connected database are also exposed under the default
+    /// `public` schema (OID 2200), so that clients that do not qualify a table with a schema - which is what
+    /// `fetchPostgreSQLTableStructure` does by default - still resolve it in the current database.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
-SELECT * FROM VALUES(
+SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
     (2200,  'public'),
@@ -1039,20 +1106,39 @@ SELECT * FROM VALUES(
     (11519, 'pg_toast'),
     (99,    'pg_temp_1'),
     (100,   'pg_toast_temp_1')
-))");
+)
+UNION ALL
+SELECT toUInt32(cityHash64('ns', name) % 1000000000 + 1000000000) AS oid, name AS nspname
+FROM system.databases
+WHERE name NOT IN ('pg_catalog', 'public', 'information_schema', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
-SELECT * FROM VALUES(
-    'oid UInt32, relkind String',
-    (1259, 'r'),
-    (2615, 'i'),
-    (1247, 'r'),
-    (3079, 'v'),
-    (1260, 'c'),
-    (1255, 'f'),
-    (3476, 'm'),
-    (3074, 'S')
-))");
+SELECT oid, relname, relnamespace, relkind FROM VALUES(
+    'oid UInt32, relname String, relnamespace UInt32, relkind String',
+    (1259, '', 0, 'r'),
+    (2615, '', 0, 'i'),
+    (1247, '', 0, 'r'),
+    (3079, '', 0, 'v'),
+    (1260, '', 0, 'c'),
+    (1255, '', 0, 'f'),
+    (3476, '', 0, 'm'),
+    (3074, '', 0, 'S')
+)
+UNION ALL
+SELECT
+    toUInt32(cityHash64('cls', database, name) % 1000000000 + 2000000000) AS oid,
+    name AS relname,
+    toUInt32(cityHash64('ns', database) % 1000000000 + 1000000000) AS relnamespace,
+    'r' AS relkind
+FROM system.tables
+UNION ALL
+SELECT
+    toUInt32(cityHash64('cls', database, name) % 1000000000 + 2000000000) AS oid,
+    name AS relname,
+    2200 AS relnamespace,
+    'r' AS relkind
+FROM system.tables
+WHERE database = currentDatabase())");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
 SELECT * FROM VALUES(
@@ -1095,18 +1181,41 @@ SELECT * FROM VALUES(
 ))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_attribute AS
-SELECT * FROM VALUES(
-    'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped UInt8',
-    (19, 1247, 'typname',      1, 0),
-    (26, 1247, 'typnamespace', 2, 0),
-    (23, 1247, 'typrelid',     3, 0),
-    (16, 1247, 'typnotnull',   4, 0),
-    (25, 1247, 'typtype',      5, 0),
-    (26, 1247, 'typreceive',   6, 0),
-    (26, 1247, 'typelem',      7, 0),
-    (26, 1247, 'typbasetype',  8, 0),
-    (18, 1247, 'typcategory',  9, 0)
-))");
+SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull, attndims, attgenerated FROM VALUES(
+    'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped UInt8, atttypmod Int32, attnotnull String, attndims Int32, attgenerated String',
+    (19, 1247, 'typname',      1, 0, -1, 't', 0, ''),
+    (26, 1247, 'typnamespace', 2, 0, -1, 't', 0, ''),
+    (23, 1247, 'typrelid',     3, 0, -1, 't', 0, ''),
+    (16, 1247, 'typnotnull',   4, 0, -1, 't', 0, ''),
+    (25, 1247, 'typtype',      5, 0, -1, 't', 0, ''),
+    (26, 1247, 'typreceive',   6, 0, -1, 't', 0, ''),
+    (26, 1247, 'typelem',      7, 0, -1, 't', 0, ''),
+    (26, 1247, 'typbasetype',  8, 0, -1, 't', 0, ''),
+    (18, 1247, 'typcategory',  9, 0, -1, 't', 0, '')
+)
+UNION ALL
+SELECT
+    multiIf(base IN ('Bool', 'Boolean'), 16,
+            base IN ('Int8', 'UInt8', 'Int16'), 21,
+            base IN ('UInt16', 'Int32'), 23,
+            base IN ('UInt32', 'Int64', 'UInt64', 'Int128', 'UInt128', 'Int256', 'UInt256'), 20,
+            base = 'Float32', 700,
+            base = 'Float64', 701,
+            base = 'UUID', 2950,
+            base IN ('Date', 'Date32'), 1082,
+            base IN ('DateTime', 'DateTime64'), 1114,
+            base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'), 1700,
+            base IN ('String', 'FixedString'), 25,
+            25) AS atttypid,
+    toUInt32(cityHash64('cls', database, table) % 1000000000 + 2000000000) AS attrelid,
+    name AS attname,
+    toInt32(position) AS attnum,
+    0 AS attisdropped,
+    -1 AS atttypmod,
+    if (startsWith(type, 'Nullable(') OR startsWith(type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
+    0 AS attndims,
+    '' AS attgenerated
+FROM (SELECT database, table, name, position, type, extract(type, '^(?:Nullable\(|LowCardinality\()*([A-Za-z0-9]+)') AS base FROM system.columns))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum AS
 SELECT * FROM VALUES(

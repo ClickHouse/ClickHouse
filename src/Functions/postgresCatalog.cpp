@@ -1,0 +1,216 @@
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Common/config_version.h>
+
+#include <Poco/String.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_SETTING;
+}
+
+namespace
+{
+
+/// PostgreSQL type OID -> human readable name, in the spelling produced by PostgreSQL's `format_type`.
+/// The set mirrors the built-in types advertised by ClickHouse's `pg_type` emulation (see PostgreSQLHandler).
+/// Unknown OIDs are rendered as `text`, matching how the counterpart mapping in
+/// `convertPostgreSQLDataType` treats unrecognised type names (they become `String`).
+String pgFormatType(Int64 oid)
+{
+    switch (oid)
+    {
+        case 16: return "boolean";
+        case 17: return "bytea";
+        case 18: return "character";
+        case 19: return "name";
+        case 20: return "bigint";
+        case 21: return "smallint";
+        case 23: return "integer";
+        case 25: return "text";
+        case 26: return "bigint"; /// oid
+        case 700: return "real";
+        case 701: return "double precision";
+        case 1042: return "character";
+        case 1043: return "character varying";
+        case 1082: return "date";
+        case 1114: return "timestamp without time zone";
+        case 1184: return "timestamp with time zone";
+        case 1700: return "numeric";
+        case 2950: return "uuid";
+        default: return "text";
+    }
+}
+
+/// `format_type(type_oid, typemod)` - PostgreSQL compatibility function.
+/// Returns the SQL name of a type given its OID. The type modifier is accepted for compatibility
+/// but ignored: the emulated catalog always stores a modifier of -1, so there is nothing to format.
+/// Provided so that ClickHouse's PostgreSQL wire protocol can answer the catalog-introspection
+/// queries issued by libpq/pqxx clients - in particular by ClickHouse itself when the `postgresql`
+/// table function or engine points at another ClickHouse instance.
+class FunctionFormatType final : public IFunction
+{
+public:
+    static constexpr auto name = "format_type";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatType>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isInteger(removeNullable(arguments[0])))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be an integer type OID, got {}",
+                getName(), arguments[0]->getName());
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const IColumn & oid_column = *arguments[0].column;
+
+        auto result = ColumnString::create();
+        result->reserve(input_rows_count);
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const String type_name = pgFormatType(oid_column.getInt(i));
+            result->insertData(type_name.data(), type_name.size());
+        }
+
+        return result;
+    }
+};
+
+/// `current_setting(name [, missing_ok])` - PostgreSQL compatibility function.
+/// Returns the textual value of a run-time configuration parameter (GUC). Only a small set of the
+/// read-only parameters that clients probe during introspection is emulated. For an unknown
+/// parameter the function throws, unless `missing_ok` is `true`, in which case it returns an empty
+/// string (PostgreSQL returns NULL, but an empty string is enough for the introspection queries and
+/// keeps the return type non-nullable).
+class FunctionCurrentSetting final : public IFunction
+{
+public:
+    static constexpr auto name = "current_setting";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCurrentSetting>(); }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 1 or 2 arguments: current_setting(name [, missing_ok])", getName());
+
+        if (!isString(arguments[0]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a constant string", getName());
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const ColumnConst * name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!name_column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "First argument of function {} must be a constant string", getName());
+
+        bool missing_ok = false;
+        if (arguments.size() == 2)
+        {
+            const ColumnConst * missing_ok_column = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
+            if (!missing_ok_column)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Second argument of function {} must be a constant boolean", getName());
+            missing_ok = missing_ok_column->getValue<UInt8>() != 0;
+        }
+
+        const String setting_name = Poco::toLower(name_column->getValue<String>());
+
+        String value;
+        if (!lookup(setting_name, value) && !missing_ok)
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING, "Unrecognized configuration parameter \"{}\"", name_column->getValue<String>());
+
+        return DataTypeString().createColumnConst(input_rows_count, value);
+    }
+
+private:
+    static bool lookup(const String & setting_name, String & value)
+    {
+        if (setting_name == "server_version")
+            value = VERSION_STRING;
+        else if (setting_name == "server_version_num")
+            value = "120000"; /// Behave like a modern (>= 12) PostgreSQL so clients take the current code path.
+        else if (setting_name == "server_encoding" || setting_name == "client_encoding")
+            value = "UTF8";
+        else if (setting_name == "standard_conforming_strings" || setting_name == "integer_datetimes")
+            value = "on";
+        else if (setting_name == "datestyle")
+            value = "ISO, MDY";
+        else if (setting_name == "timezone")
+            value = "UTC";
+        else if (setting_name == "search_path")
+            value = "public";
+        else
+            return false;
+        return true;
+    }
+};
+
+}
+
+REGISTER_FUNCTION(PostgresCatalog)
+{
+    factory.registerFunction<FunctionFormatType>(FunctionDocumentation{
+        .description = "PostgreSQL compatibility function. Returns the SQL name of a type given its OID. "
+                       "The type modifier argument is accepted for compatibility but ignored.",
+        .syntax = "format_type(type_oid, typemod)",
+        .arguments = {{"type_oid", "The type OID.", {"(U)Int*"}}, {"typemod", "The type modifier (ignored).", {"(U)Int*"}}},
+        .returned_value = {"The SQL name of the type.", {"String"}},
+        .examples = {{"Example", "SELECT format_type(23, -1)", "integer"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionCurrentSetting>(FunctionDocumentation{
+        .description = "PostgreSQL compatibility function. Returns the value of a run-time configuration parameter. "
+                       "Only a small set of read-only parameters used for client introspection is emulated.",
+        .syntax = "current_setting(name [, missing_ok])",
+        .arguments
+        = {{"name", "The configuration parameter name.", {"String"}}, {"missing_ok", "Return an empty string instead of throwing for an unknown parameter.", {"UInt8"}}},
+        .returned_value = {"The value of the configuration parameter.", {"String"}},
+        .examples = {{"Example", "SELECT current_setting('server_version_num')", "120000"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Other});
+}
+
+}

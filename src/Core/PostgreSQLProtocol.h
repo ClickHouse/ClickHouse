@@ -1303,14 +1303,15 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17
+        SET = 17,
+        ROLLBACK = 18
     };
 private:
-    String enum_to_string[18] =
+    String enum_to_string[19] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET"
+        "TRUNCATE", "USE", "SET", "ROLLBACK"
     };
 
     String value;
@@ -1392,7 +1393,11 @@ public:
             {"ALTER TABLE", Command::ALTER_TABLE},
             {"TRUNCATE", Command::TRUNCATE},
             {"BEGIN", Command::BEGIN},
+            {"START TRANSACTION", Command::BEGIN},
             {"COMMIT", Command::COMMIT},
+            {"END", Command::COMMIT},
+            {"ROLLBACK", Command::ROLLBACK},
+            {"ABORT", Command::ROLLBACK},
             {"INSERT", Command::INSERT},
             {"DELETE", Command::DELETE},
             {"UPDATE", Command::UPDATE},
