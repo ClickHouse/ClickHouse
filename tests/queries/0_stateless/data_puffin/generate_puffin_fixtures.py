@@ -333,6 +333,54 @@ def generate_invalid_integer_fields() -> None:
         )
 
 
+def generate_invalid_string_fields() -> None:
+    """BlobMetadata type / compression-codec must be JSON strings."""
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    base = json.loads(footer_json.decode("utf-8"))
+
+    type_cases = {
+        "type_number.puffin": 123,
+        "type_bool.puffin": True,
+    }
+    for name, type_value in type_cases.items():
+        case_payload = json.loads(json.dumps(base))
+        case_payload["blobs"][0]["type"] = type_value
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
+    # Non-DV blob so DV omit-codec logic does not hide the type error.
+    theta_cases = {
+        "compression_codec_number.puffin": 1,
+        "compression_codec_bool.puffin": True,
+    }
+    for name, codec_value in theta_cases.items():
+        case_payload = {
+            "blobs": [
+                {
+                    "type": "apache-datasketches-theta-v1",
+                    "fields": [],
+                    "snapshot-id": -1,
+                    "sequence-number": -1,
+                    "offset": 4,
+                    "length": len(BLOB_PLACEHOLDER),
+                    "compression-codec": codec_value,
+                }
+            ]
+        }
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
+
 def generate_cardinality_mismatch_large_bitmap() -> None:
     bitmap = pyroaring.BitMap([2, 5, 7, 100, 65536])
     vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
@@ -463,6 +511,7 @@ def main() -> None:
     generate_missing_required_fields()
     generate_invalid_property_value_types()
     generate_invalid_integer_fields()
+    generate_invalid_string_fields()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()

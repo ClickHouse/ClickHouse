@@ -204,6 +204,26 @@ Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, si
     return static_cast<Int32>(as_int64);
 }
 
+String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
+{
+    requireBlobMetadataField(blob_obj, field_name, blob_index);
+    const Poco::Dynamic::Var & value = blob_obj->get(field_name);
+    if (!value.isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be a string", blob_index, field_name);
+    return value.extract<String>();
+}
+
+String optBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
+{
+    if (!blob_obj->has(field_name) || blob_obj->isNull(field_name))
+        return {};
+
+    const Poco::Dynamic::Var & value = blob_obj->get(field_name);
+    if (!value.isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be a string", blob_index, field_name);
+    return value.extract<String>();
+}
+
 void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
 {
     static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
@@ -262,14 +282,12 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
 
         PuffinBlob blob;
 
-        requireBlobMetadataField(blob_obj, "type", i);
-        blob.type = blob_obj->getValue<String>("type");
-
+        blob.type = requireBlobMetadataString(blob_obj, "type", i);
         blob.snapshot_id = requireBlobMetadataInt64(blob_obj, "snapshot-id", i);
         blob.sequence_number = requireBlobMetadataInt64(blob_obj, "sequence-number", i);
         blob.offset = requireBlobMetadataInt64(blob_obj, "offset", i);
         blob.length = requireBlobMetadataInt64(blob_obj, "length", i);
-        blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
+        blob.compression_codec = optBlobMetadataString(blob_obj, "compression-codec", i);
 
         if (blob.type == "deletion-vector-v1")
         {

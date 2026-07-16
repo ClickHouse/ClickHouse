@@ -106,6 +106,16 @@ echo "--- fields_element_out_of_int32_range.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/fields_element_out_of_int32_range.puffin', PuffinMetadata)" 2>&1 | grep -oF 'out of Int32 range'
 
 for PUFFIN_FILE in \
+    "$DATA/type_number.puffin" \
+    "$DATA/type_bool.puffin" \
+    "$DATA/compression_codec_number.puffin" \
+    "$DATA/compression_codec_bool.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "must be a string"
+done
+
+for PUFFIN_FILE in \
     "$DATA/invalid_non_dv_properties_array.puffin" \
     "$DATA/invalid_non_dv_properties_string.puffin"
 do
