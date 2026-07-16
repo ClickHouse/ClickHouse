@@ -288,27 +288,10 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
         ]
 
-        pushed = False
-        if new_commit:
-            # Push with the GitHub App token rather than the default GITHUB_TOKEN
-            # the checkout action persists: only a push authenticated as the App
-            # (or a PAT) re-triggers workflows, so the regenerated YAML is picked
-            # up by a fresh CI run. `repo`/`branch` are attacker-controlled on fork
-            # PRs, so Git.push passes them shell-quoted.
-            pushed = Git.push(repo, f"{new_commit}:refs/heads/{branch}")
-
-        if pushed:
-            return _result(
-                Result.Status.FAIL,
-                f"Workflows were outdated. Regenerated them and pushed a commit to branch "
-                f"'{branch}'. A new CI run will start on that commit. Changed files:\n{changed}",
-            )
-
-        return _result(
-            Result.Status.FAIL,
-            f"Workflows are outdated and could not be pushed automatically to branch "
-            f"'{branch}' - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
-            f"commit and push the following files:\n{changed}",
+        return Result.from_commands_run(
+            name="Check Workflows",
+            command=commands,
+            fail_fast=True,
         )
 
     def _check_secrets(secrets):
