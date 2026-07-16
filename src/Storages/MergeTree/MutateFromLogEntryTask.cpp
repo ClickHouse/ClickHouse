@@ -141,20 +141,23 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    /// If the log entry pins a set of patch parts, resolve them locally so that the mutation applies
-    /// exactly this set (mirrors MergeFromLogEntryTask). This guarantees byte-identical mutated parts
-    /// across replicas; otherwise a replica would derive patches from its own visible state, which may
-    /// differ (issue #100493). Missing patch parts fall back to fetching the mutated part.
+    /// Resolve the pinned patch parts locally so the mutation applies exactly this set across replicas
+    /// (issue #100493). Accept a covering already-merged patch in place of a pinned name (like source
+    /// parts above): patch merges never cross a mutation-version boundary and application is
+    /// version-bounded, so a covering merged patch is byte-identical to its constituents. Rejecting by
+    /// exact name would instead deadlock the queue fetching a part nobody produces. Missing patch parts
+    /// fall back to fetching.
     if (!entry.patch_parts.empty())
     {
         MergeTreeData::DataPartsVector patch_parts;
         patch_parts.reserve(entry.patch_parts.size());
+        NameSet seen_patch_parts;
 
         for (const auto & patch_part_name : entry.patch_parts)
         {
             auto patch_part = storage.getActiveContainingPart(patch_part_name);
 
-            if (!patch_part || patch_part->name != patch_part_name)
+            if (!patch_part || !patch_part->info.isPatch())
             {
                 LOG_DEBUG(log, "Don't have all patch parts (at least {} is missing) for mutation {}; "
                     "will try to fetch part instead.", patch_part_name, entry.new_part_name);
@@ -166,7 +169,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 };
             }
 
-            patch_parts.push_back(patch_part);
+            /// Several pinned names can resolve to the same covering merged patch; add it once.
+            if (seen_patch_parts.insert(patch_part->name).second)
+                patch_parts.push_back(patch_part);
         }
 
         future_mutated_part->patch_parts = std::move(patch_parts);

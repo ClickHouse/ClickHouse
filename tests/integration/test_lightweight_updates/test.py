@@ -1,5 +1,6 @@
 import pytest
 import random
+import time
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.test_tools import TSV
@@ -179,6 +180,103 @@ def test_lwu_replicated_mutation_pins_patches(started_cluster):
 
     node1.query("DROP TABLE t_lwu_pin SYNC")
     node2.query("DROP TABLE IF EXISTS t_lwu_pin SYNC")
+
+
+def test_lwu_replicated_mutation_accepts_covering_patch(started_cluster):
+    # Regression test for the covering-patch race in issue #100493. A MUTATE_PART entry pins the exact
+    # names of the patch parts it applies. The queue blocker only stops a patch-part merge that is
+    # still queued; a merge that already committed on one replica before the mutation was assigned can
+    # replace the pinned names by a single covering merged patch. Rejecting by exact name would then
+    # make that replica fall back to fetch a mutated part nobody produced, deadlocking the queue.
+    # MutateFromLogEntryTask must accept the covering merged patch instead.
+    #
+    # The divergence is set up deterministically: node1's patch merge is paused so node1 keeps the two
+    # individual patch parts and pins them into the mutation, while node2 completes the same merge and
+    # ends up with only the covering merged patch when it materializes the mutation locally.
+    node1.query("DROP TABLE IF EXISTS t_lwu_cover SYNC")
+    node2.query("DROP TABLE IF EXISTS t_lwu_cover SYNC")
+
+    settings = {
+        "enable_lightweight_update": 1,
+        "mutations_sync": 0,
+    }
+
+    for node, replica in [(node1, "r1"), (node2, "r2")]:
+        node.query(
+            f"""
+            CREATE TABLE t_lwu_cover (id UInt64, a UInt64, b UInt64)
+            ENGINE = ReplicatedMergeTree('/test/t_lwu_cover', '{replica}')
+            ORDER BY id
+            SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+                     apply_patches_on_merge = 0
+            """
+        )
+
+    node1.query("INSERT INTO t_lwu_cover SELECT number, number, number FROM numbers(10000)")
+    node2.query("SYSTEM SYNC REPLICA t_lwu_cover")
+
+    # Two lightweight updates in the same mutation-version bucket produce two separate patch parts.
+    node1.query("UPDATE t_lwu_cover SET b = b + 1 WHERE id >= 1000 AND id < 2000", settings=settings)
+    node1.query("UPDATE t_lwu_cover SET a = a + 7 WHERE id >= 1500 AND id < 2500", settings=settings)
+    node2.query("SYSTEM SYNC REPLICA t_lwu_cover")
+
+    patch_partition = node2.query(
+        "SELECT partition_id FROM system.parts WHERE table = 't_lwu_cover' AND active "
+        "AND startsWith(partition_id, 'patch') LIMIT 1"
+    ).strip()
+    assert patch_partition, "expected a patch partition"
+
+    # Pause the patch merge on node1 and stop its fetches so node1 keeps both individual patch parts
+    # active (and therefore pins them when it assigns the mutation below).
+    node1.query("SYSTEM STOP FETCHES t_lwu_cover")
+    node1.query("SYSTEM ENABLE FAILPOINT rmt_merge_task_pause_in_prepare")
+
+    # Merge the two patch parts on node2 into one covering patch. This creates a replicated MERGE entry
+    # that node2 executes to completion (node1's copy of it stays paused), so node2 ends up with only
+    # the covering merged patch and the two pinned names become inactive there.
+    node2.query(
+        f"OPTIMIZE TABLE t_lwu_cover PARTITION ID '{patch_partition}' FINAL",
+        settings={"optimize_throw_if_noop": 1, "alter_sync": 1},
+    )
+
+    # Stop fetches on node2 too, so it must materialize the mutation locally (the code path that
+    # resolves the pinned patch parts) instead of downloading node1's mutated part.
+    node2.query("SYSTEM STOP FETCHES t_lwu_cover")
+
+    # Assign and materialize the mutation on node1: it still sees both individual patch parts (its merge
+    # is paused), so the MUTATE_PART entry pins their exact names.
+    node1.query("ALTER TABLE t_lwu_cover APPLY PATCHES IN PARTITION tuple()")
+
+    # node2 executes the same MUTATE_PART entry. The pinned names are gone there, only the covering
+    # merged patch is active. With the fix node2 accepts it and materializes a byte-identical mutated
+    # part; without the fix it rejects by exact name and loops trying to fetch a part nobody produced.
+    def mutated_part_ready(node):
+        return (
+            node.query(
+                "SELECT count() FROM system.parts WHERE table = 't_lwu_cover' AND active "
+                "AND name = 'all_0_0_0_3'"
+            ).strip()
+            == "1"
+        )
+
+    for _ in range(600):
+        if mutated_part_ready(node2):
+            break
+        time.sleep(0.1)
+    assert mutated_part_ready(node2), "node2 did not materialize the mutated part from the covering patch"
+
+    # Resume node1's paused merge and let both replicas settle, then check they converged.
+    node1.query("SYSTEM DISABLE FAILPOINT rmt_merge_task_pause_in_prepare")
+    node1.query("SYSTEM START FETCHES t_lwu_cover")
+    node2.query("SYSTEM START FETCHES t_lwu_cover")
+    node1.query("SYSTEM SYNC REPLICA t_lwu_cover", settings={"receive_timeout": 60})
+    node2.query("SYSTEM SYNC REPLICA t_lwu_cover", settings={"receive_timeout": 60})
+
+    expected = node1.query("SELECT id, a, b FROM t_lwu_cover ORDER BY id")
+    assert TSV(node2.query("SELECT id, a, b FROM t_lwu_cover ORDER BY id")) == TSV(expected)
+
+    node1.query("DROP TABLE t_lwu_cover SYNC")
+    node2.query("DROP TABLE IF EXISTS t_lwu_cover SYNC")
 
 
 @pytest.mark.parametrize("table_engine", ["ReplicatedMergeTree"])

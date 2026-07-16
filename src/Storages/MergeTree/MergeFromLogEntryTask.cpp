@@ -40,6 +40,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_merge_task_sleep_in_prepare[];
+    extern const char rmt_merge_task_pause_in_prepare[];
 }
 
 namespace ErrorCodes
@@ -71,6 +72,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     });
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_task_pause_in_prepare);
 
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
