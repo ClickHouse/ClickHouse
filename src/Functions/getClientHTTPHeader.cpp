@@ -36,8 +36,6 @@ public:
 
     String getName() const override { return "getClientHTTPHeader"; }
 
-    bool isDeterministic() const override { return false; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
@@ -91,16 +89,6 @@ The setting is not enabled by default for security reasons, because some headers
 
 HTTP headers are case-insensitive per RFC 9110.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
-
-`getClientHTTPHeader` reads the headers of the current request, so it returns a non-empty value only when the query is sent over the HTTP interface.
-For example, supply the header with the request and read it back over HTTP:
-
-```bash
-echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
-    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
-```
-
-The command above returns `application/x-www-form-urlencoded`.
 )";
     FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
     FunctionDocumentation::Arguments arguments = {
@@ -111,13 +99,12 @@ The command above returns `application/x-www-form-urlencoded`.
         {
             "Usage example",
             R"(
--- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
--- no request headers, so the function returns an empty string. See the description above
--- for an HTTP example that returns the actual header value.
-SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
+SELECT getClientHTTPHeader('Content-Type');
             )",
             R"(
-
+┌─getClientHTTPHeader('Content-Type')─┐
+│ application/x-www-form-urlencoded   │
+└─────────────────────────────────────┘
             )"
         }
     };

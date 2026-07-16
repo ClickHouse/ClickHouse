@@ -668,12 +668,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
-            Result.create_from(
-                name="Pre Hooks",
-                results=res_,
-                stopwatch=sw_,
-                with_info_from_results=True,
-            )
+            Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
         # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
         env = _Environment.get()
@@ -1001,12 +996,7 @@ def _finish_workflow(workflow, job_name):
             results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
-            Result.create_from(
-                name="Post Hooks",
-                results=results_,
-                stopwatch=sw_,
-                with_info_from_results=True,
-            )
+            Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
         )
 
     ready_for_merge_status = Result.Status.OK

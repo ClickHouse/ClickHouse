@@ -492,9 +492,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     {
         const IColumn & data = col_array->getData();
         const IColumn::Offsets & src_offsets = col_array->getOffsets();
-        /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
-        /// covers that case, otherwise getDataAt() throws NOT_IMPLEMENTED on a NULL element.
-        const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(data);
+        const bool data_is_nullable = data.isNullable();
 
         for (size_t i = from; i < from + rows; ++i)
         {

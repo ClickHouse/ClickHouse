@@ -14,7 +14,6 @@
 #include <Common/Exception.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Interpreters/Context.h>
@@ -159,13 +158,15 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    orc::ReaderOptions options;
-    reader = orc::createReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), options);
+    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), ArrowMemoryPool::instance());
+    if (!result.ok())
+        throwFromArrowStatus(result.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open ORC file");
+    reader = std::move(result).ValueOrDie();
 }
 
 void HiveORCFile::prepareColumnMapping()
 {
-    const orc::Type & type = reader->getType();
+    const orc::Type & type = reader->GetRawORCReader()->getType();
     size_t count = type.getSubtypeCount();
     for (size_t pos = 0; pos < count; pos++)
     {
@@ -222,7 +223,7 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
         prepareColumnMapping();
     }
 
-    auto statistics = reader->getStatistics();
+    auto statistics = reader->GetRawORCReader()->getStatistics();
     file_minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
@@ -240,7 +241,7 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
         prepareColumnMapping();
     }
 
-    auto * raw_reader = reader.get();
+    auto * raw_reader = reader->GetRawORCReader();
     auto stripe_num = raw_reader->getNumberOfStripes();
     auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
     if (stripe_num != stripe_stats_num)
@@ -263,7 +264,7 @@ std::optional<size_t> HiveORCFile::getRowsImpl()
         prepareColumnMapping();
     }
 
-    auto * raw_reader = reader.get();
+    auto * raw_reader = reader->GetRawORCReader();
     return raw_reader->getNumberOfRows();
 }
 

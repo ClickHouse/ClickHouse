@@ -42,10 +42,6 @@ enum class CatalogShape
     TopLevelTable,
     NestedTableThenEmptySibling,
     Empty,
-    /// Flat-namespace catalog (Databricks Delta Sharing style) that ignores the `parent` filter and
-    /// echoes the same top-level namespace for every parent. A REST catalog would recurse on this
-    /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
-    ParentIgnoringEcho,
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body)
@@ -91,8 +87,6 @@ public:
             {
                 if (shape == CatalogShape::NestedTableThenEmptySibling)
                     writeJSON(response, R"({"namespaces":[["parent"],["empty_later"]]})");
-                else if (shape == CatalogShape::ParentIgnoringEcho)
-                    writeJSON(response, R"({"namespaces":[["gold"]]})");
                 else
                     writeJSON(response, R"({"namespaces":[["namespace"]]})");
                 return;
@@ -100,9 +94,6 @@ public:
 
             if (shape == CatalogShape::NestedTableThenEmptySibling && parent == "parent")
                 writeJSON(response, R"({"namespaces":[["leaf_with_table"]]})");
-            else if (shape == CatalogShape::ParentIgnoringEcho)
-                /// Ignores `parent` and echoes the top-level namespace back for any parent.
-                writeJSON(response, R"({"namespaces":[["gold"]]})");
             else
                 writeJSON(response, R"({"namespaces":[]})");
             return;
@@ -118,8 +109,7 @@ public:
         }
 
         if (path == "/v1/namespaces/parent/tables"
-            || path == "/v1/namespaces/empty_later/tables"
-            || path == "/v1/namespaces/gold/tables")
+            || path == "/v1/namespaces/empty_later/tables")
         {
             writeJSON(response, R"({"identifiers":[]})");
             return;
@@ -213,39 +203,11 @@ bool restCatalogEmpty(CatalogShape shape)
     return catalog.empty();
 }
 
-bool deltaSharingCatalogEmpty(CatalogShape shape)
-{
-    RestCatalogTestServer server(shape);
-    auto context = DB::Context::createCopy(getContext().context);
-    context->makeQueryContext();
-
-    DeltaSharingCatalog catalog(
-        "warehouse",
-        server.getUrl(),
-        /* catalog_credential */"",
-        /* auth_scope */"",
-        /* auth_header */"",
-        /* oauth_server_uri */"",
-        /* oauth_server_use_request_body */false,
-        context);
-
-    return catalog.empty();
-}
-
 }
 
 TEST(RestCatalog, EmptyReturnsFalseForTopLevelTable)
 {
     EXPECT_FALSE(restCatalogEmpty(CatalogShape::TopLevelTable));
-}
-
-TEST(RestCatalog, DeltaSharingTerminatesWhenParentFilterIgnored)
-{
-    /// Databricks Delta Sharing has flat namespaces and echoes the same namespace for any parent. As
-    /// a `DeltaSharingCatalog` it must list the top level only and terminate (a plain REST catalog
-    /// would recurse gold -> gold.gold -> ... forever). With no tables under the echoed namespace the
-    /// catalog is reported empty.
-    EXPECT_TRUE(deltaSharingCatalogEmpty(CatalogShape::ParentIgnoringEcho));
 }
 
 TEST(RestCatalog, EmptyKeepsFoundTableStateSticky)

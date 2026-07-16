@@ -130,7 +130,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
         if (prefix.size() == limit_by_step->getColumns().size())
-            limit_by_step->applyOrder(prefix);
+            limit_by_step->applyOrder();
 
         return std::move(*properties);
     }
@@ -142,7 +142,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
         if (prefix.size() == negative_limit_by_step->getColumns().size())
-            negative_limit_by_step->applyOrder(prefix);
+            negative_limit_by_step->applyOrder();
 
         return std::move(*properties);
     }

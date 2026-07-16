@@ -128,8 +128,6 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
-
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 

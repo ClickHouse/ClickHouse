@@ -334,9 +334,9 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
+Names IStorage::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     auto getter = [](const auto & column) { return column.name; };
     const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     const auto & available_columns = metadata_snapshot->getColumns().getAllPhysical();

@@ -1,7 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-
+#ifdef OS_LINUX
 #include <Client/Connection.h>
 #include <base/defines.h>
 #include <Poco/Net/StreamSocket.h>

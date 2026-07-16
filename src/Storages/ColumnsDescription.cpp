@@ -1042,9 +1042,9 @@ void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
     }
 }
 
-VectorWithMemoryTracking<String> ColumnsDescription::getAllRegisteredNames() const
+std::vector<String> ColumnsDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> names;
+    std::vector<String> names;
     names.reserve(columns.size());
     for (const auto & column : columns)
     {

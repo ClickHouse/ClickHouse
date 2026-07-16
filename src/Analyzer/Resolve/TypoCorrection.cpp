@@ -213,9 +213,9 @@ void TypoCorrection::collectScopeWithParentScopesValidIdentifiers(
     }
 }
 
-VectorWithMemoryTracking<String> TypoCorrection::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
+std::vector<String> TypoCorrection::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
 {
-    VectorWithMemoryTracking<String> prompting_strings;
+    std::vector<String> prompting_strings;
     prompting_strings.reserve(valid_identifiers.size());
 
     for (const auto & valid_identifier : valid_identifiers)

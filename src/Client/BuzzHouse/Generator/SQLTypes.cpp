@@ -1377,9 +1377,7 @@ String VariantType::insertNumberEntry(
 
 String QBitType::typeName(const bool escape, const bool simplified) const
 {
-    if (stride == dimension)
-        return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
-    return fmt::format("QBit({}, {}, {})", subtype->typeName(escape, simplified), dimension, stride);
+    return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
 }
 
 String QBitType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -1399,7 +1397,7 @@ String QBitType::SQLitetypeName(RandomGenerator &, const bool) const
 
 std::unique_ptr<SQLType> QBitType::typeDeepCopy() const
 {
-    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension, stride);
+    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension);
 }
 
 String QBitType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -2114,43 +2112,18 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              uint32_t dimension = rg.nextSmallNumber();
-              uint32_t stride = dimension;
-              QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
+              FloatingPoints nflo = {};
+              const uint32_t dimension = rg.nextSmallNumber();
 
-              /// Occasionally generate a strided QBit. Constraints: dimension % stride == 0 and stride % 8 == 0.
-              if (rg.nextSmallNumber() < 3)
+              std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+              if (tp)
               {
-                  const uint32_t num_groups = std::max<uint32_t>(1, rg.nextSmallNumber());
-                  stride = 8;
-                  dimension = stride * num_groups;
-              }
+                  QBit * qbit = tp->mutable_qbit();
 
-              if (rg.nextSmallNumber() < 3)
-              {
-                  sub = std::make_unique<IntType>(8, false);
-                  if (tp)
-                  {
-                      qbit->set_int8(true);
-                  }
-              }
-              else
-              {
-                  FloatingPoints nflo = {};
-
-                  std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
-                  if (tp)
-                  {
-                      qbit->set_floats(nflo);
-                  }
-              }
-              if (qbit)
-              {
+                  qbit->set_subtype(nflo);
                   qbit->set_dimension(dimension);
-                  if (stride != dimension)
-                      qbit->set_stride(stride);
               }
-              res = std::make_unique<QBitType>(std::move(sub), dimension, stride);
+              res = std::make_unique<QBitType>(std::move(sub), dimension);
           }},
          {geo_type,
           [&]

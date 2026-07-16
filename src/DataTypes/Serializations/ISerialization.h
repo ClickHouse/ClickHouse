@@ -7,7 +7,6 @@
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
@@ -458,9 +457,6 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
-        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
-        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
-        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
@@ -744,7 +740,7 @@ protected:
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = VectorWithMemoryTracking<SerializationPtr>;
+using Serializations = std::vector<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
 using SubstreamType = ISerialization::Substream::Type;
 

@@ -30,7 +30,8 @@ BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
         case Type::Moving:
             return getContext()->getBackgroundMoveTaskSchedulingSettings();
         case Type::Streaming:
-            return getContext()->getBackgroundStreamingTaskSchedulingSettings();
+            /// TODO(michicosun): Change to streaming-specific settings.
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
     }
 }
 
@@ -117,18 +118,7 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-    {
-        switch (type)
-        {
-        case Type::DataProcessing:
-        case Type::Moving:
-            holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        }
-    }
+        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }

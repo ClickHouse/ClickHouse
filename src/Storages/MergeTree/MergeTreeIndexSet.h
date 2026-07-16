@@ -23,7 +23,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         const Block & index_sample_block_,
         size_t max_rows_,
         MutableColumns && columns_,
-        Ranges && set_hyperrectangle_);
+        std::vector<Range> && set_hyperrectangle_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -39,7 +39,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     Block block;
     Serializations serializations;
-    Ranges set_hyperrectangle;
+    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -91,7 +91,7 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
-    Ranges set_hyperrectangle;
+    std::vector<Range> set_hyperrectangle;
 };
 
 

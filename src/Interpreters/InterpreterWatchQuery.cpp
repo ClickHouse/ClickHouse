@@ -58,7 +58,6 @@ BlockIO InterpreterWatchQuery::execute()
         limits.size_limits.max_bytes = settings[Setting::max_result_bytes];
         limits.size_limits.overflow_mode = settings[Setting::result_overflow_mode];
 
-        res.pipeline.setNormalizedQueryHash(getContext()->getNormalizedQueryHash());
         res.pipeline.setLimitsAndQuota(limits, getContext()->getQuota());
     }
 

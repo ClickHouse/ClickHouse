@@ -147,8 +147,6 @@ public:
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
-    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
-
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
     bool hasReadPendingData() const override;

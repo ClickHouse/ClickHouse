@@ -3,7 +3,6 @@
 #include <Common/Logger_fwd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/executeQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <IO/WriteBuffer.h>
@@ -44,8 +43,7 @@ public:
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
     void executePromQLQuery(
         WriteBuffer & response,
-        const Params & params,
-        QueryFinishCallback query_finish_callback = {});
+        const Params & params);
 
     /// Get series metadata (/api/v1/series)
     void getSeries(

@@ -1,7 +1,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
@@ -341,17 +340,12 @@ Chunk NegativeLimitByTransform::generate()
 
 
 NegativeLimitBySortedStreamTransform::NegativeLimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
+    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
     : IInflatingTransform(header, header)
+    , key_positions(filterNonConstKeys(header, column_names).positions)
     , group_offset(group_offset_)
     , group_window_size(computeWindowSize(group_length_, group_offset_))
 {
-    Names key_names;
-    key_names.reserve(sorted_columns_descr.size());
-    for (const auto & column_description : sorted_columns_descr)
-        key_names.push_back(column_description.column_name);
-    key_positions = filterNonConstKeys(header, key_names).positions;
-
     prev_key_columns.reserve(key_positions.size());
     for (size_t position : key_positions)
         prev_key_columns.push_back(header->getByPosition(position).type->createColumn());
@@ -362,6 +356,16 @@ bool NegativeLimitBySortedStreamTransform::sameAsPrevChunkKey(const Columns & co
     for (size_t i = 0; i < cols.size(); ++i)
     {
         if (cols[i]->compareAt(row, 0, *prev_key_columns[i], 1) != 0)
+            return false;
+    }
+    return true;
+}
+
+bool NegativeLimitBySortedStreamTransform::sameAsRowBefore(const Columns & cols, UInt64 row) const
+{
+    for (const auto & col : cols)
+    {
+        if (col->compareAt(row, row - 1, *col, 1) != 0)
             return false;
     }
     return true;
@@ -467,20 +471,18 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     if (have_previous_chunk_key && !sameAsPrevChunkKey(normalized_keys, 0))
         finalizeWindow(current_group_window);
 
-    /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
-    /// one group.
-    while (run_start < num_rows)
+    for (UInt64 row = 1; row < num_rows; ++row)
     {
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_keys, run_start, num_rows, 1);
-
-        append_run(run_start, run_end - run_start);
+        if (sameAsRowBefore(normalized_keys, row))
+            continue;
 
         /// Group boundary: close the current run, finalize, start a new run.
-        if (run_end != num_rows)
-            finalizeWindow(current_group_window);
-
-        run_start = run_end;
+        append_run(run_start, row - run_start);
+        finalizeWindow(current_group_window);
+        run_start = row;
     }
+
+    append_run(run_start, num_rows - run_start);
 
     /// Remember this chunk's last row for the next chunk's boundary check. With no non-constant
     /// grouping keys this is a no-op (nothing to remember).

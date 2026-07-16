@@ -120,7 +120,7 @@ public:
         /// Default value for Dynamic is NULL, so nothing to add.
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }

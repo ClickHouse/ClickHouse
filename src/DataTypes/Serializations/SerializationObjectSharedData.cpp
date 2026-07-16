@@ -146,19 +146,11 @@ void SerializationObjectSharedData::enumerateStreams(
             else
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructure);
 
-            /// When deserialize state is present, it means the whole shared data will be read
-            /// via deserializeBinaryBulkWithMultipleStreams, which only uses Structure + Copy streams.
-            /// Per-bucket Data/PathsMarks/Substreams/SubstreamsMarks/PathsSubstreamsMetadata are only
-            /// needed when writing or reading individual paths via SerializationObjectSharedDataPath (separate class).
-            /// Skip them to avoid unnecessary mark file loads and file opens during prefetching.
-            if (!shared_data_state)
-            {
-                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
-                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
-                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
-                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
-                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
-            }
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
 
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);
@@ -1099,7 +1091,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
-        Columns shared_data_buckets(buckets);
+        std::vector<ColumnPtr> shared_data_buckets(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);

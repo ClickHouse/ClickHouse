@@ -35,7 +35,6 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/checkDataPart.h>
 
 
 namespace DB
@@ -49,7 +48,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ABORTED;
 }
 
 namespace FailPoints
@@ -150,11 +148,6 @@ public:
         }
         catch (const Exception & e)
         {
-            /// Rethrow transient errors instead of reporting a false "broken" row. Keep swallowing the shutdown
-            /// ABORTED (what this catch was added for) — `isRetryableException` treats ABORTED as retryable.
-            if (e.code() != ErrorCodes::ABORTED && isRetryableException(std::current_exception()))
-                throw;
-
             is_finished = true;
             CheckResult result{"", false, e.displayText()};
             return result;
