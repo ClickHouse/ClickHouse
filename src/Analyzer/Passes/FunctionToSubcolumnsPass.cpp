@@ -18,6 +18,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -205,8 +206,18 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
     const auto & key_type = data_type_map.getKeyType();
     auto tmp_key_column = key_type->createColumn();
+
+    /// `UUID` and `UUID2` share the physical representation but keep the two 64-bit halves in the
+    /// opposite order. A plain `Field`-level insert below would copy the raw representation as-is,
+    /// so a key constant of the "other" UUID flavor would serialize to the wrong subcolumn name.
+    Field key_value = second_argument_constant_node->getValue();
+    const auto key_type_decayed = removeNullable(key_type);
+    const auto constant_type_decayed = removeNullable(second_argument_constant_node->getResultType());
+    if ((isUUID(key_type_decayed) && isUUID2(constant_type_decayed)) || (isUUID2(key_type_decayed) && isUUID(constant_type_decayed)))
+        key_value = convertFieldToType(key_value, *key_type_decayed, constant_type_decayed.get());
+
     /// Verify that the constant value is compatible with the map's key type.
-    if (!tmp_key_column->tryInsert(second_argument_constant_node->getValue()))
+    if (!tmp_key_column->tryInsert(key_value))
         return;
 
     /// Serialize the key to its text representation to construct the subcolumn name,

@@ -20,6 +20,7 @@
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -2105,20 +2106,39 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     const auto & values_data = col_map->getNestedData().getColumn(1);
     const auto & offsets = nested_column.getOffsets();
 
+    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
+
+    /// `UUID` and `UUID2` share the physical representation but keep the two 64-bit halves in the
+    /// opposite order, while matchKeyToIndex* below compare the raw representations. Bring a lookup
+    /// key of the "other" UUID flavor to the map's key layout first (the cast between them swaps the
+    /// halves and loses nothing), the same way `mapContains`/`has` already do for arrays.
+    ColumnWithTypeAndName key_argument = arguments[1];
+    {
+        const auto key_type_decayed = removeNullable(type_map.getKeyType());
+        const auto arg_type_decayed = removeNullable(key_argument.type);
+        if ((isUUID(key_type_decayed) && isUUID2(arg_type_decayed)) || (isUUID2(key_type_decayed) && isUUID(arg_type_decayed)))
+        {
+            DataTypePtr target_type
+                = key_argument.type->isNullable() ? std::make_shared<DataTypeNullable>(key_type_decayed) : key_type_decayed;
+            key_argument.column = castColumn(key_argument, target_type);
+            key_argument.type = std::move(target_type);
+        }
+    }
+
     /// At first step calculate indices in array of values for requested keys.
     auto indices_column = DataTypeNumber<UInt64>().createColumn();
     indices_column->reserve(input_rows_count);
     auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
 
     bool executed = false;
-    if (!isColumnConst(*arguments[1].column))
+    if (!isColumnConst(*key_argument.column))
     {
-        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *arguments[1].column, indices_data)
-            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *arguments[1].column, indices_data);
+        executed = matchKeyToIndexNumber(keys_data, offsets, !!col_const_map, *key_argument.column, indices_data)
+            || matchKeyToIndexString(keys_data, offsets, !!col_const_map, *key_argument.column, indices_data);
     }
     else
     {
-        Field index = (*arguments[1].column)[0];
+        Field index = (*key_argument.column)[0];
         executed = matchKeyToIndexNumberConst(keys_data, offsets, index, indices_data)
             || matchKeyToIndexStringConst(keys_data, offsets, index, indices_data);
     }
@@ -2134,8 +2154,6 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
     ColumnPtr values_array = ColumnArray::create(values_data.getPtr(), nested_column.getOffsetsPtr());
     if (col_const_map)
         values_array = ColumnConst::create(values_array, input_rows_count);
-
-    const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
 
     /// Prepare arguments to call arrayElement for array with values and calculated indices at previous step.
     ColumnsWithTypeAndName new_arguments
