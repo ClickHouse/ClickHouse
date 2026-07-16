@@ -282,4 +282,100 @@ int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds)
     return std::min(current_interval_seconds * 2, max_interval_seconds);
 }
 
+DeviceTokenPollDecision evaluateDeviceTokenPollFailure(
+    const std::string & response_body,
+    int http_status,
+    const std::string & http_reason,
+    int current_interval_seconds)
+{
+    DeviceTokenPollDecision decision;
+    decision.interval_seconds = current_interval_seconds;
+
+    auto oauth_error = parseOAuthErrorResponse(response_body);
+    const std::string error = oauth_error ? oauth_error->error : "unknown_error";
+
+    if (error == "authorization_pending")
+    {
+        decision.action = DeviceTokenPollAction::ContinuePending;
+        return decision;
+    }
+
+    if (error == "slow_down")
+    {
+        /// RFC 8628: increase the polling interval by 5 seconds on slow_down.
+        decision.action = DeviceTokenPollAction::ContinueSlowDown;
+        decision.interval_seconds = current_interval_seconds + 5;
+        return decision;
+    }
+
+    if (error == "access_denied")
+    {
+        decision.action = DeviceTokenPollAction::FailAccessDenied;
+        decision.message = oauth_error ? formatOAuthError(*oauth_error) : error;
+        return decision;
+    }
+
+    if (error == "expired_token")
+    {
+        decision.action = DeviceTokenPollAction::FailExpiredToken;
+        decision.message = oauth_error ? formatOAuthError(*oauth_error) : error;
+        return decision;
+    }
+
+    decision.action = DeviceTokenPollAction::FailOther;
+    decision.message = oauth_error ? formatOAuthError(*oauth_error)
+                                   : formatOAuthError(response_body, http_status, http_reason);
+    return decision;
+}
+
+OAuthClientAuthMethod parseOAuthClientAuthMethod(
+    const std::string & client_secret,
+    const std::string & auth_method)
+{
+    if (client_secret.empty())
+        return OAuthClientAuthMethod::None;
+
+    std::string method = auth_method;
+    std::transform(method.begin(), method.end(), method.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (method.empty() || method == "basic")
+        return OAuthClientAuthMethod::Basic;
+    if (method == "post")
+        return OAuthClientAuthMethod::Post;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Invalid --oauth-client-auth '{}'. Expected 'basic' or 'post'.",
+        auth_method);
+}
+
+std::string appendClientSecretPost(std::string body, const std::string & client_secret)
+{
+    if (client_secret.empty())
+        return body;
+    if (!body.empty())
+        body += '&';
+    body += buildFormUrlEncodedBody({{"client_secret", client_secret}});
+    return body;
+}
+
+void validateOAuthEndpointOverridePair(
+    const std::string & device_authorization_endpoint_override,
+    const std::string & token_endpoint_override)
+{
+    const bool has_device = !device_authorization_endpoint_override.empty();
+    const bool has_token = !token_endpoint_override.empty();
+    if (has_device != has_token)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Both --oauth-device-uri and --oauth-token-uri must be provided together, or omit both to use OIDC discovery / Auth0-style paths from --oauth-url");
+    }
+}
+
+std::string effectiveOAuthDeviceCodeScope(const std::string & configured_scope)
+{
+    return configured_scope.empty() ? default_oauth_device_code_scope : configured_scope;
+}
+
 }

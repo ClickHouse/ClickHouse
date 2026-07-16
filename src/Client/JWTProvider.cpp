@@ -24,8 +24,6 @@
 
 #include <jwt-cpp/jwt.h>
 
-#include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -138,21 +136,7 @@ std::string JWTProvider::getJWT()
 
 OAuthClientAuthMethod JWTProvider::resolveClientAuthMethod() const
 {
-    if (oauth_client_secret.empty())
-        return OAuthClientAuthMethod::None;
-
-    std::string method = oauth_client_auth_method;
-    std::transform(method.begin(), method.end(), method.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    if (method.empty() || method == "basic")
-        return OAuthClientAuthMethod::Basic;
-    if (method == "post")
-        return OAuthClientAuthMethod::Post;
-
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Invalid --oauth-client-auth '{}'. Expected 'basic' or 'post'.",
-        oauth_client_auth_method);
+    return parseOAuthClientAuthMethod(oauth_client_secret, oauth_client_auth_method);
 }
 
 void JWTProvider::applyClientAuthentication(Poco::Net::HTTPRequest & request, std::string & body) const
@@ -169,9 +153,7 @@ void JWTProvider::applyClientAuthentication(Poco::Net::HTTPRequest & request, st
         }
         case OAuthClientAuthMethod::Post:
         {
-            if (!body.empty())
-                body += '&';
-            body += buildFormUrlEncodedBody({{"client_secret", oauth_client_secret}});
+            body = appendClientSecretPost(std::move(body), oauth_client_secret);
             break;
         }
     }
@@ -182,15 +164,12 @@ void JWTProvider::ensureOAuthEndpointsResolved()
     if (oauth_endpoints_resolved)
         return;
 
+    validateOAuthEndpointOverridePair(
+        oauth_device_authorization_endpoint_override,
+        oauth_token_endpoint_override);
+
     const bool has_device_override = !oauth_device_authorization_endpoint_override.empty();
     const bool has_token_override = !oauth_token_endpoint_override.empty();
-
-    if (has_device_override != has_token_override)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Both --oauth-device-uri and --oauth-token-uri must be provided together, or omit both to use OIDC discovery / Auth0-style paths from --oauth-url");
-    }
 
     if (has_device_override && has_token_override)
     {
@@ -266,7 +245,7 @@ void JWTProvider::deviceCodeLogin()
     Poco::URI device_code_url(resolved_device_authorization_endpoint);
     Poco::URI token_url(resolved_token_endpoint);
 
-    const std::string scope = oauth_scope.empty() ? default_oauth_device_code_scope : oauth_scope;
+    const std::string scope = effectiveOAuthDeviceCodeScope(oauth_scope);
     const std::string audience = getAudience();
 
     auto device_code_session = createHTTPSession(device_code_url);
@@ -352,40 +331,29 @@ void JWTProvider::deviceCodeLogin()
                 return;
             }
 
-            auto oauth_error = parseOAuthErrorResponse(response_body);
-            const std::string error = oauth_error ? oauth_error->error : "unknown_error";
+            const auto decision = evaluateDeviceTokenPollFailure(
+                response_body,
+                token_response.getStatus(),
+                token_response.getReason(),
+                interval_seconds);
 
-            if (error == "authorization_pending")
-                continue;
-
-            if (error == "slow_down")
+            switch (decision.action)
             {
-                /// RFC 8628: increase the polling interval by 5 seconds on slow_down.
-                interval_seconds += 5;
-                continue;
+                case DeviceTokenPollAction::ContinuePending:
+                    continue;
+                case DeviceTokenPollAction::ContinueSlowDown:
+                    interval_seconds = decision.interval_seconds;
+                    continue;
+                case DeviceTokenPollAction::FailAccessDenied:
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "IdP login denied: {}", decision.message);
+                case DeviceTokenPollAction::FailExpiredToken:
+                    throw Exception(
+                        ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Device code expired before authorization completed: {}",
+                        decision.message);
+                case DeviceTokenPollAction::FailOther:
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "IdP login failed: {}", decision.message);
             }
-
-            if (error == "access_denied")
-            {
-                throw Exception(
-                    ErrorCodes::AUTHENTICATION_FAILED,
-                    "IdP login denied: {}",
-                    oauth_error ? formatOAuthError(*oauth_error) : error);
-            }
-
-            if (error == "expired_token")
-            {
-                throw Exception(
-                    ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Device code expired before authorization completed: {}",
-                    oauth_error ? formatOAuthError(*oauth_error) : error);
-            }
-
-            throw Exception(
-                ErrorCodes::AUTHENTICATION_FAILED,
-                "IdP login failed: {}",
-                oauth_error ? formatOAuthError(*oauth_error)
-                            : formatOAuthError(response_body, token_response.getStatus(), token_response.getReason()));
         }
         catch (const Exception & e)
         {

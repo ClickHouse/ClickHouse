@@ -81,6 +81,46 @@ std::string browserVerificationURL(
 /// RFC 8628 Section 3.5: on connection timeout/failure, double the interval (cap at 60s).
 int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds);
 
+/// RFC 8628 Section 3.5: how the client should react to a non-success token poll response.
+enum class DeviceTokenPollAction
+{
+    ContinuePending,
+    ContinueSlowDown,
+    FailAccessDenied,
+    FailExpiredToken,
+    FailOther,
+};
+
+struct DeviceTokenPollDecision
+{
+    DeviceTokenPollAction action = DeviceTokenPollAction::FailOther;
+    int interval_seconds = 5;
+    std::string message;
+};
+
+/// Classify a failed device-code token poll (HTTP non-OK with optional OAuth error JSON).
+DeviceTokenPollDecision evaluateDeviceTokenPollFailure(
+    const std::string & response_body,
+    int http_status,
+    const std::string & http_reason,
+    int current_interval_seconds);
+
+/// Parse `--oauth-client-auth` for confidential clients. Empty secret => None.
+OAuthClientAuthMethod parseOAuthClientAuthMethod(
+    const std::string & client_secret,
+    const std::string & auth_method);
+
+/// Append `client_secret` for `client_secret_post`.
+std::string appendClientSecretPost(std::string body, const std::string & client_secret);
+
+/// Require both endpoint overrides together (or neither).
+void validateOAuthEndpointOverridePair(
+    const std::string & device_authorization_endpoint_override,
+    const std::string & token_endpoint_override);
+
+/// Empty `--oauth-scope` uses the Auth0 / Cloud default.
+std::string effectiveOAuthDeviceCodeScope(const std::string & configured_scope);
+
 /// Default device-code scope used when `--oauth-scope` is not set (Auth0 / Cloud compatible).
 inline constexpr const char * default_oauth_device_code_scope = "openid profile email offline_access";
 
