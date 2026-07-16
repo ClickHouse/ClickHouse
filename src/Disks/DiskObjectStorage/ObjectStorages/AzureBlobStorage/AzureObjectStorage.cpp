@@ -332,6 +332,15 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
 UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling() const
 {
+    /// On the ADLS Gen2 endpoint, writeObject returns a WriteBufferFromAzureDataLakeStorage: a single
+    /// buffer sized by buf_size (see its constructor forwarding to WriteBufferFromFileBase), flushed
+    /// synchronously on every nextImpl - there is no multipart upload with growing buffers or several
+    /// uploads in flight at once. Its memory is already covered by the local per-stream estimate, exactly
+    /// like a remote disk with no multipart upload buffers at all (e.g. HDFS); return 0 so the caller falls
+    /// back to that instead of the Blob multipart ceiling below, which this endpoint never allocates.
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
+        return 0;
+
     /// Mirror the multipart upload buffer sizing of WriteBufferFromAzureBlobStorage / BufferAllocationPolicy:
     /// the first buffer is max(max_single_part_upload_size, min_upload_part_size), later buffers grow up to
     /// max_upload_part_size, and up to max_inflight_parts_for_one_file of them can be held in memory while
