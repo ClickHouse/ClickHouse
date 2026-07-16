@@ -74,6 +74,15 @@ SELECT count() FROM (
     GROUP BY y SETTINGS parallel_replicas_custom_key = 'y + rand()', enable_analyzer = 0
 ) SETTINGS enable_analyzer = 0;
 
+-- Stateful custom key (deterministic-in-scope but stateful: timeSeriesTagsToGroup assigns replica-local
+-- group ids from a per-query collector, so the same group's rows can get different custom-key values on
+-- different replicas) -> must NOT skip the merge -> single merged row per group (3), not partials per replica.
+SELECT 'stateful custom key merged rows analyzer=1';
+SELECT count() FROM (
+    SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+    GROUP BY y SETTINGS parallel_replicas_custom_key = 'timeSeriesTagsToGroup([], ''k'', toString(y))', enable_analyzer = 1
+) SETTINGS enable_analyzer = 1;
+
 -- Expression GROUP BY key with a custom key that is a deterministic function of that expression
 -- (custom key equals the GROUP BY expression) -> safe to skip the merge; results must still be the
 -- merged totals.

@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
@@ -255,6 +256,29 @@ bool isDeterministicFunctionOfKeys(const ASTPtr & node, const std::vector<IASTHa
     return false;
 }
 
+/// Returns true if the resolved expression tree contains any stateful function. `isExpressionFunctionOfKeys`
+/// only rejects non-deterministic functions (isDeterministicInScopeOfQuery() == false); a stateful function
+/// such as `timeSeriesTagsToGroup` is marked deterministic-in-scope yet its result depends on a per-query,
+/// per-replica collector, so two replicas can assign different custom-key values to the same group. Such a
+/// key must not take the no-merge fast path.
+bool containsStatefulFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        const auto function_base = function->getFunction();
+        if (function_base && function_base->isStateful())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && containsStatefulFunction(child))
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key, const Context & context)
@@ -312,6 +336,11 @@ bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTP
 
     QueryTreeNodePtrWithHashSet key_set(query_node->getGroupBy().getNodes().begin(), query_node->getGroupBy().getNodes().end());
     if (key_set.empty())
+        return false;
+
+    /// `isExpressionFunctionOfKeys` rejects non-deterministic functions but not stateful ones (e.g.
+    /// `timeSeriesTagsToGroup`), which produce replica-local values for the same group. Reject them here.
+    if (containsStatefulFunction(custom_key_tree))
         return false;
 
     /// The custom key itself may be one of the GROUP BY keys (bare column custom key), or a
