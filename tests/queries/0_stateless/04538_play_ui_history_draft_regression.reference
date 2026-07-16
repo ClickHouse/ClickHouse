@@ -21,6 +21,12 @@ forward with a clean editor: the entry query is restored
 run-selected back: the older entry query is restored
 run-selected forward: the full run-selected editor is restored
 run-selected+draft back: the newer draft is preserved
+delayed completion: the live draft survives
+delayed completion: the completed run's result is still kept
+delayed completion: the entry does not carry run=1
+delayed completion (params changed): the query is kept
+delayed completion (params changed): the live param edit survives
+delayed completion (params changed): the entry does not carry run=1
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 reload after a color toggle over a draft: the draft is restored as editor text
