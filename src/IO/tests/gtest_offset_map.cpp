@@ -17,7 +17,7 @@ TEST(OffsetMap, SingleObject)
     const auto * o = map.findObjectAt(100);
     ASSERT_NE(o, nullptr);
     EXPECT_EQ(o->object.remote_path, "obj_a");
-    EXPECT_EQ(o->logical_offset, 0u);
+    EXPECT_EQ(o->file_offset, 0u);
 
     EXPECT_NE(map.findObjectAt(999), nullptr);
     EXPECT_EQ(map.findObjectAt(1000), nullptr);  // at end
@@ -38,17 +38,17 @@ TEST(OffsetMap, MultipleObjects)
     const auto * a = map.findObjectAt(0);
     ASSERT_NE(a, nullptr);
     EXPECT_EQ(a->object.remote_path, "blob_0");
-    EXPECT_EQ(a->logical_offset, 0u);
+    EXPECT_EQ(a->file_offset, 0u);
 
     const auto * b = map.findObjectAt(300);
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->object.remote_path, "blob_1");
-    EXPECT_EQ(b->logical_offset, 300u);
+    EXPECT_EQ(b->file_offset, 300u);
 
     const auto * c = map.findObjectAt(800);
     ASSERT_NE(c, nullptr);
     EXPECT_EQ(c->object.remote_path, "blob_2");
-    EXPECT_EQ(c->logical_offset, 800u);
+    EXPECT_EQ(c->file_offset, 800u);
 
     EXPECT_NE(map.findObjectAt(999), nullptr);
     EXPECT_EQ(map.findObjectAt(1000), nullptr);
@@ -66,7 +66,7 @@ TEST(OffsetMap, ObjectBoundary)
     const auto * o = map.findObjectAt(100);  // first byte of the second object
     ASSERT_NE(o, nullptr);
     EXPECT_EQ(o->object.remote_path, "b");
-    EXPECT_EQ(o->logical_offset, 100u);
+    EXPECT_EQ(o->file_offset, 100u);
 
     EXPECT_EQ(map.findObjectAt(200), nullptr);
 }

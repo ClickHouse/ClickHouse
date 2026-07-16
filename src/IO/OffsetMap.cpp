@@ -20,7 +20,7 @@ void OffsetMap::build(const StoredObjects & objects)
     {
         if (obj.bytes_size == StoredObject::UnknownSize)
         {
-            /// An unknown-size object must appear alone: logical offsets for
+            /// An unknown-size object must appear alone: file offsets for
             /// anything following it cannot be computed.
             if (objects.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -29,25 +29,25 @@ void OffsetMap::build(const StoredObjects & objects)
             total_size = StoredObject::UnknownSize;
             segments.push_back(Segment{
                 .object = obj,
-                .logical_offset = 0,
+                .file_offset = 0,
                 .size = StoredObject::UnknownSize,
             });
             return;
         }
         segments.push_back(Segment{
             .object = obj,
-            .logical_offset = total_size,
+            .file_offset = total_size,
             .size = obj.bytes_size,
         });
         total_size += obj.bytes_size;
     }
 }
 
-const OffsetMap::Segment * OffsetMap::findObjectAt(size_t logical_offset) const
+const OffsetMap::Segment * OffsetMap::findObjectAt(size_t file_offset) const
 {
     /// Linear scan: the segment count equals the file's object count, a handful at most.
     for (const auto & seg : segments)
-        if (seg.logical_offset <= logical_offset && logical_offset < seg.logical_offset + seg.size)
+        if (seg.file_offset <= file_offset && file_offset < seg.file_offset + seg.size)
             return &seg;
     return nullptr;
 }

@@ -227,6 +227,14 @@ private:
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
+    /// The ONLY logical<->physical coordinate converters. The offset map, object offsets, cache
+    /// coordinates and the source `file_base` are PHYSICAL (header-inclusive file coords); the
+    /// consumer API (`position`, `read_until`, `totalSize`, served windows) is LOGICAL (payload
+    /// coords). Cross exactly here -- a raw `+/- data_start_offset` anywhere else is a bug. No byte
+    /// below the header reaches a logical consumer, so a physical value below it is corrupt input.
+    size_t toPhys(size_t logical) const { return logical + data_start_offset; }
+    size_t toLogical(size_t physical) const { chassert(physical >= data_start_offset); return physical - data_start_offset; }
+
     /// Whether served payload is encrypted (`data_start_offset` is the header size,
     /// 0 when there is no encryption / no SSL).
     bool needsDecryption() const { return data_start_offset > 0; }

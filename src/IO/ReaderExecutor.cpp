@@ -234,7 +234,7 @@ bool ReaderExecutor::shouldOpenLongConnection() const
     if (long_conn || !long_connection_limit)
         return false;
     /// Open a long connection when the predicted run end runs past this window (physical coords).
-    const size_t phys = position + data_start_offset;
+    const size_t phys = toPhys(position);
     return clampReach(fetch_tracker.predictedEnd(), phys) > phys + window_size;
 }
 
@@ -249,7 +249,7 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
 
     /// Bound the held GET to the predicted run end, clamped to the object: a growing run reads
     /// further ahead, sparse access stays small, so it never over-reads a whole object for a slice.
-    const size_t phys = position + data_start_offset;
+    const size_t phys = toPhys(position);
     const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
@@ -455,8 +455,7 @@ size_t ReaderExecutor::totalSize() const
     /// (initDecryption throws on a partial file), so physical is either 0 or >= data_start_offset.
     if (physical == 0)
         return 0;
-    chassert(physical >= data_start_offset);
-    return physical - data_start_offset;
+    return toLogical(physical);
 }
 
 void ReaderExecutor::addDecryptionLayer(
@@ -561,10 +560,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (atEnd())
         return {};
 
-    /// The offset map and object sizes are physical; logical `position` maps to physical
-    /// `position + data_start_offset` (the encryption headers sit at the file front, and
-    /// `data_start_offset` is 0 without encryption).
-    const size_t position_physical = position + data_start_offset;
+    /// The offset map and object sizes are physical; `toPhys` crosses logical `position` into it.
+    const size_t position_physical = toPhys(position);
     const auto * segment = offset_map.findObjectAt(position_physical);
     if (!segment)
     {
@@ -573,7 +570,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     }
 
     const StoredObject & object = segment->object;
-    const size_t object_offset = position_physical - segment->logical_offset;
+    const size_t object_offset = position_physical - segment->file_offset;
 
     /// Clamp the block to the object boundary so a window never straddles two
     /// objects; the next call continues in the next object. Unknown total size
@@ -598,7 +595,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// Served at FILE (physical) offsets; a short window is fine, the next call continues.
     ChainedBuffers chain = cache_chain.empty()
         ? readSource(object, object_offset, want, /*file_base=*/position_physical)
-        : serveThroughCaches(object, segment->logical_offset, object_offset, want);
+        : serveThroughCaches(object, segment->file_offset, object_offset, want);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
@@ -614,7 +611,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     }
     stats.add(Stats::RequestedBytes, got);
 
-    /// Rebase physical->logical, then decrypt each node at its logical offset.
+    /// The consumer exit: rebase physical->logical, then decrypt each node at its logical offset.
+    /// The one raw `data_start_offset` use -- `shift` takes a signed delta, not a coordinate.
     chain.shift(-static_cast<ssize_t>(data_start_offset));
     chain = decryptWindow(std::move(chain));
     position += got;
@@ -644,7 +642,7 @@ void ReaderExecutor::seek(size_t new_position)
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
     /// Feed the estimator; a held connection that can't continue to `new_position` is dropped
     /// lazily by the next `readNextWindow` (its `canContinue` check).
-    fetch_tracker.recordSeek(new_position + data_start_offset);
+    fetch_tracker.recordSeek(toPhys(new_position));
     position = new_position;
     reached_eof = false;
 }
