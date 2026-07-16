@@ -65,6 +65,12 @@ jobs:
 
   Releases:
     needs: AutoReleaseInfo
+    # The reusable create_release.yml declares `permissions: write-all`; a called
+    # workflow cannot hold more permission than its caller grants, so the calling
+    # job must grant write-all too, otherwise the run fails at startup with a
+    # workflow-file error. (The pre-Praktika create_release.yml set no
+    # permissions and inherited the caller's, so this was not needed before.)
+    permissions: write-all
     strategy:
       # Without this, a failure on one release branch cancels the queued matrix entries for the others.
       fail-fast: false
