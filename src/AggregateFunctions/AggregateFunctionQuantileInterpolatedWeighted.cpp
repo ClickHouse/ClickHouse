@@ -32,6 +32,7 @@ namespace
 template <typename Value>
 struct QuantileInterpolatedWeighted
 {
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
     struct Int128Hash
     {
         size_t operator()(Int128 x) const

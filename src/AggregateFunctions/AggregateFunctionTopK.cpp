@@ -129,8 +129,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    bool mergeIsEquivalentToAddingRows() const override { return false; }
-
     void ensureCapacity(AggregateFunctionTopKData<T>::Set & set) const
     {
         if (unlikely(set.capacity() != reserved))
@@ -382,8 +380,6 @@ public:
     {
         return true;
     }
-
-    bool mergeIsEquivalentToAddingRows() const override { return false; }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {

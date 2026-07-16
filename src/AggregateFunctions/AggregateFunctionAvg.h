@@ -124,6 +124,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).numerator += this->data(rhs).numerator;

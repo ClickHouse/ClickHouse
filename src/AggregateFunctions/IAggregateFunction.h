@@ -201,11 +201,12 @@ public:
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
 
     /// Whether merging states built from consecutive row ranges gives the same result
-    /// as adding all the rows into one state (up to floating-point rounding). False
-    /// where the result depends on the split: randomized reservoirs, lossy sketches,
-    /// results exposing hash-table order. WindowTransform relies on this to
-    /// re-aggregate sliding frames from partial states.
-    virtual bool mergeIsEquivalentToAddingRows() const { return true; }
+    /// as adding all the rows into one state (up to floating-point rounding).
+    /// WindowTransform relies on this to re-aggregate sliding frames from partial
+    /// states. Opt-in: override to true only after verifying the equivalence — it does
+    /// not hold e.g. for randomized reservoirs, lossy sketches, or results exposing
+    /// hash-table order.
+    virtual bool mergeIsEquivalentToAddingRows() const { return false; }
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 

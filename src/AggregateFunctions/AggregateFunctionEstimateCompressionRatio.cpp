@@ -138,9 +138,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// Compressing each range independently != compressing the concatenation.
-    bool mergeIsEquivalentToAddingRows() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = columns[0];

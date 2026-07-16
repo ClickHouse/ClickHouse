@@ -474,6 +474,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);

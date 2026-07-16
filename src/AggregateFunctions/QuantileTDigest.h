@@ -43,11 +43,6 @@ namespace ErrorCodes
 template <typename T>
 class QuantileTDigest
 {
-public:
-    /// Centroid compression depends on how the input was split into states.
-    static constexpr bool merge_is_equivalent_to_adding_rows = false;
-
-private:
     friend class TDigestStatistic;
     using Value = Float32;
     using Count = Float32;

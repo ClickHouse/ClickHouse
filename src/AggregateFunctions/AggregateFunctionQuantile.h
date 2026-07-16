@@ -221,7 +221,7 @@ public:
         if constexpr (requires { Data::merge_is_equivalent_to_adding_rows; })
             return Data::merge_is_equivalent_to_adding_rows;
         else
-            return true;
+            return false;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override

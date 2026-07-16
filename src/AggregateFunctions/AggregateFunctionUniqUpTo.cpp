@@ -201,6 +201,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -260,6 +262,8 @@ public:
     String getName() const override { return "uniqUpTo"; }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

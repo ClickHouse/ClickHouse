@@ -71,10 +71,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// Capped, the surviving uniques differ; uncapped, the result array exposes
-    /// hash-table order, which depends on the insertion order of colliding keys.
-    bool mergeIsEquivalentToAddingRows() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
@@ -176,8 +172,6 @@ public:
     {
         return true;
     }
-
-    bool mergeIsEquivalentToAddingRows() const override { return false; }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {

@@ -419,10 +419,6 @@ private:
 template <typename Value>
 class QuantileGK
 {
-public:
-    /// Sketch compression depends on how the input was split into states.
-    static constexpr bool merge_is_equivalent_to_adding_rows = false;
-
 private:
     using Data = ApproxSampler<Value>;
     Data data;

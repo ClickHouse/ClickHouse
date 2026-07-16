@@ -25,6 +25,7 @@ namespace
 template <typename Value, typename CumulativeHistogramValue>
 struct QuantilePrometheusHistogram
 {
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
     using UnderlyingType = NativeType<Value>;
     using Hasher = HashCRC32<UnderlyingType>;
 
