@@ -11,7 +11,8 @@ PUFFIN="$DATA/spark_deletion_vector.puffin"
 for PUFFIN_FILE in \
     "$DATA/overflow_offset_length.puffin" \
     "$DATA/negative_offset.puffin" \
-    "$DATA/length_exceeds_file.puffin"
+    "$DATA/length_exceeds_file.puffin" \
+    "$DATA/blob_overlaps_footer.puffin"
 do
     echo "--- $(basename "$PUFFIN_FILE") ---"
     $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN_FILE', Puffin)" 2>&1 | grep -oF 'Puffin blob 0: offset/length out of bounds'

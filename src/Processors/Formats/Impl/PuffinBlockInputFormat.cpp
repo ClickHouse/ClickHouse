@@ -71,19 +71,19 @@ void checkMagic(const UInt8 * p, const char * context)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin magic ({})", context);
 }
 
-void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t data_size, size_t blob_index)
+/// `blob_region_end` is the end of the `Blob₁ ... Blobₙ` region, i.e. the offset of the footer's
+/// leading magic. Blob offset/length must stay within [PUFFIN_MAGIC, blob_region_end), so a malformed
+/// footer cannot point a blob into the footer payload or trailer.
+void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t blob_region_end, size_t blob_index)
 {
-    if (offset < 0 || length < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: offset/length out of bounds", blob_index);
-
-    if (offset > static_cast<Int64>(data_size) || length > static_cast<Int64>(data_size))
+    if (offset < static_cast<Int64>(sizeof(PUFFIN_MAGIC)) || length < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: offset/length out of bounds", blob_index);
 
     Int64 end = 0;
     if (common::addOverflow(offset, length, end))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: offset/length out of bounds", blob_index);
 
-    if (static_cast<UInt64>(end) > data_size)
+    if (static_cast<UInt64>(end) > blob_region_end)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: offset/length out of bounds", blob_index);
 }
 
@@ -214,7 +214,7 @@ void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & 
         blob.properties.emplace(key, val.extract<String>());
 }
 
-std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_size)
+std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)
 {
     Poco::JSON::Parser parser;
     auto root = parser.parse(footer_json);
@@ -276,7 +276,7 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_
         for (size_t j = 0; j < fields_arr->size(); ++j)
             blob.fields.push_back(fields_arr->getElement<Int32>(static_cast<unsigned>(j)));
 
-        validatePuffinBlobBounds(blob.offset, blob.length, data_size, i);
+        validatePuffinBlobBounds(blob.offset, blob.length, blob_region_end, i);
 
         blobs.push_back(std::move(blob));
     }
@@ -333,7 +333,8 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
     else
         footer_json = std::move(footer_payload);
 
-    return parseFooterJSON(footer_json, file_size);
+    const size_t blob_region_end = payload_start - sizeof(PUFFIN_MAGIC);
+    return parseFooterJSON(footer_json, blob_region_end);
 }
 
 PuffinFooter readPuffinFooter(ReadBuffer & buf)

@@ -122,6 +122,9 @@ def generate_invalid_blob_bounds() -> None:
         "overflow_offset_length.puffin": (9223372036854775797, 20),
         "negative_offset.puffin": (-1, 10),
         "length_exceeds_file.puffin": (4, 10_000),
+        # Offset/length stay within the total file size, but the blob would extend past the
+        # end of the blob region (i.e. into the footer payload), which must also be rejected.
+        "blob_overlaps_footer.puffin": (4, len(BLOB_PLACEHOLDER) + 8),
     }
     for name, (offset, length) in cases.items():
         footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)

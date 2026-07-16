@@ -4,6 +4,8 @@ Puffin blob 0: offset/length out of bounds
 Puffin blob 0: offset/length out of bounds
 --- length_exceeds_file.puffin ---
 Puffin blob 0: offset/length out of bounds
+--- blob_overlaps_footer.puffin ---
+Puffin blob 0: offset/length out of bounds
 --- invalid_roaring_bitmap.puffin ---
 Failed to deserialize deletion vector roaring bitmap
 --- invalid_bitmap_key.puffin ---
