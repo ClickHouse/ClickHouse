@@ -1483,6 +1483,73 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
+/// A single `JoinStepLogical` whose expression DAG already contains two INPUT nodes with the same
+/// name cannot be reconstructed by `JoinExpressionActions`: the reconstruction maps each input to a
+/// join side by name and requires the input count to equal the two sides' column counts. Such a step
+/// arises, for example, when a correlated scalar subquery is decorrelated and its projection exposes
+/// the same qualified identifier twice. Detect it so the reordering can be skipped.
+static bool joinStepHasDuplicateInputNames(const JoinStepLogical & join_step)
+{
+    std::unordered_set<std::string_view> seen_names;
+    for (const auto * input : join_step.getActionsDAG().getInputs())
+    {
+        if (!seen_names.insert(input->result_name).second)
+            return true;
+    }
+    return false;
+}
+
+/// Walk the join steps the optimizer would flatten into the query graph (mirroring `buildQueryGraph`)
+/// and report whether any of them has duplicate-named inputs, in which case reordering must be skipped.
+static bool joinGraphHasDuplicateInputNames(
+    const QueryPlan::Node & node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    bool merge_expression_into_join)
+{
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(node.step.get());
+    if (!join_step || node.children.size() != 2)
+        return false;
+
+    if (joinStepHasDuplicateInputNames(*join_step))
+        return true;
+
+    const auto descend = [&](const QueryPlan::Node * child, int child_limit)
+    {
+        const auto * effective = child;
+        if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
+            expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
+            && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
+        {
+            effective = effective->children[0];
+        }
+
+        if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(effective->step.get());
+            child_join_step && !child_join_step->isOptimized())
+        {
+            const auto child_join_kind = child_join_step->getJoinOperator().kind;
+            const bool allow_child_join_kind
+                = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
+                && child_join_step->getJoinOperator().strictness == JoinStrictness::All
+                && child_join_step->typeChangingSides().empty();
+
+            if (child_join_step->getJoinSettings() == join_settings && child_limit > 1 && allow_child_join_kind)
+                return joinGraphHasDuplicateInputNames(*effective, child_limit, join_settings, merge_expression_into_join);
+        }
+        return false;
+    };
+
+    const auto join_kind = join_step->getJoinOperator().kind;
+    const auto type_changing_sides = join_step->typeChangingSides();
+    const bool allow_left_subgraph
+        = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
+    const bool allow_right_subgraph
+        = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
+
+    return descend(node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0)
+        || descend(node.children[1], allow_right_subgraph ? join_steps_limit - 1 : 0);
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -1529,6 +1596,16 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
     if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings()))
+    {
+        join_step->setOptimized();
+        return;
+    }
+
+    /// Skip reordering when a participating join step already exposes duplicate-named inputs (e.g. a
+    /// decorrelated correlated subquery projecting the same qualified identifier twice), which the
+    /// `JoinExpressionActions`-based reconstruction cannot represent. The unoptimized join handles it.
+    if (joinGraphHasDuplicateInputNames(
+            node, query_graph_size_limit, join_step->getJoinSettings(), optimization_settings.merge_expression_into_join))
     {
         join_step->setOptimized();
         return;
