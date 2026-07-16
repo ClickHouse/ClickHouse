@@ -96,9 +96,25 @@ SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
                  concat('session_', 'token') = 'SEKRIT_EXPRTOK',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- The URL itself can carry credentials: the userinfo and presigned-URL query parameters must be
+-- masked while the host, path and non-credential parameters stay visible. The one-character bucket
+-- makes S3 URI validation reject the query before any network access.
+SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG&partNumber=7',
+                 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
+-- Same for BACKUP and the Backup database reconstructor.
+BACKUP TABLE nonexistent_04510 TO S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
+                 'ak', 'SEKRIT_SAK'); -- { serverError BAD_ARGUMENTS }
+CREATE DATABASE db_04510_authurl ENGINE = Backup('', S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
+                 'ak', 'SEKRIT_SAK')); -- { serverError BAD_ARGUMENTS }
+
 -- Named-collection form: an extra_credentials override alongside a collection must be masked too.
 -- The collection need not exist; masking runs on the AST before the collection is resolved.
 SELECT * FROM s3(nc_04510_missing, extra_credentials(external_id = 'SEKRIT_EID'),
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
+-- A url override on a named collection can carry credentials too.
+SELECT * FROM s3(nc_authurl_missing, url = 'https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 
 -- Named-collection form: a headers() override must have its values masked too.

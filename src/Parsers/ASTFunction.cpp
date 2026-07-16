@@ -809,6 +809,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (!settings.show_secrets)
             {
+                /// An argument with a partially masked replacement (e.g. a presigned S3 URL whose
+                /// credential parameters are hidden but whose host and path are kept).
+                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
+                {
+                    ostr << replaced->second;
+                    continue;
+                }
+
                 /// A nested secret map like `headers(..)` / `extra_credentials(..)` has its values
                 /// hidden but its keys kept. Checked before the secret-span branch below because such a
                 /// map can itself fall inside a named span, where it must not be formatted as `key = ...`.

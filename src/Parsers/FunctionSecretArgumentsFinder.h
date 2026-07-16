@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -60,10 +61,15 @@ public:
         std::string replacement;
         /// Whether to wrap a result using full argument replacement in quotes.
         bool quote_replacement = true;
+        /// Per-argument replacements by raw argument index; the text is emitted verbatim (it must carry
+        /// its own quoting). Used when only a part of an argument is secret, e.g. a presigned S3 URL
+        /// keeps its host and path while the credential query parameters are hidden. Unlike
+        /// `replacement`, this composes with the other masking (span, nested maps).
+        std::map<size_t, std::string> replaced_arguments;
 
         bool hasSecrets() const
         {
-            return count != 0 || !nested_maps.empty();
+            return count != 0 || !nested_maps.empty() || !replaced_arguments.empty();
         }
     };
 
@@ -112,6 +118,11 @@ protected:
     /// engine and the backup S3 destination): mask every positional from `first_slot` on, failing
     /// closed on invalid extra positionals, which are logged before validation rejects them.
     void maskS3PositionalsFrom(const std::vector<size_t> & positional, size_t first_slot);
+
+    /// The S3 URL itself can carry credentials: a userinfo part and presigned-URL query parameters.
+    /// If the url positional does, replace it with a partially masked copy that keeps the host and
+    /// path visible. The field set mirrors `BackupInfo::removeCredentialsFromS3URL`.
+    void maskS3UrlArgument(const std::vector<size_t> & positional, size_t url_slot);
 
     void findOrdinaryFunctionSecretArguments();
     void findMySQLFunctionSecretArguments();

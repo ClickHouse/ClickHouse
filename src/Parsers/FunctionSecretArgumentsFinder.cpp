@@ -12,6 +12,25 @@
 namespace DB
 {
 
+namespace
+{
+    /// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
+    /// presigned-URL query parameters. The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL`
+    /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
+    bool maskS3URICredentials(String & url)
+    {
+        bool changed = false;
+        static re2::RE2 userinfo_pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#@]+@";
+        if (RE2::Replace(&url, userinfo_pattern, "\\1[HIDDEN]@"))
+            changed = true;
+        static re2::RE2 presign_pattern
+            = "([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\\-]*|X-Goog-[A-Za-z0-9\\-]*)=)[^&#]*";
+        if (RE2::GlobalReplace(&url, presign_pattern, "\\1[HIDDEN]"))
+            changed = true;
+        return changed;
+    }
+}
+
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
 {
     if (index >= function->arguments->size())
@@ -67,7 +86,25 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
                 if (f->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
                 {
                     if (std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys))
+                    {
                         markSecretArgument(i, /* argument_is_named= */ true);
+                    }
+                    else if (key == "url")
+                    {
+                        /// A `url` override can itself carry credentials (userinfo, presign parameters).
+                        String url;
+                        if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
+                        {
+                            if (maskS3URICredentials(url))
+                                result.replaced_arguments[i] = "url = '" + url + "'";
+                        }
+                        else
+                        {
+                            /// A url built from an expression can embed credentials in its pieces;
+                            /// we cannot evaluate it here, so fail closed and hide the value.
+                            markSecretArgument(i, /* argument_is_named= */ true);
+                        }
+                    }
                 }
                 else
                 {
@@ -114,6 +151,17 @@ void FunctionSecretArgumentsFinder::maskS3PositionalsFrom(const std::vector<size
 {
     for (size_t slot = first_slot; slot < positional.size(); ++slot)
         markSecretArgument(positional[slot]);
+}
+
+void FunctionSecretArgumentsFinder::maskS3UrlArgument(const std::vector<size_t> & positional, size_t url_slot)
+{
+    if (url_slot >= positional.size())
+        return;
+    String url;
+    if (!tryGetStringFromArgument(positional[url_slot], &url, /* allow_identifier= */ false))
+        return;
+    if (maskS3URICredentials(url))
+        result.replaced_arguments[positional[url_slot]] = "'" + url + "'";
 }
 
 void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
@@ -363,6 +411,7 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
     }
 
     const auto positional = classifyS3Arguments();
+    maskS3UrlArgument(positional, url_slot);
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -708,6 +757,7 @@ void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
     }
 
     const auto positional = classifyS3Arguments();
+    maskS3UrlArgument(positional, 0);
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -831,7 +881,9 @@ void FunctionSecretArgumentsFinder::findS3DatabaseSecretArguments()
         /// S3('url', 'access_key_id', 'secret_access_key' [, session_token = ..., google_adc_* = ...]):
         /// the engine accepts no positional argument beyond secret_access_key, so fail closed from
         /// slot 2 on. Non-secret named overrides (e.g. `use_environment_credentials = 1`) stay visible.
-        maskS3PositionalsFrom(classifyS3Arguments(), 2);
+        const auto positional = classifyS3Arguments();
+        maskS3UrlArgument(positional, 0);
+        maskS3PositionalsFrom(positional, 2);
     }
 }
 
@@ -908,7 +960,11 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     has_secret = true;
                 }
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
+                {
+                    /// A `url` override can itself carry credentials (userinfo, presign parameters).
+                    has_secret |= maskS3URICredentials(value);
                     replacement += "'" + value + "'";
+                }
                 else
                     replacement += "'[HIDDEN]'"; /// Cannot reconstruct the literal safely; hide it rather than leak.
             }
@@ -968,7 +1024,11 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         if (arg->isIdentifier() && arg->tryGetString(&arg_value, /* allow_identifier= */ true))
             replacement += arg_value; /// e.g. the named collection name, kept unquoted.
         else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
+        {
+            /// The url positional can itself carry credentials (userinfo, presign parameters).
+            has_secret |= maskS3URICredentials(arg_value);
             replacement += "'" + arg_value + "'";
+        }
         else
         {
             /// Fail closed: an argument we cannot reconstruct safely (e.g. an unsupported tail like
@@ -1007,6 +1067,7 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
         /// slot 2. Any other positional count is invalid but logged before validation, and the intended
         /// slots are unknowable, so fail closed on everything after the url.
         const auto positional = classifyS3Arguments(0, /* positionals_allowed_after_named= */ true);
+        maskS3UrlArgument(positional, 0);
         if (positional.size() == 3)
             markSecretArgument(positional[2]);
         else if (positional.size() > 1)
