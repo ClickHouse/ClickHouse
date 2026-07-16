@@ -274,6 +274,9 @@ public:
 
     virtual bool isReadOnly() const = 0;
 
+    /// See `IDisk::isPathOnLocalFilesystem`.
+    virtual bool isPathOnLocalFilesystem() const { return true; }
+
     virtual bool isTransactional() const
     {
         return false;

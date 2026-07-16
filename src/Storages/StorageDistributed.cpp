@@ -1623,6 +1623,12 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
+    if (!disk->isPathOnLocalFilesystem())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue",
+            disk->getName());
+
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
 

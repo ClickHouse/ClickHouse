@@ -479,6 +479,12 @@ public:
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
+    /// Whether `getPath()` refers to a real, host-accessible filesystem directory that
+    /// callers may use directly with `std::filesystem`/`fs::` outside of the `IDisk` API
+    /// (e.g. `StorageDistributed`'s local insert queue directories). Purely virtual disks
+    /// backed by in-memory metadata have no such directory and return `false` here.
+    virtual bool isPathOnLocalFilesystem() const { return true; }
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 

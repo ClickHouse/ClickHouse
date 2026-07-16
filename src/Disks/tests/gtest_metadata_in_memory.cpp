@@ -180,6 +180,15 @@ TEST_F(MetadataInMemoryTest, TestRootPathSemantics)
     EXPECT_EQ(iter_paths, std::vector<std::string>({"a", "top_file"}));
 }
 
+/// The root path above is just a placeholder, not a real host directory: callers that need to do
+/// raw filesystem I/O outside the `IMetadataStorage` API (e.g. `StorageDistributed`'s local insert
+/// queue) must check `isPathOnLocalFilesystem` and fail closed instead of using `getPath()` as one.
+TEST_F(MetadataInMemoryTest, TestNotOnLocalFilesystem)
+{
+    auto metadata = getMetadataStorage();
+    EXPECT_FALSE(metadata->isPathOnLocalFilesystem());
+}
+
 /// `MergeTree` reads a part directory's mtime as the part `modification_time`
 /// (`DataPartStorageOnDiskBase::getLastModified`), and sets it on the temp part directory just
 /// before renaming it into place. Verify directories carry timestamps: `getLastModified` does

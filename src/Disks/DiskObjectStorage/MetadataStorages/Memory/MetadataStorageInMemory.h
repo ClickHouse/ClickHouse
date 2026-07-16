@@ -60,6 +60,10 @@ public:
 
     bool isReadOnly() const override { return false; }
 
+    /// `getPath()` returns a placeholder root ("/"), not a real host directory: there is
+    /// nothing on the local filesystem backing this metadata storage.
+    bool isPathOnLocalFilesystem() const override { return false; }
+
     bool supportWritingWithAppend() const override { return true; }
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
