@@ -73,6 +73,14 @@ public:
     /// The function returns false if data for this specific root path is already being restored by another table.
     virtual bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) = 0;
 
+    /// Registers an EmbeddedRocksDB table sharing rocksdb_dir with the given election_id. Tables that share
+    /// one directory (a writable table plus read_only siblings) must replay the shared RocksDB only once.
+    virtual void addRocksDBTable(const String & rocksdb_dir, const String & election_id) = 0;
+
+    /// Returns true if the given table is the elected owner that should replay the data for rocksdb_dir.
+    /// Must be called only after all tables sharing the directory have registered via addRocksDBTable().
+    virtual bool isRocksDBDataOwner(const String & rocksdb_dir, const String & election_id) const = 0;
+
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     virtual void generateUUIDForTable(ASTCreateQuery & create_query) = 0;

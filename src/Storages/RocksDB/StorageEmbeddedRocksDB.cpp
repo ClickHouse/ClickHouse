@@ -34,8 +34,11 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryReference.h>
 #include <Backups/IBackup.h>
+#include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
+#include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -546,17 +549,49 @@ private:
     String file_path;
 };
 
+/// Election id used to pick a single owner among tables sharing one rocksdb_dir. A writable table (there
+/// is at most one, enforced by RocksDB's LOCK) always sorts above every read_only table, so it is elected
+/// when present. Its handle also sees the freshest data (including the unflushed memtable), which is what
+/// the backup must capture. The table uuid keeps ids unique across tables with the same writability.
+String StorageEmbeddedRocksDB::backupElectionId() const
+{
+    return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", toString(getStorageID().uuid));
+}
+
 void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
-    TemporaryDataOnDiskSettings tmp_data_settings;
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
-    auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. Register
+    /// this table so the elected owner backs up the shared RocksDB once and siblings only reference it. This
+    /// avoids dumping the same directory multiple times from independent snapshots on different handles,
+    /// whose contents could diverge if writes race between the dumps.
+    auto coordination = backup_entries_collector.getBackupCoordination();
+    coordination->addRocksDBTable(rocksdb_dir, backupElectionId(), data_path_in_backup);
 
-    backup_entries_collector.addBackupEntries(
-        std::make_shared<EmbeddedRocksDBBackup>(
-            std::static_pointer_cast<const StorageEmbeddedRocksDB>(shared_from_this()), data_path_in_backup, std::move(tmp_data))
-            ->getBackupEntries());
+    /// Runs after all tables have registered, so getRocksDBDataPath() returns the elected owner's path.
+    auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
+    {
+        auto owner_data_path = coordination->getRocksDBDataPath(rocksdb_dir);
+        if (owner_data_path != my_data_path_in_backup)
+        {
+            /// A sibling table: reference the owner's data.bin instead of dumping the shared RocksDB again.
+            String source_path = fs::path(my_data_path_in_backup) / rocksdb_backup_data_filename;
+            String target_path = fs::path(owner_data_path) / rocksdb_backup_data_filename;
+            backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
+            return;
+        }
+
+        TemporaryDataOnDiskSettings tmp_data_settings;
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+        auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+
+        backup_entries_collector.addBackupEntries(
+            std::make_shared<EmbeddedRocksDBBackup>(
+                std::static_pointer_cast<const StorageEmbeddedRocksDB>(shared_from_this()), my_data_path_in_backup, std::move(tmp_data))
+                ->getBackupEntries());
+    };
+
+    backup_entries_collector.addPostTask(post_collecting_task);
 }
 
 /// backupData() always writes data.bin (holding zero records for an empty table). Peeking at the
@@ -587,11 +622,38 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
             "silently produce an empty table",
             getStorageID().getNameForLogs(), data_file);
 
+    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. The shared
+    /// RocksDB must be replayed only once; register this table so a single owner is elected. The owner is the
+    /// writable table when present (a read_only handle rejects Write()), so a {rw, ro} pair restores through
+    /// the writable table and the read_only sibling contributes no data restore.
+    auto restore_coordination = restorer.getRestoreCoordination();
+    restore_coordination->addRocksDBTable(rocksdb_dir, backupElectionId());
+
+    /// The ownership decision and all writes run inside the data restore task, which executes after every
+    /// table has registered (insertDataToTables() waits for all restoreDataFromBackup() calls before the
+    /// data restore tasks run), so isRocksDBDataOwner() sees the full set of siblings.
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()),
+         backup,
+         data_path_in_backup,
+         restore_coordination,
+         allow_non_empty_tables = restorer.isNonEmptyTableAllowed()]
+        {
+            if (!restore_coordination->isRocksDBDataOwner(storage->rocksdb_dir, storage->backupElectionId()))
+                return;
+            storage->restoreDataOwner(backup, data_path_in_backup, allow_non_empty_tables);
+        });
+}
+
+void StorageEmbeddedRocksDB::restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables)
+{
+    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+
     /// A read_only table opens its handle with OpenForReadOnly()/DBWithTTL::Open(..., read_only) over an
-    /// externally-managed directory and rejects the Write() a data restore issues. A backup that carries
-    /// rows therefore cannot be restored into it; reject up front with a clear error instead of failing
-    /// later with an opaque RocksDB write error. An empty backup writes nothing, so it is still allowed
-    /// (subject to the non-empty-table guard below, exactly like a writable table).
+    /// externally-managed directory and rejects the Write() a data restore issues. If this read_only table
+    /// is the elected owner (no writable sibling exists) and the backup carries rows, reject up front with a
+    /// clear error instead of failing later with an opaque RocksDB write error. An empty backup writes
+    /// nothing, so it is still allowed (subject to the non-empty-table guard below).
     bool backup_has_rows = backupHasRows(backup, data_file);
     if (read_only && backup_has_rows)
         throw Exception(
@@ -604,7 +666,7 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
     /// Unless allow_non_empty_tables is set, restoring into a table that already holds rows is rejected.
     /// This guard applies to read_only tables too: an empty backup must not silently "succeed" and leave
     /// the stale rows of a pre-populated external directory in place.
-    if (!restorer.isNonEmptyTableAllowed())
+    if (!allow_non_empty_tables)
     {
         bool empty = false;
         {
@@ -626,9 +688,7 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
     if (!backup_has_rows)
         return;
 
-    restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()), backup, data_path_in_backup]
-        { storage->restoreDataImpl(backup, data_path_in_backup); });
+    restoreDataImpl(backup, data_path_in_backup);
 }
 
 void StorageEmbeddedRocksDB::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)

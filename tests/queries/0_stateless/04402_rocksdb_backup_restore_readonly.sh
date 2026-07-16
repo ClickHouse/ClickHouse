@@ -19,16 +19,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 RDB_DIR="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb"
 RDB_DIR_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_empty"
 RDB_DIR_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_pop"
+RDB_DIR_SHARED="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_shared"
 BACKUP_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 BACKUP_ID_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_empty"
 BACKUP_ID_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_pop"
+BACKUP_ID_SHARED="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared"
 BACKUP_NAME="Disk('backups', '${BACKUP_ID}')"
 BACKUP_NAME_EMPTY="Disk('backups', '${BACKUP_ID_EMPTY}')"
 BACKUP_NAME_POP="Disk('backups', '${BACKUP_ID_POP}')"
+BACKUP_NAME_SHARED="Disk('backups', '${BACKUP_ID_SHARED}')"
 USER_FILES_PATH=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'user_files_path'")
 BACKUPS_PATH=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = 'backups'")
 rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
-    "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}" "${BACKUPS_PATH:?}/${BACKUP_ID_POP}"
+    "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" \
+    "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}" "${BACKUPS_PATH:?}/${BACKUP_ID_POP}" \
+    "${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}"
 
 # Populate an on-disk RocksDB directory through a writable table, then drop it (the explicit dir stays).
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_rw SYNC"
@@ -97,6 +102,35 @@ $CLICKHOUSE_CLIENT -q "RESTORE TABLE rdb_ro_pop FROM ${BACKUP_NAME_POP} SETTINGS
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb_ro_pop"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_ro_pop SYNC"
 
+# A writable table plus a read_only table over the SAME rocksdb_dir (the supported shared-dir mode, see
+# tests/integration/test_rocksdb_read_only). BACKUP DATABASE dumps the shared RocksDB only once, from the
+# writable owner; the read_only sibling references that single data.bin instead of dumping an independent
+# snapshot. On restore the writable owner replays the data once and the read_only sibling contributes no
+# write, so the {rw, ro} pair restores cleanly (no spurious read_only rejection) and both see the data.
+# See https://github.com/ClickHouse/ClickHouse/pull/109327
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_shared SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_shared"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_shared.rw (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SHARED}') PRIMARY KEY k"
+$CLICKHOUSE_CLIENT -q "INSERT INTO ${CLICKHOUSE_DATABASE}_shared.rw SELECT number, 'v' || toString(number) FROM numbers(300)"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_shared.ro (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SHARED}', 1) PRIMARY KEY k"
+$CLICKHOUSE_CLIENT -q "BACKUP DATABASE ${CLICKHOUSE_DATABASE}_shared TO ${BACKUP_NAME_SHARED} FORMAT Null"
+
+# Lose the data (TRUNCATE keeps a valid RocksDB directory that the read_only handle can still open), then
+# restore in place: the writable owner recovers all rows and the restore does not fail on the read_only
+# sibling.
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ${CLICKHOUSE_DATABASE}_shared.rw"
+$CLICKHOUSE_CLIENT -q "SELECT 'shared rw after truncate', count() FROM ${CLICKHOUSE_DATABASE}_shared.rw"
+$CLICKHOUSE_CLIENT -q "RESTORE DATABASE ${CLICKHOUSE_DATABASE}_shared FROM ${BACKUP_NAME_SHARED} SETTINGS allow_non_empty_tables = 1 FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "SHARED_DIR_RESTORE_OK"
+$CLICKHOUSE_CLIENT -q "SELECT 'shared rw restored', count(), sum(k) FROM ${CLICKHOUSE_DATABASE}_shared.rw"
+# The read_only table snapshots the directory at open time; re-attach it to observe the restored data.
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${CLICKHOUSE_DATABASE}_shared.ro"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}_shared.ro"
+$CLICKHOUSE_CLIENT -q "SELECT 'shared ro sees data', count(), sum(k) FROM ${CLICKHOUSE_DATABASE}_shared.ro"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_shared SYNC"
+
 rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
+    "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" \
     "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUP_ID_EMPTY:+${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}}" \
-    "${BACKUP_ID_POP:+${BACKUPS_PATH:?}/${BACKUP_ID_POP}}"
+    "${BACKUP_ID_POP:+${BACKUPS_PATH:?}/${BACKUP_ID_POP}}" \
+    "${BACKUP_ID_SHARED:+${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}}"

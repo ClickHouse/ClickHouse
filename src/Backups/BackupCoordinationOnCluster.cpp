@@ -219,6 +219,7 @@ void BackupCoordinationOnCluster::createRootNodes()
         zk->createIfNotExists(zookeeper_path + "/repl_access", "");
         zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
         zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
+        zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
         zk->createIfNotExists(zookeeper_path + "/file_infos", "");
         zk->createIfNotExists(zookeeper_path + "/writing_files", "");
     });
@@ -751,6 +752,86 @@ String BackupCoordinationOnCluster::getKeeperMapDataPath(const String & table_zo
     std::lock_guard lock(keeper_map_tables_mutex);
     prepareKeeperMapTables();
     return keeper_map_tables->getDataPath(table_zookeeper_root_path);
+}
+
+void BackupCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup)
+{
+    {
+        std::lock_guard lock{rocksdb_tables_mutex};
+        if (rocksdb_tables)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addRocksDBTable() must not be called after preparing");
+    }
+
+    /// rocksdb_dir is a host-local filesystem path, so two different hosts may pass the same string for
+    /// distinct physical directories. Qualify the coordination key with current_host so those are never
+    /// wrongly de-duplicated. Tables sharing one directory are always on the same host, so this keeps
+    /// them grouped for owner election.
+    auto qualified_dir = fmt::format("{}\n{}", current_host, rocksdb_dir);
+    auto holder = with_retries.createRetriesControlHolder("addRocksDBTable");
+    holder.retries_ctl.retryLoop(
+    [&, &zk = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zk);
+        String path = zookeeper_path + "/rocksdb_tables/" + escapeForFileName(election_id);
+        if (auto res
+            = zk->tryCreate(path, fmt::format("{}\n{}", qualified_dir, data_path_in_backup), zkutil::CreateMode::Persistent);
+            res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException(res);
+    });
+}
+
+void BackupCoordinationOnCluster::prepareRocksDBTables() const
+{
+    if (rocksdb_tables)
+        return;
+
+    std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> rocksdb_table_infos;
+    auto holder = with_retries.createRetriesControlHolder("prepareRocksDBTables");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        rocksdb_table_infos.clear();
+
+        with_retries.renewZooKeeper(zk);
+
+        fs::path tables_path = fs::path(zookeeper_path) / "rocksdb_tables";
+
+        auto tables = zk->getChildren(tables_path);
+        rocksdb_table_infos.reserve(tables.size());
+
+        for (auto & table : tables)
+            table = tables_path / table;
+
+        auto tables_info = zk->get(tables);
+        for (size_t i = 0; i < tables_info.size(); ++i)
+        {
+            const auto & table_info = tables_info[i];
+
+            if (table_info.error != Coordination::Error::ZOK)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path in Keeper {} is unexpectedly missing", tables[i]);
+
+            /// data was written as "current_host\nrocksdb_dir\ndata_path_in_backup"; the first two lines
+            /// form the host-qualified directory key, the last line is the data path.
+            std::vector<std::string> data;
+            boost::split(data, table_info.data, [](char c) { return c == '\n'; });
+            auto qualified_dir = data[0] + "\n" + data[1];
+            rocksdb_table_infos.emplace_back(
+                std::move(qualified_dir),
+                BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
+                    .table_id = fs::path(tables[i]).filename(), .data_path_in_backup = std::move(data[2])});
+        }
+    });
+
+    rocksdb_tables.emplace();
+    for (const auto & [qualified_dir, table_info] : rocksdb_table_infos)
+        rocksdb_tables->addTable(qualified_dir, table_info.table_id, table_info.data_path_in_backup);
+}
+
+String BackupCoordinationOnCluster::getRocksDBDataPath(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    prepareRocksDBTables();
+    return rocksdb_tables->getDataPath(fmt::format("{}\n{}", current_host, rocksdb_dir));
 }
 
 

@@ -132,6 +132,11 @@ public:
 private:
     SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);
 
+    /// Identifier used to elect a single owner among tables sharing one rocksdb_dir for backup/restore.
+    String backupElectionId() const;
+
+    /// Runs (only on the elected owner) the read_only / non-empty checks and then replays the shared data.
+    void restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables);
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     LoggerPtr log;
