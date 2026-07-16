@@ -232,24 +232,24 @@ Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, si
     return static_cast<Int32>(*as_int64);
 }
 
-String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
+String requireJsonStringValue(const Poco::Dynamic::Var & value, size_t blob_index, const char * field_name)
 {
-    requireBlobMetadataField(blob_obj, field_name, blob_index);
-    const Poco::Dynamic::Var & value = blob_obj->get(field_name);
     if (!value.isString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be a string", blob_index, field_name);
     return value.extract<String>();
+}
+
+String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
+{
+    requireBlobMetadataField(blob_obj, field_name, blob_index);
+    return requireJsonStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
 String optBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
 {
     if (!blob_obj->has(field_name) || blob_obj->isNull(field_name))
         return {};
-
-    const Poco::Dynamic::Var & value = blob_obj->get(field_name);
-    if (!value.isString())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be a string", blob_index, field_name);
-    return value.extract<String>();
+    return requireJsonStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
 void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
@@ -342,12 +342,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
                     i);
 
             parseBlobProperties(blob_obj, blob, i, /*required=*/true);
+            requireDeletionVectorV1Properties(blob, i);
         }
         else
             parseBlobProperties(blob_obj, blob, i, /*required=*/false);
-
-        if (blob.type == "deletion-vector-v1")
-            requireDeletionVectorV1Properties(blob, i);
 
         requireBlobMetadataField(blob_obj, "fields", i);
         auto fields_arr = blob_obj->getArray("fields");
@@ -760,9 +758,6 @@ Chunk PuffinInputFormat::read()
 
         if (blob.type != "deletion-vector-v1")
             continue;
-
-        if (!blob.compression_codec.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "deletion-vector-v1 blobs must be uncompressed");
 
         auto col_rows_data = ColumnUInt64::create();
         auto col_rows_offsets = ColumnArray::ColumnOffsets::create();

@@ -530,39 +530,34 @@ def generate_invalid_non_dv_properties() -> None:
         )
 
 
+def write_raw_footer_fixture(name: str, footer_payload: bytes) -> None:
+    flags = b"\x00\x00\x00\x00"
+    footer_length = struct.pack("<i", len(footer_payload))
+    write_fixture(
+        name,
+        PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
 def generate_invalid_footer_root() -> None:
     """FileMetadata must be a JSON object.
 
     Poco's RFC 4627 parser accepts array as a top-level value, so this exercises the
     Object::Ptr guard. String/number roots fail earlier inside the parser itself.
     """
-    flags = b"\x00\x00\x00\x00"
-    footer_payload = b"[1, 2, 3]"
-    footer_length = struct.pack("<i", len(footer_payload))
-    write_fixture(
-        "footer_root_array.puffin",
-        PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
-    )
+    write_raw_footer_fixture("footer_root_array.puffin", b"[1, 2, 3]")
 
 
 def generate_unparseable_footer_json() -> None:
     """Malformed JSON / oversize integers must fail with BAD_ARGUMENTS, not STD_EXCEPTION."""
-    flags = b"\x00\x00\x00\x00"
-    cases = {
-        "malformed_footer_json.puffin": b"{",
-        # Larger than UInt64::max; Poco NumberParser throws SyntaxException.
-        "footer_integer_overflow.puffin": (
-            b'{"blobs": [{"type": "apache-datasketches-theta-v1", "fields": [], '
-            b'"snapshot-id": 99999999999999999999999999999999, "sequence-number": 1, '
-            b'"offset": 4, "length": 4, "properties": {}}]}'
-        ),
-    }
-    for name, footer_payload in cases.items():
-        footer_length = struct.pack("<i", len(footer_payload))
-        write_fixture(
-            name,
-            PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
-        )
+    write_raw_footer_fixture("malformed_footer_json.puffin", b"{")
+    # Larger than UInt64::max; Poco NumberParser throws SyntaxException.
+    write_raw_footer_fixture(
+        "footer_integer_overflow.puffin",
+        b'{"blobs": [{"type": "apache-datasketches-theta-v1", "fields": [], '
+        b'"snapshot-id": 99999999999999999999999999999999, "sequence-number": 1, '
+        b'"offset": 4, "length": 4, "properties": {}}]}',
+    )
 
 
 def main() -> None:
