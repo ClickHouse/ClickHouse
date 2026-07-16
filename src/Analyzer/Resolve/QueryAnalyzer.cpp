@@ -234,12 +234,16 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                 scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
+            /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+            /// before resolution, so that later references to them can be resolved. This must be done for
+            /// a single expression node too, not only for a list: otherwise an alias defined and later
+            /// referenced within a standalone expression (such as a column DEFAULT expression checked
+            /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+            QueryExpressionsAliasVisitor visitor(scope.aliases);
+            visitor.visit(node);
+
             if (node_type == QueryTreeNodeType::LIST)
-            {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -293,6 +297,14 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
         scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
+
+    /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+    /// before resolution, so that later references to them can be resolved. This mirrors `resolve`
+    /// above and is needed for a single expression node too, not only for a list: otherwise an alias
+    /// defined and later referenced within a standalone constant expression (such as a user predicate
+    /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
