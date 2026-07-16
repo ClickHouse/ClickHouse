@@ -38,7 +38,7 @@ The `system.part_log` table contains the following columns:
 - `partition_id` ([String](/sql-reference/data-types/string)) — ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`.
 - `partition` ([String](/sql-reference/data-types/string)) — The partition name.
 - `part_type` ([String](/sql-reference/data-types/string)) — The type of the part. Possible values: Wide and Compact.
-- `part_storage_type` ([String](/sql-reference/data-types/string)) — The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file.
+- `part_storage_type` ([String](/sql-reference/data-types/string)) — The type of `DataPartStorage`. Possible values: `Packed` - all files are stored in a single blob, `Full` - a blob per file.
 - `disk_name` ([String](/sql-reference/data-types/string)) — The disk name data part lies on.
 - `path_on_disk` ([String](/sql-reference/data-types/string)) — Absolute path to the folder with data part files.
 - `rows` ([UInt64](/sql-reference/data-types/int-uint)) — The number of rows in the data part.
