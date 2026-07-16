@@ -13,6 +13,11 @@ ASTPtr ASTWithElement::clone() const
     res->subquery = subquery->clone();
     if (aliases)
         res->aliases = aliases->clone();
+    if (storage)
+    {
+        res->storage = storage->clone();
+        res->children.emplace_back(res->storage);
+    }
     res->children.emplace_back(res->subquery);
     return res;
 }
@@ -34,6 +39,8 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
     ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
+    if (storage)
+        storage->format(ostr, settings, state, frame);
     ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
 }

@@ -97,6 +97,18 @@ public:
         is_materialized = is_materialized_value;
     }
 
+    /// Get MATERIALIZED CTE engine storage (ASTStorage with the ENGINE clause), null means the default Memory engine
+    ASTPtr getMaterializedCTEStorage() const
+    {
+        return materialized_cte_storage;
+    }
+
+    /// Set MATERIALIZED CTE engine storage
+    void setMaterializedCTEStorage(ASTPtr storage)
+    {
+        materialized_cte_storage = std::move(storage);
+    }
+
     /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
     bool isRecursiveCTE() const
     {
@@ -226,6 +238,7 @@ private:
     bool is_subquery = false;
     bool is_cte = false;
     bool is_materialized = false;
+    ASTPtr materialized_cte_storage;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;

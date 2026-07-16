@@ -40,9 +40,14 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Storages/StorageFactory.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -138,6 +143,66 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Create the temporary table that backs a materialized CTE, honoring the engine requested via
+/// `WITH t AS MATERIALIZED ENGINE=<Engine>[(args)] (subquery)`. `storage_def` is the parsed
+/// `ASTStorage` (null means the default `Memory` engine). Only `Memory`, `Join` and `Set` are
+/// accepted; anything else is a clear error.
+///
+/// `Memory` keeps the existing dedicated path (no engine args, no on-disk data, and the
+/// `delayReadForGlobalSubqueries` behavior used by the Memory read gate). `Join`/`Set` are
+/// created through `StorageFactory` from a synthetic `ASTCreateQuery`, mirroring the temporary
+/// table path in `InterpreterCreateQuery::doCreateTable` - the data path comes from the
+/// temporary database, so `StorageSetOrJoinBase` (which requires a non-empty path) is satisfied.
+TemporaryTableHolder createMaterializedCTETemporaryTable(
+    const ContextMutablePtr & query_context,
+    NamesAndTypesList columns_list,
+    const ASTPtr & storage_def)
+{
+    ColumnsDescription columns(std::move(columns_list), false);
+
+    auto * storage_ast = storage_def ? storage_def->as<ASTStorage>() : nullptr;
+
+    /// No ENGINE clause, or an explicit `ENGINE = Memory`: use the dedicated Memory temp-table ctor.
+    if (!storage_ast || !storage_ast->engine || storage_ast->engine->name == "Memory")
+        return TemporaryTableHolder(
+            query_context,
+            columns,
+            ConstraintsDescription{},
+            nullptr /*query*/,
+            true /*create_for_global_subquery*/);
+
+    const auto & engine_name = storage_ast->engine->name;
+    if (engine_name != "Join" && engine_name != "Set")
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Materialized CTE supports only Memory, Join and Set engines, got '{}'",
+            engine_name);
+
+    /// Build a minimal CREATE query carrying only the engine; `StorageFactory::get` takes columns
+    /// separately, so no columns list is attached to the AST. The `TemporaryTableHolder` ctor
+    /// mutates this AST in place to assign the generated temporary table name/uuid before the
+    /// creator runs, so the same object is captured below.
+    auto create_query = make_intrusive<ASTCreateQuery>();
+    create_query->set(create_query->storage, storage_ast->clone());
+
+    TemporaryTableHolder::Creator creator = [&](const StorageID & table_id) -> StoragePtr
+    {
+        auto temporary_database = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
+        return StorageFactory::instance().get(
+            *create_query,
+            temporary_database->getTableDataPath(table_id.getTableName()),
+            query_context,
+            query_context->getGlobalContext(),
+            columns,
+            ConstraintsDescription{},
+            LoadingStrictnessLevel::CREATE,
+            false /*is_restore_from_backup*/);
+    };
+
+    ASTPtr query_ast = create_query;
+    return TemporaryTableHolder(query_context, creator, query_ast);
+}
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
@@ -1300,6 +1365,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
         /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
         auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
         table_node->setAlias(full_name);
+
+        /// Carry the requested engine (WITH t AS MATERIALIZED ENGINE=... (...)) into the CTE descriptor,
+        /// so the temporary table is created with that engine when the storage is finalized.
+        /// Null (no ENGINE clause) means the default Memory engine.
+        table_node->getMaterializedCTE()->storage_def
+            = query_node ? query_node->getMaterializedCTEStorage() : union_node->getMaterializedCTEStorage();
 
         cte_node = table_node;
     }
@@ -3226,12 +3297,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 columns.emplace_back(col.name, col.type);
 
                             auto query_context = scope.context->getQueryContext();
-                            auto storage_holder = TemporaryTableHolder(
+                            auto storage_holder = createMaterializedCTETemporaryTable(
                                 query_context,
-                                ColumnsDescription(std::move(columns), false),
-                                ConstraintsDescription{},
-                                nullptr /*query*/,
-                                true /*create_for_global_subquery*/);
+                                std::move(columns),
+                                materialized_cte_ptr->storage_def);
 
                             mat_table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
                         }
@@ -5793,12 +5862,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         columns.emplace_back(col.name, col.type);
 
                     auto query_context = scope.context->getQueryContext();
-                    auto storage_holder = TemporaryTableHolder(
+                    auto storage_holder = createMaterializedCTETemporaryTable(
                         query_context,
-                        ColumnsDescription(std::move(columns), false),
-                        ConstraintsDescription{},
-                        nullptr /*query*/,
-                        true /*create_for_global_subquery*/);
+                        std::move(columns),
+                        materialized_cte_ptr->storage_def);
 
                     table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
                 }

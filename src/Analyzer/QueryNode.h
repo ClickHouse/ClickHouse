@@ -154,6 +154,18 @@ public:
         is_materialized = is_materialized_value;
     }
 
+    /// Get MATERIALIZED CTE engine storage (ASTStorage with the ENGINE clause), null means the default Memory engine
+    ASTPtr getMaterializedCTEStorage() const
+    {
+        return materialized_cte_storage;
+    }
+
+    /// Set MATERIALIZED CTE engine storage
+    void setMaterializedCTEStorage(ASTPtr storage)
+    {
+        materialized_cte_storage = std::move(storage);
+    }
+
     /// Returns true if query node has RECURSIVE WITH, false otherwise
     bool isRecursiveWith() const
     {
@@ -708,6 +720,7 @@ private:
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
 
+    ASTPtr materialized_cte_storage;
     std::string cte_name;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;

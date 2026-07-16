@@ -1,0 +1,9 @@
+10	5
+10	5
+6	3
+10
+6
+WITH\n    t AS MATERIALIZED\nENGINE = Memory\n    (\n        SELECT 1\n    )\nSELECT *\nFROM t
+WITH\n    s AS MATERIALIZED\nENGINE = Set\n    (\n        SELECT 1 AS x\n    )\nSELECT 1 IN (s)
+WITH\n    j AS MATERIALIZED\nENGINE = Join(ANY, LEFT, k)\n    (\n        SELECT 1 AS k\n    )\nSELECT *\nFROM j
+10
