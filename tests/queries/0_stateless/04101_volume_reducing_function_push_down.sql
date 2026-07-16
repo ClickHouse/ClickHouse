@@ -269,6 +269,63 @@ FROM (
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0
 );
 
+SELECT 'eq: distinct union subquery';
+SELECT *
+FROM (
+    SELECT length(s)
+    FROM
+    (
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+        UNION ALL
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+    )
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1,
+             query_plan_merge_expressions = 0,
+             optimize_functions_to_subcolumns = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT length(s)
+    FROM
+    (
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+        UNION ALL
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+    )
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0,
+             query_plan_merge_expressions = 0,
+             optimize_functions_to_subcolumns = 0
+);
+
+SELECT *
+FROM (
+    SELECT length(s)
+    FROM
+    (
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+        UNION ALL
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+    )
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0,
+             query_plan_merge_expressions = 0,
+             optimize_functions_to_subcolumns = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT length(s)
+    FROM
+    (
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+        UNION ALL
+        SELECT DISTINCT s FROM volume_reducing_function_push_down
+    )
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1,
+             query_plan_merge_expressions = 0,
+             optimize_functions_to_subcolumns = 0
+);
+
 -- ----------------------------------------------------------------------------
 -- Name-collision regression: when the pushed scalar's output name equals a
 -- surviving passthrough column (here `length(s) AS id` aliased onto the table's

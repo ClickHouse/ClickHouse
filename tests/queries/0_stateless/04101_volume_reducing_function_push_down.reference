@@ -28,4 +28,5 @@ eq: join
 5	2
 12	3
 eq: distinct subquery
+eq: distinct union subquery
 eq: alias collides with sort key
