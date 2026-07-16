@@ -90,6 +90,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// A marker persisted in the stored definition when the disk was created with the credential opt-in (see
     /// the write side below); honored only on metadata load, so a user cannot self-grant on a fresh create.
     bool has_server_credentials_marker = false;
+    /// A native GCS backend selected by a literal `type = gcs`, or `type = object_storage` with a literal
+    /// `object_storage_type = gcs`.
+    bool is_gcs_disk_via_type = false;
+    bool is_gcs_disk_via_object_storage_type = false;
+    bool has_service_account_key_file = false;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -151,9 +156,16 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                     type_is_object_storage = true;
                 else if (!indirect && !is_s3_value)
                     has_concrete_non_s3_type = true;
+                if (!indirect && value_str == "gcs")
+                    is_gcs_disk_via_type = true;
             }
-            else if (!indirect && !is_s3_value) /// object_storage_type
-                has_explicit_non_s3_object_storage_type = true;
+            else /// object_storage_type
+            {
+                if (!indirect && !is_s3_value)
+                    has_explicit_non_s3_object_storage_type = true;
+                if (!indirect && value_str == "gcs")
+                    is_gcs_disk_via_object_storage_type = true;
+            }
         }
         else if (key == "access_key_id")
             has_access_key_id = !value_str.empty() && !indirect;
@@ -173,6 +185,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
+        else if (key == "service_account_key_file")
+            has_service_account_key_file = !value_str.empty() && !indirect;
         else if (key == "_server_credentials_allowed")
             has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
 
@@ -210,6 +224,19 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             key_element->appendChild(value_element);
         }
     }
+
+    /// A dynamic GCS disk created from user SQL must not read an arbitrary local file path supplied by the
+    /// query: unlike the S3 credential checks below, this is not gated by a setting, mirroring how table
+    /// functions such as `file` are confined to `user_files_path` rather than an opt-in. A `system`-database
+    /// disk is server-internal (admin-configured, not user SQL), so it is exempt like the S3 restriction above.
+    const bool is_gcs_disk = is_gcs_disk_via_type || (type_is_object_storage && is_gcs_disk_via_object_storage_type);
+    if (is_gcs_disk && has_service_account_key_file && !for_system_database)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "A dynamic GCS disk created from user SQL may not use `service_account_key_file`, which would make "
+            "the server read an arbitrary local file path supplied by the query. Provide the service account key "
+            "inline with `service_account_key`, or configure `service_account_key_file` on a server-managed disk "
+            "in the server configuration instead.");
 
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
     /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
