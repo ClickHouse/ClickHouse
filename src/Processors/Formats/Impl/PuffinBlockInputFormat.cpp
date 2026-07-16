@@ -152,6 +152,11 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
         if (ret == 0)
             break;
 
+        /// No forward progress while the frame is still open means the input is truncated:
+        /// LZ4F_decompress wants more input but we have given it everything. Stop to avoid spinning.
+        if (dst_write == 0 && src_read == 0)
+            throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer LZ4 frame is incomplete");
+
         if (dst_offset == result.size())
             throw Exception(
                 ErrorCodes::LZ4_DECODER_FAILED,

@@ -211,6 +211,20 @@ def generate_lz4_trailing_bytes() -> None:
     )
 
 
+def generate_incomplete_lz4_footer() -> None:
+    """Truncated LZ4 frame: header parses with content size, body is incomplete (must not hang)."""
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    full_frame = lz4.frame.compress(footer_json, store_size=True)
+    # Keep enough bytes for LZ4F_getFrameInfo to succeed, but truncate the body.
+    footer_payload = full_frame[:19]
+    footer_length = struct.pack("<i", len(footer_payload))
+    flags = bytes([0x01, 0x00, 0x00, 0x00])
+    write_fixture(
+        "incomplete_lz4_footer.puffin",
+        PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
 def generate_missing_required_fields() -> None:
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     payload = json.loads(footer_json.decode("utf-8"))
@@ -543,6 +557,7 @@ def main() -> None:
     generate_inflated_lz4_content_size(spark_fixture)
     generate_missing_lz4_content_size()
     generate_lz4_trailing_bytes()
+    generate_incomplete_lz4_footer()
     generate_missing_required_fields()
     generate_invalid_property_value_types()
     generate_invalid_integer_fields()

@@ -44,6 +44,9 @@ $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/missing_lz4_content_size
 echo "--- lz4_trailing_bytes.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/lz4_trailing_bytes.puffin', PuffinMetadata)" 2>&1 | grep -oF 'trailing bytes'
 
+echo "--- incomplete_lz4_footer.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/incomplete_lz4_footer.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 frame is incomplete'
+
 for PUFFIN_FILE in \
     "$DATA/missing_snapshot_id.puffin" \
     "$DATA/missing_sequence_number.puffin" \
