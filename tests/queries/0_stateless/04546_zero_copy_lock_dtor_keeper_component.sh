@@ -73,3 +73,26 @@ wait "$drop_pid" || true
 
 # The server must still be alive.
 $CLICKHOUSE_CLIENT --query "SELECT 1;"
+
+# Second scope: the zero-copy part-move path. MergeTreeData::moveParts acquires/uses/releases a
+# local ZeroCopyLock (tryCreateZeroCopyExclusiveLock does Keeper I/O), so it must run under a
+# Keeper component too. A synchronous ALTER ... MOVE PART runs moveParts directly on the query
+# thread, with no component set upstream, so with enforce_keeper_component_tracking enabled this
+# used to abort the server with "Current component is empty ...".
+$CLICKHOUSE_CLIENT --query "
+    SET insert_keeper_fault_injection_probability = 0;
+
+    CREATE TABLE mv (id UInt64, num UInt64)
+    ENGINE = ReplicatedMergeTree('/zookeeper/{database}/mv/', '1')
+    ORDER BY id
+    SETTINGS storage_policy = 'local_remote', allow_remote_fs_zero_copy_replication = 1;
+
+    INSERT INTO mv VALUES (1, 1) (2, 2) (3, 3);
+
+    ALTER TABLE mv MOVE PART 'all_0_0_0' TO DISK 's3_disk';
+
+    DROP TABLE mv SYNC;
+"
+
+# The server must still be alive after the move.
+$CLICKHOUSE_CLIENT --query "SELECT 1;"

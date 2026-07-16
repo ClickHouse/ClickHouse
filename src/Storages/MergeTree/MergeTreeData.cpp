@@ -10584,6 +10584,9 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
 
 MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy)
 {
+    /// Scope the whole acquire/use/release lifetime of the zero-copy lock's Keeper I/O below.
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::moveParts");
+
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
     const auto settings = getSettings();
