@@ -70,3 +70,6 @@ arr	UInt8
 ll.Date	String					
 t1.k	UInt8					
 t2.k	UInt8					
+=== distributed: remote() two-shard, family2 shape, setting ON ===
+D
+D

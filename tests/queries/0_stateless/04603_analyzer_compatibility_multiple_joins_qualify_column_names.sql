@@ -125,3 +125,12 @@ SELECT ll.Date FROM (SELECT * FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) A
 
 SELECT '=== describe: ARRAY JOIN mixed with 2 joins, setting ON ===';
 DESCRIBE (SELECT * FROM (SELECT 1 AS k, [1, 2] AS arr, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k ARRAY JOIN arr);
+
+-- ============================================================
+-- Distributed: the hidden-alias outer reference must survive going through `remote`
+-- (aliases are attached in `toAST`, so the qualified projection name is preserved
+-- across the shard boundary).
+-- ============================================================
+
+SELECT '=== distributed: remote() two-shard, family2 shape, setting ON ===';
+SELECT ll.Date FROM remote('127.0.0.{1,2}', view(SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k)) ORDER BY ll.Date SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 1;
