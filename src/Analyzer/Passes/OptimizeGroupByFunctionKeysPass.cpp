@@ -47,20 +47,18 @@ public:
         if (!query->hasGroupBy())
             return;
 
-        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
+        /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+        /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH
+        /// TOTALS row. In such a row the key is output as its column default. Dropping a key that is
+        /// a function of other keys makes the output projection recompute it from those keys' totals
+        /// defaults (e.g. toString(number) from number = 0 gives '0' instead of the required String
+        /// default ''), which changes the result. See #110715.
+        if (query->isGroupByWithCube() || query->isGroupByWithRollup()
+            || query->isGroupByWithGroupingSets() || query->isGroupByWithTotals())
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
-        if (query->isGroupByWithGroupingSets())
-        {
-            for (auto & set : group_by)
-            {
-                auto & grouping_set = set->as<ListNode>()->getNodes();
-                removeKeysThatAreFunctionsOfOtherKeys(grouping_set);
-            }
-        }
-        else
-            removeKeysThatAreFunctionsOfOtherKeys(group_by);
+        removeKeysThatAreFunctionsOfOtherKeys(group_by);
     }
 };
 

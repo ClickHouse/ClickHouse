@@ -38,3 +38,44 @@ FROM numbers(3)
 GROUP BY v
 ORDER BY v
 SETTINGS optimize_injective_functions_in_group_by = 1;
+
+-- Same invariant for the sibling optimize_group_by_function_keys pass, which drops a key that is a
+-- function of other keys. With WITH TOTALS the dropped key must be output as its column default in
+-- the totals row, not recomputed from the other keys' totals-row defaults (#110715).
+SELECT toString(number) AS v, number, count()
+FROM numbers(3)
+GROUP BY v, number WITH TOTALS
+ORDER BY number
+SETTINGS optimize_group_by_function_keys = 0;
+
+SELECT toString(number) AS v, number, count()
+FROM numbers(3)
+GROUP BY v, number WITH TOTALS
+ORDER BY number
+SETTINGS optimize_group_by_function_keys = 1;
+
+-- GROUPING SETS: dropping the function-of-key must not change the non-member set row default.
+SELECT toString(number) AS v, number, count()
+FROM numbers(3)
+GROUP BY GROUPING SETS ((v, number), (number))
+ORDER BY number, v
+SETTINGS optimize_group_by_function_keys = 0;
+
+SELECT toString(number) AS v, number, count()
+FROM numbers(3)
+GROUP BY GROUPING SETS ((v, number), (number))
+ORDER BY number, v
+SETTINGS optimize_group_by_function_keys = 1;
+
+-- The optimization still applies (and results are unchanged) for plain GROUP BY.
+SELECT toString(number) AS v, number
+FROM numbers(3)
+GROUP BY v, number
+ORDER BY number
+SETTINGS optimize_group_by_function_keys = 0;
+
+SELECT toString(number) AS v, number
+FROM numbers(3)
+GROUP BY v, number
+ORDER BY number
+SETTINGS optimize_group_by_function_keys = 1;
