@@ -25,6 +25,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
@@ -343,6 +344,11 @@ namespace ServerSetting
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
+}
+
+namespace FailPoints
+{
+    extern const char create_empty_part_inject_stale_dir[];
 }
 
 namespace ErrorCodes
@@ -4623,6 +4629,51 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
+    /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
+    /// (existing parts are not rewritten and the custom serialization is not reattached), so an in-place ALTER would
+    /// leave the table inconsistent: existing parts keep the plain serialization (no companion codes stream, and `pq`
+    /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
+    /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
+    {
+        auto quantize_signature = [](const ASTPtr & codec) -> String
+        {
+            const auto params = tryExtractQuantizedCodecParams(codec);
+            if (!params)
+                return {};
+            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+        };
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_COLUMN && command.type != AlterCommand::MODIFY_COLUMN)
+                continue;
+            const bool old_has = old_metadata.getColumns().has(command.column_name);
+            const bool new_has = new_metadata.getColumns().has(command.column_name);
+            const String old_sig = old_has ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String new_sig = new_has ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec) : String{};
+
+            /// The codec was added, removed, or changed.
+            bool forbidden = old_sig != new_sig;
+            /// Or a typed `MODIFY COLUMN` is applied while the Quantized codec is present. Such a command reassigns the
+            /// column type (`ColumnsDescription::modify` sets `col.type = command.data_type`), which drops the codec's
+            /// custom serialization even when the type is textually unchanged (e.g. `MODIFY COLUMN vec Array(Float32)
+            /// COMMENT '...'`): the metadata still carries `CODEC(Quantized(...))` while subsequent writes stop producing
+            /// the companion codes subcolumn, leaving parts inconsistent. A comment-only `MODIFY COLUMN vec COMMENT '...'`
+            /// (no type clause) does not set `data_type` and remains allowed.
+            if (!forbidden && command.type == AlterCommand::MODIFY_COLUMN && command.data_type && !old_sig.empty())
+                forbidden = true;
+
+            if (forbidden)
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The Quantized(...) codec is immutable via ALTER: it cannot be added, removed or changed, and a "
+                    "MODIFY COLUMN that restates the type of a Quantized-coded column is rejected (column {}), because it "
+                    "would drop the codec's serialization and leave new parts without the companion codes subcolumn. Set "
+                    "the codec at CREATE TABLE; to change the codec or type on existing data, create a new table with the "
+                    "codec and INSERT ... SELECT into it. A comment-only MODIFY COLUMN (without a type) is allowed.",
+                    backQuoteIfNeed(command.column_name));
+        }
+    }
+
     const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
         /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
@@ -5337,6 +5388,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
+    /// column, trained at serialization suffix). A compact part serializes each granule with a fresh serialization
+    /// state, which would train and write a separate codebook per granule and leave the reader unable to pair each row
+    /// with its granule's codebook. Force a wide part when any column carries `Quantize('pq', ...)`, so the codebook is
+    /// part-level. The data-independent Quantize methods are stateless per row and work in either part format.
+    if (part_type == PartType::Compact)
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        for (const auto & column : metadata_snapshot->getColumns())
+        {
+            const auto params = tryExtractQuantizedCodecParams(column.codec);
+            if (params && params->method == "product")
+            {
+                part_type = PartType::Wide;
+                break;
+            }
+        }
+    }
 
     return {part_type, PartStorageType::Full};
 }
@@ -11543,21 +11613,32 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
+
+    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
+    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
+    {
+        new_data_part_storage->createDirectories();
+    });
+
+    /// The directory may already exist as a stale leftover: a previous covering operation
+    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted
+    /// after the directory is created but before the part is renamed to its persistent name
+    /// (e.g. a rolled-back transaction with a deferred rename, or a crash). The in-memory
+    /// `tmp_dir_holder` acquired above guarantees no concurrent operation owns this name right
+    /// now (getTemporaryPartDirectoryHolder throws otherwise), so an existing directory can only
+    /// be such a leftover and is safe to remove. This mirrors the regular INSERT path in
+    /// MergeTreeDataWriter, which reclaims a stale temporary directory instead of failing. Done
+    /// before beginTransaction() so the removal is not staged in the part's own (not yet started)
+    /// write transaction.
+    if (new_data_part_storage->exists())
+    {
+        LOG_WARNING(log, "Removing old temporary directory {}", new_data_part_storage->getFullPath());
+        new_data_part_storage->removeRecursive();
+    }
+
     new_data_part_storage->beginTransaction();
 
     SyncGuardPtr sync_guard;
-
-    /// The name could be non-unique in case of stale files from previous runs.
-    if (new_data_part_storage->exists())
-    {
-        /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
-        /// New part have to capture its name, therefore there is no concurrentcy in directory creation
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "New empty part is about to materialize but the directory already exist"
-                        ", new part {}"
-                        ", directory {}",
-                        new_part_name, new_data_part_storage->getFullPath());
-    }
 
     new_data_part_storage->createDirectories();
 
@@ -11747,6 +11828,19 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
         if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
+}
+
+bool MergeTreeData::sortingKeyChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key)
+{
+    /// getName(), not IDataType::equals(): equals() ignores the SimpleAggregateFunction wrapper.
+    if (old_sorting_key.column_names != new_sorting_key.column_names)
+        return true;
+    if (old_sorting_key.data_types.size() != new_sorting_key.data_types.size())
+        return true;
+    for (size_t i = 0; i < old_sorting_key.data_types.size(); ++i)
+        if (old_sorting_key.data_types[i]->getName() != new_sorting_key.data_types[i]->getName())
+            return true;
+    return false;
 }
 
 size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept

@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_LIBPNG && USE_BASE64
+#if USE_LIBPNG && USE_SIMDUTF
 
 #include <string_view>
 #include <base/types.h>

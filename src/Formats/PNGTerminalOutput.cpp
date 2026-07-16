@@ -1,6 +1,6 @@
 #include <Formats/PNGTerminalOutput.h>
 
-#if USE_LIBPNG && USE_BASE64
+#if USE_LIBPNG && USE_SIMDUTF
 
 #include <algorithm>
 #include <array>
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include <libbase64.h>
+#include <simdutf.h>
 
 #include <IO/Base64WriteBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -152,8 +152,7 @@ void writeImageKitty(WriteBuffer & out, std::string_view png)
     /// of KITTY_CHUNK_SIZE / 4 * 3 input bytes encodes to exactly KITTY_CHUNK_SIZE base64 bytes. Every block but
     /// the last is a multiple of 3 bytes, so each is encoded independently with no carry between chunks.
     static constexpr size_t INPUT_CHUNK_SIZE = KITTY_CHUNK_SIZE / 4 * 3;
-    /// A full input block encodes to exactly KITTY_CHUNK_SIZE base64 bytes; the extra bytes are slack that
-    /// libbase64 asks callers to leave past the 4/3 output size.
+    /// A full input block encodes to exactly KITTY_CHUNK_SIZE base64 bytes; the extra bytes are slack.
     char encoded[KITTY_CHUNK_SIZE + 16];
     size_t offset = 0;
     bool first = true;
@@ -170,8 +169,7 @@ void writeImageKitty(WriteBuffer & out, std::string_view png)
         writeChar(last ? '0' : '1', out);
         writeChar(';', out);
 
-        size_t encoded_size = 0;
-        base64_encode(png.data() + offset, len, encoded, &encoded_size, 0);
+        const size_t encoded_size = simdutf::binary_to_base64(png.data() + offset, len, encoded, simdutf::base64_default);
         out.write(encoded, encoded_size);
 
         writeCString("\033\\", out);

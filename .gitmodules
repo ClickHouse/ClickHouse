@@ -333,6 +333,9 @@
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
+[submodule "contrib/sz3"]
+	path = contrib/sz3
+	url = https://github.com/ClickHouse/SZ3.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
@@ -378,15 +381,15 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
-[submodule "contrib/base64"]
-	path = contrib/base64
-	url = https://github.com/ClickHouse/base64.git
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/musl"]
+	path = contrib/musl
+	url = https://github.com/ClickHouse/musl
 [submodule "contrib/zmij"]
 	path = contrib/zmij
 	url = https://github.com/vitaut/zmij.git
@@ -399,6 +402,12 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/simdutf"]
+	path = contrib/simdutf
+	url = https://github.com/ClickHouse/simdutf
+[submodule "contrib/libdeflate"]
+	path = contrib/libdeflate
+	url = https://github.com/ClickHouse/libdeflate
 [submodule "contrib/wagyu"]
 	path = contrib/wagyu
 	url = https://github.com/ClickHouse/wagyu

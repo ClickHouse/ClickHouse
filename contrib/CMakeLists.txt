@@ -49,6 +49,10 @@ disable_dummy_launchers_if_needed()
 
 # We need to add OpenSSL first so that all our projects use our own version instead of the system one.
 add_contrib (openssl-cmake openssl)  # Needed for delta-lake
+
+if (USE_MUSL)
+    add_contrib (musl-cmake musl)
+endif()
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
@@ -81,6 +85,7 @@ add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
+add_contrib (libdeflate-cmake libdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
 add_contrib (libpng-cmake libpng) # requires: zlib
@@ -146,8 +151,8 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
+add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
@@ -267,6 +272,8 @@ add_contrib (clickstack-cmake clickstack)
 
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
+
+add_contrib (sz3-cmake sz3)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

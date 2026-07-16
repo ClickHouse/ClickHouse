@@ -25,6 +25,7 @@ namespace DB
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
     M(BACKUP_COLLECTOR, "BackupCollect") \
@@ -79,6 +80,7 @@ namespace DB
     M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \
     M(KEEPER_TTL_GARBAGE_COLLECTOR, "KeeperTTLGC") \
+    M(KEEPER_CONTAINER_GARBAGE_COLLECTOR, "KeeperCntrGC") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
