@@ -12,10 +12,10 @@ SELECT 'Test create statistics:';
 
 CREATE TABLE tab
 (
-    a LowCardinality(Int64) STATISTICS(countmin, minmax, tdigest, uniq),
-    b LowCardinality(Nullable(String)) STATISTICS(countmin, uniq),
-    c LowCardinality(Nullable(Int64)) STATISTICS(countmin, minmax, tdigest, uniq),
-    d DateTime STATISTICS(countmin, minmax, tdigest, uniq),
+    a LowCardinality(Int64) STATISTICS(countmin, minmax, tdigest, uniq, uniq_v2),
+    b LowCardinality(Nullable(String)) STATISTICS(countmin, uniq, uniq_v2),
+    c LowCardinality(Nullable(Int64)) STATISTICS(countmin, minmax, tdigest, uniq, uniq_v2),
+    d DateTime STATISTICS(countmin, minmax, tdigest, uniq, uniq_v2),
     pk String,
 ) Engine = MergeTree() ORDER BY pk;
 
@@ -25,7 +25,7 @@ SHOW CREATE TABLE tab;
 
 SELECT 'Test materialize and drop statistics:';
 ALTER TABLE tab DROP STATISTICS a, b, c, d;
-ALTER TABLE tab ADD STATISTICS b TYPE countmin, uniq;
+ALTER TABLE tab ADD STATISTICS b TYPE countmin, uniq, uniq_v2;
 ALTER TABLE tab MATERIALIZE STATISTICS b;
 SHOW CREATE TABLE tab;
 

@@ -5,7 +5,6 @@
 
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
-#include <base/sleep.h>
 
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -77,6 +76,9 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsNonZeroUInt64 ttl_gc_batch_size;
+    extern const CoordinationSettingsMilliseconds container_gc_period_ms;
+    extern const CoordinationSettingsNonZeroUInt64 container_gc_batch_size;
+    extern const CoordinationSettingsMilliseconds container_gc_max_never_used_interval_ms;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
@@ -195,7 +197,13 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     const auto & keeper_coordination_settings = keeper_context->getCoordinationSettings();
     size_t batch_size = keeper_coordination_settings[CoordinationSetting::ttl_gc_batch_size];
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
-        ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { garbageCollectorThread(batch_size); });
+        ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { ttlGarbageCollectorThread(batch_size); });
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER))
+    {
+        size_t container_batch_size = keeper_coordination_settings[CoordinationSetting::container_gc_batch_size];
+        UInt64 container_max_never_used_ms = keeper_coordination_settings[CoordinationSetting::container_gc_max_never_used_interval_ms].totalMilliseconds();
+        container_garbage_collector_thread = ThreadFromGlobalPool([this, container_batch_size, container_max_never_used_ms] { containerGarbageCollectorThread(container_batch_size, container_max_never_used_ms); });
+    }
 
     update_configuration_thread = reconfigEnabled()
         ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
@@ -209,6 +217,8 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
     try
     {
         {
+            signalShutdown();
+
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
 
@@ -217,6 +227,8 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
             const auto & feature_flags = keeper_context->getFeatureFlags();
             if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && ttl_garbage_collector_thread.joinable())
                 ttl_garbage_collector_thread.join();
+            if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER) && container_garbage_collector_thread.joinable())
+                container_garbage_collector_thread.join();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -277,18 +289,14 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
+void KeeperDispatcher::ttlGarbageCollectorThread(size_t batch_size)
 {
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     Int32 next_gc_xid = 0;
 
-    while (true)
+    while (!isShuttingDown())
     {
-        if (shutdown_called)
-            return;
-
         try
         {
             if (server->checkInit() && isLeader())
@@ -330,12 +338,75 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        if (isShuttingDown())
-            return;
-        sleepForMilliseconds(std::chrono::milliseconds(
-            keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()).count());
+        interruptibleSleep(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()));
     }
+}
 
+void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms)
+{
+    DB::setThreadName(ThreadName::KEEPER_CONTAINER_GARBAGE_COLLECTOR);
+
+    Int32 next_gc_xid = 0;
+
+    while (!isShuttingDown())
+    {
+        try
+        {
+            if (server->checkInit() && isLeader())
+            {
+                auto paths = server->getContainerCandidatesForGarbageCollector(batch_size, max_never_used_interval_ms);
+                for (auto & [path, version] : paths)
+                {
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
+                    auto & rem = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*request);
+                    rem.path = path;
+                    rem.version = version;
+                    rem.try_remove = true;
+                    rem.xid = next_gc_xid++;
+
+                    try
+                    {
+                        if (putRequest(request, keeper_internal_container_garbage_collector_session_id, /*use_xid_64=*/ false))
+                            LOG_TRACE(log, "Container garbage collector: Remove request enqueued, path: {}", path);
+                        else
+                        {
+                            LOG_WARNING(log, "Container garbage collector: putRequest rejected, retry next tick");
+                            break;
+                        }
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        break;
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        interruptibleSleep(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::container_gc_period_ms].totalMilliseconds()));
+    }
+}
+
+void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
+{
+    std::unique_lock lock(early_shutdown_wait_mutex);
+    early_shutdown_wait_cv.wait_for(lock, period, [&] { return shutting_down.load(); });
+}
+
+void KeeperDispatcher::signalShutdown()
+{
+    if (shutting_down.exchange(true))
+        return; // already called
+
+    {
+        std::lock_guard lock(early_shutdown_wait_mutex);
+    }
+    early_shutdown_wait_cv.notify_all();
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
@@ -366,17 +437,13 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 
 void KeeperDispatcher::sessionCleanerTask()
 {
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     /// TODO: Avoid spamming repeated Close requests for all sessions every
     ///       dead_session_check_period_ms if leader is stuck. Maybe keep a set of recently started
     ///       Close requests here, and don't produce a new request if it's been less than e.g.
     ///       operation_timeout_ms (20x longer than dead_session_check_period_ms by default) since
     ///       the previous attempt.
-    while (true)
+    while (!isShuttingDown())
     {
-        if (shutdown_called)
-            return;
-
         try
         {
             /// Only leader node must check dead sessions
@@ -409,8 +476,8 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        auto time_to_sleep = keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
-        std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
+        interruptibleSleep(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds()));
     }
 }
 
