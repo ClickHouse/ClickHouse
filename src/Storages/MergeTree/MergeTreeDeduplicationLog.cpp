@@ -284,12 +284,18 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
     chassert(current_writer != nullptr);
 
-    /// Publishing the block IDs must be all-or-nothing. If anything below throws,
+    /// Writing the ADD records must be all-or-nothing. If anything below throws,
     /// the caller aborts the insert before the part is committed (MergeTreeSink
     /// commits the part only after addPart returns), so a block ID left published
-    /// here would wrongly deduplicate - and silently drop - a client retry of the
-    /// same insert, even though the original part never became active.
-    size_t published = 0;
+    /// in `deduplication_map` here would wrongly deduplicate - and silently drop -
+    /// a client retry of the same insert, even though the original part never
+    /// became active. `deduplication_map.insert` is therefore deferred below,
+    /// until the durable writes and the rotation both succeeded: it also evicts
+    /// the oldest entry once the map is at capacity, and that eviction cannot be
+    /// undone by erasing only the block IDs this call published, so mutating the
+    /// map on a path that might still fail would silently narrow the
+    /// deduplication window for unrelated, already-active parts.
+    size_t written = 0;
     try
     {
         for (const auto & block_id : block_ids)
@@ -303,22 +309,16 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
             writeRecord(record, *current_writer);
             /// We have one more record in current log
             existing_logs[current_log_number].entries_count++;
-            /// Add to deduplication map
-            deduplication_map.insert(record.block_id, part_info);
-            ++published;
+            ++written;
         }
         /// Rotate and drop old logs if needed
         rotateAndDropIfNeeded();
     }
     catch (...)
     {
-        /// Remove the already published block IDs from the in-memory map first:
-        /// this cannot throw and protects retries for the lifetime of this process.
-        for (size_t i = 0; i < published; ++i)
-            deduplication_map.erase(block_ids[i]);
-
-        /// Best effort: write compensating DROP records, so that replaying the log
-        /// on server startup does not re-publish the rolled back block IDs.
+        /// Best effort: write compensating DROP records for the block IDs that were
+        /// durably written above, so that replaying the log on server startup does
+        /// not publish the rolled back block IDs either.
         try
         {
             /// If the exception came from `rotateAndDropIfNeeded` itself, `rotate`
@@ -334,7 +334,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
             if (current_writer->isCanceled())
                 rotate();
 
-            for (size_t i = 0; i < published; ++i)
+            for (size_t i = 0; i < written; ++i)
             {
                 MergeTreeDeduplicationLogRecord record;
                 record.operation = MergeTreeDeduplicationOp::DROP;
@@ -353,6 +353,10 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
         throw;
     }
+
+    /// Everything is durable now; publish into the in-memory map.
+    for (const auto & block_id : block_ids)
+        deduplication_map.insert(block_id, part_info);
 
     return {};
 }
