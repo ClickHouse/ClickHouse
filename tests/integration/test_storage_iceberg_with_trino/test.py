@@ -659,3 +659,82 @@ def test_drop_partition_with_evolved_spec_is_rejected(iceberg_db):
     expected = "1\tus\t10\n2\teu\t20\n3\tasia\t30\n"
     assert clickhouse_rows == expected
     assert trino_rows == expected
+
+
+def test_drop_partition_preserves_trino_file_metadata(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"drop_partition_metadata_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    _trino_exec(
+        cluster,
+        f"""
+        CREATE TABLE "{NAMESPACE}"."{table_name}" (
+            tag INTEGER,
+            k VARCHAR,
+            v INTEGER,
+            d DOUBLE
+        )
+        WITH (
+            format = 'PARQUET',
+            format_version = 2,
+            partitioning = ARRAY['tag'],
+            sorted_by = ARRAY['k']
+        )
+        """,
+    )
+    _trino_exec(
+        cluster,
+        f"""
+        INSERT INTO "{NAMESPACE}"."{table_name}" VALUES
+            (1, 'a', 10, 1.0),
+            (1, 'b', 11, 2.0),
+            (2, 'c', 20, 3.0),
+            (3, 'd', 30, 4.0)
+        """,
+    )
+
+    def trino_metadata_by_path():
+        output = _trino_exec(
+            cluster,
+            f"""
+            SELECT
+                file_path,
+                sort_order_id,
+                cardinality(column_sizes),
+                cardinality(null_value_counts),
+                cardinality(split_offsets)
+            FROM "{NAMESPACE}"."{table_name}$files"
+            WHERE content = 0
+            ORDER BY file_path
+            """,
+        )
+        rows = [row.split("\t") for row in output.strip().splitlines()]
+        return {row[0]: row[1:] for row in rows}
+
+    metadata_before = trino_metadata_by_path()
+    assert len(metadata_before) == 3
+    assert all(all(int(value) > 0 for value in metadata) for metadata in metadata_before.values())
+
+    node.query(
+        f"ALTER TABLE {full} DROP PARTITION 1",
+        settings=WRITE_SETTINGS,
+    )
+
+    metadata_after = trino_metadata_by_path()
+    assert len(metadata_after) == 2
+    for path, metadata in metadata_after.items():
+        assert metadata == metadata_before[path]
+
+    clickhouse_rows = node.query(
+        f"SELECT tag, k, v, d FROM {full} ORDER BY tag, k"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT tag, k, v, d FROM "{NAMESPACE}"."{table_name}" ORDER BY tag, k',
+    )
+    expected = "2\tc\t20\t3.0\n3\td\t30\t4.0\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
