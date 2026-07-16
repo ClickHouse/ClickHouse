@@ -608,6 +608,22 @@ def test_drop_partition(iceberg_db):
     )
     assert files.strip() == "2\t2"
 
+    _trino_exec(
+        cluster,
+        f'INSERT INTO "{NAMESPACE}"."{table_name}" VALUES (5, \'africa\', 50)',
+    )
+
+    clickhouse_rows = node.query(
+        f"SELECT id, region, value FROM {full} ORDER BY id"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT id, region, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    expected = "2\teu\t20\n3\tasia\t30\n5\tafrica\t50\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
+
 
 def test_drop_partition_with_evolved_spec_is_rejected(iceberg_db):
     cluster = iceberg_db
