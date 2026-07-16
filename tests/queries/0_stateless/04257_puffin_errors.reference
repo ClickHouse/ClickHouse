@@ -48,6 +48,16 @@ missing required property
 field 'properties' must be an object
 --- invalid_properties_string.puffin ---
 field 'properties' must be an object
+--- invalid_property_number.puffin ---
+must be a string
+--- invalid_property_bool.puffin ---
+must be a string
+--- invalid_property_null.puffin ---
+must be a string
+--- invalid_property_object.puffin ---
+must be a string
+--- invalid_property_cardinality_number.puffin ---
+must be a string
 --- invalid_non_dv_properties_array.puffin ---
 field 'properties' must be an object
 --- invalid_non_dv_properties_string.puffin ---

@@ -210,7 +210,11 @@ void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", blob_index);
 
     for (const auto & [key, val] : *props_obj)
+    {
+        if (!val.isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: property '{}' must be a string", blob_index, key);
         blob.properties.emplace(key, val.extract<String>());
+    }
 }
 
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)

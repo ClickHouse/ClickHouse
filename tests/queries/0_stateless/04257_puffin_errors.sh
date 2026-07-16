@@ -80,6 +80,17 @@ do
 done
 
 for PUFFIN_FILE in \
+    "$DATA/invalid_property_number.puffin" \
+    "$DATA/invalid_property_bool.puffin" \
+    "$DATA/invalid_property_null.puffin" \
+    "$DATA/invalid_property_object.puffin" \
+    "$DATA/invalid_property_cardinality_number.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "must be a string"
+done
+
+for PUFFIN_FILE in \
     "$DATA/invalid_non_dv_properties_array.puffin" \
     "$DATA/invalid_non_dv_properties_string.puffin"
 do

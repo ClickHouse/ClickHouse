@@ -280,6 +280,34 @@ def generate_missing_required_fields() -> None:
     )
 
 
+def generate_invalid_property_value_types() -> None:
+    """Property maps must have string values; non-strings must fail with BAD_ARGUMENTS."""
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    base = json.loads(footer_json.decode("utf-8"))
+    cases = {
+        # Extra key keeps required DV strings valid so the failure is the value type.
+        "invalid_property_number.puffin": {**default_dv_properties(), "ndv": 5},
+        "invalid_property_bool.puffin": {**default_dv_properties(), "flag": True},
+        "invalid_property_null.puffin": {**default_dv_properties(), "x": None},
+        "invalid_property_object.puffin": {**default_dv_properties(), "nested": {"a": 1}},
+        # Required key itself typed wrong must also reject as non-string.
+        "invalid_property_cardinality_number.puffin": {
+            "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+            "cardinality": 5,
+        },
+    }
+    for name, properties in cases.items():
+        case_payload = json.loads(json.dumps(base))
+        case_payload["blobs"][0]["properties"] = properties
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
+
 def generate_cardinality_mismatch_large_bitmap() -> None:
     bitmap = pyroaring.BitMap([2, 5, 7, 100, 65536])
     vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
@@ -408,6 +436,7 @@ def main() -> None:
     generate_missing_lz4_content_size()
     generate_lz4_trailing_bytes()
     generate_missing_required_fields()
+    generate_invalid_property_value_types()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()
