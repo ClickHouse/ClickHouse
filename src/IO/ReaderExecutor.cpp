@@ -247,12 +247,8 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
         return false;
     }
 
-    /// Bound the held GET to the predicted run end (`clampReach` of the estimator), kept
-    /// object-local and clamped to the object end. The estimate adapts: a long contiguous run
-    /// grows it toward the whole object, while sparse access keeps it small -- so the connection
-    /// reads ahead only as far as the pattern predicts (no full-object over-read when just a
-    /// slice is used). Reuse spans this bound; once the read runs past it the connection completes
-    /// (pool-reusable) and the next window opens a fresh, longer one as the run keeps growing.
+    /// Bound the held GET to the predicted run end, clamped to the object: a growing run reads
+    /// further ahead, sparse access stays small, so it never over-reads a whole object for a slice.
     const size_t phys = position + data_start_offset;
     const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
     size_t read_until_obj = object_offset + forward;
@@ -295,8 +291,6 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
     ChainedBuffers chain;
     size_t got_total = 0;
 
-    /// Fill `block_size`-sized nodes from `read_chunk` (reads <= n bytes into dst), appending each at
-    /// its file offset; stop on a short chunk (EOF / the read bound).
     auto fill = [&](auto && read_chunk)
     {
         while (got_total < want)
@@ -326,14 +320,13 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
         stats.add(Stats::LongConnectionHits);
         if (object_offset > long_conn->current_position)
         {
-            /// Bridge a small forward gap by discarding it on the open stream.
             const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_size);
             stats.add(Stats::BytesFromSource, skipped);
             stats.add(Stats::LongConnectionBytes, skipped);
         }
         fill(from_long_conn);
         if (long_conn->atBound())
-            long_conn.reset();   /// read to its bound -> pool-reusable, release the slot
+            long_conn.reset();
     }
     else
     {
@@ -377,8 +370,7 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(
         views.emplace_back(cache.get(), cache->planResidencyView(object, object_file_offset, window));
     }
 
-    /// Window start is a cache hit: return that contiguous hit run (zero-copy, populating nothing).
-    /// A short return is fine -- the next call resolves the rest.
+    /// On a hit at the window start, return that run (a short window is fine, next call continues).
     for (const auto & [cache, view] : views)
     {
         for (const auto & hit : view->hits())
@@ -387,9 +379,8 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(
                 return hit.reader->read(ByteRange{window.offset, std::min(hit.range.end(), window.end()) - window.offset});
     }
 
-    /// Window start is a miss: fetch the remainder expanded to the overlapping miss cells' aligned
-    /// edges so each cell is populated whole. Head expansion may precede the connection frontier;
-    /// `readSource` then falls back to a one-shot read (the long connection is forward-only).
+    /// Expand the miss to the overlapping cells' aligned edges so each cell fills whole; the head may
+    /// precede the connection frontier, where `readSource` falls back to a one-shot read.
     size_t fetch_lo = window.offset;
     size_t fetch_hi = window.end();
     for (const auto & [cache, view] : views)
@@ -406,7 +397,6 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(
     ChainedBuffers fetched = readSource(object, fetch_lo - object_file_offset, fetch_hi - fetch_lo, fetch_lo);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
 
-    /// Populate the covering miss cells straight from the fetch buffer (no window-wide copy).
     for (auto & [cache, view] : views)
     {
         cache->openWriteBuffers(object, object_file_offset, *view);
@@ -427,7 +417,6 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(
         }
     }
 
-    /// Return the requested window slice out of the fetched data.
     return fetched.slice(window);
 }
 
@@ -606,8 +595,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (read_until && *read_until - position < want)
         want = *read_until - position;
 
-    /// The served bytes come back as a ChainedBuffers at FILE (physical) offsets -- zero-copy for
-    /// cache hits, block-chunked for source reads. A short window is fine: the next call continues.
+    /// Served at FILE (physical) offsets; a short window is fine, the next call continues.
     ChainedBuffers chain = cache_chain.empty()
         ? readSource(object, object_offset, want, /*file_base=*/position_physical)
         : serveThroughCaches(object, segment->logical_offset, object_offset, want);
@@ -615,9 +603,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
     {
-        /// Nothing served: end of the file. A held connection is done, not an incomplete drop.
         reached_eof = true;
-        long_conn.reset();
+        long_conn.reset();   /// done at EOF, not an incomplete drop
         /// A known-size source that ends before its declared total is truncated/corrupt.
         if (!offset_map.hasUnknownSize() && position < totalSize())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -627,8 +614,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     }
     stats.add(Stats::RequestedBytes, got);
 
-    /// Rebase from physical to logical (the header sits at the file front), then decrypt each node
-    /// at its logical offset. CTR is position-addressable, so per-node decryption is exact.
+    /// Rebase physical->logical, then decrypt each node at its logical offset.
     chain.shift(-static_cast<ssize_t>(data_start_offset));
     chain = decryptWindow(std::move(chain));
     position += got;
@@ -640,8 +626,7 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
     if (!needsDecryption() || cipher.empty())
         return std::move(cipher);
 
-    /// Nodes may alias cache buffers (shared, still encrypted), so decrypt into fresh copies rather
-    /// than through them.
+    /// Nodes may alias shared cache buffers, so decrypt into fresh copies, not through them.
     StatTimer decrypt_timer(stats, Stats::DecryptMicroseconds);
     ChainedBuffers plain;
     for (const auto & node : cipher.getNodes())
