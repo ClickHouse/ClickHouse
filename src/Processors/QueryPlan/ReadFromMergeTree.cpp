@@ -1971,11 +1971,26 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// lazy merging stream instead.
                 if (split_intersecting_parts_ranges_into_layers && reader_settings.read_in_order && query_task_size_limit)
                 {
-                    /// The limit counts rows after the FINAL collapse, while getRowsCountAllParts() counts source
-                    /// rows. Every key appears at most once per part, so a layer emits at least 1/parts of its
-                    /// source rows; use this lower bound to keep layers unless the limit fits into one layer even
-                    /// under the worst-case duplication.
-                    const size_t rows_per_layer = std::max<size_t>(new_parts.getRowsCountAllParts() / max_layers / new_parts.size(), 1);
+                    /// The limit counts rows after the FINAL collapse, while source rows may contain multiple
+                    /// versions of the same key. A merge collapses them, so a part of non-zero level contains a
+                    /// key at most once (at most twice for Collapsing engines), while an unmerged part may
+                    /// contain arbitrarily many versions of a key (e.g. inserted with optimize_on_insert = 0)
+                    /// and gives no lower bound on the collapsed size. Count only rows of merged parts and
+                    /// divide by the number of parts to get a lower bound of a layer's output; keep layers
+                    /// unless the limit fits into one layer even under this worst-case duplication.
+                    size_t merged_parts_rows = 0;
+                    for (const auto & part : new_parts)
+                        if (part.data_part->info.level > 0)
+                            merged_parts_rows += part.getRowsCount();
+
+                    const size_t max_collapsed_rows_per_key_in_merged_part
+                        = (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing
+                           || data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+                        ? 2
+                        : 1;
+
+                    const size_t rows_per_layer = std::max<size_t>(
+                        merged_parts_rows / max_layers / new_parts.size() / max_collapsed_rows_per_key_in_merged_part, 1);
                     if (query_task_size_limit < rows_per_layer)
                     {
                         LOG_TRACE(

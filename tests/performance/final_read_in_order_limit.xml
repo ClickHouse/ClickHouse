@@ -14,15 +14,13 @@
         ORDER BY k
     </create_query>
 
+    <!-- A merged base part (keys unique in it, so it provides the lower bound of a layer's
+         post-FINAL output) plus unmerged update parts. -->
+    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 1) % 1000, toString(cityHash64(number, 101)) FROM numbers_mt(24000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE final_inorder_limit FINAL</fill_query>
     <fill_query>SYSTEM STOP MERGES final_inorder_limit</fill_query>
-    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 1) % 1000, toString(cityHash64(number, 101)) FROM numbers_mt(4000000)</fill_query>
     <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 2) % 1000, toString(cityHash64(number, 102)) FROM numbers_mt(4000000)</fill_query>
     <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 3) % 1000, toString(cityHash64(number, 103)) FROM numbers_mt(4000000)</fill_query>
-    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 4) % 1000, toString(cityHash64(number, 104)) FROM numbers_mt(4000000)</fill_query>
-    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 5) % 1000, toString(cityHash64(number, 105)) FROM numbers_mt(4000000)</fill_query>
-    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 6) % 1000, toString(cityHash64(number, 106)) FROM numbers_mt(4000000)</fill_query>
-    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 7) % 1000, toString(cityHash64(number, 107)) FROM numbers_mt(4000000)</fill_query>
-    <fill_query>INSERT INTO final_inorder_limit SELECT number, cityHash64(number, 8) % 1000, toString(cityHash64(number, 108)) FROM numbers_mt(4000000)</fill_query>
 
     <query>SELECT k, payload FROM final_inorder_limit FINAL ORDER BY k LIMIT 100 FORMAT Null</query>
     <query>SELECT k, payload FROM final_inorder_limit FINAL WHERE v = 7 ORDER BY k LIMIT 100 FORMAT Null</query>
