@@ -340,11 +340,24 @@ static AvroDeserializer::DeserializeFn createLogicalTimeDeserializeFn(
     {
         const UInt32 target_scale = getDecimalScale(*target_type);
         if (target_scale < source_scale)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot insert Avro time with scale {} into ClickHouse type {} without losing precision",
-                source_scale,
-                target_type->getName());
+        {
+            /// Time64(0) is second precision, same as Time: allow truncating division.
+            /// Other downscales (e.g. micros -> Time64(3)) still reject precision loss.
+            if (target_scale != 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot insert Avro time with scale {} into ClickHouse type {} without losing precision",
+                    source_scale,
+                    target_type->getName());
+
+            const Int64 divisor = DataTypeTime64::getScaleMultiplier(source_scale).value;
+            return [physical_type, divisor](IColumn & column, avro::Decoder & decoder)
+            {
+                const Int64 value = decodeAvroIntOrLong(decoder, physical_type);
+                assert_cast<ColumnDecimal<Time64> &>(column).insertValue(value / divisor);
+                return true;
+            };
+        }
 
         const Int64 multiplier = DataTypeTime64::getScaleMultiplier(target_scale - source_scale).value;
         return [physical_type, multiplier](IColumn & column, avro::Decoder & decoder)

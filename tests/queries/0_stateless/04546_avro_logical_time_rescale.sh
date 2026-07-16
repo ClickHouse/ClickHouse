@@ -41,6 +41,10 @@ cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
 cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
     -S "t_millis Time, t_micros Time" -q 'SELECT * FROM table ORDER BY ALL'
 
+# Time64(0) is also second precision: truncate like Time.
+cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
+    -S "t_millis Time64(0), t_micros Time64(0)" -q 'SELECT * FROM table ORDER BY ALL'
+
 # Upscale millis -> Time64(6).
 cat "$DATA_FILE" | ${CLICKHOUSE_LOCAL} --input-format Avro --output-format TSV \
     -S "t_millis Time64(6), t_micros Time64(6)" -q 'SELECT * FROM table ORDER BY ALL'
