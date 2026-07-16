@@ -138,4 +138,4 @@ SELECT groupBloomFilterState(200000000, 0.0001)(number) FROM numbers(10); -- { s
 SELECT groupBloomFilterState(268435464, 5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 
 -- Accepted large filters must still obey query memory limits.
-SELECT groupBloomFilterState(1048577, 1.1754943508222875e-38)(number) FROM numbers(2) SETTINGS max_memory_usage = '100Mi', max_untracked_memory = 0; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SELECT groupBloomFilterState(1048577, 1.1754943508222875e-38)(number) FROM numbers(2) SETTINGS max_memory_usage = '100Mi', max_untracked_memory = 0 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
