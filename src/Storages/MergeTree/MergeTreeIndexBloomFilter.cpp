@@ -197,12 +197,16 @@ struct MapIndexInfo
     bool has_keys_index = false;
     bool has_values_index = false;
     Field key_field;
+    /// The type `key_field` was resolved with (e.g. `UUID` or `UUID2`), used to convert it to the
+    /// map's actual key type before hashing, since layout-changing conversions are not a no-op.
+    DataTypePtr key_field_type;
 };
 
 /// Try to resolve a Map column against the bloom filter index header by the map column name
 /// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
 /// is present in the index.
-std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
+std::optional<MapIndexInfo> tryResolveMapIndexInfo(
+    const String & map_column_name, const Field & key_field, const DataTypePtr & key_field_type, const Block & header)
 {
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
@@ -215,6 +219,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 
     MapIndexInfo info;
     info.key_field = key_field;
+    info.key_field_type = key_field_type;
     if (keys_position)
     {
         info.has_keys_index = true;
@@ -241,7 +246,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, header);
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     size_t keys_position = header.getPositionByName(map_keys_index_column_name);
@@ -256,7 +261,8 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, con
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, header);
+    /// The key was deserialized using the index's own key type, so it is already in the actual layout.
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
@@ -276,7 +282,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, constant_type, header);
         }
     }
 
@@ -658,7 +664,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
+            auto converted_key_field = convertFieldToType(map_info->key_field, *actual_type, map_info->key_field_type.get());
+            if (converted_key_field.isNull())
+                return false;
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_key_field)));
         }
         else if (map_info->has_values_index)
         {
@@ -963,16 +972,19 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             size_t position = 0;
             Field const_value;
+            DataTypePtr const_value_type;
 
             if (map_info->has_keys_index)
             {
                 position = map_info->keys_index_position;
                 const_value = map_info->key_field;
+                const_value_type = map_info->key_field_type;
             }
             else if (map_info->has_values_index)
             {
                 position = map_info->values_index_position;
                 const_value = value_field;
+                const_value_type = value_type;
             }
             else
             {
@@ -983,7 +995,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
+            auto converted_const_value = convertFieldToType(const_value, *actual_type, const_value_type.get());
+            if (converted_const_value.isNull())
+                return false;
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_const_value)));
 
             return true;
         }
