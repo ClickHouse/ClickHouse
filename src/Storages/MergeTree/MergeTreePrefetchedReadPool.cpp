@@ -205,6 +205,13 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
     if (ranges_refiner)
     {
+        /// The refining job never prefetches dropped ranges, but the task boundaries and the
+        /// prefetch admission were decided at fill time from the unrefined ranges: a heavily
+        /// refined task is not topped up to the intended size and a fully pruned one does not
+        /// return its admission budget. Both need per-task cutting at prefetch time to fix
+        /// (planned together with the range-gated reading, where the cutter must become
+        /// range-aware anyway), and both only make the pool more conservative than possible,
+        /// never worse than reading without refinement.
         task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, task, *this);
         return;
     }
