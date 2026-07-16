@@ -151,18 +151,6 @@ std::vector<uint8_t> dumpValue(T value)
     return bytes;
 }
 
-DataTypePtr getTimeTypeOrNull(DataTypePtr type)
-{
-    if (type->isNullable())
-        return getTimeTypeOrNull(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
-
-    const WhichDataType which(type);
-    if (which.isTime() || which.isTime64())
-        return type;
-
-    return nullptr;
-}
-
 Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
 {
     if (type->isNullable())
@@ -483,10 +471,11 @@ void generateManifestFile(
             /// the surrounding union). Throws on an unsupported value type.
             auto make_value_datum = [&]() -> avro::GenericDatum
             {
-                auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
-                if (!partition_values[i].isNull() && partition_time_type)
+                if (!partition_values[i].isNull())
                 {
-                    return avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
+                    const WhichDataType which_partition(removeNullable(partition_types[i]));
+                    if (which_partition.isTime() || which_partition.isTime64())
+                        return avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
                 }
 
                 switch (partition_values[i].getType())
