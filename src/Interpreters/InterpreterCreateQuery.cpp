@@ -2925,7 +2925,10 @@ BlockIO InterpreterCreateQuery::execute()
             if (!is_create_database)
             {
                 getContext()->checkAccess(getRequiredAccess());
-                throwIfCaseSiblingTable(DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), create, getContext());
+                /// The database may be omitted in the query and empty at this point.
+                String create_database_name = create.getDatabase().empty() ? getContext()->getCurrentDatabase() : create.getDatabase();
+                if (!create_database_name.empty())
+                    throwIfCaseSiblingTable(DatabaseCatalog::instance().tryGetDatabase(create_database_name), create, getContext());
             }
             return executeQueryOnCluster(create);
         }
