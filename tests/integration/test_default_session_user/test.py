@@ -50,6 +50,10 @@ node_reject = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
+        # The Arrow Flight listener can come up slightly later than the native
+        # port that the readiness check uses.
+        node1.wait_until_port_is_ready(9110, timeout=10)
+        node_reject.wait_until_port_is_ready(9110, timeout=10)
         yield cluster
     finally:
         cluster.shutdown()
