@@ -792,6 +792,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
         columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        /// MATERIALIZED columns recomputed by the mutation are not in updated_columns
+        /// but their new values still drive dependencies (e.g. a TTL DELETE WHERE that
+        /// references a MATERIALIZED column). Seed them so recalculation is triggered.
+        for (const auto & [source_column, affected_materialized] : column_to_affected_materialized)
+            columns_for_dependencies.insert(affected_materialized.begin(), affected_materialized.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
 

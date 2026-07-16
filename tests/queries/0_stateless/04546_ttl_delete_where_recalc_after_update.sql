@@ -28,3 +28,30 @@ SELECT count() FROM ttl_delete_where_recalc;
 SELECT val FROM ttl_delete_where_recalc ORDER BY val;
 
 DROP TABLE ttl_delete_where_recalc;
+
+-- The WHERE-referenced column may be a MATERIALIZED column. Updating its source column
+-- must recalculate the MATERIALIZED value and, transitively, the DELETE WHERE TTL info.
+DROP TABLE IF EXISTS ttl_delete_where_materialized;
+
+CREATE TABLE ttl_delete_where_materialized
+(
+    d DateTime,
+    src UInt8,
+    flag UInt8 MATERIALIZED src,
+    id UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+TTL d + INTERVAL 1 SECOND DELETE WHERE flag = 1
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_delete_where_materialized (d, src, id) VALUES ('2000-01-01 00:00:00', 0, 1);
+
+SELECT count() FROM ttl_delete_where_materialized;
+
+-- Updating src recomputes flag (MATERIALIZED). The row now matches DELETE WHERE and is expired.
+ALTER TABLE ttl_delete_where_materialized UPDATE src = 1 WHERE id = 1 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE ttl_delete_where_materialized FINAL;
+SELECT count() FROM ttl_delete_where_materialized;
+
+DROP TABLE ttl_delete_where_materialized;
