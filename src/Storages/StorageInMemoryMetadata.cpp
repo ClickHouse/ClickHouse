@@ -447,7 +447,13 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(getRowsTTL().expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRowsWhereTTLs())
+    {
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
+        /// A `DELETE WHERE` TTL decides per row whether to drop it, and that decision is
+        /// stored per part (rows_where_ttl_info). Updating a column referenced only in the
+        /// WHERE condition can change the decision, so it must trigger a TTL recalculation.
+        add_for_rows_ttl(entry.where_expression_columns, required_ttl_columns);
+    }
 
     for (const auto & entry : getGroupByTTLs())
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
@@ -463,8 +469,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
-
-    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
