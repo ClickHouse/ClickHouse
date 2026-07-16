@@ -68,7 +68,7 @@ SELECT * FROM postgresql(postgres_creds, table='table1');
 
 ### TLS/SSL {#tls-ssl}
 
-TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys (or key-value arguments): `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). For example, to require an encrypted connection and verify the server certificate:
+TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys (or key-value arguments): `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). The certificate and key files must be located inside the directory configured by the server's [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path); relative paths are resolved against it. For example, to require an encrypted connection and verify the server certificate:
 
 ```xml
 <named_collections>
@@ -78,7 +78,7 @@ TLS/SSL parameters are forwarded to `libpq` and can be set as named collection k
         <user>postgres</user>
         <password>****</password>
         <sslmode>verify-full</sslmode>
-        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+        <sslrootcert>/var/lib/clickhouse/user_files/postgresql-ca.crt</sslrootcert>
     </postgres_creds>
 </named_collections>
 ```

@@ -16,6 +16,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <Common/logger_useful.h>
 #endif
 
@@ -332,9 +333,17 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
         }
         if (created_from_ddl)
         {
-            for (const auto & [_, replicas] : replicas_by_priority)
-                for (const auto & replica : replicas)
+            for (auto & [_, replicas] : replicas_by_priority)
+            {
+                for (auto & replica : replicas)
+                {
                     context->getRemoteHostFilter().checkHostAndPort(replica.host, toString(replica.port));
+                    /// Certificate/key paths in DDL-created dictionaries are restricted to `user_files`
+                    /// the same way as in table functions and engines. Dictionaries defined in server
+                    /// configuration files are trusted and keep their paths as-is.
+                    StoragePostgreSQL::validateSSLCertificatePaths(replica, context);
+                }
+            }
         }
 
 

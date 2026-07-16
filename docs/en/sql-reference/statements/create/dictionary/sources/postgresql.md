@@ -77,6 +77,8 @@ Setting fields:
 | `sslcert` | Path to the client certificate file (`libpq` `sslcert`). Optional. |
 | `sslkey` | Path to the client private key file (`libpq` `sslkey`). Optional. |
 
+For dictionaries created with DDL queries, the certificate and key files must be located inside the directory configured by the server's [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path) (relative paths are resolved against it). Dictionaries defined in server configuration files may use arbitrary paths.
+
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::

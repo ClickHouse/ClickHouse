@@ -5,6 +5,7 @@
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -76,6 +77,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace
@@ -594,6 +596,39 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
+void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context)
+{
+    /// clickhouse-local runs with the privileges of the user who started it, there is no file boundary to enforce.
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
+        return;
+
+    namespace fs = std::filesystem;
+    const String user_files_path = context->getUserFilesPath();
+
+    auto validate_path = [&](String & path, std::string_view option_name)
+    {
+        if (path.empty())
+            return;
+
+        /// libpq would resolve a relative path against the working directory of the server process,
+        /// which the user cannot rely on; resolve it against `user_files_path` instead.
+        if (fs::path(path).is_relative())
+            path = (fs::path(user_files_path) / path).lexically_normal().string();
+
+        if (!fileOrSymlinkPathStartsWith(path, user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                "The `{}` path {} is not inside the `user_files` directory {}. TLS/SSL certificate and key files "
+                "used for PostgreSQL connections defined through SQL must reside there",
+                option_name, path, user_files_path);
+    };
+
+    /// The special value `system` instructs libpq to verify against the system certificate store, it is not a path.
+    if (configuration.ssl_root_cert != "system")
+        validate_path(configuration.ssl_root_cert, "sslrootcert");
+    validate_path(configuration.ssl_cert, "sslcert");
+    validate_path(configuration.ssl_key, "sslkey");
+}
+
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
@@ -643,6 +678,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.ssl_root_cert = named_collection.getOrDefault<String>("sslrootcert", "");
     configuration.ssl_cert = named_collection.getOrDefault<String>("sslcert", "");
     configuration.ssl_key = named_collection.getOrDefault<String>("sslkey", "");
+
+    validateSSLCertificatePaths(configuration, context_);
 
     return configuration;
 }

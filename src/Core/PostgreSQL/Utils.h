@@ -20,6 +20,8 @@ namespace postgres
 /// Optional TLS/SSL parameters passed to libpq via the connection string.
 /// Empty fields are omitted from the connection string, so libpq keeps its own
 /// defaults (in particular, an empty `ssl_mode` leaves libpq at `sslmode=prefer`).
+/// Certificate and key paths coming from SQL are restricted to `user_files_path`
+/// before they reach here, see `StoragePostgreSQL::validateSSLCertificatePaths`.
 struct ConnectionSSLParams
 {
     String ssl_mode;       /// libpq `sslmode`: disable, allow, prefer, require, verify-ca or verify-full.

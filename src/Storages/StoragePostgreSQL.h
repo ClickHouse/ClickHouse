@@ -80,6 +80,15 @@ public:
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
 
+    /// TLS/SSL certificate and key paths accepted from SQL (table functions, engines, DDL-created
+    /// dictionaries) must reside inside `user_files_path`: the files are opened by the server process
+    /// with its own privileges, so an unrestricted path would let any user who can define a PostgreSQL
+    /// source make the server open arbitrary local certificate and key files. Resolves relative paths
+    /// against `user_files_path` (in place) and throws `PATH_ACCESS_DENIED` for paths outside of it.
+    /// Not applied to dictionaries defined in server configuration files, which are trusted, and in
+    /// clickhouse-local, which runs with the privileges of the user who started it.
+    static void validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context);
+
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
         const TableNameOrQuery & table_or_query,

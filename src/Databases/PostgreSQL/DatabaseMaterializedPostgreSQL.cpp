@@ -649,6 +649,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].value.empty())
             configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
 
+        /// The SETTINGS clause could have introduced certificate paths on top of the already
+        /// validated named collection, so validate the merged result.
+        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.context);
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,

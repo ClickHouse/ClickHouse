@@ -40,11 +40,14 @@ namespace ErrorCodes
         "`verify-ca` or `verify-full`. Empty keeps libpq's default (`prefer`).", 0) \
     DECLARE(String, materialized_postgresql_ssl_root_cert, "", \
         "Path to the CA certificate file used to verify the PostgreSQL server certificate (libpq `sslrootcert`); " \
-        "required for `verify-ca` and `verify-full` unless the special value `system` is used.", 0) \
+        "required for `verify-ca` and `verify-full` unless the special value `system` is used. " \
+        "The file must be inside the `user_files` directory.", 0) \
     DECLARE(String, materialized_postgresql_ssl_cert, "", \
-        "Path to the client certificate file for the PostgreSQL connection (libpq `sslcert`).", 0) \
+        "Path to the client certificate file for the PostgreSQL connection (libpq `sslcert`). " \
+        "The file must be inside the `user_files` directory.", 0) \
     DECLARE(String, materialized_postgresql_ssl_key, "", \
-        "Path to the client private key file for the PostgreSQL connection (libpq `sslkey`).", 0) \
+        "Path to the client private key file for the PostgreSQL connection (libpq `sslkey`). " \
+        "The file must be inside the `user_files` directory.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)

@@ -247,6 +247,8 @@ Path to the client certificate file (`libpq` `sslcert`) presented to PostgreSQL 
 
 Path to the client private key file (`libpq` `sslkey`) matching `materialized_postgresql_ssl_cert`. Default: empty.
 
+The certificate and key files must be located inside the directory configured by the server's [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path); relative paths are resolved against it.
+
 Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
 
 ```sql
@@ -254,7 +256,7 @@ CREATE DATABASE postgres_db
 ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS
     materialized_postgresql_ssl_mode = 'verify-full',
-    materialized_postgresql_ssl_root_cert = '/etc/clickhouse-server/postgresql-ca.crt';
+    materialized_postgresql_ssl_root_cert = '/var/lib/clickhouse/user_files/postgresql-ca.crt';
 ```
 
 The same parameters can be supplied through a [named collection](/operations/named-collections) instead, using the `libpq` key names `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.

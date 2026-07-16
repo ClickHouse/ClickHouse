@@ -8,6 +8,7 @@ without SSL support the connection could not be established at all.
 """
 
 import base64
+import os
 import time
 
 import psycopg2
@@ -28,12 +29,16 @@ node = cluster.add_instance(
 # It must match the certificate CN/SAN for `sslmode=verify-full` to succeed.
 PG_HOST = "postgres1"
 PG_DATA_DIR = "/postgres/data"
-# Paths on the ClickHouse node where the fixture drops the certificates.
-CA_CERT_PATH = "/etc/clickhouse-server/postgresql-ca.crt"
-WRONG_CA_CERT_PATH = "/etc/clickhouse-server/postgresql-wrong-ca.crt"
+# Paths on the ClickHouse node where the fixture drops the certificates. They must
+# be inside the `user_files` directory: certificate/key paths provided through SQL
+# are restricted to it (see `StoragePostgreSQL::validateSSLCertificatePaths`).
+USER_FILES_DIR = "/var/lib/clickhouse/user_files"
+CA_CERT_NAME = "postgresql-ca.crt"
+CA_CERT_PATH = f"{USER_FILES_DIR}/{CA_CERT_NAME}"
+WRONG_CA_CERT_PATH = f"{USER_FILES_DIR}/postgresql-wrong-ca.crt"
 # Client certificate/key used to exercise the sslcert/sslkey (client-auth) path.
-CLIENT_CERT_PATH = "/etc/clickhouse-server/postgresql-client.crt"
-CLIENT_KEY_PATH = "/etc/clickhouse-server/postgresql-client.key"
+CLIENT_CERT_PATH = f"{USER_FILES_DIR}/postgresql-client.crt"
+CLIENT_KEY_PATH = f"{USER_FILES_DIR}/postgresql-client.key"
 # A database that only accepts connections presenting a verified client
 # certificate (see the `pg_hba.conf` written by `enable_postgres_ssl`).
 CERT_DB = "certdb"
@@ -41,11 +46,7 @@ CERT_TABLE = "cert_table"
 
 
 def pg_connect(sslmode="prefer", timeout=2):
-    conn_string = (
-        f"host={cluster.postgres_ip} port={cluster.postgres_port} "
-        f"user='postgres' password='{pg_pass}' dbname='postgres' "
-        f"sslmode={sslmode} connect_timeout={timeout}"
-    )
+    conn_string = f"host={cluster.postgres_ip} port={cluster.postgres_port} user='postgres' password='{pg_pass}' dbname='postgres' sslmode={sslmode} connect_timeout={timeout}"
     conn = psycopg2.connect(conn_string)
     conn.autocommit = True
     return conn
@@ -58,7 +59,7 @@ def pg_exec(cmd):
 def node_write_file(path, content):
     # base64 keeps the PEM intact across the shell without newline/quoting issues.
     encoded = base64.b64encode(content.encode()).decode()
-    node.exec_in_container(["bash", "-c", f"echo '{encoded}' | base64 -d > {path}"])
+    node.exec_in_container(["bash", "-c", f"mkdir -p $(dirname {path}) && echo '{encoded}' | base64 -d > {path}"])
 
 
 def wait_for(predicate, timeout, description):
@@ -121,13 +122,7 @@ def enable_postgres_ssl():
     # method maps the certificate CN to the database user). `hostssl all all all
     # trust` matches both ordinary and logical-replication connections (the latter
     # are matched by database name / `all`).
-    pg_exec(
-        "cat > %s/pg_hba.conf <<'EOF'\n"
-        "local all all trust\n"
-        "hostssl %s all all cert\n"
-        "hostssl all all all trust\n"
-        "EOF" % (PG_DATA_DIR, CERT_DB)
-    )
+    pg_exec("cat > %s/pg_hba.conf <<'EOF'\nlocal all all trust\nhostssl %s all all cert\nhostssl all all all trust\nEOF" % (PG_DATA_DIR, CERT_DB))
     pg_connect(sslmode="require").cursor().execute("SELECT pg_reload_conf()")
 
     def plaintext_is_refused():
@@ -145,8 +140,8 @@ def enable_postgres_ssl():
     pg_exec(f"psql -v ON_ERROR_STOP=1 -U postgres -c 'CREATE DATABASE {CERT_DB}'")
     pg_exec(
         f"psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "
-        f"\"CREATE TABLE {CERT_TABLE} (key integer PRIMARY KEY, value integer); "
-        f"INSERT INTO {CERT_TABLE} SELECT i, i * 10 FROM generate_series(0, 9) AS i\""
+        f'"CREATE TABLE {CERT_TABLE} (key integer PRIMARY KEY, value integer); '
+        f'INSERT INTO {CERT_TABLE} SELECT i, i * 10 FROM generate_series(0, 9) AS i"'
     )
 
     # Export the CA to the ClickHouse node for use as sslrootcert, an unrelated CA
@@ -154,12 +149,17 @@ def enable_postgres_ssl():
     node_write_file(CA_CERT_PATH, pg_exec(f"cat {PG_DATA_DIR}/ca.crt"))
     node_write_file(CLIENT_CERT_PATH, pg_exec(f"cat {PG_DATA_DIR}/client.crt"))
     node_write_file(CLIENT_KEY_PATH, pg_exec(f"cat {PG_DATA_DIR}/client.key"))
-    # libpq refuses a client key that is group/world-readable.
-    node.exec_in_container(["bash", "-c", f"chmod 600 {CLIENT_KEY_PATH}"])
-    pg_exec(
-        "openssl req -new -x509 -days 3650 -nodes "
-        "-out /tmp/wrong-ca.crt -keyout /tmp/wrong-ca.key -subj '/CN=wrong'"
+    # libpq refuses a client key that is group/world-readable and requires it to be
+    # owned by the effective user of the connecting process (the server, which the
+    # cluster starts under the current uid).
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"chown {os.getuid()}:{os.getgid()} {CLIENT_KEY_PATH} && chmod 600 {CLIENT_KEY_PATH}",
+        ]
     )
+    pg_exec("openssl req -new -x509 -days 3650 -nodes -out /tmp/wrong-ca.crt -keyout /tmp/wrong-ca.key -subj '/CN=wrong'")
     node_write_file(WRONG_CA_CERT_PATH, pg_exec("cat /tmp/wrong-ca.crt"))
 
 
@@ -184,57 +184,34 @@ def started_cluster():
 
 
 def test_sslmode_require(started_cluster):
-    assert (
-        node.query("SELECT count() FROM postgresql(pg_ssl, sslmode='require')").strip()
-        == "10"
-    )
-    assert (
-        node.query("SELECT sum(value) FROM postgresql(pg_ssl, sslmode='require')").strip()
-        == str(sum(i * 10 for i in range(10)))
-    )
+    assert node.query("SELECT count() FROM postgresql(pg_ssl, sslmode='require')").strip() == "10"
+    assert node.query("SELECT sum(value) FROM postgresql(pg_ssl, sslmode='require')").strip() == str(sum(i * 10 for i in range(10)))
 
 
 def test_sslmode_disable_is_rejected(started_cluster):
     # The server requires SSL, so a plaintext connection must be refused rather
     # than silently downgraded. This proves ClickHouse honors sslmode=require above.
-    error = node.query_and_get_error(
-        "SELECT count() FROM postgresql(pg_ssl, sslmode='disable')"
-    )
+    error = node.query_and_get_error("SELECT count() FROM postgresql(pg_ssl, sslmode='disable')")
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
 
 
 def test_sslmode_verify_ca(started_cluster):
-    assert (
-        node.query(
-            f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-ca', sslrootcert='{CA_CERT_PATH}')"
-        ).strip()
-        == "10"
-    )
+    assert node.query(f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-ca', sslrootcert='{CA_CERT_PATH}')").strip() == "10"
 
 
 def test_sslmode_verify_full(started_cluster):
-    assert (
-        node.query(
-            f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')"
-        ).strip()
-        == "10"
-    )
+    assert node.query(f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')").strip() == "10"
 
 
 def test_verify_full_with_wrong_ca_is_rejected(started_cluster):
     # A CA that did not sign the server certificate must fail verification.
-    error = node.query_and_get_error(
-        f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-full', sslrootcert='{WRONG_CA_CERT_PATH}')"
-    )
+    error = node.query_and_get_error(f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-full', sslrootcert='{WRONG_CA_CERT_PATH}')")
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
 
 
 def test_postgresql_table_engine_over_ssl(started_cluster):
     node.query("DROP TABLE IF EXISTS ch_pg_ssl")
-    node.query(
-        "CREATE TABLE ch_pg_ssl (key UInt32, value UInt32) "
-        "ENGINE = PostgreSQL(pg_ssl, sslmode='verify-full', sslrootcert='%s')" % CA_CERT_PATH
-    )
+    node.query("CREATE TABLE ch_pg_ssl (key UInt32, value UInt32) ENGINE = PostgreSQL(pg_ssl, sslmode='verify-full', sslrootcert='%s')" % CA_CERT_PATH)
     assert node.query("SELECT count() FROM ch_pg_ssl").strip() == "10"
     node.query("DROP TABLE ch_pg_ssl")
 
@@ -257,33 +234,20 @@ def test_postgresql_dictionary_over_ssl(started_cluster):
         """
     )
     assert node.query("SELECT count() FROM dict_pg_ssl").strip() == "10"
-    assert (
-        node.query("SELECT dictGetUInt32(dict_pg_ssl, 'value', toUInt64(5))").strip()
-        == "50"
-    )
+    assert node.query("SELECT dictGetUInt32(dict_pg_ssl, 'value', toUInt64(5))").strip() == "50"
     node.query("DROP DICTIONARY dict_pg_ssl")
 
 
 def test_client_certificate_authentication(started_cluster):
     # CERT_DB requires a verified client certificate, so a successful read proves
     # the sslcert/sslkey parameters are forwarded to libpq and accepted.
-    assert (
-        node.query(
-            "SELECT count() FROM postgresql(pg_ssl_cert, "
-            f"sslmode='verify-full', sslrootcert='{CA_CERT_PATH}', "
-            f"sslcert='{CLIENT_CERT_PATH}', sslkey='{CLIENT_KEY_PATH}')"
-        ).strip()
-        == "10"
-    )
+    assert node.query(f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}', sslcert='{CLIENT_CERT_PATH}', sslkey='{CLIENT_KEY_PATH}')").strip() == "10"
 
 
 def test_client_certificate_is_required(started_cluster):
     # The same connection without a client certificate must be rejected, so the
     # positive test above really did authenticate with the certificate.
-    error = node.query_and_get_error(
-        "SELECT count() FROM postgresql(pg_ssl_cert, "
-        f"sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')"
-    )
+    error = node.query_and_get_error(f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')")
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
 
 
@@ -307,9 +271,7 @@ def test_materialized_postgresql_database_ssl(started_cluster):
         120,
         "MaterializedPostgreSQL initial sync over SSL",
     )
-    assert node.query("SELECT sum(value) FROM mpg_ssl.mat_table").strip() == str(
-        sum(i * 10 for i in range(50))
-    )
+    assert node.query("SELECT sum(value) FROM mpg_ssl.mat_table").strip() == str(sum(i * 10 for i in range(50)))
 
     # Insert a row after the database exists so the WAL consumer (not just the
     # initial snapshot) has to replicate it over the verify-full connection.
@@ -318,10 +280,66 @@ def test_materialized_postgresql_database_ssl(started_cluster):
     conn.close()
 
     wait_for(
-        lambda: node.query("SELECT value FROM mpg_ssl.mat_table WHERE key = 50").strip()
-        == "500",
+        lambda: node.query("SELECT value FROM mpg_ssl.mat_table WHERE key = 50").strip() == "500",
         120,
         "MaterializedPostgreSQL to replicate a post-create insert over SSL",
     )
     assert node.query("SELECT count() FROM mpg_ssl.mat_table").strip() == "51"
     node.query("DROP DATABASE mpg_ssl")
+
+
+def test_relative_certificate_path_is_resolved_against_user_files(started_cluster):
+    # A relative sslrootcert is resolved against the `user_files` directory (libpq
+    # itself would resolve it against the server's working directory).
+    assert node.query(f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-full', sslrootcert='{CA_CERT_NAME}')").strip() == "10"
+
+
+def test_certificate_path_outside_user_files_is_rejected(started_cluster):
+    # Certificate/key paths provided through SQL must stay inside `user_files`,
+    # otherwise any user able to define a PostgreSQL source could make the server
+    # open arbitrary local files with its own privileges.
+    outside_path = "/etc/clickhouse-server/config.xml"
+
+    for option in ("sslrootcert", "sslcert", "sslkey"):
+        error = node.query_and_get_error(f"SELECT count() FROM postgresql(pg_ssl, sslmode='verify-full', {option}='{outside_path}')")
+        assert "PATH_ACCESS_DENIED" in error
+
+    # The same restriction covers the MaterializedPostgreSQL settings surface...
+    node.query("DROP DATABASE IF EXISTS mpg_bad_path")
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE mpg_bad_path
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{outside_path}',
+            materialized_postgresql_tables_list = 'mat_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert "PATH_ACCESS_DENIED" in error
+
+    # ... and dictionaries created through DDL. Depending on `dictionaries_lazy_load`
+    # the source is instantiated either at CREATE or on first use, so accept the
+    # error from either step.
+    node.query("DROP DICTIONARY IF EXISTS dict_bad_path")
+    try:
+        node.query(
+            f"""
+            CREATE DICTIONARY dict_bad_path (key UInt32, value UInt32)
+            PRIMARY KEY key
+            SOURCE(POSTGRESQL(
+                host '{PG_HOST}' port 5432
+                user 'postgres' password '{pg_pass}'
+                db 'postgres' table 'test_table'
+                sslmode 'verify-full' sslrootcert '{outside_path}'))
+            LAYOUT(HASHED())
+            LIFETIME(MIN 0 MAX 0)
+            """
+        )
+    except Exception as e:
+        error = str(e)
+    else:
+        error = node.query_and_get_error("SELECT dictGetUInt32(dict_bad_path, 'value', toUInt64(1))")
+        node.query("DROP DICTIONARY dict_bad_path")
+    assert "PATH_ACCESS_DENIED" in error
