@@ -44,6 +44,8 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
+String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
