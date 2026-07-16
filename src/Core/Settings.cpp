@@ -7934,6 +7934,11 @@ Possible values:
   list. Double-quoted parts (`"MyCol"`) are always matched exactly. Backtick-quoted parts fold like
   unquoted ones.
 
+Double-quoted definitions are pinned within the query being analyzed: a folded reference does not
+match a double-quoted alias, CTE column or similar definition, only a double-quoted exact-spelling
+reference does. Quoting is not persisted in stored metadata, so definitions inside a stored view or
+table reloaded from metadata are not pinned.
+
 Database and table names are covered by the separate setting `database_and_table_name_matching`.
 )", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(

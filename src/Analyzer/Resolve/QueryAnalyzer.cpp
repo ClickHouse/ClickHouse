@@ -176,6 +176,42 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// The query node whose projection defines the column names of a query or union table
+/// expression. A union takes its projection names from its first select (see
+/// `UnionNode::computeProjectionColumns`), recursively for nested unions, so pinned
+/// projection names must be read from the same carrier.
+const QueryNode * findProjectionNamesCarrier(const QueryNode * query_node, const UnionNode * union_node)
+{
+    if (query_node || !union_node)
+        return query_node;
+
+    const auto & queries = union_node->getQueries().getNodes();
+    const QueryTreeNodePtr * current = queries.empty() ? nullptr : &queries.front();
+    while (current && *current)
+    {
+        if (const auto * inner_query = (*current)->as<QueryNode>())
+            return inner_query;
+        if (const auto * inner_union = (*current)->as<UnionNode>())
+        {
+            const auto & inner_queries = inner_union->getQueries().getNodes();
+            current = inner_queries.empty() ? nullptr : &inner_queries.front();
+        }
+        else
+        {
+            break;
+        }
+    }
+    return nullptr;
+}
+
+/// Sorted projection column names of a resolved query or union node whose definitions are
+/// double-quoted and therefore pinned under `standard` matching.
+Names collectPinnedProjectionNames(const QueryTreeNodePtr & node)
+{
+    const auto * carrier = findProjectionNamesCarrier(node->as<QueryNode>(), node->as<UnionNode>());
+    return carrier ? carrier->getPinnedProjectionColumnNames() : Names{};
+}
+
 /// The identifier resolve cache is keyed by identifier spelling only, but under `standard`
 /// matching differently quoted spellings of one name may resolve differently, so results
 /// must not be shared between them.
@@ -4370,23 +4406,52 @@ void QueryAnalyzer::validateGroupByKeyType(const DataTypePtr & group_by_key_type
 
 /** Resolve interpolate columns nodes list.
   */
-void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope, const NamesAndTypes & projection_columns)
 {
     auto & interpolate_node_list_typed = interpolate_node_list->as<ListNode &>();
+
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
 
     for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
+        const auto & target_identifier_name = interpolate_node_typed.getExpressionIdentifierName();
+        bool target_pinned = target_identifier_name.anyPartDoubleQuoted();
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        /// Everything downstream matches the target by name against the output header:
+        /// `removeUnusedProjectionColumns` pruning and the planner's actions-DAG alias. A folded
+        /// `standard`-mode target (`INTERPOLATE (val ...)` over projection `Val`) must therefore
+        /// be rewritten to the canonical projection spelling here.
+        String canonical_target_name = column_to_interpolate_name;
+        if (name_match_mode == NameMatchMode::Standard && !target_pinned && !target_identifier_name.empty())
+        {
+            Names projection_names;
+            projection_names.reserve(projection_columns.size());
+            for (const auto & projection_column : projection_columns)
+                projection_names.push_back(projection_column.name);
+
+            auto matches = collectFoldedNameMatchesInNames(projection_names, target_identifier_name);
+            if (matches.size() == 1)
+            {
+                canonical_target_name = matches.front();
+                interpolate_node_typed.setExpressionName(canonical_target_name);
+            }
+        }
 
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
-        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
+        /// The fake column carries the canonical name (it becomes the DAG input that must exist in
+        /// the output block), while the registration key keeps the user's spelling so references
+        /// inside the interpolate expression bind to it; a double-quoted target stays pinned.
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(canonical_target_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
         interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
+        if (target_pinned)
+            interpolate_scope.pinned_expression_argument_names.insert(column_to_interpolate_name);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
@@ -4680,10 +4745,21 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
             for (const auto & subcolumn : columns_description.getSubcolumns(column_name_and_type.name))
                 table_expression_data.subcolumn_names.insert(subcolumn.name);
+
+        /// Synthetic tables built from a subquery projection (e.g. the recursive CTE temporary
+        /// table) carry pins of its double-quoted projection definitions.
+        if (table_node)
+            for (const auto & pinned_name : table_node->getPinnedColumnNames())
+                table_expression_data.pinned_column_names.insert(pinned_name);
     }
     else if (query_node || union_node)
     {
         table_expression_data.column_names_and_types = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+        /// Double-quoted projection definitions are pinned: `standard`-mode folded references
+        /// from the outer query must not match them.
+        for (const auto & pinned_name : collectPinnedProjectionNames(table_expression_node))
+            table_expression_data.pinned_column_names.insert(pinned_name);
 
         /// Subquery / union projection lists are typically small; populate eagerly so the
         /// lazy populator is never installed. Emplacing the optional marks the map populated.
@@ -4885,7 +4961,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             scope.table_expressions_in_resolve_process.erase(table_function_node.get());
 
             auto fake_table_node = std::make_shared<TableNode>(parameterized_view_storage, scope_context);
-            fake_table_node->setAlias(table_function_node->getAlias());
+            fake_table_node->setAlias(table_function_node->getAlias(), table_function_node->getAliasQuote());
             table_function_node = fake_table_node;
             return;
         }
@@ -6058,6 +6134,16 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         wrapper_query->getJoinTree() = view_query_tree;
         wrapper_query->setIsSubquery(true);
 
+        /// The wrapper replaces the inner query as the table expression, so it must carry the
+        /// inner pins forward for the columns it passes through (correlated by position).
+        Names inner_pinned = collectPinnedProjectionNames(view_query_tree);
+        Names wrapper_pinned;
+        for (size_t i = 0; i < view_columns.size() && i < subquery_columns.size(); ++i)
+            if (std::binary_search(inner_pinned.begin(), inner_pinned.end(), subquery_columns[i].name))
+                wrapper_pinned.push_back(view_columns[i].name);
+        std::sort(wrapper_pinned.begin(), wrapper_pinned.end());
+        wrapper_query->setPinnedProjectionColumnNames(std::move(wrapper_pinned));
+
         result_node = std::move(wrapper_query);
     }
     else
@@ -6113,11 +6199,14 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         wrapper_query->getWhere() = std::move(filter_node);
         wrapper_query->setIsSubquery(true);
 
+        /// Pass-through projection: carry the inner pins forward unchanged.
+        wrapper_query->setPinnedProjectionColumnNames(collectPinnedProjectionNames(result_node));
+
         result_node = std::move(wrapper_query);
     }
 
     /// Preserve alias: the outer query references columns via the view name or user-provided alias.
-    result_node->setAlias(table_node->getAlias());
+    result_node->setAlias(table_node->getAlias(), table_node->getAliasQuote());
 
     /// Fix scope tracking: the old TableNode pointer was inserted during initializeQueryJoinTreeNode.
     auto * old_ptr = join_tree_node.get();
@@ -6822,8 +6911,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
+    /// With `group_by_use_nulls` the projection is resolved later, so `projection_columns` is
+    /// still empty here and the `standard`-mode target canonicalization does not apply.
     if (query_node_typed.hasInterpolate())
-        resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+        resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope, projection_columns);
 
     expandLimitByAll(query_node_typed);
 
@@ -6865,6 +6956,19 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+    }
+
+    /// Capture double-quoted projection aliases before aliases are stripped below: outer
+    /// `standard`-mode references must not fold onto such columns. When a projection override
+    /// list is present, `resolveProjectionColumns` recomputes the pins from the override quotes.
+    {
+        Names pinned_projection_names;
+        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+        for (size_t i = 0; i < projection_nodes.size() && i < projection_columns.size(); ++i)
+            if (projection_nodes[i]->getAliasQuote() == IdentifierPartQuote::DoubleQuoted)
+                pinned_projection_names.push_back(projection_columns[i].name);
+        std::sort(pinned_projection_names.begin(), pinned_projection_names.end());
+        query_node_typed.setPinnedProjectionColumnNames(std::move(pinned_projection_names));
     }
 
     /** Resolve nodes with duplicate aliases.
@@ -7032,6 +7136,10 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
 
+        /// Pins of the seed's double-quoted projection definitions (`AS "Name"` or a quoted CTE
+        /// column list) carry over to the temporary table the recursive members resolve against.
+        Names temporary_table_pinned_columns = collectPinnedProjectionNames(non_recursive_query);
+
         /// Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive
         /// and recursive sides until the types stabilize (or until the configured limit of widening steps).
         /// Each widening step requires re-resolving the recursive queries with the new column types,
@@ -7058,6 +7166,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
             recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
             recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+            recursive_cte_table_node->setPinnedColumnNames(temporary_table_pinned_columns);
 
             for (size_t i = 1; i < queries_nodes.size(); ++i)
             {

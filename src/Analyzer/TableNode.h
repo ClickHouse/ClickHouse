@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/HashUtils.h>
+#include <Core/Names.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
@@ -106,6 +107,19 @@ public:
         temporary_table_name = std::move(temporary_table_name_value);
     }
 
+    /// Sorted column names pinned to exact-spelling matching under `standard` name matching.
+    /// Used for synthetic tables built from a subquery projection (e.g. the temporary table of
+    /// a recursive CTE), whose double-quoted projection definitions must stay pinned.
+    const Names & getPinnedColumnNames() const
+    {
+        return pinned_column_names;
+    }
+
+    void setPinnedColumnNames(Names pinned_column_names_value)
+    {
+        pinned_column_names = std::move(pinned_column_names_value);
+    }
+
     /// Return true if table node has table expression modifiers, false otherwise
     bool hasTableExpressionModifiers() const
     {
@@ -176,6 +190,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
+    Names pinned_column_names;
     MaterializedCTEPtr materialized_cte;
 
     static constexpr size_t materialized_cte_subquery_index = 0;

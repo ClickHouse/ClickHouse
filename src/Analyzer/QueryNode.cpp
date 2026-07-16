@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <Analyzer/QueryNode.h>
 
@@ -70,8 +71,17 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
                 projection_columns_value.size(),
                 this->projection_aliases_to_override.size());
 
+        /// The override list renames every projection column, so pins derived from the inner
+        /// projection aliases no longer apply; the double-quoted override names pin instead.
+        Names pinned_names;
         for (size_t i = 0; i < projection_columns_value.size(); ++i)
-            projection_columns_value[i].name = this->projection_aliases_to_override[i];
+        {
+            projection_columns_value[i].name = this->projection_aliases_to_override[i].spelling;
+            if (this->projection_aliases_to_override[i].quote == IdentifierPartQuote::DoubleQuoted)
+                pinned_names.push_back(this->projection_aliases_to_override[i].spelling);
+        }
+        std::sort(pinned_names.begin(), pinned_names.end());
+        pinned_projection_column_names = std::move(pinned_names);
     }
     projection_columns = std::move(projection_columns_value);
 }
@@ -362,6 +372,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
+        pinned_projection_column_names == rhs_typed.pinned_projection_column_names &&
         settings_changes == rhs_typed.settings_changes;
 }
 
@@ -393,8 +404,15 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
 
     for (const auto & projection_alias : projection_aliases_to_override)
     {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
+        state.update(projection_alias.spelling.size());
+        state.update(projection_alias.spelling);
+        state.update(projection_alias.quote == IdentifierPartQuote::DoubleQuoted);
+    }
+
+    for (const auto & pinned_name : pinned_projection_column_names)
+    {
+        state.update(pinned_name.size());
+        state.update(pinned_name);
     }
 
     state.update(is_materialized);
@@ -444,6 +462,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
+    result_query_node->pinned_projection_column_names = pinned_projection_column_names;
 
     return result_query_node;
 }
@@ -516,7 +535,14 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
 
             if (ast_with_alias)
-                ast_with_alias->setAlias(projection_columns[i].name);
+            {
+                /// Rebuilt aliases must keep the double-quote pin so a query tree built back
+                /// from this AST preserves `standard`-mode case-sensitivity of the column.
+                bool pinned = std::binary_search(
+                    pinned_projection_column_names.begin(), pinned_projection_column_names.end(), projection_columns[i].name);
+                ast_with_alias->setAlias(
+                    projection_columns[i].name, pinned ? IdentifierPartQuote::DoubleQuoted : IdentifierPartQuote::Unquoted);
+            }
         }
     }
 

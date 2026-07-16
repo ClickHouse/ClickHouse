@@ -2526,6 +2526,10 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     auto elem = make_intrusive<ASTInterpolateElement>();
     elem->column = ident->getColumnName();
+    /// Capture the quote for a single-part target only: a compound target flattens
+    /// into a dotted name whose per-part quoting cannot be represented here.
+    if (const auto * ident_typed = ident->as<ASTIdentifier>(); ident_typed && ident_typed->isShort())
+        elem->column_quote = identifierPartQuoteFromAST(ident);
     elem->expr = expr;
     elem->children.push_back(expr);
 

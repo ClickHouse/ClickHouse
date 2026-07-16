@@ -74,7 +74,12 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
     Expected expected;
     ParserCompoundIdentifier().parse(pos, res, expected);
     if (!res || getIdentifierName(res) != column_name)
-        return make_intrusive<ASTIdentifier>(column_name);
+        res = make_intrusive<ASTIdentifier>(column_name);
+    /// The name comes from a resolved header, so pin the reference to the exact canonical
+    /// spelling: under `standard` matching a folded reference could hit a pinned or
+    /// case-sibling column and fail.
+    for (auto & part : res->as<ASTIdentifier &>().name_parts.parts)
+        part.quote = IdentifierPartQuote::DoubleQuoted;
     return res;
 }
 

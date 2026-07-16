@@ -686,9 +686,22 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    void setProjectionAliasesToOverride(Names pr_aliases)
+    void setProjectionAliasesToOverride(std::vector<IdentifierPart> pr_aliases)
     {
         projection_aliases_to_override = std::move(pr_aliases);
+    }
+
+    /// Sorted projection column names whose definitions are double-quoted (`AS "Name"` aliases or
+    /// `AS t("Name")` override lists). Under `standard` matching such columns are pinned: outer
+    /// folded references must not match them, only double-quoted exact-spelling references do.
+    const Names & getPinnedProjectionColumnNames() const
+    {
+        return pinned_projection_column_names;
+    }
+
+    void setPinnedProjectionColumnNames(Names pinned_names)
+    {
+        pinned_projection_column_names = std::move(pinned_names);
     }
 
 protected:
@@ -720,7 +733,8 @@ private:
     /// exact-case matching under `standard` name matching.
     IdentifierPartQuote cte_name_quote = IdentifierPartQuote::Unquoted;
     NamesAndTypes projection_columns;
-    Names projection_aliases_to_override;
+    std::vector<IdentifierPart> projection_aliases_to_override;
+    Names pinned_projection_column_names;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 

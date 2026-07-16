@@ -47,6 +47,10 @@ void AnalysisTableExpressionData::ensureFoldedColumnIndexIsPopulated() const
     for (const auto & column_name_and_type : column_names_and_types)
     {
         folded_column_names[foldIdentifierCaseASCII(column_name_and_type.name)].push_back(column_name_and_type.name);
+        /// A pinned column is unreachable through folded binding; it stays in `folded_column_names`
+        /// for exact lookups of all-double-quoted prefixes of compound identifiers.
+        if (pinned_column_names.contains(column_name_and_type.name))
+            continue;
         Identifier column_name_identifier(column_name_and_type.name);
         folded_column_first_parts.insert(foldIdentifierCaseASCII(column_name_identifier.at(0)));
     }
@@ -94,13 +98,22 @@ AnalysisTableExpressionData::tryMatchColumnOrSubcolumnStandard(const IdentifierN
 
     auto collect_column_candidates = [&](const IdentifierName & column_part)
     {
+        bool any_part_foldable = false;
+        for (const auto & part : column_part.parts)
+            any_part_foldable |= part.isCaseFoldable();
+
         std::vector<String> verified;
         auto it = folded_column_names.find(column_part.foldedFullKey());
         if (it == folded_column_names.end())
             return verified;
         for (const auto & canonical : it->second)
+        {
+            /// A pinned column matches only an all-double-quoted (exact) reference.
+            if (any_part_foldable && pinned_column_names.contains(canonical))
+                continue;
             if (column_part.quotedPartsMatch(canonical))
                 verified.push_back(canonical);
+        }
         return verified;
     };
 

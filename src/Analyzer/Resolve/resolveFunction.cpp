@@ -850,7 +850,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
                 if (subquery_projection_columns.size() == 1)
                 {
-                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({IdentifierPart{unique_column_name, IdentifierPartQuote::Unquoted}});
                     subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
                 }
                 else

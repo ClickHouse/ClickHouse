@@ -55,6 +55,10 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
+    /// Column names pinned to exact-spelling matching under `standard` matching (double-quoted
+    /// subquery projection definitions, pinned synthetic-table columns). Folded references must
+    /// not match them; double-quoted exact references still do.
+    std::unordered_set<String> pinned_column_names;
 
     void ensureColumnMembershipSetsArePopulated() const;
 

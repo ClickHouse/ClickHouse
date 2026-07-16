@@ -98,3 +98,40 @@ AMBIGUOUS_IDENTIFIER
 FirstName
 a
 AMBIGUOUS_IDENTIFIER
+--- standard: quoted subquery projection definitions pin, quoted references still match
+UNKNOWN_IDENTIFIER
+1
+MyAlias
+1
+UNKNOWN_IDENTIFIER
+X	Y
+1	2
+--- standard: inlined views carry pins, quotes are not persisted across metadata reload
+1
+UNKNOWN_IDENTIFIER
+1
+1
+--- standard: recursive CTE quoted column definitions pin inside recursive members
+UNKNOWN_IDENTIFIER
+1
+2
+3
+UNKNOWN_IDENTIFIER
+1
+2
+3
+1
+2
+3
+--- standard: INTERPOLATE targets fold to the canonical column, quoted targets pin
+1	10
+2	11
+3	10
+10
+11
+10
+UNKNOWN_IDENTIFIER
+1	10
+2	11
+3	10
+UNKNOWN_IDENTIFIER

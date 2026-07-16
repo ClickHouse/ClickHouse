@@ -120,6 +120,41 @@ echo '--- standard: COLUMNS list entries fold, case siblings are ambiguous'
 ${CLIENT_STANDARD} --query "SELECT COLUMNS(firstname) FROM t_col_match FORMAT TSVWithNames"
 ${CLIENT_STANDARD} --query "SELECT COLUMNS(val) FROM t_col_siblings" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
 
+echo '--- standard: quoted subquery projection definitions pin, quoted references still match'
+${CLIENT_STANDARD} --query 'SELECT myalias FROM (SELECT 1 AS "MyAlias")' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'SELECT "MyAlias" FROM (SELECT 1 AS "MyAlias")'
+${CLIENT_STANDARD} --query 'SELECT myalias FROM (SELECT 1 AS MyAlias) FORMAT TSVWithNames'
+${CLIENT_STANDARD} --query 'SELECT x, y FROM (SELECT 1, 2) AS t(X, "Y")' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'SELECT x, "Y" FROM (SELECT 1, 2) AS t(X, "Y") FORMAT TSVWithNames'
+
+echo '--- standard: inlined views carry pins, quotes are not persisted across metadata reload'
+${CLICKHOUSE_CLIENT} --query 'CREATE VIEW v_col_pin AS SELECT 1 AS "MyAlias"'
+${CLIENT_STANDARD} --query 'SELECT myalias FROM v_col_pin'
+${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT myalias FROM v_col_pin' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT "MyAlias" FROM v_col_pin'
+${CLICKHOUSE_CLIENT} --query 'DETACH TABLE v_col_pin'
+${CLICKHOUSE_CLIENT} --query 'ATTACH TABLE v_col_pin'
+${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT myalias FROM v_col_pin'
+
+echo '--- standard: recursive CTE quoted column definitions pin inside recursive members'
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte'
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte'
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS MyCol UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte'
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_interp (x UInt64, Val UInt64) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_col_interp VALUES (1, 10), (3, 10)"
+
+echo '--- standard: INTERPOLATE targets fold to the canonical column, quoted targets pin'
+${CLIENT_STANDARD} --query "SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE (val AS Val + 1)"
+${CLIENT_STANDARD} --query "SELECT Val FROM (SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE (val AS Val + 1))"
+${CLIENT_STANDARD} --query 'SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE ("val" AS Val + 1)' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLICKHOUSE_CLIENT} --query "SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE (Val AS Val + 1)"
+${CLICKHOUSE_CLIENT} --query "SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE (val AS Val + 1)" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+
+${CLICKHOUSE_CLIENT} --query "DROP VIEW v_col_pin"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_interp"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_match"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_siblings"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_tuple"

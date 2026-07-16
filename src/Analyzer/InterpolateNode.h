@@ -52,6 +52,15 @@ public:
 
     const std::string & getExpressionName() const { return expression_name; }
 
+    /// Canonicalize the stored target spelling after resolution, so downstream name matching
+    /// (projection-based pruning, the planner's actions-DAG alias) uses the canonical column
+    /// name even when a folded `standard`-mode lookup resolved a differently-cased target.
+    void setExpressionName(std::string name) { expression_name = std::move(name); }
+
+    /// Original target spelling with its quote structure. Captured at construction; the
+    /// resolved child is no longer an IdentifierNode, so it cannot be recovered later.
+    const IdentifierName & getExpressionIdentifierName() const { return expression_identifier_name; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -63,8 +72,11 @@ protected:
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
-    /// Initial name from column identifier.
+    /// Initial name from column identifier, rewritten to the canonical column spelling
+    /// when a folded `standard`-mode lookup resolves the target.
     std::string expression_name;
+    /// Original spelling with per-part quoting, for pin checks and AST round trips.
+    IdentifierName expression_identifier_name;
 
 private:
     static constexpr size_t expression_child_index = 0;

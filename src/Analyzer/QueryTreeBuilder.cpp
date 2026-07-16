@@ -372,18 +372,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     // Apply the override aliases to the projection nodes
     if (aliases)
     {
-        // Collect the aliases into a vector of strings
-        Names collected_aliases;
+        // Collect the aliases with their quoting
+        std::vector<IdentifierPart> collected_aliases;
         auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
         collected_aliases.reserve(override_aliases_children.size());
 
         for (const auto & child : override_aliases_children)
         {
             const auto & alias_ast = child->as<ASTIdentifier &>();
-            collected_aliases.push_back(alias_ast.name());
+            collected_aliases.push_back(IdentifierPart{alias_ast.name(), identifierPartQuoteFromAST(child)});
         }
 
-        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
+        current_query_tree->setProjectionAliasesToOverride(std::move(collected_aliases));
     }
 
     auto prewhere_expression = select_query_typed.prewhere();
@@ -616,7 +616,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     for (auto & expression : expression_list_typed.children)
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
-        auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        /// A double-quoted target is a single parsed part (its text may contain dots), so it must
+        /// not be re-split on dots; the quote also pins the target under `standard` matching.
+        auto expression_to_interpolate = interpolate_element.column_quote == IdentifierPartQuote::DoubleQuoted
+            ? std::make_shared<IdentifierNode>(IdentifierName({IdentifierPart{interpolate_element.column, IdentifierPartQuote::DoubleQuoted}}))
+            : std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
         auto interpolate_expression = buildExpression(interpolate_element.expr, context);
         auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
@@ -1043,7 +1047,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 if (table_expression.column_aliases)
                 {
                     const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
-                    Names column_alias_names;
+                    std::vector<IdentifierPart> column_alias_names;
                     column_alias_names.reserve(column_aliases_list.children.size());
 
                     std::unordered_set<std::string> seen_aliases;
@@ -1053,7 +1057,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         if (!seen_aliases.insert(alias_name).second)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Duplicate column alias '{}' in table expression column list", alias_name);
-                        column_alias_names.push_back(alias_name);
+                        column_alias_names.push_back(IdentifierPart{alias_name, identifierPartQuoteFromAST(column_alias)});
                     }
 
                     if (auto * query_node = node->as<QueryNode>())
