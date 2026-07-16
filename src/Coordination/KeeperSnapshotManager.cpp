@@ -230,7 +230,9 @@ namespace
         readBinary(node.stats.aversion, in);
         int64_t ephemeral_owner = 0;
         readBinary(ephemeral_owner, in);
-        if (ephemeral_owner != 0)
+        if (ephemeral_owner == std::numeric_limits<int64_t>::min())
+            node.stats.setContainer();
+        else if (ephemeral_owner != 0)
             node.stats.setEphemeralOwner(ephemeral_owner);
 
         if (version < SnapshotVersion::V6)
@@ -248,14 +250,14 @@ namespace
         {
             int64_t seq_num = 0;
             readBinary(seq_num, in);
-            if (ephemeral_owner == 0)
+            if (!node.stats.isEphemeral())
                 node.stats.setSeqNum(seq_num);
         }
         else
         {
             int32_t seq_num = 0;
             readBinary(seq_num, in);
-            if (ephemeral_owner == 0)
+            if (!node.stats.isEphemeral())
                 node.stats.setSeqNum(seq_num);
         }
 
@@ -309,6 +311,18 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
                 static_cast<uint8_t>(snapshot.version),
                 snapshot.storage->ttl_paths.size(),
                 static_cast<uint8_t>(SnapshotVersion::V8));
+    }
+    if (snapshot.version < SnapshotVersion::V9)
+    {
+        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
+        if (!snapshot.storage->container_paths.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot serialize snapshot with version {}: storage contains {} container node(s), which require snapshot "
+                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<uint8_t>(snapshot.version),
+                snapshot.storage->container_paths.size(),
+                static_cast<uint8_t>(SnapshotVersion::V9));
     }
 
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
@@ -574,9 +588,14 @@ void KeeperStorageSnapshot::deserialize(
         if (!node.stats.isEphemeral() && node.numChildren() > 0)
             node.getChildren().reserve(node.numChildren());
 
-        if (ephemeral_owner != 0)
+        if (node.stats.isContainer())
         {
-            storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            storage.container_paths.insert(std::string{path});
+            storage.committed_container_nodes.fetch_add(1);
+        }
+        else if (node.stats.isEphemeral())
+        {
+            storage.committed_ephemerals[ephemeral_owner].insert(std::string{path});
             ++storage.committed_ephemeral_nodes;
         }
 
