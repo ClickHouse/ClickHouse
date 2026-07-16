@@ -1,10 +1,14 @@
 #include <Access/AccessControl.h>
 #include <Access/UsersConfigAccessStorage.h>
+#include <Access/UsersConfigParser.h>
 #include <Access/User.h>
+#include <Access/Quota.h>
+#include <Access/RowPolicy.h>
 #include <Common/Exception.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <gtest/gtest.h>
 #include <sstream>
+#include <unordered_set>
 
 #include "config.h"
 
@@ -862,3 +866,118 @@ TEST_F(UsersConfigMultipleAuthTest, EmptySSHKeysMethodIsRejected)
     EXPECT_THROW(storage->setConfig(*config), DB::Exception);
 }
 #endif
+
+/// Quotas and row policies must be wired to a normally-parsed user. This guards the surviving-user
+/// set that parseUsers feeds into parseQuotas/parseRowPolicies: a user that parseUsers keeps must
+/// still be added as a quota grantee and get its row policy. (The complementary FIPS-skip case, where
+/// a skipped user must NOT get orphaned quota/row-policy entities, only triggers on a real FIPS build
+/// and cannot be reached from a non-FIPS unit test.)
+TEST_F(UsersConfigMultipleAuthTest, QuotaAndRowPolicyWiredToParsedUser)
+{
+    const std::string xml_config = R"(
+        <clickhouse>
+            <users>
+                <test_user>
+                    <password>plaintext_pass</password>
+                    <quota>test_quota</quota>
+                    <databases>
+                        <test_db>
+                            <test_table>
+                                <filter>a = 1</filter>
+                            </test_table>
+                        </test_db>
+                    </databases>
+                </test_user>
+            </users>
+            <quotas>
+                <test_quota></test_quota>
+            </quotas>
+        </clickhouse>
+    )";
+
+    auto config = createConfigFromXML(xml_config);
+    storage->setConfig(*config);
+
+    auto user = storage->tryRead<User>("test_user");
+    ASSERT_TRUE(user);
+    const auto user_id_opt = storage->find<User>(String{"test_user"});
+    ASSERT_TRUE(user_id_opt.has_value());
+    const UUID user_id = *user_id_opt;
+
+    auto quota = storage->tryRead<Quota>("test_quota");
+    ASSERT_TRUE(quota);
+    EXPECT_TRUE(quota->to_roles.ids.contains(user_id));
+
+    /// Look up the synthesized row policy by scanning (its short name is generated internally).
+    auto policy_ids = storage->findAll<RowPolicy>();
+    bool found_policy_for_user = false;
+    for (const auto & id : policy_ids)
+    {
+        auto rp = storage->tryRead<RowPolicy>(id);
+        if (rp && rp->getDatabase() == "test_db" && rp->getTableName() == "test_table"
+            && rp->to_roles.ids.contains(user_id))
+            found_policy_for_user = true;
+    }
+    EXPECT_TRUE(found_policy_for_user);
+}
+
+/// Directly exercises the surviving-user set that parseUsers feeds to parseQuotas/parseRowPolicies:
+/// a user absent from the surviving set (as happens when parseUser skips a FIPS all-Ed25519 user)
+/// must not get a quota grantee or a row-policy entity, so no orphaned entity referencing a missing
+/// user is created. FIPS-independent because it drives the surviving set explicitly.
+TEST_F(UsersConfigMultipleAuthTest, SkippedUserGetsNoQuotaOrRowPolicy)
+{
+    const std::string xml_config = R"(
+        <clickhouse>
+            <users>
+                <kept_user>
+                    <password>p1</password>
+                    <quota>shared_quota</quota>
+                    <databases>
+                        <db1><t1><filter>a = 1</filter></t1></db1>
+                    </databases>
+                </kept_user>
+                <skipped_user>
+                    <password>p2</password>
+                    <quota>shared_quota</quota>
+                    <databases>
+                        <db1><t1><filter>a = 2</filter></t1></db1>
+                    </databases>
+                </skipped_user>
+            </users>
+            <quotas>
+                <shared_quota></shared_quota>
+            </quotas>
+        </clickhouse>
+    )";
+
+    auto config = createConfigFromXML(xml_config);
+
+    UsersConfigParser parser{*access_control};
+    /// skipped_user is deliberately not in the surviving set (mimics parseUser having skipped it).
+    std::unordered_set<String> surviving_user_names{"kept_user"};
+
+    const UUID kept_id = UsersConfigParser::generateID(AccessEntityType::USER, "kept_user");
+    const UUID skipped_id = UsersConfigParser::generateID(AccessEntityType::USER, "skipped_user");
+
+    auto quotas = parser.parseQuotas(*config, surviving_user_names);
+    ASSERT_EQ(quotas.size(), 1u);
+    const auto & quota = static_cast<const Quota &>(*quotas[0]);
+    EXPECT_TRUE(quota.to_roles.ids.contains(kept_id));
+    EXPECT_FALSE(quota.to_roles.ids.contains(skipped_id));
+
+    auto policies = parser.parseRowPolicies(*config, surviving_user_names);
+    for (const auto & entity : policies)
+    {
+        const auto & policy = static_cast<const RowPolicy &>(*entity);
+        EXPECT_FALSE(policy.to_roles.ids.contains(skipped_id));
+    }
+    bool found_kept_policy = false;
+    for (const auto & entity : policies)
+    {
+        const auto & policy = static_cast<const RowPolicy &>(*entity);
+        if (policy.to_roles.ids.contains(kept_id))
+            found_kept_policy = true;
+    }
+    EXPECT_TRUE(found_kept_policy);
+}

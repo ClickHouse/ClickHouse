@@ -909,7 +909,8 @@ UUID UsersConfigParser::generateID(const IAccessEntity & entity) { return genera
 std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
     const Poco::Util::AbstractConfiguration & config,
     const std::unordered_set<UUID> & allowed_profile_ids,
-    const std::unordered_set<UUID> & role_ids_from_users_config) const
+    const std::unordered_set<UUID> & role_ids_from_users_config,
+    std::unordered_set<String> & surviving_user_names) const
 {
     Poco::Util::AbstractConfiguration::Keys user_names;
     config.keys("users", user_names);
@@ -926,7 +927,12 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
             /// parseUser returns nullptr when the user is skipped (e.g. all its auth methods were
             /// dropped by FIPS filtering); keep loading the remaining users.
             if (auto user = parseUser(config, user_name, allowed_profile_ids, role_ids_from_users_config, access_control, no_password_allowed, plaintext_password_allowed, log))
+            {
                 users.push_back(std::move(user));
+                /// Record the config key so parseQuotas/parseRowPolicies do not build entities
+                /// referencing a user that was skipped here.
+                surviving_user_names.insert(user_name);
+            }
         }
         catch (Exception & e)
         {
@@ -964,13 +970,19 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRoles(
 }
 
 
-std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(const Poco::Util::AbstractConfiguration & config) const
+std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::unordered_set<String> & surviving_user_names) const
 {
     Poco::Util::AbstractConfiguration::Keys user_names;
     config.keys("users", user_names);
     std::unordered_map<String, std::vector<UUID>> quota_to_user_ids;
     for (const auto & user_name : user_names)
     {
+        /// Do not add a grantee for a user that parseUsers skipped (e.g. all its auth methods were
+        /// dropped by FIPS filtering); otherwise the quota would reference a non-existent user id.
+        if (!surviving_user_names.contains(user_name))
+            continue;
         if (config.has("users." + user_name + ".quota"))
             quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, user_name));
     }
@@ -1000,7 +1012,9 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(const Poco::Util::Ab
 }
 
 
-std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Util::AbstractConfiguration & config) const
+std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::unordered_set<String> & surviving_user_names) const
 {
     bool users_without_row_policies_can_read_rows = access_control.isEnabledUsersWithoutRowPoliciesCanReadRows();
     std::map<std::pair<String /* database */, String /* table */>, std::unordered_map<String /* user */, String /* filter */>> all_filters_map;
@@ -1010,6 +1024,11 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
 
     for (const String & user_name : user_names)
     {
+        /// Skip a user that parseUsers skipped (e.g. all its auth methods were dropped by FIPS
+        /// filtering); otherwise the row policy would reference a non-existent user id.
+        if (!surviving_user_names.contains(user_name))
+            continue;
+
         const String databases_config = "users." + user_name + ".databases";
         if (config.has(databases_config))
         {
@@ -1057,6 +1076,11 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
         const auto & [database, table_name] = database_and_table_name;
         for (const String & user_name : user_names)
         {
+            /// Skip a user that parseUsers skipped so we do not synthesize a default-deny policy
+            /// referencing a non-existent user id.
+            if (!surviving_user_names.contains(user_name))
+                continue;
+
             String filter;
             auto it = user_to_filters.find(user_name);
             if (it != user_to_filters.end())

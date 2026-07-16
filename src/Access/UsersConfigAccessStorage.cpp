@@ -67,13 +67,17 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
 
-        for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, role_ids_from_users_config))
+        /// Users skipped by parseUsers (e.g. all auth methods dropped by FIPS filtering) must not
+        /// be referenced by quotas / row policies, otherwise memory_storage ends up with orphaned
+        /// entities that cannot round-trip through SHOW CREATE.
+        std::unordered_set<String> surviving_user_names;
+        for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, role_ids_from_users_config, surviving_user_names))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
-        for (const auto & entity : parser.parseQuotas(config))
+        for (const auto & entity : parser.parseQuotas(config, surviving_user_names))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
-        for (const auto & entity : parser.parseRowPolicies(config))
+        for (const auto & entity : parser.parseRowPolicies(config, surviving_user_names))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
         for (const auto & entity : parser.parseSettingsProfiles(config, allowed_profile_ids))

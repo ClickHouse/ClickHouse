@@ -23,17 +23,25 @@ class UsersConfigParser
 public:
     explicit UsersConfigParser(AccessControl & access_control_);
 
+    /// surviving_user_names is filled with the config keys of users that were actually parsed
+    /// (not skipped, e.g. by FIPS filtering). parseQuotas/parseRowPolicies use it so they do not
+    /// build entities referencing a skipped user.
     std::vector<AccessEntityPtr> parseUsers(
         const Poco::Util::AbstractConfiguration & config,
         const std::unordered_set<UUID> & allowed_profile_ids,
-        const std::unordered_set<UUID> & role_ids_from_users_config) const;
+        const std::unordered_set<UUID> & role_ids_from_users_config,
+        std::unordered_set<String> & surviving_user_names) const;
 
     std::vector<AccessEntityPtr> parseRoles(
         const Poco::Util::AbstractConfiguration & config,
         const std::unordered_set<UUID> & role_ids_from_users_config) const;
 
-    std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config) const;
-    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config) const;
+    std::vector<AccessEntityPtr> parseQuotas(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::unordered_set<String> & surviving_user_names) const;
+    std::vector<AccessEntityPtr> parseRowPolicies(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::unordered_set<String> & surviving_user_names) const;
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
