@@ -7,6 +7,8 @@ SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 -- Common phrases would otherwise take the row-scan fallback and bypass the positions path entirely.
 SET text_index_hint_max_selectivity = 1;
+-- Cached phrase results would zero the profile events checked at the end.
+SET use_text_index_postings_cache = 0;
 
 CREATE TABLE tab_none (
     id UInt32,
@@ -91,6 +93,23 @@ SELECT count() FROM tab_none WHERE hasPhrase(message, 'hello clickhouse');
 SELECT count() FROM tab_none WHERE hasPhrase(message, 'hello clickhouse') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'hello clickhouse');
 SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'hello clickhouse') SETTINGS use_skip_indexes = 0;
+
+-- In the merged part every token's list spans 4 segments (51001 entries / 16K target): the frequent
+-- phrase must decode all 12, while the needle decodes 2 and skips the rest of `hello`'s by doc range.
+SELECT 'profile events (decoded, skipped)';
+
+SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'hello clickhouse world') SETTINGS log_comment = '02346_positions_segments_frequent';
+SELECT groupArray(id) FROM tab_pfor WHERE hasPhrase(message, 'rare hello') SETTINGS log_comment = '02346_positions_segments_needle';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['TextIndexPositionsSegmentsDecoded'], ProfileEvents['TextIndexPositionsSegmentsSkipped']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_positions_segments_frequent';
+
+SELECT ProfileEvents['TextIndexPositionsSegmentsDecoded'], ProfileEvents['TextIndexPositionsSegmentsSkipped']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_positions_segments_needle';
 
 DROP TABLE tab_pfor;
 DROP TABLE tab_none;
