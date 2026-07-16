@@ -4723,6 +4723,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
         /// grouped for name-swapping (a swap would produce arity-mismatched calls).
         {"aiEmbed"},
+        /// aiSimilarity takes (text1, text2, model[, params]); like aiEmbed its arity matches no other
+        /// AI function, so it is not grouped for name-swapping.
+        {"aiSimilarity"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)

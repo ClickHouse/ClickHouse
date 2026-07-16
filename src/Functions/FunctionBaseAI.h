@@ -137,6 +137,38 @@ public:
     /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
     static bool isRetriableProviderError(std::exception_ptr exception);
 
+    /// Parameters accepted by the embedding functions (`aiEmbed`, `aiSimilarity`) in their optional trailing
+    /// `Map(String, String)` argument. Unlike the text functions, they take no `max_tokens`, and `model` is a
+    /// required positional argument (not read from the map or the named collection). `dimensions` requests a
+    /// target vector size when the model supports it.
+    static AIParamSpecs embeddingParams();
+
+    /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the input list; an entry is empty when
+    /// that input was not embedded (quota exceeded, or a failed request with `ai_function_throw_on_error`
+    /// disabled). The counters feed the AI ProfileEvents.
+    struct EmbeddingResult
+    {
+        VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
+        UInt64 api_calls = 0;
+        UInt64 input_tokens = 0;
+        UInt64 texts_embedded = 0;
+        UInt64 texts_skipped = 0;
+    };
+
+    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
+    /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
+    static EmbeddingResult embedTexts(
+        IAIProvider & provider,
+        const String & model,
+        UInt64 dimensions,
+        const VectorWithMemoryTracking<std::string_view> & inputs,
+        size_t max_batch_size,
+        UInt64 max_retries,
+        UInt64 retry_delay_ms,
+        bool throw_on_error,
+        AIQuotaTracker & quota,
+        const ConnectionTimeouts & timeouts);
+
 protected:
     ContextPtr context;
     ContextPtr getContext() const { return context; }
