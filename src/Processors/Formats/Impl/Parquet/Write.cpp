@@ -10,6 +10,8 @@
 #include <Poco/JSON/Object.h>
 #include <xxhash.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/IDataType.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -357,6 +359,35 @@ struct ConverterNumeric
     }
 };
 
+/// Parquet TIME is a time of day. Scaled values must be in [0, 24:00:00).
+static constexpr Int64 PARQUET_TIME_OF_DAY_SECONDS = 24LL * 60 * 60;
+
+static Int64 getParquetTimeOfDayMaxExclusive(const DataTypePtr & type)
+{
+    const WhichDataType which(type);
+    if (which.isTime())
+        return PARQUET_TIME_OF_DAY_SECONDS * 1'000'000;
+
+    if (which.isTime64())
+    {
+        /// Matches PrepareForWrite: scale <= 6 -> TIME_MICROS, otherwise TIME_NANOS.
+        if (getDecimalScale(*type) <= 6)
+            return PARQUET_TIME_OF_DAY_SECONDS * 1'000'000;
+        return PARQUET_TIME_OF_DAY_SECONDS * 1'000'000'000;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());
+}
+
+static void validateParquetTimeOfDay(Int64 scaled_value, Int64 max_exclusive)
+{
+    if (scaled_value < 0 || scaled_value >= max_exclusive)
+        throw Exception(
+            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Time value {} is out of range for Parquet TIME [0, 24:00:00)",
+            scaled_value);
+}
+
 template <typename TYPE>
 struct ConverterTimeType64WithMultiplierImpl
 {
@@ -386,7 +417,39 @@ struct ConverterTimeType64WithMultiplierImpl
 };
 
 using ConverterDateTime64WithMultiplier = ConverterTimeType64WithMultiplierImpl<DateTime64>;
-using ConverterTime64WithMultiplier = ConverterTimeType64WithMultiplierImpl<Time64>;
+
+struct ConverterTime64
+{
+    using Statistics = StatisticsNumeric<Int64, Int64>;
+
+    using Col = ColumnDecimal<Time64>;
+    const Col & column;
+    Int64 multiplier;
+    Int64 max_exclusive;
+    PODArray<Int64> buf;
+
+    ConverterTime64(const ColumnPtr & c, Int64 multiplier_, Int64 max_exclusive_)
+        : column(assert_cast<const Col &>(*c)), multiplier(multiplier_), max_exclusive(max_exclusive_)
+    {
+    }
+
+    const Int64 * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            Int64 value = column.getData()[offset + i].value;
+            if (common::mulOverflow(value, multiplier, buf[i]))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Time64 value {} is out of range for Parquet TIME (multiplier {})",
+                    value,
+                    multiplier);
+            validateParquetTimeOfDay(buf[i], max_exclusive);
+        }
+        return buf.data();
+    }
+};
 
 /// Multiply DateTime by 1000 to get milliseconds (because Parquet doesn't support seconds).
 struct ConverterDateTime
@@ -416,14 +479,26 @@ struct ConverterTime
     const Col & column;
     PODArray<Int64> buf;
     Int64 multiplier;
+    Int64 max_exclusive;
 
-    ConverterTime(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
+    ConverterTime(const ColumnPtr & c, Int64 multiplier_, Int64 max_exclusive_)
+        : column(assert_cast<const Col &>(*c)), multiplier(multiplier_), max_exclusive(max_exclusive_)
+    {
+    }
 
     const Int64 * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-            buf[i] = static_cast<Int64>(column.getData()[offset + i]) * multiplier;
+        {
+            if (common::mulOverflow(static_cast<Int64>(column.getData()[offset + i]), multiplier, buf[i]))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Time value {} is out of range for Parquet TIME (multiplier {})",
+                    column.getData()[offset + i],
+                    multiplier);
+            validateParquetTimeOfDay(buf[i], max_exclusive);
+        }
         return buf.data();
     }
 };
@@ -1255,7 +1330,11 @@ void writeColumnChunkBody(
         }
         case TypeIndex::Int32:
             if (s.type->getTypeId() == TypeIndex::Time)
-                writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterTime(s.primitive_column, s.datetime_multiplier));
+                writeColumnImpl<parquet::Int64Type>(
+                    s,
+                    options,
+                    out,
+                    ConverterTime(s.primitive_column, s.datetime_multiplier, getParquetTimeOfDayMaxExclusive(s.type)));
             else
                 N(Int32, Int32Type);
             break;
@@ -1346,14 +1425,11 @@ void writeColumnChunkBody(
         #undef D
 
         case TypeIndex::Time64:
-            if (s.datetime_multiplier == 1)
-                writeColumnImpl<parquet::Int64Type>(
-                    s, options, out, ConverterNumeric<ColumnDecimal<Time64>, Int64, Int64>(
-                        s.primitive_column));
-            else
-                writeColumnImpl<parquet::Int64Type>(
-                    s, options, out, ConverterTime64WithMultiplier(
-                        s.primitive_column, s.datetime_multiplier));
+            writeColumnImpl<parquet::Int64Type>(
+                s,
+                options,
+                out,
+                ConverterTime64(s.primitive_column, s.datetime_multiplier, getParquetTimeOfDayMaxExclusive(s.type)));
             break;
 
         default:
