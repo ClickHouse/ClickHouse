@@ -146,6 +146,8 @@ String statisticsTypeToTraceString(StatisticsType type)
             return "tdigest";
         case StatisticsType::Uniq:
             return "uniq";
+        case StatisticsType::UniqV2:
+            return "uniq_v2";
         case StatisticsType::CountMinSketch:
             return "countmin";
         case StatisticsType::MinMax:
@@ -876,7 +878,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                         UInt64 elapsed_microseconds)
                     {
                         const String statistics_kind = statisticsTypeToTraceString(statistics_type);
-                        if (statistics_type == StatisticsType::Uniq)
+                        if (statistics_type == StatisticsType::Uniq || statistics_type == StatisticsType::UniqV2)
                         {
                             LOG_TRACE(
                                 log,

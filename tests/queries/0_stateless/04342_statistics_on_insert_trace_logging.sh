@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 
     CREATE TABLE $table
     (
-        a UInt64 STATISTICS(minmax, uniq),
+        a UInt64 STATISTICS(minmax, uniq, uniq_v2),
         b Nullable(UInt32) STATISTICS(basic),
         c String
     )
@@ -58,17 +58,18 @@ for _ in $(seq 1 60); do
         SETTINGS max_rows_to_read = 0
     ")
 
-    [ "$count" -ge 3 ] && break
+    [ "$count" -ge 4 ] && break
     sleep 0.5
 done
 
 $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "
     SELECT
-        count() = 3,
-        countIf(message LIKE concat('%query_id: ', {query_id:String}, ',%')) = 3,
-        countIf(message LIKE '%table: %statistics_on_insert_trace_logging, column:%') = 3,
+        count() = 4,
+        countIf(message LIKE concat('%query_id: ', {query_id:String}, ',%')) = 4,
+        countIf(message LIKE '%table: %statistics_on_insert_trace_logging, column:%') = 4,
         countIf(message LIKE '%column: a, data_type: UInt64, physical_type: %, statistics_kind: minmax, rows: 1000, bytes: %, elapsed_us: %') = 1,
         countIf(message LIKE '%column: a, data_type: UInt64, physical_type: %, statistics_kind: uniq, rows: 1000, bytes: %, elapsed_us: %, distinct_values: %') = 1,
+        countIf(message LIKE '%column: a, data_type: UInt64, physical_type: %, statistics_kind: uniq_v2, rows: 1000, bytes: %, elapsed_us: %, distinct_values: %') = 1,
         countIf(message LIKE '%column: b, data_type: Nullable(UInt32), physical_type: %, statistics_kind: basic, rows: 1000, bytes: %, elapsed_us: %') = 1
     FROM system.text_log
     WHERE event_date >= yesterday()
