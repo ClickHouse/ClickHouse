@@ -857,18 +857,18 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     )
     node.query("INSERT INTO mt_kill_txn_race SELECT number, 0 FROM numbers(100)")
 
-    node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
-
-    # Begin the transaction in its own HTTP session and capture its identity
-    # before the ALTER starts, so every later step is bound to exactly this
-    # transaction, no matter what unrelated transactions the server runs.
     session = 42
-    tx(session, "BEGIN TRANSACTION")
-    tid = tx(session, "SELECT transactionID()").strip()
-    assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
-
     alter_thread = None
     try:
+        node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
+
+        # Begin the transaction in its own HTTP session and capture its identity
+        # before the ALTER starts, so every later step is bound to exactly this
+        # transaction, no matter what unrelated transactions the server runs.
+        tx(session, "BEGIN TRANSACTION")
+        tid = tx(session, "SELECT transactionID()").strip()
+        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+
         # The ALTER runs inside the transaction begun above and pauses between
         # the transaction-side and the storage-side mutation registration.  It
         # is expected to fail: its transaction gets killed.  max_execution_time
@@ -904,13 +904,30 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
             "0",
         )
     finally:
-        # Resume the ALTER: it now registers the orphaned mutation entry.
+        # The cleanup must run even if a setup step above failed: a leaked
+        # pause failpoint or open transaction would poison later tests on this
+        # shared node.
+
+        # Resume the ALTER: on the happy path it now registers the orphaned
+        # mutation entry.
         node.query(
             "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
         )
 
-    if alter_thread is not None:
-        alter_thread.join()
+        # Join before touching the session again: the ALTER holds the session
+        # lock while it runs.
+        if alter_thread is not None:
+            alter_thread.join()
+
+        # Detach the transaction from the HTTP session.  On the happy path the
+        # killed transaction stays attached in rolled-back state and ROLLBACK
+        # merely detaches it; if a failure above left it running, ROLLBACK
+        # rolls it back.  Before BEGIN TRANSACTION succeeded there is nothing
+        # to roll back and ROLLBACK itself fails - ignore that.
+        try:
+            tx(session, "ROLLBACK")
+        except Exception:
+            pass
 
     # The orphaned mutation (its transaction is gone and was never committed)
     # must be removed by the background mutation selection instead of raising
