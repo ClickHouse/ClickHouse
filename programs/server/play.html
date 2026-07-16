@@ -655,8 +655,9 @@
         {
             grid-area: terminal-icon;
             margin-bottom: 0.25rem;
-            /* Rendered as an <a> so middle-click and Ctrl/Shift+click open the terminal in a
-               new browser tab natively. color: inherit keeps the currentColor strokes from
+            /* Rendered as an <a> so middle-click, Shift+click, and the platform's new-tab
+               modifier click (Cmd+click on macOS, Ctrl+click elsewhere) open the terminal in
+               a new browser tab natively. color: inherit keeps the currentColor strokes from
                picking up the default link color, and display: block matches #databases-icon. */
             text-decoration: none;
             display: block;
@@ -1518,7 +1519,7 @@
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
         <div id="databases"></div>
-        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click or Ctrl/Shift+click to open in a new tab">
+        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) to open in a new tab">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </a>
         <a id="docs-icon" class="menu-icon" href="/docs" target="_blank" rel="noopener noreferrer" title="Documentation">
@@ -5594,9 +5595,12 @@ function addTab() {
 }
 
 /// Like `addTab`, but the new tab starts pre-filled with `query` and becomes active.
-/// Used by the databases panel when a table is opened with a new-tab gesture (middle
-/// click or Shift/Ctrl/Cmd click). `guard_paste` is set for a genuine middle click, so
-/// the activation swallows the X11 PRIMARY paste that follows focusing the editor.
+/// Used by the databases panel when a table is opened with a new-tab gesture: middle
+/// click, Shift+click, or the platform's new-tab modifier click - Cmd+click on macOS,
+/// Ctrl+click elsewhere (on macOS `Ctrl+Click` is the context-menu click, not a new-tab
+/// gesture; see the manual matrix above `onTableActivate`). `guard_paste` is set for a
+/// genuine middle click, so the activation swallows the X11 PRIMARY paste that follows
+/// focusing the editor.
 function openQueryInNewTab(query, guard_paste = false) {
     markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
     captureActiveTab();
@@ -8800,7 +8804,8 @@ document.getElementById('download-button').addEventListener('click', async funct
     }
 
     /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
-    /// middle-click or Ctrl/Shift+click opens the right address even after the user edits the
+    /// middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on
+    /// macOS, Ctrl+click elsewhere) opens the right address even after the user edits the
     /// server URL. The `href` is removed when the URL is currently unparsable: an empty `href`
     /// would resolve to the current page, so a modifier/middle-click would open Play itself
     /// instead of doing nothing.

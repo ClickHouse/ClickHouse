@@ -186,14 +186,14 @@ void CreatingSetsTransform::finishSubquery()
 
     if (set_from_cache)
     {
-        LOG_DEBUG(log, "Got set from cache in {} sec.", seconds);
+        LOG_DEBUG(log, "Got set from cache in {:.3f} sec.", seconds);
     }
     else if (read_rows != 0)
     {
         if (set_and_key->set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {:.3f} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
         if (set_and_key->external_table)
-            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {:.3f} sec.", read_rows, seconds);
     }
     else
     {

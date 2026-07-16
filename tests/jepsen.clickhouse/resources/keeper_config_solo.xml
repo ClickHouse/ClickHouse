@@ -8,6 +8,31 @@
         <size>never</size>
     </logger>
 
+    <!-- The standalone Keeper is launched (keeper/utils.clj) with
+         keeper_server storage-disk flags (snapshot_local, latest_snapshot_local,
+         log_local, latest_log_local), so those disks must be defined here (as in
+         keeper_config.xml) or Keeper aborts at startup with UNKNOWN_DISK. -->
+    <storage_configuration>
+        <disks>
+            <log_local>
+                <type>local</type>
+                <path>/home/robot-clickhouse/db/coordination/logs/</path>
+            </log_local>
+            <latest_log_local>
+                <type>local</type>
+                <path>/home/robot-clickhouse/db/coordination/latest_log/</path>
+            </latest_log_local>
+            <snapshot_local>
+                <type>local</type>
+                <path>/home/robot-clickhouse/db/coordination/snapshots/</path>
+            </snapshot_local>
+            <latest_snapshot_local>
+                <type>local</type>
+                <path>/home/robot-clickhouse/db/coordination/latest_snapshot/</path>
+            </latest_snapshot_local>
+        </disks>
+    </storage_configuration>
+
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>

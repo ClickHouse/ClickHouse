@@ -1990,7 +1990,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
 
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
-            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
+            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
             global_ctx->merge_list_element_ptr->rows_read.load(),
             global_ctx->storage_columns.size(),
             global_ctx->merging_columns.size(),

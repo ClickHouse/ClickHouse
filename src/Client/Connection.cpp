@@ -1231,7 +1231,7 @@ void Connection::sendScalarsData(Scalars & data)
 
     if (compression == Protocol::Compression::Enable)
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            "Sent data for {} scalars, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), compressed {:.3f} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1241,7 +1241,7 @@ void Connection::sendScalarsData(Scalars & data)
             ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            "Sent data for {} scalars, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1342,7 +1342,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     if (compression == Protocol::Compression::Enable)
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            "Sent data for {} external tables, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), compressed {:.3f} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1352,7 +1352,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            "Sent data for {} external tables, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),

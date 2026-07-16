@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
+    extern const int LOGICAL_ERROR;
 }
 
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
@@ -106,6 +107,15 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
     for (const auto & setting : impl->allChanged())
         changes.emplace_back(setting.getName(), setting.getValue());
     return changes;
+}
+
+const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
+{
+    const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
+    const size_t index = accessor.findByOffset(setting.offset);
+    if (index == static_cast<size_t>(-1))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown database DataLake setting");
+    return accessor.getName(index);
 }
 
 }
