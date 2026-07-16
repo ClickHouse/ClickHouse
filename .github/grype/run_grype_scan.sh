@@ -3,7 +3,7 @@ set -e
 
 IMAGE=$1
 
-GRYPE_VERSION=${GRYPE_VERSION:-"v0.92.2"}
+GRYPE_VERSION=${GRYPE_VERSION:-"v0.115.0"}
 
 docker pull $IMAGE
 docker pull anchore/grype:${GRYPE_VERSION}
