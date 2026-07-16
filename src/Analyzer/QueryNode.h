@@ -2,6 +2,7 @@
 
 #include <Common/SettingsChanges.h>
 
+#include <Core/MaterializedCTEEngine.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Analyzer/HashUtils.h>
@@ -154,16 +155,16 @@ public:
         is_materialized = is_materialized_value;
     }
 
-    /// Get MATERIALIZED CTE engine storage (ASTStorage with the ENGINE clause), null means the default Memory engine
-    ASTPtr getMaterializedCTEStorage() const
+    /// Get the engine requested for a MATERIALIZED CTE (std::nullopt means the default Memory engine)
+    const std::optional<MaterializedCTEEngine> & getMaterializedCTEEngine() const
     {
-        return materialized_cte_storage;
+        return materialized_cte_engine;
     }
 
-    /// Set MATERIALIZED CTE engine storage
-    void setMaterializedCTEStorage(ASTPtr storage)
+    /// Set the engine requested for a MATERIALIZED CTE
+    void setMaterializedCTEEngine(std::optional<MaterializedCTEEngine> engine)
     {
-        materialized_cte_storage = std::move(storage);
+        materialized_cte_engine = std::move(engine);
     }
 
     /// Returns true if query node has RECURSIVE WITH, false otherwise
@@ -720,7 +721,7 @@ private:
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
 
-    ASTPtr materialized_cte_storage;
+    std::optional<MaterializedCTEEngine> materialized_cte_engine;
     std::string cte_name;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;

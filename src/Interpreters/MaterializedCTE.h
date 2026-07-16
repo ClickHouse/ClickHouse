@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/IAST_fwd.h>
+#include <Core/MaterializedCTEEngine.h>
 #include <base/defines.h>
 
 #include <atomic>
@@ -81,10 +81,9 @@ struct MaterializedCTE
     StoragePtr storage = {};
     /// Temporary table storage.
     std::optional<TemporaryTableHolder> table_holder = {};
-    /// ASTStorage with the ENGINE clause requested for the CTE
-    /// (WITH t AS MATERIALIZED ENGINE=... (subquery)). Null means the default Memory engine.
-    /// Only Memory, Join and Set engines are accepted.
-    ASTPtr storage_def = {};
+    /// Engine requested for the CTE (WITH t AS MATERIALIZED ENGINE=... (subquery)).
+    /// std::nullopt means the default Memory engine. Only Memory, Join and Set are accepted.
+    std::optional<MaterializedCTEEngine> engine = {};
     /// Name of the CTE.
     const std::string cte_name;
     /// Temporary table name

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/MaterializedCTEEngine.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Parsers/SelectUnionMode.h>
@@ -97,16 +98,16 @@ public:
         is_materialized = is_materialized_value;
     }
 
-    /// Get MATERIALIZED CTE engine storage (ASTStorage with the ENGINE clause), null means the default Memory engine
-    ASTPtr getMaterializedCTEStorage() const
+    /// Get the engine requested for a MATERIALIZED CTE (std::nullopt means the default Memory engine)
+    const std::optional<MaterializedCTEEngine> & getMaterializedCTEEngine() const
     {
-        return materialized_cte_storage;
+        return materialized_cte_engine;
     }
 
-    /// Set MATERIALIZED CTE engine storage
-    void setMaterializedCTEStorage(ASTPtr storage)
+    /// Set the engine requested for a MATERIALIZED CTE
+    void setMaterializedCTEEngine(std::optional<MaterializedCTEEngine> engine)
     {
-        materialized_cte_storage = std::move(storage);
+        materialized_cte_engine = std::move(engine);
     }
 
     /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
@@ -238,7 +239,7 @@ private:
     bool is_subquery = false;
     bool is_cte = false;
     bool is_materialized = false;
-    ASTPtr materialized_cte_storage;
+    std::optional<MaterializedCTEEngine> materialized_cte_engine;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;

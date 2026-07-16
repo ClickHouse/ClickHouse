@@ -17,6 +17,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
@@ -47,7 +48,10 @@
 
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 
+#include <Core/MaterializedCTEEngine.h>
 #include <Core/Settings.h>
+
+#include <Poco/String.h>
 
 #include <Databases/IDatabase.h>
 
@@ -66,6 +70,7 @@ namespace Setting
     extern const SettingsUInt64 offset;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_materialized_cte;
 }
 
 
@@ -83,6 +88,99 @@ namespace ErrorCodes
 namespace
 {
 
+/// Convert the parsed `ENGINE = ...` clause of a materialized CTE into a typed descriptor.
+/// Only Memory, Join and Set are accepted; the Join strictness/kind are captured in their surface
+/// form (the setting-dependent interpretation is deferred to StorageFactory when the temporary table
+/// is created). SETTINGS and engine arguments on Memory/Set are rejected rather than silently ignored.
+MaterializedCTEEngine parseMaterializedCTEEngine(const ASTStorage & storage)
+{
+    if (!storage.engine)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized CTE storage clause has no engine");
+
+    if (storage.settings)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SETTINGS are not supported for a materialized CTE engine");
+
+    const auto & engine = *storage.engine;
+    const auto & engine_name = engine.name;
+
+    MaterializedCTEEngine result;
+
+    if (engine_name == "Memory")
+        result.kind = MaterializedCTEEngineKind::Memory;
+    else if (engine_name == "Set")
+        result.kind = MaterializedCTEEngineKind::Set;
+    else if (engine_name == "Join")
+        result.kind = MaterializedCTEEngineKind::Join;
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Materialized CTE supports only Memory, Join and Set engines, got '{}'",
+            engine_name);
+
+    const ASTs empty_args;
+    const ASTs & engine_args = engine.arguments ? engine.arguments->children : empty_args;
+
+    if (result.kind != MaterializedCTEEngineKind::Join)
+    {
+        if (!engine_args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Engine {} of a materialized CTE does not accept arguments", engine_name);
+        return result;
+    }
+
+    /// Join(<strictness>, <kind>, key1, key2, ...)
+    if (engine_args.size() < 3)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Materialized CTE with Join engine requires at least 3 parameters: "
+            "Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT|FULL, keys...)");
+
+    MaterializedJoinEngineParams join_params;
+
+    auto opt_strictness = tryGetIdentifierName(engine_args[0]);
+    const String strictness_str = opt_strictness ? Poco::toLower(*opt_strictness) : String{};
+    if (strictness_str == "any")
+        join_params.strictness = JoinStrictness::Any;
+    else if (strictness_str == "all")
+        join_params.strictness = JoinStrictness::All;
+    else if (strictness_str == "semi")
+        join_params.strictness = JoinStrictness::Semi;
+    else if (strictness_str == "anti")
+        join_params.strictness = JoinStrictness::Anti;
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "First parameter of a materialized CTE Join engine must be ANY, ALL, SEMI or ANTI (without quotes)");
+
+    auto opt_kind = tryGetIdentifierName(engine_args[1]);
+    const String kind_str = opt_kind ? Poco::toLower(*opt_kind) : String{};
+    if (kind_str == "left")
+        join_params.kind = JoinKind::Left;
+    else if (kind_str == "inner")
+        join_params.kind = JoinKind::Inner;
+    else if (kind_str == "right")
+        join_params.kind = JoinKind::Right;
+    else if (kind_str == "full")
+        join_params.kind = JoinKind::Full;
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Second parameter of a materialized CTE Join engine must be LEFT, INNER, RIGHT or FULL (without quotes)");
+
+    join_params.key_columns.reserve(engine_args.size() - 2);
+    for (size_t i = 2, size = engine_args.size(); i < size; ++i)
+    {
+        auto opt_key = tryGetIdentifierName(engine_args[i]);
+        if (!opt_key)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Parameter #{} of a materialized CTE Join engine is not a column name", i + 1);
+        join_params.key_columns.push_back(*opt_key);
+    }
+
+    result.join_params = std::move(join_params);
+    return result;
+}
+
 class QueryTreeBuilder
 {
 public:
@@ -97,7 +195,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
-        ASTPtr materialized_cte_storage;
+        std::optional<MaterializedCTEEngine> materialized_cte_engine;
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -203,7 +301,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
-    union_node->setMaterializedCTEStorage(cte_data.materialized_cte_storage);
+    union_node->setMaterializedCTEEngine(cte_data.materialized_cte_engine);
     union_node->setOriginalAST(select_with_union_query);
 
     size_t select_lists_children_size = select_lists.children.size();
@@ -247,7 +345,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
-    union_node->setMaterializedCTEStorage(cte_data.materialized_cte_storage);
+    union_node->setMaterializedCTEEngine(cte_data.materialized_cte_engine);
     union_node->setOriginalAST(select_intersect_except_query);
 
     size_t select_lists_size = select_lists.size();
@@ -322,7 +420,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
     current_query_tree->setCTEName(std::string(cte_data.cte_name));
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
-    current_query_tree->setMaterializedCTEStorage(cte_data.materialized_cte_storage);
+    current_query_tree->setMaterializedCTEEngine(cte_data.materialized_cte_engine);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
@@ -802,8 +900,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
-            .materialized_cte_storage = with_element->storage,
+            .materialized_cte_engine = {},
         };
+        /// Interpret the ENGINE clause only when the feature is enabled; otherwise a MATERIALIZED CTE
+        /// is treated as an ordinary CTE and the engine (if any) is ignored, matching the behavior of
+        /// the `is_materialized` flag itself.
+        if (with_element->storage && context->getSettingsRef()[Setting::enable_materialized_cte])
+            cte_data.materialized_cte_engine = parseMaterializedCTEEngine(with_element->storage->as<ASTStorage &>());
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
 
         result = std::move(query_node);

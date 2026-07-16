@@ -42,6 +42,7 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -145,26 +146,23 @@ namespace
 {
 
 /// Create the temporary table that backs a materialized CTE, honoring the engine requested via
-/// `WITH t AS MATERIALIZED ENGINE=<Engine>[(args)] (subquery)`. `storage_def` is the parsed
-/// `ASTStorage` (null means the default `Memory` engine). Only `Memory`, `Join` and `Set` are
-/// accepted; anything else is a clear error.
+/// `WITH t AS MATERIALIZED ENGINE=<Engine>[(args)] (subquery)`. `engine` is the typed descriptor
+/// parsed at query-tree build time (std::nullopt means the default `Memory` engine).
 ///
-/// `Memory` keeps the existing dedicated path (no engine args, no on-disk data, and the
-/// `delayReadForGlobalSubqueries` behavior used by the Memory read gate). `Join`/`Set` are
-/// created through `StorageFactory` from a synthetic `ASTCreateQuery`, mirroring the temporary
-/// table path in `InterpreterCreateQuery::doCreateTable` - the data path comes from the
-/// temporary database, so `StorageSetOrJoinBase` (which requires a non-empty path) is satisfied.
+/// `Memory` keeps the existing dedicated path (no on-disk data, and the `delayReadForGlobalSubqueries`
+/// behavior used by the Memory read gate). For `Join`/`Set` the engine AST is rebuilt from the
+/// descriptor and the storage is created through `StorageFactory` from a synthetic `ASTCreateQuery`,
+/// mirroring the temporary table path in `InterpreterCreateQuery::doCreateTable` - the data path comes
+/// from the temporary database, so `StorageSetOrJoinBase` (which requires a non-empty path) is satisfied.
 TemporaryTableHolder createMaterializedCTETemporaryTable(
     const ContextMutablePtr & query_context,
     NamesAndTypesList columns_list,
-    const ASTPtr & storage_def)
+    const std::optional<MaterializedCTEEngine> & engine)
 {
     ColumnsDescription columns(std::move(columns_list), false);
 
-    auto * storage_ast = storage_def ? storage_def->as<ASTStorage>() : nullptr;
-
     /// No ENGINE clause, or an explicit `ENGINE = Memory`: use the dedicated Memory temp-table ctor.
-    if (!storage_ast || !storage_ast->engine || storage_ast->engine->name == "Memory")
+    if (!engine || engine->kind == MaterializedCTEEngineKind::Memory)
         return TemporaryTableHolder(
             query_context,
             columns,
@@ -172,19 +170,36 @@ TemporaryTableHolder createMaterializedCTETemporaryTable(
             nullptr /*query*/,
             true /*create_for_global_subquery*/);
 
-    const auto & engine_name = storage_ast->engine->name;
-    if (engine_name != "Join" && engine_name != "Set")
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Materialized CTE supports only Memory, Join and Set engines, got '{}'",
-            engine_name);
+    /// Rebuild the engine AST from the typed descriptor. `StorageFactory::get` takes columns
+    /// separately, so no columns list is attached to the AST. The `TemporaryTableHolder` ctor mutates
+    /// this AST in place to assign the generated temporary table name/uuid before the creator runs, so
+    /// the same object is captured below.
+    auto engine_function = make_intrusive<ASTFunction>();
+    if (engine->kind == MaterializedCTEEngineKind::Set)
+    {
+        engine_function->name = "Set";
+    }
+    else
+    {
+        chassert(engine->kind == MaterializedCTEEngineKind::Join && engine->join_params);
+        const auto & join_params = *engine->join_params;
+        engine_function->name = "Join";
+        auto engine_args = make_intrusive<ASTExpressionList>();
+        /// Strictness/kind are emitted in their surface form; StorageJoin re-parses them (applying
+        /// `any_join_distinct_right_table_keys` itself) when it creates the storage.
+        engine_args->children.push_back(make_intrusive<ASTIdentifier>(toString(join_params.strictness)));
+        engine_args->children.push_back(make_intrusive<ASTIdentifier>(toString(join_params.kind)));
+        for (const auto & key : join_params.key_columns)
+            engine_args->children.push_back(make_intrusive<ASTIdentifier>(key));
+        engine_function->arguments = engine_args;
+        engine_function->children.push_back(engine_args);
+    }
+    engine_function->setKind(ASTFunction::Kind::TABLE_ENGINE);
 
-    /// Build a minimal CREATE query carrying only the engine; `StorageFactory::get` takes columns
-    /// separately, so no columns list is attached to the AST. The `TemporaryTableHolder` ctor
-    /// mutates this AST in place to assign the generated temporary table name/uuid before the
-    /// creator runs, so the same object is captured below.
     auto create_query = make_intrusive<ASTCreateQuery>();
-    create_query->set(create_query->storage, storage_ast->clone());
+    auto storage = make_intrusive<ASTStorage>();
+    storage->set(storage->engine, engine_function);
+    create_query->set(create_query->storage, storage);
 
     TemporaryTableHolder::Creator creator = [&](const StorageID & table_id) -> StoragePtr
     {
@@ -1369,8 +1384,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
         /// Carry the requested engine (WITH t AS MATERIALIZED ENGINE=... (...)) into the CTE descriptor,
         /// so the temporary table is created with that engine when the storage is finalized.
         /// Null (no ENGINE clause) means the default Memory engine.
-        table_node->getMaterializedCTE()->storage_def
-            = query_node ? query_node->getMaterializedCTEStorage() : union_node->getMaterializedCTEStorage();
+        table_node->getMaterializedCTE()->engine
+            = query_node ? query_node->getMaterializedCTEEngine() : union_node->getMaterializedCTEEngine();
 
         cte_node = table_node;
     }
@@ -3300,7 +3315,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             auto storage_holder = createMaterializedCTETemporaryTable(
                                 query_context,
                                 std::move(columns),
-                                materialized_cte_ptr->storage_def);
+                                materialized_cte_ptr->engine);
 
                             mat_table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
                         }
@@ -5865,7 +5880,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     auto storage_holder = createMaterializedCTETemporaryTable(
                         query_context,
                         std::move(columns),
-                        materialized_cte_ptr->storage_def);
+                        materialized_cte_ptr->engine);
 
                     table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
                 }
