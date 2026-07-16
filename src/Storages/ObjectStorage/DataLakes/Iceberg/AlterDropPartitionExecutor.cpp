@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -211,26 +212,55 @@ DataTypes resolvePartitionTypes(
 
 AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     const PartitionCommand & command_,
+    const IcebergMetadata & metadata_,
     ContextPtr context_,
     ObjectStoragePtr object_storage_,
     const PersistentTableComponents & components_,
     const DataLakeStorageSettings & data_lake_settings_,
     String write_format_,
     LoggerPtr log_,
-    std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     StorageID storage_id_)
     : command(command_)
+    , metadata(metadata_)
     , context(context_)
     , object_storage(std::move(object_storage_))
     , components(components_)
     , data_lake_settings(data_lake_settings_)
     , write_format(std::move(write_format_))
     , log(std::move(log_))
-    , fetch_latest_state(std::move(fetch_latest_state_))
     , catalog(std::move(catalog_))
     , storage_id(std::move(storage_id_))
 {
+}
+
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> AlterDropPartitionExecutor::fetchLatestState() const
+{
+    if (!catalog)
+        return metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_explicit_metadata_file_path=*/true);
+
+    DataLake::TableMetadata table_metadata;
+    table_metadata.withDataLakeSpecificProperties().withLocation();
+    const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
+    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog did not return a metadata file location for table '{}.{}'",
+            namespace_name,
+            table_name);
+
+    DataLakeStorageSettings effective_settings = data_lake_settings;
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+        = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
+
+    return metadata.getRelevantState(
+        context,
+        effective_settings,
+        /*force_fetch_latest_metadata=*/true,
+        /*ignore_explicit_metadata_file_path=*/false);
 }
 
 std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecutor::fetchSnapshotState()
@@ -238,7 +268,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = fetch_latest_state();
+        auto [snapshot, table_state] = fetchLatestState();
         if (!snapshot)
             return std::nullopt;
 

@@ -22,7 +22,6 @@
 
 #include <Poco/JSON/Object.h>
 
-#include <functional>
 #include <optional>
 #include <unordered_set>
 #include <vector>
@@ -36,6 +35,7 @@ namespace DB
 {
 
 class FileNamesGenerator;
+class IcebergMetadata;
 
 namespace Iceberg
 {
@@ -45,13 +45,13 @@ class AlterDropPartitionExecutor
 public:
     AlterDropPartitionExecutor(
         const PartitionCommand & command_,
+        const IcebergMetadata & metadata_,
         ContextPtr context_,
         ObjectStoragePtr object_storage_,
         const PersistentTableComponents & components_,
         const DataLakeStorageSettings & data_lake_settings_,
         String write_format_,
         LoggerPtr log_,
-        std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         StorageID storage_id_);
 
@@ -113,6 +113,7 @@ private:
     };
 
     std::optional<SnapshotState> fetchSnapshotState();
+    std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> fetchLatestState() const;
 
     TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
     TargetManifests findTargetManifests(const SnapshotState & state, const TargetFilePaths & targets) const;
@@ -159,13 +160,13 @@ private:
     void cleanupNotCommited(std::vector<std::string> files);
 
     const PartitionCommand & command;
+    const IcebergMetadata & metadata;
     ContextPtr context;
     ObjectStoragePtr object_storage;
     const PersistentTableComponents & components;
     const DataLakeStorageSettings & data_lake_settings;
     String write_format;
     LoggerPtr log;
-    std::function<std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>()> fetch_latest_state;
     /// Set for catalog-backed (DatabaseDataLake) tables; the new metadata location must also be
     /// committed to the catalog (the shared source of truth), like the INSERT/DELETE write paths do.
     std::shared_ptr<DataLake::ICatalog> catalog;

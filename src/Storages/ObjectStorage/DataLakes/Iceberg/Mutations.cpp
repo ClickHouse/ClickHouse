@@ -948,45 +948,15 @@ Pipe IcebergMetadata::alterPartition(
 void IcebergMetadata::alterPartitionDropImpl(
     const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id)
 {
-    auto fetch_latest_state = [this, context, catalog, storage_id]() -> std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    {
-        if (!catalog)
-        {
-            return getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_explicit_metadata_file_path=*/true);
-        }
-
-        DataLake::TableMetadata table_metadata;
-        table_metadata.withDataLakeSpecificProperties().withLocation();
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->getTableMetadata(namespace_name, table_name, table_metadata);
-
-        auto specific_properties = table_metadata.getDataLakeSpecificProperties();
-        if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Catalog did not return a metadata file location for table '{}.{}'",
-                namespace_name, table_name);
-
-        DataLakeStorageSettings effective_settings = data_lake_settings;
-        effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
-            = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
-
-        return getRelevantState(
-            context,
-            effective_settings,
-            /*force_fetch_latest_metadata=*/true,
-            /*ignore_explicit_metadata_file_path=*/false);
-    };
-
     Iceberg::AlterDropPartitionExecutor executor(
         command,
+        *this,
         context,
         object_storage,
         persistent_components,
         data_lake_settings,
         write_format,
         log,
-        std::move(fetch_latest_state),
         std::move(catalog),
         std::move(storage_id));
     executor.run();
