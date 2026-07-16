@@ -1,0 +1,73 @@
+--- standard: JOIN USING folds per side, merged key named as written, quoted key pins
+id	a	b
+1	10	20
+1	10	20
+UNKNOWN_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+UNKNOWN_IDENTIFIER
+--- standard: NATURAL JOIN intersects by folded class, case siblings are ambiguous
+Id	a	b
+1	10	20
+AMBIGUOUS_IDENTIFIER
+Id	a	ID	b
+1	10	1	20
+--- standard: qualified matcher qualifier folds against table aliases and names, quoted qualifier pins
+FirstName
+a
+UNKNOWN_IDENTIFIER
+FirstName
+a
+UNKNOWN_IDENTIFIER
+--- standard: EXCEPT targets fold, quoted targets pin, case siblings are ambiguous
+Amount
+1
+2
+5
+Category	Amount
+x	1
+AMBIGUOUS_IDENTIFIER
+--- standard: REPLACE targets fold, case siblings are ambiguous
+Id	a
+1	15
+AMBIGUOUS_IDENTIFIER
+--- standard: COLUMNS list entries fold, case siblings are ambiguous
+FirstName
+a
+AMBIGUOUS_IDENTIFIER
+--- standard: quoted subquery projection definitions pin, quoted references still match
+UNKNOWN_IDENTIFIER
+1
+MyAlias
+1
+UNKNOWN_IDENTIFIER
+X	Y
+1	2
+--- standard: inlined views carry pins, quotes are not persisted across metadata reload
+1
+UNKNOWN_IDENTIFIER
+1
+1
+--- standard: recursive CTE quoted column definitions pin inside recursive members
+UNKNOWN_IDENTIFIER
+1
+2
+3
+UNKNOWN_IDENTIFIER
+1
+2
+3
+1
+2
+3
+--- standard: INTERPOLATE targets fold to the canonical column, quoted targets pin
+1	10
+2	11
+3	10
+10
+11
+10
+UNKNOWN_IDENTIFIER
+1	10
+2	11
+3	10
+UNKNOWN_IDENTIFIER

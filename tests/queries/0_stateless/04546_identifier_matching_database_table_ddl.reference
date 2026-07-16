@@ -1,0 +1,48 @@
+--- standard: ALTER DATABASE folds the database name
+folded alter
+--- standard: sibling databases make ALTER DATABASE ambiguous
+AMBIGUOUS_IDENTIFIER
+--- standard: implicit current database stays exact with a case sibling
+0
+1
+x
+--- standard: CREATE TABLE AS folds the source, double-quoted wrong case stays exact
+0
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
+CANNOT_GET_CREATE_TABLE_QUERY
+--- standard: CREATE TABLE CLONE AS folds the source name
+3
+--- standard: MOVE PARTITION TO TABLE folds, double-quoted wrong case stays exact
+UNKNOWN_DATABASE
+UNKNOWN_TABLE
+1
+0
+--- standard: REPLACE PARTITION FROM folds, double-quoted wrong case stays exact
+1
+UNKNOWN_DATABASE
+--- standard: materialized view TO target folds and is stored canonically
+1
+5
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
+--- standard: CREATE INDEX folds, double-quoted wrong case stays exact
+UNKNOWN_TABLE
+UNKNOWN_DATABASE
+1
+--- standard: DROP INDEX folds, double-quoted wrong case stays exact
+UNKNOWN_TABLE
+0
+--- legacy analyzer: folded SELECT binds the canonical qualifier
+7
+UNKNOWN_TABLE
+7
+--- legacy analyzer: cross join with folded names resolves consistently
+1
+--- legacy analyzer: sibling databases stay ambiguous
+AMBIGUOUS_IDENTIFIER
+--- standard: unquoted case-sibling creation is rejected, quoted is allowed
+differs only in character case
+0
+differs only in character case
+2
