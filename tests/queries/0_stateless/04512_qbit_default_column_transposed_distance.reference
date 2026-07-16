@@ -1,0 +1,13 @@
+qb, qi are not materialized in the part yet
+A plain read recomputes the DEFAULT correctly
+0	[0,1,2,3]	[0,86,116,124]
+1	[1,2,3,4]	[86,116,124,127]
+2	[2,3,4,5]	[116,124,127,127]
+cosineDistanceTransposed must recompute the DEFAULT too, instead of reading an empty source column
+0	0
+1	0.0241
+2	0.0544
+cosineDistanceTransposedQuantized must recompute the DEFAULT too, instead of reading an empty source column
+0	0.0291
+1	0.0263
+2	0.0465

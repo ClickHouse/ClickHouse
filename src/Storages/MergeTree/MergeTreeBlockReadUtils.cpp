@@ -134,7 +134,10 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    /// Defaults are only attached to top-level columns, so a subcolumn request (e.g. "qb.1") must be
+    /// resolved to its storage name ("qb") before the lookup, otherwise the default is missed and the
+    /// subcolumn's real dependencies are never injected for reading.
+    const auto column_default = storage_snapshot->getDefault(column_in_storage ? column_in_storage->getNameInStorage() : column_name);
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
         return false;
