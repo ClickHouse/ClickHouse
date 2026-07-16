@@ -2304,14 +2304,26 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "hdfs",
     };
 
-    /// Normalize a config path to its top-level component: strip at the first `.` or `[` so
-    /// `custom.handlers` -> `custom` and `my_payload[1].field` -> `my_payload`. The final
-    /// validation below sees only top-level section names, so every exemption must be reduced
-    /// to the top-level component it actually shields.
+    /// Normalize a config path to its top-level component: strip at the first unescaped `.` or `[`
+    /// so `custom.handlers` -> `custom` and `my_payload[1].field` -> `my_payload`. A backslash
+    /// escapes the next character (mirroring `Poco::Util::XMLConfiguration::findNode`, which is how
+    /// `config.keys("")` reports a literal dot in a tag name, e.g. `<my.payload>` -> key `my\.payload`,
+    /// see `gtest_config_dot.cpp`), so `my\.payload` is one top-level component, not `my` + `.payload`.
+    /// The final validation below sees only top-level section names, so every exemption must be
+    /// reduced to the top-level component it actually shields.
     auto top_level_component = [](const String & path) -> String
     {
-        auto sep_pos = path.find_first_of(".[");
-        return sep_pos == String::npos ? path : path.substr(0, sep_pos);
+        for (size_t i = 0; i < path.size(); ++i)
+        {
+            if (path[i] == '\\' && i + 1 < path.size())
+            {
+                ++i;
+                continue;
+            }
+            if (path[i] == '.' || path[i] == '[')
+                return path.substr(0, i);
+        }
+        return path;
     };
 
     /// Two distinct concepts, kept in separate sets so they cannot cross-contaminate:

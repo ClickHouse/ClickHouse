@@ -39,6 +39,15 @@ node_static_config_ref_indexed = cluster_indexed_ref.add_instance(
     main_configs=["configs/config.d/static_handler_config_ref_indexed.xml"],
 )
 
+# Positive case: a `config://` reference can address a top-level key whose tag name contains a
+# literal dot (escaped by Poco as `\.` in the key path, see `gtest_config_dot.cpp`). The validator
+# must normalize the recorded key by respecting that escape, not by splitting on every raw `.`.
+cluster_dotted_key_ref = ClickHouseCluster(__file__, name="dotted_key_ref")
+node_static_config_ref_dotted_key = cluster_dotted_key_ref.add_instance(
+    "node_static_config_ref_dotted_key",
+    main_configs=["configs/config.d/static_handler_config_ref_dotted_key.xml"],
+)
+
 # Positive case: a custom top-level handlers section referenced via
 # <protocols>...<handlers>NAME</handlers>...</protocols> must be accepted.
 cluster_protocols = ClickHouseCluster(__file__, name="protocols")
@@ -410,6 +419,13 @@ def start_indexed_ref_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_dotted_key_ref_cluster():
+    cluster_dotted_key_ref.start()
+    yield
+    cluster_dotted_key_ref.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_protocols_cluster():
     cluster_protocols.start()
     yield
@@ -774,6 +790,19 @@ def test_config_ref_with_bracket_index_accepted(start_indexed_ref_cluster):
     )
     assert response.status_code == 200
     assert response.text == "Second payload"
+
+
+def test_config_ref_with_dotted_key_accepted(start_dotted_key_ref_cluster):
+    # If the unknown-key validator's `top_level_component` helper split on the escaped dot in
+    # `my_dotted\.payload` instead of recognizing the backslash escape, it would record the
+    # exemption as `my_dotted\` while the actual top-level key (as yielded by
+    # `config.keys("")`) is `my_dotted\.payload` — a mismatch that would reject the node's
+    # startup with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    response = node_static_config_ref_dotted_key.http_request(
+        "my_dotted_response", method="GET"
+    )
+    assert response.status_code == 200
+    assert response.text == "Hello from a dotted key"
 
 
 def test_protocols_custom_handlers_accepted(start_protocols_cluster):
