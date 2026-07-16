@@ -46,6 +46,7 @@ BASE_BRANCH = "master"
 azure_secret = Secret.Config(
     name="azure_connection_string",
     type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 chcache_secret = Secret.Config(
@@ -69,6 +70,7 @@ SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",

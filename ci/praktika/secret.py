@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import os
 from typing import List, Union
 
 
@@ -23,6 +22,15 @@ class Secret:
 
         def is_gh_var(self):
             return self.type == Secret.Type.GH_VAR
+
+        def _boto3_client(self, service):
+            import boto3
+
+            if not self.region:
+                raise RuntimeError(
+                    f"AWS region is not set for secret [{self.name}]"
+                )
+            return boto3.client(service, region_name=self.region)
 
         def get_value(self):
             if self.type == Secret.Type.AWS_SSM_PARAMETER:
@@ -47,12 +55,7 @@ class Secret:
                 assert False, f"Not supported secret type, secret [{self}]"
 
         def get_aws_ssm_parameter(self):
-            import boto3
-
-            client = boto3.client(
-                "ssm",
-                region_name=self.region or None,
-            )
+            client = self._boto3_client("ssm")
             res = client.get_parameter(
                 Name=self.name,
                 WithDecryption=True,
@@ -66,13 +69,8 @@ class Secret:
             """
             Request multiple parameters at once to avoid rate limiting
             """
-            import boto3
-
             assert isinstance(self.name, list)
-            client = boto3.client(
-                "ssm",
-                region_name=self.region or None,
-            )
+            client = self._boto3_client("ssm")
             res = client.get_parameters(
                 Names=self.name,
                 WithDecryption=True,
@@ -91,15 +89,10 @@ class Secret:
             return [name_to_value[name] for name in self.name]
 
         def get_aws_ssm_secret(self):
-            import boto3
-
             name, secret_key_name = self.name, ""
             if "." in self.name:
                 name, secret_key_name = self.name.split(".", 1)
-            client = boto3.client(
-                "secretsmanager",
-                region_name=self.region or None,
-            )
+            client = self._boto3_client("secretsmanager")
             res = client.get_secret_value(SecretId=name)
             secret_string = res.get("SecretString", "")
             if not secret_string:
@@ -115,8 +108,6 @@ class Secret:
             are resolved from a single get_secret_value response parsed in Python,
             which correctly handles multi-line values such as PEM keys.
             """
-            import boto3
-
             assert isinstance(self.name, list)
 
             # Parse each name into (root, key); key is None when there is no dot
@@ -128,10 +119,7 @@ class Secret:
                 root_to_indices.setdefault(root, []).append(i)
 
             results = [None] * len(self.name)
-            client = boto3.client(
-                "secretsmanager",
-                region_name=self.region or None,
-            )
+            client = self._boto3_client("secretsmanager")
 
             for root, indices in root_to_indices.items():
                 res = client.get_secret_value(SecretId=root)
