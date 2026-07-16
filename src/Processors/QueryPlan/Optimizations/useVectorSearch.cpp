@@ -45,7 +45,7 @@ namespace DB::QueryPlanOptimizations
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
 ///     function, we check that the table has a vector similarity index built on vec or an expression based
 ///     on vec. Other checks are left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -245,7 +245,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     return no_layers_updated;
 }
 
-bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// QueryPlan::Node * node = parent_node;
 

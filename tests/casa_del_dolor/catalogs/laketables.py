@@ -93,11 +93,15 @@ class SparkColumn:
         _spark_type: DataType,
         _nullable: bool,
         _generated: bool,
+        _clickhouse_type: str = "",
     ):
         self.column_name = _column_name
         self.spark_type = _spark_type
         self.nullable = _nullable
         self.generated = _generated
+        # Original ClickHouse type string; empty when the column has no CH-side origin
+        # (e.g. added via a Spark-side ALTER).
+        self.clickhouse_type = _clickhouse_type
 
     def _flat_column(
         self, res: dict[str, DataType], next_path: str, next_type: DataType

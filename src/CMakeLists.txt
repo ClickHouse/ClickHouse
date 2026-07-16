@@ -123,6 +123,10 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
+if (TARGET ch_contrib::sz3)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
+endif()
+
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/DiskObjectStorage)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/Replication)
@@ -560,6 +564,10 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
+if (TARGET ch_contrib::libdeflate)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libdeflate)
+endif()
+
 if (TARGET ch_contrib::libfiu)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libfiu)
 endif()
@@ -834,8 +842,8 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
-if (TARGET ch_contrib::base64)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::simdutf)
 endif()
 
 if (TARGET ch_contrib::libarchive)
