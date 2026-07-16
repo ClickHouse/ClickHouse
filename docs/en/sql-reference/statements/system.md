@@ -137,6 +137,9 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+
+Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
 ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
 
 Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
