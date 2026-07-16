@@ -91,6 +91,21 @@ do
 done
 
 for PUFFIN_FILE in \
+    "$DATA/float_offset.puffin" \
+    "$DATA/float_length.puffin" \
+    "$DATA/float_snapshot_id.puffin" \
+    "$DATA/float_sequence_number.puffin" \
+    "$DATA/float_fields_element.puffin" \
+    "$DATA/string_offset.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "must be an integer"
+done
+
+echo "--- fields_element_out_of_int32_range.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/fields_element_out_of_int32_range.puffin', PuffinMetadata)" 2>&1 | grep -oF 'out of Int32 range'
+
+for PUFFIN_FILE in \
     "$DATA/invalid_non_dv_properties_array.puffin" \
     "$DATA/invalid_non_dv_properties_string.puffin"
 do

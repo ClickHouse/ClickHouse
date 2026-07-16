@@ -308,6 +308,31 @@ def generate_invalid_property_value_types() -> None:
         )
 
 
+def generate_invalid_integer_fields() -> None:
+    """BlobMetadata integer fields must be JSON integers, not floats or strings."""
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    base = json.loads(footer_json.decode("utf-8"))
+    cases = {
+        "float_offset.puffin": ("offset", 5.1),
+        "float_length.puffin": ("length", 58.9),
+        "float_snapshot_id.puffin": ("snapshot-id", -1.5),
+        "float_sequence_number.puffin": ("sequence-number", 1.2),
+        "float_fields_element.puffin": ("fields", [1.9]),
+        "string_offset.puffin": ("offset", "4"),
+        "fields_element_out_of_int32_range.puffin": ("fields", [2**40]),
+    }
+    for name, (field, value) in cases.items():
+        case_payload = json.loads(json.dumps(base))
+        case_payload["blobs"][0][field] = value
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
+
 def generate_cardinality_mismatch_large_bitmap() -> None:
     bitmap = pyroaring.BitMap([2, 5, 7, 100, 65536])
     vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
@@ -437,6 +462,7 @@ def main() -> None:
     generate_lz4_trailing_bytes()
     generate_missing_required_fields()
     generate_invalid_property_value_types()
+    generate_invalid_integer_fields()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()

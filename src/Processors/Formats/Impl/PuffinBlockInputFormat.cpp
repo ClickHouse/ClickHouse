@@ -181,6 +181,29 @@ void requireBlobMetadataField(const Poco::JSON::Object::Ptr & blob_obj, const ch
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field '{}'", blob_index, field_name);
 }
 
+Int64 requireBlobMetadataInt64(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
+{
+    requireBlobMetadataField(blob_obj, field_name, blob_index);
+    const Poco::Dynamic::Var & value = blob_obj->get(field_name);
+    if (!value.isInteger())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be an integer", blob_index, field_name);
+    return value.convert<Int64>();
+}
+
+Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, size_t blob_index, size_t field_index)
+{
+    if (!value.isInteger())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] must be an integer", blob_index, field_index);
+
+    const Int64 as_int64 = value.convert<Int64>();
+    if (as_int64 < std::numeric_limits<Int32>::min() || as_int64 > std::numeric_limits<Int32>::max())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] is out of Int32 range", blob_index, field_index);
+
+    return static_cast<Int32>(as_int64);
+}
+
 void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
 {
     static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
@@ -242,17 +265,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
         requireBlobMetadataField(blob_obj, "type", i);
         blob.type = blob_obj->getValue<String>("type");
 
-        requireBlobMetadataField(blob_obj, "snapshot-id", i);
-        blob.snapshot_id = blob_obj->getValue<Int64>("snapshot-id");
-
-        requireBlobMetadataField(blob_obj, "sequence-number", i);
-        blob.sequence_number = blob_obj->getValue<Int64>("sequence-number");
-
-        requireBlobMetadataField(blob_obj, "offset", i);
-        blob.offset = blob_obj->getValue<Int64>("offset");
-
-        requireBlobMetadataField(blob_obj, "length", i);
-        blob.length = blob_obj->getValue<Int64>("length");
+        blob.snapshot_id = requireBlobMetadataInt64(blob_obj, "snapshot-id", i);
+        blob.sequence_number = requireBlobMetadataInt64(blob_obj, "sequence-number", i);
+        blob.offset = requireBlobMetadataInt64(blob_obj, "offset", i);
+        blob.length = requireBlobMetadataInt64(blob_obj, "length", i);
         blob.compression_codec = blob_obj->optValue<String>("compression-codec", "");
 
         if (blob.type == "deletion-vector-v1")
@@ -277,7 +293,7 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'fields' must be an array", i);
 
         for (size_t j = 0; j < fields_arr->size(); ++j)
-            blob.fields.push_back(fields_arr->getElement<Int32>(static_cast<unsigned>(j)));
+            blob.fields.push_back(requireBlobMetadataFieldsElementInt32(fields_arr->get(static_cast<unsigned>(j)), i, j));
 
         validatePuffinBlobBounds(blob.offset, blob.length, blob_region_end, i);
 

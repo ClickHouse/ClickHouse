@@ -58,6 +58,20 @@ must be a string
 must be a string
 --- invalid_property_cardinality_number.puffin ---
 must be a string
+--- float_offset.puffin ---
+must be an integer
+--- float_length.puffin ---
+must be an integer
+--- float_snapshot_id.puffin ---
+must be an integer
+--- float_sequence_number.puffin ---
+must be an integer
+--- float_fields_element.puffin ---
+must be an integer
+--- string_offset.puffin ---
+must be an integer
+--- fields_element_out_of_int32_range.puffin ---
+out of Int32 range
 --- invalid_non_dv_properties_array.puffin ---
 field 'properties' must be an object
 --- invalid_non_dv_properties_string.puffin ---
