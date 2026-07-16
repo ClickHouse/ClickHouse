@@ -33,11 +33,19 @@ public:
         /// Each reallocation relocates all previously lexed Token structs, which is a large
         /// fraction of parse time for queries with huge literals (e.g. a 10k-element `IN [...]`).
         /// A significant token is at least ~3 bytes on average for dense numeric literals, so
-        /// begin..end / 4 covers the bulk of them; the cap bounds memory for pathologically large
-        /// queries (a multi-hundred-MB query would otherwise reserve gigabytes up front).
-        const size_t query_size = end > begin ? static_cast<size_t>(end - begin) : 0;
+        /// (bytes to lex) / 4 covers the bulk of them.
+        ///
+        /// Bound the estimate by the bytes the lexer may actually consume, not the whole
+        /// begin..end range: the lexer stops at begin + max_query_size, and call sites such as
+        /// parseQuery (multi-statement) and ParserInsertQuery (`INSERT ... FORMAT`) pass an `end`
+        /// far past the current statement. Without this bound a short header before a large
+        /// payload/script would reserve up to the cap (4M tokens ~= 96 MiB) up front. The cap also
+        /// bounds memory for a single pathologically large query.
+        size_t lex_bytes = end > begin ? static_cast<size_t>(end - begin) : 0;
+        if (max_query_size != 0)
+            lex_bytes = std::min<size_t>(lex_bytes, max_query_size);
         static constexpr size_t max_reserve = 4 * 1024 * 1024;
-        data.reserve(std::min<size_t>(query_size / 4 + 16, max_reserve));
+        data.reserve(std::min<size_t>(lex_bytes / 4 + 16, max_reserve));
     }
 
     const Token & operator[] (size_t index)
