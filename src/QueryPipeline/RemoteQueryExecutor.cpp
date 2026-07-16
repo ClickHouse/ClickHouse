@@ -1011,12 +1011,12 @@ void RemoteQueryExecutor::sendExternalTables()
                 auto storage_memory = std::dynamic_pointer_cast<StorageMemory>(cur);
                 if (!storage_memory)
                 {
-                    /// A non-Memory materialized CTE (Join/Set) is a per-node hash structure that can't be
+                    /// A non-Memory materialized CTE (Set) is a per-node hash structure that can't be
                     /// shipped to shards. Fail loudly instead of silently dropping it (wrong results).
                     if (table.first.starts_with(MaterializedCTE::table_name_prefix))
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,
-                            "Materialized CTE with a non-Memory engine (Join or Set) is not supported in distributed queries");
+                            "Materialized CTE with the Set engine is not supported in distributed queries");
                     continue;
                 }
 

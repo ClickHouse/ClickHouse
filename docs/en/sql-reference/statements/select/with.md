@@ -59,9 +59,17 @@ They require the [analyzer](/operations/analyzer) and the setting `enable_materi
 ### Syntax {#materialized-common-table-expressions-syntax}
 
 ```sql
-WITH <identifier> AS MATERIALIZED (<subquery>)
+WITH <identifier> AS [MATERIALIZED [ENGINE = <engine>]] (<subquery>)
 SELECT ...
 ```
+
+### Engine {#materialized-cte-engine}
+
+By default a materialized CTE stores its data in a temporary `Memory` table. You can instead choose the `Set` engine so that a prepared set is reused across references instead of being rebuilt each time:
+
+- `Set` — for a CTE that is referenced only on the right-hand side of `x IN t`. The result is stored as a prepared set and reused by every `IN`. A `Set`-engine CTE cannot be read as a table.
+
+The engine only takes effect when the CTE is referenced more than once; a CTE referenced a single time is inlined regardless of the specified engine (see the tip below).
 
 ### When to use {#materialized-cte-when-to-use}
 
@@ -165,6 +173,8 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 - **Analyzer required**: Materialized CTEs only work with the [analyzer](/operations/analyzer) enabled (`enable_analyzer = 1`).
 - **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
+- **Engines**: Only `Memory` (the default) and `Set` are supported; any other engine raises a `BAD_ARGUMENTS` exception. The engine clause does not accept a `SETTINGS` clause.
+- **`Set` is local-only**: A `Set`-engine materialized CTE used in a distributed query raises a `NOT_IMPLEMENTED` exception.
 
 ## Common Scalar Expressions {#common-scalar-expressions}
 

@@ -51,8 +51,6 @@
 #include <Core/MaterializedCTEEngine.h>
 #include <Core/Settings.h>
 
-#include <Poco/String.h>
-
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/Context.h>
@@ -88,7 +86,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Convert a materialized CTE `ENGINE = ...` clause into a typed descriptor (Memory, Set or Join only).
+/// Convert a materialized CTE `ENGINE = ...` clause into a typed descriptor (Memory or Set only).
 MaterializedCTEEngine parseMaterializedCTEEngine(const ASTStorage & storage)
 {
     if (!storage.engine)
@@ -98,80 +96,20 @@ MaterializedCTEEngine parseMaterializedCTEEngine(const ASTStorage & storage)
     const auto & engine_name = engine.name;
 
     MaterializedCTEEngine result;
-
     if (engine_name == "Memory")
         result.kind = MaterializedCTEEngineKind::Memory;
     else if (engine_name == "Set")
         result.kind = MaterializedCTEEngineKind::Set;
-    else if (engine_name == "Join")
-        result.kind = MaterializedCTEEngineKind::Join;
     else
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Materialized CTE supports only Memory, Join and Set engines, got '{}'",
+            "Materialized CTE supports only Memory and Set engines, got '{}'",
             engine_name);
 
-    const ASTs empty_args;
-    const ASTs & engine_args = engine.arguments ? engine.arguments->children : empty_args;
-
-    if (result.kind != MaterializedCTEEngineKind::Join)
-    {
-        if (!engine_args.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Engine {} of a materialized CTE does not accept arguments", engine_name);
-        return result;
-    }
-
-    /// Join(<strictness>, <kind>, key1, key2, ...)
-    if (engine_args.size() < 3)
+    if (engine.arguments && !engine.arguments->children.empty())
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Materialized CTE with Join engine requires at least 3 parameters: "
-            "Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT|FULL, keys...)");
+            ErrorCodes::BAD_ARGUMENTS, "Engine {} of a materialized CTE does not accept arguments", engine_name);
 
-    MaterializedJoinEngineParams join_params;
-
-    auto opt_strictness = tryGetIdentifierName(engine_args[0]);
-    const String strictness_str = opt_strictness ? Poco::toLower(*opt_strictness) : String{};
-    if (strictness_str == "any")
-        join_params.strictness = JoinStrictness::Any;
-    else if (strictness_str == "all")
-        join_params.strictness = JoinStrictness::All;
-    else if (strictness_str == "semi")
-        join_params.strictness = JoinStrictness::Semi;
-    else if (strictness_str == "anti")
-        join_params.strictness = JoinStrictness::Anti;
-    else
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "First parameter of a materialized CTE Join engine must be ANY, ALL, SEMI or ANTI (without quotes)");
-
-    auto opt_kind = tryGetIdentifierName(engine_args[1]);
-    const String kind_str = opt_kind ? Poco::toLower(*opt_kind) : String{};
-    if (kind_str == "left")
-        join_params.kind = JoinKind::Left;
-    else if (kind_str == "inner")
-        join_params.kind = JoinKind::Inner;
-    else if (kind_str == "right")
-        join_params.kind = JoinKind::Right;
-    else if (kind_str == "full")
-        join_params.kind = JoinKind::Full;
-    else
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Second parameter of a materialized CTE Join engine must be LEFT, INNER, RIGHT or FULL (without quotes)");
-
-    join_params.key_columns.reserve(engine_args.size() - 2);
-    for (size_t i = 2, size = engine_args.size(); i < size; ++i)
-    {
-        auto opt_key = tryGetIdentifierName(engine_args[i]);
-        if (!opt_key)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Parameter #{} of a materialized CTE Join engine is not a column name", i + 1);
-        join_params.key_columns.push_back(*opt_key);
-    }
-
-    result.join_params = std::move(join_params);
     return result;
 }
 

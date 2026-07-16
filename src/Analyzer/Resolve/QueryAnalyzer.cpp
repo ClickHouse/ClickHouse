@@ -42,7 +42,6 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -162,26 +161,10 @@ TemporaryTableHolder createMaterializedCTETemporaryTable(
             nullptr /*query*/,
             true /*create_for_global_subquery*/);
 
-    /// Rebuild the engine AST from the descriptor; columns are passed to StorageFactory separately.
+    /// Set: build the engine AST from the descriptor; columns are passed to StorageFactory separately.
+    chassert(engine->kind == MaterializedCTEEngineKind::Set);
     auto engine_function = make_intrusive<ASTFunction>();
-    if (engine->kind == MaterializedCTEEngineKind::Set)
-    {
-        engine_function->name = "Set";
-    }
-    else
-    {
-        chassert(engine->kind == MaterializedCTEEngineKind::Join && engine->join_params);
-        const auto & join_params = *engine->join_params;
-        engine_function->name = "Join";
-        auto engine_args = make_intrusive<ASTExpressionList>();
-        /// Surface form; StorageJoin re-parses these when it creates the storage.
-        engine_args->children.push_back(make_intrusive<ASTIdentifier>(toString(join_params.strictness)));
-        engine_args->children.push_back(make_intrusive<ASTIdentifier>(toString(join_params.kind)));
-        for (const auto & key : join_params.key_columns)
-            engine_args->children.push_back(make_intrusive<ASTIdentifier>(key));
-        engine_function->arguments = engine_args;
-        engine_function->children.push_back(engine_args);
-    }
+    engine_function->name = "Set";
     engine_function->setKind(ASTFunction::Kind::TABLE_ENGINE);
 
     auto create_query = make_intrusive<ASTCreateQuery>();

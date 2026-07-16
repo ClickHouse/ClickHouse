@@ -1,5 +1,5 @@
--- Custom table engines (Memory, Join, Set) for materialized CTEs:
---   WITH t AS MATERIALIZED ENGINE = <Engine>[(args)] (subquery)
+-- Custom table engines (Memory, Set) for materialized CTEs:
+--   WITH t AS MATERIALIZED ENGINE = <Engine> (subquery)
 
 SET enable_materialized_cte = 1;
 
@@ -13,36 +13,32 @@ SELECT
     (SELECT count() FROM numbers(100) WHERE number IN s) AS c1,
     (SELECT count() FROM numbers(5) WHERE number IN s) AS c2;
 
--- Join engine consumed in a JOIN, referenced twice.
-WITH j AS MATERIALIZED ENGINE = Join(ANY, LEFT, k) (SELECT number AS k, number * 2 AS v FROM numbers(5))
-SELECT
-    (SELECT sum(v) FROM (SELECT number AS k FROM numbers(3)) AS l ANY LEFT JOIN j USING (k)) AS s1,
-    (SELECT count() FROM (SELECT number AS k FROM numbers(3)) AS l ANY LEFT JOIN j USING (k)) AS s2;
+-- Set engine referenced twice directly in the main query (not in subqueries).
+WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
+SELECT countIf(number IN s) AS in_s, countIf(number NOT IN s) AS not_in_s FROM numbers(20);
 
--- Single-use CTEs are inlined regardless of the specified engine; results match the plain form.
+-- Single-use CTE is inlined regardless of the specified engine; result matches the plain form.
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
 SELECT count() FROM numbers(100) WHERE number IN s;
 
-WITH j AS MATERIALIZED ENGINE = Join(ANY, LEFT, k) (SELECT number AS k, number * 2 AS v FROM numbers(5))
-SELECT sum(v) FROM (SELECT number AS k FROM numbers(3)) AS l ANY LEFT JOIN j USING (k);
-
--- The ENGINE clause parses and round-trips (in particular ENGINE = Join(args) is not mis-parsed
--- as a parametric function that swallows the CTE subquery).
+-- The ENGINE clause parses and round-trips.
 SELECT formatQuery('WITH t AS MATERIALIZED ENGINE = Memory (SELECT 1) SELECT * FROM t');
 SELECT formatQuery('WITH s AS MATERIALIZED ENGINE = Set (SELECT 1 AS x) SELECT 1 IN s');
-SELECT formatQuery('WITH j AS MATERIALIZED ENGINE = Join(ANY, LEFT, k) (SELECT 1 AS k) SELECT * FROM j');
 
 -- With the feature disabled the ENGINE clause still parses; the CTE is treated as a normal one.
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
 SELECT count() FROM numbers(100) WHERE number IN s
 SETTINGS enable_materialized_cte = 0;
 
--- Only Memory, Join and Set are allowed.
+-- Only Memory and Set are allowed (Join is not supported yet).
 WITH t AS MATERIALIZED ENGINE = Log (SELECT number FROM numbers(5))
 SELECT count() FROM t; -- { serverError BAD_ARGUMENTS }
 
+WITH j AS MATERIALIZED ENGINE = Join(ANY, LEFT, k) (SELECT number AS k FROM numbers(5))
+SELECT count() FROM (SELECT 1 AS k) AS l ANY LEFT JOIN j USING (k); -- { serverError BAD_ARGUMENTS }
+
 -- A SETTINGS clause on the engine is not parsed, so it is a syntax error.
-WITH j AS MATERIALIZED ENGINE = Join(ANY, LEFT, k) SETTINGS join_use_nulls = 1 (SELECT 1 AS k) SELECT count() FROM (SELECT 1 AS k) AS l ANY LEFT JOIN j USING (k); -- { clientError SYNTAX_ERROR }
+WITH s AS MATERIALIZED ENGINE = Set SETTINGS x = 1 (SELECT number FROM numbers(10)) SELECT count() FROM numbers(10) WHERE number IN s; -- { clientError SYNTAX_ERROR }
 
 -- A Set-engine CTE cannot be read as a table (two references keep it materialized as a Set).
 WITH s AS MATERIALIZED ENGINE = Set (SELECT number FROM numbers(10))
