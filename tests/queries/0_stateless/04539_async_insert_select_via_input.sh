@@ -45,14 +45,16 @@ for _ in $(seq 1 60); do
     sleep 0.5
 done
 
-# Flush and Query events confirm the insert went through the async queue.
+# status=Ok and data_kind=Preprocessed confirm the block was pushed via pushQueryWithBlock.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT arraySort(groupArray(event_type))
+    SELECT status, data_kind
     FROM system.asynchronous_insert_log
     WHERE event_date >= yesterday()
       AND event_time >= now() - 600
       AND database = currentDatabase()
       AND table = 'test_async_input'
+    ORDER BY event_time_microseconds
+    LIMIT 1
 "
 
 # ── Case 2: TCP + async_insert=1 — INSERT...SELECT FROM input() stays sync ───────
@@ -65,15 +67,57 @@ printf '2\tworld_row\n' | ${CLICKHOUSE_CLIENT} \
 # Verify data arrived (sync execution completes before the client returns).
 ${CLICKHOUSE_CLIENT} -q "SELECT id, s FROM test_async_input_tcp ORDER BY id"
 
-# Confirm no async events were recorded — TCP path never routes via the async queue.
+# Confirm no async log entries — TCP path never routes via the async queue.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT arraySort(groupArray(event_type))
+    SELECT count()
     FROM system.asynchronous_insert_log
     WHERE event_date >= yesterday()
       AND event_time >= now() - 600
       AND database = currentDatabase()
       AND table = 'test_async_input_tcp'
+"
+
+# ── Case 3: table function destination (remote) + async_insert=1 ─────────────────
+# Regression: async_insert_flush must be set on the queued AST so that
+# InterpreterInsertQuery::getTable can still call setStructureHint for table
+# functions, while execute() does not re-run the already-consumed SELECT.
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_async_input"
+
+Q=$(urlencode "INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'test_async_input') SELECT id, s, getClientHTTPHeader('X-Test-Header') AS hdr FROM input('id UInt32, s String') FORMAT TSV")
+printf '3\tremote_row\n' | ${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&allow_get_client_http_header=1&allow_experimental_analyzer=1&query=${Q}" \
+    -H 'X-Test-Header: remote_hdr' \
+    -H 'Content-Type: application/octet-stream' \
+    --data-binary @-
+
+${CLICKHOUSE_CLIENT} -q "SELECT id, s, hdr FROM test_async_input ORDER BY id"
+
+# ── Case 4: oversized payload → sync fallback ─────────────────────────────────────
+# Regression: with async_insert_max_data_size=1, every non-empty block exceeds
+# the limit. The fallback must write synchronously without re-executing the
+# already-consumed StorageInput pipeline (was_pipe_used guard).
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_async_input"
+
+Q=$(urlencode "INSERT INTO test_async_input SELECT id, s, getClientHTTPHeader('X-Test-Header') FROM input('id UInt32, s String') FORMAT TSV")
+printf '4\tfallback_row\n' | ${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&allow_get_client_http_header=1&async_insert_max_data_size=1&query=${Q}" \
+    -H 'X-Test-Header: fallback_hdr' \
+    -H 'Content-Type: application/octet-stream' \
+    --data-binary @-
+
+# Data must have arrived synchronously.
+${CLICKHOUSE_CLIENT} -q "SELECT id, s, hdr FROM test_async_input ORDER BY id"
+
+# The oversized fallback writes synchronously — no async log entry for this insert.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT count()
+    FROM system.asynchronous_insert_log
+    WHERE event_date >= yesterday()
+      AND event_time >= now() - 30
+      AND database = currentDatabase()
+      AND table = 'test_async_input'
 "
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────

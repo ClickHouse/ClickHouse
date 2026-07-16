@@ -1,4 +1,7 @@
 1	hello_row	hello
-['Flush','Query']
+Ok	Preprocessed
 2	world_row
-[]
+0
+3	remote_row	remote_hdr
+4	fallback_row	fallback_hdr
+0
