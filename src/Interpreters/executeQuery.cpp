@@ -252,6 +252,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
+    extern const char framing_finalize_throw[];
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
@@ -3073,53 +3074,77 @@ void executeQuery(
 
     if (framing)
     {
-        /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
-        /// trailing server logs and profile events - emitted by the query-finish logging in
-        /// `onFinish` - are included in the stream, like the native protocol does. The order is:
-        ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct),
-        ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
-        ///   3. finalize the framing format: it drains those logs and writes the final packets,
-        ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
-        finishExecutedQuery(streams, [&]()
+        try
         {
-            auto progress_callback = context->getProgressCallback();
-
-            /// On the no-result path the `Null` payload carrier is not part of the pipeline, so the
-            /// pipeline's progress callback is not called anymore: forward the final progress flush
-            /// (`result_rows` / `result_bytes`) to the carrier as well, so the framed stream ends with
-            /// a `progress` packet carrying the final counters, like the native protocol does.
-            if (!pulling_pipeline)
+            /// Test-only: emulate `finishExecutedQuery` / `finalize` throwing below, to test that the
+            /// failure is still delivered as a framed `exception` packet (see the `catch` block).
+            fiu_do_on(FailPoints::framing_finalize_throw,
             {
-                progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the framing format");
+            });
+
+            /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
+            /// trailing server logs and profile events - emitted by the query-finish logging in
+            /// `onFinish` - are included in the stream, like the native protocol does. The order is:
+            ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct),
+            ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
+            ///   3. finalize the framing format: it drains those logs and writes the final packets,
+            ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
+            finishExecutedQuery(streams, [&]()
+            {
+                auto progress_callback = context->getProgressCallback();
+
+                /// On the no-result path the `Null` payload carrier is not part of the pipeline, so the
+                /// pipeline's progress callback is not called anymore: forward the final progress flush
+                /// (`result_rows` / `result_bytes`) to the carrier as well, so the framed stream ends with
+                /// a `progress` packet carrying the final counters, like the native protocol does.
+                if (!pulling_pipeline)
                 {
-                    if (previous_progress_callback)
-                        previous_progress_callback(progress);
-                    captured_output_format->onProgress(progress);
-                };
-            }
+                    progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
+                    {
+                        if (previous_progress_callback)
+                            previous_progress_callback(progress);
+                        captured_output_format->onProgress(progress);
+                    };
+                }
 
-            flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
-        });
+                flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
+            });
 
-        /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
-        /// included in the stream. Otherwise it would be logged only when the query's thread group is
-        /// destroyed (from `QueryScope`, after this function returns) - too late for the framing format.
-        /// This mirrors what `TCPHandler` does before it drains the logs for the native protocol.
-        if (auto thread_group = CurrentThread::getGroup())
-            thread_group->memory_tracker.logPeakMemoryUsage();
+            /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
+            /// included in the stream. Otherwise it would be logged only when the query's thread group is
+            /// destroyed (from `QueryScope`, after this function returns) - too late for the framing format.
+            /// This mirrors what `TCPHandler` does before it drains the logs for the native protocol.
+            if (auto thread_group = CurrentThread::getGroup())
+                thread_group->memory_tracker.logPeakMemoryUsage();
 
-        /// On the no-result path nothing else finalizes the `Null` carrier (it is not part of the
-        /// pipeline), and the last progress update - including the final one flushed above - may still
-        /// be pending because of throttling (see `onProgress`): finalize the carrier now, which writes
-        /// it as the final `progress` packet. The framing finalization itself is deferred (see
-        /// `deferFramingFinalize` above), and for a pulling query the output format was already
-        /// finalized by the pipeline, so this is a no-op.
-        output_format->finalize();
+            /// On the no-result path nothing else finalizes the `Null` carrier (it is not part of the
+            /// pipeline), and the last progress update - including the final one flushed above - may still
+            /// be pending because of throttling (see `onProgress`): finalize the carrier now, which writes
+            /// it as the final `progress` packet. The framing finalization itself is deferred (see
+            /// `deferFramingFinalize` above), and for a pulling query the output format was already
+            /// finalized by the pipeline, so this is a no-op.
+            output_format->finalize();
 
-        framing->finalize();
+            framing->finalize();
 
-        if (query_finish_callback)
-            query_finish_callback();
+            if (query_finish_callback)
+                query_finish_callback();
+        }
+        catch (...)
+        {
+            /// `finishExecutedQuery` (specifically `BlockIO::onFinish`), `output_format->finalize`, or
+            /// `framing->finalize` can throw after the query has otherwise succeeded, with packets
+            /// possibly already streamed to the client. Deliver the failure as a framed `exception`
+            /// packet - the same mechanism used for a failure during `executeQueryImpl` above - instead
+            /// of letting it escape to the generic HTTP error path, which would append a plain-text
+            /// error after an already-started packet stream, breaking the "always a stream of packets"
+            /// contract. `handle_exception_in_output_format` finalizes the HTTP output itself (as it
+            /// does for the early-failure path), so `query_finish_callback` must not be called again.
+            if (handle_exception_in_output_format)
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+            throw;
+        }
     }
     else
     {

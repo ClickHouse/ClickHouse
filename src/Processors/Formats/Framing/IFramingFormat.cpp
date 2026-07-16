@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -87,14 +88,27 @@ void IFramingFormat::finalize()
     finalized = true;
 }
 
+namespace
+{
+
+/// Flushes `buf` and, if it wraps another buffer (an HTTP compression layer such as gzip, and/or the
+/// internal `compress=1` layer, which can be stacked), flushes the whole chain down to the underlying
+/// HTTP buffer, so that packets are delivered interactively rather than sitting in a compression
+/// buffer until enough data accumulates or the query finishes.
+void flushBufferChain(WriteBuffer & buf)
+{
+    buf.next();
+    if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&buf))
+        flushBufferChain(*out_with_nested->getNestedBuffer());
+    else if (auto * out_compressed = dynamic_cast<CompressedWriteBuffer *>(&buf))
+        flushBufferChain(*out_compressed->getNestedBuffer());
+}
+
+}
+
 void IFramingFormat::flushOut()
 {
-    out.next();
-
-    /// If the output is a compressed buffer, flush the compressed chunk to the underlying buffer
-    /// as well, so that packets are delivered interactively (mirrors `IOutputFormat::flushImpl`).
-    if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&out))
-        out_with_nested->getNestedBuffer()->next();
+    flushBufferChain(out);
 }
 
 void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)

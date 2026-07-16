@@ -107,6 +107,8 @@ text/event-stream; charset=UTF-8; payload=base64
 CSV payload with a carriage return round-trips
 --- EventStream base64-encodes formats that write values without escaping (Vertical)
 Vertical payload with a carriage return round-trips
+--- EventStream base64-encodes SQLInsert (the table name setting is written verbatim)
+SQLInsert payload with a carriage return in the table name round-trips
 --- EventStream base64-encodes Pretty and XML (values are written without escaping the carriage return)
 text/event-stream; charset=UTF-8; payload=base64
 text/event-stream; charset=UTF-8; payload=base64

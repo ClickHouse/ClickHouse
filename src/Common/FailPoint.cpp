@@ -126,6 +126,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(framing_finalize_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
