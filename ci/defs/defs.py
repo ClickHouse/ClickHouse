@@ -41,8 +41,8 @@ class RunnerLabels:
         "altinity-on-demand",
         "altinity-func-tester-aarch64",
     ]
-    AMD_SMALL = ["self-hosted", "altinity-on-demand", "altinity-style-checker"]
-    ARM_SMALL = ["self-hosted", "altinity-on-demand", "altinity-style-checker-aarch64"]
+    AMD_SMALL = ["self-hosted", "altinity-on-demand", "altinity-func-tester"]
+    ARM_SMALL = ["self-hosted", "altinity-on-demand", "altinity-func-tester-aarch64"]
     AMD_SMALL_MEM = ["self-hosted", "altinity-on-demand", "altinity-func-tester"]
     ARM_SMALL_MEM = ["self-hosted", "altinity-on-demand", "altinity-func-tester-aarch64"]
     MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]

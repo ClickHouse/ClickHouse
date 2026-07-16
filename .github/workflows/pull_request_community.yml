@@ -874,7 +874,7 @@ jobs:
           path: ci/tmp/*64.tgz*
 
   quick_functional_tests:
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [build_amd_debug, config_workflow, fast_test]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UXVpY2sgZnVuY3Rpb25hbCB0ZXN0cw==') }}
     name: "Quick functional tests"
