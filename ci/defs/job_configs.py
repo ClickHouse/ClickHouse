@@ -1553,7 +1553,7 @@ class JobConfigs:
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
