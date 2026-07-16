@@ -19,7 +19,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Libdeflate.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
@@ -455,12 +454,7 @@ struct ConverterEnumAsString
 
 struct ConverterUUID
 {
-    /// Use ...Copy, not ...Ref: each batch reuses `swapped_buf` storage which can be reallocated
-    /// between successive `getBatch` calls (when `data_count` exceeds the current capacity, e.g.
-    /// after a low-density null run). Statistics that hold raw pointers into `swapped_buf` would
-    /// then dereference freed memory when merging the next page's stats — a heap-use-after-free.
-    /// `StatisticsFixedStringCopy` keeps min/max as inline 16-byte arrays, so no dangling refs.
-    using Statistics = StatisticsFixedStringCopy<sizeof(UUID), /*SIGNED=*/ false>;
+    using Statistics = StatisticsFixedStringRef;
 
     const ColumnVector<UUID> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -631,19 +625,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
-#if USE_LIBDEFLATE
-    /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
-    /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
-    /// range (e.g. level 0 = store) keep using the streaming path below.
-    if (method == CompressionMethod::Gzip && level >= 1 && level <= 12)
-    {
-        scratch.resize(Libdeflate::compressBound(method, level, source.size()));
-        size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
-        scratch.resize(compressed_size);
-        return scratch;
-    }
-#endif
-
     switch (method)
     {
         case CompressionMethod::None:
@@ -683,7 +664,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
             scratch.resize(max_dest_size);
 
-            size_t compressed_size = 0;
+            size_t compressed_size;
             snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
 
             scratch.resize(compressed_size);
@@ -1081,7 +1062,7 @@ void writeColumnImpl(
             {
                 for (size_t i = 0; i < data_count; ++i)
                 {
-                    UInt64 h = 0;
+                    UInt64 h;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
                         h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);

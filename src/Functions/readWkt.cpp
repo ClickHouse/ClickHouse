@@ -38,7 +38,7 @@ void readWKT(const String & str, T & out)
 }
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKT final : public IFunction
+class FunctionReadWKT : public IFunction
 {
 public:
     explicit FunctionReadWKT() = default;
@@ -95,7 +95,7 @@ public:
     }
 };
 
-class FunctionReadWKTCommon final : public IFunction
+class FunctionReadWKTCommon : public IFunction
 {
 public:
     enum class WKTTypes
@@ -338,11 +338,11 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
     },
     {
         "MultiLineString example",
-        "SELECT toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));",
+        "SELECT toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));",
         R"(
-┌─toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
-│ MultiLineString                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
+│ MultiLineString                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

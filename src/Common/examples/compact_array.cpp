@@ -7,7 +7,6 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <unistd.h>
-#include <Examples/clickhouse_examples.h>
 
 
 namespace fs = std::filesystem;

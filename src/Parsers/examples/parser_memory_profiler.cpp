@@ -81,7 +81,6 @@
 #include <Parsers/parseQuery.h>
 
 #include <jemalloc/jemalloc.h>
-#include <Examples/clickhouse_examples.h>
 
 
 namespace

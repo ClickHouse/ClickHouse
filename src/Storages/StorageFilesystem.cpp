@@ -71,7 +71,7 @@ Int8 fileTypeToEnumValue(fs::file_type type)
 struct QueueEntry
 {
     fs::directory_entry entry;
-    UInt16 depth = 0;
+    UInt16 depth;
     /// If false, the entry is reported as a row but not traversed.
     /// Used for directory symlinks whose canonicalization fails (e.g. cycles).
     bool expand = true;

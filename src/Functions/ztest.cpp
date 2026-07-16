@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionTwoSampleProportionsZTest final : public IFunction
+class FunctionTwoSampleProportionsZTest : public IFunction
 {
 public:
     static constexpr auto POOLED = "pooled";
@@ -174,7 +174,7 @@ public:
 
             /// z-statistics
             /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
-            Float64 zstat = 0;
+            Float64 zstat;
             if (is_unpooled)
             {
                 zstat = (props_x - props_y) / se;

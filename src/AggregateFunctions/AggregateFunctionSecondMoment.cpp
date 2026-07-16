@@ -7,7 +7,6 @@ namespace DB
 
 template <typename T> using AggregateFunctionSecondMoment = AggregateFunctionVarianceSimple<StatFuncOneArg<T, 2>>;
 
-void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory & factory)
 {
     /// varSamp documentation

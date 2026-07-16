@@ -14,7 +14,7 @@ private:
     natsStatus publishMessage(const String & message) override;
 
     std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> jet_stream_ctx;
-    jsOptions jet_stream_options{};
+    jsOptions jet_stream_options;
 };
 
 }

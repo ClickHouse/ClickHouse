@@ -157,9 +157,4 @@ const WindowDescription & WindowStep::getWindowDescription() const
     return window_description;
 }
 
-QueryPlanStepPtr WindowStep::clone() const
-{
-    return std::make_unique<WindowStep>(*this);
-}
-
 }

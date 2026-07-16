@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/Common/AccessType.h>
-#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
@@ -45,9 +44,6 @@ public:
         const UUID & uuid;
         ContextPtr & context;
         LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
-        /// True when the database is created by the server itself (e.g. loading metadata on startup) rather
-        /// than by a user query. Lets an engine distinguish an internal reload from a user `ATTACH DATABASE`.
-        bool internal = false;
     };
 
     struct EngineFeatures
@@ -72,10 +68,9 @@ public:
     {
         CreatorFn creator_fn;
         EngineFeatures features;
-        Documentation documentation;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
@@ -85,16 +80,16 @@ public:
         .supports_table_overrides = false,
         .is_external = false,
         .source_access_type = std::nullopt,
-    }, Documentation documentation = {});
+    });
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
     /// Returns true if the given database engine accesses external data sources.
     bool isDatabaseExternal(const String & engine_name) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
         return result;
@@ -103,7 +98,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.

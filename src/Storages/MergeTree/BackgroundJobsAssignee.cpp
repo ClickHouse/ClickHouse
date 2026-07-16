@@ -29,8 +29,6 @@ BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
             return getContext()->getBackgroundProcessingTaskSchedulingSettings();
         case Type::Moving:
             return getContext()->getBackgroundMoveTaskSchedulingSettings();
-        case Type::Streaming:
-            return getContext()->getBackgroundStreamingTaskSchedulingSettings();
     }
 }
 
@@ -108,8 +106,6 @@ String BackgroundJobsAssignee::toString(Type type)
             return "DataProcessing";
         case Type::Moving:
             return "Moving";
-        case Type::Streaming:
-            return "Streaming";
     }
 }
 
@@ -117,18 +113,7 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-    {
-        switch (type)
-        {
-        case Type::DataProcessing:
-        case Type::Moving:
-            holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        }
-    }
+        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }
@@ -173,9 +158,6 @@ try
             break;
         case Type::Moving:
             succeed = data.scheduleDataMovingJob(*this);
-            break;
-        case Type::Streaming:
-            succeed = data.scheduleStreamingJob(*this);
             break;
     }
 

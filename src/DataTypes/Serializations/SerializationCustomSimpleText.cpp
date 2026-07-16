@@ -1,6 +1,5 @@
 #include <DataTypes/Serializations/SerializationCustomSimpleText.h>
 
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,8 +49,6 @@ bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB:
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern
     {
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return false;
     }
 }

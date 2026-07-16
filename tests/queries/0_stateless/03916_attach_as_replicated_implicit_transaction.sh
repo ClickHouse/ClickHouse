@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-ordinary-database, no-shared-merge-tree
+# Tags: zookeeper, no-replicated-database, no-ordinary-database, no-shared-merge-tree, no-encrypted-storage
 
 # Regression test: ATTACH TABLE AS REPLICATED with implicit_transaction caused
 # assertHasValidVersionMetadata() LOGICAL_ERROR in debug/sanitizer builds.

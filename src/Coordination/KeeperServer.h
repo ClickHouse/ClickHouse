@@ -81,9 +81,9 @@ private:
 
     const int server_id;
 
-    nuraft::ptr<KeeperStateManager> state_manager;
+    nuraft::ptr<IKeeperStateMachine> state_machine;
 
-    nuraft::ptr<KeeperStateMachine> state_machine;
+    nuraft::ptr<KeeperStateManager> state_manager;
 
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
@@ -136,7 +136,7 @@ public:
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
-        KeeperStateMachine::CommitCallback commit_callback);
+        IKeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -154,7 +154,7 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
+    nuraft::ptr<IKeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
 
     void forceRecovery();
 
@@ -205,10 +205,6 @@ public:
 
     KeeperLogInfo getKeeperLogInfo();
 
-    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const;
-
-    std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
-
     bool requestLeader();
 
     void yieldLeadership();
@@ -216,8 +212,6 @@ public:
     void recalculateStorageStats();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
-
-    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };

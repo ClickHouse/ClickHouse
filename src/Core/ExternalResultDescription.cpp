@@ -1,5 +1,4 @@
 #include <Core/ExternalResultDescription.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -70,8 +69,6 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtInt32, is_nullable);
         else if (which.isInt64())
             types.emplace_back(ValueType::vtInt64, is_nullable);
-        else if (which.isInt256())
-            types.emplace_back(ValueType::vtInt256, is_nullable);
         else if (which.isFloat32())
             types.emplace_back(ValueType::vtFloat32, is_nullable);
         else if (which.isFloat64())

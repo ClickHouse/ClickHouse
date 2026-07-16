@@ -2,7 +2,6 @@
 
 #include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
@@ -30,7 +29,7 @@ class MergeTreeSkipIndexReader
 public:
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
-        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
+        std::optional<KeyCondition> & key_condition_rpn_template_,
         bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
@@ -44,7 +43,7 @@ public:
 
 private:
     UsefulSkipIndexes skip_indexes;
-    ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
+    std::optional<KeyCondition> key_condition_rpn_template;
     bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;

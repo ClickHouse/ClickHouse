@@ -56,7 +56,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)
     , read_settings(read_settings_)
-    , tmp_buffer_size(read_settings.remote_fs_settings.buffer_size)
+    , tmp_buffer_size(read_settings.remote_fs_buffer_size)
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
@@ -199,8 +199,8 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);
-            chassert(pos >= working_buffer.begin());
-            chassert(pos < working_buffer.end());
+            assert(pos >= working_buffer.begin());
+            assert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -209,7 +209,7 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
         if (initialized && offset_ > position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
+            if (diff < read_settings.remote_read_min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;

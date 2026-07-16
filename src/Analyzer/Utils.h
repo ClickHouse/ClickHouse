@@ -11,8 +11,6 @@
 
 #include <Columns/IColumn_fwd.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 namespace DB
 {
 
@@ -23,7 +21,7 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
-using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
+using NamesAndTypes = std::vector<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
@@ -219,16 +217,5 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
-
-/// Returns true if the subquery's projection matches the storage schema (column count and
-/// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise
-/// returns false.
-bool verifyMaterializedCTESubqueryMatchesStorage(
-    const QueryTreeNodePtr & subquery,
-    const StoragePtr & storage,
-    const ContextPtr & context,
-    const std::string & cte_name,
-    const QueryTreeNodePtr & scope_node,
-    bool throw_on_mismatch);
 
 }

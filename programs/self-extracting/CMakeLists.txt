@@ -2,7 +2,6 @@
 if (NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     set (COMPRESSOR "${PROJECT_BINARY_DIR}/native/utils/self-extracting-executable/pre_compressor")
@@ -24,7 +23,7 @@ if (BUILD_STRIPPED_BINARY)
     add_custom_target (clickhouse-self-extracting-stripped ALL
         ${CMAKE_COMMAND} -E remove clickhouse-stripped
         COMMAND ${COMPRESSOR} ${DECOMPRESSOR} clickhouse-stripped ../clickhouse-stripped
-        DEPENDS clickhouse-stripped compressor
+        DEPENDS clickhouse clickhouse-stripped
     )
     list(APPEND self_extracting_deps clickhouse-self-extracting-stripped)
 endif()

@@ -2,9 +2,7 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
@@ -203,10 +201,10 @@ void SLRUFileCachePriority::iterate(
     probationary_queue.iterate(func, stat, lock);
 }
 
-void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
+void SLRUFileCachePriority::resetEvictionPos()
 {
-    protected_queue.resetEvictionPos(cursor);
-    probationary_queue.resetEvictionPos(cursor);
+    protected_queue.resetEvictionPos();
+    probationary_queue.resetEvictionPos();
 }
 
 EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
@@ -288,12 +286,12 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
 }
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(
-    EvictionInfo & eviction_info,
+    const EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    EvictionCursor eviction_cursor,
+    bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -315,7 +313,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            eviction_cursor,
+            continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -335,7 +333,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            eviction_cursor,
+            continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -358,7 +356,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            eviction_cursor,
+            continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -383,7 +381,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            eviction_cursor,
+            continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -399,7 +397,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             res,
             invalidated_entries,
             reservee,
-            eviction_cursor,
+            continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -413,12 +411,12 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 /// TODO: currently this will find only releasable entries,
 /// but since we are only downgrading, then it does not matter.
 bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
-    EvictionInfo & eviction_info,
+    const EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    EvictionCursor eviction_cursor,
+    bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -434,7 +432,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         *downgrade_candidates,
         invalidated_entries,
         reservee,
-        eviction_cursor,
+        continue_from_last_eviction_pos,
         max_candidates_size,
         is_total_space_cleanup,
         origin_info,
@@ -465,7 +463,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         state_guard.lock());
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
-    eviction_info.addOrUpdate(std::move(probationary_eviction_info));
+    /// FIXME: const_cast is a bad practice.
+    const_cast<EvictionInfo &>(eviction_info).add(std::move(probationary_eviction_info));
     if (requires_eviction)
     {
         /// If not enough space - we need to "downgrade" lowest priority entries
@@ -477,7 +476,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             res,
             invalidated_entries,
             reservee,
-            eviction_cursor,
+            continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
             origin_info,
@@ -547,7 +546,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// As PriorityGuard::WriteLock allows to only move elements,
     /// but not increment size of any of the queues,
     /// we move elements with zero size and increase the size later in a separate callback.
-    res.addAfterEvictWriteCallback([=, this](const CachePriorityGuard::WriteLock & lk) mutable
+    res.setAfterEvictWriteFunc([=, this](const CachePriorityGuard::WriteLock & lk) mutable
     {
         for (auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -579,7 +578,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     });
 
     /// Set incrementing size callback, as explained in the previous comment.
-    res.addAfterEvictStateCallback([=, this](const CacheStateGuard::Lock & lk)
+    res.setAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
     {
         fiu_do_on(FailPoints::file_cache_slru_downgrade_fail_before_finalize,
         {
@@ -705,7 +704,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// Holds the real probationary evictions that free room for the downgraded
     /// protected entries (empty if probationary already has room). The downgrade
     /// move itself is committed in the afterEvict* callbacks.
-    EvictionCandidates eviction_candidates(getOnEvictCallback());
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
@@ -715,7 +714,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         eviction_candidates,
         invalidated_entries,
         /* reservee */nullptr,
-        EvictionCursor::FromHead,
+        /* continue_from_last_eviction_pos */false,
         /* max_candidates_size */0,
         /* is_total_space_cleanup */false,
         FileCache::getInternalOrigin(),
@@ -939,16 +938,10 @@ void SLRUFileCachePriority::SLRUIterator::decrementSize(size_t size)
     lru_iterator.decrementSize(size);
 }
 
-void SLRUFileCachePriority::SLRUIterator::invalidate() noexcept
+void SLRUFileCachePriority::SLRUIterator::invalidate()
 {
     assertValid();
     lru_iterator.invalidate();
-}
-
-void SLRUFileCachePriority::SLRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock & lock) noexcept
-{
-    assertValid();
-    lru_iterator.invalidateBeforeRemove(lock);
 }
 
 bool SLRUFileCachePriority::SLRUIterator::isValid(const CachePriorityGuard::WriteLock & lock) const

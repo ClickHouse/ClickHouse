@@ -427,8 +427,6 @@ public:
 
     String nextIdentifier(const String & prefix, uint32_t counter, bool allow_nasty);
 
-    String nextHexBytes(uint32_t nbytes);
-
     String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
 
     String nextUUID();
