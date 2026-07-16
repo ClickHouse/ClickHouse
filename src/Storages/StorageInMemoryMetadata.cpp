@@ -449,9 +449,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     for (const auto & entry : getRowsWhereTTLs())
     {
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
-        /// A `DELETE WHERE` TTL decides per row whether to drop it, and that decision is
-        /// stored per part (rows_where_ttl_info). Updating a column referenced only in the
-        /// WHERE condition can change the decision, so it must trigger a TTL recalculation.
         add_for_rows_ttl(entry.where_expression_columns, required_ttl_columns);
     }
 
