@@ -680,14 +680,9 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::DateTime:
             return "long";
         case TypeIndex::Time:
-            return wrap_with_logical_type("long");
         case TypeIndex::Time64:
-        {
-            auto scale = getDecimalScale(*type);
-            if (scale <= 6)
-                return wrap_with_logical_type("long");
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
-        }
+            /// Scale > 6 is rejected in getAvroLogicalType (called above).
+            return wrap_with_logical_type("long");
         case TypeIndex::DateTime64:
         {
             if (getDecimalScale(*type) != 6)
