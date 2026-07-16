@@ -1983,15 +1983,18 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: the right boundary of every loaded key column is +inf. The left and right
+                    /// Last mark: the storage-order right boundary of every loaded key column is +inf for an
+                    /// ascending column and -inf for a descending (reverse) one. For an ascending column the
                     /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
                     /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
-                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    /// ordering; NULLs sort last for an ascending column). For a descending column the left
+                    /// boundary (a real value, or +inf for NULL, which sorts first) never equals -inf, so
+                    /// its boundaries are never equal.
                     for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                        equal_boundaries_mask[i] = !reverse_flags[i] && col->isNullAt(range.begin);
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)

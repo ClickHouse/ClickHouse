@@ -91,3 +91,44 @@ DROP TABLE t_04512_authors;
 DROP TABLE t_04512_books;
 DROP TABLE t_04512_publishers;
 DROP TABLE t_04512_blocked;
+
+-- Part without a final mark (non-adaptive granularity): the last mark range has no index value at its
+-- end, so the storage-order right endpoint of a descending column is -inf there.
+DROP TABLE IF EXISTS t_04512_nonadaptive;
+
+CREATE TABLE t_04512_nonadaptive
+(
+    g String,
+    r Enum8('poor' = 1, 'ok' = 2, 'great' = 3)
+)
+ENGINE = MergeTree
+ORDER BY (g, r DESC)
+SETTINGS allow_experimental_reverse_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+
+INSERT INTO t_04512_nonadaptive VALUES ('manual', 'ok'), ('manual', 'poor'), ('novel', 'great'), ('novel', 'great');
+
+SELECT count() FROM t_04512_nonadaptive WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nonadaptive WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nonadaptive WHERE r >= 'ok';
+SELECT count() FROM t_04512_nonadaptive WHERE r < 'ok';
+
+DROP TABLE t_04512_nonadaptive;
+
+-- Nullable reverse key column: NULLs sort first in storage for a descending column. In the last mark
+-- range of a part without a final mark, a NULL at the range begin must not collapse the column to the
+-- point {NULL}: the range extends down to the smallest value.
+DROP TABLE IF EXISTS t_04512_nullable;
+
+CREATE TABLE t_04512_nullable (n Nullable(Int32))
+ENGINE = MergeTree
+ORDER BY n DESC
+SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+
+INSERT INTO t_04512_nullable VALUES (NULL), (NULL), (NULL), (5);
+
+SELECT count() FROM t_04512_nullable WHERE n = 5 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable WHERE n = 5 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nullable WHERE n IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable WHERE n IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 1;
+
+DROP TABLE t_04512_nullable;
