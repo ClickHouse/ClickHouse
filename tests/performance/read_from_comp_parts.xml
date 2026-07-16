@@ -14,7 +14,7 @@
         <max_threads>8</max_threads>
     </settings>
 
-    <query short="1">SELECT count() FROM mt_comp_parts WHERE NOT ignore(s1)</query>
+    <query>SELECT count() FROM mt_comp_parts WHERE NOT ignore(s1)</query>
     <query>SELECT count() FROM mt_comp_parts WHERE NOT ignore(c2, s1, arr1, s2)</query>
     <query>SELECT count() FROM mt_comp_parts WHERE NOT ignore(c1, s1, c3)</query>
     <query>SELECT count() FROM mt_comp_parts WHERE NOT ignore(c1, c2, c3)</query>

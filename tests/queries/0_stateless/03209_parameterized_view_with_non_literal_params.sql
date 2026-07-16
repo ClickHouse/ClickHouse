@@ -4,16 +4,17 @@ select 'Test with Date parameter';
 drop table if exists date_table_pv;
 create table date_table_pv (id Int32, dt Date) engine = Memory();
 
-insert into date_table_pv values(1, today());
-insert into date_table_pv values(2, yesterday());
+-- Use fixed dates to avoid timing issues across midnight boundary
+insert into date_table_pv values(1, '2000-01-01');
+insert into date_table_pv values(2, '1999-12-31');
 insert into date_table_pv values(3, toDate('1974-04-07'));
 
 drop view if exists date_pv;
 create view date_pv as select * from date_table_pv where dt =  {dtparam:Date};
 
-select id from date_pv(dtparam=today());
-select id from date_pv(dtparam=yesterday());
-select id from date_pv(dtparam=yesterday()+1);
+select id from date_pv(dtparam='2000-01-01');
+select id from date_pv(dtparam='1999-12-31');
+select id from date_pv(dtparam='2000-01-01');
 select id from date_pv(dtparam='1974-04-07');
 select id from date_pv(dtparam=toDate('1974-04-07'));
 select id from date_pv(dtparam=toString(toDate('1974-04-07')));
@@ -25,8 +26,9 @@ select 'Test with Date32 parameter';
 drop table if exists date32_table_pv;
 create table date32_table_pv (id Int32, dt Date32) engine = Memory();
 
-insert into date32_table_pv values(1, today());
-insert into date32_table_pv values(2, yesterday());
+-- Use fixed dates to avoid timing issues across midnight boundary
+insert into date32_table_pv values(1, '2000-01-01');
+insert into date32_table_pv values(2, '1999-12-31');
 insert into date32_table_pv values(3, toDate32('2199-12-31'));
 insert into date32_table_pv values(4, toDate32('1950-12-25'));
 insert into date32_table_pv values(5, toDate32('1900-01-01'));
@@ -34,9 +36,9 @@ insert into date32_table_pv values(5, toDate32('1900-01-01'));
 drop view if exists date32_pv;
 create view date32_pv as select * from date32_table_pv where dt =  {dtparam:Date32};
 
-select id from date32_pv(dtparam=today());
-select id from date32_pv(dtparam=yesterday());
-select id from date32_pv(dtparam=yesterday()+1);
+select id from date32_pv(dtparam='2000-01-01');
+select id from date32_pv(dtparam='1999-12-31');
+select id from date32_pv(dtparam='2000-01-01');
 select id from date32_pv(dtparam='2199-12-31');
 select id from date32_pv(dtparam=toDate32('1900-01-01'));
 select id from date32_pv(dtparam=(select dt from date32_table_pv where id = 3));
@@ -69,8 +71,8 @@ select 'Test with 2 parameters';
 
 drop view if exists date_pv2;
 create view date_pv2 as select * from date_table_pv where dt = {dtparam:Date} and id = {intparam:Int32};
-select id from date_pv2(dtparam=today(),intparam=1);
-select id from date_pv2(dtparam=today(),intparam=length('A'));
+select id from date_pv2(dtparam='2000-01-01',intparam=1);
+select id from date_pv2(dtparam='2000-01-01',intparam=length('A'));
 select id from date_pv2(dtparam='1974-04-07',intparam=length('AAA'));
 select id from date_pv2(dtparam=toDate('1974-04-07'),intparam=length('BBB'));
 

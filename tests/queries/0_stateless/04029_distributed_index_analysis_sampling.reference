@@ -1,0 +1,37 @@
+20086
+20086
+-- { echo }
+EXPLAIN indexes = 1 SELECT * FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 0;
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromMergeTree (default.t_dia_sampling)
+  Indexes:
+    PrimaryKey
+      Keys:
+        intHash32(key)
+      Condition: (intHash32(key) in (-Inf, 429496728])
+      Parts: 20/20
+      Granules: 86/780
+      Search Algorithm: binary search
+    Ranges: 20
+EXPLAIN indexes = 1 SELECT * FROM t_dia_sampling SAMPLE 0.1 SETTINGS distributed_index_analysis = 1;
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromMergeTree (default.t_dia_sampling)
+  Indexes:
+    PrimaryKey
+      Keys:
+        intHash32(key)
+      Condition: (intHash32(key) in (-Inf, 429496728])
+      Parts: 20/20
+      Granules: 86/780
+      Distributed:
+        Address: 127.0.0.2:9000
+        Parts send: 5
+        Parts received: 5
+        Granules send: 195
+        Granules received: 21
+        Address: 127.0.0.1:9000
+        Parts send: 15
+        Parts received: 15
+        Granules send: 585
+        Granules received: 65
+    Ranges: 20

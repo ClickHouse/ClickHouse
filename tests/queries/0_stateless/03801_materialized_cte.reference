@@ -1,0 +1,162 @@
+QUERY id: N
+  PROJECTION COLUMNS
+    name String
+  PROJECTION
+    LIST id: N, nodes: 1
+      COLUMN id: N, column_name: name, result_type: String, source_id: N
+  JOIN TREE
+    QUERY id: N, alias: __table1, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+      PROJECTION COLUMNS
+        name String
+      PROJECTION
+        LIST id: N, nodes: 1
+          COLUMN id: N, column_name: name, result_type: String, source_id: N
+      JOIN TREE
+        TABLE id: N, alias: __table2, table_name: default.users
+QUERY id: N
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: N, nodes: 1
+      FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    JOIN id: N, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: N, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+          MATERIALIZED CTE SUBQUERY
+            QUERY id: N, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+              PROJECTION COLUMNS
+                uid Int16
+                name String
+                age Int16
+              PROJECTION
+                LIST id: N, nodes: 3
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  COLUMN id: N, column_name: name, result_type: String, source_id: N
+                  COLUMN id: N, column_name: age, result_type: Int16, source_id: N
+              JOIN TREE
+                TABLE id: N, alias: __table3, table_name: default.users
+      RIGHT TABLE EXPRESSION
+        TABLE id: N, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+          MATERIALIZED CTE SUBQUERY
+            QUERY id: N, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+              PROJECTION COLUMNS
+                uid Int16
+                name String
+                age Int16
+              PROJECTION
+                LIST id: N, nodes: 3
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  COLUMN id: N, column_name: name, result_type: String, source_id: N
+                  COLUMN id: N, column_name: age, result_type: Int16, source_id: N
+              JOIN TREE
+                TABLE id: N, alias: __table6, table_name: default.users
+      JOIN EXPRESSION
+        FUNCTION id: N, function_name: equals, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: N, nodes: 2
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+QUERY id: N
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: N, nodes: 1
+      FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    JOIN id: N, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: N, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+          MATERIALIZED CTE SUBQUERY
+            QUERY id: N, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+              PROJECTION COLUMNS
+                uid Int16
+                count() UInt64
+              PROJECTION
+                LIST id: N, nodes: 2
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
+              JOIN TREE
+                TABLE id: N, alias: __table3, table_name: default.users
+              GROUP BY
+                LIST id: N, nodes: 1
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+      RIGHT TABLE EXPRESSION
+        TABLE id: N, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+          MATERIALIZED CTE SUBQUERY
+            QUERY id: N, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+              PROJECTION COLUMNS
+                uid Int16
+                count() UInt64
+              PROJECTION
+                LIST id: N, nodes: 2
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
+              JOIN TREE
+                TABLE id: N, alias: __table6, table_name: default.users
+              GROUP BY
+                LIST id: N, nodes: 1
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+      JOIN EXPRESSION
+        FUNCTION id: N, function_name: equals, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: N, nodes: 2
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+MaterializingCTEs (Materialize CTEs before main query execution)
+Header: count() UInt64
+  Expression ((Project names + Projection))
+  Header: count() UInt64
+    Aggregating
+    Header: count() UInt64
+      Expression
+      Header: 
+        Join (JOIN FillRightFirst)
+        Header: __join_result_dummy UInt8
+          Expression (Left Pre Join Actions)
+          Header: __table1.uid Int16
+                  __join_result_dummy UInt8
+            Filter
+            Header: __table1.uid Int16
+              ReadFromMemoryStorage
+              Header: uid Int16
+          Expression (Right Pre Join Actions)
+          Header: __table4.uid Int16
+            BuildRuntimeFilter (Build runtime join filter on __table4.uid)
+            Header: __table4.uid Int16
+              Expression (Change column names to column identifiers)
+              Header: __table4.uid Int16
+                ReadFromMemoryStorage
+                Header: uid Int16
+  MaterializingCTE (Materializing CTE: a)
+  Header: 
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+    Header: uid Int16
+            name String
+            age Int16
+      ReadFromMemoryStorage
+      Header: uid Int16
+              name String
+              age Int16
+3
+MaterializingCTEs (Materialize CTEs before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        Expression (Post Join Actions)
+          Join (JOIN FillRightFirst)
+            Expression (Left Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMemoryStorage
+            Expression (Right Pre Join Actions)
+              Expression (Change column names to column identifiers)
+                ReadFromMemoryStorage
+  MaterializingCTE (Materializing CTE: cte)
+    Union
+      Expression ((Conversion before UNION + (Project names + (Projection + Change column names to column identifiers))))
+        ReadFromSystemOne
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemNumbers
+36
+-- Materialized CTE in scalar subquery
+10	9

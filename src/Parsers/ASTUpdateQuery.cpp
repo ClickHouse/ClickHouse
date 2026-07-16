@@ -11,7 +11,7 @@ String ASTUpdateQuery::getID(char delim) const
 
 ASTPtr ASTUpdateQuery::clone() const
 {
-    auto res = std::make_shared<ASTUpdateQuery>(*this);
+    auto res = make_intrusive<ASTUpdateQuery>(*this);
     res->children.clear();
 
     const auto add_children_if_needed = [&](const auto & src, auto & dst)

@@ -1,4 +1,3 @@
--- Tags: no-parallel-replicas
 
 DROP TABLE IF EXISTS log;
 
@@ -26,6 +25,8 @@ INSERT INTO log VALUES ('2025-01-01 02:06:07', 'eventId_003', Null);
 INSERT INTO log VALUES ('2025-01-01 03:08:09', 'eventId_004', Null);
 INSERT INTO log VALUES ('2025-01-01 04:10:11', 'eventId_005', Null);
 INSERT INTO log VALUES ('2025-01-01 05:12:13', 'eventId_006', Null);
+
+SET parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 SELECT
     formatDateTime(toStartOfInterval(collectorReceiptTime, toIntervalHour(1)), '%Y-%m-%d %H') AS time,

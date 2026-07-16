@@ -5,18 +5,18 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/QueryMetricLog.h>
-#include <Interpreters/LatencyLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 
 namespace DB
 {
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::startCollect(const String & thread_name, size_t collect_interval_milliseconds_)
+void PeriodicLog<LogElement>::startCollect(ThreadName thread_name, size_t collect_interval_milliseconds_)
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
     collecting_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
-        setThreadName(thread_name.c_str());
+        DB::setThreadName(thread_name);
         threadFunction();
     });
 }
@@ -39,6 +39,13 @@ void PeriodicLog<LogElement>::shutdown()
 }
 
 template <typename LogElement>
+void PeriodicLog<LogElement>::stepFunctionSafe(TimePoint current_time)
+{
+    std::lock_guard lock(step_mutex);
+    stepFunction(current_time);
+}
+
+template <typename LogElement>
 void PeriodicLog<LogElement>::threadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
@@ -48,7 +55,7 @@ void PeriodicLog<LogElement>::threadFunction()
         {
             const auto current_time = std::chrono::system_clock::now();
 
-            stepFunction(current_time);
+            stepFunctionSafe(current_time);
 
             /// We will record current time into table but align it to regular time intervals to avoid time drift.
             /// We may drop some time points if the server is overloaded and recording took too much time.
@@ -62,6 +69,12 @@ void PeriodicLog<LogElement>::threadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+template <typename LogElement>
+void PeriodicLog<LogElement>::flushBufferToLog(TimePoint current_time)
+{
+    stepFunctionSafe(current_time);
 }
 
 #define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;

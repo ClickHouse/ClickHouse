@@ -1,0 +1,197 @@
+---
+description: 'ClickHouse のバックアップと復元の概要'
+sidebarTitle: 'S3 エンドポイント'
+slug: /operations/backup/s3_endpoint
+title: S3 エンドポイントへの、または S3 エンドポイントからの BACKUP / RESTORE
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/ja/_syntax.mdx';
+
+この記事では、S3 エンドポイントを介した S3 バケットへのバックアップと、
+S3 バケットからのバックアップの復元について説明します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+<Syntax />
+
+<div id="usage-examples">
+  ## 使用例
+</div>
+
+<div id="incremental-backup-to-an-s3-endpoint">
+  ### S3 エンドポイントへの増分バックアップ
+</div>
+
+この例では、S3 エンドポイントにバックアップを作成し、その後そこから再度復元します。
+
+<Note>
+  フルバックアップと増分バックアップの違いについては、[&quot;バックアップの種類&quot;](/ja/concepts/features/backup-restore/overview#backup-types)を参照してください。
+</Note>
+
+この方法を使用するには、以下の情報が必要です。
+
+| パラメータ        | 例                                                            |
+| ------------ | ------------------------------------------------------------ |
+| S3 エンドポイント   | `https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/` |
+| アクセスキー ID    | `BKIOZLE2VYN3VXXTP9RC`                                       |
+| シークレットアクセスキー | `40bwYnbqN7xU8bVePaUCh3+YEyGXu8UOMV9ANpwL`                   |
+
+<Tip>
+  S3 バケットの作成については、[&quot;use S3 Object Storage as a ClickHouse disk&quot;](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#configuring-s3-for-clickhouse-use)のセクションを参照してください。
+</Tip>
+
+バックアップの宛先は、次のように指定します。
+
+```sql
+S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extra_credentials>')
+```
+
+<br />
+
+<Steps>
+  <Step>
+    #### セットアップ
+
+    以下のデータベースとテーブルを作成し、ランダムなデータをいくつか挿入します。
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test_db;
+    CREATE TABLE test_db.test_table
+    (
+        `key` Int,
+        `value` String,
+        `array` Array(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    ```
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 1000
+    ```
+  </Step>
+
+  <Step>
+    #### ベースバックアップを作成する
+
+    増分バックアップを開始するには、*ベース*バックアップが必要です。S3 の宛先の
+    最初のパラメータは S3 エンドポイントで、その後にこのバックアップで使用する
+    bucket 内の directory が続きます。この例では、directory 名は `my_backup` です。
+
+    ベースバックアップを作成するには、次のコマンドを実行します。
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ de442b75-a66c-4a3c-a193-f76f278c70f3 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### さらにデータを追加する
+
+    増分バックアップには、ベースバックアップと
+    バックアップ対象のテーブルの現在の内容との差分が保存されます。増分バックアップを取得する前に、
+    さらにデータを追加してください。
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 100
+    ```
+  </Step>
+
+  <Step>
+    #### 増分バックアップを取得する
+
+    このバックアップコマンドはベースバックアップの場合と似ていますが、`SETTINGS base_backup` とベースバックアップの保存場所を追加で指定します。増分バックアップの宛先はベースバックアップと同じディレクトリではありません。エンドポイントは同じですが、バケット内の書き込み先ディレクトリは異なります。ベースバックアップは `my_backup` にあり、増分バックアップは `my_incremental` に書き込まれます:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    SETTINGS base_backup = S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### インクリメンタルバックアップから復元
+
+    このコマンドは、インクリメンタルバックアップを新しいテーブル `test_table_restored` に復元します。
+    インクリメンタルバックアップを復元する際は、ベースバックアップの内容も含まれます。
+    復元時に指定するのは、**インクリメンタルバックアップ** のみです。
+
+    ```sql
+    RESTORE TABLE data AS test_db.test_table_restored FROM S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status───┐
+    │ ff0c8c39-7dff-4324-a241-000796de11ca │ RESTORED │
+    └──────────────────────────────────────┴──────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### 件数を確認する
+
+    元のテーブル `data` には 2 回 insert されており、1 回は 1,000 行、もう 1 回は 100 行で、合計 1,100 行です。
+    restore したテーブルに 1,100 行あることを確認します:
+
+    ```sql
+    SELECT count()
+    FROM test_db.test_table_restored
+    ```
+
+    ```response
+    ┌─count()─┐
+    │    1100 │
+    └─────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### 内容を確認する
+
+    ここでは、元のテーブル `test_table` の内容と、復元したテーブル `test_table_restored` の内容を比較します。
+
+    ```sql
+    SELECT throwIf((
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table
+       ) != (
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table_restored
+    ), 'Data does not match after BACKUP/RESTORE')
+    ```
+  </Step>
+</Steps>

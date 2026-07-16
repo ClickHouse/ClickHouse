@@ -37,7 +37,7 @@ struct QuantileExactWeighted
     {
         size_t operator()(Int128 x) const
         {
-            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
+            return CityHash_v1_0_2::Hash128to64({static_cast<UInt64>(x >> 64), static_cast<UInt64>(x & 0xffffffffffffffffll)});
         }
     };
 
@@ -155,7 +155,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             array[i] = pair.getValue();
             ++i;
         }
@@ -169,7 +169,7 @@ private:
         const Pair * end = array + size;
         while (it < end)
         {
-            accumulated += it->second;
+            accumulated += static_cast<Float64>(it->second);
 
             if (accumulated >= threshold)
                 break;
@@ -204,7 +204,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             array[i] = pair.getValue();
             ++i;
         }
@@ -221,7 +221,7 @@ private:
 
         while (it < end)
         {
-            accumulated += it->second;
+            accumulated += static_cast<Float64>(it->second);
 
             while (accumulated >= threshold)
             {
@@ -320,7 +320,7 @@ private:
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
         std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
         Weight max_position = array[size - 1].second - 1;
-        Float64 position = max_position * level;
+        Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
 
@@ -353,7 +353,7 @@ private:
 
         for (size_t j = 0; j < num_levels; ++j)
         {
-            Float64 position = max_position * levels[indices[j]];
+            Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
             result[indices[j]] = quantileInterpolated(array, size, position);
         }
     }
@@ -378,7 +378,7 @@ private:
         if (lower == higher || lower_key == higher_key)
             return static_cast<Float64>(lower_key);
 
-        return (static_cast<Float64>(higher) - position) * lower_key + (position - static_cast<Float64>(lower)) * higher_key;
+        return (static_cast<Float64>(higher) - position) * static_cast<Float64>(lower_key) + (position - static_cast<Float64>(lower)) * static_cast<Float64>(higher_key);
     }
 };
 
@@ -388,7 +388,7 @@ using FuncQuantileExactWeighted = AggregateFunctionQuantile<
     Value,
     QuantileExactWeighted<Value, interpolated>,
     std::conditional_t<interpolated, NameQuantileExactWeightedInterpolated, NameQuantileExactWeighted>,
-    true,
+    UInt64,
     std::conditional_t<return_float, Float64, void>,
     false,
     false>;
@@ -397,7 +397,7 @@ using FuncQuantilesExactWeighted = AggregateFunctionQuantile<
     Value,
     QuantileExactWeighted<Value, interpolated>,
     std::conditional_t<interpolated, NameQuantilesExactWeightedInterpolated, NameQuantilesExactWeighted>,
-    true,
+    UInt64,
     std::conditional_t<return_float, Float64, void>,
     true,
     false>;
@@ -437,18 +437,192 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileExactWeighted::name, createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>);
-    factory.registerFunction(
-        NameQuantilesExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, false>, properties});
+    FunctionDocumentation::Description description = R"(
+Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
 
-    factory.registerFunction(NameQuantileExactWeightedInterpolated::name, createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>);
+To get the exact value, all the passed values are combined into an array, which is then partially sorted.
+Each value is counted with its weight, as if it is present `weight` times.
+A hash table is used in the algorithm.
+Because of this, if the passed values are frequently repeated, the function consumes less RAM than [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileExact).
+You can use this function instead of `quantileExact` and specify the weight 1.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+quantileExactWeighted(level)(expr, weight)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
+        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level. For numeric data types the output format matches the input format.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing exact weighted quantile",
+        R"(
+CREATE TABLE t (
+    n Int32,
+    val Int32
+) ENGINE = Memory;
+
+-- Insert the sample data
+INSERT INTO t VALUES
+(0, 3),
+(1, 2),
+(2, 1),
+(5, 4);
+
+SELECT quantileExactWeighted(n, val) FROM t;
+        )",
+        R"(
+┌─quantileExactWeighted(n, val)─┐
+│                             1 │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(NameQuantileExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>, documentation});
+
+    FunctionDocumentation::Description description_quantiles = R"(
+Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, taking into account the weight of each element.
+
+This function is equivalent to [`quantileExactWeighted`](/sql-reference/aggregate-functions/reference/quantileexactweighted) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles = R"(
+quantilesExactWeighted(level1, level2, ...)(expr, weight)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles = {
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
+        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles = {
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of quantiles of the specified levels in the same order as the levels were specified. For numeric data types the output format matches the input format.", {"Array((U)Int*)", "Array(Int128)", "Array(UInt128)", "Array(Int256)", "Array(UInt256)", "Array(Float*)", "Array(Decimal*)", "Array(Date)", "Array(DateTime)", "Array(DateTime64)"}};
+    FunctionDocumentation::Examples examples_quantiles = {
+    {
+        "Computing multiple exact weighted quantiles",
+        R"(
+SELECT quantilesExactWeighted(0.25, 0.5, 0.75)(number, 1) FROM numbers(10)
+        )",
+        R"(
+┌─quantilesExactWeighted(0.25, 0.5, 0.75)(number, 1)─┐
+│ [2,4,7]                                            │
+└────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};
+    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
+
+    factory.registerFunction(NameQuantilesExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, false>, documentation_quantiles, properties});
+
+    FunctionDocumentation::Description description_interpolated = R"(
+Computes [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation, taking into account the weight of each element.
+
+To get the interpolated value, all the passed values are combined into an array, which are then sorted by their corresponding weights.
+Quantile interpolation is then performed using the [weighted percentile method](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method) by building a cumulative distribution based on weights and then a linear interpolation is performed using the weights and the values to compute the quantiles.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+
+We strongly recommend using `quantileExactWeightedInterpolated` instead of `quantileInterpolatedWeighted` because `quantileExactWeightedInterpolated` is more accurate than `quantileInterpolatedWeighted`.
+See the example below for more details.
+    )";
+    FunctionDocumentation::Syntax syntax_interpolated = R"(
+quantileExactWeightedInterpolated(level)(expr, weight)
+    )";
+    FunctionDocumentation::Arguments arguments_interpolated = {
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
+        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
+    };
+    FunctionDocumentation::Parameters parameters_interpolated = {
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_interpolated = {"Quantile of the specified level. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format.", {"Float64", "Decimal*", "Date", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples_interpolated = {
+    {
+        "Computing exact weighted interpolated quantile",
+        R"(
+SELECT quantileExactWeightedInterpolated(n, val) FROM t;
+        )",
+        R"(
+┌─quantileExactWeightedInterpolated(n, val)─┐
+│                                       1.5 │
+└───────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Prefer quantileExactWeightedInterpolated over quantileInterpolatedWeighted",
+        R"(
+SELECT
+    quantileExactWeightedInterpolated(0.99)(number, 1),
+    quantile(0.99)(number),
+    quantileInterpolatedWeighted(0.99)(number, 1)
+FROM numbers(9)
+        )",
+        R"(
+┌─quantileExactWeightedInterpolated(0.99)(number, 1)─┬─quantile(0.99)(number)─┬─quantileInterpolatedWeighted(0.99)(number, 1)─┐
+│                                               7.92 │                   7.92 │                                             8 │
+└────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_interpolated = {24, 10};
+    FunctionDocumentation::Category category_interpolated = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_interpolated = {description_interpolated, syntax_interpolated, arguments_interpolated, parameters_interpolated, returned_value_interpolated, examples_interpolated, introduced_in_interpolated, category_interpolated};
+
+    factory.registerFunction(NameQuantileExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>, documentation_interpolated});
+    FunctionDocumentation::Description description_quantiles_interpolated = R"(
+Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.
+
+This function is equivalent to [`quantileExactWeightedInterpolated`](/sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles_interpolated = R"(
+quantilesExactWeightedInterpolated(level1, level2, ...)(expr, weight)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles_interpolated = {
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}},
+        {"weight", "Column with weights of sequence members. Weight is a number of value occurrences.", {"UInt*"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles_interpolated = {
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles_interpolated = {"Array of quantiles of the specified levels in the same order as the levels were specified. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format.", {"Array(Float64)", "Array(Decimal*)", "Array(Date)", "Array(DateTime)", "Array(DateTime64)"}};
+    FunctionDocumentation::Examples examples_quantiles_interpolated = {
+    {
+        "Computing multiple exact weighted interpolated quantiles",
+        R"(
+SELECT quantilesExactWeightedInterpolated(0.25, 0.5, 0.75)(number, 1) FROM numbers(10)
+        )",
+        R"(
+┌─quantilesExactWeightedInterpolated(0.25, 0.5, 0.75)(number, 1)─┐
+│ [2.25,4.5,6.75]                                                │
+└────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles_interpolated = {24, 10};
+    FunctionDocumentation::Category category_quantiles_interpolated = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles_interpolated = {description_quantiles_interpolated, syntax_quantiles_interpolated, arguments_quantiles_interpolated, parameters_quantiles_interpolated, returned_value_quantiles_interpolated, examples_quantiles_interpolated, introduced_in_quantiles_interpolated, category_quantiles_interpolated};
+
     factory.registerFunction(
-        NameQuantilesExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, true>, properties});
+        NameQuantilesExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantilesExactWeighted, true>, documentation_quantiles_interpolated, properties});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianExactWeighted", NameQuantileExactWeighted::name);

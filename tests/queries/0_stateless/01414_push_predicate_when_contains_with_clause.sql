@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS numbers_indexed;
 DROP TABLE IF EXISTS squares;
 

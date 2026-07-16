@@ -150,6 +150,13 @@ namespace Util
         /// Does nothing if the given configuration is not part of the
         /// LayeredConfiguration.
 
+        void replace(const std::string & label, AbstractConfiguration * pNewConfig, int priority, bool shared);
+        /// Atomically replaces the configuration with the given label.
+        /// If no configuration with that label exists, adds it as new.
+        /// This method is thread-safe with respect to concurrent readers
+        /// that access the configuration through public methods of
+        /// AbstractConfiguration (which lock _mutex).
+
     protected:
         struct ConfigItem
         {

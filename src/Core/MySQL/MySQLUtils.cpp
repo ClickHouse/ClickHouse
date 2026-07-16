@@ -1,11 +1,11 @@
 #include <Core/MySQL/MySQLUtils.h>
-
 #include <Common/assert_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 
+#include <cmath>
 
 namespace DB
 {
@@ -36,7 +36,7 @@ DecimalUtils::DecimalComponents<DateTime64> getNormalizedDateTime64Components(Da
         if (scale > 6)
         {
             // MySQL Timestamp has max scale of 6
-            components.fractional /= static_cast<int>(pow(10, scale - 6));
+            components.fractional /= static_cast<int>(std::pow(10, scale - 6));
         }
         else
         {
@@ -47,7 +47,7 @@ DecimalUtils::DecimalComponents<DateTime64> getNormalizedDateTime64Components(Da
             // Scale 4 = 000100
             // Scale 5 = 000010
             // Scale 6 = 000001
-            components.fractional *= static_cast<int>(pow(10, 6 - scale));
+            components.fractional *= static_cast<int>(std::pow(10, 6 - scale));
         }
     }
 

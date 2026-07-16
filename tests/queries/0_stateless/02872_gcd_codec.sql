@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 0;
+
 -- GCD codec can't be used stand-alone
 CREATE TABLE table_gcd_codec (n UInt64 CODEC(GCD)) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 

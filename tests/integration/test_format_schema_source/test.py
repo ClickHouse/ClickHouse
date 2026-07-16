@@ -3,7 +3,6 @@ import uuid
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -72,18 +71,18 @@ def test_protobuf_format_input_with_old_setting(started_cluster):
     )
     assert instance.query("SELECT * from test.simple") == "1\tabc\n2\tdef\n"
 
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "INSERT INTO test.simple SETTINGS format_schema='simple:KeyValuePair' format_schema_message_name='KeyValuePair' FORMAT Protobuf",
             "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
         )
 
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "INSERT INTO test.simple SETTINGS format_schema='simple:KeyValuePair' format_schema_message_name='Tmp' FORMAT Protobuf",
             "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
         )
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "INSERT INTO test.simple SETTINGS format_schema='simple:' format_schema_message_name='Tmp' FORMAT Protobuf",
             "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
@@ -112,12 +111,12 @@ def test_protobuf_format_input_with_format_schema_source(started_cluster, format
     schema = """
 syntax = "proto3";
 
-message KeyValuePair { 
+message KeyValuePair {
     uint64 key = 1;
     string value = 2;
 }
 """
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE")
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
@@ -138,12 +137,12 @@ def test_protobuf_format_output_with_format_schema_source(started_cluster, forma
     schema = """
 syntax = "proto3";
 
-message KeyValuePair { 
+message KeyValuePair {
     uint64 key = 1;
     string value = 2;
 }
 """
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE")
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
@@ -169,13 +168,13 @@ def test_protobuf_format_output_with_format_schema_source_clear_cache_files(
     schema = """
 syntax = "proto3";
 
-message KeyValuePair { 
+message KeyValuePair {
     uint64 key = 1;
     string value = 2;
 }
 """
 
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE")
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
@@ -194,7 +193,7 @@ message KeyValuePair {
     new_schema = """
 syntax = "proto3";
 
-message MessageTmp { 
+message MessageTmp {
     uint64 key2 = 1;
     string value2 = 2;
 }
@@ -205,7 +204,7 @@ message MessageTmp {
     assert new_format_schema == format_schema
     assert new_format_schema_content != format_schema_content
 
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Protobuf")
     # Not clear cached file yet, still work as the old schema is still being used
     assert (
         instance.http_query(
@@ -214,9 +213,9 @@ message MessageTmp {
         == "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"
     )
 
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR Files")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Files")
     # After clearing, not work with new schema
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             f"SELECT * FROM test.simple SETTINGS format_schema_source='query', format_schema='{format_schema}', format_schema_message_name='MessageTmp' FORMAT Protobuf"
         )
@@ -237,7 +236,7 @@ message MessageTmp {
     string value = 2;
 }
 """
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE")
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
@@ -256,7 +255,7 @@ message MessageTmp {
     new_schema = """
 syntax = "proto3";
 
-message MessageTmp { 
+message MessageTmp {
     uint64 key2 = 1;
     string value2 = 2;
 }
@@ -272,9 +271,9 @@ message MessageTmp {
     )
     instance.query("INSERT INTO test.new_simple VALUES (1, 'abc'), (2, 'def')")
 
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Protobuf")
     if format_schema_source != "file":
-        instance.query("SYSTEM DROP FORMAT SCHEMA CACHE FOR Files")
+        instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR Files")
 
     # Tets works with new scheme
     assert (
@@ -284,7 +283,7 @@ message MessageTmp {
         == "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"
     )
     # Tests that stop working with old scheme
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         instance.http_query(
             "SELECT * FROM test.simple SETTINGS format_schema_source='{format_schema_source}', format_schema='{new_format_schema}', format_schema_message_name='MessageTmp' FORMAT Protobuf"
         )
@@ -298,7 +297,7 @@ message MessageTmp {
 def test_drop_capn_proto_format_with_format_schema_source(
     started_cluster, format_schema_source: str
 ):
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE")
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
 
@@ -325,7 +324,7 @@ struct MessageTmp {
         f"SELECT * FROM test.simple Format CapnProto SETTINGS format_schema='{format_schemas_path}/simple:MessageTmp'"
     )
 
-    instance.query("SYSTEM DROP FORMAT SCHEMA CACHE")
+    instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE")
 
     new_schema = """
 @0x801f030c2b67bf19;

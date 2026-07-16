@@ -110,6 +110,8 @@ select number, x, y from (select number from system.numbers limit 5) f any left 
 select b + 1 as c from (select a + 1 as b from (select x + 1 as a from table_1)) settings additional_table_filters={'table_1' : 'x != 2 and x != 3'};
 4
 7
+select dummy from system.one SETTINGS additional_table_filters = {'system.one':'dummy in (select number from numbers(2))'};
+0
 -- { echoOn }
 select * from v_numbers;
 1

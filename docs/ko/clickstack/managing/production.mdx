@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/production
+title: '프로덕션 환경으로 전환하기'
+sidebarTitle: '프로덕션'
+description: 'ClickStack로 프로덕션 환경으로 전환하기'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', '프로덕션', '배포', '모범 사례', '운영']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
+
+프로덕션 환경에 ClickStack을 배포할 때는 보안, 안정성, 올바른 구성을 보장하기 위해 추가로 고려해야 할 사항이 몇 가지 있습니다. 이러한 사항은 사용 중인 배포 형태인 Open Source 또는 Managed에 따라 달라집니다.
+
+<Tabs>
+  <Tab title="관리형 ClickStack">
+    프로덕션 배포에는 [Managed ClickStack](/ko/clickstack/getting-started/managed)을 권장합니다. 기본적으로 업계 표준 [보안 모범 사례](/ko/products/cloud/features/security)를 적용하며, 여기에는 강화된 암호화, 인증 및 연결, 관리형 액세스 제어가 포함됩니다. 또한 다음과 같은 이점이 있습니다:
+
+    * 스토리지와 독립적으로 컴퓨트를 자동 스케일링
+    * 객체 스토리지 기반의 저비용, 사실상 무제한 보존
+    * Warehouses를 사용해 읽기 및 쓰기 워크로드를 독립적으로 격리하는 기능
+    * 통합 인증
+    * 자동 [백업](/ko/products/cloud/features/backups/overview)
+    * 원활한 업그레이드
+
+    **Managed ClickStack을 사용할 때는 ClickHouse Cloud의 다음 [모범 사례](/ko/products/cloud/guides/production-readiness)를 따르십시오.**
+
+    ### 수집 보안
+
+    기본적으로 ClickStack OpenTelemetry Collector는 오픈 소스 배포판 외부에 배포되는 경우 보안 설정이 적용되지 않으며, OTLP 포트에서 인증을 요구하지 않습니다.
+
+    수집을 보호하려면 `OTLP_AUTH_TOKEN` 환경 변수를 사용해 collector를 배포할 때 인증 토큰을 지정하십시오. 자세한 내용은 [&quot;collector 보안 설정&quot;](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 참조하십시오.
+
+    #### 수집용 사용자 생성
+
+    Managed ClickHouse로 데이터를 수집하고, 수집 데이터가 예를 들어 `otel`과 같은 특정 데이터베이스로 전송되도록 하려면 OTel collector 전용 사용자를 생성하는 것이 좋습니다. 자세한 내용은 [&quot;수집용 사용자 생성&quot;](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)을 참조하십시오.
+
+    ### Time To Live (TTL) 구성
+
+    Managed ClickStack 배포에서 [Time To Live (TTL)](/ko/clickstack/managing/ttl)이 [적절하게 구성](/ko/clickstack/managing/ttl#modifying-ttl)되어 있는지 확인하십시오. 이 설정은 데이터를 얼마나 오래 보존할지를 제어하며, 기본값인 3일은 조정이 필요한 경우가 많습니다.
+
+    ### 리소스 추정
+
+    <ResourceEstimation />
+
+    환경에 맞는 크기 산정 가정을 더 정교하게 조정하는 방법에 대한 자세한 내용은 [&quot;환경에 맞는 크기 산정 가정 구체화&quot;](/ko/clickstack/managing/estimating-resources#refining-sizing-assumptions)를 참조하십시오.
+
+    #### 관측성 워크로드 격리
+
+    이미 실시간 애플리케이션 분석과 같은 다른 워크로드를 지원하는 **기존 ClickHouse Cloud 서비스**에 ClickStack을 추가하는 경우, 관측성 트래픽을 격리할 것을 강력히 권장합니다.
+
+    [**Managed Warehouses**](/ko/products/cloud/features/infrastructure/warehouses)를 사용해 ClickStack 전용 **하위 서비스**를 생성하십시오. 이렇게 하면 다음이 가능합니다:
+
+    * 기존 애플리케이션의 수집 및 쿼리 부하 격리
+    * 관측성 워크로드를 독립적으로 스케일링
+    * 관측성 쿼리가 프로덕션 분석에 영향을 주지 않도록 방지
+    * 필요할 때 서비스 간에 동일한 기본 데이터셋 공유
+
+    이 접근 방식은 기존 워크로드에 영향을 주지 않으면서, 관측성 데이터가 증가해도 ClickStack을 독립적으로 스케일링할 수 있도록 보장합니다.
+
+    더 큰 규모의 배포이거나 맞춤형 크기 산정 지침이 필요하면, 보다 정확한 추정을 위해 지원팀에 문의하십시오.
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ### 네트워크 및 포트 보안
+
+    기본적으로 Docker Compose는 호스트에 포트를 노출하여 컨테이너 외부에서 접근할 수 있도록 합니다. 이는 `ufw`(Uncomplicated Firewall)와 같은 도구가 활성화(enabled)되어 있더라도 마찬가지입니다. 이러한 동작은 Docker 네트워킹 스택의 특성 때문으로, 명시적으로 구성하지 않으면 호스트 수준의 방화벽(firewall) 규칙을 우회할 수 있습니다.
+
+    **권장 사항:**
+
+    프로덕션 환경에 필요한 포트만 노출하십시오. 일반적으로 OTLP 엔드포인트, API 서버, 프론트엔드가 이에 해당합니다.
+
+    예시로, `docker-compose.yml` 파일에서 불필요한 포트 매핑을 제거하거나 주석 처리하세요:
+
+    ```yaml
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8080:8080"  # Only if needed for the API
+    # Avoid exposing internal ports like ClickHouse 8123 or MongoDB 27017.
+    ```
+
+    컨테이너 격리 및 접근 보안 강화에 대한 자세한 내용은 [Docker 네트워킹 문서](https://docs.docker.com/network/)를 참조하십시오.
+
+    ### 세션 시크릿 구성
+
+    프로덕션 환경에서는 세션(session) 데이터를 보호하고 변조를 방지하기 위해 ClickStack UI(HyperDX)의 `EXPRESS_SESSION_SECRET` 환경 변수에 강력한 무작위 값을 설정해야 합니다.
+
+    앱 서비스의 `docker-compose.yml` 파일에 추가하는 방법은 다음과 같습니다:
+
+    ```yaml
+      app:
+        image: ${IMAGE_NAME_HDX}:${IMAGE_VERSION}
+        ports:
+          - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+          - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+        environment:
+          FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
+          HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+          HYPERDX_API_PORT: ${HYPERDX_API_PORT}
+          HYPERDX_APP_PORT: ${HYPERDX_APP_PORT}
+          HYPERDX_APP_URL: ${HYPERDX_APP_URL}
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          MINER_API_URL: 'http://miner:5123'
+          MONGO_URI: 'mongodb://db:27017/hyperdx'
+          NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:${HYPERDX_API_PORT}
+          OTEL_SERVICE_NAME: 'hdx-oss-api'
+          USAGE_STATS_ENABLED: ${USAGE_STATS_ENABLED:-true}
+          EXPRESS_SESSION_SECRET: "super-secure-random-string"
+        networks:
+          - internal
+        depends_on:
+          - ch-server
+          - db1
+    ```
+
+    `openssl`을 사용하여 강력한 시크릿을 생성할 수 있습니다:
+
+    ```shell
+    openssl rand -hex 32
+    ```
+
+    시크릿을 소스 컨트롤에 커밋하지 마십시오. 프로덕션 환경에서는 환경 변수 관리 도구(예: Docker Secrets, HashiCorp Vault, 환경별 CI/CD 구성)를 사용하는 것을 권장합니다.
+
+    ### 안전한 수집
+
+    모든 데이터 수집은 OpenTelemetry (OTel) collector의 ClickStack 배포판이 노출하는 OTLP 포트를 통해 이루어져야 합니다. 기본적으로 시작 시 생성되는 보안 수집 API key가 필요합니다. 이 key는 OTel 포트로 데이터를 전송할 때 필요하며, HyperDX UI의 `Team Settings → API Keys`에서 확인할 수 있습니다.
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집 키" size="lg" />
+
+    또한 OTLP 엔드포인트에 TLS를 활성화하는 것을 권장합니다.
+
+    #### 수집용 사용자 생성
+
+    ClickHouse 수집을 위해 OTel collector 전용 사용자를 생성하고, 수집 데이터가 특정 데이터베이스(예: `otel`)로 전송되도록 설정하는 것을 권장합니다. 자세한 내용은 [&quot;수집 사용자 생성&quot;](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)을 참조하십시오.
+
+    ### ClickHouse
+
+    자체 ClickHouse 인스턴스를 직접 관리하는 경우 다음 모범 사례를 따르십시오.
+
+    #### 보안 모범 사례
+
+    직접 ClickHouse 인스턴스를 운영하는 경우, **TLS**를 활성화하고 인증(authentication)을 적용하며 접근 보안 강화를 위한 모범 사례를 따르는 것이 중요합니다. 실제 환경에서 발생하는 잘못된 구성 사례와 예방 방법에 대해서는 [이 블로그 게시물](https://www.wiz.io/blog/clickhouse-and-wiz)을 참고하십시오.
+
+    ClickHouse OSS는 강력한 보안 기능을 기본으로 제공하지만, 사용하려면 별도의 구성이 필요합니다.
+
+    * **TLS를 사용하려면** `tcp_port_secure`와 `config.xml`의 `<openSSL>`을 사용하십시오. [guides/sre/configuring-tls](/ko/concepts/features/security/tls/configuring-tls)를 참조하십시오.
+    * **`default` 사용자의 비밀번호를 강력하게 설정하거나** 해당 사용자를 비활성화하십시오.
+    * **명시적으로 외부 노출을 의도한 경우가 아니라면 ClickHouse를 외부에 노출하지 마십시오.** 기본적으로 `listen_host`를 수정하지 않으면 ClickHouse는 `localhost`에서만 수신 대기합니다.
+    * **비밀번호, 인증서, SSH 키 또는 [외부 인증자](/ko/concepts/features/security/external-authenticators/index) 등의 인증 메서드를 사용하세요.**
+    * IP 필터링과 `HOST` 절을 사용해 **액세스를 제한하세요**. 자세한 내용은 [sql-reference/statements/create/user#user-host](/ko/reference/statements/create/user#user-host)를 참조하십시오.
+    * **역할 기반 접근 제어(RBAC)를 활성화하세요**. 그러면 세분화된 권한을 부여할 수 있습니다. [operations/access-rights](/ko/concepts/features/security/access-rights)를 참조하십시오.
+    * **쿼터와 제한을 적용**하려면 [쿼터](/ko/concepts/features/configuration/server-config/quotas), [설정 프로필](/ko/concepts/features/configuration/settings/settings-profiles), 읽기 전용 모드를 사용하십시오.
+    * **저장 중인 데이터를 암호화**하고 안전한 외부 저장소를 사용하십시오. [operations/storing-data](/ko/concepts/features/configuration/server-config/storing-data) 및 [cloud/security/CMEK](/ko/products/cloud/guides/security/cmek)를 참조하십시오.
+    * **자격 증명을 하드코딩하지 마십시오.** [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections) 또는 ClickHouse Cloud의 IAM 역할을 사용하세요.
+    * **[시스템 로그](/ko/reference/system-tables/query_log) 및 [세션 로그](/ko/reference/system-tables/session_log)를 사용해 접근 기록과 쿼리를 감사하십시오.**
+
+    사용자 관리 및 쿼리/리소스 제한 설정에 대한 자세한 내용은 [외부 인증자(external authenticators)](/ko/concepts/features/security/external-authenticators/index) 및 [쿼리 복잡도 설정](/ko/concepts/features/configuration/settings/query-complexity)을 참조하십시오.
+
+    #### ClickStack UI 사용자 권한
+
+    ClickStack UI용 ClickHouse 사용자는 다음 설정을 변경할 수 있는 권한이 있는 `readonly` 사용자면 충분합니다:
+
+    * `max_rows_to_read` (최소 100만 이상)
+    * `read_overflow_mode`
+    * `cancel_http_readonly_queries_on_client_close`
+    * `wait_end_of_query`
+
+    기본적으로 OSS와 ClickHouse Cloud 모두에서 `default` 사용자는 이러한 권한(permissions)을 보유하고 있지만, 해당 권한을 가진 새 사용자를 별도로 생성하는 것을 권장합니다.
+
+    ### TTL(Time To Live) 설정
+
+    ClickStack 배포 환경에 맞게 [TTL(Time To Live)](/ko/clickstack/managing/ttl)이 [적절히 구성](/ko/clickstack/managing/ttl#modifying-ttl)되어 있는지 확인하십시오. 이 설정은 데이터 보존 기간을 제어하며, 기본값인 3일은 대부분의 경우 변경이 필요합니다.
+
+    ### MongoDB 가이드라인
+
+    공식 [MongoDB 보안 체크리스트](https://www.mongodb.com/docs/manual/administration/security-checklist/)를 참고하십시오.
+  </Tab>
+</Tabs>

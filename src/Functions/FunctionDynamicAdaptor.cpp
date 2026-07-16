@@ -1,4 +1,8 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Common/CurrentThread.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -7,15 +11,48 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromMemory.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool dynamic_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int NO_COMMON_TYPE;
+}
+
+/// Expand a function result back to pre-filter size. The nested function may return an input column
+/// unchanged (e.g. concat of one String arg), so `column` can alias a subcolumn of the source
+/// Dynamic's backing ColumnVariant; mutate() clones it when shared, unlike assumeMutable() which
+/// would expand the shared subcolumn in place and leave the source ColumnVariant malformed.
+static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UInt8> & filter)
+{
+    auto mutable_column = IColumn::mutate(std::move(column));
+    mutable_column->expand(filter, false);
+    return mutable_column;
+}
+
+ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    size_t dynamic_argument_index_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
+    , dynamic_argument_index(dynamic_argument_index_)
+{
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::dynamic_throw_on_type_mismatch];
+    }
 }
 
 ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
@@ -38,6 +75,53 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         result->insertManyDefaults(variant_column.size());
         return result;
     }
+
+    /// Helper: build function base for the given arguments, respecting throw_on_type_mismatch.
+    /// Returns nullptr if the type is incompatible and throwing is disabled; otherwise throws.
+    auto try_build = [&](const ColumnsWithTypeAndName & args) -> FunctionBasePtr
+    {
+        if (throw_on_type_mismatch)
+            return function_overload_resolver->build(args);
+
+        try
+        {
+            return function_overload_resolver->build(args);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
+
+    /// Helper: execute function, respecting throw_on_type_mismatch.
+    /// Some functions (e.g. comparisons) pass build() but throw during execute()
+    /// because executeGeneric calls getLeastSupertype which can throw NO_COMMON_TYPE.
+    /// Returns nullptr if execution fails with a type-related error and throwing is disabled.
+    auto try_execute = [&](const FunctionBasePtr & func_base, const ColumnsWithTypeAndName & args,
+                           const DataTypePtr & res_type, size_t rows, bool is_dry_run) -> ColumnPtr
+    {
+        if (throw_on_type_mismatch)
+            return func_base->execute(args, res_type, rows, is_dry_run);
+
+        try
+        {
+            return func_base->execute(args, res_type, rows, is_dry_run);
+        }
+        catch (const Exception & e)
+        {
+            /// Only suppress NO_COMMON_TYPE, which is what getLeastSupertype throws when the
+            /// alternative type is incompatible with the other argument (e.g. comparison functions
+            /// calling executeGeneric). All other errors (including ILLEGAL_TYPE_OF_ARGUMENT) are
+            /// value-dependent and must propagate — for example, geoToS2 throws ILLEGAL_TYPE_OF_ARGUMENT
+            /// for NaN coordinates after build() has already succeeded for a Float64 alternative.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
 
     /// Check if this Dynamic column contains only values of one type and no NULLs.
     /// In this case we can replace argument with this variant and execute the function without changing all other arguments.
@@ -68,9 +152,23 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, dynamic_column.size(), dry_run);
+        auto nested_result = try_execute(func_base, new_arguments, nested_result_type, dynamic_column.size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -152,9 +250,24 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)->convertToFullColumnIfConst();
+        auto nested_result = try_execute(func_base, new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -170,7 +283,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         if (!isDynamic(result_type))
         {
             /// Expand filtered result. If it's already Nullable, it will be filled with NULLs.
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// If result wasn't Nullable, create null-mask from filter and make it Nullable.
             if (!nested_result_type->isNullable() && nested_result_type->canBeInsideNullable())
             {
@@ -210,7 +323,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         /// and cast to the result Dynamic type (it can have different max_types parameter).
         if (isDynamic(nested_result_type))
         {
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
         }
 
@@ -232,11 +345,11 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             {
                 if (byte)
                 {
-                    nested_filter.push_back(0);
+                    nested_filter.push_back(static_cast<UInt8>(0));
                 }
                 else
                 {
-                    nested_filter.push_back(1);
+                    nested_filter.push_back(static_cast<UInt8>(1));
                     ++size_hint;
                 }
             }
@@ -292,19 +405,19 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     selector.reserve(variant_column.size());
     IColumn::Offsets variants_offsets;
     variants_offsets.reserve(variant_column.size());
-    std::vector<ColumnWithTypeAndName> variants;
+    ColumnsWithTypeAndName variants;
     /// We need to determine the selector index for rows with NULL values, but we don't know how many
     /// variants we have in Dynamic column (shared variant can contain unknown amount of new variant types).
     /// So, we allocate 0 index for rows with NULL values.
     variants.emplace_back();
     /// Remember indexes in selector for each variant type.
-    std::unordered_map<String, size_t> variant_indexes;
+    UnorderedMapWithMemoryTracking<String, size_t> variant_indexes;
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & offsets = variant_column.getOffsets();
     auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(dynamic_column.getSharedVariantDiscriminator());
     const auto & shared_variant = dynamic_column.getSharedVariant();
     /// Remember created serializations for variants in shared variant to avoid recreating it every time.
-    std::unordered_map<String, SerializationPtr> shared_variants_serializations;
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> shared_variants_serializations;
     FormatSettings format_settings;
     for (size_t i = 0; i != local_discriminators.size(); ++i)
     {
@@ -318,7 +431,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// Deserialize type and value from shared variant row.
             auto value = shared_variant.getDataAt(offsets[i]);
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             auto type_name = type->getName();
 
@@ -358,7 +471,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     }
 
     /// Create set of arguments for each variant using selector.
-    std::vector<ColumnsWithTypeAndName> variants_arguments;
+    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -376,16 +489,29 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    std::vector<ColumnPtr> variants_results;
+    VectorWithMemoryTracking<ColumnPtr> variants_results;
     variants_results.reserve(variants.size());
     /// 0 index is allocated for rows with NULL values, it doesn't have any result,
     /// we will insert NULL values in these rows.
     variants_results.emplace_back();
     for (size_t i = 1; i != variants_arguments.size(); ++i)
     {
-        auto func_base = function_overload_resolver->build(variants_arguments[i]);
+        auto func_base = try_build(variants_arguments[i]);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results.emplace_back();
+            continue;
+        }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)->convertToFullColumnIfConst();
+        auto nested_result = try_execute(func_base, variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results.emplace_back();
+            continue;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
         if (nested_result_type->onlyNull())
@@ -448,7 +574,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeDryRunImpl(const ColumnsWithT
 FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_) : function_overload_resolver(function_overload_resolver_), arguments(arguments_)
 {
     /// For resulting Dynamic type use the maximum max_dynamic_types from all Dynamic arguments.
-    size_t result_max_dynamic_type;
+    size_t result_max_dynamic_type = 0;
     bool first = true;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -467,7 +593,7 @@ FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFu
         }
     }
 
-    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic())
+    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic(arguments))
         return_type = makeNullableSafe(type);
     else
         return_type = std::make_shared<DataTypeDynamic>(result_max_dynamic_type);

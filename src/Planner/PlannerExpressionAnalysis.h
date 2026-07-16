@@ -51,6 +51,7 @@ struct SortAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
 };
 
 struct LimitByAnalysisResult
@@ -187,10 +188,13 @@ private:
     LimitByAnalysisResult limit_by_analysis_result;
 };
 
-/// Build expression analysis result for query tree, join tree input columns and planner context
+/// Build expression analysis result for query tree, join tree input columns and planner context.
+/// `source_constants` (see `JoinTreeQueryPlan::source_constants`) are constant columns the chain
+/// keeps flowing rather than fold-and-drop, so a distributed shard delivers what the initiator expects.
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants = {});
 
 }

@@ -36,6 +36,8 @@ public:
 
     DB::Names getTables() const override;
 
+    Namespaces getNamespaces() const override;
+
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
     void getTableMetadata(const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const override;
@@ -47,15 +49,24 @@ public:
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE; }
 
 private:
-    std::shared_ptr<apache::thrift::transport::TTransport> socket;
-    std::shared_ptr<apache::thrift::transport::TTransport> transport;
-    std::shared_ptr<apache::thrift::protocol::TBinaryProtocol> protocol;
+    void reconnectUnlocked() const TSA_REQUIRES(client_mutex);
+
+    template <typename Func>
+    void executeWithRetry(Func && func) const;
+
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+
+    String base_url;
+
+    mutable std::shared_ptr<apache::thrift::transport::TTransport> socket;
+    mutable std::shared_ptr<apache::thrift::transport::TTransport> transport;
+    mutable std::shared_ptr<apache::thrift::protocol::TBinaryProtocol> protocol;
      /// Somehow API of apache::thrift::transport::TBufferBase is not thread-safe.
      /// Database Datalake can call this function from multiple threads, so we need to protect
      /// access to the client.
     mutable std::mutex client_mutex;
 
-    mutable Apache::Hadoop::Hive::ThriftHiveMetastoreClient client TSA_GUARDED_BY(client_mutex);
+    mutable std::unique_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client TSA_GUARDED_BY(client_mutex);
 
 };
 

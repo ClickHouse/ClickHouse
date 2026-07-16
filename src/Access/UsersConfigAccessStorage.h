@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/MemoryAccessStorage.h>
+#include <Access/UsersConfigParser.h>
 #include <Common/ZooKeeper/Common.h>
 
 
@@ -16,10 +17,11 @@ class AccessControl;
 class ConfigReloader;
 
 /// Implementation of IAccessStorage which loads all from users.xml periodically.
+/// Should be initialized after disk storage was added to AccessControl so that roles can be
+/// referenced in users.xml grants.
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
-
     static constexpr char STORAGE_TYPE[] = "users_xml";
 
     UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);

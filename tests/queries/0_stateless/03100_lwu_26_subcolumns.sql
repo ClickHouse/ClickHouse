@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS t_lwu_subcolumns;
 
 SET enable_json_type = 1;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lwu_subcolumns(data JSON, arr Array(UInt32), n Nullable(String))
 ENGINE = MergeTree ORDER BY tuple()

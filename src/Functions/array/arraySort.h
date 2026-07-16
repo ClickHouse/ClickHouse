@@ -73,7 +73,9 @@ struct NameArrayPartialReverseSort
 
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true, false>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false, false>, NameArrayReverseSort>;
-using FunctionArrayPartialSort = FunctionArrayMapped<ArraySortImpl<true, true>, NameArrayPartialSort>;
-using FunctionArrayPartialReverseSort = FunctionArrayMapped<ArraySortImpl<false, true>, NameArrayPartialReverseSort>;
+/// Partial sort is non-deterministic: the order of elements beyond position k is unspecified
+/// (uses nth_element internally), so the same input can produce different outputs.
+using FunctionArrayPartialSort = FunctionArrayMapped<ArraySortImpl<true, true>, NameArrayPartialSort, /*IsDeterministic=*/ false>;
+using FunctionArrayPartialReverseSort = FunctionArrayMapped<ArraySortImpl<false, true>, NameArrayPartialReverseSort, /*IsDeterministic=*/ false>;
 
 }

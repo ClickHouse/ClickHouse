@@ -1,0 +1,254 @@
+---
+title: 深くネストされたオブジェクト配列を含むGeoJSONのインポート
+description: "深くネストされたオブジェクト配列を含むGeoJSONのインポート"
+date: 2024-12-18
+tags: ['データフォーマット']
+keywords: ['GeoJSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 質問
+</div>
+
+ネストされたオブジェクト配列を含むGeoJSONをインポートするにはどうすればよいですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+このチュートリアルでは、[こちら](https://opendata.esri.es/datasets/ComunidadSIG::municipios-ign/explore?location=39.536006%2C-0.303882%2C6.57)で公開されているオープンデータを使用します。コピーは[こちら](https://datasets-documentation.s3.eu-west-3.amazonaws.com/geoJSON/Municipios.geojson)から入手できます。
+
+1. データをGeoJSONフォーマットでダウンロードし、ファイル名を`geojson.json`に変更します。
+
+2. 構造を確認します。
+
+```sql
+DESCRIBE TABLE file('geojson.json', 'JSON')
+┌─name─────┬─type─────────────────────────────────────────────────────────────────────────────────────────┐
+│ type     │ Nullable(String)                                                                             │     
+│ name     │ Nullable(String)                                                                             │     
+│ crs      │ Tuple( properties Tuple(name Nullable(String)),type Nullable(String))                        │     
+│ features │ Array(Tuple(                                                                                 │  
+│          │                  geometry Tuple(coordinates Array(Array(Array(Array(Nullable(Float64))))),   │  
+│          │                  type Nullable(String)),                                                     │  
+│          │                  properties Tuple(   CODIGOINE Nullable(String),                             │  
+│          │                                      CODNUT1 Nullable(String),                               │  
+│          │                                      CODNUT2 Nullable(String),                               │  
+│          │                                      CODNUT3 Nullable(String),                               │  
+│          │                                      FID Nullable(Int64),                                    │  
+│          │                                      INSPIREID Nullable(String),                             │  
+│          │                                      NAMEUNIT Nullable(String),                              │ 
+│          │                                      NATCODE Nullable(String),                               │  
+│          │                                      SHAPE_Area Nullable(Float64),                           │  
+│          │                                      SHAPE_Length Nullable(Float64)                          │  
+│          │                                  ),                                                          │  
+│          │                  type Nullable(String)                                                       │  
+│          │              )                                                                               │  
+│          │      )                                                                                       │  
+└──────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘ 
+```
+
+3. GeoJSONの行を格納するテーブルを作成します。
+
+<br />
+
+ここで必要なのは、`features 配列` 内の各 `オブジェクト` ごとに1つの行を生成することです。
+フィールド `geometry` に対して推論されたデータ型から、これが ClickHouse の **MultiPolygon** [データ型](/ja/reference/data-types/geo#multipolygon) に相当することがわかります。
+
+```sql
+create table geojson 
+(
+    type String,
+    name String,
+    crsType String,
+    crsName String,
+    featureType String,
+    id Int64,
+    inspiredId String,
+    natCode String,
+    nameUnit String,
+    codNut1 String,
+    codNut2 String,
+    codNut3 String,
+    codigoIne String,
+    shapeLength Float64,
+    shapeArea Float64,
+    geometryType String,
+    geometry MultiPolygon
+)
+engine = MergeTree
+order by id;
+```
+
+4. データを準備します。
+
+<br />
+
+このクエリの主な目的は、**features 配列**内の**オブジェクト**ごとに 1 **行**が取得されることを確認することです。
+
+<Note>
+  結果セットを見やすくするため、フィールド `features.geometry.coordinates` はコメントアウトしています。
+</Note>
+
+```sql
+SELECT
+    type AS type,
+    name AS name,
+    crs.type AS crsType,
+    crs.properties.name AS crsName,
+    features.type AS featureType,
+    features.properties.FID AS id,
+    features.properties.INSPIREID AS inspiredId,
+    features.properties.NATCODE AS natCode,
+    features.properties.NAMEUNIT AS nameUnit,
+    features.properties.CODNUT1 AS codNut1,
+    features.properties.CODNUT2 AS codNut2,
+    features.properties.CODNUT3 AS codNut3,
+    features.properties.CODIGOINE AS codigoIne,
+    features.properties.SHAPE_Length AS shapeLength,
+    features.properties.SHAPE_Area AS shapeArea,
+    features.geometry.type AS geometryType
+    --,features.geometry.coordinates
+FROM file('municipios_ign.geojson', 'JSON')
+ARRAY JOIN features
+LIMIT 5
+
+┌─type──────────────┬─name───────────┬─crsType─┬─crsName───────────────────────┬─featureType─┬─id─┬─inspiredId───────────────┬─natCode─────┬─nameUnit──────────────┬─codNut1─┬─codNut2─┬─codNut3─┬─codigoIne─┬────────shapeLength─┬─────────────shapeArea─┬─geometryType─┐
+│ FeatureCollection │ Municipios_IGN │ name    │ urn:ogc:def:crs:OGC:1.3:CRS84 │ Feature     │  1 │ ES.IGN.SIGLIM34081616266 │ 34081616266 │ Villarejo-Periesteban │ ES4     │ ES42    │ ES423   │ 16266     │ 0.2697476997304121 │ 0.0035198414406406673 │ MultiPolygon │
+│ FeatureCollection │ Municipios_IGN │ name    │ urn:ogc:def:crs:OGC:1.3:CRS84 │ Feature     │  2 │ ES.IGN.SIGLIM34081616269 │ 34081616269 │ Villares del Saz      │ ES4     │ ES42    │ ES423   │ 16269     │ 0.4476083901269905 │   0.00738179315030249 │ MultiPolygon │
+│ FeatureCollection │ Municipios_IGN │ name    │ urn:ogc:def:crs:OGC:1.3:CRS84 │ Feature     │  3 │ ES.IGN.SIGLIM34081616270 │ 34081616270 │ Villarrubio           │ ES4     │ ES42    │ ES423   │ 16270     │ 0.3053942273994179 │ 0.0029777582813496337 │ MultiPolygon │
+│ FeatureCollection │ Municipios_IGN │ name    │ urn:ogc:def:crs:OGC:1.3:CRS84 │ Feature     │  4 │ ES.IGN.SIGLIM34081616271 │ 34081616271 │ Villarta              │ ES4     │ ES42    │ ES423   │ 16271     │ 0.2831226979821184 │  0.002680273189024594 │ MultiPolygon │
+│ FeatureCollection │ Municipios_IGN │ name    │ urn:ogc:def:crs:OGC:1.3:CRS84 │ Feature     │  5 │ ES.IGN.SIGLIM34081616272 │ 34081616272 │ Villas de la Ventosa  │ ES4     │ ES42    │ ES423   │ 16272     │ 0.5958276749246777 │  0.015354885085133583 │ MultiPolygon │
+└───────────────────┴────────────────┴─────────┴───────────────────────────────┴─────────────┴────┴──────────────────────────┴─────────────┴───────────────────────┴─────────┴─────────┴─────────┴───────────┴────────────────────┴───────────────────────┴──────────────┘
+```
+
+5. データを挿入します。
+
+<br />
+
+```sql
+INSERT INTO geojson
+SELECT
+    type AS type,
+    name AS name,
+    crs.type AS crsType,
+    crs.properties.name AS crsName,
+    features.type AS featureType,
+    features.properties.FID AS id,
+    features.properties.INSPIREID AS inspiredId,
+    features.properties.NATCODE AS natCode,
+    features.properties.NAMEUNIT AS nameUnit,
+    features.properties.CODNUT1 AS codNut1,
+    features.properties.CODNUT2 AS codNut2,
+    features.properties.CODNUT3 AS codNut3,
+    features.properties.CODIGOINE AS codigoIne,
+    features.properties.SHAPE_Length AS shapeLength,
+    features.properties.SHAPE_Area AS shapeArea,
+    features.geometry.type AS geometryType,
+    features.geometry.coordinates as geometry
+FROM file('municipios_ign.geojson', 'JSON')
+ARRAY JOIN features
+```
+
+ここで、次のエラーが発生します。
+
+```
+Code: 53. DB::Exception: Received from localhost:9000. DB::Exception: ARRAY JOIN requires array or map argument. (TYPE_MISMATCH)
+Received exception from server (version 24.1.2):
+```
+
+これは、`features.geometry.coordinates` がパースされるためです。
+
+6. そのデータ型を確認しましょう。
+
+<br />
+
+```sql
+SELECT DISTINCT toTypeName(features.geometry.coordinates) AS geometry
+FROM file('municipios_ign.geojson', 'JSON')
+ARRAY JOIN features
+
+┌─geometry──────────────────────────────────────┐
+│ Array(Array(Array(Array(Nullable(Float64))))) │
+└───────────────────────────────────────────────┘
+```
+
+`multipolygon.properties.coordinates` を `Array(Array(Array(Tuple(Float64,Float64))))` にキャストすることで修正できます。
+これを行うには、関数 [arrayMap(func,arr1,...)](/ja/reference/functions/regular-functions/array-functions#arrayMap) を使用できます。
+
+```sql
+SELECT distinct
+    toTypeName(
+        arrayMap(features.geometry.coordinates->
+                    arrayMap(features.geometry.coordinates-> 
+                            arrayMap(features.geometry.coordinates-> (features.geometry.coordinates[1],features.geometry.coordinates[2]) 
+                    ,features.geometry.coordinates),
+                features.geometry.coordinates),
+        features.geometry.coordinates)
+    ) as toTypeName
+FROM file('municipios_ign.geojson', 'JSON')
+ARRAY JOIN features;
+
+┌─toTypeName───────────────────────────────────────────────────────┐
+│ Array(Array(Array(Tuple(Nullable(Float64), Nullable(Float64))))) │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+7. データを挿入します。
+
+<br />
+
+```sql
+INSERT INTO geojson
+SELECT
+    type as type,
+    name as name,
+    crs.type as crsType,
+    crs.properties.name as crsName,
+    features.type as featureType,
+    features.properties.FID id,
+    features.properties.INSPIREID inspiredId,
+    features.properties.NATCODE natCode,
+    features.properties.NAMEUNIT nameUnit,
+    features.properties.CODNUT1 codNut1,
+    features.properties.CODNUT2 codNut2,
+    features.properties.CODNUT3 codNut3,
+    features.properties.CODIGOINE codigoIne,
+    features.properties.SHAPE_Length shapeLength,
+    features.properties.SHAPE_Area shapeArea,
+    features.geometry.type geometryType,
+    arrayMap(features.geometry.coordinates->
+                arrayMap(features.geometry.coordinates-> 
+                        arrayMap(features.geometry.coordinates-> (features.geometry.coordinates[1],features.geometry.coordinates[2]),features.geometry.coordinates)
+                ,features.geometry.coordinates)
+    ,features.geometry.coordinates) geometry
+FROM file('municipios_ign.geojson', 'JSON')
+ARRAY JOIN features;
+```
+
+```sql
+SELECT count()
+FROM geojson
+
+┌─count()─┐
+│    8205 │
+└─────────┘
+
+SELECT DISTINCT toTypeName(geometry)
+FROM geojson
+
+┌─toTypeName(geometry)─┐
+│ MultiPolygon         │
+└──────────────────────┘
+```
+
+<div id="conclusion">
+  ### 結論
+</div>
+
+JSON の処理は複雑になりがちです。このチュートリアルでは、ネストされたオブジェクト配列によって、この作業がさらに難しくなるケースを取り上げました。
+JSON に関するその他の要件については、[ドキュメント](/ja/guides/clickhouse/data-formats/json/intro) を参照してください。

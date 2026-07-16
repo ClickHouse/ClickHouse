@@ -3,12 +3,14 @@
 
 #include <base/EnumReflection.h>
 
+#include <string_view>
+#include <unordered_map>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -237,10 +239,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
         case IntervalKind::Kind::Day:
             return "toDayOfMonth";
         case IntervalKind::Kind::Week:
-            // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
-            // else if (ParserKeyword(Keyword::WEEK).ignore(pos, expected))
-            //    function_name = "toRelativeWeekNum";
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week");
+            return "toISOWeek";
         case IntervalKind::Kind::Month:
             return "toMonth";
         case IntervalKind::Kind::Quarter:
@@ -251,63 +250,49 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 }
 
 
+bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result)
+{
+    /// Mirrors `toNameOfFunctionExtractTimePart`.
+    static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
+        {"toNanosecond",  IntervalKind::Kind::Nanosecond},
+        {"toMicrosecond", IntervalKind::Kind::Microsecond},
+        {"toMillisecond", IntervalKind::Kind::Millisecond},
+        {"toSecond",      IntervalKind::Kind::Second},
+        {"toMinute",      IntervalKind::Kind::Minute},
+        {"toHour",        IntervalKind::Kind::Hour},
+        {"toDayOfMonth",  IntervalKind::Kind::Day},
+        {"toISOWeek",     IntervalKind::Kind::Week},
+        {"toMonth",       IntervalKind::Kind::Month},
+        {"toQuarter",     IntervalKind::Kind::Quarter},
+        {"toYear",        IntervalKind::Kind::Year},
+    };
+    auto it = lookup.find(name);
+    if (it == lookup.end())
+        return false;
+    result = it->second;
+    return true;
+}
+
+
 bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
 {
-    if ("nanosecond" == kind)
-    {
-        result = IntervalKind::Kind::Nanosecond;
-        return true;
-    }
-    if ("microsecond" == kind)
-    {
-        result = IntervalKind::Kind::Microsecond;
-        return true;
-    }
-    if ("millisecond" == kind)
-    {
-        result = IntervalKind::Kind::Millisecond;
-        return true;
-    }
-    if ("second" == kind)
-    {
-        result = IntervalKind::Kind::Second;
-        return true;
-    }
-    if ("minute" == kind)
-    {
-        result = IntervalKind::Kind::Minute;
-        return true;
-    }
-    if ("hour" == kind)
-    {
-        result = IntervalKind::Kind::Hour;
-        return true;
-    }
-    if ("day" == kind)
-    {
-        result = IntervalKind::Kind::Day;
-        return true;
-    }
-    if ("week" == kind)
-    {
-        result = IntervalKind::Kind::Week;
-        return true;
-    }
-    if ("month" == kind)
-    {
-        result = IntervalKind::Kind::Month;
-        return true;
-    }
-    if ("quarter" == kind)
-    {
-        result = IntervalKind::Kind::Quarter;
-        return true;
-    }
-    if ("year" == kind)
-    {
-        result = IntervalKind::Kind::Year;
-        return true;
-    }
-    return false;
+    static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
+        {"nanosecond",  IntervalKind::Kind::Nanosecond},
+        {"microsecond", IntervalKind::Kind::Microsecond},
+        {"millisecond", IntervalKind::Kind::Millisecond},
+        {"second",      IntervalKind::Kind::Second},
+        {"minute",      IntervalKind::Kind::Minute},
+        {"hour",        IntervalKind::Kind::Hour},
+        {"day",         IntervalKind::Kind::Day},
+        {"week",        IntervalKind::Kind::Week},
+        {"month",       IntervalKind::Kind::Month},
+        {"quarter",     IntervalKind::Kind::Quarter},
+        {"year",        IntervalKind::Kind::Year},
+    };
+    auto it = lookup.find(kind);
+    if (it == lookup.end())
+        return false;
+    result = it->second;
+    return true;
 }
 }

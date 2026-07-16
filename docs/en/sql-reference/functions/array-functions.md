@@ -3,9 +3,8 @@ description: 'Documentation for Array Functions'
 sidebar_label: 'Arrays'
 slug: /sql-reference/functions/array-functions
 title: 'Array Functions'
+doc_type: 'reference'
 ---
-
-# Array functions
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

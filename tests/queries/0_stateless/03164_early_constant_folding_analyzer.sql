@@ -1,3 +1,7 @@
+SET explain_query_plan_default = 'legacy';
+SET optimize_trivial_count_query = 1;
+SET optimize_trivial_insert_select = 0;
+
 CREATE TABLE checks
 (
     `pull_request_number` UInt32,

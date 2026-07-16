@@ -66,8 +66,8 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 
     if (vector_type_str == "BSI")
     {
-        UInt32 integer_bit_num;
-        UInt32 fraction_bit_num;
+        UInt32 integer_bit_num = 0;
+        UInt32 fraction_bit_num = 0;
 
         if (!parameters.empty() && parameters.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "AggregateFunction {} requires zero/three parameters", name);
@@ -165,9 +165,10 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 }
 }
 
+void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, createAggregateFunctionNumericIndexedVector);
+    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, {createAggregateFunctionNumericIndexedVector, {}});
 }
 
 

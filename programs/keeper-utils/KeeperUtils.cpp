@@ -54,16 +54,7 @@ namespace CoordinationSetting
 namespace
 {
 
-uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
-{
-    std::filesystem::path path(snapshot_path);
-    std::string filename = path.stem();
-    Strings name_parts;
-    splitInto<'_', '.'>(name_parts, filename);
-    return parse<uint64_t>(name_parts[1]);
-}
-
-void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats)
+void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats, size_t subtrees_limit)
 {
     try
     {
@@ -112,7 +103,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                 std::cout << "=== Snapshot: " << snapshot_file << " ===\n";
 
                 // Create a snapshot manager for each snapshot
-                auto snapshot_manager = KeeperSnapshotManager<KeeperMemoryStorage>(
+                auto snapshot_manager = KeeperSnapshotManager(
                     std::numeric_limits<size_t>::max(), // snapshots_to_keep
                     keeper_context,
                     true, // compress_snapshots_zstd
@@ -120,8 +111,11 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     500   // storage_tick_time
                 );
 
+                // Deserialize the exact named file, not by parsed index: with retained
+                // same-index duplicates, an index lookup could read a different sibling.
+                SnapshotFileInfo selected_snapshot{std::filesystem::path(full_path).filename().string(), keeper_context->getSnapshotDisk()};
                 auto result = snapshot_manager.deserializeSnapshotFromBuffer(
-                    snapshot_manager.deserializeSnapshotBufferFromDisk(getSnapshotPathUpToLogIdx(full_path)),
+                    snapshot_manager.deserializeSnapshotBufferFromDisk(selected_snapshot),
                     full_storage);
 
                 if (!result.storage)
@@ -159,13 +153,13 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     if (with_node_stats)
                     {
                         std::cout << "Finding biggest subtrees... " << std::endl;
-                        std::unordered_map<StringRef, size_t> subtree_sizes;
+                        std::unordered_map<std::string_view, size_t> subtree_sizes;
                         for (const auto & path : result.paths)
                         {
                             if (path == "/")
                                 continue;
 
-                            StringRef current_path = path;
+                            std::string_view current_path = path;
                             while (true)
                             {
                                 auto parent = parentNodePath(current_path);
@@ -184,7 +178,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         for (const auto & [node_path, count] : subtree_sizes)
                         {
                             pq.emplace(count, node_path);
-                            if (pq.size() > 10)
+                            if (pq.size() > subtrees_limit)
                                 pq.pop();
                         }
 
@@ -196,7 +190,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         }
                         std::reverse(top_nodes.begin(), top_nodes.end());
 
-                        std::cout << "  Top 10 biggest subtrees:\n";
+                        std::cout << fmt::format("  Top {} biggest subtrees:\n", subtrees_limit);
                         for (const auto & node : top_nodes)
                         {
                             std::cout << fmt::format("    {}: {} descendants\n", node.second, node.first);
@@ -358,7 +352,7 @@ void spliceChangelogFile(const std::string & source_path, const std::string & de
     }
 }
 
-void dumpSessions(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output)
+void dumpSessions(const DB::KeeperStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output)
 {
 
     // Get session info
@@ -455,12 +449,12 @@ void dumpSessions(const DB::KeeperMemoryStorage & storage, const std::string & o
     }
 }
 
-void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
+void dumpNodes(const DB::KeeperStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
 {
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperMemoryStorage::Node & value)>;
+    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperStorage::Node & value)>;
 
     const auto print_nodes = [&](const PrintFunction print_function)
     {
@@ -475,9 +469,9 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             for (const auto & child : value.getChildren())
             {
                 if (key == "/")
-                    keys.push(key + child.toString());
+                    keys.push(fmt::format("/{}", child));
                 else
-                    keys.push(key + "/" + child.toString());
+                    keys.push(fmt::format("{}/{}", key, child));
             }
         }
     };
@@ -536,7 +530,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             res_columns[i++]->insert(value.stats.aversion);
             res_columns[i++]->insert(value.stats.ephemeralOwner());
             res_columns[i++]->insert(value.stats.data_size);
-            res_columns[i++]->insert(value.stats.numChildren());
+            res_columns[i++]->insert(value.numChildren());
             res_columns[i++]->insert(value.stats.pzxid);
             res_columns[i++]->insert(value.getData());
 
@@ -573,7 +567,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             value.stats.ephemeralOwner(),
             value.stats.czxid,
             value.stats.mzxid,
-            value.stats.numChildren(),
+            value.numChildren(),
             value.stats.data_size);
 
         if (with_acl)
@@ -623,6 +617,7 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
+    {"CheckStat", static_cast<Int16>(Coordination::OpNum::CheckStat)},
 });
 }
 
@@ -642,7 +637,6 @@ int dumpStateMachine(
     Poco::Logger::root().setLevel("trace");
 
     auto logger = getLogger("keeper-utils");
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -650,7 +644,7 @@ int dumpStateMachine(
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", log_path));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshot_path));
 
-    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_committed_index = state_machine->last_commit_index();
 
@@ -751,12 +745,11 @@ int deserializeChangelog(
                 desc->from_log_index + entry_storage.size());
         }
 
-        ResponsesQueue queue(std::numeric_limits<size_t>::max());
         SnapshotsQueue snapshots_queue{1};
         KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", fs::temp_directory_path() / "keeper-utils-snapshot"));
-        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
+        auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
 
         if (!output_file.empty())
         {
@@ -963,6 +956,7 @@ int deserializeChangelog(
 
 }
 
+int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
 int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
 {
     namespace po = boost::program_options;
@@ -1096,7 +1090,9 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 ("help,h", "Show help message")
                 ("snapshot-path", po::value<std::string>()->required(), "Path to snapshots directory")
                 ("full-storage", po::bool_switch()->default_value(false), "Load full storage from snapshot")
-                ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics");
+                ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics")
+                ("subtrees-limit", po::value<std::size_t>()->default_value(10), "Show top N subtrees")
+            ;
 
             try
             {
@@ -1128,7 +1124,8 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 analyzeSnapshot(
                     analyzer_vm["snapshot-path"].as<std::string>(),
                     analyzer_vm["full-storage"].as<bool>(),
-                    analyzer_vm["with-node-stats"].as<bool>());
+                    analyzer_vm["with-node-stats"].as<bool>(),
+                    analyzer_vm["subtrees-limit"].as<size_t>());
                 return 0;
             }
             catch (const std::exception & e)

@@ -1,0 +1,19 @@
+100
+with skip index, distributed_index_analysis=0
+{
+  "Type": "Skip",
+  "Condition": "(toStartOfHour(timestamp) in [1704063600, 1704063600])",
+  "Initial Parts": 100,
+  "Selected Parts": 1,
+  "Initial Granules": 100,
+  "Selected Granules": 1
+}
+with skip index, distributed_index_analysis=1 (wrong Condition, correct Selected Granules)
+{
+  "Type": "PrimaryKey",
+  "Condition": "true",
+  "Initial Parts": 100,
+  "Selected Parts": 1,
+  "Initial Granules": 100,
+  "Selected Granules": 1
+}

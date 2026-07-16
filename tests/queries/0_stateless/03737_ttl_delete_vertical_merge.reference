@@ -1,0 +1,23 @@
+test1_before	2000
+test1_after	1000
+test1_min_id	1000
+test1_max_id	1999
+test1_check_cols	4995000	49950000	499500000	4995000000
+test1_parts	1
+test1_algo	Vertical
+test2_before	2000
+test2_after	0
+test2_algo	Vertical
+test3_before	2000
+test3_after	1000
+test3_check_cols	4995000	49950000	499500000	4995000000
+test3_algo	Horizontal
+test4_before	2000
+test4_after	1000
+test4_category	1
+test4_parts	1
+test4_algo	Vertical
+test5_after	1000
+test5_ttl_info	1	1	1
+test6_after	1000
+test6_ttl_info	0	0

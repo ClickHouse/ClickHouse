@@ -32,6 +32,6 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
-using ASTCreateNamedCollectionQueryPtr = std::shared_ptr<ASTCreateNamedCollectionQuery>;
+using ASTCreateNamedCollectionQueryPtr = boost::intrusive_ptr<ASTCreateNamedCollectionQuery>;
 
 }

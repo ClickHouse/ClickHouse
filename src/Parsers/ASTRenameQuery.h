@@ -74,12 +74,12 @@ public:
         {
             if (!elem.from.database)
             {
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
+                elem.from.database = make_intrusive<ASTIdentifier>(database_name);
                 children.push_back(elem.from.database);
             }
             if (!elem.to.database)
             {
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
+                elem.to.database = make_intrusive<ASTIdentifier>(database_name);
                 children.push_back(elem.to.database);
             }
         }
@@ -92,7 +92,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTRenameQuery>(*this);
+        auto res = make_intrusive<ASTRenameQuery>(*this);
         res->children.clear();
 
         auto clone_child = [&res](ASTPtr & node)
@@ -125,12 +125,12 @@ public:
         {
             if (!elem.from.database)
             {
-                elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
+                elem.from.database = make_intrusive<ASTIdentifier>(params.default_database);
                 query.children.push_back(elem.from.database);
             }
             if (!elem.to.database)
             {
-                elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
+                elem.to.database = make_intrusive<ASTIdentifier>(params.default_database);
                 query.children.push_back(elem.to.database);
             }
         }
@@ -146,7 +146,7 @@ public:
         {
             if (name.empty())
                 return nullptr;
-            ASTPtr ast = std::make_shared<ASTIdentifier>(name);
+            ASTPtr ast = make_intrusive<ASTIdentifier>(name);
             children.push_back(ast);
             return ast;
         };

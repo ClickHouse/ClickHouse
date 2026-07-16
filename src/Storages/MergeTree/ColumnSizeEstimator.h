@@ -38,12 +38,12 @@ public:
 
     Float64 columnWeight(const String & column) const
     {
-        return static_cast<Float64>(map.at(column)) / sum_total;
+        return static_cast<Float64>(map.at(column)) / static_cast<Float64>(sum_total);
     }
 
     Float64 keyColumnsWeight() const
     {
-        return static_cast<Float64>(sum_index_columns) / sum_total;
+        return static_cast<Float64>(sum_index_columns) / static_cast<Float64>(sum_total);
     }
 };
 }

@@ -17,9 +17,9 @@ UncompressedCache::UncompressedCache(const String & cache_policy,
 UInt128 UncompressedCache::hash(const String & path_to_file, size_t offset)
 {
     SipHash hash;
-    hash.update(path_to_file.data(), path_to_file.size() + 1);
+    hash.update(path_to_file.size());
+    hash.update(path_to_file.data(), path_to_file.size());
     hash.update(offset);
-
     return hash.get128();
 }
 }

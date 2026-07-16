@@ -33,7 +33,6 @@ def test_system_logs_recreate():
         "trace_log",
         "metric_log",
         "error_log",
-        "latency_log",
     ]
 
     try:
@@ -176,7 +175,7 @@ def test_drop_system_log():
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -206,6 +205,6 @@ def test_drop_system_log():
     )  # we check that query_log just exists
 
     node.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node.restart_clickhouse()

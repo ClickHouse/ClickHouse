@@ -1,3 +1,0 @@
-{"data":{"id":2,"obj":{"k2":{"k3":"str","k4":[{"k6":55}]},"some":42},"s":"bar"}}
-{"data":{"id":2,"obj.k2.k3":"str","obj.k2.k4.k6":[55],"obj.some":42,"s":"bar"}}
-{"a.id":2,"a.obj.k2":{"k3":"str","k4":[{"k6":55}]},"a.obj.some":42}

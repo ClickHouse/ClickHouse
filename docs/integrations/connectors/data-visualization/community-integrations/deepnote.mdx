@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Deepnote'
+slug: /integrations/deepnote
+keywords: ['clickhouse', 'Deepnote', 'connect', 'integrate', 'notebook']
+description: 'Efficiently query very large datasets, analyzing and modeling in the comfort of known notebook environment.'
+title: 'Connect ClickHouse to Deepnote'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+  - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge/>
+
+<a href="https://www.deepnote.com/" target="_blank">Deepnote</a> is a collaborative data notebook built for teams to discover and share insights. In addition to being Jupyter-compatible, it works in the cloud and provides you with one central place to collaborate and work on data science projects efficiently.
+
+This guide assumes you already have a Deepnote account and that you have a running ClickHouse instance.
+
+## Interactive example {#interactive-example}
+If you would like to explore an interactive example of querying ClickHouse from Deepnote data notebooks, click the button below to  launch a template project connected to the [ClickHouse playground](/get-started/sample-datasets/playground).
+
+[<img src="https://deepnote.com/buttons/launch-in-deepnote.svg" alt="Launch in Deepnote" width="32" />](https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote)
+
+## Connect to ClickHouse {#connect-to-clickhouse}
+
+1. Within Deepnote, select the "Integrations" overview and click on the ClickHouse tile.
+
+<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="ClickHouse integration tile" border />
+
+2. Provide the connection details for your ClickHouse instance:
+<ConnectionDetails />
+
+   <Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="ClickHouse details dialog" border />
+
+   **_NOTE:_** If your connection to ClickHouse is protected with an IP Access List, you might need to allow Deepnote's IP addresses. Read more about it in [Deepnote's docs](https://docs.deepnote.com/integrations/authorize-connections-from-deepnote-ip-addresses).
+
+3. Congratulations! You have now integrated ClickHouse into Deepnote.
+
+## Using ClickHouse integration. {#using-clickhouse-integration}
+
+1. Start by connecting to the ClickHouse integration on the right of your notebook.
+
+   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="ClickHouse details dialog" border />
+
+2. Now create a new ClickHouse query block and query your database. The query results will be saved as a DataFrame and stored in the variable specified in the SQL block.
+3. You can also convert any existing [SQL block](https://docs.deepnote.com/features/sql-cells) to a ClickHouse block.

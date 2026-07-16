@@ -1,0 +1,396 @@
+---
+slug: /cloud/managed-postgres/quickstart
+sidebarTitle: 'Quickstart'
+title: 'Quickstart for Managed Postgres'
+description: 'Experience NVMe-powered Postgres performance and add real-time analytics with native ClickHouse integration'
+keywords: ['managed postgres', 'quickstart', 'getting started', 'create database', 'nvme', 'performance']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
+
+ClickHouse Managed Postgres is enterprise-grade Postgres backed by NVMe storage, delivering up to 10x faster performance for disk-bound workloads compared to network-attached storage like EBS. This quickstart is divided into two parts:
+
+- **Part 1:** Get started with NVMe Postgres and experience its performance
+- **Part 2:** Unlock real-time analytics by integrating with ClickHouse
+
+Managed Postgres is currently available on AWS in several regions and is free during private preview.
+
+**In this quickstart, you will:**
+- Create a Managed Postgres instance with NVMe-powered performance
+- Load 1 million sample events and see NVMe speed in action
+- Run queries and experience low-latency performance
+- Replicate data to ClickHouse for real-time analytics
+- Query ClickHouse directly from Postgres using `pg_clickhouse`
+
+## Part 1: Get Started with NVMe Postgres {#part-1}
+
+### Create a database {#create-postgres-database}
+
+To create a new Managed Postgres service, click on the **New service** button in the service list of the Cloud Console. You should then be able to select Postgres as the database type.
+
+<Image img="/images/managed-postgres/create-service.webp" alt="Create a managed Postgres service" size="md" border/>
+
+Enter a name for your database instance and click on **Create service**. You will be taken to the overview page.
+
+<Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres overview" size="md" border/>
+
+Your Managed Postgres instance will be provisioned and ready for use in 3-5 minutes.
+
+### Connect to your database {#connect}
+
+In the sidebar on the left, you will see a [**Connect** button](/products/managed-postgres/connection). Click on it to view your connection details and connection strings in multiple formats.
+
+<Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres connect modal" size="md" border/>
+
+Copy the `psql` connection string and connect to your database. You can also use any Postgres-compatible client such as DBeaver, or any application library.
+
+### Experience NVMe performance {#nvme-performance}
+
+Let's see NVMe-powered performance in action. First, enable timing in psql to measure query execution:
+
+```sql
+\timing
+```
+
+Create two sample tables for events and users:
+
+```sql
+CREATE TABLE events (
+   event_id SERIAL PRIMARY KEY,
+   event_name VARCHAR(255) NOT NULL,
+   event_type VARCHAR(100),
+   event_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+   event_data JSONB,
+   user_id INT,
+   user_ip INET,
+   is_active BOOLEAN DEFAULT TRUE,
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE users (
+   user_id SERIAL PRIMARY KEY,
+   name VARCHAR(100),
+   country VARCHAR(50),
+   platform VARCHAR(50)
+);
+```
+
+Now, insert 1 million events and watch the NVMe speed:
+
+```sql
+INSERT INTO events (event_name, event_type, event_timestamp, event_data, user_id, user_ip)
+SELECT
+   'Event ' || gs::text AS event_name,
+   CASE
+       WHEN random() < 0.5 THEN 'click'
+       WHEN random() < 0.75 THEN 'view'
+       WHEN random() < 0.9 THEN 'purchase'
+       WHEN random() < 0.98 THEN 'signup'
+       ELSE 'logout'
+   END AS event_type,
+   NOW() - INTERVAL '1 day' * (gs % 365) AS event_timestamp,
+   jsonb_build_object('key', 'value' || gs::text, 'additional_info', 'info_' || (gs % 100)::text) AS event_data,
+   GREATEST(1, LEAST(1000, FLOOR(POWER(random(), 2) * 1000) + 1)) AS user_id,
+   ('192.168.1.' || ((gs % 254) + 1))::inet AS user_ip
+FROM
+   generate_series(1, 1000000) gs;
+```
+
+```text
+INSERT 0 1000000
+Time: 3596.542 ms (00:03.597)
+```
+
+<Tip>
+**NVMe Performance**
+
+1 million rows with JSONB data inserted in under 4 seconds. On traditional cloud databases using network-attached storage like EBS, this same operation typically takes 2-3x longer due to network round-trip latency and IOPS throttling. NVMe storage eliminates these bottlenecks by keeping storage physically attached to the compute.
+
+Performance varies based on instance size, current load, and data characteristics.
+</Tip>
+
+Insert 1,000 users:
+
+```sql
+INSERT INTO users (name, country, platform)
+SELECT
+    first_names[first_idx] || ' ' || last_names[last_idx] AS name,
+    CASE
+        WHEN random() < 0.25 THEN 'India'
+        WHEN random() < 0.5 THEN 'USA'
+        WHEN random() < 0.7 THEN 'Germany'
+        WHEN random() < 0.85 THEN 'China'
+        ELSE 'Other'
+    END AS country,
+    CASE
+        WHEN random() < 0.2 THEN 'iOS'
+        WHEN random() < 0.4 THEN 'Android'
+        WHEN random() < 0.6 THEN 'Web'
+        WHEN random() < 0.75 THEN 'Windows'
+        WHEN random() < 0.9 THEN 'MacOS'
+        ELSE 'Linux'
+    END AS platform
+FROM
+    generate_series(1, 1000) AS seq
+    CROSS JOIN LATERAL (
+        SELECT
+            array['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack', 'Liam', 'Olivia', 'Noah', 'Emma', 'Sophia', 'Benjamin', 'Isabella', 'Lucas', 'Mia', 'Amelia', 'Aarav', 'Riya', 'Arjun', 'Ananya', 'Wei', 'Li', 'Huan', 'Mei', 'Hans', 'Klaus', 'Greta', 'Sofia'] AS first_names,
+            array['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Martinez', 'Taylor', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson', 'Moore', 'Lee', 'Perez', 'Sharma', 'Patel', 'Gupta', 'Reddy', 'Zhang', 'Wang', 'Chen', 'Liu', 'Schmidt', 'Müller', 'Weber', 'Fischer'] AS last_names,
+            1 + (seq % 32) AS first_idx,
+            1 + ((seq / 32)::int % 32) AS last_idx
+    ) AS names;
+```
+
+### Run queries on your data {#run-queries}
+
+Now let's run some queries to see how fast Postgres responds with NVMe storage.
+
+**Aggregate 1 million events by type:**
+
+```sql
+SELECT event_type, COUNT(*) as count 
+FROM events 
+GROUP BY event_type 
+ORDER BY count DESC;
+```
+
+```text
+ event_type | count  
+------------+--------
+ click      | 499523
+ view       | 375644
+ purchase   | 112473
+ signup     |  12117
+ logout     |    243
+(5 rows)
+
+Time: 114.883 ms
+```
+
+**Query with JSONB filtering and date range:**
+
+```sql
+SELECT COUNT(*) 
+FROM events 
+WHERE event_timestamp > NOW() - INTERVAL '30 days'
+  AND event_data->>'additional_info' LIKE 'info_5%';
+```
+
+```text
+ count 
+-------
+  9042
+(1 row)
+
+Time: 109.294 ms
+```
+
+**Join events with users:**
+
+```sql
+SELECT u.country, COUNT(*) as events, AVG(LENGTH(e.event_data::text))::int as avg_json_size
+FROM events e
+JOIN users u ON e.user_id = u.user_id
+GROUP BY u.country
+ORDER BY events DESC;
+```
+
+```text
+ country | events | avg_json_size 
+---------+--------+---------------
+ USA     | 383748 |            52
+ India   | 255990 |            52
+ Germany | 223781 |            52
+ China   | 127754 |            52
+ Other   |   8727 |            52
+(5 rows)
+
+Time: 224.670 ms
+```
+
+<Info>
+**Your Postgres is ready**
+
+At this point, you have a fully functional, high-performance Postgres database ready for your transactional workloads.
+
+Continue to Part 2 to see how native ClickHouse integration can supercharge your analytics.
+</Info>
+
+---
+
+## Part 2: Add Real-Time Analytics with ClickHouse {#part-2}
+
+While Postgres excels at transactional workloads (OLTP), ClickHouse is purpose-built for analytical queries (OLAP) on large datasets. By integrating the two, you get the best of both worlds:
+
+- **Postgres** for your application's transactional data (inserts, updates, point lookups)
+- **ClickHouse** for sub-second analytics on billions of rows
+
+This section shows you how to replicate your Postgres data to ClickHouse and query it seamlessly.
+
+### Setup ClickHouse integration {#setup-integrate-clickhouse}
+Now that we have tables and data in Postgres, let's replicate the tables to ClickHouse for analytics. We start by clicking on **ClickHouse integration** in the sidebar. Then you can click on **Replicate data in ClickHouse**.
+<Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres integration empty" size="md" border/>
+In the form that follows, you can enter a name for your integration and select an existing ClickHouse instance to replicate to. If you don't have a ClickHouse instance yet, you can create one directly from this form.
+<Info>
+**Important**
+
+Make sure the ClickHouse service you select is Running before proceeding.
+</Info>
+<Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres integration form" size="md" border/>
+
+Click on **Next**, to be taken to the table picker. Here all you need to do is:
+- Select a ClickHouse database to replicate to.
+- Expand the **public** schema and select the users and events table we created earlier.
+- Click on **Replicate data to ClickHouse**.
+
+<Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres table picker" size="md" border/>
+
+The replication process will start, and you will be taken to the integration overview page. Being the first integration, it can take 2-3 minutes to setup the initial infrastructure. In the meantime let's check out the new **pg_clickhouse** extension.
+
+### Query ClickHouse from Postgres {#pg-clickhouse-extension}
+
+The `pg_clickhouse` extension lets you query ClickHouse data directly from Postgres using standard SQL. This means your application can use Postgres as a unified query layer for both transactional and analytical data. See the [full documentation](/products/managed-postgres/extensions/pg_clickhouse/introduction) for details.
+
+Enable the extension:
+
+```sql
+CREATE EXTENSION pg_clickhouse;
+```
+
+Then, create a foreign server connection to ClickHouse. Use the `http` driver with port `8443` for secure connections:
+
+```sql
+CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
+       OPTIONS(driver 'http', host '<clickhouse_cloud_host>', dbname '<database_name>', port '8443');
+```
+
+Replace `<clickhouse_cloud_host>` with your ClickHouse hostname and `<database_name>` with the database you selected during replication setup. You can find the hostname in your ClickHouse service by clicking **Connect** in the sidebar.
+
+<Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Get ClickHouse host" size="md" border/>
+
+Now, we map the Postgres user to the ClickHouse service's credentials:
+```sql
+CREATE USER MAPPING FOR CURRENT_USER SERVER ch 
+OPTIONS (user 'default', password '<clickhouse_password>');
+```
+Now import the ClickHouse tables into a Postgres schema:
+
+```sql
+CREATE SCHEMA organization;
+IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
+```
+
+Replace `<database_name>` with the same database name you used when creating the server.
+
+You can now see all the ClickHouse tables in your Postgres client:
+
+```sql
+\det+ organization.*
+```
+
+### See your analytics in action {#analytics-after-integration}
+
+Let's check back on the integration page. You should see that the initial replication is complete. Click on the integration name to view details.
+
+<Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres analytics list" size="md" border/>
+
+Click on the service name to open the ClickHouse console and see your replicated tables.
+
+<Image img="/images/managed-postgres/replicated-tables.webp" alt="Managed Postgres replicated tables in ClickHouse" size="md" border/>
+
+### Compare Postgres vs ClickHouse performance {#performance-comparison}
+
+Now let's run some analytical queries and compare performance between Postgres and ClickHouse. Note that replicated tables use the naming convention `public_<table_name>`.
+
+**Query 1: Top users by activity**
+
+This query finds the most active users with multiple aggregations:
+
+```sql
+-- Via ClickHouse
+SELECT 
+    user_id,
+    COUNT(*) as total_events,
+    COUNT(DISTINCT event_type) as unique_event_types,
+    SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
+    MIN(event_timestamp) as first_event,
+    MAX(event_timestamp) as last_event
+FROM organization.public_events
+GROUP BY user_id
+ORDER BY total_events DESC
+LIMIT 10;
+```
+
+```text
+ user_id | total_events | unique_event_types | purchases |        first_event         |         last_event         
+---------+--------------+--------------------+-----------+----------------------------+----------------------------
+       1 |        31439 |                  5 |      3551 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+       2 |        13235 |                  4 |      1492 | 2025-01-22 22:40:45.612281 | 2026-01-21 22:40:45.612281
+...
+(10 rows)
+
+Time: 163.898 ms   -- ClickHouse
+Time: 554.621 ms   -- Same query on Postgres
+```
+
+**Query 2: User engagement by country and platform**
+
+This query joins events with users and computes engagement metrics:
+
+```sql
+-- Via ClickHouse
+SELECT 
+    u.country,
+    u.platform,
+    COUNT(DISTINCT e.user_id) as users,
+    COUNT(*) as total_events,
+    ROUND(COUNT(*)::numeric / COUNT(DISTINCT e.user_id), 2) as events_per_user,
+    SUM(CASE WHEN e.event_type = 'purchase' THEN 1 ELSE 0 END) as purchases
+FROM organization.public_events e
+JOIN organization.public_users u ON e.user_id = u.user_id
+GROUP BY u.country, u.platform
+ORDER BY total_events DESC
+LIMIT 10;
+```
+
+```text
+ country | platform | users | total_events | events_per_user | purchases 
+---------+----------+-------+--------------+-----------------+-----------
+ USA     | Android  |   115 |       109977 |             956 |     12388
+ USA     | Web      |   108 |       105057 |             972 |     11847
+ USA     | iOS      |    83 |        84594 |            1019 |      9565
+ Germany | Android  |    85 |        77966 |             917 |      8852
+ India   | Android  |    80 |        68095 |             851 |      7724
+...
+(10 rows)
+
+Time: 170.353 ms   -- ClickHouse
+Time: 1245.560 ms  -- Same query on Postgres
+```
+
+**Performance comparison:**
+
+| Query | Postgres (NVMe) | ClickHouse (via pg_clickhouse) | Speedup |
+|-------|-----------------|-------------------------------|---------|
+| Top users (5 aggregations) | 555 ms | 164 ms | 3.4x |
+| User engagement (JOIN + aggregations) | 1,246 ms | 170 ms | 7.3x |
+
+<Tip>
+**When to use ClickHouse**
+
+Even on this 1M row dataset, ClickHouse delivers 3-7x faster performance on complex analytical queries with JOINs and multiple aggregations. The difference becomes even more dramatic at larger scales (100M+ rows), where ClickHouse's columnar storage and vectorized execution can deliver 10-100x speedups.
+
+Query times vary based on instance size, network latency between services, data characteristics, and current load.
+</Tip>
+
+## Cleanup {#cleanup}
+
+To delete the resources created in this quickstart:
+
+1. First, delete the ClickPipe integration from the ClickHouse service
+2. Then, delete the Managed Postgres instance from the Cloud Console

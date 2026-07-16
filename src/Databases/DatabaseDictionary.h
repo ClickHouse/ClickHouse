@@ -38,13 +38,12 @@ public:
 
     bool empty() const override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     void shutdown() override;
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:

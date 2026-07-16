@@ -170,7 +170,7 @@ REGISTER_FUNCTION(ArrayCompact)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);", "[1,nan,2,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayCompact>(documentation);
 }

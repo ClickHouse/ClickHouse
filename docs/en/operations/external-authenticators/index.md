@@ -5,11 +5,8 @@ sidebar_label: 'External User Authenticators and Directories'
 sidebar_position: 48
 slug: /operations/external-authenticators/
 title: 'External User Authenticators and Directories'
+doc_type: 'reference'
 ---
-
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
-
-<SelfManaged />
 
 ClickHouse supports authenticating and managing users using external services.
 
@@ -19,3 +16,4 @@ The following external authenticators and directories are supported:
 - Kerberos [Authenticator](/operations/external-authenticators/kerberos#kerberos-as-an-external-authenticator-for-existing-users)
 - [SSL X.509 authentication](/operations/external-authenticators/ssl-x509)
 - HTTP [Authenticator](./http.md)
+- [JWT authentication](/operations/external-authenticators/jwt)

@@ -12,14 +12,22 @@ public:
     using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
-    SerializationTuple(const ElementSerializations & elems_, bool has_explicit_names_)
-        : elems(elems_), has_explicit_names(has_explicit_names_)
+private:
+    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
+        : elems(std::move(elems_)), has_explicit_names(has_explicit_names_)
     {
     }
+
+public:
+    static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
+    static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_);
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
@@ -72,6 +80,8 @@ public:
             SubstreamsCache * cache) const override;
 
     const ElementSerializations & getElementsSerializations() const { return elems; }
+
+    static void readElementsSafe(IColumn & column, std::function<void()> && read_func);
 
 private:
     ElementSerializations elems;

@@ -63,7 +63,8 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputHeader()->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
 
             auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
             cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
@@ -90,6 +91,11 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
 void IntersectOrExceptStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+QueryPlanStepPtr IntersectOrExceptStep::clone() const
+{
+    return std::make_unique<IntersectOrExceptStep>(*this);
 }
 
 }

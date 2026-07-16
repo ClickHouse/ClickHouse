@@ -16,6 +16,7 @@ enum TraceFlags : UInt8
 {
     TRACE_FLAG_NONE = 0,
     TRACE_FLAG_SAMPLED = 1,
+    TRACE_FLAG_KEEPER_SPANS = 2,
 };
 
 /// The runtime info we need to create new OpenTelemetry spans.
@@ -36,6 +37,12 @@ struct TracingContext
     {
         return trace_id != UUID();
     }
+
+    /// Generate a new random non-zero trace ID
+    static UUID generateTraceId();
+
+    /// Generate a new random span ID
+    static UInt64 generateSpanId();
 
     void deserialize(ReadBuffer & buf);
     void serialize(WriteBuffer & buf) const;

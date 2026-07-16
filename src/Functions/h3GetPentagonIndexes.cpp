@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -26,7 +27,7 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 namespace
 {
 
-class FunctionH3GetPentagonIndexes : public IFunction
+class FunctionH3GetPentagonIndexes final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetPentagonIndexes";
@@ -75,7 +76,7 @@ public:
         result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
-        std::vector<H3Index> hindex_vec;
+        VectorWithMemoryTracking<H3Index> hindex_vec;
         result_data.reserve(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -84,7 +85,7 @@ public:
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                    toString(data[row]),
+                    static_cast<uint8_t>(data[row]),
                     getName(),
                     MAX_H3_RES);
 
@@ -110,7 +111,32 @@ public:
 
 REGISTER_FUNCTION(H3GetPentagonIndexes)
 {
-    factory.registerFunction<FunctionH3GetPentagonIndexes>();
+    FunctionDocumentation::Description description = R"(
+Returns all the pentagon [H3](#h3-index) indices at the specified resolution.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetPentagonIndexes(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of all pentagon H3 indices at the specified resolution.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get all pentagon indices at resolution 3",
+            "SELECT h3GetPentagonIndexes(3) AS indexes",
+            R"(
+┌─indexes────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,...] │
+└────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetPentagonIndexes>(documentation);
 }
 
 }

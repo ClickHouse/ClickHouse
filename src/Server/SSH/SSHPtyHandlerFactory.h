@@ -5,6 +5,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <optional>
+#include <unistd.h>
 
 #include <Core/ServerSettings.h>
 #include <Server/SSH/SSHPtyHandler.h>
@@ -17,6 +18,7 @@
 #include <Common/LibSSHLogger.h>
 #include <Server/SSH/SSHBind.h>
 #include <Server/SSH/SSHSession.h>
+#include <Common/config_version.h>
 
 namespace Poco
 {
@@ -28,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SSH_EXCEPTION;
 }
 
 class SSHPtyHandlerFactory : public TCPServerConnectionFactory
@@ -54,6 +57,10 @@ public:
     {
         LOG_INFO(log, "Initializing sshbind");
         ssh_bind.disableDefaultConfig();
+        /// Identify ourselves to ssh clients, similar to how OpenSSH prepends its
+        /// own name to the "SSH-2.0-" prefix (e.g. "SSH-2.0-OpenSSH_8.9p1"). Use
+        /// underscore because RFC 4253 forbids spaces and '-' in this field.
+        ssh_bind.setBanner(std::string("ClickHouse_") + VERSION_STRING);
 
         String prefix = "ssh_server.";
         auto rsa_key = config.getString(prefix + "host_rsa_key", "");
@@ -74,14 +81,16 @@ public:
             LOG_WARNING(log, "Client options propagation is enabled. This is considered unsafe and shouldn't be used in production.");
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
         ::ssh::libsshLogger::initialize();
         ::ssh::SSHSession session;
-        session.disableSocketOwning();
         session.disableDefaultConfig();
-        ssh_bind.acceptFd(session, socket.sockfd());
+        int duplicated_fd = dup(socket.sockfd());
+        if (duplicated_fd == -1)
+            throw Exception(ErrorCodes::SSH_EXCEPTION, "Failed to duplicate socket file descriptor");
+        ssh_bind.acceptFd(session, duplicated_fd);
 
         auto options = SSHPtyHandler::Options
         {

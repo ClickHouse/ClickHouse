@@ -1,9 +1,10 @@
 #pragma once
 
-#include <base/types.h>
-#include <Common/OpenTelemetryTracingContext.h>
-
+#include <map>
 #include <time.h>
+#include <base/types.h>
+#include <Common/HTTPFieldLess.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 namespace Poco::Net
 {
@@ -38,6 +39,7 @@ public:
         TCP_INTERSERVER = 7,
         PROMETHEUS = 8,
         BACKGROUND = 9, // e.g. queries from refreshable materialized views
+        ARROW_FLIGHT = 10,
     };
 
     enum class HTTPMethod : uint8_t
@@ -52,17 +54,22 @@ public:
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
-        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
+        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed query execution.
     };
 
     ClientInfo();
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
+    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
+
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
     std::shared_ptr<Poco::Net::SocketAddress> current_address;
+
+    /// For IMPERSONATEd session, stores the original authenticated user
+    String authenticated_user;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
@@ -84,6 +91,9 @@ public:
     String os_user;
     String client_hostname;
     String client_name;
+    /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
+    /// detected from environment variables. Empty when no agent is detected.
+    String client_agent;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
@@ -100,12 +110,19 @@ public:
     UInt64 connection_client_version_minor = 0;
     UInt64 connection_client_version_patch = 0;
     UInt32 connection_tcp_protocol_version = 0;
+    /// Parallel-replicas protocol version negotiated with the immediate upstream connection on
+    /// hello. Populated locally by `TCPHandler` from its own `client_parallel_replicas_protocol_version`
+    /// member — NOT serialized to the wire. A follower uses this to recognise whether its
+    /// initiator can speak features bumped in newer parallel-replicas protocol versions
+    /// (e.g. announcement-response in `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`)
+    /// and degrade gracefully when it can't. 0 means "unknown / pre-versioning".
+    UInt32 connection_parallel_replicas_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
-    std::unordered_map<String, String> http_headers;
+    std::map<String, String, HTTPFieldLess> http_headers;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
@@ -127,21 +144,15 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
+    bool is_shared_catalog_internal = false;
+    /// Server-internal query (not user-issued), propagated to remote queries.
+    /// Independent of `query_kind == SECONDARY_QUERY`: either can hold without the other.
+    bool is_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
     UInt64 obsolete_count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
-
-    enum class BackgroundOperationType : uint8_t
-    {
-        NOT_A_BACKGROUND_OPERATION = 0,
-        MERGE = 1,
-        MUTATION = 2,
-    };
-
-    /// It's ClientInfo and context created for background operation (not real query)
-    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
@@ -149,8 +160,12 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision);
+    /// `with_trailing_fields` controls whether the `client_agent` and `is_internal` fields are (de)serialized as
+    /// trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
+    /// `Distributed` insert header, where `client_agent` and `is_internal` are stored as trailing header fields
+    /// instead, so that older binaries draining newer queue files can read the header without misinterpreting it.
+    void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

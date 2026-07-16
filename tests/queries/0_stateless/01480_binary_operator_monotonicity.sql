@@ -50,6 +50,10 @@ create table x (i int, j int) engine MergeTree order by i / 10 settings index_gr
 insert into x values (10, 1), (20, 2), (30, 3), (40, 4);
 
 set max_rows_to_read = 3;
+
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+set parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 select * from x where i > 30; -- converted to i / 10 >= 3, thus needs to read 3 granules.
 
 drop table x;

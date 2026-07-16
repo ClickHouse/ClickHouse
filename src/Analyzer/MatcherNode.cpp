@@ -227,7 +227,7 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (!column_transformers.empty())
     {
-        transformers = std::make_shared<ASTColumnsTransformerList>();
+        transformers = make_intrusive<ASTColumnsTransformerList>();
 
         for (const auto & column_transformer : column_transformers)
             transformers->children.push_back(column_transformer->toAST(options));
@@ -237,7 +237,7 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         if (qualified_identifier.empty())
         {
-            auto asterisk = std::make_shared<ASTAsterisk>();
+            auto asterisk = make_intrusive<ASTAsterisk>();
 
             if (transformers)
             {
@@ -249,10 +249,10 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         }
         else
         {
-            auto qualified_asterisk = std::make_shared<ASTQualifiedAsterisk>();
+            auto qualified_asterisk = make_intrusive<ASTQualifiedAsterisk>();
 
             auto identifier_parts = qualified_identifier.getParts();
-            qualified_asterisk->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            qualified_asterisk->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
             qualified_asterisk->children.push_back(qualified_asterisk->qualifier);
 
             if (transformers)
@@ -268,7 +268,7 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         if (qualified_identifier.empty())
         {
-            auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
+            auto regexp_matcher = make_intrusive<ASTColumnsRegexpMatcher>();
             regexp_matcher->setPattern(columns_matcher->pattern());
 
             if (transformers)
@@ -281,11 +281,11 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         }
         else
         {
-            auto regexp_matcher = std::make_shared<ASTQualifiedColumnsRegexpMatcher>();
+            auto regexp_matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
             regexp_matcher->setPattern(columns_matcher->pattern());
 
             auto identifier_parts = qualified_identifier.getParts();
-            regexp_matcher->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            regexp_matcher->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
             regexp_matcher->children.push_back(regexp_matcher->qualifier);
 
             if (transformers)
@@ -299,18 +299,18 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
     }
     else
     {
-        auto column_list = std::make_shared<ASTExpressionList>();
+        auto column_list = make_intrusive<ASTExpressionList>();
         column_list->children.reserve(columns_identifiers.size());
 
         for (const auto & identifier : columns_identifiers)
         {
             auto identifier_parts = identifier.getParts();
-            column_list->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            column_list->children.push_back(make_intrusive<ASTIdentifier>(std::move(identifier_parts)));
         }
 
         if (qualified_identifier.empty())
         {
-            auto columns_list_matcher = std::make_shared<ASTColumnsListMatcher>();
+            auto columns_list_matcher = make_intrusive<ASTColumnsListMatcher>();
             columns_list_matcher->column_list = std::move(column_list);
             columns_list_matcher->children.push_back(columns_list_matcher->column_list);
 
@@ -324,10 +324,10 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         }
         else
         {
-            auto columns_list_matcher = std::make_shared<ASTQualifiedColumnsListMatcher>();
+            auto columns_list_matcher = make_intrusive<ASTQualifiedColumnsListMatcher>();
 
             auto identifier_parts = qualified_identifier.getParts();
-            columns_list_matcher->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            columns_list_matcher->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
             columns_list_matcher->column_list = std::move(column_list);
             columns_list_matcher->children.push_back(columns_list_matcher->qualifier);
             columns_list_matcher->children.push_back(columns_list_matcher->column_list);

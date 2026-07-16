@@ -1,0 +1,52 @@
+-- HOUR TO MINUTE
+(1,30)
+Tuple(IntervalHour, IntervalMinute)
+-- HOUR TO SECOND
+(1,30,45)
+Tuple(IntervalHour, IntervalMinute, IntervalSecond)
+-- MINUTE TO SECOND
+(5,30)
+Tuple(IntervalMinute, IntervalSecond)
+-- YEAR TO MONTH
+(2,6)
+Tuple(IntervalYear, IntervalMonth)
+-- DAY TO HOUR
+(5,12)
+Tuple(IntervalDay, IntervalHour)
+-- DAY TO MINUTE
+(5,12,30)
+Tuple(IntervalDay, IntervalHour, IntervalMinute)
+-- DAY TO SECOND
+(5,12,30,45)
+Tuple(IntervalDay, IntervalHour, IntervalMinute, IntervalSecond)
+-- Invalid: cross-group mixing
+-- Invalid: same kind
+-- Invalid: malformed strings
+-- Invalid: sign on non-leading component
+-- Zero values
+(0,0)
+(0,0)
+-- Date arithmetic
+2024-01-01 01:30:00
+2026-09-01
+2024-01-06 12:30:45
+-- Negative intervals
+(-1,-30)
+(-2,-6)
+(-5,-12,-30,-45)
+2024-01-01 10:30:00
+2024-01-01 00:00:00
+2024-03-01
+2024-01-01 00:00:00
+-- Leading plus sign
+(1,30)
+-- Interval + Interval
+(1,45)
+-- Interval comparison
+1
+1
+1
+1
+-- Interval * integer (unsupported for intervals)
+-- Large leading field
+(1000000,59)

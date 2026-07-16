@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
+#include <Common/SetWithMemoryTracking.h>
 
 
 namespace DB
@@ -34,22 +35,22 @@ namespace ErrorCodes
 
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec, bool enable_zstd_qat_codec) const
+    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
 
     if (level)
     {
-        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+            {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+            {}, sanity_check, allow_experimental_codecs);
     }
 }
 
@@ -74,21 +75,39 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
     return false;
 }
 
+bool typeContainsMap(const DataTypePtr & type)
+{
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        return true;
+    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return typeContainsMap(type_nullable->getNestedType());
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsMap(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+            if (typeContainsMap(subtype))
+                return true;
+        return false;
+    }
+    return false;
+}
+
 }
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec, bool enable_zstd_qat_codec) const
+    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        ASTPtr codecs_descriptions = std::make_shared<ASTExpressionList>();
+        ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
 
         bool with_compression_codec = false;
         bool with_none_codec = false;
         std::optional<size_t> first_generic_compression_codec_pos;
         std::optional<size_t> first_delta_codec_pos;
         std::optional<size_t> last_floating_point_time_series_codec_pos;
-        std::set<size_t> encryption_codecs_pos;
+        SetWithMemoryTracking<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
         for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
@@ -119,7 +138,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
 
                 result_codec = default_codec;
-                codecs_descriptions->children.emplace_back(std::make_shared<ASTIdentifier>(DEFAULT_CODEC_NAME));
+                codecs_descriptions->children.emplace_back(make_intrusive<ASTIdentifier>(DEFAULT_CODEC_NAME));
             }
             else
             {
@@ -128,7 +147,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     CompressionCodecPtr prev_codec;
                     ISerialization::StreamCallback callback = [&](const auto & substream_path)
                     {
-                        assert(!substream_path.empty());
+                        chassert(!substream_path.empty());
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
                             const auto & last_type = substream_path.back().data.type;
@@ -159,16 +178,29 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         " You can enable it with the 'allow_experimental_codecs' setting",
                         codec_family_name);
 
-                if (!enable_deflate_qpl_codec && result_codec->isDeflateQpl())
+                /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
+                /// (a float key would be accepted by a float-only codec like SZ3), and lossily compressing
+                /// the keys would round them on disk and break lookups, grouping and ordering. SZ3 (the only
+                /// lossy codec) is documented for Float*/Array(Float*) columns only, so reject Map entirely.
+                if (result_codec->isLossyCompression() && column_type && typeContainsMap(column_type))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_deflate_qpl_codec' setting",
-                        codec_family_name);
+                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains a Map, "
+                        "whose keys would be corrupted by lossy compression",
+                        codec_family_name, column_type->getName());
 
-                if (!enable_zstd_qat_codec && result_codec->isZstdQat())
+                /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values, so they can only
+                /// be applied to a known floating-point column. The marks, primary key, default and TTL
+                /// recompression codec settings all validate with a null data type; reject a lossy codec here so
+                /// the misconfiguration is reported when the metadata is created, instead of being accepted and
+                /// then failing later in a background merge or part write.
+                /// This is a sanity check, so it is not enforced when `allow_suspicious_codecs` is set, nor on the
+                /// metadata-load path (`ATTACH`), where `sanity_check` is disabled so that a table stored on an
+                /// earlier version does not become unloadable after an upgrade.
+                if (sanity_check && result_codec->isLossyCompression() && !column_type)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_zstd_qat_codec' setting",
+                        "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/"
+                        "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
+                        "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
@@ -257,7 +289,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         /// readability and backward compatibility.
         if (can_substitute_codec_arguments)
         {
-            std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+            boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
             result->name = "CODEC";
             result->arguments = codecs_descriptions;
             return result;

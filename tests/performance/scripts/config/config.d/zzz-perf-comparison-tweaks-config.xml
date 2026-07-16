@@ -17,7 +17,6 @@
     <part_log remove="remove"/>
     <text_log remove="remove"/>
 <!--    <metric_log remove="remove"/>-->
-    <latency_log remove="remove"/>
     <error_log remove="remove"/>
     <query_metric_log remove="remove"/>
 <!--    <asynchronous_metric_log remove="remove"/>-->
@@ -31,10 +30,11 @@
     <blob_storage_log remove="remove"/>
     <transactions_info_log remove="remove"/>
     <filesystem_cache_log remove="remove"/>
+    <aggregated_zookeeper_log remove="remove"/>
+    <iceberg_metadata_log remove="remove"/>
+    <delta_lake_metadata_log remove="remove"/>
 
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
-
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
-
     <remap_executable replace="replace">true</remap_executable>
 </clickhouse>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -10,14 +10,16 @@ class Context;
 
 /** Implements the system table `detached_tables`, which allows you to get information about detached tables.
   */
-class StorageSystemDetachedTables final : public IStorage
+class StorageSystemDetachedTables final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemDetachedTables(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemDetachedTables"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

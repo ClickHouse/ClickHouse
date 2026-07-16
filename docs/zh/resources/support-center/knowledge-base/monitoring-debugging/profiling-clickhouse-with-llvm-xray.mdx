@@ -1,0 +1,188 @@
+---
+title: "使用 LLVM 的 XRay 对 ClickHouse 进行性能分析"
+date: 2024-11-13
+description: "了解如何使用 LLVM 的 XRay 插桩分析器对 ClickHouse 进行性能分析、将 trace 可视化并分析性能。"
+tags: ['性能与优化', '工具与实用程序']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="types-of-profilers">
+  ## Profiler 的类型
+</div>
+
+LLVM 已经内置了一个可对代码进行插桩的工具，使我们能够进行[插桩分析](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation)。与[采样分析或统计分析](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Statistical_profilers)相比，
+这种方式精度非常高，不会漏掉任何调用，但代价是需要对代码进行插桩，并且资源开销更大。
+
+简单来说，插桩分析器会插入额外的代码，以跟踪对所有函数的调用。
+统计分析器则允许我们在不修改代码的情况下运行程序，通过定期获取快照来查看应用程序的状态。因此，只有在获取快照时正在运行的函数才会被统计。[perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) 是一个非常知名的
+统计分析器。
+
+<div id="profiling-clickhouse-using-xray-integration">
+  ## 使用 XRay 的集成功能分析 ClickHouse 性能
+</div>
+
+在 ClickHouse 25.12 中，XRay 已完成集成，可无缝为函数添加新的插桩点。
+因此，任何官方发布版本都已包含此功能，并且可按需触发；在未启用时，
+不会影响整体性能。其思路是仅启用尽可能少的
+插桩点，以获取有价值的信息。
+
+我们可以使用 [SYSTEM INSTRUMENT ADD
+PROFILE](/zh/reference/statements/system#instrument-add-profile)
+语句添加一个新的性能分析插桩点。可插桩的函数可以从
+[system.symbols](/zh/reference/system-tables/symbols) 系统表中获取。比如，我们
+想分析 `sleepForNanoseconds` 函数的性能，它很适合用来检查运行耗时。
+
+```sql
+SYSTEM INSTRUMENT ADD 'sleepForNanoseconds' PROFILE
+```
+
+然后，让它在我们想要分析的时间段内持续运行，再将其停止。
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+我们将 system.trace&#95;log 中收集的数据转换为[Chrome
+格式](/zh/reference/system-tables/trace_log#chrome-event-trace-format)，以便在 [Perfetto](https://ui.perfetto.dev) 中可视化。请注意每个条目的 query&#95;id、cpu&#95;id 和 stacktrace。
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
+
+<div id="profiling-a-native-application-using-xray">
+  ## 使用 XRay 对原生应用程序进行性能分析
+</div>
+
+以下内容保留为参考，帮助你了解 XRay 的底层工作机制，以及如何开箱即用地用它对原生应用程序进行性能分析。
+
+<div id="instrument-the-code">
+  ### 对代码进行插桩
+</div>
+
+假设有如下源代码：
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+void one()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+void two()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+}
+
+int main()
+{
+    printf("Start\n");
+
+    for (int i = 0; i < 10; ++i)
+    {
+        one();
+        two();
+    }
+
+    printf("Finish\n");
+}
+```
+
+要使用 XRay 进行插桩，需要添加一些参数，如下所示：
+
+```bash
+clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
+```
+
+* 需要使用 `-fxray-instrument` 为代码插桩。
+* 使用 `-fxray-instruction-threshold=1` 是为了让它对所有函数都进行插桩，即使它们
+  像本例中那样非常小。默认情况下，它只会对[至少有 200 条
+  指令](https://llvm.org/docs/XRay.html#instrumenting-your-c-c-objective-c-application)的函数进行插桩。
+
+我们可以通过检查可执行文件中是否新增了一个 section，来确认代码已正确插桩：
+
+```bash
+objdump -h -j xray_instr_map test
+
+test:     file format elf64-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+ 17 xray_instr_map 000005c0  000000000002f91c  000000000002f91c  0002f91c  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+```
+
+<div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
+  ### 使用适当的环境变量值运行进程以收集 trace
+</div>
+
+默认情况下，除非显式启用，否则 Profiler 不会收集数据。换句话说，除非
+我们正在进行 profiling，否则其开销几乎可以忽略不计。我们可以为 `XRAY_OPTIONS` 设置不同的值，
+以配置 Profiler 何时开始收集，以及采用何种方式收集。
+
+```bash
+XRAY_OPTIONS="patch_premain=true xray_mode=xray-basic verbosity=1" ./test
+==74394==XRay: Log file in 'xray-log.test.14imlN'
+Start
+Finish
+==74394==Cleaned up log for TID: 74394
+```
+
+<div id="convert-the-trace">
+  ### 转换 trace
+</div>
+
+XRay 的 trace 可以转换为多种格式。`trace_event` 格式非常有用，因为
+它便于解析，而且已有不少工具支持，因此我们将使用这种格式：
+
+```bash
+llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xray-log.test.14imlN | gzip > test-trace.txt.gz
+```
+
+<div id="visualize-the-trace">
+  ### 将 trace 可视化
+</div>
+
+我们可以使用基于 Web 的 UI，例如 [speedscope.app](https://www.speedscope.app/) 或
+[Perfetto](https://ui.perfetto.dev)。
+
+虽然 Perfetto 更便于同时可视化多个线程并查询数据，但 speedscope 更适合
+生成火焰图以及数据的三明治视图。
+
+<div id="time-order">
+  #### 按时间顺序
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
+
+<div id="left-heavy">
+  #### 左偏重
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="左偏重" />
+
+<div id="sandwitch">
+  #### 三明治
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="三明治" />
+
+<div id="check-out-the-docs">
+  ## 查阅文档
+</div>
+
+* [SYSTEM INSTRUMENT](/zh/reference/statements/system#instrument) — 添加
+  或移除插桩点。
+* [system.instrumentation](/zh/reference/system-tables/instrumentation)
+  — 查看已插桩的点位。
+* [system.symbols](/zh/reference/system-tables/symbols) — 查看
+  可用于添加插桩点的符号。
+* [system.trace&#95;log](/zh/reference/system-tables/trace_log) — 查看通过插桩点收集的
+  数据。
+* [XRay Instrumentation](https://llvm.org/docs/XRay.html)
+* [使用 XRay 进行调试](https://llvm.org/docs/XRayExample.html) 文档以了解更多详情。

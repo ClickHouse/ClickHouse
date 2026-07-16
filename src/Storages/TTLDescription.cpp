@@ -11,6 +11,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,8 +33,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_zstd_qat_codec;
-    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -230,6 +229,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     else /// It's columns TTL without any additions, just copy it
         result.expression_ast = definition_ast->clone();
 
+    checkExpressionDoesntContainSubqueries(*result.expression_ast);
+
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
@@ -270,14 +271,11 @@ TTLDescription TTLDescription::getTTLFromAST(
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
-            NameSet used_primary_key_columns_set;
 
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
-
-                used_primary_key_columns_set.insert(pk_columns[i]);
             }
 
             std::vector<std::pair<String, ASTPtr>> aggregations;
@@ -303,31 +301,6 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 
-            const auto & primary_key_expressions = primary_key.expression_list_ast->children;
-
-            /// Wrap with 'any' aggregate function primary key columns,
-            /// which are not in 'GROUP BY' key and was not set explicitly.
-            /// The separate step, because not all primary key columns are ordinary columns.
-            for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
-            {
-                if (!aggregation_columns_set.contains(pk_columns[i]))
-                {
-                    ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
-                    aggregations.emplace_back(pk_columns[i], std::move(expr));
-                    aggregation_columns_set.insert(pk_columns[i]);
-                }
-            }
-
-            /// Wrap with 'any' aggregate function other columns, which was not set explicitly.
-            for (const auto & column : columns.getOrdinary())
-            {
-                if (!aggregation_columns_set.contains(column.name) && !used_primary_key_columns_set.contains(column.name))
-                {
-                    ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
-                    aggregations.emplace_back(column.name, std::move(expr));
-                }
-            }
-
             for (auto [name, value] : aggregations)
             {
                 auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
@@ -346,9 +319,15 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
+            /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
+            /// a table created on an earlier version must still load even if its recompression codec would now be
+            /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. `is_attach` here is
+            /// also set for a create with `allow_suspicious_ttl_expressions`, matching `checkTTLExpression` below.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    ttl_element->recompression_codec, {},
+                    !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                    is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
         }
     }
 

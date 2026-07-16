@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-msan
+# Tags: no-sanitizers, long
 # It's not clear why distributed aggregation is much slower with sanitizers (https://github.com/ClickHouse/ClickHouse/issues/60625)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -14,7 +14,7 @@ function were_parallel_replicas_used () {
             initial_query_id,
             concat('Used parallel replicas: ', (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String) as used
         FROM system.query_log
-    WHERE event_date >= yesterday()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
       AND initial_query_id LIKE '$1%'
       AND query_id = initial_query_id
       AND type = 'QueryFinish'
@@ -66,6 +66,7 @@ function run_query_with_pure_parallel_replicas () {
         --max_parallel_replicas 3 \
         --parallel_replicas_prefer_local_join 0 \
         --cluster_for_parallel_replicas "parallel_replicas" \
+        --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
         --parallel_replicas_only_with_analyzer 0 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \

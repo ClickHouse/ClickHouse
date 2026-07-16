@@ -1,3 +1,12 @@
 [libfuzzer]
+timeout = 60
 dict = all.dict
-jobs = 8
+rss_limit_mb = 8192
+max_len = 65536
+
+[fuzzer_arguments]
+max_query_size = 65536
+max_parser_backtracks = 7000
+max_parser_depth = 50
+max_ast_depth = 200
+max_ast_elements = 10000

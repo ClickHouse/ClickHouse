@@ -3,6 +3,8 @@ CREATE TABLE t1(ID UInt64, name String) engine=MergeTree order by ID;
 
 insert into t1(ID, name) values (1, 'abc'), (2, 'bbb');
 
+set ignore_format_null_for_explain = 0;
+
 -- The returned node order is uncertain
 explain pipeline graph=1 select count(ID) from t1 FORMAT Null;
 explain pipeline graph=1 select sum(1) from t1 FORMAT Null;

@@ -1,0 +1,10 @@
+x	x	1
+y	z	0
+x	x	0
+y	z	1
+false	false	1
+true	false	0
+true	true	1
+false	false	0
+true	false	1
+true	true	0

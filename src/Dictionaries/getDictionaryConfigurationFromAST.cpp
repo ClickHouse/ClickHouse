@@ -1,6 +1,5 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
@@ -8,10 +7,13 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
+#include <Core/Field.h>
+#include <Core/UUID.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -44,7 +46,7 @@ struct AttributeConfiguration
     std::string expression;
 };
 
-using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
+using AttributeNameToConfiguration = UnorderedMapWithMemoryTracking<std::string, AttributeConfiguration>;
 
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
@@ -99,6 +101,93 @@ void buildLifetimeConfiguration(
     lifetime_element->appendChild(min_element);
     lifetime_element->appendChild(max_element);
     root->appendChild(lifetime_element);
+}
+
+/// Element names for the entries of a layout parameter given as a key-value collection literal.
+/// Every layout parameter that accepts a collection literal declares its names here, so the generated
+/// configuration has the same shape a user writes in an XML dictionary definition; the layout's create
+/// function reads the same names back from the configuration.
+struct KeyValueCollectionElementNames
+{
+    String entry;
+    String key;
+    String value;
+};
+
+/// Returns nullptr when the layout parameter does not support a collection value.
+const KeyValueCollectionElementNames * tryGetKeyValueCollectionElementNames(const String & layout_type, const String & parameter_name)
+{
+    static const KeyValueCollectionElementNames naive_bayes_priors{"prior", "class", "probability"};
+
+    if (layout_type == "naive_bayes" && parameter_name == "priors")
+        return &naive_bayes_priors;
+
+    return nullptr;
+}
+
+/* Transforms a layout parameter whose value is a key-value collection literal
+ *  PRIORS [(0, 0.6), (1, 0.4)]
+ * to the next configuration
+ *  <priors>
+ *    <prior>
+ *      <class>0</class>
+ *      <probability>0.6</probability>
+ *    </prior>
+ *    <prior>
+ *      <class>1</class>
+ *      <probability>0.4</probability>
+ *    </prior>
+ *  </priors>
+ * so the layout reads it as structured configuration instead of parsing a string.
+ */
+void buildLayoutParameterKeyValueCollection(
+    AutoPtr<Document> doc,
+    AutoPtr<Element> parameter_element,
+    const String & parameter_name,
+    const KeyValueCollectionElementNames & element_names,
+    const Field & collection)
+{
+    const auto & entries = collection.safeGet<Array>();
+
+    for (const auto & entry : entries)
+    {
+        if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter '{}' must be a collection of (key, value) pairs, got element '{}' instead",
+                parameter_name,
+                fieldToString(entry));
+        }
+
+        const auto & key_and_value = entry.safeGet<Tuple>();
+
+        AutoPtr<Element> entry_element(doc->createElement(element_names.entry));
+        parameter_element->appendChild(entry_element);
+
+        auto append_scalar_child = [&](const String & element_name, const Field & field)
+        {
+            const auto field_type = field.getType();
+            if (field_type != Field::Types::UInt64 && field_type != Field::Types::Int64 && field_type != Field::Types::Float64
+                && field_type != Field::Types::String)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' entry element '{}' must be a number or a string, got '{}' instead",
+                    parameter_name,
+                    element_name,
+                    field.getTypeName());
+            }
+
+            AutoPtr<Element> field_element(doc->createElement(element_name));
+            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToString(field)));
+            field_element->appendChild(field_text);
+            entry_element->appendChild(field_element);
+        };
+
+        append_scalar_child(element_names.key, key_and_value[0]);
+        append_scalar_child(element_names.value, key_and_value[1]);
+    }
 }
 
 /* Transforms next definition
@@ -166,13 +255,34 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const auto value_field = value_literal->value;
+        const Field & value_field = value_literal->value;
+
+        /// A collection-valued parameter (an array of (key, value) tuples) becomes structured child
+        /// elements instead of a text node.
+        if (value_field.getType() == Field::Types::Array)
+        {
+            const auto * element_names = tryGetKeyValueCollectionElementNames(layout->layout_type, pair->first);
+            if (!element_names)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' of layout '{}' does not accept a collection value",
+                    pair->first,
+                    layout->layout_type);
+            }
+
+            AutoPtr<Element> collection_parameter_element(doc->createElement(pair->first));
+            layout_type_element->appendChild(collection_parameter_element);
+            buildLayoutParameterKeyValueCollection(doc, collection_parameter_element, pair->first, *element_names, value_field);
+            continue;
+        }
 
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
+                "Dictionary layout parameter value must be an UInt64, Float64, String, or a collection of (key, value) pairs, "
+                "got '{}' instead",
                 value_field.getTypeName());
         }
 
@@ -188,7 +298,7 @@ void buildLayoutConfiguration(
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -233,7 +343,7 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
             "MIN {} attribute is not defined in the dictionary attributes", range->min_attr_name);
 
-    auto range_max_attribute_it = all_attrs.find(range->min_attr_name);
+    auto range_max_attribute_it = all_attrs.find(range->max_attr_name);
     if (range_max_attribute_it == all_attrs.end())
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
             "MAX {} attribute is not defined in the dictionary attributes", range->max_attr_name);
@@ -381,7 +491,7 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto * it = std::find_if(
+        const auto it = std::find_if(
             children.begin(),
             children.end(),
             [&](const ASTPtr & node)
@@ -492,6 +602,17 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
+            /// The grammar admits an array literal for any key-value parameter, but a dictionary
+            /// source parameter has no structured representation for it, so reject a collection
+            /// instead of silently stringifying it.
+            if (literal->value.getType() == Field::Types::Array)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary source parameter '{}' does not accept a collection value",
+                    pair->first);
+            }
+
             AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
             current_xml_element->appendChild(value);
         }
@@ -513,6 +634,11 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                     "Please update the dictionary definition to remove function usage");
             }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
+            if (!builder)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported function {}", func->name);
+            }
             auto function = builder->build({});
             function->prepare({});
 
@@ -605,13 +731,13 @@ void checkAST(const ASTCreateQuery & query)
 void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names & key_attrs)
 {
     for (const auto & key_attr : key_attrs)
-        if (all_attrs.find(key_attr) == all_attrs.end())
+        if (!all_attrs.contains(key_attr))
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
 }
 
 }
 
-void checkLifetime(const ASTCreateQuery & query)
+static void checkLifetime(const ASTCreateQuery & query)
 {
     if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
     {
@@ -712,7 +838,7 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
 
     String host = config->getString("dictionary.source.clickhouse.host", "localhost");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    UInt16 port = static_cast<UInt16>(config->getUInt("dictionary.source.clickhouse.port", default_port));
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 

@@ -6,6 +6,7 @@ keywords: ['LineAsString']
 output_format: true
 slug: /interfaces/formats/LineAsString
 title: 'LineAsString'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

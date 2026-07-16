@@ -2,6 +2,9 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <IO/ReadPipeline.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -68,7 +71,7 @@ namespace
             if ((config_key == "key") || config_key.starts_with("key["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = toString(config.getString(key_path));
+                key.plain = config.getString(key_path);
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -76,7 +79,7 @@ namespace
             else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = unhexKey(toString(config.getString(key_path)));
+                key.plain = unhexKey(config.getString(key_path));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -151,12 +154,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = toString(config.getString(key_path));
+            String current_key = config.getString(key_path);
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(toString(config.getString(key_hex_path)));
+            String current_key = unhexKey(config.getString(key_hex_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -350,6 +353,14 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
+ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    auto reservation = delegate->reserve(bytes, constraints);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
+}
+
 
 void DiskEncrypted::copyDirectoryContent(
     const String & from_dir,
@@ -383,30 +394,71 @@ void DiskEncrypted::copyDirectoryContent(
     IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
+void DiskEncrypted::copyFile(
+    const String & from_file_path,
+    IDisk & to_disk,
+    const String & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    /// Check if we can copy the file without deciphering.
+    if (isSameDiskType(*this, to_disk))
+    {
+        /// Disk type is the same, check if the key is the same too.
+        if (auto * to_disk_enc = typeid_cast<DiskEncrypted *>(&to_disk))
+        {
+            auto from_settings = current_settings.get();
+            auto to_settings = to_disk_enc->current_settings.get();
+            if (from_settings->all_keys == to_settings->all_keys)
+            {
+                /// Keys are the same so we can simply copy the encrypted file.
+                auto wrapped_from_path = wrappedPath(from_file_path);
+                auto to_delegate = to_disk_enc->delegate;
+                auto wrapped_to_path = to_disk_enc->wrappedPath(to_file_path);
+                delegate->copyFile(wrapped_from_path, *to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook);
+                return;
+            }
+        }
+    }
+
+    /// Copy the file through buffers with deciphering.
+    IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+}
+
+
+void DiskEncrypted::prepareRead(
     const String & path,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    ReadPipeline & pipeline) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
-    if (buffer->eof())
-    {
-        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
-        /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
-    }
+    delegate->prepareRead(wrapped_path, settings, read_hint, pipeline);
+
     auto encryption_settings = current_settings.get();
-    FileEncryption::Header header = readHeader(*buffer);
-    String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
-    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
+    pipeline.needDecryption(
+        path,
+        settings.local_fs_settings.buffer_size,
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        {
+            return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
+        });
+
+    /// Only cache encryption headers when the backend assigns a fresh blob path to every write
+    /// (`areBlobPathsRandom`): then a rewrite / replace / rename never rebinds an existing path to
+    /// different ciphertext, so the cache can never serve a stale header and needs no invalidation.
+    /// Deterministic-path backends (plain / plain-rewritable, local, web) reuse the path on rewrite
+    /// and are excluded.
+    if (delegate->areBlobPathsRandom())
+    {
+        if (auto global_context = Context::getGlobalContextInstance())
+            if (auto cache = global_context->getEncryptionHeaderCache())
+                pipeline.needEncryptionHeaderCache(std::move(cache));
+    }
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
@@ -475,6 +527,7 @@ void DiskEncrypted::applyNewSettings(
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](
@@ -490,7 +543,10 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         disk->startup(skip_access_check);
         return disk;
     };
-    factory.registerDiskType("encrypted", creator);
+    factory.registerDiskType("encrypted", creator, Documentation{
+        .description = "Wraps another disk and transparently encrypts and decrypts data using AES, so that data at rest is encrypted on the underlying disk.",
+        .syntax = "disk(type = encrypted, disk = underlying_disk, key = '...')",
+        .related = {"local"}});
 }
 
 }

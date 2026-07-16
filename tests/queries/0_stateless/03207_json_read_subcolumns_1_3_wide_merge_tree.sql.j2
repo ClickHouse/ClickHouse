@@ -1,0 +1,52 @@
+-- Tags: no-fasttest, no-azure-blob-storage, no-s3-storage
+-- Tag: no-azure-blob-storage - too slow
+-- Tag: no-s3-storage - too slow
+
+SET enable_json_type = 1;
+set allow_experimental_variant_type = 1;
+set use_variant_as_common_type = 1;
+set session_timezone = 'UTC';
+
+drop table if exists test;
+create table test (id UInt64, json JSON(max_dynamic_paths=2, a.b.c UInt32)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;
+
+insert into test select number, '{}' from numbers(5);
+insert into test select number, toJSONString(map('a.b.c', number)) from numbers(5, 5);
+insert into test select number, toJSONString(map('a.b.d', number::UInt32, 'a.b.e', 'str_' || toString(number))) from numbers(10, 5);
+insert into test select number, toJSONString(map('b.b.d', number::UInt32, 'b.b.e', 'str_' || toString(number))) from numbers(15, 5);
+insert into test select number, toJSONString(map('a.b.c', number, 'a.b.d', number::UInt32, 'a.b.e', 'str_' || toString(number))) from numbers(20, 5);
+insert into test select number, toJSONString(map('a.b.c', number, 'a.b.d', number::UInt32, 'a.b.e', 'str_' || toString(number), 'b.b._' || toString(number), number::UInt32)) from numbers(25, 5);
+insert into test select number, toJSONString(map('a.b.c', number, 'a.b.d', range(number % + 1)::Array(UInt32), 'a.b.e', 'str_' || toString(number), 'd.a', number::UInt32, 'd.c', toDate(number))) from numbers(30, 5);
+insert into test select number, toJSONString(map('a.b.c', number, 'a.b.d', toDateTime(number), 'a.b.e', 'str_' || toString(number), 'd.a', range(number % 5 + 1)::Array(UInt32), 'd.b', number::UInt32)) from numbers(35, 5);
+
+{% for merge_command in ['system stop merges test', 'system start merges test'] -%}
+
+{{ merge_command }};
+
+select json.d.a, json.d.b from test order by id format JSONColumns;
+select json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
+select json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
+select json, json.d.a, json.d.b from test order by id format JSONColumns;
+select json, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
+select json, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
+
+select json.d.a, json.b.b.`_26` from test order by id format JSONColumns;
+select json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b.`_26`.:Date from test order by id format JSONColumns;
+select json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b, json.b.b.`_26`.:Date from test order by id format JSONColumns;
+select json, json.d.a, json.b.b.`_26` from test order by id format JSONColumns;
+select json, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b.`_26`.:Date from test order by id format JSONColumns;
+select json, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b, json.b.b.`_26`.:Date from test order by id format JSONColumns;
+
+select json.^a, json.a.b.c from test order by id format JSONColumns;
+select json, json.^a, json.a.b.c from test order by id format JSONColumns;
+
+select json.^a, json.a.b.d from test order by id format JSONColumns;
+select json.^a, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
+select json.^a, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
+select json, json.^a, json.a.b.d from test order by id format JSONColumns;
+select json, json.^a, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
+select json, json.^a, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
+
+{% endfor -%}
+
+drop table test;

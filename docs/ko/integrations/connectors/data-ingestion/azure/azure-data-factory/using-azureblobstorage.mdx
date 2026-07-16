@@ -1,0 +1,170 @@
+---
+sidebarTitle: 'azureBlobStorage 테이블 함수 사용하기'
+slug: /integrations/azure-data-factory/table-function
+description: 'ClickHouse의 azureBlobStorage 테이블 함수 사용하기'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data', 'azureBlobStorage']
+title: 'ClickHouse의 azureBlobStorage 테이블 함수 사용하기'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이는 Azure Blob Storage 또는 Azure Data Lake Storage에서 ClickHouse로 데이터를
+복사하는 가장 효율적이고 간단한 방법 중 하나입니다. 이 테이블
+함수를 사용하면 ClickHouse가 Azure 스토리지에 직접 연결해
+필요할 때 데이터를 읽을 수 있습니다.
+
+이 함수는 소스에서 직접 데이터를 조회하고, 삽입하고,
+필터링할 수 있는 테이블 형태의 인터페이스를 제공합니다. 이 함수는 매우 최적화되어 있으며
+`CSV`, `JSON`, `Parquet`, `Arrow`,
+`TSV`, `ORC`, `Avro` 등을 포함한 널리 사용되는 다양한 파일 포맷을 지원합니다. 전체 목록은 [&quot;데이터 포맷&quot;](/ko/reference/formats/index)을 참조하십시오.
+
+이 섹션에서는 Azure Blob Storage에서 ClickHouse로 데이터를 전송하는
+간단한 시작 가이드와 함께, 이 함수를 효과적으로 사용하기 위한
+중요한 고려 사항을 설명합니다. 자세한 내용과 고급 옵션은
+공식 문서를 참조하십시오:
+[`azureBlobStorage` 테이블 함수 문서 페이지](/ko/reference/functions/table-functions/azureBlobStorage)
+
+<div id="acquiring-azure-blob-storage-access-keys">
+  ## Azure Blob Storage 액세스 키 획득
+</div>
+
+ClickHouse가 Azure Blob Storage에 액세스할 수 있도록 하려면 액세스 키가 포함된 연결 문자열이 필요합니다.
+
+1. Azure Portal에서 **스토리지 계정**으로 이동합니다.
+
+2. 왼쪽 메뉴에서 **Security +
+   networking** 섹션 아래의 **Access keys**를 선택합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Azure 데이터 저장소 설정" border />
+
+3. **key1** 또는 **key2** 중 하나를 선택한 다음,
+   **연결 문자열** 필드 옆의 **Show** 버튼을 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Azure 데이터 저장소 액세스 키" border />
+
+4. 연결 문자열을 복사합니다. 이 값은 azureBlobStorage 테이블 함수의 매개변수로 사용합니다.
+
+<div id="querying-the-data-from-azure-blob-storage">
+  ## Azure Blob Storage의 데이터 쿼리하기
+</div>
+
+사용하는 ClickHouse 쿼리 콘솔을 여십시오 — ClickHouse Cloud
+웹 인터페이스, ClickHouse CLI 클라이언트 또는 쿼리를 실행할 때 사용하는
+다른 도구를 사용할 수 있습니다. 연결 문자열과 ClickHouse 쿼리
+콘솔이 모두 준비되면 Azure Blob Storage의 데이터를 직접 쿼리할 수 있습니다.
+
+다음 예시에서는 data-container라는 이름의 컨테이너에 있는
+JSON 파일에 저장된 모든 데이터를 쿼리합니다:
+
+```sql
+SELECT * FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>',
+    'data-container',
+    '*.json',
+    'JSONEachRow');
+```
+
+해당 데이터를 로컬 ClickHouse 테이블(예: my&#95;table)에 복사하려면
+`INSERT INTO ... SELECT` 문을 사용할 수 있습니다:
+
+```sql
+INSERT INTO my_table
+SELECT * FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>',
+    'data-container',
+    '*.json',
+    'JSONEachRow');
+```
+
+이를 통해 별도의 ETL 단계 없이도 외부 데이터를 ClickHouse로
+효율적으로 가져올 수 있습니다.
+
+<div id="simple-example-using-the-environmental-sensors-dataset">
+  ## Environmental Sensors 데이터셋을 사용하는 간단한 예시
+</div>
+
+예시로 Environmental Sensors
+데이터셋에서 파일 하나를 다운로드하겠습니다.
+
+1. [샘플 파일](https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/sensors/monthly/2019-06_bmp180.csv.zst)을 다운로드합니다
+   ([Environmental Sensors Dataset](/ko/get-started/sample-datasets/environmental-sensors)에서 제공).
+
+2. Azure Portal에서 새 스토리지 계정을 만드십시오. 이미 스토리지 계정이 있다면 이 단계는 건너뛰어도 됩니다.
+
+<Warning>
+  스토리지 계정에서 **Allow storage account key access**가 활성화되어
+  있는지 확인하십시오. 그렇지 않으면 계정 키를 사용해
+  데이터에 액세스할 수 없습니다.
+</Warning>
+
+3. 스토리지 계정에 새 컨테이너를 만드십시오. 이 예시에서는 이름을 sensors로 지정합니다.
+   기존 컨테이너를 사용 중이라면 이 단계는 건너뛸 수 있습니다.
+
+4. 앞에서 다운로드한 `2019-06_bmp180.csv.zst` 파일을
+   컨테이너에 업로드합니다.
+
+5. 앞서 설명한 단계에 따라 Azure Blob Storage
+   연결 문자열(connection string)을 가져오십시오.
+
+이제 모든 설정이 완료되었으므로 Azure Blob Storage에서 직접 데이터를 쿼리할 수 있습니다:
+
+```sql
+    SELECT *
+    FROM azureBlobStorage(
+        '<YOUR CONNECTION STRING>', 
+        'sensors',
+        '2019-06_bmp180.csv.zst', 
+        'CSVWithNames')
+    LIMIT 10
+    SETTINGS format_csv_delimiter = ';'
+```
+
+7. 데이터를 테이블에 로드하려면 원본 데이터셋에 사용된
+   스키마를 단순화한 버전을 생성합니다:
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+<Info>
+  Azure Blob Storage와 같은 외부 소스를 쿼리할 때 사용할 수 있는 구성 옵션과 스키마 추론에 대한
+  자세한 내용은 [입력 데이터에서 자동 스키마
+  추론](/ko/concepts/features/interfaces/schema-inference)을 참조하십시오.
+</Info>
+
+8. 이제 Azure Blob Storage의 데이터를 sensors 테이블에 삽입합니다:
+   ```sql
+   INSERT INTO sensors
+   SELECT sensor_id, lat, lon, timestamp, temperature
+   FROM azureBlobStorage(
+       '<YOUR CONNECTION STRING>', 
+       'sensors',
+       '2019-06_bmp180.csv.zst', 
+       'CSVWithNames')
+   SETTINGS format_csv_delimiter = ';'
+   ```
+
+이제 sensors 테이블이 Azure Blob Storage에 저장된 `2019-06_bmp180.csv.zst`
+파일의 데이터로 채워집니다.
+
+<div id="additional-resources">
+  ## 추가 자료
+</div>
+
+이 문서는 azureBlobStorage 함수를 사용하는 방법을 간단히 소개합니다. 더
+고급 옵션과 구성 세부 정보는 공식
+문서를 참조하십시오:
+
+* [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)
+* [입력 및 출력 데이터 포맷](/ko/reference/formats/index)
+* [입력 데이터에서 자동 스키마 추론](/ko/concepts/features/interfaces/schema-inference)

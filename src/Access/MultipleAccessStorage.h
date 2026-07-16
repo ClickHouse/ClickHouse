@@ -27,6 +27,9 @@ public:
     bool isReadOnly() const override;
     bool isReadOnly(const UUID & id) const override;
 
+    bool isEphemeral() const override;
+    bool isEphemeral(const UUID & id) const override;
+
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
     void reload(ReloadMode reload_mode) override;

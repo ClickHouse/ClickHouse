@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS t_shared SYNC;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_shared (id UInt64, c1 UInt64, c2 String)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_shared/', '1')

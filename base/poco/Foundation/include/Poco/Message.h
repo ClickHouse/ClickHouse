@@ -54,7 +54,8 @@ public:
         PRIO_INFORMATION, /// An informational message, usually denoting the successful completion of an operation.
         PRIO_DEBUG, /// A debugging message.
         PRIO_TRACE, /// A tracing message. This is the lowest priority useful for production.
-        PRIO_TEST /// A message for test environment.
+        PRIO_TEST, /// A message for test environment.
+        PRIO_END
     };
 
     Message();
@@ -94,6 +95,9 @@ public:
 
     Message(const Message & msg);
     /// Creates a Message by copying another one.
+
+    Message(Message && msg) = default;
+    /// Creates a Message by moving another one.
 
     Message(const Message & msg, const std::string & text);
     /// Creates a Message by copying all but the text from another message.

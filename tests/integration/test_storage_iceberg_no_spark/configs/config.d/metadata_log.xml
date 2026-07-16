@@ -1,0 +1,7 @@
+<clickhouse>
+  <iceberg_metadata_log>
+    <database>system</database>
+    <table>iceberg_metadata_log</table>
+    <flush_interval_milliseconds>10</flush_interval_milliseconds>
+  </iceberg_metadata_log>
+</clickhouse>

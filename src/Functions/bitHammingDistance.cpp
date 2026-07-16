@@ -27,7 +27,7 @@ struct BitHammingDistanceImpl
         if constexpr (sizeof(A) <= sizeof(UInt64) && sizeof(B) <= sizeof(UInt64))
         {
             UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
-            return std::popcount(res);
+            return static_cast<ResultType>(std::popcount(res));
         }
         else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         {
@@ -57,7 +57,7 @@ REGISTER_FUNCTION(BitHammingDistance)
 {
     FunctionDocumentation::Description description = R"(
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two numbers.
-Can be used with [`SimHash`](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings.
+Can be used with [`SimHash`](../../sql-reference/functions/hash-functions.md#ngramSimHash) functions for detection of semi-duplicate strings.
 The smaller the distance, the more similar the strings are.
 )";
     FunctionDocumentation::Syntax syntax = "bitHammingDistance(x, y)";
@@ -75,7 +75,7 @@ The smaller the distance, the more similar the strings are.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitHammingDistance>(documentation);
 }

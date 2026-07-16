@@ -31,11 +31,11 @@ function test
 {
     QUERY_ID=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}" -q "SELECT * FROM test SETTINGS load_marks_asynchronously=$1 FORMAT Null"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
-    result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['BackgroundLoadingMarksTasks'] FROM system.query_log WHERE query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
+    result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['BackgroundLoadingMarksTasks'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
     if [[ $result -ne 0 ]]; then
         echo 'Ok'
     else

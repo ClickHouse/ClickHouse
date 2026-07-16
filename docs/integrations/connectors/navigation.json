@@ -1,0 +1,232 @@
+{
+  "groups": [
+    {
+      "group": "Data sources",
+      "pages": [
+        {
+          "expanded": false,
+          "group": "AWS S3",
+          "pages": [
+            "integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse",
+            "integrations/connectors/data-ingestion/AWS/performance",
+            "integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket"
+          ]
+        },
+        "integrations/connectors/data-sources/postgres",
+        {
+          "expanded": false,
+          "group": "Kafka",
+          "pages": [
+            "integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink",
+            "integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud",
+            "integrations/connectors/data-ingestion/kafka/confluent/custom-connector",
+            "integrations/connectors/data-ingestion/kafka/msk/index",
+            "integrations/connectors/data-ingestion/kafka/kafka-vector",
+            "integrations/connectors/data-ingestion/kafka/kafka-table-engine",
+            "integrations/connectors/data-ingestion/kafka/confluent/index",
+            "integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http",
+            "integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc",
+            "integrations/connectors/data-ingestion/kafka/kafka-table-engine-named-collections"
+          ],
+          "root": "integrations/connectors/data-ingestion/kafka/index"
+        },
+        "integrations/connectors/data-sources/mysql",
+        "integrations/connectors/data-sources/cassandra",
+        "integrations/connectors/data-sources/gcs",
+        "integrations/connectors/data-ingestion/s3-minio",
+        "integrations/connectors/data-ingestion/emqx/index",
+        "integrations/connectors/data-ingestion/insert-local-files",
+        "integrations/connectors/data-ingestion/jdbc-with-clickhouse",
+        "integrations/connectors/data-ingestion/odbc-with-clickhouse"
+      ],
+      "root": "integrations/connectors/data-sources/index"
+    },
+    {
+      "expanded": true,
+      "group": "Data visualization",
+      "pages": [
+        {
+          "expanded": false,
+          "group": "Grafana",
+          "pages": [
+            "integrations/connectors/data-visualization/grafana/query-builder",
+            "integrations/connectors/data-visualization/grafana/config"
+          ],
+          "root": "integrations/connectors/data-visualization/grafana/index"
+        },
+        "integrations/connectors/data-visualization/lightdash-and-clickhouse",
+        "integrations/connectors/data-visualization/looker-and-clickhouse",
+        "integrations/connectors/data-visualization/looker-studio-and-clickhouse",
+        "integrations/connectors/data-visualization/metabase-and-clickhouse",
+        "integrations/connectors/data-visualization/omni-and-clickhouse",
+        "integrations/connectors/data-visualization/powerbi-and-clickhouse",
+        "integrations/connectors/data-visualization/quicksight-and-clickhouse",
+        "integrations/connectors/data-visualization/superset-and-clickhouse",
+        "integrations/connectors/data-visualization/splunk-and-clickhouse",
+        {
+          "expanded": false,
+          "group": "Tableau",
+          "pages": [
+            "integrations/connectors/data-visualization/tableau/tableau-and-clickhouse",
+            "integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse",
+            "integrations/connectors/data-visualization/tableau/tableau-connection-tips",
+            "integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Community integrations",
+          "pages": [
+            "integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/deepnote",
+            "integrations/connectors/data-visualization/community-integrations/dot-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/draxlr-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/embeddable-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/querio-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse"
+          ]
+        }
+      ],
+      "root": "integrations/connectors/data-visualization/index"
+    },
+    {
+      "expanded": true,
+      "group": "Data ingestion",
+      "pages": [
+        "integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+        "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+        "integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
+        {
+          "expanded": false,
+          "group": "Apache Spark",
+          "pages": [
+            "integrations/connectors/data-ingestion/apache-spark/spark-native-connector",
+            "integrations/connectors/data-ingestion/apache-spark/databricks",
+            "integrations/connectors/data-ingestion/apache-spark/spark-jdbc"
+          ],
+          "root": "integrations/connectors/data-ingestion/apache-spark/index"
+        },
+        "integrations/connectors/data-ingestion/apache-flink",
+        "integrations/connectors/data-ingestion/AWS/glue",
+        {
+          "expanded": false,
+          "group": "Azure Data Factory",
+          "pages": [
+            "integrations/connectors/data-ingestion/azure/azure-data-factory/overview",
+            "integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage",
+            "integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface"
+          ],
+          "root": "integrations/connectors/data-ingestion/azure/azure-data-factory/index"
+        },
+        "integrations/connectors/data-ingestion/azure/azure-synapse",
+        "integrations/connectors/data-ingestion/etl-tools/apache-beam",
+        {
+          "expanded": false,
+          "group": "Google Dataflow",
+          "pages": [
+            "integrations/connectors/data-ingestion/GCP/google-dataflow/dataflow",
+            "integrations/connectors/data-ingestion/GCP/google-dataflow/java-runner",
+            "integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
+            {
+              "expanded": false,
+              "group": "Dataflow templates",
+              "pages": [
+                "integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
+                "integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
+              ]
+            }
+          ]
+        },
+        "integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
+        {
+          "expanded": false,
+          "group": "dbt",
+          "pages": [
+            "integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
+            "integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
+            "integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
+            "integrations/connectors/data-ingestion/etl-tools/dbt/guides"
+          ],
+          "root": "integrations/connectors/data-ingestion/etl-tools/dbt/index"
+        },
+        "integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
+        {
+          "group": "Fivetran",
+          "pages": [
+            "integrations/connectors/data-ingestion/etl-tools/fivetran/reference",
+            "integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting"
+          ],
+          "root": "integrations/connectors/data-ingestion/etl-tools/fivetran/index"
+        },
+        "integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse",
+        "integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse",
+        {
+          "expanded": false,
+          "group": "Streamkap",
+          "pages": [
+            "integrations/connectors/data-ingestion/streamkap/streamkap-and-clickhouse",
+            "integrations/connectors/data-ingestion/streamkap/sql-server-clickhouse"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Community integrations",
+          "pages": [
+            "integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
+            "integrations/connectors/data-ingestion/community-integrations/estuary"
+          ]
+        }
+      ],
+      "root": "integrations/connectors/data-ingestion/index"
+    },
+    {
+      "expanded": true,
+      "group": "Data integrations",
+      "pages": [
+        "integrations/connectors/data-integrations/integrations/retool",
+        "integrations/connectors/data-integrations/integrations/easypanel",
+        "integrations/connectors/data-integrations/integrations/middleware",
+        "integrations/connectors/data-integrations/integrations/notion",
+        "integrations/connectors/data-integrations/integrations/splunk"
+      ],
+      "root": "integrations/connectors/tools/data-integration-index"
+    },
+    {
+      "expanded": true,
+      "group": "SQL-clients",
+      "pages": [
+        "integrations/connectors/sql-clients/sql-console",
+        "integrations/connectors/sql-clients/datagrip",
+        "integrations/connectors/sql-clients/dbeaver",
+        "integrations/connectors/sql-clients/dbvisualizer",
+        "integrations/connectors/sql-clients/jupysql",
+        "integrations/connectors/sql-clients/qstudio",
+        "integrations/connectors/sql-clients/tablum",
+        "integrations/connectors/sql-clients/marimo",
+        "integrations/connectors/sql-clients/cli"
+      ],
+      "root": "integrations/connectors/sql-clients/index"
+    },
+    {
+      "expanded": true,
+      "group": "Tools",
+      "pages": [
+        "integrations/connectors/tools/gui",
+        "integrations/connectors/tools/proxy",
+        "integrations/connectors/tools/third-party-libraries"
+      ],
+      "root": "integrations/connectors/tools/index"
+    }
+  ],
+  "icon": "/images/icons/icon-connectors.svg",
+  "item": "Connectors"
+}

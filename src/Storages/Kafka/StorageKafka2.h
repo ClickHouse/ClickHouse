@@ -11,7 +11,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <atomic>
@@ -30,9 +29,14 @@ class Configuration;
 namespace DB
 {
 
+namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
+
 struct KafkaSettings;
+class Kafka2Source;
+class ReadFromStorageKafka2;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
+class ThreadStatus;
 
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -56,6 +60,8 @@ class StorageKafka2 final : public IStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
+    friend class Kafka2Source;
+    friend class ReadFromStorageKafka2;
 
 public:
     using KeeperHandlingConsumerPtr = std::shared_ptr<KeeperHandlingConsumer>;
@@ -78,6 +84,8 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
+    bool isMessageQueue() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
@@ -85,7 +93,8 @@ public:
 
     void drop() override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -104,10 +113,20 @@ public:
 
     StreamingHandleErrorMode getHandleKafkaErrorMode() const;
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+
+    /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>
+    ensureOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate)
+    {
+        std::lock_guard lock(oauth_context_mutex);
+        if (!oauth_context)
+            oauth_context = std::move(candidate);
+        return oauth_context;
+    }
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
 
@@ -150,6 +169,8 @@ private:
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
+    mutable std::mutex oauth_context_mutex;
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context TSA_GUARDED_BY(oauth_context_mutex);
 
     std::mutex consumers_mutex;
     std::condition_variable cv;
@@ -163,6 +184,14 @@ private:
     /// If named_collection is specified.
     String collection_name;
     std::atomic<bool> shutdown_called = false;
+    /// Number of background streaming threads currently consuming for materialized views.
+    /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
+    /// Uses a counter instead of a boolean because with thread_per_consumer=1,
+    /// multiple threads may stream simultaneously and each must be tracked independently.
+    std::atomic<size_t> active_mv_streamers{0};
+    /// Number of consumers used by direct SELECTs. Prevents MV streaming from starting
+    /// while direct reads are in progress, avoiding concurrent consumer access.
+    std::atomic<size_t> active_direct_readers{0};
 
     // Handling replica activation.
     std::atomic<bool> is_active = false;
@@ -189,6 +218,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t
     {
@@ -214,7 +244,7 @@ private:
     void dropReplica();
 
     std::optional<BlocksAndGuard>
-    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context);
+    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context, size_t poll_max_block_size = 0);
 
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;

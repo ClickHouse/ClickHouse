@@ -83,7 +83,7 @@ public:
         if (used_bits > 32)
             return 0; // hilbert code will be overflowed in this case
 
-        auto [current_shift, state] = getInitialShiftAndState(used_bits);
+        auto [current_shift, state] = getInitialShiftAndState(static_cast<UInt8>(used_bits));
         while (current_shift >= 0)
         {
             const UInt8 x_bits = (x >> current_shift) & STEP_MASK;
@@ -103,7 +103,7 @@ private:
     // State is rotation of curve on every step, left/up/right/down - therefore 2 bits
     static UInt64 getCodeAndUpdateState(UInt8 x_bits, UInt8 y_bits, UInt8& state)
     {
-        const UInt8 table_index = state | (x_bits << bit_step) | y_bits;
+        const auto table_index = static_cast<UInt8>(state | (x_bits << bit_step) | y_bits);
         const auto table_code = HilbertDetails::HilbertEncodeLookupTable<bit_step>::LOOKUP_TABLE[table_index];
         state = table_code & STATE_MASK;
         return table_code & HILBERT_MASK;
@@ -112,7 +112,7 @@ private:
     // hilbert code is double size of input values
     static constexpr UInt8 getHilbertShift(UInt8 shift)
     {
-        return shift << 1;
+        return static_cast<UInt8>(shift << 1);
     }
 
     static std::pair<Int8, UInt8> getInitialShiftAndState(UInt8 used_bits)

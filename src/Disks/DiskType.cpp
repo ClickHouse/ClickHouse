@@ -2,8 +2,6 @@
 #include <Poco/String.h>
 #include <Common/Exception.h>
 
-#include <unordered_set>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -23,6 +21,8 @@ MetadataStorageType metadataTypeFromString(const String & type)
         return MetadataStorageType::PlainRewritable;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
+    if (check_type == "web_index")
+        return MetadataStorageType::WebIndex;
     if (check_type == "keeper")
         return MetadataStorageType::Keeper;
     if (check_type == "memory")
@@ -51,7 +51,7 @@ bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
         == std::tie(other.type, other.object_storage_type, other_description);
 }
 
-std::string DataSourceDescription::toString() const
+String DataSourceDescription::name() const
 {
     switch (type)
     {
@@ -81,4 +81,11 @@ std::string DataSourceDescription::toString() const
         }
     }
 }
+
+String DataSourceDescription::toString() const
+{
+    return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
+                       name(), description, is_encrypted, is_cached, zookeeper_name);
+}
+
 }

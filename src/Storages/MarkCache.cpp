@@ -17,7 +17,8 @@ MarkCache::MarkCache(const String & cache_policy,
 UInt128 MarkCache::hash(const String& path_to_file)
 {
     SipHash hash;
-    hash.update(path_to_file.data(), path_to_file.size() + 1);
+    hash.update(path_to_file.size());
+    hash.update(path_to_file.data(), path_to_file.size());
     return hash.get128();
 }
 

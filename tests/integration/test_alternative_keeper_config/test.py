@@ -69,4 +69,4 @@ def test_create_insert(started_cluster):
     for node in [node1, node2, node3]:
         expected = [[1, "str1"], [2, "str2"]]
         assert node.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-        assert node.query("CHECK TABLE tbl") == "1\n"
+        assert node.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"

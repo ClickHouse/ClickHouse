@@ -1,2 +1,0 @@
-# See https://bugs.llvm.org/show_bug.cgi?id=47418
-# leak:getActualTableStructure

@@ -13,7 +13,7 @@ namespace MySQLParser
 
 ASTPtr ASTDeclareConstraint::clone() const
 {
-    auto res = std::make_shared<ASTDeclareConstraint>(*this);
+    auto res = make_intrusive<ASTDeclareConstraint>(*this);
     res->children.clear();
 
     if (check_expression)
@@ -58,7 +58,7 @@ bool ParserDeclareConstraint::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
         ParserKeyword(Keyword::ENFORCED).ignore(pos, expected);
     }
 
-    auto declare_constraint = std::make_shared<ASTDeclareConstraint>();
+    auto declare_constraint = make_intrusive<ASTDeclareConstraint>();
     declare_constraint->enforced = enforced;
     declare_constraint->check_expression = index_check_expression;
 

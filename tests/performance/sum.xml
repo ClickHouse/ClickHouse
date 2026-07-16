@@ -31,7 +31,7 @@
                 FROM numbers_mt(200000000)
                 SETTINGS max_threads = 8
     </fill_query>
-    <query short="1">SELECT sum(x) FROM nullfloat32</query>
-    <query short="1">SELECT sum(x::Nullable(Float64)) FROM nullfloat32</query>
+    <query>SELECT sum(x) FROM nullfloat32</query>
+    <query>SELECT sum(x::Nullable(Float64)) FROM nullfloat32</query>
     <drop_query>DROP TABLE IF EXISTS nullfloat32</drop_query>
 </test>

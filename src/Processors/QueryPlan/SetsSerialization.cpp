@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NativeWriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
@@ -112,7 +113,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                         num_rows, columns[col]->size());
 
                 encodeDataType(types[col], out);
-                auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = types[col]->getDefaultSerialization();
                 NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
             }
         }
@@ -138,9 +139,10 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     DeserializedSetsRegistry & registry,
     ReadBuffer & in,
     const SerializationFlags & flags,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    size_t max_type_complexity)
 {
-    UInt64 num_sets;
+    UInt64 num_sets = 0;
     readVarUInt(num_sets, in);
 
     QueryPlanAndSets res;
@@ -159,7 +161,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", hash.low64, hash.high64);
 
-        UInt8 kind;
+        UInt8 kind = 0;
         readVarUInt(kind, in);
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
@@ -169,20 +171,26 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))
         {
-            UInt64 num_columns;
-            UInt64 num_rows;
+            UInt64 num_columns = 0;
+            UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
 
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);
 
+            /// The set data comes from the same plan stream, so it carries the plan's resolved type-complexity
+            /// limit (the effective setting for client packets, 0 for trusted server-to-server plans). Pass it
+            /// on both the column type and the column data (a Dynamic column decodes further types via NativeReader).
+            FormatSettings format_settings;
+            format_settings.binary.max_binary_type_complexity = max_type_complexity;
+
             for (size_t col = 0; col < num_columns; ++col)
             {
-                auto type = decodeDataType(in);
-                auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
+                auto type = decodeDataType(in, max_type_complexity);
+                auto serialization = type->getDefaultSerialization();
                 ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, {}, num_rows, 0);
+                NativeReader::readData(*serialization, column, in, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -191,7 +199,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
-            auto plan_for_set = QueryPlan::deserialize(in, context, flags);
+            auto plan_for_set = QueryPlan::deserialize(in, context, flags, max_type_complexity);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},

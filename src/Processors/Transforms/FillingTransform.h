@@ -16,7 +16,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
  *  It fills gaps in data stream by rows with missing values in columns with set WITH FILL and default values in other columns.
  *  Optionally FROM, TO and STEP values can be specified.
  */
-class FillingTransform : public ISimpleTransform
+class FillingTransform final : public ISimpleTransform
 {
 public:
     FillingTransform(
@@ -102,7 +102,7 @@ private:
     const bool use_with_fill_by_sorting_prefix;
 };
 
-class FillingNoopTransform : public ISimpleTransform
+class FillingNoopTransform final : public ISimpleTransform
 {
 public:
     FillingNoopTransform(SharedHeader header, const SortDescription & sort_description_)

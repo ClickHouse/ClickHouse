@@ -5,6 +5,7 @@
 #include <base/find_symbols.h>
 #include <base/hex.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -31,10 +32,13 @@ namespace
             ColumnString::Offsets & res_offsets,
             size_t input_rows_count)
         {
-            /// The size of result is always not more than the size of source.
-            /// Because entities decodes to the shorter byte sequence.
-            /// Example: &#xx... &#xx... will decode to UTF-8 byte sequence not longer than 4 bytes.
-            res_data.resize(data.size());
+            /// Most entities decode to a byte sequence not longer than the entity itself, but a few
+            /// expand: `&nGt;` and `&nLt;` are 5 bytes and decode to a 6-byte UTF-8 sequence
+            /// (U+226B/U+226A followed by the combining U+20D2). That is the largest expansion among
+            /// all entities, so the worst case is 6/5 of the input. Size the buffer accordingly (plus
+            /// a small constant for the up-to-15-byte overwrite of memcpySmallAllowReadWriteOverflow15
+            /// at the end of the buffer) to avoid a heap buffer overflow.
+            res_data.resize(data.size() + data.size() / 5 + 64);
 
             res_offsets.resize(input_rows_count);
 
@@ -71,7 +75,7 @@ namespace
             char * dst_pos = dst;
 
             // to hold char seq for lookup, reuse it
-            std::vector<char> seq;
+            VectorWithMemoryTracking<char> seq;
             while (true)
             {
                 const char * entity_pos = find_first_symbols<'&'>(src_pos, src_end);
@@ -220,6 +224,29 @@ namespace
 
 REGISTER_FUNCTION(DecodeHTMLComponent)
 {
-    factory.registerFunction<FunctionDecodeHTMLComponent>();
+    FunctionDocumentation::Description description = R"(
+Decodes HTML entities in a string to their corresponding characters.
+)";
+    FunctionDocumentation::Syntax syntax = "decodeHTMLComponent(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String containing HTML entities to decode.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the string with HTML entities decoded.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT decodeHTMLComponent('&lt;div&gt;Hello &amp; &quot;World&quot;&lt;/div&gt;')",
+        R"(
+┌─decodeHTMLComponent('&lt;div&gt;Hello &amp; &quot;World&quot;&lt;/div&gt;')─┐
+│ <div>Hello & "World"</div>                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDecodeHTMLComponent>(documentation);
 }
 }

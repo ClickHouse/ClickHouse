@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-fasttest
+-- Tags: no-ordinary-database, no-fasttest, use-rocksdb
 
 DROP TABLE IF EXISTS 02416_rocksdb;
 

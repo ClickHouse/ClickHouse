@@ -97,6 +97,24 @@ void FormattingChannel::log(const Message& msg)
 	}
 }
 
+void FormattingChannel::log(Message && msg)
+{
+    if (_pChannel)
+    {
+        if (_pFormatter)
+        {
+            std::string text;
+            _pFormatter->format(msg, text);
+            msg.setText(text);
+            _pChannel->log(std::move(msg));
+        }
+        else
+        {
+            _pChannel->log(std::move(msg));
+        }
+    }
+}
+
 
 void FormattingChannel::setProperty(const std::string& name, const std::string& value)
 {

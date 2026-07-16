@@ -95,15 +95,25 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 }
 
 
+void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings)
+        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings, FormatFilterInfoPtr /*format_filter_info*/)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
     factory.markOutputFormatNotTTYFriendly("ODBCDriver2");
     factory.setContentType("ODBCDriver2", "application/octet-stream");
+
+    factory.setDocumentation("ODBCDriver2", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

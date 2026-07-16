@@ -1,0 +1,44 @@
+----    do_not_merge: 0    ----    automatic_decision: 0    ----
+ReplacingSorted 6 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 6 0 → 1
+----    do_not_merge: 0    ----    automatic_decision: 1    ----
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+----    do_not_merge: 1    ----    automatic_decision: 0    ----
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+----    do_not_merge: 1    ----    automatic_decision: 1    ----
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+----    do_not_merge: 0    ----    automatic_decision: 0    ----
+ReplacingSorted 6 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 6 0 → 1
+----    do_not_merge: 0    ----    automatic_decision: 1    ----
+ReplacingSorted 6 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 6 0 → 1
+----    do_not_merge: 1    ----    automatic_decision: 0    ----
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+----    do_not_merge: 1    ----    automatic_decision: 1    ----
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+ReplacingSorted 2 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1

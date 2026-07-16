@@ -1,0 +1,359 @@
+-- Basic arrayMap tests --
+-- { echoOn }
+
+-- Simple arrayMap identity
+SELECT 1 IN arrayMap(x -> x, [1]);
+1
+SELECT 1 IN arrayMap(x -> x, [2]);
+0
+SELECT 1 IN arrayMap(x -> x, [1, 2, 3]);
+1
+-- arrayMap with transformation
+SELECT 2 IN arrayMap(x -> x + 1, [1, 2, 3]);
+1
+SELECT 5 IN arrayMap(x -> x * 2, [1, 2, 3]);
+0
+-- arrayMap with column reference
+SELECT number, number IN arrayMap(x -> x, [0, 2, 4]) FROM numbers(5);
+0	1
+1	0
+2	1
+3	0
+4	1
+SELECT number, number IN arrayMap(x -> x + number, [0, 1, 2]) FROM numbers(3);
+0	1
+1	1
+2	1
+SELECT '-- arrayFilter tests --';
+-- arrayFilter tests --
+SELECT 2 IN arrayFilter(x -> x > 1, [1, 2, 3]);
+1
+SELECT 1 IN arrayFilter(x -> x > 1, [1, 2, 3]);
+0
+SELECT number, number IN arrayFilter(x -> x % 2 = 0, [0, 1, 2, 3, 4]) FROM numbers(5);
+0	1
+1	0
+2	1
+3	0
+4	1
+SELECT '-- arrayConcat tests --';
+-- arrayConcat tests --
+SELECT 3 IN arrayConcat([1, 2], [3, 4]);
+1
+SELECT 5 IN arrayConcat([1, 2], [3, 4]);
+0
+SELECT number, number IN arrayConcat([0, 1], [number, number + 1]) FROM numbers(3);
+0	1
+1	1
+2	1
+SELECT '-- Other array functions --';
+-- Other array functions --
+-- arrayReverse
+SELECT 1 IN arrayReverse([3, 2, 1]);
+1
+SELECT 4 IN arrayReverse([3, 2, 1]);
+0
+-- arrayDistinct
+SELECT 1 IN arrayDistinct([1, 1, 2, 2, 3]);
+1
+SELECT 4 IN arrayDistinct([1, 1, 2, 2, 3]);
+0
+-- arraySlice
+SELECT 2 IN arraySlice([1, 2, 3, 4], 2, 2);
+1
+SELECT 1 IN arraySlice([1, 2, 3, 4], 2, 2);
+0
+-- arrayShuffle (deterministic seed)
+SELECT 1 IN arrayShuffle([1, 2, 3], 42);
+1
+-- range function
+SELECT 5 IN range(10);
+1
+SELECT 15 IN range(10);
+0
+SELECT number, number IN range(5) FROM numbers(7);
+0	1
+1	1
+2	1
+3	1
+4	1
+5	0
+6	0
+SELECT '-- Nested array functions --';
+-- Nested array functions --
+SELECT 4 IN arrayMap(x -> x * 2, arrayFilter(y -> y > 0, [0, 1, 2, 3]));
+1
+SELECT 1 IN arrayMap(x -> x * 2, arrayFilter(y -> y > 0, [0, 1, 2, 3]));
+0
+SELECT number, number IN arrayMap(x -> x + 1, arrayFilter(y -> y < number, [0, 1, 2, 3, 4])) FROM numbers(5);
+0	0
+1	1
+2	1
+3	1
+4	1
+SELECT '-- NULL handling with transform_null_in = 0 --';
+-- NULL handling with transform_null_in = 0 --
+SET transform_null_in = 0;
+-- NULL in arrayMap result
+SELECT NULL IN arrayMap(x -> x, [1, 2, 3]);
+\N
+SELECT NULL IN arrayMap(x -> x, [1, NULL, 3]);
+\N
+SELECT 1 IN arrayMap(x -> x, [1, NULL, 3]);
+1
+-- Nullable element search
+SELECT toNullable(1) IN arrayMap(x -> x, [1, 2, 3]);
+1
+SELECT toNullable(1) IN arrayMap(x -> toNullable(x), [1, 2, 3]);
+1
+-- NULL in array with column
+SELECT number, NULL IN arrayMap(x -> x, [number, number + 1]) FROM numbers(2);
+0	\N
+1	\N
+SELECT number, toNullable(number) IN arrayMap(x -> x, [0, 1, 2]) FROM numbers(3);
+0	1
+1	1
+2	1
+SELECT '-- NULL handling with transform_null_in = 1 --';
+-- NULL handling with transform_null_in = 1 --
+SET transform_null_in = 1;
+SELECT NULL IN arrayMap(x -> x, [1, 2, 3]);
+0
+SELECT NULL IN arrayMap(x -> x, [1, NULL, 3]);
+1
+SELECT 1 IN arrayMap(x -> x, [1, NULL, 3]);
+1
+SELECT toNullable(1) IN arrayMap(x -> x, [1, 2, 3]);
+1
+SELECT toNullable(1) IN arrayMap(x -> toNullable(x), [1, 2, 3]);
+1
+SELECT number, NULL IN arrayMap(x -> x, [number, number + 1]) FROM numbers(2);
+0	0
+1	0
+SELECT '-- Type coercion tests --';
+-- Type coercion tests --
+SET transform_null_in = 0;
+-- Int vs UInt
+SELECT 1::Int32 IN arrayMap(x -> x, [1::UInt64, 2::UInt64]);
+1
+SELECT -1::Int32 IN arrayMap(x -> x, [1::UInt64, 2::UInt64]);
+0
+-- Float vs Int
+SELECT 1.0 IN arrayMap(x -> x, [1, 2, 3]);
+1
+SELECT 1.5 IN arrayMap(x -> x, [1, 2, 3]);
+0
+-- String
+SELECT 'a' IN arrayMap(x -> x, ['a', 'b', 'c']);
+1
+SELECT 'd' IN arrayMap(x -> x, ['a', 'b', 'c']);
+0
+-- Mixed types in arrayConcat
+SELECT 1 IN arrayConcat([1::Int32], [2::Int64]);
+1
+SELECT '-- Edge cases --';
+-- Edge cases --
+-- Empty array
+SELECT 1 IN arrayMap(x -> x, []);
+0
+SELECT 1 IN arrayFilter(x -> x > 100, [1, 2, 3]);
+0
+-- Single element
+SELECT 1 IN arrayMap(x -> x, [1]);
+1
+SELECT 2 IN arrayMap(x -> x, [1]);
+0
+-- Large array
+SELECT 500 IN range(1000);
+1
+SELECT 1500 IN range(1000);
+0
+-- Array with duplicates
+SELECT 1 IN arrayMap(x -> 1, [1, 2, 3]);
+1
+SELECT '-- Complex expressions --';
+-- Complex expressions --
+-- Expression on left side
+SELECT (1 + 1) IN arrayMap(x -> x, [2, 3, 4]);
+1
+SELECT number * 2, (number * 2) IN arrayMap(x -> x, [0, 2, 4, 6]) FROM numbers(5);
+0	1
+2	1
+4	1
+6	1
+8	0
+-- Subquery in arrayMap
+SELECT 1 IN arrayMap(x -> x, (SELECT [1, 2, 3]));
+1
+-- Multiple IN with arrayMap in same query
+SELECT 
+    1 IN arrayMap(x -> x, [1, 2]),
+    2 IN arrayMap(x -> x, [1, 2]),
+    3 IN arrayMap(x -> x, [1, 2]);
+1	1	0
+SELECT '-- Comparison with has() --';
+-- Comparison with has() --
+-- These should produce identical results
+SELECT number, 
+    number IN arrayMap(x -> x, [0, 2, 4]),
+    has(arrayMap(x -> x, [0, 2, 4]), number)
+FROM numbers(5);
+0	1	1
+1	0	0
+2	1	1
+3	0	0
+4	1	1
+SELECT number,
+    number IN arrayFilter(x -> x % 2 = 0, range(10)),
+    has(arrayFilter(x -> x % 2 = 0, range(10)), number)
+FROM numbers(5);
+0	1	1
+1	0	0
+2	1	1
+3	0	0
+4	1	1
+SELECT '-- NOT IN tests --';
+-- NOT IN tests --
+SELECT 1 NOT IN arrayMap(x -> x, [2, 3, 4]);
+1
+SELECT 1 NOT IN arrayMap(x -> x, [1, 2, 3]);
+0
+SELECT number, number NOT IN arrayMap(x -> x, [0, 2, 4]) FROM numbers(5);
+0	0
+1	1
+2	0
+3	1
+4	0
+-- NOT IN with various array functions
+SELECT 5 NOT IN arrayFilter(x -> x < 5, range(10));
+1
+SELECT 3 NOT IN arrayFilter(x -> x < 5, range(10));
+0
+SELECT 1 NOT IN arrayConcat([2, 3], [4, 5]);
+1
+SELECT 2 NOT IN arrayConcat([2, 3], [4, 5]);
+0
+SELECT 1 NOT IN arrayReverse([2, 3, 4]);
+1
+SELECT 2 NOT IN arrayReverse([2, 3, 4]);
+0
+SELECT 1 NOT IN range(5);
+0
+SELECT 10 NOT IN range(5);
+1
+-- NOT IN with NULL handling (transform_null_in = 0)
+SELECT NULL NOT IN arrayMap(x -> x, [1, 2, 3]) SETTINGS transform_null_in = 0;
+\N
+SELECT NULL NOT IN arrayMap(x -> x, [1, NULL, 3]) SETTINGS transform_null_in = 0;
+\N
+SELECT 1 NOT IN arrayMap(x -> x, [1, NULL, 3]) SETTINGS transform_null_in = 0;
+0
+SELECT toNullable(1) NOT IN arrayMap(x -> x, [2, 3, 4]) SETTINGS transform_null_in = 0;
+1
+SELECT toNullable(1) NOT IN arrayMap(x -> x, [1, 2, 3]) SETTINGS transform_null_in = 0;
+0
+-- NOT IN with transform_null_in = 1 is not yet fully supported for array-returning functions
+-- SELECT 1 NOT IN arrayMap(x -> x, [1, NULL, 3]) SETTINGS transform_null_in = 1;
+-- SELECT toNullable(1) NOT IN arrayMap(x -> x, [2, 3, 4]) SETTINGS transform_null_in = 1;
+-- SELECT toNullable(1) NOT IN arrayMap(x -> x, [1, 2, 3]) SETTINGS transform_null_in = 1;
+
+-- NOT IN with column references
+SELECT number, number NOT IN arrayMap(x -> x + 1, [0, 1, 2]) FROM numbers(5);
+0	1
+1	0
+2	0
+3	0
+4	1
+SELECT number, number NOT IN arrayFilter(x -> x % 2 = 0, range(10)) FROM numbers(5);
+0	0
+1	1
+2	0
+3	1
+4	0
+-- NOT IN with nested array functions
+SELECT 5 NOT IN arrayMap(x -> x * 2, arrayFilter(y -> y > 0, [0, 1, 2, 3]));
+1
+SELECT 4 NOT IN arrayMap(x -> x * 2, arrayFilter(y -> y > 0, [0, 1, 2, 3]));
+0
+-- NOT IN consistency with has()
+SELECT number,
+    number NOT IN arrayMap(x -> x, [0, 2, 4]),
+    NOT has(arrayMap(x -> x, [0, 2, 4]), number)
+FROM numbers(5);
+0	0	0
+1	1	1
+2	0	0
+3	1	1
+4	0	0
+SELECT '-- GLOBAL IN tests --';
+-- GLOBAL IN tests --
+SELECT 1 GLOBAL IN arrayMap(x -> x, [1, 2, 3]);
+1
+-- GLOBAL NOT IN with array-returning functions not yet supported with transform_null_in=1
+-- SELECT 1 GLOBAL NOT IN arrayMap(x -> x, [2, 3, 4]);
+
+SELECT '-- Tuple element IN array-returning function --';
+-- Tuple element IN array-returning function --
+SELECT (1, 2).1 IN arrayMap(x -> x, [1, 2, 3]);
+1
+SELECT (1, 2).2 IN arrayMap(x -> x, [1, 3, 5]);
+0
+SELECT '-- arrayMap with lambda capturing outer scope --';
+-- arrayMap with lambda capturing outer scope --
+SELECT number, number IN arrayMap(x -> x + number, [0, 1, 2]) FROM numbers(3);
+0	1
+1	1
+2	1
+SELECT number, (number + 1) IN arrayMap(x -> x * number, [1, 2, 3]) FROM numbers(4);
+0	0
+1	1
+2	0
+3	0
+SELECT '-- Consistency check: array literal vs arrayMap identity --';
+-- Consistency check: array literal vs arrayMap identity --
+-- These pairs should produce identical results
+SELECT number, number IN [0, 2, 4], number IN arrayMap(x -> x, [0, 2, 4]) FROM numbers(5);
+0	1	1
+1	0	0
+2	1	1
+3	0	0
+4	1	1
+SELECT number, number IN (0, 2, 4), number IN arrayMap(x -> x, [0, 2, 4]) FROM numbers(5);
+0	1	1
+1	0	0
+2	1	1
+3	0	0
+4	1	1
+SELECT '-- arrayFlatten --';
+-- arrayFlatten --
+SELECT 2 IN arrayFlatten([[1], [2, 3], [4]]);
+1
+SELECT 5 IN arrayFlatten([[1], [2, 3], [4]]);
+0
+SELECT '-- arraySort / arrayReverseSort --';
+-- arraySort / arrayReverseSort --
+SELECT 2 IN arraySort([3, 1, 2]);
+1
+SELECT 2 IN arrayReverseSort([3, 1, 2]);
+1
+SELECT '-- arrayUniq result (returns scalar, should fail or work differently) --';
+-- arrayUniq result (returns scalar, should fail or work differently) --
+SELECT 3 IN [arrayUniq([1, 2, 3])]; -- arrayUniq returns UInt64, wrap in array
+1
+SELECT '-- arrayZip --';
+-- arrayZip --
+SELECT (1, 'a') IN arrayZip([1, 2], ['a', 'b']);
+1
+SELECT (1, 'b') IN arrayZip([1, 2], ['a', 'b']);
+0
+SELECT '-- arrayMap with if() --';
+-- arrayMap with if() --
+SELECT number, number IN arrayMap(x -> if(x > 1, x, 0), [0, 1, 2, 3]) FROM numbers(4);
+0	1
+1	0
+2	1
+3	1
+SELECT '-- Error cases --';
+-- Error cases --
+-- Type mismatch: tuple IN array of scalars
+SELECT (1, 2) IN arrayMap(x -> x, [1, 2, 3]); -- { serverError NO_COMMON_TYPE }

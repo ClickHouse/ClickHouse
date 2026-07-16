@@ -1,0 +1,226 @@
+name: BackfillDistroless
+
+"on":
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'Space-separated list of versions to build (e.g. "25.3.3.42 25.8.2.100 25.10.1.7525")'
+        required: true
+        type: string
+      dry-run:
+        description: 'Build but do not push to Docker Hub'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: backfill-distroless
+
+env:
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  BackfillDistroless:
+    runs-on: [self-hosted, release-maker]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push distroless images
+        shell: bash
+        env:
+          INPUT_VERSIONS: ${{ inputs.versions }}
+          INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -e
+
+          PUSH_FLAG=""
+          OUTPUT_FLAG="--output=type=docker"
+          if [ "$INPUT_DRY_RUN" != "true" ]; then
+            PUSH_FLAG="--push"
+            OUTPUT_FLAG="--output=type=registry"
+          fi
+
+          GITHUB_RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHA=$(git rev-parse HEAD)
+
+          # Validate every input version before doing anything. We want to
+          # bail loudly on the first bad version rather than rebuild some
+          # of the multi-version input and then fail halfway through.
+          for VERSION in $INPUT_VERSIONS; do
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Invalid version format: ${VERSION}"
+              exit 1
+            fi
+          done
+
+          # Read the currently-published com.clickhouse.build.version label
+          # from a floating tag. Echoes the X.Y.Z.N version, or empty if the
+          # tag does not exist yet. Returns non-zero on any other failure so
+          # the caller can bail rather than silently overwrite.
+          read_published_version() {
+            local image="$1"
+            local tag="$2"
+            local manifest_raw
+            local err
+
+            manifest_raw=$(docker buildx imagetools inspect "${image}:${tag}" --format '{{json .}}' 2>/dev/null) || {
+              err=$(docker buildx imagetools inspect "${image}:${tag}" 2>&1 1>/dev/null || true)
+              if echo "$err" | grep -qiE "not found|manifest unknown|no such manifest|does not exist"; then
+                return 0
+              fi
+              echo "ERROR: failed to inspect ${image}:${tag}: ${err}" >&2
+              return 1
+            }
+
+            # Read the canonical com.clickhouse.build.version label, falling
+            # back to the misspelled com.clickhoghuse.build.version that some
+            # historical floating-tag pushes used. Once this run overwrites
+            # those tags with correctly-keyed labels the fallback will go
+            # unused, but we need to accept it now to bootstrap past the
+            # transition.
+            local label
+            label=$(echo "$manifest_raw" | jq -r '
+              (.image // {}) as $img |
+              (if ($img | has("config")) then $img.config.Labels
+               else ($img | to_entries[0]?.value.config.Labels) end) as $lbl |
+              ($lbl["com.clickhouse.build.version"] //
+               $lbl["com.clickhoghuse.build.version"] // "")' 2>/dev/null | grep -v '^$' | head -1)
+
+            if [ -z "$label" ]; then
+              echo "ERROR: ${image}:${tag} has no com.clickhouse.build.version label (also tried com.clickhoghuse.build.version fallback)" >&2
+              return 1
+            fi
+
+            local version="${label%-distroless}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: ${image}:${tag} label '${label}' is not X.Y.Z.N-distroless" >&2
+              return 1
+            fi
+            echo "$version"
+          }
+
+          # Returns 0 if $1 >= $2 (semver-ish via sort -V), 1 otherwise.
+          version_ge() {
+            [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]
+          }
+
+          # Sort versions descending so that within any X.Y or X.Y.Z group
+          # the HIGHEST patch is processed first. We use that ordering to
+          # decide which version "owns" the floating refs: only the first
+          # version seen for a given X.Y / X.Y.Z gets to update those
+          # floating tags. Without this, an input like
+          # `versions="26.4.4.10 26.4.3.37"` would publish the floating
+          # `:26.4-distroless` ref pointing at the older 26.4.3.37 image
+          # because the lower version is processed last.
+          SORTED_VERSIONS=$(printf '%s\n' $INPUT_VERSIONS | sort -rV)
+
+          SEEN_MINOR=""
+          SEEN_MAJOR=""
+          SEEN_LATEST=""
+
+          for VERSION in $SORTED_VERSIONS; do
+            echo "============================================"
+            echo "Building distroless images for ${VERSION}"
+            echo "============================================"
+
+            VERSION_MINOR=${VERSION%.*}
+            VERSION_MAJOR=${VERSION_MINOR%.*}
+
+            # Decide which floating tags THIS version is allowed to write.
+            # First time we see a given X.Y.Z or X.Y in this run, we let
+            # this build update that floating ref. Subsequent (lower)
+            # versions in the same group skip it. The :latest-distroless
+            # ref is only ever a candidate for the very first (highest)
+            # version in the run; the cross-run version_ge check below
+            # then refuses to actually overwrite :latest if a newer
+            # version is already published there.
+            FLOATING_TAGS=""
+            case " $SEEN_MINOR " in
+              *" $VERSION_MINOR "*)
+                echo "skipping :${VERSION_MINOR}-distroless — already updated by a higher patch in this run" ;;
+              *)
+                FLOATING_TAGS="$FLOATING_TAGS:${VERSION_MINOR}"
+                SEEN_MINOR="$SEEN_MINOR $VERSION_MINOR" ;;
+            esac
+            case " $SEEN_MAJOR " in
+              *" $VERSION_MAJOR "*)
+                echo "skipping :${VERSION_MAJOR}-distroless — already updated by a higher patch in this run" ;;
+              *)
+                FLOATING_TAGS="$FLOATING_TAGS:${VERSION_MAJOR}"
+                SEEN_MAJOR="$SEEN_MAJOR $VERSION_MAJOR" ;;
+            esac
+            if [ -z "$SEEN_LATEST" ]; then
+              FLOATING_TAGS="$FLOATING_TAGS:latest"
+              SEEN_LATEST=1
+            else
+              echo "skipping :latest-distroless — already considered for a higher patch in this run"
+            fi
+
+            for image_config in \
+              "clickhouse/clickhouse-server:docker/server/Dockerfile.distroless:docker/server" \
+              "clickhouse/clickhouse-keeper:docker/keeper/Dockerfile.distroless:docker/keeper"
+            do
+              IMAGE_NAME=${image_config%%:*}
+              rest=${image_config#*:}
+              DOCKERFILE=${rest%%:*}
+              CONTEXT=${rest#*:}
+
+              # Build the --tag args. Full-version tag always written;
+              # floating tags only for versions that won the descending-
+              # sort race above AND are >= whatever is currently published
+              # at the floating ref. The cross-run check guards against a
+              # later partial backfill of an older patch silently moving
+              # the floating tag backwards. Anyone tracking :X.Y-distroless
+              # would otherwise see a downgrade with no warning.
+              TAG_ARGS="--tag=${IMAGE_NAME}:${VERSION}-distroless"
+              EFFECTIVE_FLOATS=""
+              IFS=':' read -ra _floats <<<"${FLOATING_TAGS}"
+              for _f in "${_floats[@]}"; do
+                if [ -z "$_f" ]; then
+                  continue
+                fi
+                if ! PUBLISHED=$(read_published_version "${IMAGE_NAME}" "${_f}-distroless"); then
+                  echo "ERROR: cannot read currently-published version for ${IMAGE_NAME}:${_f}-distroless — refusing to overwrite floating tag" >&2
+                  exit 1
+                fi
+                if [ -z "$PUBLISHED" ]; then
+                  echo "  ${IMAGE_NAME}:${_f}-distroless does not exist yet, will publish ${VERSION}"
+                  TAG_ARGS="${TAG_ARGS} --tag=${IMAGE_NAME}:${_f}-distroless"
+                  EFFECTIVE_FLOATS="${EFFECTIVE_FLOATS}:${_f}"
+                elif version_ge "${VERSION}" "${PUBLISHED}"; then
+                  echo "  ${IMAGE_NAME}:${_f}-distroless currently at ${PUBLISHED}, will overwrite with ${VERSION}"
+                  TAG_ARGS="${TAG_ARGS} --tag=${IMAGE_NAME}:${_f}-distroless"
+                  EFFECTIVE_FLOATS="${EFFECTIVE_FLOATS}:${_f}"
+                else
+                  echo "  skipping ${IMAGE_NAME}:${_f}-distroless — published ${PUBLISHED} is newer than candidate ${VERSION}"
+                fi
+              done
+
+              echo "--- ${IMAGE_NAME}:${VERSION}-distroless${EFFECTIVE_FLOATS:+ (also${EFFECTIVE_FLOATS//:/ +})} ---"
+
+              docker buildx build \
+                --platform=linux/amd64,linux/arm64 \
+                --provenance=true \
+                --sbom=true \
+                --target=production \
+                ${PUSH_FLAG:-$OUTPUT_FLAG} \
+                --label="build-url=${GITHUB_RUN_URL}" \
+                --label="com.clickhouse.build.githash=${SHA}" \
+                --label="com.clickhouse.build.version=${VERSION}-distroless" \
+                ${TAG_ARGS} \
+                --build-arg=VERSION="${VERSION}" \
+                --progress=plain \
+                --file="${DOCKERFILE}" \
+                "${CONTEXT}"
+
+              echo "Done: ${IMAGE_NAME}:${VERSION}-distroless"
+            done
+          done
+
+          echo "All versions built successfully."

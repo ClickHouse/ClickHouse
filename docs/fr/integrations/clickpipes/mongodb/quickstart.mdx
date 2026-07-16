@@ -1,0 +1,392 @@
+---
+title: 'Utilisation de JSON dans ClickHouse'
+sidebarTitle: 'Utilisation de JSON'
+slug: /integrations/clickpipes/mongodb/quickstart
+description: 'Cas d’usage courants pour travailler avec des données JSON répliquées de MongoDB vers ClickHouse via ClickPipes'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Ce guide présente des cas d’usage courants pour travailler avec des données JSON répliquées de MongoDB vers ClickHouse via ClickPipes.
+
+Supposons que nous ayons créé une collection `t1` dans MongoDB pour suivre les commandes des clients :
+
+```javascript
+db.t1.insertOne({
+  "order_id": "ORD-001234",
+  "customer_id": 98765,
+  "status": "completed",
+  "total_amount": 299.97,
+  "order_date": new Date(),
+  "shipping": {
+    "method": "express",
+    "city": "Seattle",
+    "cost": 19.99
+  },
+  "items": [
+    {
+      "category": "electronics",
+      "price": 149.99
+    },
+    {
+      "category": "accessories",
+      "price": 24.99
+    }
+  ]
+})
+```
+
+Le connecteur CDC MongoDB réplique des documents de MongoDB dans ClickHouse à l’aide du type de données JSON natif. La table répliquée `t1` dans ClickHouse contiendra la ligne suivante :
+
+```shell
+Row 1:
+──────
+_id:                "68a4df4b9fe6c73b541703b0"
+doc:                {"_id":"68a4df4b9fe6c73b541703b0","customer_id":"98765","items":[{"category":"electronics","price":149.99},{"category":"accessories","price":24.99}],"order_date":"2025-08-19T20:32:11.705Z","order_id":"ORD-001234","shipping":{"city":"Seattle","cost":19.99,"method":"express"},"status":"completed","total_amount":299.97}
+_peerdb_synced_at:  2025-08-19 20:50:42.005000000
+_peerdb_is_deleted: 0
+_peerdb_version:    0
+```
+
+<div id="table-schema">
+  ## Schéma de la table
+</div>
+
+Les tables répliquées utilisent ce schéma standard :
+
+```shell
+┌─name───────────────┬─type──────────┐
+│ _id                │ String        │
+│ doc                │ JSON          │
+│ _peerdb_synced_at  │ DateTime64(9) │
+│ _peerdb_version    │ Int64         │
+│ _peerdb_is_deleted │ Int8          │
+└────────────────────┴───────────────┘
+```
+
+* `_id` : Clé primaire de MongoDB
+* `doc` : document MongoDB répliqué au format de type de données JSON
+* `_peerdb_synced_at` : Indique quand la ligne a été synchronisée pour la dernière fois
+* `_peerdb_version` : Suit la version de la ligne ; incrémentée lorsque la ligne est mise à jour ou supprimée
+* `_peerdb_is_deleted` : Indique si la ligne est supprimée
+
+<div id="replacingmergetree-table-engine">
+  ### Moteur de table ReplacingMergeTree
+</div>
+
+ClickPipes fait correspondre les collections MongoDB à ClickHouse à l’aide de la famille de moteurs de table `ReplacingMergeTree`. Avec ce moteur, les mises à jour sont modélisées comme des insertions avec une version plus récente (`_peerdb_version`) du document pour une clé primaire donnée (`_id`), ce qui permet de gérer efficacement les mises à jour, les remplacements et les suppressions sous forme d’insertions versionnées.
+
+`ReplacingMergeTree` supprime les doublons de manière asynchrone, en tâche de fond. Pour garantir l’absence de doublons pour une même ligne, utilisez le [modificateur `FINAL`](/fr/reference/statements/select/from#final-modifier). Par exemple :
+
+```sql
+SELECT * FROM t1 FINAL;
+```
+
+<div id="handling-deletes">
+  ### Gestion des suppressions
+</div>
+
+Les suppressions dans MongoDB sont répercutées sous forme de nouvelles lignes marquées comme supprimées à l’aide de la colonne `_peerdb_is_deleted`. En général, vous voudrez les exclure de vos requêtes à l’aide d’un filtre :
+
+```sql
+SELECT * FROM t1 FINAL WHERE _peerdb_is_deleted = 0;
+```
+
+Vous pouvez également créer une politique d’accès au niveau des lignes pour exclure automatiquement les lignes supprimées au lieu de spécifier le filtre dans chaque requête :
+
+```sql
+CREATE ROW POLICY policy_name ON t1
+FOR SELECT USING _peerdb_is_deleted = 0;
+```
+
+<div id="querying-json-data">
+  ## Interroger des données JSON
+</div>
+
+Vous pouvez interroger directement les champs JSON à l’aide de la notation pointée :
+
+```sql title="Query"
+SELECT
+    doc.order_id,
+    doc.shipping.method
+FROM t1;
+```
+
+```shell title="Result"
+┌-─doc.order_id─┬─doc.shipping.method─┐
+│ ORD-001234    │ express             │
+└───────────────┴─────────────────────┘
+```
+
+Lorsque vous interrogez des *champs d&#39;objets imbriqués* à l&#39;aide de la notation par points, veillez à ajouter l&#39;opérateur [`^`](/fr/reference/data-types/newjson#reading-json-sub-objects-as-sub-columns) :
+
+```sql title="Query"
+SELECT doc.^shipping as shipping_info FROM t1;
+```
+
+```shell title="Result"
+┌─shipping_info──────────────────────────────────────┐
+│ {"city":"Seattle","cost":19.99,"method":"express"} │
+└────────────────────────────────────────────────────┘
+```
+
+<div id="dynamic-type">
+  ### Type Dynamic
+</div>
+
+Dans ClickHouse, chaque champ d’un JSON est de type `Dynamic`. Le type Dynamic permet à ClickHouse de stocker des valeurs de n’importe quel type sans connaître ce type à l’avance. Vous pouvez le vérifier avec la fonction `toTypeName` :
+
+```sql title="Query"
+SELECT toTypeName(doc.customer_id) AS type FROM t1;
+```
+
+```shell title="Result"
+┌─type────┐
+│ Dynamic │
+└─────────┘
+```
+
+Pour examiner les types de données sous-jacents d’un champ, vous pouvez utiliser la fonction `dynamicType`. Notez qu’il est possible d’avoir différents types de données pour un même nom de champ d’une ligne à l’autre :
+
+```sql title="Query"
+SELECT dynamicType(doc.customer_id) AS type FROM t1;
+```
+
+```shell title="Result"
+┌─type──┐
+│ Int64 │
+└───────┘
+```
+
+[Fonctions régulières](/fr/reference/functions/regular-functions/regular-functions-index) s&#39;appliquent au type Dynamic comme aux colonnes ordinaires :
+
+**Exemple 1 : analyse syntaxique du type Date**
+
+```sql title="Query"
+SELECT parseDateTimeBestEffortOrNull(doc.order_date) AS order_date FROM t1;
+```
+
+```shell title="Result"
+┌─order_date──────────┐
+│ 2025-08-19 20:32:11 │
+└─────────────────────┘
+```
+
+**Exemple 2 : Logique conditionnelle**
+
+```sql title="Query"
+SELECT multiIf(
+    doc.total_amount < 100, 'less_than_100',
+    doc.total_amount < 1000, 'less_than_1000',
+    '1000+') AS spendings
+FROM t1;
+```
+
+```shell title="Result"
+┌─spendings──────┐
+│ less_than_1000 │
+└────────────────┘
+```
+
+**Exemple 3 : opérations sur le type Array**
+
+```sql title="Query"
+SELECT length(doc.items) AS item_count FROM t1;
+```
+
+```shell title="Result"
+┌─item_count─┐
+│          2 │
+└────────────┘
+```
+
+<div id="field-casting">
+  ### Conversion de type d’un champ
+</div>
+
+Les [fonctions d’agrégation](/fr/reference/functions/aggregate-functions/combinators) de ClickHouse ne fonctionnent pas directement avec le type Dynamic. Par exemple, si vous essayez d’utiliser directement la fonction `sum` sur un type Dynamic, vous obtenez l’erreur suivante :
+
+```sql
+SELECT sum(doc.shipping.cost) AS shipping_cost FROM t1;
+-- DB::Exception: Illegal type Dynamic of argument for aggregate function sum. (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+Pour utiliser des fonctions d’agrégation, convertissez le champ au type approprié avec la fonction `CAST` ou la syntaxe `::` :
+
+```sql title="Query"
+SELECT sum(doc.shipping.cost::Float32) AS shipping_cost FROM t1;
+```
+
+```shell title="Result"
+┌─shipping_cost─┐
+│         19.99 │
+└───────────────┘
+```
+
+<Note>
+  La conversion du type Dynamic vers le type de données sous-jacent (déterminé par `dynamicType`) est très performante, car ClickHouse stocke déjà la valeur en interne dans ce type sous-jacent.
+</Note>
+
+<div id="flattening-json">
+  ## Mise à plat du JSON
+</div>
+
+<div id="normal-view">
+  ### Vue standard
+</div>
+
+Vous pouvez créer des vues standard sur la table JSON afin d&#39;encapsuler la logique d&#39;aplatissement, de transtypage et de transformation, pour interroger les données comme dans une table relationnelle. Les vues standard sont légères, car elles stockent uniquement la requête elle-même, et non les données sous-jacentes. Par exemple :
+
+```sql
+CREATE VIEW v1 AS
+SELECT
+    CAST(doc._id, 'String') AS object_id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items AS items
+FROM t1 FINAL
+WHERE _peerdb_is_deleted = 0;
+```
+
+Cette vue aura le schéma suivant :
+
+```shell
+┌─name────────────┬─type───────────┐
+│ object_id       │ String         │
+│ order_id        │ String         │
+│ customer_id     │ Int64          │
+│ status          │ String         │
+│ total_amount    │ Decimal(18, 2) │
+│ order_date      │ DateTime64(3)  │
+│ shipping_info   │ JSON           │
+│ items           │ Dynamic        │
+└─────────────────┴────────────────┘
+```
+
+Vous pouvez maintenant interroger la vue, comme vous le feriez pour une table mise à plat :
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM v1
+WHERE shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
+
+<div id="refreshable-materialized-view">
+  ### Vue matérialisée actualisable
+</div>
+
+Vous pouvez créer des [vues matérialisées actualisables](/fr/concepts/features/materialized-views/refreshable-materialized-view), qui vous permettent de planifier l’exécution de requêtes afin de dédupliquer les lignes et de stocker les résultats dans une table de destination mise à plat. À chaque actualisation planifiée, la table de destination est remplacée par le résultat le plus récent de la requête.
+
+Le principal avantage de cette méthode est que la requête utilisant le mot-clé `FINAL` ne s’exécute qu’une seule fois lors de l’actualisation, ce qui évite d’avoir à utiliser `FINAL` dans les requêtes suivantes sur la table de destination.
+
+L’inconvénient est que les données de la table de destination ne sont à jour qu’à hauteur de la dernière actualisation. Pour de nombreux cas d’usage, des intervalles d’actualisation de quelques minutes à quelques heures offrent un bon équilibre entre fraîcheur des données et performances des requêtes.
+
+```sql
+CREATE TABLE flattened_t1 (
+    `_id` String,
+    `order_id` String,
+    `customer_id` Int64,
+    `status` String,
+    `total_amount` Decimal(18, 2),
+    `order_date` DateTime64(3),
+    `shipping_info` JSON,
+    `items` Dynamic
+)
+ENGINE = ReplacingMergeTree()
+PRIMARY KEY _id
+ORDER BY _id;
+
+CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 HOUR TO flattened_t1 AS
+SELECT 
+    CAST(doc._id, 'String') AS _id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items AS items
+FROM t1 FINAL
+WHERE _peerdb_is_deleted = 0;
+```
+
+Vous pouvez désormais interroger la table `flattened_t1` directement, sans le modificateur `FINAL` :
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM flattened_t1
+WHERE shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
+
+<div id="incremental-materialized-view">
+  ### Vue matérialisée incrémentielle
+</div>
+
+Si vous souhaitez accéder aux colonnes mises à plat en temps réel, vous pouvez créer des [vues matérialisées incrémentielles](/fr/concepts/features/materialized-views/incremental-materialized-view). Si votre table est fréquemment mise à jour, il n’est pas recommandé d’utiliser le modificateur `FINAL` dans votre vue matérialisée, car chaque mise à jour déclenchera une opération de fusion. À la place, vous pouvez dédupliquer les données au moment de la requête en créant une vue standard au-dessus de la vue matérialisée.
+
+```sql
+CREATE TABLE flattened_t1 (
+    `_id` String,
+    `order_id` String,
+    `customer_id` Int64,
+    `status` String,
+    `total_amount` Decimal(18, 2),
+    `order_date` DateTime64(3),
+    `shipping_info` JSON,
+    `items` Dynamic,
+    `_peerdb_version` Int64,
+    `_peerdb_synced_at` DateTime64(9),
+    `_peerdb_is_deleted` Int8
+)
+ENGINE = ReplacingMergeTree()
+PRIMARY KEY _id
+ORDER BY _id;
+
+CREATE MATERIALIZED VIEW imv TO flattened_t1 AS
+SELECT 
+    CAST(doc._id, 'String') AS _id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items,
+    _peerdb_version,
+    _peerdb_synced_at,   
+    _peerdb_is_deleted
+FROM t1;
+
+CREATE VIEW flattened_t1_final AS
+SELECT * FROM flattened_t1 FINAL WHERE _peerdb_is_deleted = 0;
+```
+
+Vous pouvez maintenant exécuter une requête sur la vue `flattened_t1_final` comme suit :
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM flattened_t1_final
+AND shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```

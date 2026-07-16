@@ -47,6 +47,9 @@ enum class AuthenticationType : uint8_t
     /// Password is encrypted in SCRAM-SHA256 hash.
     SCRAM_SHA256_PASSWORD,
 
+    /// Internal user. It's impossible to log in to this user.
+    NO_AUTHENTICATION,
+
     /// NOT an AuthenticationType. It is used indicate the element number of AuthenticationType.
     /// It should always be placed at the bottom of the element list.
     MAX,

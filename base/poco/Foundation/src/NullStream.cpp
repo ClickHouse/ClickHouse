@@ -27,7 +27,7 @@ NullStreamBuf::~NullStreamBuf()
 {
 }
 
-	
+
 int NullStreamBuf::readFromDevice()
 {
 	return -1;
@@ -53,6 +53,7 @@ NullIOS::~NullIOS()
 
 NullInputStream::NullInputStream(): std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -63,6 +64,7 @@ NullInputStream::~NullInputStream()
 
 NullOutputStream::NullOutputStream(): std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

@@ -2,6 +2,7 @@
 SET max_block_size = 65536;
 SET min_joined_block_size_rows = 65536;
 SET min_joined_block_size_bytes = 512000;
+SET enable_lazy_columns_replication = 0;
 -- Setting a big number to avoid limiting by the number of rows
 SET max_joined_block_size_rows = 100000000;
 

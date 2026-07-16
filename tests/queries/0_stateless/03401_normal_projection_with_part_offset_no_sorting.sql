@@ -17,12 +17,12 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY ()
-SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192;
+SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, merge_max_block_size = 8192;
 
 -- Insert enough rows so that future projection materialization test will trigger level 1 merge
-INSERT INTO test SELECT number * 3, rand() FROM numbers(360000);
-INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(360000);
-INSERT INTO test SELECT number * 3 + 2, rand() FROM numbers(360000);
+INSERT INTO test SELECT number * 3, rand() FROM numbers(10000);
+INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(10000);
+INSERT INTO test SELECT number * 3 + 2, rand() FROM numbers(10000);
 SELECT sum(l._part_offset = r._parent_part_offset) FROM test l JOIN mergeTreeProjection(currentDatabase(), test, p) r USING (a) SETTINGS enable_analyzer = 1;
 
 OPTIMIZE TABLE test FINAL;

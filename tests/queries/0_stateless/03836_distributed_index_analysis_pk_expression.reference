@@ -1,0 +1,19 @@
+100
+distributed_index_analysis=0
+{
+  "Type": "PrimaryKey",
+  "Condition": "(toStartOfMinute(timestamp) in [1704063900, 1704063900])",
+  "Initial Parts": 100,
+  "Selected Parts": 1,
+  "Initial Granules": 100,
+  "Selected Granules": 1
+}
+distributed_index_analysis=1
+{
+  "Type": "PrimaryKey",
+  "Condition": "(toStartOfMinute(timestamp) in [1704063900, 1704063900])",
+  "Initial Parts": 100,
+  "Selected Parts": 1,
+  "Initial Granules": 100,
+  "Selected Granules": 1
+}

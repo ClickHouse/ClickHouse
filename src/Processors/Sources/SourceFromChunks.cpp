@@ -19,7 +19,7 @@ Chunk SourceFromChunks::generate()
     if (it != chunks.end())
     {
         Chunk && chunk = std::move(*it);
-        it++;
+        ++it;
         return chunk;
     }
     return {};

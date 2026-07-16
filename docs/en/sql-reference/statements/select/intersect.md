@@ -3,9 +3,8 @@ description: 'Documentation for INTERSECT Clause'
 sidebar_label: 'INTERSECT'
 slug: /sql-reference/statements/select/intersect
 title: 'INTERSECT Clause'
+doc_type: 'reference'
 ---
-
-# INTERSECT Clause
 
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
 
@@ -29,13 +28,11 @@ The condition could be any expression based on your requirements.
 
 Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 8:
 
-```sql
+```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─number─┐
 │      3 │
 │      4 │
@@ -48,7 +45,7 @@ Result:
 
 `INTERSECT` is useful if you have two tables that share a common column (or columns). You can intersect the results of two queries, as long as the results contain the same columns. For example, suppose we have a few million rows of historical cryptocurrency data that contains trade prices and volume:
 
-```sql
+```sql title="Query"
 CREATE TABLE crypto_prices
 (
     trade_date Date,
@@ -74,7 +71,7 @@ ORDER BY trade_date DESC
 LIMIT 10;
 ```
 
-```response
+```response title="Response"
 ┌─trade_date─┬─crypto_name─┬──────volume─┬────price─┬───market_cap─┬──change_1_day─┐
 │ 2020-11-02 │ Bitcoin     │ 30771456000 │ 13550.49 │ 251119860000 │  -0.013585099 │
 │ 2020-11-01 │ Bitcoin     │ 24453857000 │ 13737.11 │ 254569760000 │ -0.0031840964 │
@@ -91,7 +88,7 @@ LIMIT 10;
 
 Now suppose we have a table named `holdings` that contains a list of cryptocurrencies that we own, along with the number of coins:
 
-```sql
+```sql title="Query"
 CREATE TABLE holdings
 (
     crypto_name String,
@@ -111,16 +108,14 @@ INSERT INTO holdings VALUES
 
 We can use `INTERSECT` to answer questions like **"Which coins do we own that have traded at a price greater than $100?"**:
 
-```sql
+```sql title="Query"
 SELECT crypto_name FROM holdings
 INTERSECT
 SELECT crypto_name FROM crypto_prices
 WHERE price > 100
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─crypto_name─┐
 │ Bitcoin     │
 │ Bitcoin     │
@@ -135,16 +130,14 @@ This means at some point in time, Bitcoin and Ethereum traded above $100, and DO
 
 Notice in the previous query we had multiple Bitcoin and Ethereum holdings that traded above $100. It might be nice to remove duplicate rows (since they only repeat what we already know). You can add `DISTINCT` to `INTERSECT` to eliminate duplicate rows from the result:
 
-```sql
+```sql title="Query"
 SELECT crypto_name FROM holdings
 INTERSECT DISTINCT
 SELECT crypto_name FROM crypto_prices
 WHERE price > 100;
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─crypto_name─┐
 │ Bitcoin     │
 │ Ethereum    │

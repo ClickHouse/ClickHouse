@@ -1,0 +1,13 @@
+Less, LHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE less(dictGetString(\'colors\', \'name\', __table1.color_id), \'red\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Less, LHS
+2	b
+4	d
+5	R

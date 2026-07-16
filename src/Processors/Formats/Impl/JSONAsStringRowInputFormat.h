@@ -4,7 +4,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 
 namespace DB
@@ -58,7 +57,7 @@ private:
     void readJSONObject(IColumn & column) override;
 };
 
-class JSONAsStringExternalSchemaReader : public IExternalSchemaReader
+class JSONAsStringExternalSchemaReader final : public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override
@@ -67,16 +66,14 @@ public:
     }
 };
 
-class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
+class JSONAsObjectExternalSchemaReader final : public IExternalSchemaReader
 {
 public:
     explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings_);
 
     NamesAndTypesList readSchema() override
     {
-        if (settings.json.allow_json_type)
-            return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
-        return {{"json", std::make_shared<DataTypeObjectDeprecated>("json", false)}};
+        return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
     }
 
 private:

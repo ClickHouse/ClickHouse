@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn_fwd.h>
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
@@ -11,8 +10,8 @@ namespace DB
 class ConstantValue
 {
 public:
-    ConstantValue(ColumnPtr column_, DataTypePtr data_type_)
-        : column(wrapToColumnConst(column_))
+    ConstantValue(ColumnConstPtr column_, DataTypePtr data_type_)
+        : column(std::move(column_))
         , data_type(std::move(data_type_))
     {}
 
@@ -21,7 +20,7 @@ public:
         , data_type(std::move(data_type_))
     {}
 
-    const ColumnPtr & getColumn() const
+    const ColumnConstPtr & getColumn() const
     {
         return column;
     }
@@ -31,21 +30,20 @@ public:
         return data_type;
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType() const
+    String getValueName(const IColumn::Options & options) const
     {
-        return column->getValueNameAndType(0);
+        return column->getValueName(0, options);
+    }
+
+    static ColumnConstPtr wrapToColumnConst(const ColumnPtr & column_)
+    {
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column_.get()))
+            return column_const->getPtr();
+        return ColumnConst::create(column_, 1);
     }
 
 private:
-
-    static ColumnPtr wrapToColumnConst(ColumnPtr column_)
-    {
-        if (!isColumnConst(*column_))
-            return ColumnConst::create(column_, 1);
-        return column_;
-    }
-
-    ColumnPtr column;
+    ColumnConstPtr column;
     DataTypePtr data_type;
 };
 

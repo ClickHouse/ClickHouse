@@ -121,6 +121,7 @@
 #define POCO_ARCH_ARM64 0x0f // same as POCO_ARCH_AARCH64
 #define POCO_ARCH_RISCV64 0x10
 #define POCO_ARCH_LOONGARCH64 0x12
+#define POCO_ARCH_E2K 0x13
 
 
 #if defined(__ALPHA) || defined(__alpha) || defined(__alpha__) || defined(_M_ALPHA)
@@ -212,6 +213,9 @@
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #elif defined(__loongarch64)
 #    define POCO_ARCH POCO_ARCH_LOONGARCH64
+#    define POCO_ARCH_LITTLE_ENDIAN 1
+#elif defined(__e2k__)
+#    define POCO_ARCH POCO_ARCH_E2K
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #endif
 

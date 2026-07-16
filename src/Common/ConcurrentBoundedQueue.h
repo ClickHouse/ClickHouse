@@ -6,7 +6,7 @@
 #include <optional>
 
 #include <base/MoveOrCopyIfThrow.h>
-
+#include <base/defines.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
@@ -103,7 +103,9 @@ public:
 
     explicit ConcurrentBoundedQueue(size_t max_fill_)
         : max_fill(max_fill_)
-    {}
+    {
+    }
+
 
     /// Returns false if queue is finished
     [[nodiscard]] bool pushFront(const T & x)

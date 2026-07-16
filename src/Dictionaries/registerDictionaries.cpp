@@ -22,6 +22,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_fac
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & source_factory);
+void registerDictionarySourceYTsaurus(DictionarySourceFactory & source_factory);
 
 class DictionaryFactory;
 void registerDictionaryRangeHashed(DictionaryFactory & factory);
@@ -34,8 +35,10 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
+void registerDictionaryNaiveBayes(DictionaryFactory & factory);
 
 
+void registerDictionaries();
 void registerDictionaries()
 {
     {
@@ -55,6 +58,7 @@ void registerDictionaries()
         registerDictionarySourceHTTP(source_factory);
         registerDictionarySourceLibrary(source_factory);
         registerDictionarySourceYAMLRegExpTree(source_factory);
+        registerDictionarySourceYTsaurus(source_factory);
     }
 
     {
@@ -68,6 +72,7 @@ void registerDictionaries()
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
+        registerDictionaryNaiveBayes(factory);
     }
 }
 

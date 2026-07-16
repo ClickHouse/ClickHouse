@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/TimezoneMixin.h>
 
 namespace DB
@@ -8,8 +9,12 @@ namespace DB
 
 class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
 {
-public:
+private:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
+
+public:
+    static UInt128 getHash(const TimezoneMixin & time_zone_);
+    static SerializationPtr create(const TimezoneMixin & time_zone_);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -28,10 +33,14 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 };
 
-class SerializationTime final : public SerializationNumber<Int32>, public TimezoneMixin
+class SerializationTime final : public SerializationNumber<Int32>
 {
+private:
+    explicit SerializationTime(const DataTypeTime & /*time_type*/);
+
 public:
-    explicit SerializationTime(const TimezoneMixin & time_zone_);
+    static UInt128 getHash(const DataTypeTime & time_type);
+    static SerializationPtr create(const DataTypeTime & time_type);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -51,4 +60,3 @@ public:
 };
 
 }
-

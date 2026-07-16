@@ -6,6 +6,7 @@ keywords: ['Null', 'format']
 output_format: true
 slug: /interfaces/formats/Null
 title: 'Null'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

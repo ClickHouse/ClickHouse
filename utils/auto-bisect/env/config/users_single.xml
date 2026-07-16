@@ -1,0 +1,39 @@
+<clickhouse>
+    <users>
+        <admin>
+            <password></password>
+            <grants>
+                <query>GRANT ALL ON *.* WITH GRANT OPTION</query>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <!-- Settings profile for user. -->
+            <profile>default</profile>
+        </admin>
+    </users>
+
+    <profiles>
+        <default>
+            <max_rows_to_read>9999999999999999</max_rows_to_read>
+            <!--            <compatibility>24.12</compatibility>-->
+            <alter_sync>2</alter_sync>
+            <mutations_sync>2</mutations_sync>
+            <distributed_ddl_output_mode>none</distributed_ddl_output_mode>
+            <async_insert>0</async_insert>
+            <!--            <apply_settings_from_server>1</apply_settings_from_server>-->
+            <enable_parallel_replicas>0</enable_parallel_replicas>
+            <max_memory_usage>0</max_memory_usage>
+        </default>
+    </profiles>
+
+    <user_directories replace="replace">
+        <!-- <users_xml>-->
+        <!-- <path>/etc/clickhouse-server/users.xml</path>-->
+        <!-- </users_xml>-->
+        <replicated>
+            <zookeeper_path>/clickhouse/mycluster/access/</zookeeper_path>
+        </replicated>
+    </user_directories>
+</clickhouse>

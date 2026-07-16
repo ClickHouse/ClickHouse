@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTExpressionList::clone() const
 {
-    auto clone = std::make_shared<ASTExpressionList>(*this);
+    auto clone = make_intrusive<ASTExpressionList>(*this);
     clone->cloneChildren();
     return clone;
 }
@@ -21,8 +21,8 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
     {
         if (i)
         {
-            if (separator)
-                ostr << separator;
+            if (char sep = getSeparator())
+                ostr << sep;
             ostr << ' ';
         }
 
@@ -53,8 +53,8 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
-        if (i && separator)
-            ostr << separator;
+        if (char sep = getSeparator(); i && sep)
+            ostr << sep;
 
         if (size > 1 || frame.expression_list_always_start_on_new_line)
             ostr << indent_str;

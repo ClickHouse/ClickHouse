@@ -1,0 +1,180 @@
+---
+slug: /whats-new/cloud-compatibility
+sidebarTitle: 'Cloud 兼容性'
+title: 'Cloud 兼容性'
+description: '本指南概述了 ClickHouse Cloud 在功能和运维方面的预期表现。'
+keywords: ['ClickHouse Cloud', '兼容性']
+doc_type: 'guide'
+---
+
+本指南概述了 ClickHouse Cloud 在功能和运维方面的预期表现。虽然 ClickHouse Cloud 基于开源发行版 ClickHouse，但在架构和实现上可能存在一些差异。作为背景资料，你可能会对这篇介绍[我们如何构建 ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year)的博文感兴趣。
+
+<div id="clickhouse-cloud-architecture">
+  ## ClickHouse Cloud 架构
+</div>
+
+ClickHouse Cloud 显著简化了运维负担，并降低了大规模运行 ClickHouse 的成本。您无需预先确定部署规模、为高可用配置复制、手动对数据进行分片、在工作负载增加时扩容服务器，或在不使用时将其缩容——这些都由我们代为处理。
+
+这些优势得益于 ClickHouse Cloud 底层的架构设计：
+
+* 计算与存储相互分离，因此可以分别沿不同维度自动扩缩容。这样一来，您无需在静态实例配置中对存储或计算资源进行过度预配。
+* 基于对象存储的分层存储与多级缓存相结合，提供了近乎无限的扩展能力和良好的性价比，因此您无需预先规划存储容量，也不必担心高昂的存储成本。
+* 默认启用高可用，且复制由系统透明管理，因此您可以专注于构建应用程序或分析数据。
+* 默认启用针对持续变化工作负载的自动扩缩容，因此您无需预先确定服务规模，也无需在工作负载增加时扩容服务器，或在活动减少时手动将服务器缩容
+* 默认启用针对间歇性工作负载的无缝休眠。我们会在一段时间无活动后自动暂停您的计算资源，并在有新查询到达时透明地重新启动，因此您无需为空闲资源付费。
+* 高级扩缩容控制允许您设置自动扩缩容上限，以进一步控制成本；也可以设置自动扩缩容下限，为有特定性能要求的应用程序预留计算资源。
+
+<div id="capabilities">
+  ## 功能
+</div>
+
+ClickHouse Cloud 提供对 ClickHouse 开源发行版中一系列精选功能的访问。下表列出了当前在 ClickHouse Cloud 中已禁用的部分功能。
+
+<div id="database-and-table-engines">
+  ### 数据库和表引擎
+</div>
+
+ClickHouse Cloud 默认是一项高可用且具备副本能力的服务，构建在 [SharedMergeTree](/zh/products/cloud/features/infrastructure/shared-merge-tree) 表引擎家族之上。当你使用标准的 MergeTree 家族引擎创建表时，Cloud 会自动替换为对应的 `Shared*` 引擎。你无需自行添加 `Shared` 或 `Replicated` 前缀。
+
+| 你指定                            | Cloud 使用                             |
+| ------------------------------ | ------------------------------------ |
+| `MergeTree` (或不指定引擎)           | `SharedMergeTree`                    |
+| `ReplacingMergeTree`           | `SharedReplacingMergeTree`           |
+| `SummingMergeTree`             | `SharedSummingMergeTree`             |
+| `AggregatingMergeTree`         | `SharedAggregatingMergeTree`         |
+| `CollapsingMergeTree`          | `SharedCollapsingMergeTree`          |
+| `VersionedCollapsingMergeTree` | `SharedVersionedCollapsingMergeTree` |
+| `GraphiteMergeTree`            | `SharedGraphiteMergeTree`            |
+
+`Replicated*` 引擎也会转换为对应的 `Shared*` 引擎。你可以在 `SHOW CREATE TABLE` 中看到这种替换：即使你的语句中指定的是普通变体，显示结果中仍会报告 `Shared*` 引擎。
+
+以下引擎也受支持，并会按原样使用：
+
+* URL
+* View
+* MaterializedView
+* GenerateRandom
+* Null
+* Buffer
+* Memory
+* Deltalake
+* Hudi
+* MySQL
+* MongoDB
+* NATS
+* RabbitMQ
+* PostgreSQL
+* S3
+* Kafka
+
+<div id="interfaces">
+  ### 接口
+</div>
+
+ClickHouse Cloud 支持 HTTPS、原生接口以及 [MySQL wire 协议](/zh/concepts/features/interfaces/mysql)。对 Postgres 等更多接口的支持即将上线。
+
+<div id="dictionaries">
+  ### 字典
+</div>
+
+字典是在 ClickHouse 中加速查找操作的常用方式。ClickHouse Cloud 目前支持基于 PostgreSQL、MySQL、远程和本地 ClickHouse 服务器、Redis、MongoDB 以及 HTTP 源的字典。
+
+<div id="federated-queries">
+  ### 联邦查询
+</div>
+
+我们支持在云环境中通过联邦 ClickHouse 查询实现跨集群通信，也支持与外部自管理 ClickHouse 集群进行通信。ClickHouse Cloud 目前支持使用以下集成引擎的联邦查询：
+
+* Deltalake
+* Hudi
+* MySQL
+* MongoDB
+* NATS
+* RabbitMQ
+* PostgreSQL
+* S3
+
+目前尚不支持通过某些外部数据库和表引擎进行联邦查询，例如 SQLite、ODBC、JDBC、Redis、HDFS 和 Hive。
+
+<div id="user-defined-functions">
+  ### 用户自定义函数
+</div>
+
+ClickHouse Cloud 中的用户自定义函数目前处于[Public Beta](/zh/reference/functions/regular-functions/udf)阶段。
+
+<div id="udf-settings-behavior">
+  #### 设置行为
+</div>
+
+<Warning>
+  **重要**
+
+  ClickHouse Cloud 中的 UDFs **不会继承用户级设置**，而是以默认系统设置执行。
+</Warning>
+
+这意味着：
+
+* 会话级设置 (通过 `SET` 语句设置) 不会传递到 UDF 的执行上下文中
+* 用户 profile 设置不会被 UDFs 继承
+* 查询级设置在 UDF 执行期间不生效
+
+<div id="experimental-features">
+  ### Experimental 功能
+</div>
+
+为确保服务部署的稳定性，ClickHouse Cloud 服务默认禁用 Experimental 功能。
+
+<div id="named-collections">
+  ### 命名集合
+</div>
+
+ClickHouse Cloud 目前暂不支持[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。
+
+<div id="operational-defaults-and-considerations">
+  ## 运行默认值与注意事项
+</div>
+
+以下是 ClickHouse Cloud 服务的默认设置。其中部分设置为固定值，以确保服务正常运行；其余设置则可以调整。
+
+<div id="operational-limits">
+  ### 运行限制
+</div>
+
+<div id="max_parts_in_total-10000">
+  #### `max_parts_in_total: 10,000`
+</div>
+
+MergeTree 表的 `max_parts_in_total` 设置默认值已从 100,000 下调至 10,000。之所以做出这一调整，是因为我们观察到，大量数据分区片段很可能会导致云环境中服务启动缓慢。大量 parts 通常表明分区键划分得过细，而这往往是无意中造成的，应当避免。此次默认值调整将有助于更早发现这类情况。
+
+<div id="max_concurrent_queries-1000">
+  #### `max_concurrent_queries: 1,000`
+</div>
+
+将此服务器级设置从默认的 `100` 提高到 `1000`，以支持更高的并发能力。
+这样一来，所提供的各层级服务可支持的并发查询数将为 `副本数量 * 1,000`。
+对于仅限单个副本的基础版服务，可支持 `1000` 个并发查询；对于 Scale 和 Enterprise，
+则可支持 `1000+` 个并发查询，具体取决于配置的副本数量。
+
+<div id="max_table_size_to_drop-1000000000000">
+  #### `max_table_size_to_drop: 1,000,000,000,000`
+</div>
+
+将此设置从 50GB 提高，以允许删除最大可达 1TB 的表/分区。
+
+<div id="system-settings">
+  ### 系统设置
+</div>
+
+ClickHouse Cloud 已针对变化较大的工作负载进行了优化，因此目前大多数系统设置都不可配置。我们预计大多数用户都无需调整系统设置；但如果您对高级系统调优有任何疑问，请联系 ClickHouse Cloud Support。
+
+<div id="advanced-security-administration">
+  ### 高级安全管理
+</div>
+
+在创建 ClickHouse 服务时，我们会创建一个默认数据库，以及具有该数据库广泛权限的 `default` 用户。该初始用户可以创建其他用户，并为其分配对此数据库的权限。除此之外，目前暂不支持通过 Kerberos、LDAP 或 SSL X.509 证书身份验证在数据库内启用以下安全功能。
+
+<div id="roadmap">
+  ## 路线图
+</div>
+
+我们正在评估 ClickHouse Cloud 中许多其他功能的用户需求。如果你有反馈，或希望申请某项特定功能，请[在此提交](https://console.clickhouse.cloud/support)。

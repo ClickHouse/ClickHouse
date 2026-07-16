@@ -137,10 +137,10 @@ size_t ASTSettingsProfileElements::getNumberOfProfiles() const
 
 ASTPtr ASTSettingsProfileElements::clone() const
 {
-    auto res = std::make_shared<ASTSettingsProfileElements>(*this);
+    auto res = make_intrusive<ASTSettingsProfileElements>(*this);
 
     for (auto & element : res->elements)
-        element = std::static_pointer_cast<ASTSettingsProfileElement>(element->clone());
+        element = boost::static_pointer_cast<ASTSettingsProfileElement>(element->clone());
 
     return res;
 }
@@ -186,16 +186,16 @@ String ASTAlterSettingsProfileElements::getID(char) const
 
 ASTPtr ASTAlterSettingsProfileElements::clone() const
 {
-    auto res = std::make_shared<ASTAlterSettingsProfileElements>(*this);
+    auto res = make_intrusive<ASTAlterSettingsProfileElements>(*this);
 
     if (add_settings)
-        res->add_settings = std::static_pointer_cast<ASTSettingsProfileElements>(add_settings->clone());
+        res->add_settings = boost::static_pointer_cast<ASTSettingsProfileElements>(add_settings->clone());
 
     if (modify_settings)
-        res->modify_settings = std::static_pointer_cast<ASTSettingsProfileElements>(modify_settings->clone());
+        res->modify_settings = boost::static_pointer_cast<ASTSettingsProfileElements>(modify_settings->clone());
 
     if (drop_settings)
-        res->drop_settings = std::static_pointer_cast<ASTSettingsProfileElements>(drop_settings->clone());
+        res->drop_settings = boost::static_pointer_cast<ASTSettingsProfileElements>(drop_settings->clone());
 
     return res;
 }
@@ -250,28 +250,28 @@ void ASTAlterSettingsProfileElements::add(ASTAlterSettingsProfileElements && oth
     if (other.add_settings)
     {
         if (!add_settings)
-            add_settings = std::make_shared<ASTSettingsProfileElements>();
+            add_settings = make_intrusive<ASTSettingsProfileElements>();
         add_settings->add(std::move(*other.add_settings));
     }
 
     if (other.add_settings)
     {
         if (!add_settings)
-            add_settings = std::make_shared<ASTSettingsProfileElements>();
+            add_settings = make_intrusive<ASTSettingsProfileElements>();
         add_settings->add(std::move(*other.add_settings));
     }
 
     if (other.modify_settings)
     {
         if (!modify_settings)
-            modify_settings = std::make_shared<ASTSettingsProfileElements>();
+            modify_settings = make_intrusive<ASTSettingsProfileElements>();
         modify_settings->add(std::move(*other.modify_settings));
     }
 
     if (other.drop_settings)
     {
         if (!drop_settings)
-            drop_settings = std::make_shared<ASTSettingsProfileElements>();
+            drop_settings = make_intrusive<ASTSettingsProfileElements>();
         drop_settings->add(std::move(*other.drop_settings));
     }
 }

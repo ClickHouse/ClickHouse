@@ -5,8 +5,8 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -17,7 +17,7 @@ struct AsyncReadCounters;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 class ReadBufferFromRemoteFSGather;
 
-class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase
+class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     using Impl = ReadBufferFromFileBase;
@@ -26,9 +26,11 @@ public:
     explicit AsynchronousBoundedReadBuffer(
         ImplPtr impl_,
         IAsynchronousReader & reader_,
-        const ReadSettings & settings_,
         size_t buffer_size_,
         size_t min_bytes_for_seek_,
+        Priority priority_,
+        size_t page_cache_block_size_,
+        bool enable_prefetches_log_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
 
@@ -50,10 +52,29 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
+    /// Used only for unit test.
+    const ImplPtr & getImpl() { return impl; }
+
+    /// NOTE: readBigAt() does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
+    /// (when supported), which is possible because readBigAt is asynchronous on its own. If a (small-object)
+    /// initial prefetch is in flight it is consumed first: the requested range is served from the prefetched
+    /// buffer when covered, otherwise the prefetch is dropped and the read falls back to impl.
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
+    /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.
+    bool supportsExternalBufferMode() const override { return false; }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    std::optional<Field> getMetadata(const String & name) const override;
+
 private:
     const ImplPtr impl;
-    const ReadSettings read_settings;
-    const size_t buffer_size;
+    const Priority base_priority;
+    const size_t page_cache_block_size;
+    const bool enable_prefetches_log;
+    size_t buffer_size;
     const size_t min_bytes_for_seek;
     const String file_name;
     IAsynchronousReader & reader;
@@ -65,7 +86,13 @@ private:
     size_t bytes_to_ignore = 0;
 
     Memory<> prefetch_buffer;
-    std::future<IAsynchronousReader::Result> prefetch_future;
+    /// mutable: a pending prefetch may be consumed from the const readBigAt().
+    mutable std::future<IAsynchronousReader::Result> prefetch_future;
+
+    /// When using userspace page cache, we directly use memory owned by the cache instead of
+    /// allocating our own buffers.
+    bool use_page_cache = false;
+    PageCacheCellPtr page_cache_cell;
 
     const std::string query_id;
     const std::string current_reader_id;
@@ -80,7 +107,7 @@ private:
         std::chrono::system_clock::time_point submit_time;
         Priority priority;
     };
-    LastPrefetchInfo last_prefetch_info;
+    mutable LastPrefetchInfo last_prefetch_info;
 
     bool nextImpl() override;
 

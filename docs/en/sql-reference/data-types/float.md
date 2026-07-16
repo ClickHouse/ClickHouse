@@ -5,6 +5,7 @@ sidebar_label: 'Float32 | Float64 | BFloat16'
 sidebar_position: 4
 slug: /sql-reference/data-types/float
 title: 'Float32 | Float64 | BFloat16 Types'
+doc_type: 'reference'
 ---
 
 :::note
@@ -111,13 +112,54 @@ SELECT 0 / 0
 
 See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-reference/statements/select/order-by.md).
 
+## NaN values in set semantics {#nan-values-in-set-semantics}
+
+The IEEE 754 standard defines `NaN` such that the scalar comparison `NaN = NaN` returns `false`.
+ClickHouse follows that rule for the `=` operator.
+
+However, `NaN` is not a single value; it is any bit pattern whose exponent is all ones and whose
+mantissa is non-zero. Different operations and different CPU architectures can produce `NaN`
+values with different sign bits or different mantissa payloads. For example:
+
+- `0./0.` produces a `NaN` whose sign bit is 1 on most x86 platforms.
+- The literal `nan` produces a `NaN` whose sign bit is 0.
+- After [PR #98230](https://github.com/ClickHouse/ClickHouse/pull/98230), the AArch64 NEON path of
+  `log` returns a `NaN` whose sign bit differs from glibc's scalar `log` on negative inputs.
+
+Hash tables in ClickHouse compare keys byte-wise, so different `NaN` bit patterns hash to
+different buckets and are treated as distinct values by set-semantics operations including
+`DISTINCT`, `GROUP BY`, `uniqExact`, `countDistinct`, and equi-`JOIN` on a `Float` key:
+
+```sql
+SELECT countDistinct(arrayJoin([0./0., nan, log(-1.)]));
+-- May return 2 or 3 depending on architecture and build, even though all three inputs are NaN.
+```
+
+This is consistent with IEEE 754 (every `NaN` is unequal to every other value, including itself)
+but can be surprising. If you need set-semantics operations to treat all `NaN` values as equal,
+canonicalize them in the query:
+
+```sql
+-- Replace every NaN with a single canonical NaN value
+SELECT countDistinct(if(isNaN(x), CAST('nan' AS Float64), x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 1.
+
+-- Or exclude NaN values from the set entirely
+SELECT countDistinct(if(isNaN(x), NULL, x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 0.
+```
+
+The same approach works for `DISTINCT`, `GROUP BY`, and `JOIN` keys.
+
 ## BFloat16 {#bfloat16}
 
 `BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa. 
 It is useful for machine learning and AI applications.
 
 ClickHouse supports conversions between `Float32` and `BFloat16` which 
-can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#tofloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#tobfloat16) functions.
+can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#toFloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#toBFloat16) functions.
 
 :::note
 Most other operations are not supported.

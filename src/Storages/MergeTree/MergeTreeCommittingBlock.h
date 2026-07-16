@@ -46,6 +46,12 @@ struct PlainCommittingBlockHolder
     ~PlainCommittingBlockHolder();
 };
 
+class ReadBuffer;
+class WriteBuffer;
+
+void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & out);
+CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in);
+
 std::string serializeCommittingBlockOpToString(CommittingBlock::Op op);
 CommittingBlock::Op deserializeCommittingBlockOpFromString(const std::string & representation);
 

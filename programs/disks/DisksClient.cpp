@@ -5,6 +5,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/IDisk.h>
 #include <base/types.h>
 
@@ -160,6 +161,7 @@ String DiskWithPath::normalizePath(const String & path)
 DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_)
     : config(config_), context(std::move(context_)), log(getLogger("DisksClient"))
 {
+    auto component_guard = Coordination::setCurrentComponent("DisksClient::DisksClient");
     String begin_disk = config.getString("disk", DEFAULT_DISK_NAME);
     String config_prefix = "storage_configuration.disks";
     Poco::Util::AbstractConfiguration::Keys keys;

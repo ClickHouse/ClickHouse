@@ -13,19 +13,69 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+#include <utility>
 
 
 // NOLINTBEGIN(*)
 
-/// Use same extended double for all platforms
+/// Cross-platform conversion from double to wide integers requires consistent rounding behavior.
+/// We target 64-bit mantissa precision (matching x86's 80-bit extended) on all platforms.
+///
+/// Platform-specific handling:
+/// 1. x86/x86_64 (LDBL_MANT_DIG == 64):
+///    - Native 80-bit extended precision with 64-bit mantissa
+///    - Use long double directly, no emulation needed
+///
+/// 2. ARM Linux, RISC-V, PowerPC, etc. (LDBL_MANT_DIG > 64, typically 113):
+///    - 128-bit quad precision with 113-bit mantissa
+///    - Use long double but round intermediate results to 64-bit precision
+///    - Emulation via round_to_64bit_mantissa() ensures identical results to x86
+///
+/// 3. macOS ARM64 (LDBL_MANT_DIG == 53):
+///    - long double == double (no extended precision available)
+///    - Cannot emulate 64-bit from 53-bit, so use boost::multiprecision
+///    - boost::cpp_bin_float_double_extended provides software-emulated 64-bit mantissa
+///
 #if (LDBL_MANT_DIG == 64)
-#define CONSTEXPR_FROM_DOUBLE constexpr
 using FromDoubleIntermediateType = long double;
+#elif (LDBL_MANT_DIG > 64)
+using FromDoubleIntermediateType = long double;
+
+namespace detail
+{
+/// Round a long double to 64-bit mantissa precision to match x86 extended precision behavior.
+/// This extracts the value into 64-bit chunks similar to boost::multiprecision::cpp_bin_float.
+constexpr long double round_to_64bit_mantissa(long double value) noexcept
+{
+    if (!std::isfinite(value) || value == 0.0L)
+        return value;
+
+    // Extract mantissa and exponent
+    int exponent;
+    long double mantissa = std::frexp(value, &exponent);
+
+    // mantissa is now in range [0.5, 1.0) or (-1.0, -0.5]
+    // Scale to extract exactly 64 bits of precision
+    constexpr long double scale = static_cast<long double>(1ULL << 63) * 2.0L; // 2^64
+
+    // N.B. std::round (ties away from zero) is used intentionally, NOT std::rint (ties to even).
+    // On ARM, division by max_int can produce results with an exact .5 fractional part
+    // (e.g., 9223372036854775808.5) because the 113-bit mantissa preserves it. On x86,
+    // the 64-bit mantissa truncates the same division to 9223372036854775809.0 directly.
+    // std::round matches x86's truncation direction for these tie cases; std::rint does not.
+    long double scaled = std::round(mantissa * scale);
+
+    // Convert back to normalized mantissa with 64-bit precision
+    long double rounded_mantissa = scaled / scale;
+
+    // Reconstruct the original value with limited precision
+    return std::ldexp(rounded_mantissa, exponent);
+}
+}
 #else
-#include <boost/math/special_functions/fpclassify.hpp>
-#include <boost/multiprecision/cpp_bin_float.hpp>
-/// `wide_integer_from_builtin` can't be constexpr with non-literal `cpp_bin_float_double_extended`
-#define CONSTEXPR_FROM_DOUBLE
+// Platforms where long double has insufficient precision (e.g., macOS ARM64 where LDBL_MANT_DIG=53)
+#    include <boost/math/special_functions/fpclassify.hpp>
+#    include <boost/multiprecision/cpp_bin_float.hpp>
 using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_extended;
 #endif
 
@@ -322,18 +372,14 @@ struct integer<Bits, Signed>::_impl
 
         self.items[little(0)] = _impl::to_Integral(rhs);
 
+        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
+        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
+        base_type extension = 0;
         if constexpr (std::is_signed_v<Integral>)
-        {
-            if (rhs < 0)
-            {
-                for (unsigned i = 1; i < item_count; ++i)
-                    self.items[little(i)] = -1;
-                return;
-            }
-        }
+            extension = rhs < 0 ? base_type(-1) : base_type(0);
 
         for (unsigned i = 1; i < item_count; ++i)
-            self.items[little(i)] = 0;
+            self.items[little(i)] = extension;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -374,7 +420,7 @@ struct integer<Bits, Signed>::_impl
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
         static_assert(std::is_same_v<T, double> || std::is_same_v<T, FromDoubleIntermediateType>);
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
-#if (LDBL_MANT_DIG == 64)
+#if (LDBL_MANT_DIG >= 64)
         if (!std::isfinite(t))
         {
             self = 0;
@@ -399,7 +445,14 @@ struct integer<Bits, Signed>::_impl
         }
 #endif
 
-        const T alpha = t / static_cast<T>(max_int);
+        T alpha = t / static_cast<T>(max_int);
+#if (LDBL_MANT_DIG > 64)
+        // Round division result to 64-bit precision on platforms with higher precision (e.g., ARM Linux with 113-bit mantissa)
+        if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
+        {
+            alpha = detail::round_to_64bit_mantissa(alpha);
+        }
+#endif
 
         /** Here we have to use strict comparison.
           * The max_int is 2^64 - 1.
@@ -414,10 +467,25 @@ struct integer<Bits, Signed>::_impl
             set_multiplier<double>(self, static_cast<double>(alpha));
 
         self *= max_int;
-        self += static_cast<uint64_t>(t - floor(alpha) * static_cast<T>(max_int)); // += b_i
+
+        // Calculate remainder: t - floor(alpha) * max_int
+        // On platforms with >64-bit mantissa, round the multiplication to 64-bit precision
+        // to match x86's 80-bit extended behavior
+        T remainder_subtrahend = floor(alpha) * static_cast<T>(max_int);
+#if (LDBL_MANT_DIG > 64)
+        if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
+        {
+            remainder_subtrahend = detail::round_to_64bit_mantissa(remainder_subtrahend);
+        }
+#endif
+        self += static_cast<uint64_t>(t - remainder_subtrahend); // += b_i
     }
 
-    CONSTEXPR_FROM_DOUBLE static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
+    /// Can only be constexpr when not using boost (boost types are not literal types)
+#if (LDBL_MANT_DIG >= 64)
+    constexpr
+#endif
+        static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
         constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
@@ -430,7 +498,8 @@ struct integer<Bits, Signed>::_impl
         /// The necessary check here is that FromDoubleIntermediateType has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
 
-        if (rhs > static_cast<FromDoubleIntermediateType>(min_int) && rhs < static_cast<FromDoubleIntermediateType>(max_int))
+        if (static_cast<FromDoubleIntermediateType>(rhs) > static_cast<FromDoubleIntermediateType>(min_int)
+            && static_cast<FromDoubleIntermediateType>(rhs) < static_cast<FromDoubleIntermediateType>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
@@ -438,7 +507,7 @@ struct integer<Bits, Signed>::_impl
 
         const FromDoubleIntermediateType rhs_long_double = (static_cast<FromDoubleIntermediateType>(rhs) < 0)
             ? -static_cast<FromDoubleIntermediateType>(rhs)
-            : rhs;
+            : static_cast<FromDoubleIntermediateType>(rhs);
 
         set_multiplier(self, rhs_long_double);
 
@@ -458,18 +527,13 @@ struct integer<Bits, Signed>::_impl
 
         if constexpr (Bits > Bits2)
         {
+            /// See the rationale in wide_integer_from_builtin.
+            base_type extension = 0;
             if constexpr (std::is_signed_v<Signed2>)
-            {
-                if (rhs < 0)
-                {
-                    for (unsigned i = to_copy; i < item_count; ++i)
-                        self.items[little(i)] = -1;
-                    return;
-                }
-            }
+                extension = rhs < 0 ? base_type(-1) : base_type(0);
 
             for (unsigned i = to_copy; i < item_count; ++i)
-                self.items[little(i)] = 0;
+                self.items[little(i)] = extension;
         }
     }
 
@@ -648,8 +712,8 @@ private:
             HalfType a0 = lhs.items[little(0)];
             HalfType a1 = lhs.items[little(1)];
 
-            HalfType b01 = rhs;
-            uint64_t b0 = b01;
+            HalfType b01 = static_cast<HalfType>(rhs);
+            uint64_t b0 = static_cast<uint64_t>(b01);
             uint64_t b1 = 0;
             HalfType b23 = 0;
             if constexpr (sizeof(T) > 8)
@@ -663,7 +727,7 @@ private:
             HalfType r12_x = a1 * b0;
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = r01;
+            res.items[little(0)] = static_cast<base_type>(r01);
             res.items[little(3)] = r23 >> 64;
 
             if constexpr (sizeof(T) > 8)
@@ -678,7 +742,7 @@ private:
             if (r12 < r12_x)
                 ++res.items[little(3)];
 
-            res.items[little(1)] = r12;
+            res.items[little(1)] = static_cast<base_type>(r12);
             res.items[little(2)] = r12 >> 64;
             return res;
         }
@@ -689,7 +753,7 @@ private:
             CompilerUInt128 b = (CompilerUInt128(rhs.items[little(1)]) << 64) + rhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
             return res;
         }
@@ -860,19 +924,31 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
-                return is_negative(rhs);
-
             integer<Bits, Signed> t = rhs;
-            for (unsigned i = 0; i < item_count; ++i)
+
+            /// Branchless lexicographic comparison from the most significant limb: no early-out, so the
+            /// columnar comparison kernels stay branchless and vectorize (e.g. to AVX-512 vpcmpq). The top
+            /// limb is compared as signed for signed types, which subsumes the sign check; lower limbs unsigned.
+            base_type lhs_top = lhs.items[big(0)];
+            base_type rhs_top = get_item(t, big(0));
+
+            bool greater;
+            if constexpr (std::is_same_v<Signed, signed>)
+                greater = static_cast<signed_base_type>(lhs_top) > static_cast<signed_base_type>(rhs_top);
+            else
+                greater = lhs_top > rhs_top;
+
+            bool equal = lhs_top == rhs_top;
+            for (unsigned i = 1; i < item_count; ++i)
             {
+                base_type lhs_item = lhs.items[big(i)];
                 base_type rhs_item = get_item(t, big(i));
 
-                if (lhs.items[big(i)] != rhs_item)
-                    return lhs.items[big(i)] > rhs_item;
+                greater = greater | (equal & (lhs_item > rhs_item));
+                equal = equal & (lhs_item == rhs_item);
             }
 
-            return false;
+            return greater;
         }
         else
         {
@@ -886,19 +962,29 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
-                return is_negative(lhs);
-
             integer<Bits, Signed> t = rhs;
-            for (unsigned i = 0; i < item_count; ++i)
+
+            /// See the rationale in operator_greater.
+            base_type lhs_top = lhs.items[big(0)];
+            base_type rhs_top = get_item(t, big(0));
+
+            bool less;
+            if constexpr (std::is_same_v<Signed, signed>)
+                less = static_cast<signed_base_type>(lhs_top) < static_cast<signed_base_type>(rhs_top);
+            else
+                less = lhs_top < rhs_top;
+
+            bool equal = lhs_top == rhs_top;
+            for (unsigned i = 1; i < item_count; ++i)
             {
+                base_type lhs_item = lhs.items[big(i)];
                 base_type rhs_item = get_item(t, big(i));
 
-                if (lhs.items[big(i)] != rhs_item)
-                    return lhs.items[big(i)] < rhs_item;
+                less = less | (equal & (lhs_item < rhs_item));
+                equal = equal & (lhs_item == rhs_item);
             }
 
-            return false;
+            return less;
         }
         else
         {
@@ -999,11 +1085,11 @@ public:
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
 
             CompilerUInt128 remainder = a - b * c;
-            numerator.items[little(0)] = remainder;
+            numerator.items[little(0)] = static_cast<base_type>(remainder);
             numerator.items[little(1)] = remainder >> 64;
 
             return res;
@@ -1219,7 +1305,7 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         {
             if (it < il.end())
             {
-                items[_impl::little(i)] = *it;
+                items[_impl::little(i)] = static_cast<base_type>(*it);
                 ++it;
             }
             else
@@ -1375,12 +1461,9 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T>
-requires(std::is_arithmetic_v<T>)
+template <std::integral T>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer);
-
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;
@@ -1408,7 +1491,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
         long double t = res;
         res *= static_cast<long double>(std::numeric_limits<base_type>::max());
         res += t;
-        res += tmp.items[_impl::big(i)];
+        res += static_cast<long double>(tmp.items[_impl::big(i)]);
     }
 
     if (_impl::is_negative(*this))

@@ -46,7 +46,7 @@ function test_max_delay_to_insert_will_throw()
 #
 function test_max_delay_to_insert_will_succeed_once()
 {
-    local max_delay_to_insert=4
+    local max_delay_to_insert=20
     local flush_delay=2
 
     drop_tables

@@ -1,7 +1,7 @@
 SELECT number FROM numbers(10) LIMIT 0 + 1;
 SELECT number FROM numbers(10) LIMIT 1 - 1;
 SELECT number FROM numbers(10) LIMIT 2 - 1;
-SELECT number FROM numbers(10) LIMIT 0 - 1; -- { serverError INVALID_LIMIT_EXPRESSION }
+SELECT number FROM numbers(10) LIMIT 0 - 1;
 SELECT number FROM numbers(10) LIMIT 1.0;
 SELECT number FROM numbers(10) LIMIT 1.5; -- { serverError INVALID_LIMIT_EXPRESSION }
 SELECT number FROM numbers(10) LIMIT '1'; -- { serverError INVALID_LIMIT_EXPRESSION }

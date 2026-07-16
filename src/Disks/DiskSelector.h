@@ -54,6 +54,7 @@ private:
     bool is_initialized = false;
 
     void assertInitialized() const;
+    void recordDisk(const std::string & disk_name, DiskPtr disk);
 
     const std::unordered_set<String> skip_types;
 

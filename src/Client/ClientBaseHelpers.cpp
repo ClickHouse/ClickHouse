@@ -13,7 +13,11 @@
 #include <Interpreters/Context.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
+#include <algorithm>
+#include <cctype>
 #include <string_view>
+#include <unordered_set>
+#include <vector>
 
 #if USE_REPLXX
 namespace replxx { char const * ansi_color(Replxx::Color); }
@@ -130,8 +134,120 @@ std::string getChineseZodiac()
     return zodiacs[offset];
 }
 
+bool isCloudEndpoint(const std::string & host)
+{
+    return endsWith(host, ".clickhouse.cloud") || endsWith(host, ".clickhouse-staging.com") || endsWith(host, ".clickhouse-dev.com");
+}
+
 #if USE_REPLXX
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position)
+/// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
+/// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
+/// colors vector allocation (with iteration and `UTF8::seqLength`). This function replaces the use
+/// of `UTF8::countCodePoints()`, since, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle
+/// invalid utf-8 sequences inconsistently (e.g., hex literals like x'A0'), causing count mismatches
+/// and crashes. TODO: @bharatnc fix `UTF8::countCodePoints` to handle invalid utf-8 sequences consistently
+/// with `UTF8::seqLength` so that this helper function's usage can be removed.
+static size_t countCodePointsWithSeqLength(const String & query, const char * end)
+{
+    size_t code_points = 0;
+    const char * pos = query.data();
+    while (pos < end)
+    {
+        pos += UTF8::seqLength(*pos);
+        ++code_points;
+    }
+    return code_points;
+}
+
+/// Lexer-based highlighting. Unlike the parser-based path, it never fails: it just tokenizes the input
+/// and colors each token by its kind. It is used as a fallback for input that the parser cannot parse,
+/// most importantly the query fragments that appear throughout the documentation (e.g. `f(x)` or
+/// `ENGINE = MergeTree`). The token kinds and colors mirror the Web UI (`programs/server/play.html`).
+static void highlightWithLexer(const String & query, std::vector<replxx::Replxx::Color> & colors)
+{
+    using namespace replxx;
+
+    /// SQL keywords recognized for highlighting. The lexer reports them as `BareWord`, so they are
+    /// disambiguated from identifiers here. Ported verbatim from `programs/server/play.html`.
+    static const std::unordered_set<std::string_view> keywords = {
+#include <Client/SQLKeywordsForHighlighting.inc>
+    };
+
+    const char * const begin = query.data();
+    const char * const end = begin + query.size();
+
+    /// Tokenize the whole input first so that a `BareWord` can peek at the following token to tell a
+    /// function call (`name(`) from a plain identifier — exactly as the line editor and the Web UI do.
+    std::vector<Token> tokens;
+    Lexer lexer(begin, end);
+    while (true)
+    {
+        Token token = lexer.nextToken();
+        tokens.push_back(token);
+        if (token.isEnd() || token.isError())
+            break;
+    }
+
+    size_t code_point_pos = 0;
+    const char * char_pos = begin;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        const Token & token = tokens[i];
+        if (token.isEnd())
+            break;
+
+        Replxx::Color color = Replxx::Color::DEFAULT;
+        switch (token.type)
+        {
+            case TokenType::Comment: color = Replxx::Color::GRAY; break;
+            case TokenType::Number: color = replxx::color::rgb666(0, 4, 0); break;
+            case TokenType::StringLiteral:
+            case TokenType::HereDoc: color = Replxx::Color::GREEN; break;
+            case TokenType::QuotedIdentifier: color = replxx::color::rgb666(0, 4, 4); break;
+            case TokenType::BareWord: {
+                String upper(token.begin, token.end);
+                std::transform(
+                    upper.begin(), upper.end(), upper.begin(), [](char c) { return std::toupper(static_cast<unsigned char>(c)); });
+                if (keywords.contains(upper))
+                    color = replxx::color::bold(Replxx::Color::DEFAULT);
+                else
+                {
+                    /// A bare word immediately followed by `(` is a function; otherwise an identifier.
+                    color = Replxx::Color::CYAN;
+                    for (size_t j = i + 1; j < tokens.size(); ++j)
+                    {
+                        if (tokens[j].type == TokenType::Whitespace || tokens[j].type == TokenType::Comment)
+                            continue;
+                        if (tokens[j].type == TokenType::OpeningRoundBracket)
+                            color = Replxx::Color::BROWN;
+                        break;
+                    }
+                }
+                break;
+            }
+            default:
+                if (token.isError())
+                    color = Replxx::Color::RED;
+                /// Operators, brackets and punctuation keep the default color.
+                break;
+        }
+
+        /// Map the token's byte range to code-point positions in `colors`.
+        while (char_pos < token.begin && code_point_pos < colors.size())
+        {
+            ++code_point_pos;
+            char_pos += UTF8::seqLength(*char_pos);
+        }
+        while (char_pos < token.end && code_point_pos < colors.size())
+        {
+            colors[code_point_pos] = color;
+            ++code_point_pos;
+            char_pos += UTF8::seqLength(*char_pos);
+        }
+    }
+}
+
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses, bool lexer_fallback)
 {
     using namespace replxx;
 
@@ -154,8 +270,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::substitution, Replxx::Color::MAGENTA},
         {Highlight::number, replxx::color::rgb666(0, 4, 0)},
         {Highlight::string, Replxx::Color::GREEN},
-        {Highlight::string_like, Replxx::Color::GREEN},
-        {Highlight::string_regexp, Replxx::Color::GREEN},
+        {Highlight::string_escape, replxx::color::bold(Replxx::Color::LIGHTGRAY)},
+        {Highlight::string_metacharacter, replxx::color::bold(Replxx::Color::BRIGHTMAGENTA)},
     };
 
     /// We set reasonably small limits for size/depth, because we don't want the CLI to be slow.
@@ -199,22 +315,36 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
     catch (...)
     {
-        /// Skip highlighting in the case of exceptions during parsing.
+        /// The parser failed; fall back to lexer-based highlighting if requested, otherwise skip it.
         /// It is ok to ignore unknown exceptions here.
+        if (lexer_fallback)
+            highlightWithLexer(query, colors);
         return;
     }
+
+    /// The input could not be parsed as one or more complete queries (common for documentation snippets,
+    /// which are query fragments). Use lexer-based highlighting instead of the partial parser highlights.
+    if (lexer_fallback && !parse_res)
+    {
+        highlightWithLexer(query, colors);
+        return;
+    }
+
+    /// Also if the cursor is at an identifier or alias, highlight all identifiers and aliases with the same name
+    const char * cursor_char_position = cursor_position >= 0
+        ? begin + UTF8::computeBytesBeforeCodePoint(reinterpret_cast<const UInt8 *>(begin), query.size(), cursor_position)
+        : end;
+    const HighlightedRange * highlight_matching_identifiers = nullptr;
+
+    /// Expand string_like/string_regexp into character-level sub-ranges
+    /// (string, string_escape, string_metacharacter).
+    const auto expanded = expandHighlights(expected.highlights);
 
     /// We have to map from byte positions to Unicode positions.
     size_t code_point_pos = 0;
     const char * char_pos = begin;
-    for (const auto & range : expected.highlights)
+    for (const auto & range : expanded)
     {
-        const char * metacharacters = "";
-        if (range.highlight == Highlight::string_like)
-            metacharacters = "%_";
-        if (range.highlight == Highlight::string_regexp)
-            metacharacters = "|()^$.[]?*+{:-";
-
         auto it = type_to_color.find(range.highlight);
         if (it != type_to_color.end())
         {
@@ -224,28 +354,94 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 char_pos += UTF8::seqLength(*char_pos);
             }
 
-            int escaped = 0;
+            if (!highlight_matching_identifiers
+                && range.begin <= cursor_char_position && cursor_char_position < range.end
+                && (range.highlight == Highlight::identifier || range.highlight == Highlight::alias))
+            {
+                highlight_matching_identifiers = &range;
+            }
+
+            /// Highlight digit groups inside numbers
+            bool is_regular_number = (range.highlight == Highlight::number);
+            bool is_regular_number_finished = false;
+            std::optional<size_t> regular_number_before_decimal_code_point_first;
+            std::optional<size_t> regular_number_before_decimal_code_point_last;
+
             while (char_pos < range.end)
             {
-                if (*char_pos == '\\')
+                colors[code_point_pos] = it->second;
+
+                if (is_regular_number)
                 {
-                    ++escaped;
-                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
-                }
-                /// The counting of escape characters is quite tricky due to double escaping of string literals + regexps,
-                /// and the special logic of interpreting escape sequences that are not interpreted by the string literals.
-                else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *char_pos))
-                {
-                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
-                }
-                else
-                {
-                    colors[code_point_pos] = it->second;
-                    escaped = 0;
+                    if (*char_pos == '-')
+                    {
+                        /// Skip
+                    }
+                    else if (isNumericASCII(*char_pos))
+                    {
+                        if (!is_regular_number_finished)
+                        {
+                            if (!regular_number_before_decimal_code_point_first)
+                                regular_number_before_decimal_code_point_first = code_point_pos;
+                            regular_number_before_decimal_code_point_last = code_point_pos;
+                        }
+                    }
+                    else if (*char_pos == '.')
+                    {
+                        /// We are highlighting only before the decimal point
+                        is_regular_number_finished = true;
+                    }
+                    else
+                    {
+                        /// Unexpected, like already pre-formatted numbers, e.g., 1_000, or exponential notation or hex/bin
+                        /// Do not highlight.
+                        is_regular_number = false;
+                    }
                 }
 
                 ++code_point_pos;
                 char_pos += UTF8::seqLength(*char_pos);
+            }
+
+            /// Highlight digit groups inside numbers
+            if (is_regular_number
+                && regular_number_before_decimal_code_point_first
+                && regular_number_before_decimal_code_point_last)
+            {
+                size_t number_length = 1 + *regular_number_before_decimal_code_point_last - *regular_number_before_decimal_code_point_first;
+                if (number_length >= 5)
+                {
+                    for (int64_t offset = number_length - 4; offset >= 0; offset -= 3)
+                    {
+                        size_t number_code_point_pos = *regular_number_before_decimal_code_point_first + offset;
+                        colors[number_code_point_pos] = replxx::color::underline(colors[number_code_point_pos]);
+                    }
+                }
+            }
+        }
+    }
+
+    if (highlight_matching_identifiers)
+    {
+        const char * identifiers_char_pos = begin;
+        size_t identifiers_code_point_pos = 0;
+        for (const auto & range : expanded)
+        {
+            if ((range.highlight == Highlight::identifier || range.highlight == Highlight::alias)
+                && std::string_view(range.begin, range.end) == std::string_view(highlight_matching_identifiers->begin, highlight_matching_identifiers->end))
+            {
+                while (identifiers_char_pos < range.begin)
+                {
+                    ++identifiers_code_point_pos;
+                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
+                }
+
+                while (identifiers_char_pos < range.end)
+                {
+                    colors[identifiers_code_point_pos] = replxx::color::underline(colors[identifiers_code_point_pos]);
+                    ++identifiers_code_point_pos;
+                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
+                }
             }
         }
     }
@@ -283,8 +479,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     IParser::Pos highlight_token_iterator(
         tokens,
         static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_depth]),
-        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks])
-    );
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks]));
 
     try
     {
@@ -296,8 +491,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
             {
                 /// On opening round bracket, remember the color we use for it.
-                color_stack.push_back(default_colormap[current_color % default_colormap.size()]);
+                /// Use color zero if rainbow parentheses disabled.
                 brace_stack.push_back(*highlight_token_iterator);
+                auto color = default_colormap[current_color % default_colormap.size()];
+                if (!rainbow_parentheses)
+                    color = default_colormap[0];
+                color_stack.push_back(color);
                 current_color++;
 
                 ++highlight_token_iterator;
@@ -314,13 +513,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     continue;
                 }
 
+                /// TODO: @bharatnc replace the usages of countCodePointsWithSeqLength() below with UTF8::countCodePoints()
+                /// once it's fixed to handle invalid utf-8 sequences consistently with seqLength.
                 /// Highlight the closing round bracket.
-                auto highlight_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_token_iterator->begin - begin);
+                auto highlight_pos = countCodePointsWithSeqLength(query, highlight_token_iterator->begin);
                 if (highlight_pos < colors.size())
                     colors[highlight_pos] = color_stack.back();
 
                 /// Highlight the matching opening round bracket.
-                auto matching_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), brace_stack.back().begin - begin);
+                auto matching_brace_pos = countCodePointsWithSeqLength(query, brace_stack.back().begin);
                 if (matching_brace_pos < colors.size())
                     colors[matching_brace_pos] = color_stack.back();
 
@@ -340,7 +541,10 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 /// If the cursor is on one of the round braces,
                 /// highlight both the opening and closing round braces with a brighter color.
+                /// Use color zero if rainbow parentheses disabled.
                 auto bright_color = bright_colormap.at(color_stack.back());
+                if (!rainbow_parentheses)
+                    bright_color = bright_colormap.at(default_colormap[0]);
                 colors[highlight_pos] = bright_color;
                 colors[matching_brace_pos] = bright_color;
                 active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
@@ -375,7 +579,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         && !(insert_data && expected.max_parsed_pos >= insert_data)
         && expected.max_parsed_pos >= char_pos)
     {
-        code_point_pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(char_pos), expected.max_parsed_pos - char_pos);
+        code_point_pos += countCodePointsWithSeqLength(query, expected.max_parsed_pos) - countCodePointsWithSeqLength(query, char_pos);
 
         if (code_point_pos >= colors.size())
             code_point_pos = colors.size() - 1;
@@ -386,15 +590,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {
             const auto & [highlight_pos, matching_brace_pos] = *active_matching_brace;
 
-            const auto opening_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_pos);
-            const auto closing_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), matching_brace_pos);
-
+            // highlight_pos and matching_brace_pos are already code points
             /// If the cursor is on one of the round brackets marked as an error,
             /// highlight both with a brighter color.
-            if (code_point_pos == closing_brace_pos || code_point_pos == opening_brace_pos)
+            if (code_point_pos == matching_brace_pos || code_point_pos == highlight_pos)
             {
-                colors[closing_brace_pos] = replxx::color::rgb666(5, 0, 1);
-                colors[opening_brace_pos] = replxx::color::rgb666(5, 0, 1);
+                colors[matching_brace_pos] = replxx::color::rgb666(5, 0, 1);
+                colors[highlight_pos] = replxx::color::rgb666(5, 0, 1);
             }
         }
     }
@@ -411,46 +613,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 
-String highlighted(const String & query, const Context & context)
+String highlighted(const String & query, const Context & context, bool rainbow_parentheses, bool lexer_fallback)
 {
-    // Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
-    /// Previously utf-8 code points were calculated in the following way:
-    /// size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
-    /// But, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle invalid UTF-8 sequences inconsistently
-    /// (e.g., hex literals like x'A0'), causing count mismatches and crashes.
-    /// For a quick fix, since the highlight function uses `UTF8::seqLength` for iteration, use the same logic for
-    /// counting to ensure consistency when invalid UTF-8 bytes are detected (use UTF8::countCodePoints for all other
-    /// cases to mainly for performance concerns).
-    /// TODO: @bharatnc Fix UTF8::countCodePoints to handle invalid UTF-8 sequences consistently with seqLength so that
-    /// this logic can be removed.
-    bool has_invalid_utf8 = false;
-    for (const char c : query)
-    {
-        /// Standalone UTF-8 continuation bytes (0x80-0xBF, e.g. 0xA0 from hex literals)
-        /// cause countCodePoints/seqLength inconsistency.
-        if (static_cast<unsigned char>(c) >= 0x80 && static_cast<unsigned char>(c) <= 0xBF)
-        {
-            has_invalid_utf8 = true;
-            break;
-        }
-    }
-    size_t num_code_points;
-    if (has_invalid_utf8)
-    {
-        num_code_points = 0;
-        const char * pos = query.data();
-        const char * end = pos + query.size();
-        while (pos < end)
-        {
-            pos += UTF8::seqLength(*pos);
-            ++num_code_points;
-        }
-    }
-    else
-        num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
-    highlight(query, colors, context, 0);
+    highlight(query, colors, context, 0, rainbow_parentheses, lexer_fallback);
 
     String res;
     size_t query_size = query.size();

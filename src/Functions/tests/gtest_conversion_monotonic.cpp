@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
+
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 
 using namespace DB;
@@ -46,4 +49,28 @@ TEST(ConversionMonotonic, toDateTime)
 
     /// The range of from_type exceeds the range of to_type
     ASSERT_EQ(ToDateTimeMonotonicity<DataTypeDateTime>::get(DataTypeUInt64(), {}, {}).is_strict, false);
+}
+
+TEST(ConversionMonotonic, toStringFixedString)
+{
+    DataTypeFixedString fixed_string_type(4);
+
+    const auto monotonicity = ToStringMonotonicity::get(fixed_string_type, {}, {});
+
+    ASSERT_EQ(monotonicity.is_monotonic, true);
+    ASSERT_EQ(monotonicity.is_positive, true);
+    ASSERT_EQ(monotonicity.is_always_monotonic, true);
+    ASSERT_EQ(monotonicity.is_strict, true);
+}
+
+TEST(ConversionMonotonic, toStringLowCardinalityFixedString)
+{
+    DataTypeLowCardinality low_cardinality_fixed_string_type(std::make_shared<DataTypeFixedString>(4));
+
+    const auto monotonicity = ToStringMonotonicity::get(low_cardinality_fixed_string_type, {}, {});
+
+    ASSERT_EQ(monotonicity.is_monotonic, true);
+    ASSERT_EQ(monotonicity.is_positive, true);
+    ASSERT_EQ(monotonicity.is_always_monotonic, true);
+    ASSERT_EQ(monotonicity.is_strict, true);
 }

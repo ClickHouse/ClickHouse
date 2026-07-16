@@ -4,9 +4,8 @@ sidebar_label: 'TRUNCATE'
 sidebar_position: 52
 slug: /sql-reference/statements/truncate
 title: 'TRUNCATE Statements'
+doc_type: 'reference'
 ---
-
-# TRUNCATE Statements
 
 The `TRUNCATE` statement in ClickHouse is used to quickly remove all data from a table or database while preserving their structure.
 

@@ -61,7 +61,17 @@ if (CCACHE_EXECUTABLE MATCHES "/ccache$")
     endif()
 
     message(STATUS "Using ccache: ${CCACHE_EXECUTABLE} (version ${CCACHE_VERSION})")
-    set(LAUNCHER ${CCACHE_EXECUTABLE})
+
+    # Enable depend mode (available since ccache 4.0). In this mode, ccache uses the compiler's
+    # dependency file (.d) to track input files instead of its own source parser.
+    # This is needed because ccache's built-in parser does not recognize C23 #embed directives,
+    # so changes to files included via #embed would not invalidate the cache in direct mode.
+    if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0")
+        message(STATUS "Enabling ccache depend mode for correct #embed tracking")
+        set(LAUNCHER env CCACHE_DEPEND=true ${CCACHE_EXECUTABLE})
+    else()
+        set(LAUNCHER ${CCACHE_EXECUTABLE})
+    endif()
 
     # Work around a well-intended but unfortunate behavior of ccache 4.0 & 4.1 with
     # environment variable SOURCE_DATE_EPOCH. This variable provides an alternative
@@ -74,7 +84,7 @@ if (CCACHE_EXECUTABLE MATCHES "/ccache$")
     # (*) https://reproducible-builds.org/specs/source-date-epoch/
     if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0" AND CCACHE_VERSION VERSION_LESS "4.2")
         message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache 4.0 / 4.1")
-        set(LAUNCHER env -u SOURCE_DATE_EPOCH ${CCACHE_EXECUTABLE})
+        set(LAUNCHER env -u SOURCE_DATE_EPOCH ${LAUNCHER})
     endif()
 elseif(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using sccache: ${CCACHE_EXECUTABLE}")

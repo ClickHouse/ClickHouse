@@ -4,13 +4,60 @@
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/composite_key.hpp>
+#include <boost/multi_index/mem_fun.hpp>
 
 namespace DB
 {
 class ASTCreateNamedCollectionQuery;
 class ASTDropNamedCollectionQuery;
 class ASTAlterNamedCollectionQuery;
+
+struct NamedCollectionDependency
+{
+    String collection_name;
+    StorageID table_id;
+
+    NamedCollectionDependency(const String & collection_name_, const StorageID & table_id_)
+        : collection_name(collection_name_), table_id(table_id_) {}
+
+    const String & getCollectionName() const { return collection_name; }
+    const String & getDatabaseName() const { return table_id.database_name; }
+    const String & getTableName() const { return table_id.table_name; }
+    UUID getUUID() const { return table_id.uuid; }
+};
+
+struct Collection {};
+struct TableUUID {};
+struct TableName {};
+
+using NamedCollectionDependencies = boost::multi_index_container<
+    NamedCollectionDependency,
+    boost::multi_index::indexed_by<
+        boost::multi_index::hashed_non_unique<
+            boost::multi_index::tag<Collection>,
+            boost::multi_index::const_mem_fun<NamedCollectionDependency, const String &, &NamedCollectionDependency::getCollectionName>
+        >,
+        boost::multi_index::hashed_non_unique<
+            boost::multi_index::tag<TableUUID>,
+            boost::multi_index::const_mem_fun<NamedCollectionDependency, UUID, &NamedCollectionDependency::getUUID>,
+            std::hash<UUID>
+        >,
+        /// For non-Atomic databases where tables don't have UUIDs
+        boost::multi_index::hashed_non_unique<
+            boost::multi_index::tag<TableName>,
+            boost::multi_index::composite_key<
+                NamedCollectionDependency,
+                boost::multi_index::const_mem_fun<NamedCollectionDependency, const String &, &NamedCollectionDependency::getDatabaseName>,
+                boost::multi_index::const_mem_fun<NamedCollectionDependency, const String &, &NamedCollectionDependency::getTableName>
+            >
+        >
+    >
+>;
 
 class NamedCollectionFactory : boost::noncopyable
 {
@@ -43,9 +90,15 @@ public:
 
     void shutdown();
 
+    void addDependency(const String & collection_name, const StorageID & table_id);
+    void removeDependencies(const StorageID & table_id);
+    void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
+    std::vector<StorageID> getDependents(const String & collection_name) const;
+
 protected:
     mutable NamedCollectionsMap loaded_named_collections;
     mutable std::mutex mutex;
+    NamedCollectionDependencies dependencies;
 
     const LoggerPtr log = getLogger("NamedCollectionFactory");
 

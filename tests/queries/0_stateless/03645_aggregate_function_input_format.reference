@@ -1,0 +1,47 @@
+=== Test 1: State format (default) ===
+123	456
+=== Test 2: Value format - single argument ===
+124	456
+125	789
+126	321
+=== Test 3: Array format - single argument ===
+127	200
+128	450
+129	600
+=== Test 4: Value format - multiple arguments (tuple) ===
+200	1
+201	1
+=== Test 5: Array format - multiple arguments ===
+202	1
+=== Test 6: String aggregate function - value format ===
+300	1
+301	1
+=== Test 7: String aggregate function - array format ===
+302	3
+303	2
+=== Test 8: VALUES and TabSeparated format - value and TabSeparated ===
+400	999
+400	999
+=== Test 9: Error handling - invalid format ===
+Error validation works correctly
+=== Test 10: Multiple inserts with different formats ===
+500	100
+501	200
+502	400
+=== Test 11: Empty array handling ===
+600	nan
+=== Test 12: CSV format - value ===
+700	456
+=== Test 13: CSV format - array ===
+701	200
+=== Test 14: TabSeparated format - value ===
+702	789
+=== Test 15: TabSeparated format - array ===
+703	500
+=== Test 16: JSONEachRow format - value ===
+704	999
+=== Test 17: JSONEachRow format - array ===
+705	800
+=== Test 18: Multiple JSON records ===
+706	111
+707	222

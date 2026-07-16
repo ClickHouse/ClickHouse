@@ -11,7 +11,7 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     jobs=[
         *[
-            j.set_provides([ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+            j.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
             for j in JobConfigs.special_build_jobs
             if "fuzzers" in j.name
         ],
@@ -22,6 +22,7 @@ workflow = Workflow.Config(
     artifacts=[
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        *ArtifactConfigs.clickhouse_binaries,
     ],
     enable_cache=True,
     enable_report=True,

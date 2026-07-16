@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-async-insert
--- no-async-insert: https://github.com/ClickHouse/ClickHouse/issues/80105
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS h3_indexes;
 

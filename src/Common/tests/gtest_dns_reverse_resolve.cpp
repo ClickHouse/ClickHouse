@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <thread>
+#include <cmath>
 #include <Common/DNSPTRResolverProvider.h>
 #include <Common/DNSResolver.h>
 #include <Poco/Net/IPAddress.h>
@@ -19,10 +20,10 @@ TEST(Common, ReverseDNS)
             auto & dns_resolver_instance = DNSResolver::instance();
             dns_resolver_instance.setDisableCacheFlag();
 
-            auto val1 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
-            auto val2 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
-            auto val3 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
-            auto val4 = rnd1() % static_cast<uint32_t>((pow(2, 31) - 1));
+            auto val1 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
+            auto val2 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
+            auto val3 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
+            auto val4 = rnd1() % static_cast<uint32_t>((std::pow(2, 31) - 1));
 
             uint32_t ipv4_buffer[1] = {
                 static_cast<uint32_t>(val1)

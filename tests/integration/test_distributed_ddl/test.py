@@ -44,7 +44,10 @@ def test_default_database(test_cluster):
     instance = test_cluster.instances["ch3"]
 
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE IF NOT EXISTS test2 ON CLUSTER 'cluster' FORMAT TSV"
+        instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster' SYNC FORMAT TSV"
+    )
+    test_cluster.ddl_check_query(
+        instance, "CREATE DATABASE test2 ON CLUSTER 'cluster' FORMAT TSV"
     )
     test_cluster.ddl_check_query(
         instance, "DROP TABLE IF EXISTS null ON CLUSTER 'cluster' FORMAT TSV"
@@ -268,7 +271,7 @@ def test_implicit_macros(test_cluster):
         instance, "DROP DATABASE IF EXISTS test_db ON CLUSTER '{cluster}' SYNC"
     )
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER '{cluster}'"
+        instance, "CREATE DATABASE test_db ON CLUSTER '{cluster}'"
     )
 
     test_cluster.ddl_check_query(
@@ -293,8 +296,10 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{layer}-{shard}/{tab
 
 def test_allowed_databases(test_cluster):
     instance = test_cluster.instances["ch2"]
-    instance.query("CREATE DATABASE IF NOT EXISTS db1 ON CLUSTER cluster")
-    instance.query("CREATE DATABASE IF NOT EXISTS db2 ON CLUSTER cluster")
+    instance.query("DROP DATABASE IF EXISTS db1 ON CLUSTER cluster SYNC")
+    instance.query("CREATE DATABASE db1 ON CLUSTER cluster")
+    instance.query("DROP DATABASE IF EXISTS db2 ON CLUSTER cluster SYNC")
+    instance.query("CREATE DATABASE db2 ON CLUSTER cluster")
 
     instance.query(
         "CREATE TABLE db1.t1 ON CLUSTER cluster (i Int8) ENGINE = Memory",
@@ -506,7 +511,7 @@ def test_replicated_without_arguments(test_cluster):
 
     test_cluster.ddl_check_query(
         instance,
-        "CREATE DATABASE IF NOT EXISTS test_atomic ON CLUSTER cluster ENGINE=Atomic",
+        "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic",
     )
     assert (
         "only supported when the UUID is explicitly specified"
@@ -570,8 +575,11 @@ def test_replicated_without_arguments(test_cluster):
     )
 
     test_cluster.ddl_check_query(
+        instance, "DROP DATABASE IF EXISTS test_ordinary ON CLUSTER cluster SYNC"
+    )
+    test_cluster.ddl_check_query(
         instance,
-        "CREATE DATABASE IF NOT EXISTS test_ordinary ON CLUSTER cluster ENGINE=Ordinary",
+        "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )
     assert (

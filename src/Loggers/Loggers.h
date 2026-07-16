@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Loggers/OwnSplitChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
@@ -9,7 +10,10 @@
 
 namespace DB
 {
-    class OwnSplitChannelBase;
+class OwnSplitChannelBase;
+
+using AsyncLogQueueSize = std::pair<std::string, size_t>;
+using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
 }
 
 namespace Poco::Util
@@ -27,6 +31,7 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
+    DB::AsyncLogQueueSizes getAsynchronousMetricsFromAsyncLogs();
     void flushTextLogs();
 
     virtual ~Loggers() = default;
@@ -46,3 +51,6 @@ private:
 
     Poco::AutoPtr<DB::OwnSplitChannelBase> split;
 };
+
+class OwnPatternFormatter;
+Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color = false);

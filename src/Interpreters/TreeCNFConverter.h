@@ -49,7 +49,7 @@ public:
                 /// all atoms false -> group false -> CNF false
                 filtered.clear();
                 filtered_group.clear();
-                filtered_group.insert(CNFQueryAtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
+                filtered_group.insert(CNFQueryAtomicFormula{false, make_intrusive<ASTLiteral>(static_cast<UInt8>(0))});
                 filtered.insert(filtered_group);
                 std::swap(statements, filtered);
                 return *this;
@@ -133,10 +133,10 @@ public:
     /// If amount of atomic formulas will be exceeded nullopt will be returned.
     /// 0 - means unlimited.
     static std::optional<CNFQuery> tryConvertToCNF(
-        const ASTPtr & query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
+        const IAST * query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static CNFQuery toCNF(
-        const ASTPtr & query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
+        const IAST * query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static ASTPtr fromCNF(const CNFQuery & cnf);
 };

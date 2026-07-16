@@ -11,7 +11,7 @@ namespace DB
 
 bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTDeleteQuery>();
+    auto query = make_intrusive<ASTDeleteQuery>();
     node = query;
 
     ParserKeyword s_delete(Keyword::DELETE);

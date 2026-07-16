@@ -4,7 +4,7 @@
 
 #if USE_SSL
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <string>
 
 namespace DB
@@ -24,7 +24,17 @@ public:
         // if path starts_with metadata_path -> got already wrapped path
         if (!path_wrapper.empty() && path.starts_with(path_wrapper))
             return path;
+
         return path_wrapper + path;
+    }
+
+    static String unwrapPath(const String & path_wrapper, const String & path)
+    {
+        /// If path does not start with the wrap prefix -> it was not wrapped.
+        if (path_wrapper.empty() || !path.starts_with(path_wrapper))
+            return path;
+
+        return path.substr(path_wrapper.size());
     }
 
     MetadataStorageWithPathWrapperTransaction(MetadataTransactionPtr delegate_, const std::string & metadata_path_)
@@ -35,14 +45,14 @@ public:
 
     ~MetadataStorageWithPathWrapperTransaction() override = default;
 
-    const IMetadataStorage & getStorageForNonTransactionalReads() const final
-    {
-        return delegate->getStorageForNonTransactionalReads();
-    }
-
     void commit(const TransactionCommitOptionsVariant & options) final
     {
         delegate->commit(options);
+    }
+
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
+    {
+        return delegate->tryCommit(options);
     }
 
     void writeStringToFile(const std::string & path, const std::string & data) override
@@ -55,19 +65,14 @@ public:
         delegate->writeInlineDataToFile(wrappedPath(path), data);
     }
 
-    void createEmptyMetadataFile(const std::string & path) override
+    void createMetadataFile(const std::string & path, const StoredObjects & objects) override
     {
-        delegate->createEmptyMetadataFile(wrappedPath(path));
+        delegate->createMetadataFile(wrappedPath(path), objects);
     }
 
-    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
+    void addBlobToMetadata(const std::string & path, const StoredObject & object) override
     {
-        delegate->createMetadataFile(wrappedPath(path), object_key, size_in_bytes);
-    }
-
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
-    {
-        delegate->addBlobToMetadata(wrappedPath(path), object_key, size_in_bytes);
+        delegate->addBlobToMetadata(wrappedPath(path), object);
     }
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override
@@ -87,9 +92,9 @@ public:
         delegate->setReadOnly(wrappedPath(path));
     }
 
-    void unlinkFile(const std::string & path) override
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override
     {
-        delegate->unlinkFile(wrappedPath(path));
+        delegate->unlinkFile(wrappedPath(path), if_exists, should_remove_objects);
     }
 
     void createDirectory(const std::string & path) override
@@ -107,9 +112,14 @@ public:
         delegate->removeDirectory(wrappedPath(path));
     }
 
-    void removeRecursive(const std::string & path) override
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override
     {
-        delegate->removeRecursive(wrappedPath(path));
+        auto unwrapped_should_remove_objects = [wrapper = metadata_path, should_remove_objects](const String & relative_path)
+        {
+            return should_remove_objects(unwrapPath(wrapper, relative_path));
+        };
+
+        delegate->removeRecursive(wrappedPath(path), unwrapped_should_remove_objects);
     }
 
     void createHardLink(const std::string & path_from, const std::string & path_to) override
@@ -132,20 +142,14 @@ public:
         delegate->replaceFile(wrappedPath(path_from), wrappedPath(path_to));
     }
 
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override
+    void truncateFile(const std::string & src_path, size_t size) override
     {
-        return delegate->unlinkMetadata(wrappedPath(path));
+        delegate->truncateFile(wrappedPath(src_path), size);
     }
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override
-    {
-        return delegate->truncateFile(wrappedPath(src_path), target_size);
-    }
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
-    {
-        return delegate->tryGetBlobsFromTransactionIfExists(path);
-    }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
+    void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override { delegate->recordBlobsReplication(blob, missing_locations); }
+    StoredObjects getSubmittedForRemovalBlobs() override { return delegate->getSubmittedForRemovalBlobs(); }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage
@@ -156,6 +160,16 @@ private:
     std::string metadata_absolute_path;
 
     String wrappedPath(const String & path) const { return MetadataStorageWithPathWrapperTransaction::wrappedPath(metadata_path, path); }
+    Strings wrappedPaths(const Strings & paths) const
+    {
+        Strings wrapped_paths;
+        wrapped_paths.reserve(paths.size());
+
+        for (const auto & path : paths)
+            wrapped_paths.push_back(wrappedPath(path));
+
+        return wrapped_paths;
+    }
 
 public:
     MetadataStorageWithPathWrapper(MetadataStoragePtr delegate_, const std::string & metadata_path_)
@@ -179,6 +193,11 @@ public:
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
+
+    bool areBlobPathsRandom() const override
+    {
+        return delegate->areBlobPathsRandom();
+    }
 
     bool existsFile(const std::string & path) const override
     {
@@ -214,11 +233,6 @@ public:
 
     bool supportsStat() const override { return delegate->supportsStat(); }
 
-    bool supportsPartitionCommand(const PartitionCommand & command) const override
-    {
-        return delegate->supportsPartitionCommand(command);
-    }
-
     struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
 
     std::vector<std::string> listDirectory(const std::string & path) const override
@@ -243,11 +257,7 @@ public:
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override
     {
-        std::vector<String> wrapped_paths;
-        wrapped_paths.reserve(file_paths.size());
-        for (const auto & path : file_paths)
-            wrapped_paths.push_back(wrappedPath(path));
-        return delegate->getSerializedMetadata(wrapped_paths);
+        return delegate->getSerializedMetadata(wrappedPaths(file_paths));
     }
 
     uint32_t getHardlinkCount(const std::string & path) const override
@@ -264,8 +274,52 @@ public:
     {
         return delegate->isReadOnly();
     }
-};
 
+    void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override
+    {
+        delegate->updateCache(wrappedPaths(paths), recursive, enforce_fresh, serialized_cache_update_description);
+    }
+
+    void updateCacheFromSerializedDescription(const std::string & serialized_cache_update_description) override
+    {
+        delegate->updateCacheFromSerializedDescription(serialized_cache_update_description);
+    }
+
+    void invalidateCache(const std::string & path) override
+    {
+        delegate->invalidateCache(wrappedPath(path));
+    }
+
+    void dropCache() override
+    {
+        delegate->dropCache();
+    }
+
+    BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override
+    {
+        return delegate->getBlobsToRemove(cluster, max_count);
+    }
+
+    int64_t recordAsRemoved(const StoredObjects & blobs) override
+    {
+        return delegate->recordAsRemoved(blobs);
+    }
+
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
+    {
+        return delegate->hasPendingRemovalBlobs(blobs);
+    }
+
+    BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override
+    {
+        return delegate->getBlobsToReplicate(cluster, max_count);
+    }
+
+    int64_t recordAsReplicated(const BlobsToReplicate & blobs) override
+    {
+        return delegate->recordAsReplicated(blobs);
+    }
+};
 
 }
 

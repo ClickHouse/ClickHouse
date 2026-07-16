@@ -10,11 +10,16 @@ profiles:
         # nearest_hostname - from set of replicas with minimum number of errors, choose replica
         # with minimum number of different symbols between replica's hostname and local hostname (Hamming distance).
         # hostname_levenshtein_distance - just the same with nearest_hostname but calculate the difference by Levenshtein distance.
+        # hostname_longest_common_prefix - just the same with nearest_hostname but prefers the replica whose hostname shares the longest common prefix with the local hostname.
+        # hostname_longest_common_suffix - just the same with nearest_hostname but prefers the replica whose hostname shares the longest common suffix with the local hostname.
         # in_order - first live replica is chosen in specified order.
         # first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
         load_balancing: random
 
-        # Profile that allows only read queries.
+    # Settings for background operations (e.g. Merge, Mutate)
+    #background:
+
+    # Profile that allows only read queries.
     readonly:
         readonly: 1
 

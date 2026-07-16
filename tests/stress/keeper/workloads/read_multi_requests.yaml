@@ -1,0 +1,48 @@
+name: read_multi_requests
+# Read-heavy get + list; use with opts.feature_flags.multi_read for MultiRead batching.
+# Same paths/setup as prod_mix for comparability.
+concurrency: 640
+report_delay: 0.0
+continue_on_error: true
+
+connections:
+  operation_timeout_ms: 30000
+  connection_timeout_ms: 400000
+
+setup:
+  node:
+    name: e2e
+    node:
+      name: prod
+      node:
+      - name: hot
+        data:
+          random_string:
+            size:
+              min_value: 0
+              max_value: 162
+      - name: pool
+        node:
+        - repeat: 64
+          name:
+            random_string:
+              size: 12
+          data:
+            random_string:
+              size:
+                min_value: 0
+                max_value: 162
+      - name: churn
+
+generator:
+  requests:
+    get:
+      path:
+      - /e2e/prod/hot
+      - children_of: /e2e/prod
+      weight: 85
+    list:
+      path:
+      - /e2e/prod/pool
+      - children_of: /e2e/prod
+      weight: 15

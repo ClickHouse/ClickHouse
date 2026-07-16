@@ -5,7 +5,7 @@ target_link_libraries(clickhouse_functions_url PRIVATE dbms)
 set_source_files_properties(tldLookup.generated.cpp PROPERTIES COMPILE_FLAGS -Wno-shorten-64-to-32)
 
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(clickhouse_functions_url PRIVATE "-g0")
+    target_compile_options(clickhouse_functions_url PRIVATE "-g1")
 endif()
 
 # TODO: move Functions/Regexps.h to some lib and use here

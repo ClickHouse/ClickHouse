@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -138,7 +139,7 @@ namespace
     {
         constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
         constexpr size_t result_size = simple_types.size() + complex_types_size;
-        std::array<TypeIndex, result_size> result;
+        std::array<TypeIndex, result_size> result{};
         size_t index = 0;
 
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)
@@ -189,11 +190,11 @@ namespace
         /// and slowness of this function, and it can lead to `Max query size exceeded`
         /// while using this function with generateRandom.
         size_t num_values = rng() % 16 + 1;
-        std::vector<Int16> values(num_values);
+        VectorWithMemoryTracking<Int16> values(num_values);
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
-            x = rng() % (2 * max_value + 3 - num_values) - max_value - 1;
+            x = static_cast<Int16>(rng() % (2 * max_value + 3 - num_values) - max_value - 1);
         /// Make all numbers unique.
         std::sort(values.begin(), values.end());
         for (size_t i = 0; i < num_values; ++i)
@@ -241,10 +242,13 @@ namespace
     }
 
     template <bool allow_complex_types = true>
-    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0)
+    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0, size_t max_depth = MAX_DEPTH)
     {
-        if (allow_complex_types && depth > MAX_DEPTH)
-            writeRandomType<false>(column_name, rng, buf, depth);
+        if (allow_complex_types && depth > max_depth)
+        {
+            writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth, max_depth);
+            return;
+        }
 
         constexpr auto all_types = getAllTypes<allow_complex_types>();
         auto type = all_types[rng() % all_types.size()];
@@ -293,14 +297,14 @@ namespace
             case TypeIndex::Nullable:
             {
                 writeCString("Nullable(", buf);
-                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 writeChar(')', buf);
                 return;
             }
             case TypeIndex::Array:
             {
                 writeCString("Array(", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 writeChar(')', buf);
                 return;
             }
@@ -309,7 +313,7 @@ namespace
                 writeCString("Map(", buf);
                 writeMapKeyType(column_name, rng, buf);
                 writeCString(", ", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 writeChar(')', buf);
                 return;
             }
@@ -334,7 +338,7 @@ namespace
                         writeString(element_name, buf);
                         writeChar(' ', buf);
                     }
-                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 }
                 writeChar(')', buf);
                 return;
@@ -420,7 +424,6 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
         auto buf = WriteBufferFromVector<ColumnString::Chars>(chars);
         writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
     }
-    chars.push_back(0);
     string_column.getOffsets().push_back(chars.size());
     return ColumnConst::create(std::move(col_res), input_rows_count);
 }
@@ -434,24 +437,70 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     return buf.str();
 }
 
+String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types)
+{
+    WriteBufferFromOwnString buf;
+    String column_name = "c";
+    if (allow_complex_types)
+        writeRandomType<true>(column_name, rng, buf, allow_suspicious_lc_types);
+    else
+        writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types);
+    return buf.str();
+}
+
+String FunctionGenerateRandomStructure::generateRandomTypeForTest(size_t seed, bool allow_suspicious_lc_types, size_t max_depth)
+{
+    pcg64 rng(seed);
+    WriteBufferFromOwnString buf;
+    writeRandomType<true>("c", rng, buf, allow_suspicious_lc_types, /*depth=*/0, max_depth);
+    return buf.str();
+}
+
 REGISTER_FUNCTION(GenerateRandomStructure)
 {
-    factory.registerFunction<FunctionGenerateRandomStructure>(FunctionDocumentation
-        {
-            .description=R"(
-Generates a random table structure.
-This function takes 2 optional constant arguments:
-the number of columns in the result structure (random by default) and random seed (random by default)
-The maximum number of columns is 128.
-The function returns a value of type String.
-)",
-            .examples{
-                {"random", "SELECT generateRandomStructure()", "c1 UInt32, c2 FixedString(25)"},
-                {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
-                {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
-            },
-            .category = FunctionDocumentation::Category::RandomNumber
-        });
+    FunctionDocumentation::Description description = R"(
+Generates random table structure in the format `column1_name column1_type, column2_name column2_type, ...`.
+)";
+    FunctionDocumentation::Syntax syntax = "generateRandomStructure([number_of_columns, seed])";
+    FunctionDocumentation::Arguments arguments = {
+        {"number_of_columns", "The desired number of columns in the resultant table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.", {"UInt64"}},
+        {"seed", "Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Randomly generated table structure.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT generateRandomStructure()
+        )",
+        R"(
+c1 Decimal32(5), c2 Date, c3 Tuple(LowCardinality(String), Int128, UInt64, UInt16, UInt8, IPv6), c4 Array(UInt128), c5 UInt32, c6 IPv4, c7 Decimal256(64), c8 Decimal128(3), c9 UInt256, c10 UInt64, c11 DateTime
+        )"
+    },
+    {
+        "with specified number of columns",
+        R"(
+SELECT generateRandomStructure(1)
+        )",
+        R"(
+c1 Map(UInt256, UInt16)
+        )"
+    },
+    {
+        "with specified seed",
+        R"(
+SELECT generateRandomStructure(NULL, 33)
+        )",
+        R"(
+c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70)))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGenerateRandomStructure>(documentation);
 }
 
 }

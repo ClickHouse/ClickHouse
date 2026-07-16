@@ -13,7 +13,12 @@ namespace DB
 class PartitionPruner
 {
 public:
-    PartitionPruner(const StorageMetadataPtr & metadata, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context, bool strict = false);
+    PartitionPruner(
+        const StorageMetadataPtr & metadata,
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        bool strict = false,
+        bool skip_analysis = false);
 
     bool canBePruned(const IMergeTreeDataPart & part) const;
 

@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'RowBinaryWithDefaultsフォーマットに関するドキュメント'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/ja/common-row-binary-format-settings.mdx';
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✗  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+[`RowBinary`](/ja/reference/formats/RowBinary/RowBinary)フォーマットに似ていますが、各カラムの前に、デフォルト値を使用するかどうかを示す追加の1バイトがあります。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+例:
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* カラム `x` では、デフォルト値を使用することを示す 1 バイト `01` のみがあり、このバイトの後ろにはほかのデータはありません。
+* カラム `y` では、データはバイト `00` で始まり、これはそのカラムが実際の値を持ち、後続のデータ &#96;01000000&#96;&#96; から読み取る必要があることを示します。
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+<RowBinaryFormatSettings />

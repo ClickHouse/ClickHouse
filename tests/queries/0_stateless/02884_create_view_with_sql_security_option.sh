@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-async-insert
+# Tags: long, no-replicated-database, no-async-insert
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -227,11 +227,11 @@ FROM $db.destination1;
 EOF
 
 echo "insert into source"
-(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100 SETTINGS optimize_trivial_insert_select = 0" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 echo "grant insert on source to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.source TO $user2"
 echo "insert into source as user2"
-${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100"
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100 SETTINGS optimize_trivial_insert_select = 0"
 
 echo "select from destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
@@ -348,7 +348,7 @@ GRANT INSERT ON $db.session_events TO $user3;
 GRANT SELECT ON $db.session_events TO $user3;
 EOF
 
-${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000"
+${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000 SETTINGS optimize_trivial_insert_select = 0"
 ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
 
@@ -363,5 +363,33 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.cluster_mv" | grep -c "DEFINER = $user3"
 
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE $db.test_mv_1;
+DROP TABLE $db.test_mv_3;
+DROP TABLE $db.test_mv_4;
+DROP TABLE $db.test_mv_5;
 
+DROP TABLE $db.mv1;
+DROP TABLE $db.mv2;
+
+DROP TABLE $db.test_view_row_1;
+DROP TABLE $db.test_view_g_1;
+DROP TABLE $db.test_view_g_2;
+DROP TABLE $db.test_mv_row_2;
+
+DROP TABLE $db.test_view_2;
+DROP TABLE $db.test_view_3;
+DROP TABLE $db.test_view_4;
+DROP TABLE $db.test_view_5;
+DROP TABLE $db.test_view_6;
+DROP TABLE $db.test_view_7;
+DROP TABLE $db.test_view_8;
+DROP TABLE $db.test_view_9;
+DROP TABLE $db.test_view_10;
+DROP TABLE $db.test_view_11;
+
+DROP TABLE $db.cluster_mv ON CLUSTER test_shard_localhost;
+
+DROP TABLE $db.materialized_events;
+EOF
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";

@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FlattenTupleForCSVHeader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
@@ -35,11 +36,20 @@ void CSVRowOutputFormat::writePrefix()
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
 
+    /// When tuple values are serialized into separate columns, flatten the header the same way so
+    /// that the number of header fields matches the number of data fields (issue #107342).
+    const bool flatten = format_settings.csv.serialize_tuple_into_separate_columns
+        && format_settings.csv.header_serialize_tuple_into_separate_columns;
+
+    Names names;
+    Names type_names;
+    getCSVHeaderNamesAndTypes(sample, flatten, names, type_names);
+
     if (with_names)
-        writeLine(sample.getNames());
+        writeLine(names);
 
     if (with_types)
-        writeLine(sample.getDataTypeNames());
+        writeLine(type_names);
 }
 
 
@@ -73,6 +83,7 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 }
 
 
+void registerOutputFormatCSV(FormatFactory & factory);
 void registerOutputFormatCSV(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -80,7 +91,8 @@ void registerOutputFormatCSV(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
                    WriteBuffer & buf,
                    const Block & sample,
-                   const FormatSettings & format_settings)
+                   const FormatSettings & format_settings,
+                   FormatFilterInfoPtr /*format_filter_info*/)
         {
             return std::make_shared<CSVRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, format_settings);
         });

@@ -104,8 +104,8 @@ def test_storage_url_redirected_headers(started_cluster):
 
     print(result_redirect)
 
-    assert "Host: 127.0.0.1" in result_redirect
-    assert "Host: localhost" not in result_redirect
+    assert "Host: 127.0.0.1:8080" in result_redirect
+    assert "Host: localhost:8000" not in result_redirect
 
     result = server.exec_in_container(
         ["cat", http_headers_echo_server.RESULT_PATH], user="root"
@@ -113,8 +113,8 @@ def test_storage_url_redirected_headers(started_cluster):
 
     print(result)
 
-    assert "Host: 127.0.0.1" not in result
-    assert "Host: localhost" in result
+    assert "Host: 127.0.0.1:8080" not in result
+    assert "Host: localhost:8000" in result
 
 
 def test_with_override_content_type_url_http_headers(started_cluster):

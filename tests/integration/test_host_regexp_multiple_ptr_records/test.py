@@ -65,7 +65,7 @@ def setup_ch_server(dns_server_ip):
     ch_server.exec_in_container(
         (["bash", "-c", "echo 'options ndots:0' >> /etc/resolv.conf"])
     )
-    ch_server.query("SYSTEM DROP DNS CACHE")
+    ch_server.query("SYSTEM CLEAR DNS CACHE")
 
 
 def build_endpoint_v4(ip):

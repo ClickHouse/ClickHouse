@@ -1,6 +1,7 @@
 services:
     zoo1:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -36,8 +37,10 @@ services:
             - timeout:1
             - inet6
             - rotate
+        cpus: 3
     zoo2:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -73,8 +76,10 @@ services:
             - timeout:1
             - inet6
             - rotate
+        cpus: 3
     zoo3:
         image: ${image:-clickhouse/integration-test}
+        stop_grace_period: 5s
         restart: always
         user: ${user:-}
         volumes:
@@ -110,3 +115,4 @@ services:
             - timeout:1
             - inet6
             - rotate
+        cpus: 3

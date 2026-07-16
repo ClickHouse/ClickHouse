@@ -16,28 +16,15 @@ class MergeTreePatchReader : private boost::noncopyable
 public:
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
-    struct PatchReadResult
-    {
-        PatchReadResult(ReadResult read_result_, PatchSharedDataPtr data_)
-            : read_result(std::move(read_result_)), data(std::move(data_))
-        {
-        }
-
-        ReadResult read_result;
-        PatchSharedDataPtr data;
-    };
-
-    using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
-
     MergeTreePatchReader(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_);
     virtual ~MergeTreePatchReader() = default;
 
-    virtual PatchReadResultPtr readPatch(MarkRanges & ranges) = 0;
-    virtual PatchToApplyPtr applyPatch(const Block & result_block, const PatchReadResult & patch_result) const = 0;
+    virtual std::vector<PatchReadResultPtr> readPatches(MarkRanges & ranges,
+        const ReadResult & main_result,
+        const Block & result_header,
+        const PatchReadResult * last_read_patch) = 0;
 
-    /// Returns true if we need to read a new patch part for main_result.
-    /// A new patch is needed if main_result has newer data than covered by old_patch.
-    virtual bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const = 0;
+    virtual std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const = 0;
 
     /// Returns true if we need to keep old_patch for main_result.
     /// An old patch is not needed if main_result and all further results have data newer than covered by old_patch.
@@ -48,53 +35,57 @@ public:
     IMergeTreeReader * getReader() const { return reader.get(); }
 
 protected:
-    ReadResult readPatchRange(MarkRanges ranges);
+    ReadResult readPatchRanges(MarkRanges ranges);
 
     PatchPartInfoForReader patch_part;
     MergeTreeReaderPtr reader;
     MergeTreeRangeReader range_reader;
 };
 
-class PatchReadResultCache : public CacheBase<UInt128, MergeTreePatchReader::PatchReadResult>
-{
-public:
-    PatchReadResultCache();
-    static UInt128 hash(const String & patch_name, const MarkRanges & ranges);
-};
-
-using PatchReadResultCachePtr = std::shared_ptr<PatchReadResultCache>;
-
 class MergeTreePatchReaderMerge : public MergeTreePatchReader
 {
 public:
     MergeTreePatchReaderMerge(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_);
 
-    PatchReadResultPtr readPatch(MarkRanges & ranges) override;
-    PatchToApplyPtr applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
-    bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const override;
+    std::vector<PatchReadResultPtr> readPatches(
+        MarkRanges & ranges,
+        const ReadResult & main_result,
+        const Block & result_header,
+        const PatchReadResult * last_read_patch) override;
+
+    std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
     bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const override;
+
+private:
+    PatchReadResultPtr readPatch(const MarkRange & range);
+    /// Returns true if we need to read a new patch part for main_result.
+    /// A new patch is needed if main_result has newer data than covered by old_patch.
+    bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const;
 };
 
 class MergeTreePatchReaderJoin : public MergeTreePatchReader
 {
 public:
-    MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchReadResultCache * read_result_cache_);
+    MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_);
 
-    PatchReadResultPtr readPatch(MarkRanges & ranges) override;
-    PatchToApplyPtr applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
-    /// Return true because we need to read all data in range for Join mode.
-    bool needNewPatch(const ReadResult &, const PatchReadResult &) const override { return true; }
+    std::vector<PatchReadResultPtr> readPatches(
+        MarkRanges & ranges,
+        const ReadResult & main_result,
+        const Block & result_header,
+        const PatchReadResult * last_read_patch) override;
+
+    std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
     /// Return true because patch with Join mode is shared between all data
     /// in range and we shouldn't remove it until reading of range is finished.
     bool needOldPatch(const ReadResult &, const PatchReadResult &) const override { return true; }
 
 private:
-    PatchReadResultCache * read_result_cache;
+    PatchJoinCache * patch_join_cache;
 };
 
 using MergeTreePatchReaderPtr = std::shared_ptr<MergeTreePatchReader>;
 using MergeTreePatchReaders = std::vector<MergeTreePatchReaderPtr>;
 
-MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchReadResultCache * read_result_cache);
+MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache);
 
 }

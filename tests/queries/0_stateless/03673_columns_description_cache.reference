@@ -1,0 +1,32 @@
+0
+-- { echoOn }
+create table t_mt (key Int) engine=MergeTree() order by ();
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+0
+insert into t_mt values (1);
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+1
+insert into t_mt values (2);
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+1
+alter table t_mt add column value String settings mutations_sync=2;
+insert into t_mt values (10, '10');
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+2
+insert into t_mt values (20, '20');
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+2
+-- now let's try to remove ColumnsDescription with old structure
+alter table t_mt detach part 'all_1_1_0';
+alter table t_mt detach part 'all_2_2_0';
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+1
+-- reattach
+detach table t_mt;
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+attach table t_mt;
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_mt';
+1
+-- system.metrics
+select value > 0 from system.metrics where metric = 'ColumnsDescriptionsCacheSize';
+1

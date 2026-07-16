@@ -12,12 +12,12 @@ l	\N	\N	String	Nullable(String)
 using
 l	\N	Nullable(String)	Nullable(String)
 l	\N	Nullable(String)	Nullable(String)
-\N	\N	Nullable(String)	Nullable(String)
-\N	\N	Nullable(String)	Nullable(String)
+r	\N	Nullable(String)	Nullable(String)
+r	\N	Nullable(String)	Nullable(String)
 l	\N	Nullable(String)	Nullable(String)
 l	\N	Nullable(String)	Nullable(String)
-\N	\N	Nullable(String)	Nullable(String)
-\N	\N	Nullable(String)	Nullable(String)
+r	\N	Nullable(String)	Nullable(String)
+r	\N	Nullable(String)	Nullable(String)
 \N	\N
 \N	\N
 on + join_use_nulls

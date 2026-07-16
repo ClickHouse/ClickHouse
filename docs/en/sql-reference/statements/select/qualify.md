@@ -3,9 +3,8 @@ description: 'Documentation for QUALIFY Clause'
 sidebar_label: 'QUALIFY'
 slug: /sql-reference/statements/select/qualify
 title: 'QUALIFY Clause'
+doc_type: 'reference'
 ---
-
-# QUALIFY Clause
 
 Allows filtering window functions results. It is similar to the [WHERE](../../../sql-reference/statements/select/where.md) clause, but the difference is that `WHERE` is performed before window functions evaluation, while `QUALIFY` is performed after it.
 

@@ -148,9 +148,9 @@ void HandshakeResponse::readPayloadImpl(ReadBuffer & payload)
     }
     else if (capability_flags & CLIENT_SECURE_CONNECTION)
     {
-        char len;
-        payload.readStrict(len);
-        auth_response.resize(static_cast<unsigned int>(len));
+        UInt8 len = 0;
+        readBinary(len, payload);
+        auth_response.resize(len);
         payload.readStrict(auth_response.data(), len);
     }
     else
@@ -183,8 +183,8 @@ void HandshakeResponse::writePayloadImpl(WriteBuffer & buffer) const
     }
     else if (capability_flags & CLIENT_SECURE_CONNECTION)
     {
-        writeChar(auth_response.size(), buffer);
-        writeString(auth_response.data(), auth_response.size(), buffer);
+        writeChar(static_cast<UInt8>(auth_response.size()), buffer);
+        writeString(auth_response, buffer);
     }
     else
     {

@@ -9,10 +9,13 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
-                <!-- Avoid extra retries to speed up tests -->
+                <!-- Avoid extra retries to speed up tests. -->
+                <!-- retry_attempts=0 might give sporadic erorrs due to various reasons, but for this test it seems it works -->
+                <!-- It works because run_endpoint waits until s3 starts -->
                 <retry_attempts>0</retry_attempts>
                 <s3_use_adaptive_timeouts>0</s3_use_adaptive_timeouts>
                 <connect_timeout_ms>20000</connect_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3>
             <s3_retryable>
                 <type>s3</type>
@@ -23,6 +26,7 @@
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
                 <connect_timeout_ms>20000</connect_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_retryable>
             <s3_no_retries>
                 <type>s3</type>
@@ -37,6 +41,7 @@
                 <s3_use_adaptive_timeouts>0</s3_use_adaptive_timeouts>
                 <s3_max_single_read_retries>1</s3_max_single_read_retries>
                 <connect_timeout_ms>20000</connect_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_no_retries>
             <default/>
         </disks>

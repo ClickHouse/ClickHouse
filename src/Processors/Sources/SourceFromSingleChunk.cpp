@@ -22,6 +22,7 @@ SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data) : ISource(std::m
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = data->info.bucket_num;
         info->is_overflows = data->info.is_overflows;
+        info->out_of_order_buckets = data->info.out_of_order_buckets;
         chunk.getChunkInfos().add(std::move(info));
     }
 }

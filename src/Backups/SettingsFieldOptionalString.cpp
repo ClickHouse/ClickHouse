@@ -1,6 +1,7 @@
 #include <Backups/SettingsFieldOptionalString.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -9,6 +10,10 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
 }
+
+SettingFieldOptionalString::operator Field() const { return Field(value.value_or("")); }
+
+String SettingFieldOptionalString::toString() const { return value.value_or(""); }
 
 SettingFieldOptionalString::SettingFieldOptionalString(const Field & field)
 {

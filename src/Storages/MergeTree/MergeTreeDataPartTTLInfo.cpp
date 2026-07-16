@@ -4,6 +4,7 @@
 #include <Common/quoteString.h>
 #include <algorithm>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/TTLDescription.h>
 
@@ -37,19 +38,20 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
     {
         columns_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        updatePartMinMaxTTL(ttl_info);
     }
 
     for (const auto & [name, ttl_info] : other_infos.rows_where_ttl)
     {
         rows_where_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        updatePartMinMaxTTL(ttl_info);
     }
 
     for (const auto & [name, ttl_info] : other_infos.group_by_ttl)
     {
-        group_by_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        const MergeTreeDataPartTTLInfo not_finished_ttl_info{ .min = ttl_info.min, .max = ttl_info.max, .ttl_finished = false };
+        group_by_ttl[name].update(not_finished_ttl_info);
+        updatePartMinMaxTTL(not_finished_ttl_info);
     }
 
     for (const auto & [name, ttl_info] : other_infos.recompression_ttl)
@@ -59,7 +61,7 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
         moves_ttl[expression].update(ttl_info);
 
     table_ttl.update(other_infos.table_ttl);
-    updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
+    updatePartMinMaxTTL(table_ttl);
 }
 
 
@@ -85,7 +87,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             String name = col["name"].getString();
             columns_ttl.emplace(name, ttl_info);
 
-            updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+            updatePartMinMaxTTL(ttl_info);
         }
     }
     if (json.has("table"))
@@ -97,7 +99,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         if (table.has("finished"))
             table_ttl.ttl_finished = table["finished"].getUInt();
 
-        updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
+        updatePartMinMaxTTL(table_ttl);
     }
 
     auto fill_ttl_info_map = [this](const JSON & json_part, TTLInfoMap & ttl_info_map, bool update_min_max)
@@ -115,7 +117,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             ttl_info_map.emplace(expression, ttl_info);
 
             if (update_min_max)
-                updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+                updatePartMinMaxTTL(ttl_info);
         }
     };
 
@@ -247,14 +249,13 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
     auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
     {
         for (const auto & [name, info] : map)
-        {
-            if (!info.finished())
+            if (info.initialized() && !info.finished())
                 return true;
-        }
+
         return false;
     };
 
-    if (!table_ttl.finished())
+    if (table_ttl.initialized() && !table_ttl.finished())
         return true;
 
     if (has_non_finished_ttl(columns_ttl))
@@ -313,7 +314,7 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
                 continue;
         }
 
-        time_t ttl_time;
+        time_t ttl_time = 0;
 
         if (use_max)
             ttl_time = ttl_info_it->second.max;

@@ -51,6 +51,10 @@ struct SelectQueryOptions
     /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
     bool ignore_access_check = false;
 
+    /// Check access rights for tables inside subqueries even in only_analyze mode.
+    /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
+    bool check_subquery_table_access = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -58,7 +62,10 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_count;
 
     bool build_logical_plan = false;
+    bool is_local_shard_plan = false;
     bool ignore_rename_columns = false;
+
+    size_t max_step_description_length = 0;
 
     /** During read from MergeTree parts will be removed from snapshot after they are not needed.
       * This optimization will break subsequent execution of the same query tree, because table node
@@ -67,6 +74,8 @@ struct SelectQueryOptions
       * TODO: Implement this functionality in safer way
       */
     bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
+
+    bool force_materialize_cte = false;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -86,6 +95,7 @@ struct SelectQueryOptions
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
+        out.is_local_shard_plan = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
@@ -160,6 +170,12 @@ struct SelectQueryOptions
         return *this;
     }
 
+    SelectQueryOptions & checkSubqueryTableAccess(bool value = true)
+    {
+        check_subquery_table_access = value;
+        return *this;
+    }
+
     SelectQueryOptions & setInternal(bool value = false)
     {
         is_internal = value;
@@ -182,6 +198,12 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
+        return *this;
+    }
+
+    SelectQueryOptions & forceMaterializeCTE(bool value = true)
+    {
+        force_materialize_cte = value;
         return *this;
     }
 };

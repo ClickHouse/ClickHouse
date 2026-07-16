@@ -1,6 +1,8 @@
 -- { echoOn }
-Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10));
+(0,0)
+Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10));
+(0,0)
 SELECT
     any(tp) AS default,
     toTypeName(default) as default_type,

@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <merge_tree_compact_parts_min_granules_to_multibuffer_read>1000</merge_tree_compact_parts_min_granules_to_multibuffer_read>
+        </default>
+    </profiles>
+</clickhouse>

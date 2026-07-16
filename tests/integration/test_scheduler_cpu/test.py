@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import random
 import threading
 import time
 
@@ -16,7 +15,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     stay_alive=True,
-    main_configs=[],
+    main_configs=[
+        "configs/no_cpu_slot_preemption.xml",
+    ],
     with_zookeeper=True,
 )
 
@@ -33,7 +34,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        f"""
+        """
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
@@ -102,7 +103,7 @@ class BusyPeriod:
 
 def test_create_workload():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=100;
         create workload admin in all settings priority=0;
@@ -114,37 +115,37 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+                "select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+                "select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='cpu' and max_requests=100"
+                "select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='cpu' and max_requests=100"
             )
             == "1\n"
         )
@@ -156,7 +157,7 @@ def test_create_workload():
 
 def test_concurrency_control_compatibility():
     node.query(
-        f"""
+        """
         create resource cpu (worker thread); -- concurrency control doesn't count master thread towards the cpu slots limit
         create workload all settings max_concurrent_threads=50;
     """
@@ -189,7 +190,7 @@ def test_concurrency_control_compatibility():
     )
 
     node.query(
-        f"""
+        """
         create or replace workload all settings max_concurrent_threads=1;
     """
     )
@@ -206,7 +207,7 @@ def test_concurrency_control_compatibility():
     # Background query starts in a separate thread to reach this limit.
     # When this limit is reached the foreground query gets less than 6 threads despite the fact that it has settings max_threads=6
     node.query(
-        f"""
+        """
         create or replace workload all settings max_concurrent_threads=10;
     """
     )
@@ -247,7 +248,7 @@ def test_concurrency_control_compatibility():
 
 def test_independent_pools():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all;
         create workload production in all settings max_concurrent_threads=15;
@@ -280,7 +281,7 @@ def test_independent_pools():
 
 def test_slot_allocation_fairness():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=2;
         create workload production in all settings weight=3;
@@ -327,13 +328,13 @@ def test_slot_allocation_fairness():
 
     production = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/production/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/production/%' and type='fifo'"
         ).strip()
     )
 
     development = int(
         node.query(
-            f"select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/development/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/development/%' and type='fifo'"
         ).strip()
     )
 

@@ -32,10 +32,10 @@ TLDList::TLDList(size_t size)
 }
 void TLDList::insert(const String & host, TLDType type)
 {
-    StringRef owned_host{memory_pool->insert(host.data(), host.size()), host.size()};
+    std::string_view owned_host{memory_pool->insert(host.data(), host.size()), host.size()};
     tld_container[owned_host] = type;
 }
-TLDType TLDList::lookup(StringRef host) const
+TLDType TLDList::lookup(std::string_view host) const
 {
     if (auto it = tld_container.find(host); it != nullptr)
         return it->getMapped();

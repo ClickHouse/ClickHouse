@@ -1,0 +1,50 @@
+-- Tags: long
+
+SET query_plan_join_swap_table = 0;
+SET enable_analyzer = 1;
+
+SET max_memory_usage = '50M';
+
+WITH t1 AS (
+    SELECT number % 2 AS id, sipHash64(number, 1) % 2 as attr FROM numbers(5_000)
+),
+t2 AS (
+    SELECT number % 2 AS id, sipHash64(number, 2) % 2 as attr FROM numbers(5_000)
+)
+SELECT sum(ignore(*) + 1)
+FROM t1
+LEFT JOIN t2
+ON t1.id = t2.id OR (t1.attr = t2.attr)
+;
+
+{% for join_algorithm in ['hash', 'parallel_hash'] -%}
+
+WITH t1 AS (
+    SELECT number % 2 AS id, sipHash64(number, 1) % 2 as attr FROM numbers(10_000)
+),
+t2 AS (
+    SELECT number % 2 AS id, sipHash64(number, 2) % 2 as attr FROM numbers(10_000)
+)
+SELECT sum(ignore(*) + 1)
+FROM t1
+LEFT JOIN t2
+ON t1.id = t2.id AND (t1.attr != t2.attr)
+SETTINGS join_algorithm = '{{ join_algorithm }}';
+
+-- more rows to use two-level map
+WITH t1 AS (
+    SELECT number % 2 AS id, sipHash64(number, 1) % 2 as attr FROM numbers(10_000)
+),
+t2 AS (
+    SELECT number AS id, sipHash64(number, 2) % 2 as attr FROM numbers(10_000)
+    UNION ALL
+    SELECT number % 2 AS id, sipHash64(number, 2) % 2 as attr FROM numbers(10_000)
+)
+SELECT sum(ignore(*) + 1)
+FROM t1
+LEFT JOIN t2
+ON t1.id = t2.id AND (t1.attr != t2.attr)
+SETTINGS join_algorithm = '{{ join_algorithm }}',
+    max_threads = 8; -- with too many hash tables query consumes >50M memory
+
+{% endfor -%}

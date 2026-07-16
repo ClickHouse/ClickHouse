@@ -3,9 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/StringHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/TLDListsHolder.h>
 
 namespace DB
@@ -25,14 +23,14 @@ struct FirstSignificantSubdomainCustomLookup
     {
     }
 
-    TLDType operator()(StringRef host) const
+    TLDType operator()(std::string_view host) const
     {
         return tld_list.lookup(host);
     }
 };
 
 template <typename Extractor, typename Name>
-class FunctionCutToFirstSignificantSubdomainCustomImpl : public IFunction
+class FunctionCutToFirstSignificantSubdomainCustomImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -91,18 +89,16 @@ public:
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            Extractor::execute(tld_lookup, reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
+            Extractor::execute(tld_lookup, reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset, start, length);
 
-            res_data.resize(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = 0;
-
+            res_offset += length;
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
         }

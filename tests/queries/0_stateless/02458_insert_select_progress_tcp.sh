@@ -10,6 +10,8 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 
 # We should have correct env vars from shell_config.sh to run this test
-python3 "$CURDIR"/02458_insert_select_progress_tcp.python
+# For 1 second sleep and 1ms of interactive_delay we definitelly should have non zero progress packet.
+# NOTE: interactive_delay=0 cannot be used since in this case CompletedPipelineExecutor will not call cancelled callback.
+python3 "$CURDIR"/helpers/parse_query_progress_tcp.python "insert into function null('_ Int') select sleep(1) from numbers(2) settings max_block_size=1, interactive_delay=1000"
 
 $CLICKHOUSE_CLIENT -q "drop table insert_select_progress_tcp"

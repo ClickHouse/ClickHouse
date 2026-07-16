@@ -34,9 +34,6 @@ struct TreeRewriterResult
     /// Same as above but also record alias columns which are expanded. This is for RBAC access check.
     Names required_source_columns_before_expanding_alias_columns;
 
-    /// Set of columns that object columns are not extended. This is for distinguishing JSON and Tuple type.
-    NamesAndTypesList source_columns_ordinary;
-
     NameSet missed_subcolumns;
 
     /// Set of alias columns that are expanded to their alias expressions. We still need the original columns to check access permission.

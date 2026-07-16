@@ -17,16 +17,16 @@ public:
     };
 
     String name;
-    Type type;
-    IAST * expr;
+    Type type{};
+    IAST * expr{};
 
     String getID(char) const override { return "Constraint"; }
 
     ASTPtr clone() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&expr));
+        f(&expr, nullptr);
     }
 
 protected:

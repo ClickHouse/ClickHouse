@@ -23,11 +23,11 @@ SELECT 'Non-const arguments';
 WITH
     materialize([(1, ['a', 'b']), (NULL, ['c'])]) AS f,
     materialize([(2, ['c', NULL]), (1, ['a', 'b'])]) AS s
-SELECT arraySymmetricDifference(f, s);
+SELECT arraySort(arraySymmetricDifference(f, s));
 WITH
     materialize([(1, ['a', 'b']::Array(LowCardinality(String))), (NULL, ['c']::Array(LowCardinality(String)))]) AS f,
     materialize([(2, ['c', NULL]::Array(LowCardinality(Nullable(String)))), (1, ['a', 'b']::Array(LowCardinality(String)))]) AS s
-SELECT arraySymmetricDifference(f, s);
+SELECT arraySort(arraySymmetricDifference(f, s));
 
 -- Table with batch inserts
 DROP TABLE IF EXISTS test_arraySymmetricDifference;
@@ -55,5 +55,5 @@ VALUES
 
 SELECT
 	ta.id AS id,
-	arraySymmetricDifference(ta.arr1, ta.arr2) AS symmetricDifference
+    arraySort(arraySymmetricDifference(ta.arr1, ta.arr2)) AS symmetricDifference
 FROM test_arraySymmetricDifference ta;

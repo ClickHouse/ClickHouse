@@ -37,6 +37,6 @@ struct StorageLimits
     SizeLimits leaf_limits;
 };
 
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 }

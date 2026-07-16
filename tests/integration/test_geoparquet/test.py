@@ -36,7 +36,7 @@ def delete_if_exists(file_path):
 
 @pytest.mark.parametrize(
     "query, expected_result",
-    {
+    [
         (
             "DROP TABLE IF EXISTS geom1;"
             "CREATE TABLE IF NOT EXISTS geom1 (point Point) ENGINE = Memory();"
@@ -72,7 +72,7 @@ def delete_if_exists(file_path):
             "SELECT * FROM geom5 ORDER BY point INTO OUTFILE '{file_name}' FORMAT Parquet;",
             'MULTIPOLYGON (((0 0, 10 0, 10 10, 0 10, 0 0)), ((20 20, 50 20, 50 50, 20 50, 20 20), (30 30, 50 50, 50 30, 30 30)))',
         )
-    },
+    ],
 )
 def test_compatibiltity_with_geopandas(query, expected_result, start_cluster):
     file_name = f"export{time.time()}.parquet"

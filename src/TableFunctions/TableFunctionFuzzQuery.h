@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/StorageFuzzQuery.h>
 
-#include "config.h"
 
 namespace DB
 {
@@ -32,7 +31,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "fuzzQuery"; }
+    const char * getStorageEngineName() const override { return "FuzzQuery"; }
 
     String source;
     std::optional<UInt64> random_seed;

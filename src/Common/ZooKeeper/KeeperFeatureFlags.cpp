@@ -80,13 +80,23 @@ const std::string & KeeperFeatureFlags::getFeatureFlags() const
     return feature_flags;
 }
 
-void KeeperFeatureFlags::logFlags(LoggerPtr log) const
+void KeeperFeatureFlags::logFlags(LoggerPtr log, DB::LogsLevel log_level) const
 {
+    static const std::unordered_map<DB::LogsLevel, Poco::Message::Priority> logs_level_to_prio = {
+        {DB::LogsLevel::test, Poco::Message::Priority::PRIO_TEST},
+        {DB::LogsLevel::trace, Poco::Message::Priority::PRIO_TRACE},
+        {DB::LogsLevel::debug, Poco::Message::Priority::PRIO_DEBUG},
+        {DB::LogsLevel::information, Poco::Message::Priority::PRIO_INFORMATION},
+        {DB::LogsLevel::warning, Poco::Message::Priority::PRIO_WARNING},
+        {DB::LogsLevel::error, Poco::Message::Priority::PRIO_ERROR},
+        {DB::LogsLevel::fatal, Poco::Message::Priority::PRIO_FATAL},
+    };
+
+    auto poco_priority = logs_level_to_prio.at(log_level);
     for (const auto & [feature_flag, feature_flag_name] : magic_enum::enum_entries<KeeperFeatureFlag>())
     {
         auto is_enabled = isEnabled(feature_flag);
-        LOG_INFO(log, "Keeper feature flag {}: {}", feature_flag_name, is_enabled ? "enabled" : "disabled");
+        LOG_IMPL(log, log_level, poco_priority, "Keeper feature flag {}: {}", feature_flag_name, is_enabled ? "enabled" : "disabled");
     }
 }
-
 }

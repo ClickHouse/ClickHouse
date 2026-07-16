@@ -72,9 +72,9 @@ private:
     using TBiasData = std::remove_reference_t<TBiasDataRef>;
 
     static_assert(std::is_same_v<TRawEstimates, TBiasData>, "Bias estimator data have inconsistent types");
-    static_assert(std::tuple_size<TRawEstimates>::value > 0, "Bias estimator has no raw estimate data");
-    static_assert(std::tuple_size<TBiasData>::value > 0, "Bias estimator has no bias data");
-    static_assert(std::tuple_size<TRawEstimates>::value == std::tuple_size<TBiasData>::value,
+    static_assert(std::tuple_size_v<TRawEstimates> > 0, "Bias estimator has no raw estimate data");
+    static_assert(std::tuple_size_v<TBiasData> > 0, "Bias estimator has no bias data");
+    static_assert(std::tuple_size_v<TRawEstimates> == std::tuple_size_v<TBiasData>,
                   "Bias estimator has inconsistent data");
 };
 

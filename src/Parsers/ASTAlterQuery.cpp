@@ -1,7 +1,9 @@
 #include <Parsers/ASTAlterQuery.h>
 
 #include <Core/ServerSettings.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 
@@ -20,7 +22,7 @@ String ASTAlterCommand::getID(char delim) const
 
 ASTPtr ASTAlterCommand::clone() const
 {
-    auto res = std::make_shared<ASTAlterCommand>(*this);
+    auto res = make_intrusive<ASTAlterCommand>(*this);
     res->children.clear();
 
     if (col_decl)
@@ -65,18 +67,16 @@ ASTPtr ASTAlterCommand::clone() const
         res->sql_security = res->children.emplace_back(sql_security->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
+    if (execute_args)
+        res->execute_args = res->children.emplace_back(execute_args->clone()).get();
+    if (add_enum_values)
+        res->add_enum_values = res->children.emplace_back(add_enum_values->clone());
+    if (refresh)
+        res->refresh = res->children.emplace_back(refresh->clone()).get();
 
     return res;
 }
 
-/// When the alter command is about statistics, the Parentheses is necessary to avoid ambiguity.
-bool needToFormatWithParentheses(ASTAlterCommand::Type type)
-{
-    return type == ASTAlterCommand::ADD_STATISTICS
-        || type == ASTAlterCommand::DROP_STATISTICS
-        || type == ASTAlterCommand::MATERIALIZE_STATISTICS
-        || type == ASTAlterCommand::MODIFY_STATISTICS;
-}
 
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -127,6 +127,14 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         {
             ostr << " RESET SETTING ";
             settings_resets->format(ostr, settings, state, frame);
+        }
+        else if (add_enum_values)
+        {
+            ostr << " ADD ENUM VALUES (";
+            ostr << " ";
+            add_enum_values->format(ostr, settings, state, frame);
+            ostr << " )";
+            ostr << " ";
         }
         else
         {
@@ -228,7 +236,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
                       << (if_exists ? "IF EXISTS " : "");
-        statistics_decl->format(ostr, settings, state, frame);
+
+        if (statistics_decl)
+            statistics_decl->format(ostr, settings, state, frame);
+        else
+            ostr << " ALL";
+
         if (partition)
         {
             ostr << " IN PARTITION ";
@@ -238,12 +251,17 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
         ostr << "MATERIALIZE STATISTICS ";
-        statistics_decl->format(ostr, settings, state, frame);
-        if (partition)
+        if (statistics_decl)
         {
-            ostr << " IN PARTITION ";
-            partition->format(ostr, settings, state, frame);
+            statistics_decl->format(ostr, settings, state, frame);
+            if (partition)
+            {
+                ostr << " IN PARTITION ";
+                partition->format(ostr, settings, state, frame);
+            }
         }
+        else
+            ostr << " ALL";
     }
     else if (type == ASTAlterCommand::UNLOCK_SNAPSHOT)
     {
@@ -251,7 +269,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << quoteString(snapshot_name);
         if (snapshot_desc != nullptr)
         {
-            ostr << "FROM ";
+            ostr << " FROM ";
             snapshot_desc->format(ostr, settings, state, frame);
         }
     }
@@ -266,6 +284,12 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "")
                      ;
         constraint->format(ostr, settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_CONSTRAINT)
+    {
+        ostr << "MODIFY CONSTRAINT " << (if_exists ? "IF EXISTS " : "")
+                     ;
+        constraint_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_PROJECTION)
     {
@@ -450,7 +474,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
         ostr << "MODIFY TTL ";
-        ttl->format(ostr, settings, state, frame);
+        auto nested_frame = frame;
+        nested_frame.expression_list_prepend_whitespace = false;
+        ttl->format(ostr, settings, state, nested_frame);
     }
     else if (type == ASTAlterCommand::REMOVE_TTL)
     {
@@ -459,6 +485,15 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         ostr << "MATERIALIZE TTL";
+        if (partition)
+        {
+            ostr << " IN PARTITION ";
+            partition->format(ostr, settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::REWRITE_PARTS)
+    {
+        ostr << "REWRITE PARTS";
         if (partition)
         {
             ostr << " IN PARTITION ";
@@ -478,13 +513,30 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
     {
         ostr << "MODIFY SETTING ";
-        settings_changes->format(ostr, settings, state, frame);
+        auto modified_frame{frame};
+        modified_frame.create_engine_name = DataLake::DATABASE_ENGINE_NAME;
+        settings_changes->format(ostr, settings, state, modified_frame);
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        ostr << "MODIFY QUERY" << settings.nl_or_ws
-                     ;
-        select->format(ostr, settings, state, frame);
+        ostr << "MODIFY QUERY" << settings.nl_or_ws;
+
+        /// When the ALTER query has trailing SETTINGS (inherited from ASTQueryWithOutput),
+        /// we must wrap the MODIFY QUERY select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by `ParserSelectQuery` as part of the
+        /// last SELECT during re-parsing, instead of remaining on the ALTER query.
+        /// Clear the flags to prevent inner nodes from adding redundant parentheses.
+        if (frame.parent_has_trailing_settings)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
@@ -526,33 +578,43 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::EXECUTE_COMMAND)
+    {
+        ostr << "EXECUTE " << execute_command_name << "(";
+        if (execute_args)
+            execute_args->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }
 
-void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
+void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
-    f(reinterpret_cast<void **>(&col_decl));
-    f(reinterpret_cast<void **>(&column));
-    f(reinterpret_cast<void **>(&order_by));
-    f(reinterpret_cast<void **>(&sample_by));
-    f(reinterpret_cast<void **>(&index_decl));
-    f(reinterpret_cast<void **>(&index));
-    f(reinterpret_cast<void **>(&constraint_decl));
-    f(reinterpret_cast<void **>(&constraint));
-    f(reinterpret_cast<void **>(&projection_decl));
-    f(reinterpret_cast<void **>(&projection));
-    f(reinterpret_cast<void **>(&statistics_decl));
-    f(reinterpret_cast<void **>(&partition));
-    f(reinterpret_cast<void **>(&predicate));
-    f(reinterpret_cast<void **>(&update_assignments));
-    f(reinterpret_cast<void **>(&comment));
-    f(reinterpret_cast<void **>(&ttl));
-    f(reinterpret_cast<void **>(&settings_changes));
-    f(reinterpret_cast<void **>(&settings_resets));
-    f(reinterpret_cast<void **>(&select));
-    f(reinterpret_cast<void **>(&sql_security));
-    f(reinterpret_cast<void **>(&rename_to));
+    f(&col_decl, nullptr);
+    f(&column, nullptr);
+    f(&order_by, nullptr);
+    f(&sample_by, nullptr);
+    f(&index_decl, nullptr);
+    f(&index, nullptr);
+    f(&constraint_decl, nullptr);
+    f(&constraint, nullptr);
+    f(&projection_decl, nullptr);
+    f(&projection, nullptr);
+    f(&statistics_decl, nullptr);
+    f(&partition, nullptr);
+    f(&predicate, nullptr);
+    f(&update_assignments, nullptr);
+    f(&comment, nullptr);
+    f(&ttl, nullptr);
+    f(&settings_changes, nullptr);
+    f(&settings_resets, nullptr);
+    f(nullptr, &add_enum_values);
+    f(&select, nullptr);
+    f(&sql_security, nullptr);
+    f(&rename_to, nullptr);
+    f(&execute_args, nullptr);
+    f(&refresh, nullptr);
 }
 
 
@@ -609,6 +671,62 @@ bool ASTAlterQuery::isCommentAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
+namespace
+{
+
+/// True only for a pure comment-only `MODIFY COLUMN c COMMENT 'x'`, mirroring the
+/// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
+/// routing and the storage fast path agree. Placement (FIRST/AFTER) and
+/// per-column SETTINGS are excluded: they alter the replicated /columns and must
+/// take the full replicated path.
+bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
+{
+    if (command.type != ASTAlterCommand::MODIFY_COLUMN)
+        return false;
+
+    const auto * col_decl = command.col_decl ? command.col_decl->as<ASTColumnDeclaration>() : nullptr;
+    if (!col_decl)
+        return false;
+
+    return col_decl->getComment() != nullptr
+        && col_decl->getType() == nullptr
+        && col_decl->getCodec() == nullptr
+        && col_decl->getDefaultExpression() == nullptr
+        && col_decl->getTTL() == nullptr
+        && col_decl->getSettings() == nullptr
+        && command.settings_changes == nullptr
+        && command.settings_resets == nullptr
+        && command.column == nullptr
+        && !command.first;
+}
+
+}
+
+bool ASTAlterQuery::isSettingsOrCommentAlter() const
+{
+    if (!command_list || command_list->children.empty())
+        return false;
+    for (const auto & child : command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        switch (command.type)
+        {
+            case ASTAlterCommand::MODIFY_SETTING:
+            case ASTAlterCommand::RESET_SETTING:
+            case ASTAlterCommand::COMMENT_COLUMN:
+            case ASTAlterCommand::MODIFY_COMMENT:
+                break;
+            case ASTAlterCommand::MODIFY_COLUMN:
+                if (!isCommentOnlyModifyColumn(command))
+                    return false;
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
 {
     if (command_list)
@@ -636,19 +754,20 @@ String ASTAlterQuery::getID(char delim) const
 
 ASTPtr ASTAlterQuery::clone() const
 {
-    auto res = std::make_shared<ASTAlterQuery>(*this);
+    auto res = make_intrusive<ASTAlterQuery>(*this);
     res->children.clear();
 
     if (command_list)
         res->set(res->command_list, command_list->clone());
+
+    cloneOutputOptions(*res);
+    cloneTableOptions(*res);
 
     return res;
 }
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     ostr << indent_str;
 
@@ -685,7 +804,6 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
     formatOnCluster(ostr, settings);
 
     FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
     if (settings.one_line)
     {
         frame_nested.expression_list_prepend_whitespace = true;
@@ -698,11 +816,11 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
     }
 }
 
-void ASTAlterQuery::forEachPointerToChild(std::function<void(void**)> f)
+void ASTAlterQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
     for (const auto & child : command_list->children)
         child->as<ASTAlterCommand &>().forEachPointerToChild(f);
-    f(reinterpret_cast<void **>(&command_list));
+    f(reinterpret_cast<IAST **>(&command_list), nullptr);
 }
 
 }

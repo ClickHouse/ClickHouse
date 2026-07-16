@@ -48,12 +48,14 @@ void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 }
 
+void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory)
 {
     factory.registerOutputFormat("CapnProto", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
             return std::make_shared<CapnProtoRowOutputFormat>(
                 buf,
@@ -72,6 +74,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatCapnProto(FormatFactory &);
 void registerOutputFormatCapnProto(FormatFactory &) {}
 }
 

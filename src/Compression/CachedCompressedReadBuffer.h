@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <time.h>
+#include <ctime>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressedReadBufferBase.h>
 #include <IO/UncompressedCache.h>
@@ -9,7 +9,6 @@
 
 namespace DB
 {
-
 
 /** A buffer for reading from a compressed file using the cache of decompressed blocks.
   * The external cache is passed as an argument to the constructor.

@@ -3,9 +3,8 @@ description: 'Documentation for Comparison Functions'
 sidebar_label: 'Comparison'
 slug: /sql-reference/functions/comparison-functions
 title: 'Comparison Functions'
+doc_type: 'reference'
 ---
-
-# Comparison functions
 
 ## Comparison rules {#comparison-rules}
 

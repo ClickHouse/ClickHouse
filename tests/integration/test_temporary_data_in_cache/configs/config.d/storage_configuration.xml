@@ -3,13 +3,13 @@
         <disks>
             <local_disk>
                 <type>local_blob_storage</type>
-                <path>/local_disk/</path>
+                <path>/test_tmp_data_in_cache_local_disk/</path>
             </local_disk>
 
             <tiny_local_cache>
                 <type>cache</type>
                 <disk>local_disk</disk>
-                <path>/tiny_local_cache/</path>
+                <path>/test_tmp_data_in_cache_tiny_local_cache/</path>
                 <cache_policy>LRU</cache_policy>
                 <max_size>12M</max_size>
                 <max_file_segment_size>100K</max_file_segment_size>
@@ -21,7 +21,7 @@
             <!-- Entry about tiny_local_cache shows incorrect info due to it uses DiskObjectStorage under the hood -->
             <tiny_local_cache_local_disk>
                 <type>local</type>
-                <path>/tiny_local_cache/</path>
+                <path>/test_tmp_data_in_cache_tiny_local_cache/</path>
             </tiny_local_cache_local_disk>
         </disks>
 

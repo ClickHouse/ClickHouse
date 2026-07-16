@@ -155,6 +155,33 @@ LayeredConfiguration::ConfigPtr LayeredConfiguration::find(const std::string& la
 }
 
 
+void LayeredConfiguration::replace(const std::string& label, AbstractConfiguration* pNewConfig, int priority, bool shared)
+{
+	Mutex::ScopedLock lock(_mutex);
+
+	for (ConfigList::iterator it = _configs.begin(); it != _configs.end(); ++it)
+	{
+		if (it->label == label)
+		{
+			it->pConfig = ConfigPtr(pNewConfig, shared);
+			return;
+		}
+	}
+
+	// Not found — add as new entry under the lock.
+	ConfigItem item;
+	item.pConfig   = ConfigPtr(pNewConfig, shared);
+	item.priority  = priority;
+	item.writeable = false;
+	item.label     = label;
+
+	ConfigList::iterator it = _configs.begin();
+	while (it != _configs.end() && it->priority < priority)
+		++it;
+	_configs.insert(it, item);
+}
+
+
 bool LayeredConfiguration::getRaw(const std::string& key, std::string& value) const
 {
 	for (ConfigList::const_iterator it = _configs.begin(); it != _configs.end(); ++it)

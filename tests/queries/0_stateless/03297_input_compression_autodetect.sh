@@ -5,6 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select=0"
+
 $CLICKHOUSE_LOCAL --query "SELECT number FROM numbers(10)" > "${CLICKHOUSE_TMP}/numbers.jsonl.gz"
 $CLICKHOUSE_LOCAL --query "SELECT * FROM table" < "${CLICKHOUSE_TMP}/numbers.jsonl.gz"
 $CLICKHOUSE_LOCAL --query "SELECT * FROM table" < "${CLICKHOUSE_TMP}/numbers.jsonl.gz" > "${CLICKHOUSE_TMP}/numbers.csv.bz2"

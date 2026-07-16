@@ -1,0 +1,12 @@
+before materialize
+0
+after materialize
+2
+projection data
+4	40	2	0
+5	50	2	1
+6	60	2	2
+after mutation on merged part
+1	11	1	0
+2	20	1	1
+3	30	1	2

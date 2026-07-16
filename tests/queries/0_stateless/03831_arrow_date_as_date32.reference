@@ -1,0 +1,14 @@
+Arrow schema inference:
+d	Date32					
+ArrowStream schema inference:
+d	Date32					
+Arrow roundtrip:
+2024-01-15	2020-12-31
+ArrowStream roundtrip:
+2024-01-15	2020-12-31
+Arrow schema inference (uint16 compat):
+d	UInt16					
+ArrowStream schema inference (uint16 compat):
+d	UInt16					
+Arrow roundtrip (uint16 compat):
+19737	18627

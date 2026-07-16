@@ -17,6 +17,6 @@ $CLICKHOUSE_CLIENT -q "
     SELECT database || '.' || name FROM system.tables
     WHERE
         database in ('system', 'information_schema', 'INFORMATION_SCHEMA')
-        AND name NOT IN ('zookeeper', 'models', 'coverage_log')
+        AND name NOT IN ('zookeeper', 'models', 'coverage_log', 'jemalloc_profile_text')
         AND name NOT LIKE '%\\_sender' AND name NOT LIKE '%\\_watcher'
 " | xargs -P6 -i $CLICKHOUSE_CLIENT --allow_introspection_functions=1 --format=Null "SELECT * FROM {} LIMIT 10e3"

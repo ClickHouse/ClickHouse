@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <IO/ReadBuffer.h>
 
 class SipHash;
 
@@ -34,7 +35,7 @@ public:
     const char * end = nullptr;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
-    ReadBuffer * tail = nullptr;
+    mutable ReadBufferPtr tail = nullptr;
 
     bool async_insert_flush = false;
 
@@ -54,7 +55,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTInsertQuery>(*this);
+        auto res = make_intrusive<ASTInsertQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }

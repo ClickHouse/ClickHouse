@@ -6,6 +6,7 @@ keywords: ['CustomSeparated']
 output_format: true
 slug: /interfaces/formats/CustomSeparated
 title: 'CustomSeparated'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

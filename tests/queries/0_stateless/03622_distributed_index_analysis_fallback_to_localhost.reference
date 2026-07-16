@@ -1,0 +1,6 @@
+10	130
+-- { echo }
+select count() from test_1m where key > 10000 settings distributed_index_analysis=0;
+989999
+select count() from test_1m where key > 10000 settings distributed_index_analysis=1;
+989999

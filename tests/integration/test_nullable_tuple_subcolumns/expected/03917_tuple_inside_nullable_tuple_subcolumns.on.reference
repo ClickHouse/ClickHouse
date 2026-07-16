@@ -1,0 +1,4 @@
+Nullable(Tuple(x UInt32, y String))	(1,'aa')	Nullable(UInt32)	1	Nullable(String)	aa
+Nullable(Tuple(x UInt32, y String))	\N	Nullable(UInt32)	\N	Nullable(String)	\N
+Nullable(Tuple(x UInt32, y String))	(1,'aa')	Nullable(UInt32)	1	Nullable(String)	aa
+Nullable(Tuple(x UInt32, y String))	\N	Nullable(UInt32)	\N	Nullable(String)	\N

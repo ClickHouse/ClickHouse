@@ -1,5 +1,8 @@
 -- Tags: long, no-msan
 
+-- Too slow for targeted tests
+SET compile_aggregate_expressions=0, compile_expressions=0;
+
 /* Trivial case */
 
 SELECT CASE WHEN 1 THEN 2 WHEN 3 THEN  4 ELSE 5 END;

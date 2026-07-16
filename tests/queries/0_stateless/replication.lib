@@ -38,8 +38,9 @@ function try_sync_replicas()
     local i=0
     for t in "${tables_arr[@]}"
     do
-        $CLICKHOUSE_CLIENT --receive_timeout $time_left -q "SYSTEM SYNC REPLICA $t STRICT" || ($CLICKHOUSE_CLIENT -q \
-            "select 'sync failed, queue:', * from system.replication_queue where database=currentDatabase() and table='$t' order by database, table, node_name" && exit 1) &
+        $CLICKHOUSE_CURL --max-time $time_left --fail -sS $CLICKHOUSE_URL -d "SYSTEM SYNC REPLICA $t STRICT" || {
+            $CLICKHOUSE_CURL --max-time $time_left -sS $CLICKHOUSE_URL -d "select 'sync failed, queue:', * from system.replication_queue where database=currentDatabase() and table='$t' ORDER BY database, table, node_name" && exit 1
+        } &
         pids[${i}]=$!
         i=$((i + 1))
     done

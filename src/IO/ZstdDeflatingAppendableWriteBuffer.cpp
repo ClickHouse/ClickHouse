@@ -1,7 +1,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromFile.h>
 
 namespace DB
 {
@@ -192,7 +191,7 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
     auto fsize = reader->getFileSize();
     if (fsize > 3)
     {
-        std::array<char, 3> result;
+        std::array<char, 3> result{};
         reader->seek(fsize - 3, SEEK_SET);
         reader->readStrict(result.data(), 3);
 

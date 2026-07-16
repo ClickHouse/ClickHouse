@@ -12,7 +12,7 @@ class ASTRolesOrUsersSet;
 class ASTShowGrantsQuery : public ASTQueryWithOutput
 {
 public:
-    std::shared_ptr<ASTRolesOrUsersSet> for_roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> for_roles;
     bool with_implicit = false;
     bool final = false;
 

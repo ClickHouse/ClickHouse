@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -9,10 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -31,7 +27,11 @@ class FunctionH3CellAreaRads2 final : public IFunction
 public:
     static constexpr auto name = "h3CellAreaRads2";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3CellAreaRads2>(); }
+    H3Validator validator;
+
+    explicit FunctionH3CellAreaRads2(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3CellAreaRads2>(context); }
 
     std::string getName() const override { return name; }
 
@@ -79,13 +79,17 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
+            Float64 res = 0;
 
-            CellBoundary boundary{};
-            auto err = cellToBoundary(index, &boundary);
-            if (err)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
+            if (validator.validateCell(index))
+            {
+                CellBoundary boundary{};
+                auto err = cellToBoundary(index, &boundary);
+                if (err)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-            Float64 res = cellAreaRads2(index);
+                cellAreaRads2(index, &res);
+            }
             dst_data[row] = res;
         }
 
@@ -97,7 +101,32 @@ public:
 
 REGISTER_FUNCTION(H3CellAreaRads2)
 {
-    factory.registerFunction<FunctionH3CellAreaRads2>();
+    FunctionDocumentation::Description description = R"(
+Returns the exact area of a specific cell in square radians corresponding to the given input [H3](#h3-index) index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3CellAreaRads2(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the exact area of the H3 cell in square radians.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get area of an H3 cell in square radians",
+            "SELECT h3CellAreaRads2(579205133326352383) AS area",
+            R"(
+┌────────────────area─┐
+│ 0.10116268528089567 │
+└─────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3CellAreaRads2>(documentation);
 }
 
 }

@@ -7,6 +7,7 @@ INSERT INTO merge_table_standard_delete select number, toString(number) from num
 SELECT COUNT(), part_type FROM system.parts WHERE database = currentDatabase() AND table = 'merge_table_standard_delete' AND active GROUP BY part_type ORDER BY part_type;
 
 SET mutations_sync = 0;
+SET check_query_single_value_result = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
 SELECT COUNT(), part_type FROM system.parts WHERE database = currentDatabase() AND table = 'merge_table_standard_delete' AND active GROUP BY part_type ORDER BY part_type;

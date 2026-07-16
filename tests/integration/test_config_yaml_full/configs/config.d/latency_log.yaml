@@ -1,6 +1,0 @@
-latency_log:
-  database: system
-  table: latency_log
-  flush_interval_milliseconds: 7500
-  collect_interval_milliseconds: 1000
-

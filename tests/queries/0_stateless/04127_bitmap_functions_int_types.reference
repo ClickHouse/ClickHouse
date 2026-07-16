@@ -1,0 +1,41 @@
+--- bitmapBuild + bitmapToArray: signed / unsigned element types ---
+[1,2,3]
+[1,2,3]
+[1,2,3]
+[1,2,3]
+[1,2,3]
+[1,2,3]
+[1,2,3]
+[1,2,3]
+--- bitmapAnd / Or / Xor / Andnot ---
+[2,3]
+[1,2,3,4]
+[1,4]
+[1]
+--- bitmapSubsetInRange / bitmapSubsetLimit ---
+[2,3,4]
+[2,3,4]
+--- bitmapContains / bitmapHasAny / bitmapHasAll ---
+1
+0
+1
+0
+1
+0
+--- cardinality helpers ---
+5
+1
+3
+2
+1
+--- bitmapMin / Max ---
+5
+10
+--- bitmapTransform ---
+[3,10,20]
+[3,100,200]
+--- error: non-Array argument ---
+--- error: non-integer element type ---
+--- empty bitmap ---
+[]
+0

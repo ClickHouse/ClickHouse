@@ -31,7 +31,7 @@ PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
     };
 }
 
-Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
     Int32 connection_id = last_connection_id++;
     LOG_TRACE(log, "PostgreSQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());

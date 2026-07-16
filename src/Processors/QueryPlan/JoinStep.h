@@ -10,6 +10,13 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+struct LogicalJoinInfo
+{
+    String readable_relation_name;
+    std::optional<UInt64> result_rows_estimation;
+    JoinLocality locality{};
+};
+
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
@@ -24,7 +31,8 @@ public:
         size_t max_streams_,
         NameSet required_output_,
         bool keep_left_read_in_order_,
-        bool use_new_analyzer_);
+        bool use_new_analyzer_,
+        bool use_join_disjunctions_push_down_ = false);
 
     String getName() const override { return "Join"; }
 
@@ -37,6 +45,7 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
+    void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
     bool allowPushDownToRight() const;
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
@@ -48,20 +57,29 @@ public:
         std::string rhs_name;
     };
 
-    using PrimaryKeySharding = std::vector<PrimaryKeyNamesPair>;
+    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    {
+        bool is_reverse_order = false;
+    };
 
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
-    void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
+    void keepLeftPipelineInOrder(bool disable_squashing = false);
+
+    bool isOptimized() const { return optimized; }
+    void setOptimized() { optimized = true; }
 
 private:
+    bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
+    String join_readable_relation_name;
 
     JoinPtr join;
+    std::optional<size_t> result_rows_estimation;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
@@ -69,9 +87,22 @@ private:
 
     const NameSet required_output;
     std::set<size_t> columns_to_remove;
+    JoinLocality locality = JoinLocality::Unspecified;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
+    bool use_join_disjunctions_push_down;
+    bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
+    /// to prevent infinite optimization loop
+
+public:
+    /// Check if disjunction optimization was already applied to this JoinStep
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+
+    /// Mark that disjunction optimization has been applied to this JoinStep
+    void setDisjunctionsOptimizationApplied(bool value) { disjunctions_optimization_applied = value; }
+
     bool swap_streams = false;
+    bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
     PrimaryKeySharding primary_key_sharding;
 };
 
@@ -90,11 +121,15 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
 private:
     void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;
+    bool disjunctions_optimization_applied = false;
 };
 
 }

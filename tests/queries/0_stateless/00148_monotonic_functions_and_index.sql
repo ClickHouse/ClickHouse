@@ -1,4 +1,5 @@
 -- Tags: stateful
+SET use_primary_key = 1; -- test relies on PK index for monotonic function pruning and max_rows_to_read limits
 SET max_rows_to_read = 60000;
 
 SELECT count() FROM test.hits WHERE -CounterID = -1731;

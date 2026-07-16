@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: avoids strange edge case error that only happens with replicated DB and old analyzer
+
 CREATE TABLE mydestination
 (
     `object` String

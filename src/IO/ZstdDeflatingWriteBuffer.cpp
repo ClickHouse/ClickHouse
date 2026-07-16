@@ -104,7 +104,7 @@ void ZstdDeflatingWriteBuffer::nextImpl()
         flush(ZSTD_e_flush);
 }
 
-void ZstdDeflatingWriteBuffer::finalizeBefore()
+void ZstdDeflatingWriteBuffer::finalFlushBefore()
 {
     /// Don't write out if no data was ever compressed
     if (!compress_empty && total_out == 0)
@@ -112,7 +112,7 @@ void ZstdDeflatingWriteBuffer::finalizeBefore()
     flush(ZSTD_e_end);
 }
 
-void ZstdDeflatingWriteBuffer::finalizeAfter()
+void ZstdDeflatingWriteBuffer::finalFlushAfter()
 {
     try
     {

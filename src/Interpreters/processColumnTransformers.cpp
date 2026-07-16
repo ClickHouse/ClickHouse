@@ -5,7 +5,6 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -26,8 +25,8 @@ ASTPtr processColumnTransformersImpl(
 
     TablesWithColumns tables_with_columns;
     {
-        auto table_expr = std::make_shared<ASTTableExpression>();
-        table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(storage_id);
+        auto table_expr = make_intrusive<ASTTableExpression>();
+        table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(storage_id);
         table_expr->children.push_back(table_expr->database_and_table_name);
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias(*table_expr, current_database), names_and_types);
     }
@@ -50,19 +49,19 @@ ASTPtr processColumnTransformersImpl(
 }
 
 ASTPtr processColumnTransformers(
-        const String & current_database,
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        ASTPtr query_columns)
+    const String & current_database,
+    const StoragePtr & table,
+    const StorageMetadataPtr & metadata_snapshot,
+    ASTPtr query_columns)
 {
-    return processColumnTransformersImpl(metadata_snapshot->columns, table->getVirtualsList(), query_columns, current_database, table->getStorageID());
+    return processColumnTransformersImpl(metadata_snapshot->columns, metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList(), query_columns, current_database, table->getStorageID());
 }
 
 ASTPtr processColumnTransformers(
-        const String & current_database,
-        const StorageID & table_id,
-        const ColumnsDescription & columns,
-        ASTPtr query_columns)
+    const String & current_database,
+    const StorageID & table_id,
+    const ColumnsDescription & columns,
+    ASTPtr query_columns)
 {
     if (table_id.empty())
         return processColumnTransformersImpl(columns, {}, query_columns, current_database, StorageID("", "dummy"));

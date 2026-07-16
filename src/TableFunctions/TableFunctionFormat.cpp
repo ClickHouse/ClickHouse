@@ -1,5 +1,6 @@
 #include <Formats/ReadSchemaUtils.h>
 
+#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -53,7 +54,11 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "Values"; }
+    const char * getStorageEngineName() const override
+    {
+        /// No underlying storage engine
+        return "";
+    }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -121,7 +126,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    std::vector<Block> blocks;
+    Blocks blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
 
@@ -167,51 +172,33 @@ Returned value: A table with data parsed from `data` argument according specifie
     {
         {
             "First example",
-            R"(
-Query:
-```
-:) select * from format(JSONEachRow,
+            R"(SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
 {"a": "Hello", "b": 112}
 {"a": "World", "b": 124}
-$$)
-```
-
-Result:
-```
-┌───b─┬─a─────┐
+$$))",
+            R"(┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
 │ 112 │ Hello │
 │ 124 │ World │
-└─────┴───────┘
-```
-)", ""
+└─────┴───────┘)"
         },
         {
             "Second example",
-            R"(
-Query:
-```
-:) desc format(JSONEachRow,
+            R"(DESCRIBE format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
 {"a": "Hello", "b": 112}
 {"a": "World", "b": 124}
-$$)
-```
-
-Result:
-```
-┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+$$))",
+            R"(┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
-└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-)", ""
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘)"
         },
     },
     .category = FunctionDocumentation::Category::TableFunction
@@ -220,9 +207,10 @@ Result:
 }
 
 
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::Case::Insensitive);
+    factory.registerFunction<TableFunctionFormat>(format_table_function_documentation, {false}, TableFunctionFactory::Case::Insensitive);
 }
 
 }

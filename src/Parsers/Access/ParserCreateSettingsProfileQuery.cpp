@@ -27,7 +27,7 @@ namespace
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -37,12 +37,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
+            settings = boost::static_pointer_cast<ASTSettingsProfileElements>(ast);
             return true;
         });
     }
 
-    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTAlterSettingsProfileElements> & alter_settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -52,12 +52,12 @@ namespace
             if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
+            alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(ast);
             return true;
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, boost::intrusive_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -70,7 +70,7 @@ namespace
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
+            roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -122,8 +122,8 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         return false;
 
     String new_name;
-    std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
     String cluster;
     String storage_name;
 
@@ -134,22 +134,22 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
         if (alter)
         {
-            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            boost::intrusive_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
             if (parseAlterSettings(pos, expected, new_alter_settings))
             {
                 if (!alter_settings)
-                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
+                    alter_settings = make_intrusive<ASTAlterSettingsProfileElements>();
                 alter_settings->add(std::move(*new_alter_settings));
                 continue;
             }
         }
         else
         {
-            std::shared_ptr<ASTSettingsProfileElements> new_settings;
+            boost::intrusive_ptr<ASTSettingsProfileElements> new_settings;
             if (parseSettings(pos, expected, attach_mode, new_settings))
             {
                 if (!settings)
-                    settings = std::make_shared<ASTSettingsProfileElements>();
+                    settings = make_intrusive<ASTSettingsProfileElements>();
                 settings->add(std::move(*new_settings));
                 continue;
             }
@@ -164,13 +164,13 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         break;
     }
 
-    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> to_roles;
     parseToRoles(pos, expected, attach_mode, to_roles);
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
+    auto query = make_intrusive<ASTCreateSettingsProfileQuery>();
     node = query;
 
     query->alter = alter;

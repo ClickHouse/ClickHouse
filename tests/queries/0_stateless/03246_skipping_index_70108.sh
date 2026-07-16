@@ -14,6 +14,7 @@ $CLICKHOUSE_LOCAL -m "
     ORDER BY c0;
     INSERT INTO t SELECT * FROM file('$CURDIR/data_i70108/repro.tsv.zstd');
 
-SELECT count() FROM t WHERE c1 = 'dedenk1d4q' SETTINGS use_skip_indexes=1;
+SELECT count() FROM t WHERE c1 = 'dedenk1d4q' SETTINGS use_skip_indexes=1, secondary_indices_enable_bulk_filtering=0;
+SELECT count() FROM t WHERE c1 = 'dedenk1d4q' SETTINGS use_skip_indexes=1, secondary_indices_enable_bulk_filtering=1;
 SELECT count() FROM t WHERE c1 = 'dedenk1d4q' SETTINGS use_skip_indexes=0;
 "

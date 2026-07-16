@@ -37,13 +37,13 @@ SELECT
     if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries1'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -69,13 +69,13 @@ SELECT
     if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries2'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -105,13 +105,13 @@ SELECT
     if(peak_threads >= 1, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries3'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -181,13 +181,13 @@ SELECT
     if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries4'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
@@ -220,13 +220,13 @@ SELECT
      -- we have 95 parts, but avoid spawning too much idles threads
 FROM system.query_thread_log
 WHERE
-    event_time > now() - 60
+    event_date >= yesterday() AND event_time > now() - 60
     AND query_id = (
         SELECT query_id
         FROM system.query_log
         WHERE
             type = 'QueryFinish'
-            AND event_time > now() - 60
+            AND event_date >= yesterday() AND event_time > now() - 60
             AND log_comment = 'check_concurrency_in_remote_queries5'
             AND current_database = currentDatabase()
             ORDER BY event_time DESC LIMIT 1
