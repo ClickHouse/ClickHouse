@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -59,6 +60,18 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
         selected_entry_,
         task_result_callback_)
 {
+}
+
+MergeFromLogEntryTask::~MergeFromLogEntryTask()
+{
+    /// This task owns the zero-copy exclusive lock. If it is still held when the task is torn
+    /// down on a background executor thread, ~ZooKeeperLock issues Keeper requests to release
+    /// the ephemeral node while no component scope is set, which aborts the server under
+    /// enforce_keeper_component_tracking. This is the highest level that owns the section doing
+    /// those ZooKeeper requests, so set the Keeper component here and release the lock within
+    /// the guarded scope (the member itself is destroyed after this body, outside the guard).
+    auto component_guard = Coordination::setCurrentComponent("MergeFromLogEntryTask::~MergeFromLogEntryTask");
+    zero_copy_lock.reset();
 }
 
 

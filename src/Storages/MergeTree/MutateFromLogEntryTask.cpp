@@ -9,6 +9,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Core/Settings.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace ProfileEvents
 {
@@ -38,6 +39,19 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_mutate_task_pause_in_prepare[];
+    extern const char rmt_mutate_task_pause_after_zero_copy_lock[];
+}
+
+MutateFromLogEntryTask::~MutateFromLogEntryTask()
+{
+    /// This task owns the zero-copy exclusive lock. If it is still held when the task is torn
+    /// down on a background executor thread, ~ZooKeeperLock issues Keeper requests to release
+    /// the ephemeral node while no component scope is set, which aborts the server under
+    /// enforce_keeper_component_tracking. This is the highest level that owns the section doing
+    /// those ZooKeeper requests, so set the Keeper component here and release the lock within
+    /// the guarded scope (the member itself is destroyed after this body, outside the guard).
+    auto component_guard = Coordination::setCurrentComponent("MutateFromLogEntryTask::~MutateFromLogEntryTask");
+    zero_copy_lock.reset();
 }
 
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
@@ -216,6 +230,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             }
 
             LOG_DEBUG(log, "Zero copy lock taken, will mutate part {}", entry.new_part_name);
+
+            /// Pause here with the zero-copy exclusive lock held, so a test can tear the task
+            /// down (e.g. via DROP TABLE) while ~ZooKeeperLock still has to release the lock.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_zero_copy_lock);
         }
     }
 
