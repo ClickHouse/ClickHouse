@@ -186,6 +186,7 @@ def started_cluster():
                 "configs/backups.xml",
                 "configs/cluster.xml",
                 "configs/text_log.xml",
+                "configs/display_secrets.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -1713,3 +1714,170 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def test_alter_database_settings_not_supported(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"iceberg_alter_settings_{uuid.uuid4().hex}"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    fake_token = f"fake_secret_token_{uuid.uuid4().hex}"
+
+    qid_alter = uuid.uuid4().hex
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other_warehouse'"
+    )
+    assert "BAD_ARGUMENTS" in error
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = '{fake_token}'",
+        query_id=qid_alter,
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING no_such_setting = 1"
+    )
+    assert "BAD_ARGUMENTS" in error or "UNKNOWN_SETTING" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "other_warehouse" not in show_result
+    assert "onelake_bearer_token" not in show_result
+    node.query(
+        f"SELECT name FROM system.tables WHERE database = '{db_name}' SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    )
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    logged_query = node.query(
+        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid_alter}'"
+    )
+    assert fake_token not in logged_query
+    assert "[HIDDEN]" in logged_query
+
+    node.query(f"DROP DATABASE {db_name}")
+
+    glue_db_name = f"glue_alter_settings_{uuid.uuid4().hex}"
+    node.query(
+        f"""
+        ATTACH DATABASE {glue_db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x'
+        """
+    )
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {glue_db_name} MODIFY SETTING region = 'eu-west-1'"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    node.query(f"DROP DATABASE {glue_db_name}")
+
+
+def test_alter_database_settings_rest_auth_header(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"rest_alter_auth_header_{uuid.uuid4().hex}"
+    old_header = f"Authorization: Bearer old_{uuid.uuid4().hex}"
+    new_header = f"Authorization: Bearer new_{uuid.uuid4().hex}"
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-rest:1/api')
+        SETTINGS catalog_type = 'rest', warehouse = 'wh', auth_header = '{old_header}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING auth_header = '{new_header}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING catalog_credential = 'id:secret'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert new_header not in show_result
+    assert "[HIDDEN]" in show_result
+
+    node.restart_clickhouse()
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_header in engine_full_with_secrets
+    assert old_header not in engine_full_with_secrets
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
+def test_alter_database_settings_onelake_persistence(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"onelake_alter_persist_{uuid.uuid4().hex}"
+    old_token = f"secret_token_{uuid.uuid4().hex}"
+    new_token = f"secret_token_{uuid.uuid4().hex}"
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-0', onelake_tenant_id = 'tenant-1', onelake_bearer_token = '{old_token}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_tenant_id = 'tenant-2', onelake_bearer_token = '{new_token}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_client_id = 'client-1'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other_warehouse'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = ''"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "tenant-2" in show_result
+    assert new_token not in show_result
+    assert old_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert "tenant-2" in engine_full_with_secrets
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    node.restart_clickhouse()
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "tenant-2" in show_result
+    assert "tenant-0" not in show_result
+    assert "tenant-1" not in show_result
+    assert new_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert "tenant-2" in engine_full
+    assert "tenant-0" not in engine_full
+    assert "tenant-1" not in engine_full
+    assert new_token not in engine_full
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    node.query(f"DROP DATABASE {db_name}")
