@@ -578,8 +578,8 @@ def test_redact_basic(started_cluster):
     assert "email" in sent and "name" in sent
 
 
-def test_redact_all_categories_empty_array(started_cluster):
-    """An empty categories array is accepted and means 'redact every detected category'."""
+def test_redact_default_categories_empty_array(started_cluster):
+    """An empty categories array is accepted and falls back to the default set of PII categories."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('some text with pii')")
     result = instance.query(
