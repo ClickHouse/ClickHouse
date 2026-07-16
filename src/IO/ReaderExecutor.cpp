@@ -1458,8 +1458,12 @@ bool ReaderExecutor::shouldOpenLongConnection(size_t phys_off) const
     /// continues past it instead. The reach is `boundedReach` - the SAME value `longConnectionBound`
     /// sizes the channel with - so the trigger never opens a "long" channel the bound would then
     /// clamp back to the extent (a reverse/scattered pattern, or a run walled off by a near wide
-    /// cached run, stays short). When no extent is advertised, fall back to one window.
-    const size_t boundary = read_extent_end
+    /// cached run, stays short). An extent AT the object end (a merge reading the whole part;
+    /// a full-file scan) is not a narrowing declaration - the reach is clamped to the file end,
+    /// so it could never run past it - and falls back to the same structural one-window rule
+    /// as no extent at all: a read whose reach spans more than one window is long.
+    const size_t file_end = hasUnknownSize() ? std::numeric_limits<size_t>::max() : toPhys(totalSize());
+    const size_t boundary = (read_extent_end && toPhys(*read_extent_end) < file_end)
         ? toPhys(*read_extent_end)
         : (phys_off + effectiveWindowSize(level));
     return boundedReach(phys_off) > boundary;
