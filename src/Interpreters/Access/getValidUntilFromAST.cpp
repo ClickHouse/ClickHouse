@@ -118,6 +118,20 @@ namespace DB
 
         if (context)
         {
+            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
+            /// year field of `0` means "not specified", so it is silently replaced with the current
+            /// (or previous) year instead of being kept as-is - see the `!year` fallback in
+            /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). That would make the
+            /// bound check below pass on a deadline the caller never asked for. The documented `VALID
+            /// UNTIL` syntax (docs/en/sql-reference/statements/create/user.md) is always a delimited
+            /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
+            /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
+            /// through the "year omitted" fallback.
+            if (valid_until_str.starts_with("0000") && (valid_until_str.size() == 4 || !isNumericASCII(valid_until_str[4])))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
+
             /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
             /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
             const auto & time_zone = DateLUT::instance("");
