@@ -310,6 +310,12 @@ namespace
 
                     if (OpenSSLInitializer::instance().isFIPSEnabled() && !SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
                     {
+                        /// Validate the format before skipping: on a non-FIPS node makePublicKeyFromBase64 would
+                        /// reject a malformed key, so the FIPS short-circuit must not let a corrupted or mistyped
+                        /// key through and make config-user validity depend on the node's FIPS mode. No libssh
+                        /// import happens here, so it stays crash-safe for Ed25519 under FIPS.
+                        SSHKeyFactory::validatePublicKeyFormat(base64_key, type);
+
                         LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
                             "Skipping SSH key entry {} for user {} (type {}): not usable in FIPS mode", entry, user_name, type);
                         has_fips_filtered_key = true;

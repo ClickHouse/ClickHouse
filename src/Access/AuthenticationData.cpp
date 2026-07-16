@@ -540,6 +540,12 @@ std::optional<AuthenticationData> AuthenticationData::fromAST(const ASTAuthentic
                 /// method missing that key and DiskAccessStorage::writeEntityFile / ZooKeeperReplicator would
                 /// persist the truncated definition, permanently deleting the key on the next rewrite. Preserve
                 /// it verbatim so the stored definition round-trips unchanged; it just does not authenticate here.
+                /// Validate the key format before preserving it: on a non-FIPS node makePublicKeyFromBase64
+                /// would reject a malformed key, so the FIPS short-circuit must not let a corrupted or mistyped
+                /// key through and make validity depend on the node's FIPS mode. This never imports the key into
+                /// libssh, so it stays crash-safe for Ed25519 under FIPS.
+                SSHKeyFactory::validatePublicKeyFormat(key_base64, type);
+
                 LOG_WARNING(getLogger("AuthenticationData"),
                     "Preserving SSH key of type {} that is not usable in FIPS mode; it is kept in the stored "
                     "definition but cannot be used for authentication", type);

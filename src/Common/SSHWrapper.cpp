@@ -302,6 +302,34 @@ bool SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(const String & type_name)
     return isKeyTypeUsableInFIPSBuilds(ssh_key_type_from_name(type_name.c_str()));
 }
 
+void SSHKeyFactory::validatePublicKeyFormat(const String & base64_key, const String & type_name)
+{
+    /// Format-only validation that does NOT import the key into libssh (importing an Ed25519 key
+    /// under FIPS crashes). This keeps a definition's validity independent of the node's FIPS mode:
+    /// a key that is FIPS-unusable (Ed25519) but must be preserved/skipped is still rejected here if
+    /// it is malformed, matching what makePublicKeyFromBase64 does for FIPS-usable keys.
+    /// An SSH public key wire blob starts with a length-prefixed string naming the algorithm.
+    String blob;
+    try
+    {
+        blob = base64Decode(base64_key);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: rethrown below as a typed exception; base64Decode's own message is not user-facing here.
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Bad SSH public key of type {}: not valid base64", type_name);
+    }
+
+    std::string_view data(blob);
+    std::string_view embedded_type;
+    if (!readSSHWireString(data, embedded_type))
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Bad SSH public key of type {}: truncated wire format", type_name);
+
+    if (std::string_view(type_name) != embedded_type)
+        throw Exception(ErrorCodes::LIBSSH_ERROR,
+            "SSH public key type mismatch: declared '{}' but the key encodes '{}'", type_name, String(embedded_type));
+}
+
 bool SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(const String & filename, const String & passphrase)
 {
     return isKeyTypeUsableInFIPSBuilds(detectPrivateKeyType(filename, passphrase));

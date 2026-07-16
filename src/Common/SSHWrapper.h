@@ -61,6 +61,11 @@ public:
 
     static bool isPublicKeyUsableInFIPSBuilds(const String & type_name);
 
+    /// Validate the format of an SSH public key (base64 + embedded wire type) WITHOUT importing it
+    /// into libssh. Used to reject malformed keys on the reload / ATTACH path even for key types
+    /// that are FIPS-unusable and therefore skipped/preserved rather than imported. Throws on error.
+    static void validatePublicKeyFormat(const String & base64_key, const String & type_name);
+
     /// Detect the key type of a key file WITHOUT importing it into libssh (importing an Ed25519 key
     /// under FIPS mode crashes) and report whether it is usable in FIPS builds. The passphrase lets
     /// detection decrypt an encrypted PKCS#8 carrier to read its algorithm OID.

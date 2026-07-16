@@ -245,4 +245,33 @@ TEST(SSHKeyFIPSDetection, PrivateKeyFileEncryptedPKCS8WrongPassphraseIsUnknown)
     (void)std::remove(path.c_str());
 }
 
+/// The base64 wire body (no "<type> " prefix / trailing comment) of ED25519_PUBLIC_KEY above.
+constexpr const char * ED25519_BASE64 = "AAAAC3NzaC1lZDI1NTE5AAAAIM3xD3f0wUQKH+bskX/oCu2CFytFOkxoTl/dTurq8RCe";
+
+/// validatePublicKeyFormat is a format-only check (no libssh import), so it runs on every build and
+/// keeps a definition's validity independent of the node's FIPS mode. It backs the reload / ATTACH
+/// and config-file paths where FIPS-unusable Ed25519 keys are skipped/preserved rather than imported:
+/// a malformed or mistyped key must still be rejected there, not silently accepted because it is Ed25519.
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatAcceptsWellFormedEd25519)
+{
+    EXPECT_NO_THROW(SSHKeyFactory::validatePublicKeyFormat(ED25519_BASE64, "ssh-ed25519"));
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsNonBase64)
+{
+    EXPECT_THROW(SSHKeyFactory::validatePublicKeyFormat("not valid base64 !!!", "ssh-ed25519"), DB::Exception);
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsTypeMismatch)
+{
+    /// The blob encodes ssh-ed25519 but the declared type says ssh-rsa.
+    EXPECT_THROW(SSHKeyFactory::validatePublicKeyFormat(ED25519_BASE64, "ssh-rsa"), DB::Exception);
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsTruncatedWire)
+{
+    /// Valid base64 but too short to hold a length-prefixed type string.
+    EXPECT_THROW(SSHKeyFactory::validatePublicKeyFormat("AAA=", "ssh-ed25519"), DB::Exception);
+}
+
 #endif
