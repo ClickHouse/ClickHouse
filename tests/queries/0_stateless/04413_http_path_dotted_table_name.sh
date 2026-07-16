@@ -3,7 +3,7 @@
 # no-old-analyzer: the explicit FROM-less path relies on `implicit_table_at_top_level`, which is
 # honored only by the analyzer (`QueryTreeBuilder`/`QueryAnalyzer`); the old interpreter ignores it
 # and resolves a FROM-less `SELECT` against the dummy `system.one`, so `SELECT x` cannot find the
-# column there. The feature is new-analyzer-only (the old analyzer is deprecated).
+# column there. The feature works only with the analyzer (the old analyzer is deprecated).
 
 # A table whose name contains a literal dot, addressed via the HTTP URL path (`/db/my.table`), must
 # resolve to that table on BOTH paths:

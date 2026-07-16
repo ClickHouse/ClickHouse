@@ -2,7 +2,7 @@
 # Tags: no-old-analyzer
 # no-old-analyzer: the explicit FROM-less path relies on `implicit_table_at_top_level`, which is
 # honored only by the analyzer (`QueryTreeBuilder`/`QueryAnalyzer`); the old interpreter resolves a
-# FROM-less `SELECT` against the dummy `system.one`. The feature is new-analyzer-only.
+# FROM-less `SELECT` against the dummy `system.one`. The feature works only with the analyzer.
 
 # Regression: a FROM-less HTTP path query (`/db/t?query=SELECT x`) combined with a query-construction
 # setting (`limit` / `filter` / `order` / ...) must still resolve unqualified columns against the path
