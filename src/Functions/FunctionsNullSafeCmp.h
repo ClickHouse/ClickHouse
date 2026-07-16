@@ -233,11 +233,11 @@ public:
                     : type_and_name_right_col);
         }
 
-        // get common type for null-safe comparison; may be null for types with no least common
-        // supertype (e.g. `UInt64` vs `Int64`), which are still comparable element-wise.
+        // get common type for null-safe comparison;
         DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
-        bool has_string_type = WhichDataType(arguments[0].type).isStringOrFixedString()
-                        || WhichDataType(arguments[1].type).isStringOrFixedString();
+        // handle string types compared with null
+        bool has_string_type = WhichDataType(removeNullable(arguments[0].type)).isStringOrFixedString()
+                        || WhichDataType(removeNullable(arguments[1].type)).isStringOrFixedString();
         if (common_type)
         {
             ColumnPtr c0_converted = castColumn(arguments[0], common_type);

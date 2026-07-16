@@ -517,12 +517,12 @@ SELECT c_variant IS DISTINCT FROM c_ipv6 FROM 03611_nscmp_tbl; -- { serverError 
 SELECT
     c_variant <=> c_string,
     c_variant <=> c_fstring
-FROM 03611_nscmp_tbl;   -- { serverError NO_COMMON_TYPE }
+FROM 03611_nscmp_tbl;   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT
     c_variant IS DISTINCT FROM c_string,
     c_variant IS DISTINCT FROM c_fstring
-FROM 03611_nscmp_tbl;   -- { serverError NO_COMMON_TYPE }
+FROM 03611_nscmp_tbl;   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Array vs Map cross-type test cases';
 

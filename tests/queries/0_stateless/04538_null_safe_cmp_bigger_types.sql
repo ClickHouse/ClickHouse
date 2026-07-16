@@ -40,6 +40,20 @@ SELECT [1]::Array(UInt64) IS NOT DISTINCT FROM [1]::Array(Int64);
 SELECT [1,2]::Array(UInt64) IS DISTINCT FROM [1,2,3]::Array(Int64);
 SELECT materialize([1]::Array(UInt64)) IS DISTINCT FROM materialize([-1]::Array(Int64));
 
+-- Arrays of Nullable elements whose types have no least common supertype
+SELECT [1]::Array(Nullable(UInt64)) IS DISTINCT FROM [-1]::Array(Nullable(Int64));
+SELECT [1]::Array(Nullable(UInt64)) IS NOT DISTINCT FROM [1]::Array(Nullable(Int64));
+SELECT [1,2]::Array(Nullable(UInt64)) IS NOT DISTINCT FROM [1,2]::Array(Nullable(Int64));
+SELECT [NULL]::Array(Nullable(UInt64)) IS NOT DISTINCT FROM [NULL]::Array(Nullable(Int64));
+SELECT [NULL]::Array(Nullable(UInt64)) IS DISTINCT FROM [1]::Array(Nullable(Int64));
+SELECT materialize([1]::Array(Nullable(UInt64))) IS DISTINCT FROM materialize([-1]::Array(Nullable(Int64)));
+
+-- Nullable wrapped string vs nullable number (no least common supertype, const-string path)
+SELECT CAST('1', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)');
+SELECT CAST('1', 'Nullable(String)') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)');
+SELECT CAST('2', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)');
+SELECT CAST('1', 'Nullable(FixedString(1))') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)');
+
 -- Consistency with the regular operators (null-safe result matches != / = for non-NULL values)
 SELECT (CAST('1', 'UInt64') IS DISTINCT FROM CAST('-1', 'Int64')) = (CAST('1', 'UInt64') != CAST('-1', 'Int64'));
 SELECT (CAST('1', 'UInt64') IS NOT DISTINCT FROM CAST('-1', 'Int64')) = (CAST('1', 'UInt64') = CAST('-1', 'Int64'));

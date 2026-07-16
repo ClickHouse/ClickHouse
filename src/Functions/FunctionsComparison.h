@@ -1478,8 +1478,15 @@ public:
                     auto left_nested_type = left_array->getNestedType();
                     auto right_nested_type = right_array->getNestedType();
 
+                    /// Use is_null_safe_cmp_mode to produce a definite non-Nullable `UInt8`, matching the
+                    /// runtime array specialization that compares elements with `FunctionIsNotDistinctFrom`.
+                    if constexpr (is_null_safe_cmp_mode)
+                    {
+                        left_nested_type = removeNullable(left_nested_type);
+                        right_nested_type = removeNullable(right_nested_type);
+                    }
                     auto element_comparison
-                        = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(params));
+                        = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name, is_null_safe_cmp_mode>>(params));
                     ColumnsWithTypeAndName element_args{{nullptr, left_nested_type, ""}, {nullptr, right_nested_type, ""}};
                     /// Throws NO_COMMON_TYPE if the element types are not comparable.
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
