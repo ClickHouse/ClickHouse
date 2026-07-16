@@ -315,7 +315,8 @@ Poco::Dynamic::Var bigQueryJSONValue(const BigQueryField & field, const DataType
         const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
 
         Poco::JSON::Array::Ptr elements = new Poco::JSON::Array;
-        for (size_t i = offsets[row - 1]; i < offsets[row]; ++i)
+        size_t start = row == 0 ? 0 : offsets[row - 1];
+        for (size_t i = start; i < offsets[row]; ++i)
             elements->add(nonRepeatedJSONValue(field, nested_type, column_array.getData(), i));
         return Poco::Dynamic::Var(elements);
     }
