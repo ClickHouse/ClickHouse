@@ -1171,7 +1171,8 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     /// There is a couple of instances where there might be a lower limit on the rows to be read
     /// * The max_rows_to_read setting
     /// * A LIMIT in a simple query (see maxBlockSizeByLimit())
-    UInt64 max_rows = maxBlockSizeByLimit();
+    bool unused_stateful_function_blocked_trivial_limit = false;
+    UInt64 max_rows = maxBlockSizeByLimit(unused_stateful_function_blocked_trivial_limit);
     if (settings[Setting::max_rows_to_read])
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
@@ -2695,28 +2696,15 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
  *  then as the block size we will use limit + offset (not to read more from the table than requested),
  *  and also set the number of threads to 1.
  */
-UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
+UInt64 InterpreterSelectQuery::maxBlockSizeByLimit(bool & out_stateful_function_blocked_trivial_limit) const
 {
+    out_stateful_function_blocked_trivial_limit = false;
+
     const auto & query = query_ptr->as<const ASTSelectQuery &>();
 
     const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-    /// `arrayJoin` (function or `ARRAY JOIN` clause) expands one input row into several output
-    /// rows after the source has produced them. Limiting the source to `limit + offset` rows
-    /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
-    /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
-    /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
-        return 0;
-
-    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) gives block- and
-    /// data-order dependent results and side effects, so it must see the same input rows it would
-    /// see without the optimization. Capping the source to `limit + offset` rows would truncate
-    /// its input. See the sibling guard in `mainQueryNodeBlockSizeByLimit`.
-    if (selectListHasStatefulFunction(query.select(), context))
-        return 0;
-
-    if (!query.distinct
+    if (!(!query.distinct
        && !query.limit_with_ties
        && !query.prewhere()
        && !query.where()
@@ -2732,10 +2720,34 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && lim_info.fractional_offset == 0
        && query.limitLength()
        && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset
-       && !lim_info.is_limit_length_negative)
-        return lim_info.limit_length + lim_info.limit_offset;
+       && !lim_info.is_limit_length_negative))
+        return 0;
 
-    return 0;
+    /// `arrayJoin` (function or `ARRAY JOIN` clause) expands one input row into several output
+    /// rows after the source has produced them. Limiting the source to `limit + offset` rows
+    /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
+    /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
+    /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
+    if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+        return 0;
+
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) gives block- and
+    /// data-order dependent results and side effects, so it must see the same input rows it would
+    /// see without the optimization. Capping the source to `limit + offset` rows would truncate
+    /// its input. See the sibling guard in `mainQueryNodeBlockSizeByLimit`.
+    /// Unlike the block-size cap, running with more than one stream isn't unsafe by itself, but it
+    /// does make the result depend on the scheduling race between streams (e.g. each
+    /// `GenerateRandom` stream is seeded independently, and an unordered multi-stream `LIMIT`
+    /// keeps whichever rows happen to arrive first) -- so the caller still forces a single stream
+    /// via `out_stateful_function_blocked_trivial_limit`, matching the pre-existing behavior for
+    /// such a trivial LIMIT before this guard was added.
+    if (selectListHasStatefulFunction(query.select(), context))
+    {
+        out_stateful_function_blocked_trivial_limit = true;
+        return 0;
+    }
+
+    return lim_info.limit_length + lim_info.limit_offset;
 }
 
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
@@ -2816,7 +2828,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     UInt64 max_block_size = settings[Setting::max_block_size];
     auto local_limits = getStorageLimits(*context, options);
 
-    if (UInt64 max_block_limited = maxBlockSizeByLimit())
+    bool stateful_function_blocked_trivial_limit = false;
+    if (UInt64 max_block_limited = maxBlockSizeByLimit(stateful_function_blocked_trivial_limit))
     {
         if (max_block_limited < max_block_size)
         {
@@ -2835,6 +2848,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         {
             query_info.trivial_limit = max_block_limited;
         }
+    }
+    else if (stateful_function_blocked_trivial_limit)
+    {
+        /// The block-size cap (and `trivial_limit`) is unsafe here (see the comment in
+        /// `maxBlockSizeByLimit`), but forcing a single stream is not: it keeps the read
+        /// deterministic without truncating or re-chunking the rows the stateful expression sees.
+        max_threads_execute_query = max_streams = 1;
     }
 
     if (!max_block_size)

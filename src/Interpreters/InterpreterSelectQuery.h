@@ -200,7 +200,7 @@ private:
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
     std::optional<UInt64> getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
-    UInt64 maxBlockSizeByLimit() const;
+    UInt64 maxBlockSizeByLimit(bool & out_stateful_function_blocked_trivial_limit) const;
 
     enum class Modificator : uint8_t
     {

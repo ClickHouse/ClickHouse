@@ -860,8 +860,10 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(
     return filter_info;
 }
 
-UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
+UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info, bool & out_stateful_function_blocked_trivial_limit)
 {
+    out_stateful_function_blocked_trivial_limit = false;
+
     // Since we support negative limit, query node field could potentially be Int64 implying negative value.
     // So, we have to handle to separately
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
@@ -894,6 +896,26 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         limit_offset = field.safeGet<UInt64>();
     }
 
+    /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
+      * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
+      * then as the block size we will use limit + offset (not to read more from the table than requested),
+      * and also set the number of threads to 1.
+      */
+    if (!(main_query_node.hasLimit()
+        && !main_query_node.isDistinct()
+        && !main_query_node.isLimitWithTies()
+        && !main_query_node.hasPrewhere()
+        && !main_query_node.hasWhere()
+        && select_query_info.filter_asts.empty()
+        && !main_query_node.hasGroupBy()
+        && !main_query_node.hasHaving()
+        && !main_query_node.hasOrderBy()
+        && !main_query_node.hasLimitBy()
+        && !select_query_info.need_aggregate
+        && !select_query_info.has_window
+        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset))
+        return 0;
+
     /// `arrayJoin` in the projection expands one input row into several output rows after the
     /// source has run. Capping the source to `limit + offset` rows would truncate input BEFORE
     /// expansion, so hard consumers of `trivial_limit` (StorageLoop, system.zeros, generateRandom)
@@ -908,29 +930,19 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     /// data-order dependent results and side effects, so it must see the same input rows it would
     /// see without the optimization. Capping the source to `limit + offset` rows would truncate
     /// its input. See the sibling guard in `InterpreterSelectQuery::maxBlockSizeByLimit`.
+    /// Unlike the block-size cap, running the read with more than one stream isn't unsafe by
+    /// itself, but it does make the result depend on the scheduling race between streams (e.g.
+    /// each `GenerateRandom` stream is seeded independently, and an unordered multi-stream `LIMIT`
+    /// keeps whichever rows happen to arrive first) -- so the caller still forces a single stream
+    /// via `out_stateful_function_blocked_trivial_limit`, matching the pre-existing behavior for
+    /// such a trivial LIMIT before this guard was added.
     if (hasStatefulFunctionNode(main_query_node.getProjectionNode()))
+    {
+        out_stateful_function_blocked_trivial_limit = true;
         return 0;
+    }
 
-    /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
-      * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
-      * then as the block size we will use limit + offset (not to read more from the table than requested),
-      * and also set the number of threads to 1.
-      */
-    if (main_query_node.hasLimit()
-        && !main_query_node.isDistinct()
-        && !main_query_node.isLimitWithTies()
-        && !main_query_node.hasPrewhere()
-        && !main_query_node.hasWhere()
-        && select_query_info.filter_asts.empty()
-        && !main_query_node.hasGroupBy()
-        && !main_query_node.hasHaving()
-        && !main_query_node.hasOrderBy()
-        && !main_query_node.hasLimitBy()
-        && !select_query_info.need_aggregate
-        && !select_query_info.has_window
-        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-        return limit_length + limit_offset;
-    return 0;
+    return limit_length + limit_offset;
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
@@ -1534,8 +1546,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
                 || !!getEffectiveRowPolicyFilter(storage, query_context);
+            bool stateful_function_blocked_trivial_limit = false;
             if (!has_additional_filters)
-                max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
+                max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info, stateful_function_blocked_trivial_limit);
             if (max_block_size_limited)
             {
                 if (max_block_size_limited < max_block_size)
@@ -1557,6 +1570,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     table_expression_query_info.trivial_limit = max_block_size_limited;
                 }
+            }
+            else if (stateful_function_blocked_trivial_limit)
+            {
+                /// The block-size cap (and `trivial_limit`) is unsafe here (see the comment in
+                /// `mainQueryNodeBlockSizeByLimit`), but forcing a single stream is not: it keeps
+                /// the read deterministic without truncating or re-chunking the rows the stateful
+                /// expression sees.
+                max_streams = 1;
+                max_threads_execute_query = 1;
             }
 
             if (!max_block_size)

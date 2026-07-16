@@ -14,12 +14,15 @@ CREATE TABLE join_inner_table
 ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/join_inner_table', 'r1')
 ORDER BY (id, number, key);
 
+-- max_block_size = 100 (matching the LIMIT): generateRandom fills each block's columns sequentially
+-- from one RNG stream, so a bigger block would shift every column after the first to different values.
 INSERT INTO join_inner_table
 SELECT
     '833c9e22-c245-4eb5-8745-117a9a1f26b1'::UUID as id,
     rowNumberInAllBlocks()::String as key,
     * FROM generateRandom('number Int64, value1 String, value2 String, time Int64', 1, 10, 2)
-LIMIT 100;
+LIMIT 100
+SETTINGS max_threads = 1, max_block_size = 100;
 
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
@@ -123,7 +126,8 @@ SELECT
     '833c9e22-c245-4eb5-8745-117a9a1f26b1'::UUID as id,
         (rowNumberInAllBlocks() % 10)::String as key,
         * FROM generateRandom('otherValue1 String, otherValue2 String, time Int64', 1, 10, 2)
-LIMIT 100;
+LIMIT 100
+SETTINGS max_threads = 1, max_block_size = 100;
 
 
 SELECT '=============== OUTER QUERY (NO PARALLEL) ===============';
