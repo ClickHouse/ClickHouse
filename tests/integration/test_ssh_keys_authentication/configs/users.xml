@@ -18,9 +18,16 @@
         </john>
         <lucy>
             <ssh_keys>
+                <!-- Ed25519 key: dropped by UsersConfigParser on FIPS builds (not FIPS-approved). -->
                 <ssh_key>
                      <type>ssh-ed25519</type>
                      <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAILbX3cPhyeqaY3uP5UR45pS3GOMXEdv+E2obcbl6YpUQ</base64_key>
+                 </ssh_key>
+                <!-- RSA key with a passphrase-protected private key file: FIPS-approved, so
+                     lucy still authenticates (and survives config parsing) on FIPS builds. -->
+                <ssh_key>
+                     <type>ssh-rsa</type>
+                     <base64_key>AAAAB3NzaC1yc2EAAAADAQABAAABAQCzbRyjvCUoxl3Tsfe3dobQEdDYlkUcfBXqnW8nv0wHA/L8idZoX2dMe968lVHmTtHs8/VsPT1I6wA7IrQA96fa1aEpg4lZSssUHU8Mp3uA/sZGLkC5ITCDahRpYeTx09voUM38RfIiyChiQxhztHQ2RTU1s9wNn6ebtxf1WegKmCFdfa+ij6qkwqvpdrly3x7SguhgootVH7bWkiDlquAVIdsjYU6d4Ur56gB1r5jgNsPqlciPQUciVIqtZBRDSfiVvVL74HefIDAO5IlYvrugiFE7NR5dXDpqrF4guhgP7rSp4FqpZk85vQQ+PmodeANNQowSriIPDn8Nfdu2dl//</base64_key>
                  </ssh_key>
             </ssh_keys>
         </lucy>
