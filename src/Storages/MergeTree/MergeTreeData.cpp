@@ -25,6 +25,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
@@ -4628,6 +4629,51 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
+    /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
+    /// (existing parts are not rewritten and the custom serialization is not reattached), so an in-place ALTER would
+    /// leave the table inconsistent: existing parts keep the plain serialization (no companion codes stream, and `pq`
+    /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
+    /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
+    {
+        auto quantize_signature = [](const ASTPtr & codec) -> String
+        {
+            const auto params = tryExtractQuantizedCodecParams(codec);
+            if (!params)
+                return {};
+            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+        };
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_COLUMN && command.type != AlterCommand::MODIFY_COLUMN)
+                continue;
+            const bool old_has = old_metadata.getColumns().has(command.column_name);
+            const bool new_has = new_metadata.getColumns().has(command.column_name);
+            const String old_sig = old_has ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String new_sig = new_has ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec) : String{};
+
+            /// The codec was added, removed, or changed.
+            bool forbidden = old_sig != new_sig;
+            /// Or a typed `MODIFY COLUMN` is applied while the Quantized codec is present. Such a command reassigns the
+            /// column type (`ColumnsDescription::modify` sets `col.type = command.data_type`), which drops the codec's
+            /// custom serialization even when the type is textually unchanged (e.g. `MODIFY COLUMN vec Array(Float32)
+            /// COMMENT '...'`): the metadata still carries `CODEC(Quantized(...))` while subsequent writes stop producing
+            /// the companion codes subcolumn, leaving parts inconsistent. A comment-only `MODIFY COLUMN vec COMMENT '...'`
+            /// (no type clause) does not set `data_type` and remains allowed.
+            if (!forbidden && command.type == AlterCommand::MODIFY_COLUMN && command.data_type && !old_sig.empty())
+                forbidden = true;
+
+            if (forbidden)
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The Quantized(...) codec is immutable via ALTER: it cannot be added, removed or changed, and a "
+                    "MODIFY COLUMN that restates the type of a Quantized-coded column is rejected (column {}), because it "
+                    "would drop the codec's serialization and leave new parts without the companion codes subcolumn. Set "
+                    "the codec at CREATE TABLE; to change the codec or type on existing data, create a new table with the "
+                    "codec and INSERT ... SELECT into it. A comment-only MODIFY COLUMN (without a type) is allowed.",
+                    backQuoteIfNeed(command.column_name));
+        }
+    }
+
     const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
         /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
@@ -5342,6 +5388,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
+    /// column, trained at serialization suffix). A compact part serializes each granule with a fresh serialization
+    /// state, which would train and write a separate codebook per granule and leave the reader unable to pair each row
+    /// with its granule's codebook. Force a wide part when any column carries `Quantize('pq', ...)`, so the codebook is
+    /// part-level. The data-independent Quantize methods are stateless per row and work in either part format.
+    if (part_type == PartType::Compact)
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        for (const auto & column : metadata_snapshot->getColumns())
+        {
+            const auto params = tryExtractQuantizedCodecParams(column.codec);
+            if (params && params->method == "product")
+            {
+                part_type = PartType::Wide;
+                break;
+            }
+        }
+    }
 
     return {part_type, PartStorageType::Full};
 }
