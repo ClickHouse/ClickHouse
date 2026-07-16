@@ -39,6 +39,11 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
   *     pre-disk-selection guess.
   * Since upload buffers only ever hold data that has already flown through them, their contribution is
   * capped by the data volume of the merge (see the implementation for details).
+  * Projection IO is included as well: a projection whose parts are present in every source part is merged
+  * by a nested MergeTask over those parts, priced by applying this same estimate recursively, and a
+  * projection the merge rebuilds from scratch (a commit-order projection, or
+  * materialize_projections_on_merge) is priced as one set of temp-part writer streams plus the read-back
+  * of the temporary parts, both bounded by the merge's input data volume.
   * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
   * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
   */
