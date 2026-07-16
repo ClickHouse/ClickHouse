@@ -25,7 +25,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     unrun draft that diverges from the URL (the onpopstate save after a preserved-draft
 #     Back/Forward, or persistColorModes over a draft), a reload restores that draft as
 #     editor text but NEVER auto-runs it (the stale-reload branch drops the URL's run=1);
-#     a clean run, by contrast, is both restored and re-run on reload.
+#     a clean run, by contrast, is both restored and re-run on reload;
+#   - typing does not cancel an in-flight run, so a delayed completion must not clobber a
+#     newer, unrun draft (or its live parameter edits) typed while the run was still in
+#     flight: `saveHistory` must leave the live editor/params alone and drop `run=1` on the
+#     entry it produces, even though it still keeps the completed run's own result snapshot.
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects (including a minimal in-memory
 # IndexedDB), asserting on the observable state: history entries, the active tab, the
@@ -234,6 +238,24 @@ async function runSelected(editorText, selectedStatement)
     await drain();
 }
 
+/// Begin a run without completing it, capturing the query/params at launch time — exactly what
+/// `postSingle`'s `history_query_text`/`postMulti`'s `launch_query_text` and `resolveRunParams`
+/// snapshot before the network round-trip. Pair with `finishRun` once something else has
+/// happened to the live tab/params meanwhile (typing does not cancel an in-flight request).
+function startRun(q)
+{
+    type(q);
+    return { query: q, params: sandbox.getParamValues() };
+}
+
+/// Complete a run started with `startRun`: `saveHistory` receives the LAUNCH-TIME snapshot,
+/// never whatever the editor/params hold by the time the response actually arrives.
+async function finishRun(started)
+{
+    sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1 });
+    await drain();
+}
+
 function reset()
 {
     sandbox.tabs.length = 0;
@@ -389,6 +411,33 @@ async function reload()
     sandbox.history.back();
     await drain();
     assert_eq('run-selected+draft back: the newer draft is preserved', active().query, 'SELECT 1; SELECT 2; SELECT 3');
+
+    /// A run's completion must not clobber a newer, unrun draft typed while it was in flight:
+    /// typing does not cancel a request, so by the time it resolves the editor may already hold
+    /// text that has nothing to do with what actually ran (`saveHistory`'s `ranLiveQuery` guard).
+    /// The completed run's own result snapshot is still kept — rendering/downloads must reflect
+    /// what actually ran — but the live draft survives and the entry it produces carries no
+    /// `run=1` (that draft itself was never run).
+    reset();
+    await run('SELECT 0');
+    const inFlight = startRun('SELECT 1');
+    type('SELECT 2 -- typed while SELECT 1 was still in flight');
+    await finishRun(inFlight);
+    assert_eq('delayed completion: the live draft survives', active().query, 'SELECT 2 -- typed while SELECT 1 was still in flight');
+    assert_eq("delayed completion: the completed run's result is still kept", active().result && active().result.query, 'SELECT 1');
+    assert_eq('delayed completion: the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+
+    /// Same hazard when only the PARAMETERS changed while the query itself did not (e.g. a param
+    /// widget edited during an in-flight run): the live parameter edit must survive, and must not
+    /// be silently paired with the completed run's own (now stale) parameter values under `run=1`.
+    reset();
+    await run('SELECT 0');
+    const inFlightParams = startRun('SELECT {x:Int32}');
+    setParam('x', '9');
+    await finishRun(inFlightParams);
+    assert_eq('delayed completion (params changed): the query is kept', active().query, 'SELECT {x:Int32}');
+    assert_params('delayed completion (params changed): the live param edit survives', active().params, { x: '9' });
+    assert_eq('delayed completion (params changed): the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so

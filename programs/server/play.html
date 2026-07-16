@@ -4740,7 +4740,7 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed, params_restore_pending)
+async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text)
 {
     const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
@@ -4887,9 +4887,14 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
     for (const s of multi) multi_size += s.data ? s.data.length : 0;
     if (multi_size > 100000) multi = null;
 
-    /// Save all queries to browser history, using the full textarea content.
+    /// Save all queries to browser history, using the full textarea content captured when the
+    /// run STARTED (`launch_query_text`), not the live `query_area.value`. Typing does not cancel
+    /// an in-flight `postMulti`/`postImpl` request, so by the time every statement has finished the
+    /// editor may already hold a newer, unrun draft; recording that draft here would stamp it as a
+    /// genuine run (`saveHistory` always sets `fromRun=true`) and let a reload auto-execute text
+    /// that was never actually run.
     saveHistory({
-        query: query_area.value,
+        query: launch_query_text,
         format: null,
         ok: !had_error,
         data: null,
@@ -5834,10 +5839,22 @@ function refreshCurrentHistoryEntry(tab) {
 /// Called after an actual run: stash the result snapshot on the active tab (this is
 /// what makes the tab "have a result", hence visible in the bar) and record history.
 /// The snapshot records the query/params that produced it.
+///
+/// A query can take a while, and typing does not cancel it: the `query_area`/`param-` input
+/// handlers keep syncing every keystroke/edit into `tab.query`/`tab.params` in real time (even
+/// while this very run is in flight), so by the time it completes the tab may already hold a
+/// newer, unrun draft that has nothing to do with `stateData`. `ranLiveQuery`/`ranLiveParams`
+/// detect that divergence by comparing against `stateData`, which is itself a snapshot taken
+/// before the run started (`postSingle`'s `history_query_text`/`postMulti`'s `launch_query_text`,
+/// and `resolveRunParams`'s return value). If either diverged, the live draft must be left alone
+/// (never reverted to the stale query/params that actually ran) and the entry must not carry
+/// `run=1` — that draft was never run, so a reload must not auto-execute it.
 function saveHistory(stateData, titleForDoc) {
     const tab = getActiveTab();
     if (!tab) return;
-    tab.query = stateData.query;
+    const ranLiveQuery = tab.query === stateData.query;
+    const ranLiveParams = JSON.stringify(tab.params || {}) === JSON.stringify(stateData.params || {});
+    if (ranLiveQuery) tab.query = stateData.query;
     tab.result = {
         ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
         /// The single statement that produced this result (in multi-query mode it differs
@@ -5857,8 +5874,10 @@ function saveHistory(stateData, titleForDoc) {
         elapsed_ns: stateData.elapsed_ns,
     };
     /// This entry was produced by an actual run, so it may carry `run=1` (a reload/shared link
-    /// re-runs it). Editor-only writers (`syncHistory`/`refreshCurrentHistoryEntry`) never do.
-    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ true);
+    /// re-runs it) — but only when the editor still reflects exactly what ran (`ranLiveQuery` and
+    /// `ranLiveParams`); otherwise a newer unrun draft has taken over meanwhile, and the marker
+    /// must be dropped for the same reason `syncHistory`/`refreshCurrentHistoryEntry` never set it.
+    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ ranLiveQuery && ranLiveParams);
 }
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
@@ -6084,7 +6103,7 @@ async function postOne()
         }
 
         if (selected.length > 1) {
-            await postMulti(my_request_num, selected, params_restore_pending);
+            await postMulti(my_request_num, selected, params_restore_pending, all_text);
         } else if (selected.length === 1) {
             await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart);
         }
@@ -6117,7 +6136,7 @@ async function postAll()
     if (my_request_num !== request_num) return;
 
     if (parsed.length > 1) {
-        await postMulti(my_request_num, parsed, params_restore_pending);
+        await postMulti(my_request_num, parsed, params_restore_pending, all_text);
     } else {
         const query = await getQueryUnderCursor();
         if (my_request_num !== request_num) return;
