@@ -2500,7 +2500,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 {"grpc_port", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
                 {"prometheus.port", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
                 {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
-                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
+                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}},
+                {"introspection.tcp_port", {"IntrospectionTCPThreads", "Number of threads in the server of the introspection TCP protocol (without TLS)."}},
+                {"introspection.tcp_port_secure", {"IntrospectionTCPSecureThreads", "Number of threads in the server of the introspection TCP protocol (with TLS)."}}
             };
             auto it = metric_map.find(name);
             if (it == metric_map.end())
@@ -2523,7 +2525,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
                     {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
                     {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
+                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}},
+                    {"introspection.tcp_port", {"IntrospectionTCPRejectedConnections", "Number of rejected connections for the introspection TCP protocol (without TLS)."}},
+                    {"introspection.tcp_port_secure", {"IntrospectionTCPSecureRejectedConnections", "Number of rejected connections for the introspection TCP protocol (with TLS)."}}
                 };
             auto it = metric_map.find(name);
             if (it == metric_map.end())

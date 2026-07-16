@@ -125,6 +125,14 @@ private:
         bool start_servers = false,
         const ServerType & server_type = ServerType(ServerType::Type::QUERIES_ALL));
 
+    void createIntrospectionServers(
+        Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
+        const Strings & introspection_listen_hosts,
+        bool listen_try,
+        Poco::ThreadPool & introspection_server_pool,
+        std::vector<ProtocolServerAdapter> & servers);
+
     void updateServers(
         Poco::Util::AbstractConfiguration & config,
         const ServerSettings & server_settings,

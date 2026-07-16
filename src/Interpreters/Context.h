@@ -1727,6 +1727,9 @@ public:
     void startServers(const ServerType & server_type) const;
     void stopServers(const ServerType & server_type) const;
 
+    using StopIntrospectionServersCallback = std::function<void()>;
+    void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
+
     void shutdown();
 
     bool isInternalQuery() const { return is_internal_query; }

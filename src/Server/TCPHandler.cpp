@@ -316,12 +316,14 @@ TCPHandler::TCPHandler(
     std::string server_display_name_,
     std::string host_name_,
     const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
+    const ProfileEvents::Event & write_event_,
+    bool is_from_introspection_port_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(getLogger("TCPHandler"))
+    , is_from_introspection_port(is_from_introspection_port_)
     , read_event(read_event_)
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
@@ -518,7 +520,7 @@ void TCPHandler::runImpl()
             Stopwatch idle_time;
             UInt64 timeout_us = std::min(poll_interval, idle_connection_timeout) * 1000000;
 
-            while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_us))
+            while (tcp_server.isOpen() && !in->poll(timeout_us))
             {
                 const auto elapsed_seconds = idle_time.elapsedSeconds();
 
@@ -536,10 +538,10 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
+            if (!tcp_server.isOpen() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(),
+                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {}, eof: {})",
+                    tcp_server.isOpen(), in->isCanceled(),
                     !in->isCanceled() && in->eof());
                 return;
             }
@@ -1233,7 +1235,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     Stopwatch watch;
 
-    while (!server.isCancelled())
+    while (tcp_server.isOpen() || !server.isCancelled())
     {
         while (!in->poll(timeout_us))
         {
@@ -1294,7 +1296,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
     }
 
-    chassert(server.isCancelled());
+    chassert(!tcp_server.isOpen() && server.isCancelled());
     throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
@@ -2508,6 +2510,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// when the upstream is too old to speak features added in newer protocol versions and degrade
     /// gracefully instead of triggering rolling-upgrade incompatibilities.
     client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
+    client_info.is_from_introspection_port = is_from_introspection_port;
 
     state->query_context = session->makeQueryContext(client_info);
 

@@ -854,8 +854,9 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
-        /// Signal cancellation so that active handlers (e.g. TCPHandler)
-        /// exit their receive loops promptly instead of waiting for socket timeout.
+        /// Signal cancellation: together with stopping the servers below, this makes active
+        /// handlers (e.g. TCPHandler) exit their receive loops promptly instead of waiting
+        /// for socket timeout.
         is_cancelled = true;
 
         /// Stop protocol servers before shutting down context.

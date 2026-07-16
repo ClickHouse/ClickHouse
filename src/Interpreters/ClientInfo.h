@@ -84,6 +84,8 @@ public:
 
     Interface interface = Interface::TCP;
     bool is_secure = false;
+    /// The connection was accepted on the introspection port.
+    bool is_from_introspection_port = false;
     String certificate;
 
     /// For tcp

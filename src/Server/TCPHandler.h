@@ -174,7 +174,8 @@ public:
         String server_display_name_,
         String host_name_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
-        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
+        bool is_from_introspection_port_ = false);
     TCPHandler(
         IServer & server_,
         TCPServer & tcp_server_,
@@ -196,6 +197,7 @@ private:
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     LoggerPtr log;
+    bool is_from_introspection_port = false;
 
     String forwarded_for;
     String certificate;
