@@ -1,0 +1,52 @@
+-- Tags: no-parallel-replicas
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/50593
+-- Custom key parallel replicas must still merge per-replica partial results on the initiator
+-- when the custom key is not a function of the GROUP BY keys (e.g. plain count()).
+-- Previously distributed_group_by_no_merge=2 was set unconditionally, so count() returned
+-- one partial row per replica instead of the merged total.
+
+DROP TABLE IF EXISTS t_04545 SYNC;
+
+CREATE TABLE t_04545 (number Int64, y UInt32) ENGINE = MergeTree ORDER BY number;
+INSERT INTO t_04545 SELECT number, number % 3 FROM numbers(100000);
+
+SET enable_parallel_replicas = 1;
+SET max_parallel_replicas = 3;
+SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_mode = 'custom_key_sampling';
+SET automatic_parallel_replicas_mode = 0;
+
+-- Plain count(): custom key is NOT a GROUP BY key -> must be merged -> single row.
+SELECT 'count analyzer=1';
+SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 1;
+
+SELECT 'count analyzer=0';
+SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 0;
+
+-- count() wrapped in a subquery (exact shape from the issue) -> single row.
+SELECT 'count subquery';
+SELECT * FROM (SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545))
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)';
+
+-- GROUP BY on a key that does NOT cover the custom key -> must be merged.
+SELECT 'group by not covering custom key';
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)';
+
+-- GROUP BY covers the custom key (custom key is a function of the GROUP BY key) -> correct with or
+-- without merge; results must still be the merged totals.
+SELECT 'group by covering custom key (y)';
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'y', enable_analyzer = 1;
+
+SELECT 'group by covering custom key cityHash64(y)';
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'cityHash64(y)', enable_analyzer = 1;
+
+DROP TABLE t_04545 SYNC;

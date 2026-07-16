@@ -5,11 +5,19 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+
 #include <Interpreters/Context.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 
 #include <boost/rational.hpp>
@@ -183,6 +191,92 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
+}
+
+namespace
+{
+
+/// Collect the bare column names referenced by the custom key expression AST.
+NameSet collectCustomKeyColumns(const ASTPtr & custom_key)
+{
+    NameSet columns;
+    for (const auto * identifier : IdentifiersCollector::collect(custom_key))
+        columns.insert(identifier->name());
+    return columns;
+}
+
+}
+
+bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key)
+{
+    /// Concatenating per-replica results without merging is only correct when each GROUP BY key is
+    /// fully processed by a single replica. That holds when the custom key is a function of the GROUP BY
+    /// keys. GROUP BY modifiers produce extra rows (totals/subtotals) that must be merged on the initiator.
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube
+        || select.group_by_with_grouping_sets)
+        return false;
+
+    const ASTPtr group_by = select.groupBy();
+    if (!group_by || group_by->children.empty())
+        return false;
+
+    /// Collect bare GROUP BY key column names (only plain column references count).
+    NameSet group_by_columns;
+    for (const auto & group_by_element : group_by->children)
+    {
+        if (const auto * identifier = group_by_element->as<ASTIdentifier>())
+            group_by_columns.insert(identifier->name());
+    }
+    if (group_by_columns.empty())
+        return false;
+
+    /// The custom key must reference only columns that are themselves GROUP BY keys.
+    const NameSet custom_key_columns = collectCustomKeyColumns(custom_key);
+    if (custom_key_columns.empty())
+        return false;
+    for (const auto & column : custom_key_columns)
+    {
+        if (!group_by_columns.contains(column))
+            return false;
+    }
+
+    return true;
+}
+
+bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTPtr & custom_key)
+{
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    if (query_node->isGroupByWithTotals() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube()
+        || query_node->isGroupByWithGroupingSets())
+        return false;
+
+    if (!query_node->hasGroupBy())
+        return false;
+
+    /// Collect bare GROUP BY key column names (only plain column references count).
+    NameSet group_by_columns;
+    for (const auto & group_by_element : query_node->getGroupBy().getNodes())
+    {
+        if (const auto * column_node = group_by_element->as<ColumnNode>())
+            group_by_columns.insert(column_node->getColumnName());
+    }
+    if (group_by_columns.empty())
+        return false;
+
+    /// The custom key AST references bare column names; check they are all GROUP BY keys.
+    const NameSet custom_key_columns = collectCustomKeyColumns(custom_key);
+    if (custom_key_columns.empty())
+        return false;
+    for (const auto & column : custom_key_columns)
+    {
+        if (!group_by_columns.contains(column))
+            return false;
+    }
+
+    return true;
 }
 
 }

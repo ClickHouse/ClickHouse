@@ -1,0 +1,18 @@
+count analyzer=1
+100000
+count analyzer=0
+100000
+count subquery
+100000
+group by not covering custom key
+0	33334
+1	33333
+2	33333
+group by covering custom key (y)
+0	33334
+1	33333
+2	33333
+group by covering custom key cityHash64(y)
+0	33334
+1	33333
+2	33333
