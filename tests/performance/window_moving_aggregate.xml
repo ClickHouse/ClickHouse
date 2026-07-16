@@ -1,0 +1,19 @@
+<test>
+    <!-- Moving-aggregate optimization for sliding window frames:
+         sum/avg subtract rows leaving the frame, min/max use a monotonic deque
+         for large ROWS frames. -->
+    <query>SELECT sum(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT avg(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT min(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT max(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+
+    <!-- Subtraction also applies to sliding RANGE frames. -->
+    <query>SELECT sum(number) OVER (ORDER BY number RANGE BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+
+    <!-- Small frames for min/max stay on the recompute path (below the deque crossover);
+         make sure it does not regress. -->
+    <query>SELECT min(number) OVER (ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+
+    <!-- Floating point sum is excluded from subtraction and keeps the recompute path. -->
+    <query>SELECT sum(toFloat64(number)) OVER (ROWS BETWEEN 1000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
+</test>
