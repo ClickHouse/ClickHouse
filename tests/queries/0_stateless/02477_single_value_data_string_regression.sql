@@ -98,6 +98,12 @@ SELECT '2^30', maxMerge(x) from (select CAST(unhex('00000040') || randomString(1
 SELECT '2^30+1', maxMerge(x) from (select CAST(unhex('01000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
 
 SELECT '2^30-1', maxMerge(x) from (select CAST(unhex('ffffff3f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
+
+-- Reading a corrupted state with a huge size prefix must not try to allocate the whole
+-- (untrusted) size upfront: with a tight memory limit it must still fail with
+-- CANNOT_READ_ALL_DATA rather than MEMORY_LIMIT_EXCEEDED.
+SELECT '2^31-1 tight mem', maxMerge(x) from (select CAST(unhex('ffffff7f') || randomString(100500), 'AggregateFunction(max, String)') as x) SETTINGS max_memory_usage = '500Mi'; -- { serverError CANNOT_READ_ALL_DATA }
+
 -- The following query works, but it's too long and consumes to much memory
 -- SELECT '2^30-1', length(maxMerge(x)) from (select CAST(unhex('ffffff3f') || randomString(0x3FFFFFFF - 1) || 'x', 'AggregateFunction(max, String)') as x);
 SELECT '1M without 0', length(maxMerge(x)) from (select CAST(unhex('00001000') || randomString(0x00100000 - 1) || 'x', 'AggregateFunction(max, String)') as x);

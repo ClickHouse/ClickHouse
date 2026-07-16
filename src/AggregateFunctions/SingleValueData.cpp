@@ -13,6 +13,7 @@
 #    include <base/extended_types.h>
 #endif
 
+#include <algorithm>
 #include <cstring>
 #include <type_traits>
 
@@ -1357,8 +1358,45 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     else
     {
         size = rhs_size;
-        allocateLargeDataIfNeeded(size - 1, arena);
-        buf.readStrict(large_data, size - 1);
+
+        /// A corrupted or truncated state may carry an arbitrarily large size prefix (up to
+        /// ~2 GiB). Pre-allocating `size - 1` bytes in one shot would waste memory and, more
+        /// importantly, could trigger MEMORY_LIMIT_EXCEEDED before we even notice that the
+        /// buffer does not actually contain that many bytes. Grow the destination gradually
+        /// instead, so a short buffer fails with the expected CANNOT_READ_ALL_DATA while only
+        /// as much memory as the data really occupies gets allocated.
+        /// See 02477_single_value_data_string_regression.
+        const UInt32 bytes_to_read = size - 1;
+        UInt32 bytes_read = 0;
+        while (bytes_read < bytes_to_read)
+        {
+            if (capacity <= bytes_read)
+            {
+                /// Grow geometrically (at least ×2) to keep the total work linear, and reserve
+                /// at least enough to drain what is currently buffered in a single read. The
+                /// `+ 1` term guarantees progress even if the buffer is momentarily empty, and
+                /// we never reserve more than the whole value needs.
+                UInt64 bytes_to_reserve = std::max<UInt64>({
+                    static_cast<UInt64>(bytes_read) + 1,
+                    static_cast<UInt64>(capacity) * 2,
+                    static_cast<UInt64>(bytes_read) + buf.available()});
+                bytes_to_reserve = std::min<UInt64>(bytes_to_reserve, bytes_to_read);
+
+                size_t rounded_capacity = roundUpToPowerOfTwoOrZero(bytes_to_reserve);
+                chassert(rounded_capacity <= MAX_STRING_SIZE + 1); /// rounded_capacity <= 2^31
+
+                char * new_large_data = arena->alloc(rounded_capacity);
+                if (bytes_read)
+                    memcpy(new_large_data, large_data, bytes_read);
+                large_data = new_large_data;
+                capacity = static_cast<UInt32>(rounded_capacity);
+            }
+
+            UInt32 chunk = std::min(capacity, bytes_to_read) - bytes_read;
+            buf.readStrict(large_data + bytes_read, chunk);
+            bytes_read += chunk;
+        }
+
         readChar(last_char, buf);
     }
 
