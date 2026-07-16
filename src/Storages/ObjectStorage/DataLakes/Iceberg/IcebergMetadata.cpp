@@ -121,7 +121,6 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int INCORRECT_DATA;
 extern const int LIMIT_EXCEEDED;
 }
 
