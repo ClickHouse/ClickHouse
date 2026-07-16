@@ -64,10 +64,10 @@ SELECT formatQueryFromJSON('{"type":"CreateWasmFunctionQuery","function_name":{"
 
 -- ---------------------------------------------------------------------------
 -- BACKUP: element-local fields must match the element type. A `TEMPORARY TABLE` element
--- (type 1) carrying `partitions` is parser-impossible and must be rejected (formatting drops
+-- carrying `partitions` is parser-impossible and must be rejected (formatting drops
 -- `PARTITIONS` while backup/restore would still honour it).
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t PARTITION \'p\' TO Disk(\'backups\', \'f\')'), '"type":0', '"type":1')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP TABLE t PARTITION \'p\' TO Disk(\'backups\', \'f\')'), '"type":"TABLE"', '"type":"TEMPORARY_TABLE"')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- The JSON nesting pre-scan budget is derived from `max_ast_depth` with headroom for the JSON

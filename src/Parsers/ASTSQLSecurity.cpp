@@ -18,7 +18,7 @@ void ASTSQLSecurity::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SQLSecurity");
     if (type.has_value())
-        w.writeInt("security_type", static_cast<Int64>(*type));
+        w.writeString("security_type", std::string(magic_enum::enum_name(*type)));
     if (is_definer_current_user)
         w.writeBool("is_definer_current_user", true);
     if (definer)
@@ -33,10 +33,10 @@ void ASTSQLSecurity::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     if (r.has("security_type"))
     {
-        Int64 security_type_value = r.getInt("security_type");
-        auto security_type_opt = magic_enum::enum_cast<SQLSecurityType>(static_cast<std::underlying_type_t<SQLSecurityType>>(security_type_value));
-        if (!security_type_opt || static_cast<Int64>(*security_type_opt) != security_type_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown security_type: {}", security_type_value);
+        String security_type_str = r.getString("security_type");
+        auto security_type_opt = magic_enum::enum_cast<SQLSecurityType>(security_type_str);
+        if (!security_type_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown security_type: '{}'", security_type_str);
         type = security_type_opt;
     }
     is_definer_current_user = r.getBool("is_definer_current_user");

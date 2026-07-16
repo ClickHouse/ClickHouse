@@ -673,8 +673,7 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
 #endif
     JSONObjectWriter w(out, "SystemQuery");
-    w.writeInt("query_type", static_cast<Int64>(type));
-    w.writeString("query_type_name", typeToString(type));
+    w.writeString("query_type", std::string(magic_enum::enum_name(type)));
     w.writeChild("database", database);
     w.writeChild("table", table);
     if (if_exists)
@@ -733,13 +732,13 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     if (!fail_point_name.empty())
         w.writeString("fail_point_name", fail_point_name);
     if (fail_point_action != FailPointAction::UNSPECIFIED)
-        w.writeInt("fail_point_action", static_cast<Int64>(fail_point_action));
+        w.writeString("fail_point_action", std::string(magic_enum::enum_name(fail_point_action)));
     if (!delta_kernel_tracing_level.empty())
         w.writeString("delta_kernel_tracing_level", delta_kernel_tracing_level);
     if (!coverage_test_name.empty())
         w.writeString("coverage_test_name", coverage_test_name);
     if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-        w.writeInt("sync_replica_mode", static_cast<Int64>(sync_replica_mode));
+        w.writeString("sync_replica_mode", std::string(magic_enum::enum_name(sync_replica_mode)));
     if (!src_replicas.empty())
     {
         w.writeKey("src_replicas");
@@ -774,7 +773,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
     {
         w.writeKey("server_type");
         auto & buf = w.getOut();
-        buf << "{\"type\":" << static_cast<Int64>(server_type.type);
+        buf << "{\"type\":";
+        writeJSONString(magic_enum::enum_name(server_type.type), buf, w.getFormatSettings());
         if (!server_type.custom_name.empty())
         {
             buf << ",\"custom_name\":";
@@ -788,7 +788,7 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
             {
                 if (!first_excl) buf << ',';
                 first_excl = false;
-                buf << static_cast<Int64>(t);
+                writeJSONString(magic_enum::enum_name(t), buf, w.getFormatSettings());
             }
             buf << ']';
         }
@@ -816,10 +816,10 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     if (!r.has("query_type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'query_type' field in `SystemQuery` during AST JSON deserialization");
-    Int64 query_type_value = r.getInt("query_type");
-    auto query_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(query_type_value));
-    if (!query_type_opt || static_cast<Int64>(*query_type_opt) != query_type_value)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: {}", query_type_value);
+    String query_type_str = r.getString("query_type");
+    auto query_type_opt = magic_enum::enum_cast<Type>(query_type_str);
+    if (!query_type_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: '{}'", query_type_str);
     type = *query_type_opt;
 #if USE_XRAY
     if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
@@ -919,20 +919,20 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     fail_point_name = r.getString("fail_point_name");
     if (r.has("fail_point_action"))
     {
-        Int64 action_value = r.getInt("fail_point_action");
-        auto action_opt = magic_enum::enum_cast<FailPointAction>(static_cast<std::underlying_type_t<FailPointAction>>(action_value));
-        if (!action_opt || static_cast<Int64>(*action_opt) != action_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM fail_point_action: {}", action_value);
+        String action_str = r.getString("fail_point_action");
+        auto action_opt = magic_enum::enum_cast<FailPointAction>(action_str);
+        if (!action_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM fail_point_action: '{}'", action_str);
         fail_point_action = *action_opt;
     }
     delta_kernel_tracing_level = r.getString("delta_kernel_tracing_level");
     coverage_test_name = r.getString("coverage_test_name");
     if (r.has("sync_replica_mode"))
     {
-        Int64 mode_value = r.getInt("sync_replica_mode");
-        auto mode_opt = magic_enum::enum_cast<SyncReplicaMode>(static_cast<std::underlying_type_t<SyncReplicaMode>>(mode_value));
-        if (!mode_opt || static_cast<Int64>(*mode_opt) != mode_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM sync_replica_mode: {}", mode_value);
+        String mode_str = r.getString("sync_replica_mode");
+        auto mode_opt = magic_enum::enum_cast<SyncReplicaMode>(mode_str);
+        if (!mode_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM sync_replica_mode: '{}'", mode_str);
         sync_replica_mode = *mode_opt;
     }
     src_replicas = r.readStringArray("src_replicas");
@@ -1006,10 +1006,10 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         JSONObjectReader srv_reader(*srv_obj);
         if (!srv_obj->has("type"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is missing 'type' during AST JSON deserialization");
-        Int64 srv_type_value = srv_reader.getInt("type");
-        auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(srv_type_value));
-        if (!srv_type_opt || static_cast<Int64>(*srv_type_opt) != srv_type_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: {}", srv_type_value);
+        String srv_type_str = srv_reader.getString("type");
+        auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(srv_type_str);
+        if (!srv_type_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: '{}'", srv_type_str);
         server_type.type = *srv_type_opt;
         server_type.custom_name = srv_reader.getString("custom_name");
         if (srv_obj->has("exclude_types"))
@@ -1021,17 +1021,16 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             {
                 /// Non-AST array: count each entry against `max_ast_elements`.
                 countJSONDeserializationElement();
-                /// Validate the JSON scalar type strictly so a coerced value (e.g. the string `"1"` or a
-                /// boolean) cannot be turned into a real filter; a JSON boolean is reported as integral in
-                /// Poco, so exclude it explicitly.
+                /// Require a JSON string so a coerced value (e.g. a number or a boolean) is not accepted
+                /// as an enum name.
                 const auto elem = arr->get(i);
-                if (!elem.isInteger() || elem.isBoolean())
+                if (!elem.isString())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "'server_type.exclude_types[{}]' must be an integer during AST JSON deserialization", i);
-                Int64 v = arr->getElement<Poco::Int64>(i);
-                auto opt = magic_enum::enum_cast<ServerType::Type>(static_cast<std::underlying_type_t<ServerType::Type>>(v));
-                if (!opt || static_cast<Int64>(*opt) != v)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: {}", i, v);
+                        "'server_type.exclude_types[{}]' must be a string during AST JSON deserialization", i);
+                String v = arr->getElement<std::string>(i);
+                auto opt = magic_enum::enum_cast<ServerType::Type>(v);
+                if (!opt)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: '{}'", i, v);
                 server_type.exclude_types.insert(*opt);
             }
         }

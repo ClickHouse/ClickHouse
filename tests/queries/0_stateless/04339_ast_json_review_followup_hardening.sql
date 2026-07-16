@@ -80,7 +80,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' F
 -- ASTBackupQuery: `FROM SNAPSHOT` (base_snapshot_name) is parser-producible only for `BACKUP`;
 -- a `RESTORE` carrying it would format parser-impossible SQL and restore an empty element set.
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'), '"kind":0', '"kind":1')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'), '"BackupQuery","kind":"BACKUP"', '"BackupQuery","kind":"RESTORE"')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- ASTFunction: `kind` = `LAMBDA_FUNCTION` is parser-producible only together with the

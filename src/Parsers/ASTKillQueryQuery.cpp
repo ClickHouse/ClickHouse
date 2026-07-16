@@ -52,7 +52,7 @@ void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
 void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "KillQueryQuery");
-    w.writeInt("kill_type", static_cast<Int64>(type));
+    w.writeString("kill_type", std::string(magic_enum::enum_name(type)));
     w.writeChild("where_expression", where_expression);
     if (sync)
         w.writeBool("sync", true);
@@ -68,10 +68,10 @@ void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     if (!r.has("kill_type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kill_type' field in `KillQueryQuery` during AST JSON deserialization");
-    Int64 type_value = r.getInt("kill_type");
-    auto type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(type_value));
-    if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown KILL kill_type: {}", type_value);
+    String type_str = r.getString("kill_type");
+    auto type_opt = magic_enum::enum_cast<Type>(type_str);
+    if (!type_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown KILL kill_type: '{}'", type_str);
     type = *type_opt;
     where_expression = r.readChild("where_expression");
     if (!where_expression)

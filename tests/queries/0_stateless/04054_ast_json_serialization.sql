@@ -867,13 +867,13 @@ FROM (SELECT parseQueryToJSON('INSERT INTO FUNCTION file(\'test.csv\') SELECT 1'
 
 -- ==========================================================================
 -- 45. ASTAlterCommand
--- Fields: command_type(int), col_decl(child), column(child), partition(child),
+-- Fields: command_type(string), col_decl(child), column(child), partition(child),
 --         predicate(child), update_assignments(child)
 -- ==========================================================================
 
 -- ALTER ADD COLUMN
 SELECT 'AlterCommand_add' AS t,
-    JSONExtractInt(j, 'command_list', 'children', 1, 'command_type') AS cmd_type,
+    JSONExtractString(j, 'command_list', 'children', 1, 'command_type') AS cmd_type,
     JSONHas(j, 'command_list', 'children', 1, 'col_decl') AS has_cd
 FROM (SELECT parseQueryToJSON('ALTER TABLE t ADD COLUMN c UInt64') AS j);
 
@@ -1079,16 +1079,16 @@ FROM (SELECT parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, start DateTime
 
 -- ==========================================================================
 -- 59. ASTSystemQuery
--- Fields: query_type(int), query_type_name(string), database(child), table(child)
+-- Fields: query_type(string), database(child), table(child)
 -- ==========================================================================
 
 SELECT 'SystemQuery_flush' AS t,
     JSONExtractString(j, 'type') AS tp,
-    JSONExtractString(j, 'query_type_name') AS qtn
+    JSONExtractString(j, 'query_type') AS qtn
 FROM (SELECT parseQueryToJSON('SYSTEM FLUSH LOGS') AS j);
 
 SELECT 'SystemQuery_stop' AS t,
-    JSONExtractString(j, 'query_type_name') AS qtn,
+    JSONExtractString(j, 'query_type') AS qtn,
     JSONHas(j, 'table') AS has_table
 FROM (SELECT parseQueryToJSON('SYSTEM STOP MERGES t') AS j);
 
@@ -1127,7 +1127,7 @@ FROM (SELECT parseQueryToJSON('SHOW COLUMNS FROM t FROM db') AS j);
 
 -- ==========================================================================
 -- 62. ASTKillQueryQuery
--- Fields: kill_type(int), where_expression(child), sync(bool), test(bool)
+-- Fields: kill_type(string), where_expression(child), sync(bool), test(bool)
 -- ==========================================================================
 
 SELECT 'KillQueryQuery' AS t,
@@ -1234,7 +1234,7 @@ FROM (SELECT parseQueryToJSON('CREATE VIEW v AS SELECT 1') AS j);
 
 -- ==========================================================================
 -- 71. ASTSQLSecurity
--- Fields: security_type(int), is_definer_current_user(bool), definer(child)
+-- Fields: security_type(string), is_definer_current_user(bool), definer(child)
 -- ==========================================================================
 
 SELECT 'SQLSecurity' AS t,
@@ -1243,7 +1243,7 @@ FROM (SELECT parseQueryToJSON('CREATE VIEW v DEFINER = CURRENT_USER SQL SECURITY
 
 -- ==========================================================================
 -- 72. ASTRefreshStrategy
--- Fields: schedule_kind(int), period(child), append(bool)
+-- Fields: schedule_kind(string), period(child), append(bool)
 -- ==========================================================================
 
 SELECT 'RefreshStrategy' AS t,

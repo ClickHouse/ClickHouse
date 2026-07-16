@@ -97,7 +97,7 @@ ASTPtr ASTAlterCommand::clone() const
 void ASTAlterCommand::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "AlterCommand");
-    w.writeInt("command_type", static_cast<Int64>(type));
+    w.writeString("command_type", std::string(magic_enum::enum_name(type)));
 
     w.writeBool("detach", detach);
     w.writeBool("part", part);
@@ -170,10 +170,10 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 
     if (!r.has("command_type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_type' field in `AlterCommand` during AST JSON deserialization");
-    Int64 command_type_value = r.getInt("command_type");
-    auto command_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(command_type_value));
-    if (!command_type_opt || static_cast<Int64>(*command_type_opt) != command_type_value)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: {}", command_type_value);
+    String command_type_str = r.getString("command_type");
+    auto command_type_opt = magic_enum::enum_cast<Type>(command_type_str);
+    if (!command_type_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: '{}'", command_type_str);
     type = *command_type_opt;
 
     detach = r.getBool("detach");

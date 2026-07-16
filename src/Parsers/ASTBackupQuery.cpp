@@ -365,7 +365,8 @@ namespace
     {
         WriteBuffer & out = w.getOut();
         const FormatSettings & fs = w.getFormatSettings();
-        out << "{\"type\":" << static_cast<Int64>(e.type);
+        out << "{\"type\":";
+        writeJSONString(magic_enum::enum_name(e.type), out, fs);
         if (!e.table_name.empty())
         {
             out << ",\"table_name\":";
@@ -442,10 +443,10 @@ namespace
         JSONObjectReader elem_reader(elem_obj);
         if (!elem_obj.has("type"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'type' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
-        Int64 type_value = elem_reader.getInt("type");
-        auto type_opt = magic_enum::enum_cast<ElementType>(static_cast<std::underlying_type_t<ElementType>>(type_value));
-        if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE element type at index {}: {}", element_index, type_value);
+        String type_str = elem_reader.getString("type");
+        auto type_opt = magic_enum::enum_cast<ElementType>(type_str);
+        if (!type_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE element type at index {}: '{}'", element_index, type_str);
         e.type = *type_opt;
         e.table_name = elem_reader.getString("table_name");
         e.database_name = elem_reader.getString("database_name");
@@ -562,7 +563,7 @@ namespace
 void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "BackupQuery");
-    w.writeInt("kind", static_cast<Int64>(kind));
+    w.writeString("kind", std::string(magic_enum::enum_name(kind)));
     w.writeChild("backup_name", backup_name);
     w.writeChild("base_backup_name", base_backup_name);
     w.writeChild("base_snapshot_name", base_snapshot_name);
@@ -591,10 +592,10 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     if (!r.has("kind"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kind' field in `BackupQuery` during AST JSON deserialization");
-    Int64 kind_value = r.getInt("kind");
-    auto kind_opt = magic_enum::enum_cast<Kind>(static_cast<std::underlying_type_t<Kind>>(kind_value));
-    if (!kind_opt || static_cast<Int64>(*kind_opt) != kind_value)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: {}", kind_value);
+    String kind_str = r.getString("kind");
+    auto kind_opt = magic_enum::enum_cast<Kind>(kind_str);
+    if (!kind_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: '{}'", kind_str);
     kind = *kind_opt;
     /// `backup_name`, `base_backup_name` and `base_snapshot_name` are parser-owned `ASTFunction`
     /// children (`ParserBackupQuery::parseBackupName` marks them as `BACKUP_NAME`). Restoring them

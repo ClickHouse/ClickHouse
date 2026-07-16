@@ -112,7 +112,7 @@ DropQuery_view	1
 InsertQuery_select	InsertQuery	1	1
 InsertQuery_columns	1
 InsertQuery_func	1
-AlterCommand_add	0	1
+AlterCommand_add	ADD_COLUMN	1
 AlterCommand_drop	1
 AlterCommand_update	1	1
 AlterCommand_delete	1
@@ -137,8 +137,8 @@ DictAttrDecl_flags	1	1
 DictionaryLifetime	0	1000
 DictionaryLayout	hashed	1
 DictionaryRange	start	end
-SystemQuery_flush	SystemQuery	FLUSH LOGS
-SystemQuery_stop	STOP MERGES	1
+SystemQuery_flush	SystemQuery	FLUSH_LOGS
+SystemQuery_stop	STOP_MERGES	1
 ShowTablesQuery_from	ShowTablesQuery	1
 ShowTablesQuery_like	%test%
 ShowTablesQuery_databases	1

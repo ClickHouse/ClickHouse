@@ -145,7 +145,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a 
 -- `sql_security` is valid only for view shapes (`supportSQLSecurity()`). `formatImpl` hides it on a
 -- plain `CREATE TABLE`, but `InterpreterCreateQuery::createTable` still runs `processSQLSecurityOption`.
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8) ENGINE = Memory'), '"attach":false', '"sql_security":{"type":"SQLSecurity","security_type":1,"is_definer_current_user":true},"attach":false')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8) ENGINE = Memory'), '"attach":false', '"sql_security":{"type":"SQLSecurity","security_type":"DEFINER","is_definer_current_user":true},"attach":false')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- REFRESH strategy invariants (`ParserRefreshStrategy`): `OFFSET` is parsed only in the `EVERY`

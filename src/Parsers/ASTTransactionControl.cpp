@@ -56,7 +56,7 @@ void ASTTransactionControl::updateTreeHashImpl(SipHash & hash_state, bool /*igno
 void ASTTransactionControl::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TransactionControl");
-    w.writeInt("action", static_cast<Int64>(action));
+    w.writeString("action", std::string(magic_enum::enum_name(action)));
     if (action == SET_SNAPSHOT)
         w.writeUInt("snapshot", snapshot);
 }
@@ -66,10 +66,10 @@ void ASTTransactionControl::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     if (!r.has("action"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'action' field in `TransactionControl` during AST JSON deserialization");
-    Int64 action_value = r.getInt("action");
-    auto action_opt = magic_enum::enum_cast<QueryType>(static_cast<std::underlying_type_t<QueryType>>(action_value));
-    if (!action_opt || static_cast<Int64>(*action_opt) != action_value)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown TransactionControl action: {}", action_value);
+    String action_str = r.getString("action");
+    auto action_opt = magic_enum::enum_cast<QueryType>(action_str);
+    if (!action_opt)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown TransactionControl action: '{}'", action_str);
     action = *action_opt;
     if (action == SET_SNAPSHOT)
     {
