@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 # not the ClickHouse SQL produced by the transpiler.
 query_id="${CLICKHOUSE_DATABASE}_04512_log"
 $CLICKHOUSE_CLIENT $POLY --query_id="$query_id" -q "INSERT INTO b VALUES (true)"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 echo "--- query_log keeps the original, untranspiled query text (expect: INSERT INTO b VALUES (true)) ---"
 $CLICKHOUSE_CLIENT -q "SELECT query FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()"
 
