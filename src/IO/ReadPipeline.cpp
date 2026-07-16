@@ -259,12 +259,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    /// Read-through cache chain the executor consults and populates per window, in the foreground.
-    /// Page cache first (fastest, file-level: one `PageCacheFile` for the whole read — object storage
-    /// without a file cache, or local disks via `use_page_cache_for_local_disks`), then the
-    /// filesystem cache(s). `filesystem_caches` is stored inner-to-outer and the executor queries the
-    /// front first, so reverse to give the legacy outer-first order. (`filesystem_caches` is empty for
-    /// local reads.)
+    /// Cache chain, front = fastest: the page cache (file-level) then the filesystem cache(s).
+    /// `filesystem_caches` is inner-to-outer; the executor queries the front first, so reverse it.
     if (memory_cache && memory_cache->page_cache_settings.cache)
     {
         const auto & pcs = memory_cache->page_cache_settings;

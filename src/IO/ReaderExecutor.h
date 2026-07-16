@@ -215,13 +215,10 @@ private:
     /// one-shot read). Records `BytesFromSource`. The single source-read entry point for both the
     /// direct path and the cache miss path.
     size_t readSource(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Serve `want` bytes at object-local `object_offset` through the cache chain, per window:
-    /// probe each tier (`planResidencyView`), serve the contiguous cached prefix from the fastest
-    /// tier holding each byte, read the miss remainder from the source via `readSource` (long
-    /// connection), then populate every tier's miss cells with the assembled window (filling misses
-    /// and promoting the prefix up). `object_file_offset` is this object's start in the logical file
-    /// (cache coordinates are file-level). Views live only for this window. Precondition:
-    /// `!cache_chain.empty()`.
+    /// Serve `want` bytes at object-local `object_offset` through the cache chain: serve the cached
+    /// prefix, read the miss remainder from the source via `readSource`, then populate every tier's
+    /// miss cells with the assembled window. `object_file_offset` is this object's start in the file
+    /// (cache coordinates are file-level). Precondition: `!cache_chain.empty()`.
     size_t serveThroughCaches(
         const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.

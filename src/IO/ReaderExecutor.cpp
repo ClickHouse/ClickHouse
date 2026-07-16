@@ -221,9 +221,7 @@ ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, L
 
 size_t ReaderExecutor::clampReach(size_t predicted_end, size_t logical_pos) const
 {
-    /// The estimator's predicted run end is run-anchored and unclamped: bound it to the file end
-    /// when the size is known, and never below `logical_pos` (a prediction behind the current
-    /// position means no reach there, not a negative one).
+    /// Bound the run-anchored predicted end to `[logical_pos, file end]`.
     size_t end = std::max(predicted_end, logical_pos);
     if (!offset_map.hasUnknownSize())
         end = std::min(end, totalSize());
@@ -311,14 +309,11 @@ size_t ReaderExecutor::readSource(const StoredObject & object, size_t object_off
     if (long_conn && long_conn->servesObject(object.remote_path)
         && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
     {
-        /// Reuse the held connection for this contiguous (or small-gap) window.
         stats.add(Stats::LongConnectionHits);
         got = serveFromLongConnection(object_offset, want, dst);
     }
     else
     {
-        /// A held connection that cannot continue (wrong object / backward / far / past bound) is
-        /// dropped; open a fresh one when the read is predicted to continue, else a one-shot read.
         if (long_conn)
             dropLongConnection();
         if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
@@ -326,7 +321,6 @@ size_t ReaderExecutor::readSource(const StoredObject & object, size_t object_off
         else
             got = readOneShot(object, object_offset, want, dst);
     }
-    /// Any bridged (skipped) bytes were already counted in BytesFromSource inside serveFromLongConnection.
     stats.add(Stats::BytesFromSource, got);
     return got;
 }
@@ -335,14 +329,10 @@ size_t ReaderExecutor::serveThroughCaches(
     const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want, char * dst)
 {
     chassert(!cache_chain.empty());
-    /// Cache coordinates are FILE-LEVEL: `object_file_offset` is this object's start in the logical
-    /// (physical) file, so the per-object disk cache maps back via it while the file-level page
-    /// cache addresses the concatenation directly.
+    /// Cache coordinates are FILE-LEVEL; `object_file_offset` is this object's start in the file.
     const ByteRange window{object_file_offset + object_offset, want};
 
-    /// One residency probe per tier, all kept alive for the whole window: the hit readers pin their
-    /// resident segments and `openWriteBuffers` reuses each view's miss cells for the populate. The
-    /// views' destructors run the deferred LRU bump when this function returns.
+    /// Kept alive for the whole window: the hit readers pin their segments.
     VectorWithMemoryTracking<std::pair<ICacheProvider *, CacheViewPtr>> views;
     for (auto & cache : cache_chain)
     {
@@ -350,9 +340,7 @@ size_t ReaderExecutor::serveThroughCaches(
         views.emplace_back(cache.get(), cache->planResidencyView(object, object_file_offset, window));
     }
 
-    /// Serve the contiguous cached prefix: at each frontier take the fastest tier holding it and
-    /// serve up to that hit's end, then advance. Stop at the first byte no tier holds -- the rest is
-    /// one miss run, matching the sequential frontier: [cached prefix][miss remainder].
+    /// Serve the contiguous cached prefix, fastest tier first; stop at the first byte no tier holds.
     size_t served = 0;
     while (served < want)
     {
@@ -363,7 +351,7 @@ size_t ReaderExecutor::serveThroughCaches(
         {
             for (const auto & hit : view->hits())
             {
-                /// A hit is readable in full (the probe split any partial segment at its write offset).
+                /// A hit is readable in full: the probe split any partial segment at its write offset.
                 if (hit.reader && hit.range.offset <= frontier && frontier < hit.range.end())
                 {
                     reader = hit.reader.get();
@@ -381,16 +369,12 @@ size_t ReaderExecutor::serveThroughCaches(
         served += sub.size;
     }
 
-    /// Read the miss remainder from the source through the long connection, so a cold sequential
-    /// scan streams from one held connection instead of a GET per window. Object-local.
+    /// Read the miss remainder from the source, object-local.
     size_t total = served;
     if (served < want)
         total += readSource(object, object_offset + served, want - served, dst + served);
 
-    /// Populate every tier's miss cells with the assembled window: this fills the miss run and
-    /// promotes the cached prefix into faster tiers that missed it. Append-only cells take only a
-    /// write starting at their frontier; whole-cell (page) cells take only a full-cell cover -- the
-    /// writers enforce that, so a misaligned partial simply lands nothing.
+    /// Populate every tier's miss cells with the assembled window (fills the miss, promotes the prefix up).
     if (total > 0)
     {
         auto block = std::make_shared<OwnedChainedBuffer>(total);
@@ -602,11 +586,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     size_t got = 0;
     if (!cache_chain.empty())
-        /// Read-through cache path: serve the cached prefix, read the miss remainder from the source
-        /// (long connection) and populate. Records its own Cache{Get,Populate}Requests / BytesFromSource.
         got = serveThroughCaches(*object, object_physical_start_offset, object_offset, want, block->data());
     else
-        /// Direct path: long connection or one-shot (records BytesFromSource).
         got = readSource(*object, object_offset, want, block->data());
 
     stats.add(Stats::RequestedBytes, got);
