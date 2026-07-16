@@ -23,6 +23,13 @@ FROM (SELECT materialize('LINESTRING EMPTY') AS l, materialize('MULTILINESTRING 
 SELECT number, dynamicType(if(number = 0, CAST(toUInt8(1), 'Dynamic'), CAST(toUInt16(1), 'Dynamic'))) FROM numbers(2);
 SELECT number, dynamicType(multiIf(number = 0, CAST(CAST([1], 'Array(UInt8)'), 'Dynamic'), CAST(CAST([1], 'Array(UInt16)'), 'Dynamic'))) FROM numbers(2);
 
+-- Dynamic(max_types=0): single-type constants are stored in the shared variant (not a typed
+-- variant), so this exercises the discr == getSharedVariantDiscriminator() branch of
+-- ColumnDynamic::getValueNameImpl. Without the type-name prefix both constants render to the
+-- same string and collapse to one action node.
+SELECT number, dynamicType(if(number = 0, CAST(toUInt8(1), 'Dynamic(max_types=0)'), CAST(toUInt16(1), 'Dynamic(max_types=0)'))) FROM numbers(2);
+SELECT number, dynamicType(multiIf(number = 0, CAST(CAST([1], 'Array(UInt8)'), 'Dynamic(max_types=0)'), CAST(CAST([1], 'Array(UInt16)'), 'Dynamic(max_types=0)'))) FROM numbers(2);
+
 -- Same root cause via an explicit Variant with layout-duplicate alternatives.
 SET allow_suspicious_variant_types = 1;
 SELECT number, variantType(if(number = 0, CAST(toUInt8(1), 'Variant(UInt8, UInt16)'), CAST(toUInt16(1), 'Variant(UInt8, UInt16)'))) FROM numbers(2);
