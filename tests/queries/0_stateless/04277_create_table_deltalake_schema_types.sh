@@ -87,7 +87,7 @@ rm -rf "$TABLE_PATH"
 # (Code: 48 = NOT_IMPLEMENTED). `UInt8` is the important one: it must NOT be silently committed as
 # Delta `boolean` (that is `Bool`), which would lose values 2..255.
 echo "rejections:"
-for spec in "UInt8" "UInt32" "FixedString(4)" "Date" "DateTime" "DateTime64(3)" "LowCardinality(String)"; do
+for spec in "UInt8" "UInt32" "FixedString(4)" "Date" "DateTime" "DateTime64(3)" "DateTime64(6, 'UTC')" "Decimal(50, 2)" "LowCardinality(String)"; do
     reject_path="${TABLE_PATH}_reject"
     rm -rf "$reject_path"
     if $CLICKHOUSE_CLIENT --query "

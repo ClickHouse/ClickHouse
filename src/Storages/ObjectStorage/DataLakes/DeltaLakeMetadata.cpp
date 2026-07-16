@@ -18,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -765,7 +766,8 @@ void DeltaLakeMetadata::createInitial(
         /// nothing to register.
         if (catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
         {
-            const auto location = configuration_ptr->getRawPath().path;
+            /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path` (which `TableMetadata::setLocation` cannot parse back).
+            const auto location = getKernelHelper(configuration_ptr, object_storage)->getTableLocation();
             Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;
             metadata_content->set("location", location);
             metadata_content->set("fields", buildDeltaSchemaFields(columns->getAllPhysical()));
@@ -903,18 +905,36 @@ DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr &
         case TypeIndex::String:  return DeltaPrimitiveType::String;
         case TypeIndex::Date32:  return DeltaPrimitiveType::Date;
         case TypeIndex::DateTime64:
+        {
+            const auto & datetime64 = assert_cast<const DataTypeDateTime64 &>(*type);
             /// Delta `timestamp` is microsecond precision; only `DateTime64(6)` round-trips.
-            if (assert_cast<const DataTypeDateTime64 &>(*type).getScale() == 6)
-                return DeltaPrimitiveType::Timestamp;
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DeltaLake `timestamp` is microsecond precision; declare the column as `DateTime64(6)` "
-                "instead of `{}` for CREATE TABLE",
-                type->getName());
+            if (datetime64.getScale() != 6)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "DeltaLake `timestamp` is microsecond precision; declare the column as `DateTime64(6)` "
+                    "instead of `{}` for CREATE TABLE",
+                    type->getName());
+            /// Delta `timestamp` carries no time zone; a `DateTime64(6, 'TZ')` reads back as plain
+            /// `DateTime64(6)` (the explicit zone is dropped), so it does not round-trip.
+            if (datetime64.hasExplicitTimeZone())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "DeltaLake `timestamp` has no time zone; declare the column as `DateTime64(6)` without a "
+                    "time zone instead of `{}` for CREATE TABLE",
+                    type->getName());
+            return DeltaPrimitiveType::Timestamp;
+        }
         case TypeIndex::Decimal32:
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
+            /// Delta `decimal` allows precision up to 38, but ClickHouse `Decimal256` allows up to 76;
+            /// a higher precision would emit an invalid Delta `decimal(P,S)` and cannot round-trip.
+            if (getDecimalPrecision(*type) > 38)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "DeltaLake `decimal` supports precision up to 38; `{}` exceeds it for CREATE TABLE",
+                    type->getName());
             return DeltaPrimitiveType::Decimal;
         case TypeIndex::UInt8:
             throw Exception(

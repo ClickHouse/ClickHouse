@@ -22,4 +22,6 @@ FixedString(4): rejected
 Date: rejected
 DateTime: rejected
 DateTime64(3): rejected
+DateTime64(6, 'UTC'): rejected
+Decimal(50, 2): rejected
 LowCardinality(String): rejected
