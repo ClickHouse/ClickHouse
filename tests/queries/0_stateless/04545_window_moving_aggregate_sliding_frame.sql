@@ -423,7 +423,7 @@ FROM
 -- partition start, the state is reused across rows after insertResultInto already
 -- finalized the compressor, which diverges from a fresh sequential aggregation. That is
 -- pre-existing behavior of the incremental tail-add path, unchanged from before.
-SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 2500 OR cr = cr2))) AS mismatches
+SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 2500 OR cr = cr2) AND arraySort(gu) = arraySort(gu2))) AS mismatches
 FROM
 (
     SELECT
@@ -432,7 +432,8 @@ FROM
         quantile(0.5)(value) OVER w AS q, arrayReduce('quantile(0.5)', groupArray(value) OVER w) AS q2,
         topK(3)(value) OVER w AS tk, arrayReduce('topK(3)', groupArray(value) OVER w) AS tk2,
         quantileIf(0.5)(value, value % 2 = 0) OVER w AS qi, arrayReduce('quantileIf(0.5)', groupArray(value) OVER w, groupArray(value % 2 = 0) OVER w) AS qi2,
-        estimateCompressionRatio('ZSTD')(str) OVER w AS cr, arrayReduce('estimateCompressionRatio(\'ZSTD\')', groupArray(str) OVER w) AS cr2
+        estimateCompressionRatio('ZSTD')(str) OVER w AS cr, arrayReduce('estimateCompressionRatio(\'ZSTD\')', groupArray(str) OVER w) AS cr2,
+        groupUniqArray(2)(value) OVER w AS gu, arrayReduce('groupUniqArray(2)', groupArray(value) OVER w) AS gu2
     FROM moving_aggregate_test
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );

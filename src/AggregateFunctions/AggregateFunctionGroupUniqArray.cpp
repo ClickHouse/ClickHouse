@@ -71,6 +71,10 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// With a max_size cap, merge replays the rhs set in hash-table order up to the
+    /// cap, so the surviving uniques differ from row-order insertion.
+    bool mergeIsEquivalentToAddingRows() const override { return !limit_num_elems; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
@@ -172,6 +176,8 @@ public:
     {
         return true;
     }
+
+    bool mergeIsEquivalentToAddingRows() const override { return !limit_num_elems; }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
