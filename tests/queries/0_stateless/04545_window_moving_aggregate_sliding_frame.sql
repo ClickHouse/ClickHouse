@@ -414,15 +414,10 @@ FROM
     WINDOW w AS (ORDER BY k RANGE BETWEEN 12000 PRECEDING AND CURRENT ROW)
 );
 
--- Functions whose merge is not equivalent to appending rows (randomized reservoirs,
--- lossy sketches; see mergeIsEquivalentToAddingRows) must keep the recompute path:
--- their result over a tree-sized frame must match a sequential re-aggregation of the
--- frame rows (arrayReduce builds one state and adds row by row), also through
--- combinators.
--- The cr check skips the growing prefix: while the frame start is still at the
--- partition start, the state is reused across rows after insertResultInto already
--- finalized the compressor, which diverges from a fresh sequential aggregation. That is
--- pre-existing behavior of the incremental tail-add path, unchanged from before.
+-- Functions without mergeIsEquivalentToAddingRows must keep the recompute path: their
+-- results must match a sequential re-aggregation (arrayReduce), also through
+-- combinators. The cr check skips the growing prefix, where the tail-add path reuses
+-- the state after insertResultInto finalized the compressor (pre-existing behavior).
 SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 2500 OR cr = cr2) AND gu = gu2 AND guu = guu2)) AS mismatches
 FROM
 (
@@ -439,9 +434,8 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );
 
--- groupArrayIntersect: same set, but the result array order exposes hash-table
--- iteration order; must stay on the recompute path. The rotated common core makes the
--- per-row insertion order differ.
+-- groupArrayIntersect must stay on the recompute path: the result array exposes
+-- hash-table order, and the rotated core makes per-row insertion order differ.
 SELECT countIf(gi != gi2) AS mismatches
 FROM
 (
@@ -451,12 +445,9 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );
 
--- Floating-point sums over tree-sized frames merge per-segment partial sums, so the
--- rounding may differ from the reset-and-readd path (whose rounding in turn already
--- depends on the input block layout, on master too): float addition is not associative
--- and no particular summation order is guaranteed, as with parallel GROUP BY. Pin what
--- IS guaranteed: identical inputs give identical bits (two identical runs over values
--- with catastrophic cancellation), and the frame multiset is exact (count survives).
+-- Float rounding over tree-sized frames may differ from sequential summation (which
+-- already depends on the block layout, on master too). Pin what is guaranteed:
+-- identical runs give identical bits, and the frame row multiset stays exact.
 DROP TABLE IF EXISTS float_order_results;
 CREATE TABLE float_order_results (r UInt64, c UInt64) ENGINE = Memory;
 INSERT INTO float_order_results

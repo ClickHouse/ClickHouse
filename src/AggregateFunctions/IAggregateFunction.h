@@ -200,13 +200,11 @@ public:
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
 
-    /// Whether merging a state built from some rows with a state built from the rows
-    /// that follow them gives the same result as adding all those rows into one state
-    /// (exactly, up to floating-point rounding). True for almost all functions; false
-    /// where the result depends on how the input was split into states, e.g. randomized
-    /// reservoirs (groupArraySample, quantile) and lossy sketches (topK,
-    /// quantileTDigest). WindowTransform relies on this to re-aggregate sliding window
-    /// frames from partial states; functions without it keep the full-recompute path.
+    /// Whether merging states built from consecutive row ranges gives the same result
+    /// as adding all the rows into one state (up to floating-point rounding). False
+    /// where the result depends on the split: randomized reservoirs, lossy sketches,
+    /// results exposing hash-table order. WindowTransform relies on this to
+    /// re-aggregate sliding frames from partial states.
     virtual bool mergeIsEquivalentToAddingRows() const { return true; }
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }

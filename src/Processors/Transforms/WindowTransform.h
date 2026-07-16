@@ -246,17 +246,14 @@ public:
     // frame (cf. Tangwongsan et al., "General Incremental Sliding-Window Aggregation",
     // PVLDB 2015). A segment at level L holds the state of fanout^(L+1) consecutive rows,
     // so re-aggregating a frame of N rows takes O(fanout * log N) merge calls instead of
-    // N add calls. This is sound only for functions whose merge is equivalent to adding
-    // the rows (see IAggregateFunction::mergeIsEquivalentToAddingRows); the rest, e.g.
-    // groupArraySample, keep the full-recompute path.
+    // N add calls. Only sound for functions with mergeIsEquivalentToAddingRows; the
+    // rest keep the full-recompute path.
     // Rows are identified by their index counted from the frame start at activation.
     // Frame boundaries only move forward, so segments are immutable once built; the
     // single trailing level-0 segment accumulates rows as they arrive, and may be
     // queried because it covers exactly the rows up to the current frame end.
-    // For floating-point aggregates the per-segment regrouping can change the rounding
-    // compared to the reset-and-readd path (whose rounding already depends on the input
-    // block layout); as with parallel GROUP BY, no particular summation order is
-    // guaranteed, only determinism for identical inputs.
+    // Floating-point rounding may differ from the reset-and-readd path (whose rounding
+    // already depends on the block layout); no summation order is guaranteed.
     class FrameAggregateTree
     {
     public:

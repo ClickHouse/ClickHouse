@@ -336,8 +336,7 @@ public:
 
     bool mergeIsEquivalentToAddingRows() const override
     {
-        // The unique values are replayed into the nested function in hash-set order,
-        // which depends on how states were combined.
+        // Replays unique values into the nested function in hash-set order.
         return false;
     }
 

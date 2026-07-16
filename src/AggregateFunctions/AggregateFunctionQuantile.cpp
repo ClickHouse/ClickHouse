@@ -33,8 +33,6 @@ namespace
 template <typename Value>
 struct QuantileReservoirSampler
 {
-    /// The reservoir picks a different random sample when merged than when filled row
-    /// by row.
     static constexpr bool merge_is_equivalent_to_adding_rows = false;
 
     using Data = ReservoirSampler<Value, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
