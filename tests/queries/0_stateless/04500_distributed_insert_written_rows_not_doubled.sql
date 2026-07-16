@@ -19,8 +19,10 @@ INSERT INTO dist_04500 SELECT number FROM numbers(1000)
 
 SYSTEM FLUSH LOGS query_log;
 
--- Expect written_rows = 1000, not 2000.
-SELECT written_rows
+-- Expect written_rows = 1000, not 2000, and written_bytes = 8000 (1000 UInt64), not 16000.
+-- written_bytes comes from the same nested CountingTransform accounting that also drives the
+-- WRITTEN_BYTES quota, so a correct value here confirms the quota is not double-charged either.
+SELECT written_rows, written_bytes
 FROM system.query_log
 WHERE type = 'QueryFinish'
   AND is_initial_query

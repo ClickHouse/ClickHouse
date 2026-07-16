@@ -503,12 +503,13 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 job.local_context = Context::createCopy(context);
 
                 /// The rows pushed into a local shard are already accounted by the top-level
-                /// CountingTransform of the distributed INSERT. Detach the nested insert from
-                /// the parent's write-progress accounting so the same rows are not counted
-                /// twice (otherwise system.query_log.written_rows and
-                /// system.view_refreshes.written_rows are inflated per local shard).
-                job.local_context->setProgressCallback({});
-                job.local_context->setProcessListElement({});
+                /// CountingTransform of the distributed INSERT. Suppress the nested insert's
+                /// own accounting so the same rows/bytes are not counted twice (otherwise
+                /// system.query_log.written_rows / system.view_refreshes.written_rows are
+                /// inflated and the WRITTEN_BYTES quota is double-charged per local shard).
+                /// This keeps the process-list element on the context, so the local sink still
+                /// honors KILL QUERY / max_execution_time.
+                job.local_context->setSkipInsertCounting(true);
 
                 /// Copying of the query AST is required to avoid race,
                 /// in case of INSERT into multiple local shards.
@@ -825,13 +826,13 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        /// Detach the nested local insert from the parent's write-progress accounting: the
-        /// rows are already counted by the top-level CountingTransform of the distributed
-        /// INSERT, so reusing the parent context here would double-count them in
-        /// system.query_log.written_rows and system.view_refreshes.written_rows.
+        /// Suppress the nested insert's own accounting: the rows are already counted by the
+        /// top-level CountingTransform of the distributed INSERT, so reusing the parent context
+        /// here would double-count written_rows/bytes and double-charge the WRITTEN_BYTES quota.
+        /// The process-list element stays on the context so the local sink still honors
+        /// KILL QUERY / max_execution_time.
         auto local_context = Context::createCopy(context);
-        local_context->setProgressCallback({});
-        local_context->setProcessListElement({});
+        local_context->setSkipInsertCounting(true);
 
         InterpreterInsertQuery interp(
             query_ast,

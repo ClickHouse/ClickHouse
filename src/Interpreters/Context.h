@@ -572,6 +572,12 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// Set for a nested INSERT whose written rows/bytes are already accounted by an outer pipeline
+    /// (e.g. the per-shard local INSERT of a distributed INSERT). Suppresses only the nested
+    /// CountingTransform accounting (written_rows/written_bytes progress and WRITTEN_BYTES quota),
+    /// while keeping the process-list element available to the target storage sinks for
+    /// KILL QUERY / max_execution_time / quorum-wait handling.
+    bool skip_insert_counting = false;
     /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
     /// and internal backup coordination.
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
@@ -1739,6 +1745,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool getSkipInsertCounting() const { return skip_insert_counting; }
+    void setSkipInsertCounting(bool skip) { skip_insert_counting = skip; }
 
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }

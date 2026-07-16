@@ -438,9 +438,21 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
-        counting->setProcessListElement(context->getProcessListElement());
-        counting->setProgressCallback(context->getProgressCallback());
+        /// When these rows are already accounted by an outer pipeline (e.g. a distributed INSERT
+        /// counting the block before dispatching it to local shards), suppress this nested
+        /// accounting: no WRITTEN_BYTES quota, no progress update. The context's process-list
+        /// element is intentionally left untouched so the storage sinks still honor
+        /// KILL QUERY / max_execution_time.
+        const bool skip_counting = context->getSkipInsertCounting();
+        auto counting = std::make_shared<CountingTransform>(
+            in_header,
+            skip_counting ? nullptr : context->getQuota(),
+            context->getNormalizedQueryHash());
+        if (!skip_counting)
+        {
+            counting->setProcessListElement(context->getProcessListElement());
+            counting->setProgressCallback(context->getProgressCallback());
+        }
 
         return counting;
     });
@@ -833,9 +845,19 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 chain.getInputSharedHeader()));
     }
 
-    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota(), context->getNormalizedQueryHash());
-    counting->setProcessListElement(context->getProcessListElement());
-    counting->setProgressCallback(context->getProgressCallback());
+    /// See the note at the other CountingTransform site: suppress nested accounting (quota and
+    /// progress) when the rows are already counted by an outer pipeline, but keep the process-list
+    /// element on the context so storage sinks still honor KILL QUERY / max_execution_time.
+    const bool skip_counting = context->getSkipInsertCounting();
+    auto counting = std::make_shared<CountingTransform>(
+        chain.getInputSharedHeader(),
+        skip_counting ? nullptr : context->getQuota(),
+        context->getNormalizedQueryHash());
+    if (!skip_counting)
+    {
+        counting->setProcessListElement(context->getProcessListElement());
+        counting->setProgressCallback(context->getProgressCallback());
+    }
     chain.addSource(std::move(counting));
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
