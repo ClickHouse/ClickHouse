@@ -544,3 +544,66 @@ def test_optimize_manifest_trino_field_ids(iceberg_db):
     assert after == expected, (
         f"Trino read of renamed column after OPTIMIZE MANIFEST: expected {expected!r}, got {after!r}"
     )
+
+
+def test_drop_partition(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"drop_partition_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, region String, value Int64)
+        {_engine_clause(table_name)}
+        PARTITION BY identity(region)
+        SETTINGS iceberg_format_version = 2
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    # The first snapshot has one manifest shared by three partitions, so removing
+    # `us` rewrites that manifest and preserves the other two partitions.
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            (1, 'us', 10),
+            (2, 'eu', 20),
+            (3, 'asia', 30)
+        """,
+        settings=WRITE_SETTINGS,
+    )
+    # This second manifest contains only the target partition and is removed whole.
+    node.query(
+        f"INSERT INTO {full} VALUES (4, 'us', 40)",
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"ALTER TABLE {full} DROP PARTITION 'us'",
+        settings=WRITE_SETTINGS,
+    )
+
+    clickhouse_rows = node.query(
+        f"SELECT id, region, value FROM {full} ORDER BY id"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT id, region, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    expected = "2\teu\t20\n3\tasia\t30\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
+
+    snapshots = _trino_exec(
+        cluster,
+        f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$snapshots"',
+    )
+    assert snapshots.strip() == "3"
+
+    files = _trino_exec(
+        cluster,
+        f'SELECT count(*), sum(record_count) FROM "{NAMESPACE}"."{table_name}$files"',
+    )
+    assert files.strip() == "2\t2"
