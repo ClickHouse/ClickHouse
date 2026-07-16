@@ -7,6 +7,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
@@ -48,6 +49,7 @@ extern const Metric BackgroundSchedulePoolSize;
 extern const Metric BackgroundBufferFlushSchedulePoolSize;
 extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
+extern const Metric BackgroundStreamingSchedulePoolSize;
 extern const Metric PointInPolygonCacheSizeLimit;
 }
 
@@ -468,6 +470,7 @@ A value of `0` means "never". The default value corresponds to 1 day.
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     \
     \
+    DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
@@ -669,6 +672,14 @@ This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache policy name.", 0) \
+    DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
+Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+)", 0) \
+    DECLARE(Double, encryption_header_cache_size_ratio, DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the encryption header cache relative to the cache's total size.", 0) \
     \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disables the internal DNS cache. Recommended for operating ClickHouse in systems with frequently changing infrastructure such as Kubernetes.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
@@ -970,6 +981,7 @@ Possible values:
     DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
+    DECLARE(UInt64, background_streaming_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing streaming background operations.)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
 
@@ -1405,6 +1417,31 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
+    DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
+Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
+`DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
+its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
+queries by `s3_allow_server_credentials_in_user_queries`.
+
+When enabled (the default), the object is loaded without those credentials instead of aborting startup: an
+`S3`/`S3Queue` table or a dynamic S3 disk is built with an anonymous S3 client, and a `DataLakeCatalog`
+database is left with an unavailable catalog. The server starts, but the object is inaccessible (its requests
+to a private bucket are denied, or the catalog reports a clear error) until its credentials resolve to a
+permitted source again. It never silently regains the server's identity. This keeps a single such object —
+for example one created in an older version before the restriction existed, or one whose named collection was
+later re-bound to `use_environment_credentials = 1` — from aborting server startup.
+
+When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
+if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
+)", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
+S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
+server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
+cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
+exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
+database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
+)", 0) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
@@ -1508,6 +1545,19 @@ The directory with top level domains.
 ```xml
 <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
 ```
+)", 0) \
+    DECLARE(Bool, interserver_tables_status_require_auth, true, R"(
+Require interserver `TablesStatusRequest` to be authenticated with the cluster
+`<secret>`. Clients new enough to send a secret hash (protocol revision
+`DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) are always validated; this
+setting additionally rejects older clients that send no hash, which is what closes the
+unauthenticated table-status disclosure by default.
+
+Defaults to `true` (secure by default). During a rolling upgrade a not-yet-upgraded
+node speaks the old protocol and sends no hash, so a `Distributed` query initiated on
+such a node against an already-upgraded node would have its `TablesStatusRequest`
+rejected. If you must run a mixed-version cluster, set this to `false` on the upgraded
+nodes until every node is upgraded, then remove the override.
 )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
 The hostname that can be used by other servers to access this server.
@@ -1957,6 +2007,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
             {"background_distributed_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundDistributedSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
+            {"background_streaming_schedule_pool_size",
+                {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundStreamingSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
 
             {"mark_cache_size", {std::to_string(context->getMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
@@ -1964,6 +2016,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache(/*only_if_enabled=*/ false)->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},

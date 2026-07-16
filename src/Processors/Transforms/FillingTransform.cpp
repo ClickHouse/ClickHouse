@@ -198,13 +198,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         return false;
 
     if (!descr.fill_from.isNull())
-        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
+        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_to.isNull())
-        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
+        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_step.isNull())
-        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
+        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_staleness.isNull())
-        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type);
+        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
 
     descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
@@ -343,6 +343,21 @@ FillingTransform::FillingTransform(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "The same column in ORDER BY before WITH FILL (sorting prefix) and INTERPOLATE is not allowed. Column: {}",
                     (header_->begin() + sort_prefix_pos)->name);
+        }
+    }
+
+    /// A column that is both a fill column and an interpolate target gets two inserts per gap-fill
+    /// row (one from filling, one from interpolate), yielding a chunk with inconsistent row counts.
+    if (!interpolate_column_positions.empty())
+    {
+        std::unordered_set<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
+        for (auto interpolate_pos : interpolate_column_positions)
+        {
+            if (fill_positions.contains(interpolate_pos))
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "The same column in WITH FILL and INTERPOLATE is not allowed. Column: {}",
+                    (header_->begin() + interpolate_pos)->name);
         }
     }
 }

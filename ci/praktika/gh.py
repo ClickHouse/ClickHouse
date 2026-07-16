@@ -91,9 +91,30 @@ class GH:
         # HEAD, same as deleted files, which were always included.
         jq_both_sides = ".filename, (.previous_filename // empty)"
 
-        if info.pr_number > 0:
+        # In a merge-queue run PR_NUMBER is 0, but the queue entry is built for
+        # exactly one PR (parsed from the merge group head ref). Use that PR's
+        # paginated files list: the merge group SHA is a merge commit, and the
+        # commits API caps a commit's file list at 300 entries.
+        pr_number = info.pr_number
+        if pr_number <= 0 and info.is_merge_queue_event:
+            pr_number = info.linked_pr_number
+            if pr_number <= 0 and strict:
+                # The linked PR number could not be parsed from the merge group
+                # head ref. Falling back to `repos/{repo}/commits/{sha}` would
+                # reintroduce the 300-entry cap this branch exists to avoid, so a
+                # large PR could silently lose changed test files and turn the
+                # merge-queue flaky check into a false green. Fail closed instead:
+                # a merge-queue run always corresponds to exactly one PR, so a
+                # missing linked PR number is a real fault, not a skip condition.
+                raise RuntimeError(
+                    "Merge-queue run has no linked PR number (could not parse it "
+                    "from the merge group head ref); refusing to fall back to the "
+                    "capped commits API for changed-file detection."
+                )
+
+        if pr_number > 0:
             command = (
-                f"gh api repos/{repo_name}/pulls/{info.pr_number}/files "
+                f"gh api repos/{repo_name}/pulls/{pr_number}/files "
                 f"--paginate --jq '.[] | {jq_both_sides}'"
             )
         else:
@@ -903,6 +924,43 @@ class GH:
             f"-f description={safe_description} -f context={safe_context}"
         )
         return cls.do_command_with_retries(command)
+
+    @classmethod
+    def get_commit_statuses(
+        cls, sha="", repo=""
+    ) -> Optional[Dict[str, "GH.CommitStatus"]]:
+        """
+        Fetch commit statuses for the given commit SHA and return the latest
+        status for each context. Returns `None` if the status list cannot be
+        retrieved or parsed.
+        """
+        repo = repo or _Environment.get().REPOSITORY
+        sha = sha or _Environment.get().SHA
+
+        output = cls.get_output_with_retries(
+            f"gh api repos/{repo}/commits/{sha}/statuses --paginate"
+        )
+        if not output:
+            print("ERROR: Failed to fetch commit statuses")
+            return None
+        try:
+            statuses_list = json.loads(output)
+        except json.JSONDecodeError as ex:
+            print(f"ERROR: Failed to parse commit statuses: {ex}")
+            return None
+        status_map: Dict[str, GH.CommitStatus] = {}
+
+        for status in statuses_list:
+            context = status["context"]
+            if context not in status_map:
+                status_map[context] = GH.CommitStatus(
+                    state=status["state"],
+                    description=status.get("description", ""),
+                    url=status.get("target_url", ""),
+                    context=context,
+                )
+
+        return status_map
 
     @classmethod
     def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
