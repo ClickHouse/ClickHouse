@@ -1,0 +1,92 @@
+-- Pruning: unsigned integer, all operators
+0	0	1	0	1	0	1	0	0
+-- Not pruned: possible matches evaluate normally
+0	0	0
+1	1	1
+-- Pruning: CAST and :: conversions
+0	0
+-- Pruning: signed integer, decimal, float
+0	1	0	0	1
+-- Date and DateTime: the scalar conversion always renders the simple format
+0	0	1
+-- DateTime inside composites honors date_time_output_format
+0	1
+1	0
+-- Top-level Nullable is not optimized: NULL is preserved
+\N	0
+-- Nullable inside a composite adds the NULL characters
+1	0
+-- Bool and String types are not analyzed
+1	1
+-- Composite separators are possible characters
+1	0	1	0	1	0
+-- Pruned expression becomes a constant in the query tree
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_10, constant_value_type: UInt8
+  WHERE
+    CONSTANT id: 6, constant_value: UInt64_0, constant_value_type: UInt8
+-- Destructuring: tuple of a String and a number
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        s String
+        n UInt8
+      PROJECTION
+        LIST id: 4, nodes: 2
+          FUNCTION id: 5, function_name: materialize, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 6, nodes: 1
+                CONSTANT id: 7, constant_value: \'hello world\', constant_value_type: String
+          FUNCTION id: 8, function_name: materialize, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                CONSTANT id: 10, constant_value: UInt64_42, constant_value_type: UInt8
+      JOIN TREE
+        TABLE id: 11, alias: __table2, table_name: system.one
+  WHERE
+    FUNCTION id: 12, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 13, nodes: 2
+          FUNCTION id: 14, function_name: ilike, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                COLUMN id: 16, column_name: s, result_type: String, source_id: 3
+                CONSTANT id: 17, constant_value: \'%hello%\', constant_value_type: String
+          CONSTANT id: 18, constant_value: UInt64_0, constant_value_type: UInt8
+-- Destructuring results
+1	1	0
+1	0	1
+-- Needles that could match the escaping of String elements are not destructured (and stay correct)
+1	0
+-- Patterns that must not be destructured (0 = no OR chain in the query tree)
+0
+0
+0
+0
+0
+0
+-- Patterns that are destructured (1 = OR chain in the query tree)
+1
+1
+-- A tuple without String elements is pruned outright to a constant, so no OR chain is left
+0	0
+-- Text index is used for global search after destructuring
+1
+1
+-- Results are identical with the optimizations disabled
+0	0	0	1	1
