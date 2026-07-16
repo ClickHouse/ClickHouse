@@ -9,6 +9,7 @@ namespace DB
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool leader_election;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
@@ -59,14 +60,20 @@ Float32 MergeTreeCleanupThread::iterate()
                 static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
         {
             /// Both use relative_data_path which changes during rename, so we do it under share lock.
-            /// Include `delete_tmp_` in addition to the default prefixes: under `leader_election` the
-            /// unconditional startup cleanup is skipped (a follower must not delete the leader's data),
-            /// so this periodic pass is the only place where `delete_tmp_<name>` leftovers of a remove
-            /// interrupted by a crash are ever cleaned up. Concurrent removal of the same directory is
-            /// tolerated by the remove path (see `DataPartStorageOnDiskBase::remove`).
-            cleaned_part_like += storage.clearOldTemporaryDirectories(
-                (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds(),
-                {"tmp_", "delete_tmp_", "tmp-fetch_"});
+            /// Under `leader_election`, also include `delete_tmp_`: the unconditional startup cleanup
+            /// is skipped there (a follower must not delete the leader's data), so this periodic pass
+            /// is the only place where `delete_tmp_<name>` leftovers of a remove interrupted by a crash
+            /// are ever cleaned up. Concurrent removal of the same directory is tolerated by the remove
+            /// path (see `DataPartStorageOnDiskBase::remove`). Tables without `leader_election` already
+            /// get `delete_tmp_` swept once at startup, so keep the default prefixes here for them —
+            /// widening this periodic sweep unconditionally would add a recurring race window (against
+            /// the normal remove path) that startup-only cleanup never had.
+            cleaned_part_like += (*storage_settings)[MergeTreeSetting::leader_election]
+                ? storage.clearOldTemporaryDirectories(
+                    (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds(),
+                    {"tmp_", "delete_tmp_", "tmp-fetch_"})
+                : storage.clearOldTemporaryDirectories(
+                    (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
         }
     }
 
