@@ -6013,7 +6013,14 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     /// response is dispatched by its `Content-Type` - an event stream is handled as usual (the
     /// query chose `EventStream` itself), anything else is shown as raw text, so the packets the
     /// user asked to see are displayed verbatim rather than misparsed.
-    const user_framing = /\bframing_output_format\b/i.test(query);
+    ///
+    /// A query that sets `framing_output_format = 'None'` disables framing rather than choosing
+    /// one, so it is not "the query's own framing" - it asks to run without any of it. This page
+    /// only supports the framed rendering path (progress, logs, metrics, and the compact default
+    /// format all depend on it), so such a query is refused up front instead of being sent with a
+    /// `default_format` (`framed_default_format`) that the plain, unframed response cannot use.
+    const user_disables_framing = /\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
+    const user_framing = !user_disables_framing && /\bframing_output_format\b/i.test(query);
     let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
@@ -6038,6 +6045,11 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     let response, reply, format;
     reply = '';
     try {
+        if (user_disables_framing)
+        {
+            throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None'.");
+        }
+
         const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 

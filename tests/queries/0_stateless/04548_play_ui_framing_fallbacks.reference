@@ -16,3 +16,6 @@ no exception: OK
 1
 event: data
 event: exception
+--- a query that disables framing is refused client-side, not sent as a plain request
+disables-framing guard extracted: OK
+disables-framing guard: OK

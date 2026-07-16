@@ -19,6 +19,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 3. An exception raised after data was already streamed arrives as an `exception` packet inside
 #    a 200 OK event stream (the headers were already sent), which the page must report as a query
 #    failure ("Run all" stops, the single run shows the error state).
+# 4. A query that explicitly disables framing (`SETTINGS framing_output_format = 'None'`) is not
+#    "the query's own framing" - the page requires framing to render results, so it refuses such a
+#    query client-side instead of sending it (there is no HTTP request to assert on, so the guard
+#    expression itself is extracted from the served page and exercised directly).
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -68,5 +72,25 @@ ${CLICKHOUSE_CURL} -sS -D "$header_file" \
 grep -c '^HTTP/1.1 200 OK' "$header_file"
 grep -o -m1 '^event: data' "$result_file"
 grep -o -m1 '^event: exception' "$result_file"
+
+echo '--- a query that disables framing is refused client-side, not sent as a plain request'
+# The guard expression is extracted from the served page (as above for `rejection_pattern`), so it
+# cannot drift from the code it pins, and exercised directly under node.
+disables_framing_expr="$(echo "$page" | sed -n "s/^ *const user_disables_framing = \(.*\);$/\1/p")"
+[ -n "$disables_framing_expr" ] && echo 'disables-framing guard extracted: OK'
+node -e "
+function disables_framing(query) { return ${disables_framing_expr}; }
+const cases = [
+    [\"SELECT 1\", false],
+    [\"SELECT 1 SETTINGS framing_output_format = 'None'\", true],
+    [\"select 1 settings framing_output_format='none'\", true],
+    [\"SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'\", false],
+];
+let ok = true;
+for (const [query, expected] of cases) {
+    if (disables_framing(query) !== expected) { ok = false; console.log('MISMATCH', JSON.stringify(query)); }
+}
+console.log(ok ? 'disables-framing guard: OK' : 'disables-framing guard: FAIL');
+"
 
 rm -f "$result_file" "$header_file"
