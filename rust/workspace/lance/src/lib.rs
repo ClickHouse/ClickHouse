@@ -4,19 +4,20 @@ use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::Stream;
 use futures::StreamExt;
-use futures::TryStreamExt;
+use lance::dataset::builder::DatasetBuilder;
+use lance::dataset::ReadParams;
+use lance::io::ObjectStoreParams;
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
-use object_store::path::Path as ObjectStorePath;
-use object_store::ObjectStore;
+use object_store::DynObjectStore;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::ptr;
-use tempfile::TempDir;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
+use url::Url;
 
 #[repr(C)]
 pub struct ch_lance_error {
@@ -65,7 +66,6 @@ pub struct ch_lance_scan_options {
 pub struct ch_lance_dataset {
     runtime: Runtime,
     dataset: Dataset,
-    _s3_cache: Option<TempDir>,
 }
 
 #[repr(C)]
@@ -122,7 +122,6 @@ struct DatasetOpenOptions {
 
 struct OpenedDataset {
     dataset: Dataset,
-    s3_cache: Option<TempDir>,
 }
 
 unsafe fn apply_dataset_options(
@@ -178,10 +177,36 @@ unsafe fn apply_dataset_options(
     })
 }
 
+async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, String> {
+    if let Some(storage_options) = options.storage_options {
+        let object_store = build_s3_store(&options.uri, &storage_options)?;
+        let location = Url::parse(&options.uri).map_err(|err| err.to_string())?;
+        #[allow(deprecated)]
+        let store_options = ObjectStoreParams {
+            object_store: Some((object_store, location)),
+            ..Default::default()
+        };
+        let dataset = DatasetBuilder::from_uri(&options.uri)
+            .with_read_params(ReadParams {
+                store_options: Some(store_options),
+                ..Default::default()
+            })
+            .load()
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(OpenedDataset { dataset })
+    } else {
+        let dataset = Dataset::open(&options.uri)
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok(OpenedDataset { dataset })
+    }
+}
+
 fn build_s3_store(
     uri: &str,
     storage_options: &HashMap<String, String>,
-) -> Result<object_store::aws::AmazonS3, String> {
+) -> Result<Arc<DynObjectStore>, String> {
     let mut builder = if storage_options
         .get("aws_use_environment_credentials")
         .is_some_and(|value| value == "true")
@@ -196,81 +221,10 @@ fn build_s3_store(
             builder = builder.with_config(config_key, value);
         }
     }
-    builder.build().map_err(|err| err.to_string())
-}
-
-async fn download_s3_dataset(
-    uri: &str,
-    storage_options: &HashMap<String, String>,
-) -> Result<TempDir, String> {
-    let url = url::Url::parse(uri).map_err(|err| err.to_string())?;
-    let prefix = url.path().trim_start_matches('/').trim_end_matches('/');
-    if prefix.is_empty() {
-        return Err("Lance S3 dataset path must not be empty".to_string());
-    }
-
-    let store = build_s3_store(uri, storage_options)?;
-    let cache_dir = tempfile::Builder::new()
-        .prefix("ch_lance_s3_")
-        .tempdir()
-        .map_err(|err| err.to_string())?;
-    let prefix_path = ObjectStorePath::from(prefix);
-    let objects = store
-        .list(Some(&prefix_path))
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    for object in objects {
-        let object_path = object.location.to_string();
-        let relative_path = object_path
-            .strip_prefix(prefix)
-            .unwrap_or(&object_path)
-            .trim_start_matches('/');
-        if relative_path.is_empty() {
-            continue;
-        }
-
-        let local_path: PathBuf = cache_dir.path().join(relative_path);
-        if let Some(parent) = local_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        let bytes = store
-            .get(&object.location)
-            .await
-            .map_err(|err| err.to_string())?
-            .bytes()
-            .await
-            .map_err(|err| err.to_string())?;
-        tokio::fs::write(&local_path, bytes)
-            .await
-            .map_err(|err| err.to_string())?;
-    }
-
-    Ok(cache_dir)
-}
-
-async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, String> {
-    if let Some(storage_options) = options.storage_options {
-        let cache_dir = download_s3_dataset(&options.uri, &storage_options).await?;
-        let dataset = Dataset::open(cache_dir.path().to_string_lossy().as_ref())
-            .await
-            .map_err(|err| err.to_string())?;
-        Ok(OpenedDataset {
-            dataset,
-            s3_cache: Some(cache_dir),
-        })
-    } else {
-        let dataset = Dataset::open(&options.uri)
-            .await
-            .map_err(|err| err.to_string())?;
-        Ok(OpenedDataset {
-            dataset,
-            s3_cache: None,
-        })
-    }
+    builder
+        .build()
+        .map(|store| Arc::new(store) as Arc<DynObjectStore>)
+        .map_err(|err| err.to_string())
 }
 
 fn projection_from_ffi(list: &ch_lance_string_list) -> Result<Vec<String>, String> {
@@ -414,7 +368,6 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
         Ok(opened) => Box::into_raw(Box::new(ch_lance_dataset {
             runtime,
             dataset: opened.dataset,
-            _s3_cache: opened.s3_cache,
         })),
         Err(err) => {
             set_error(error, &err.to_string());
