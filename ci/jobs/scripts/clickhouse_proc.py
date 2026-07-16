@@ -335,6 +335,12 @@ class ClickHouseProc:
 
     @staticmethod
     def stop_log_exports():
+        # Flush buffered system-log records into the `system.*_log` tables so
+        # the `_watcher` materialized views feed the final rows into the
+        # `_sender` tables before `--stop-log-replication` drops them. Without
+        # this the tail of `query_log` and the other logs stays buffered and is
+        # lost from the export. Matches `SQLStorm`.
+        Shell.check('clickhouse-client --query "SYSTEM FLUSH LOGS"', verbose=True)
         return Shell.check(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
