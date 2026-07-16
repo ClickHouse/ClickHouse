@@ -35,7 +35,7 @@ bool isArrayOfStringsOrEmpty(const IDataType & type)
 }
 
 /// Token that replaces each detected PII span, unless overridden via the `replacement` parameter.
-constexpr auto default_replacement = "[MASKED]";
+constexpr auto default_replacement = "[REDACTED]";
 
 }
 
@@ -132,22 +132,22 @@ private:
     ///       "strict": true,
     ///       "schema": {
     ///         "type": "object",
-    ///         "properties": { "masked_text": {"type": "string"} },
-    ///         "required": ["masked_text"],
+    ///         "properties": { "redacted_text": {"type": "string"} },
+    ///         "required": ["redacted_text"],
     ///         "additionalProperties": false
     ///       }
     ///     }
     ///   }
     Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName &) const override
     {
-        Poco::JSON::Object::Ptr masked_prop = new Poco::JSON::Object;
-        masked_prop->set("type", "string");
+        Poco::JSON::Object::Ptr redacted_prop = new Poco::JSON::Object;
+        redacted_prop->set("type", "string");
 
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("masked_text", masked_prop);
+        properties->set("redacted_text", redacted_prop);
 
         Poco::JSON::Array::Ptr required = new Poco::JSON::Array;
-        required->add("masked_text");
+        required->add("redacted_text");
 
         Poco::JSON::Object::Ptr schema = new Poco::JSON::Object;
         schema->set("type", "object");
@@ -166,16 +166,16 @@ private:
         return root;
     }
 
-    /// Any response that does not parse into a string `masked_text` is rejected.
+    /// Any response that does not parse into a string `redacted_text` is rejected.
     String postProcessResponse(const String & raw_response) const override
     {
         try
         {
             Poco::JSON::Parser parser;
             auto obj = parser.parse(raw_response).extract<Poco::JSON::Object::Ptr>();
-            if (obj && obj->has("masked_text"))
+            if (obj && obj->has("redacted_text"))
             {
-                auto value = obj->get("masked_text");
+                auto value = obj->get("redacted_text");
                 if (value.isString())
                     return value.extract<String>();
             }
@@ -183,7 +183,7 @@ private:
         catch (const Poco::Exception &) {} // NOLINT(bugprone-empty-catch) Ok: fall through to the throw below.
 
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-            R"(aiRedact: provider did not return a redacted-text object of the form {{"masked_text": "..."}})");
+            R"(aiRedact: provider did not return a redacted-text object of the form {{"redacted_text": "..."}})");
     }
 };
 
@@ -203,7 +203,7 @@ be treated as a safe or sufficient anonymization mechanism on its own. Always re
 meets your organization's data privacy and compliance policies before exposing data to untrusted parties.
 :::
 
-Each detected PII span is replaced with a masking token (`[MASKED]` by default, configurable via the
+Each detected PII span is replaced with a redaction token (`[REDACTED]` by default, configurable via the
 `replacement` parameter). The `categories` array restricts which PII types are redacted; an empty array
 falls back to a default set of common categories (name, email, phone number, address, credit card, IP address).
 
@@ -215,12 +215,12 @@ may be incomplete or fail to parse.
         .arguments = {
             {"text", "Text to redact.", {"String"}},
             {"categories", "Constant list of PII categories to redact (e.g. `['name', 'ssn', 'credit_card']`). An empty array falls back to a default set of common categories (name, email, phone number, address, credit card, IP address).", {"Array(String)"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens or the reply may be truncated and incomplete), `replacement` (token that replaces each detected PII span; default `[MASKED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens or the reply may be truncated and incomplete), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
-        .returned_value = {"The text with detected PII replaced by the masking token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
+        .returned_value = {"The text with detected PII replaced by the redaction token, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Mask specific categories", "SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [MASKED] with email [MASKED]"},
-            {"Mask the default PII categories with a custom token", "SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
+            {"Redact specific categories", "SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])", "Purchase was done by customer [REDACTED] with email [REDACTED]"},
+            {"Redact the default PII categories with a custom token", "SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5", ""},
         },
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::AI});

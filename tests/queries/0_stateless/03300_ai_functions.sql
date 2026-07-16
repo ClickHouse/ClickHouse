@@ -591,10 +591,10 @@ CREATE TABLE _03300_redact_default
 (
     id UInt32,
     doc String,
-    masked String DEFAULT aiRedact(doc, ['email'])
+    redacted String DEFAULT aiRedact(doc, ['email'])
 ) ENGINE = MergeTree ORDER BY id;
 INSERT INTO _03300_redact_default (id, doc) VALUES (1, 'hello world');
-SELECT id, length(masked) FROM _03300_redact_default;
+SELECT id, length(redacted) FROM _03300_redact_default;
 DROP TABLE _03300_redact_default;
 
 SET ai_function_throw_on_error = 1;

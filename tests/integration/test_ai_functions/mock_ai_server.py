@@ -19,7 +19,7 @@ Endpoints:
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
   POST /v1/chat/rawtext              — returns HTTP 200 with plain, non-JSON content, ignoring any
-      response_format. Used to check that aiRedact rejects a response that is not a `masked_text` object.
+      response_format. Used to check that aiRedact rejects a response that is not a `redacted_text` object.
   POST /v1/embeddings                — returns one deterministic embedding per input.
       Honors `dimensions` if provided, otherwise returns DEFAULT_EMBED_DIM floats.
       `prompt_tokens` = sum of input character lengths.
@@ -208,8 +208,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/chat/rawtext":
             # Returns HTTP 200 but plain, non-JSON content, ignoring any response_format. Used to check
-            # that aiRedact rejects a response that is not a `{"masked_text": ...}` object.
-            self._send_json(200, make_success_response("this is not a masked_text object"))
+            # that aiRedact rejects a response that is not a `{"redacted_text": ...}` object.
+            self._send_json(200, make_success_response("this is not a redacted_text object"))
             return
 
         if parsed.path == "/v1/error":
