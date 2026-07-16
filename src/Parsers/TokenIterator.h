@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
 
+#include <algorithm>
 #include <vector>
 
 
@@ -28,6 +29,15 @@ public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
         : lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
     {
+        /// Pre-size the token buffer to avoid repeated geometric reallocations while lexing.
+        /// Each reallocation relocates all previously lexed Token structs, which is a large
+        /// fraction of parse time for queries with huge literals (e.g. a 10k-element `IN [...]`).
+        /// A significant token is at least ~3 bytes on average for dense numeric literals, so
+        /// begin..end / 4 covers the bulk of them; the cap bounds memory for pathologically large
+        /// queries (a multi-hundred-MB query would otherwise reserve gigabytes up front).
+        const size_t query_size = end > begin ? static_cast<size_t>(end - begin) : 0;
+        static constexpr size_t max_reserve = 4 * 1024 * 1024;
+        data.reserve(std::min<size_t>(query_size / 4 + 16, max_reserve));
     }
 
     const Token & operator[] (size_t index)
