@@ -39,10 +39,8 @@ void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
         /// Instead we need to insert data from the current range from it.
         if (rows_offset)
         {
-            /// `column` may alias `cached_column` (the substream can be read first with rows_offset == 0,
-            /// placing `column` itself into the cache, and then re-read in the same range with rows_offset > 0),
-            /// so clone it when shared — `IColumn::mutate` is a no-op when uniquely owned — before the append
-            /// and the in-place rows_offset compaction below.
+            /// IColumn::mutate is safe here: when rows_offset > 0, the cache always stores a cut() copy
+            /// (see the fresh-read path below), so `column` itself is never shared via the cache.
             MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
             mutable_column->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
             column = std::move(mutable_column);
@@ -74,9 +72,7 @@ void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    /// Apply rows_offset if needed. `column` is uniquely owned here (it was cloned above on the cache path
-    /// when shared, and the fresh-read path caches a separate cut() copy), so this in-place compaction does
-    /// not touch storage referenced elsewhere.
+    /// Apply rows_offset if needed.
     if (rows_offset)
     {
         auto mutable_column = column->assumeMutable();

@@ -273,10 +273,13 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column->size();
-        /// `column` may be shared — e.g. it was placed into the substreams cache by an earlier substream
-        /// read — and appending to it in place would then mutate data still referenced by another owner.
-        /// Clone it when shared; `IColumn::mutate` is a no-op for the common uniquely-owned case.
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+        /// Use assumeMutable instead of IColumn::mutate: columns may be shared via the substreams
+        /// cache between multiple readers (e.g. reading both a subcolumn and the full column).
+        /// This sharing is intentional by design; IColumn::mutate would clone the column on
+        /// use_count > 1, defeating the cache and causing unnecessary copies.
+        /// MergeTree readers return a set of constant columns that are not mutated after reading,
+        /// so sharing subcolumns via the same ColumnPtr is safe.
+        auto mutable_column = column->assumeMutable();
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);

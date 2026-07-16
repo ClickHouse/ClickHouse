@@ -562,14 +562,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         /// Instead we need to insert data from the current range from it.
         if (rows_offset)
         {
-            /// `col`'s discriminators may alias `cached_column`: a prior rows_offset == 0 read of this
-            /// substream caches the discriminators column itself (see the deserialize path below, where
-            /// `discriminators_for_cache` is `col.getLocalDiscriminatorsPtr()` and not a `cut()` copy).
-            /// On a later rows_offset > 0 cache hit, appending in place — and the in-place rows_offset
-            /// compaction that follows — would then mutate storage still referenced by the cache, the same
-            /// COW hole the size readers close. Clone when shared; `IColumn::mutate` is a no-op when
-            /// uniquely owned.
             ColumnPtr & discriminators = col.getLocalDiscriminatorsPtr();
+            /// IColumn::mutate is safe here: when rows_offset > 0, the cache always stores a cut() copy
+            /// (see the fresh-read path below), so discriminators are never shared via the cache.
             MutableColumnPtr mutable_discriminators = IColumn::mutate(std::move(discriminators));
             mutable_discriminators->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
             discriminators = std::move(mutable_discriminators);

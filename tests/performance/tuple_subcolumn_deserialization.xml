@@ -1,0 +1,70 @@
+<test>
+    <!-- Wide parts: full Tuple + named subcolumns, alternating granule skipping via minmax index -->
+    <create_query>
+        CREATE TABLE tuple_deser_wide
+        (
+            id UInt64,
+            skip UInt8,
+            t Tuple(a String, b String, c String, d String, e String),
+            INDEX idx_skip skip TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS
+            min_bytes_for_wide_part = 0,
+            index_granularity = 2048,
+            index_granularity_bytes = 0,
+            string_serialization_version = 'single_stream'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO tuple_deser_wide
+        SELECT
+            number,
+            intDiv(number, 2048) % 2,
+            tuple(randomString(1000), randomString(1000), randomString(1000), randomString(1000), randomString(1000))
+        FROM numbers(400000)
+    </fill_query>
+
+    <fill_query>OPTIMIZE TABLE tuple_deser_wide FINAL</fill_query>
+
+    <query>
+        SELECT t, t.a, t.b, t.c, t.d, t.e
+        FROM tuple_deser_wide
+        WHERE skip = 0
+        FORMAT Null
+        SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000
+    </query>
+
+    <!-- Compact parts: nested Tuple so that subcolumns share substreams via cache -->
+    <create_query>
+        CREATE TABLE tuple_deser_compact
+        (
+            id UInt64,
+            t Tuple(inner Tuple(a String, b String, c String, d String, e String))
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS
+            min_bytes_for_wide_part = 1000000000000,
+            string_serialization_version = 'single_stream'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO tuple_deser_compact
+        SELECT
+            number,
+            tuple(tuple(randomString(1000), randomString(1000), randomString(1000), randomString(1000), randomString(1000)))
+        FROM numbers(400000)
+    </fill_query>
+
+    <fill_query>OPTIMIZE TABLE tuple_deser_compact FINAL</fill_query>
+
+    <query>
+        SELECT t.inner, t.inner.a, t.inner.b, t.inner.c, t.inner.d, t.inner.e
+        FROM tuple_deser_compact
+        FORMAT Null
+        SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS tuple_deser_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tuple_deser_compact</drop_query>
+</test>
