@@ -85,6 +85,14 @@ struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::D
         if (map_column)
             callback(map_column);
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (map_state)
+            callback(map_state);
+        if (structure_state)
+            callback(structure_state);
+    }
 };
 
 

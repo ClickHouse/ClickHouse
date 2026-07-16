@@ -1,4 +1,5 @@
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
@@ -900,6 +901,13 @@ void ColumnsOwnershipValidator::add(const ISerialization::DeserializeBinaryBulkS
         return;
 
     state->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column, &References::from_deserialize_states); });
+
+    /// A nested state is not necessarily registered in any SubstreamsDeserializeStatesCache
+    /// (e.g. the LowCardinality state holding the global dictionary inside a Variant state),
+    /// so the columns it owns are reachable only by recursing from its holder. The `seen_states`
+    /// check above guarantees that a state reachable both from a cache and from a parent state
+    /// is enumerated only once.
+    state->forEachNestedState([this](const ISerialization::DeserializeBinaryBulkStatePtr & nested_state) { add(nested_state); });
 }
 
 void ColumnsOwnershipValidator::add(const ColumnPtr & column)
@@ -934,6 +942,20 @@ void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
             ++tree_references[child.get()];
             walk(*child);
         });
+
+        /// ColumnLowCardinality::forEachSubcolumn hides the dictionary when it is shared (the
+        /// column is not its exclusive owner and must not mutate it), but the reference is still
+        /// a counted ColumnPtr, and a shared dictionary is exactly the place where broken reference
+        /// counting turns into a use-after-free, so it must participate in the ownership check.
+        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+        {
+            if (low_cardinality->isSharedDictionary())
+            {
+                const auto & dictionary = low_cardinality->getDictionaryPtr();
+                ++tree_references[dictionary.get()];
+                walk(*dictionary);
+            }
+        }
     };
 
     for (const auto & column : result_columns)

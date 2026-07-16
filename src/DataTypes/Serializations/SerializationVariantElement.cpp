@@ -69,6 +69,14 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
         if (variant)
             callback(variant);
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (discriminators_state)
+            callback(discriminators_state);
+        if (variant_element_state)
+            callback(variant_element_state);
+    }
 };
 
 

@@ -145,6 +145,24 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
 
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        for (const auto & [_, path_state] : typed_path_states)
+        {
+            if (path_state)
+                callback(path_state);
+        }
+        for (const auto & [_, path_state] : dynamic_path_states)
+        {
+            if (path_state)
+                callback(path_state);
+        }
+        if (shared_data_state)
+            callback(shared_data_state);
+        if (structure_state)
+            callback(structure_state);
+    }
 };
 
 void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const

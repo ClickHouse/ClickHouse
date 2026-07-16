@@ -53,6 +53,14 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
         if (shared_data)
             callback(shared_data);
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (structure_state)
+            callback(structure_state);
+        if (nested_state)
+            callback(nested_state);
+    }
 };
 
 

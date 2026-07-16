@@ -104,6 +104,22 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
             new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (map_state)
+            callback(map_state);
+        for (const auto & bucket_map_state : bucket_map_states)
+        {
+            if (bucket_map_state)
+                callback(bucket_map_state);
+        }
+        for (const auto & bucket_structure_state : bucket_structure_states)
+        {
+            if (bucket_structure_state)
+                callback(bucket_structure_state);
+        }
+    }
 };
 
 void SerializationObjectSharedData::enumerateStreams(

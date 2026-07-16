@@ -144,6 +144,14 @@ public:
         /// Enumerates the columns owned by this state.
         /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
         virtual void forEachColumn(const std::function<void(const ColumnPtr &)> &) const {}
+
+        /// Enumerates the nested deserialize states held by this state. Composite serializations
+        /// (Variant, Dynamic, Tuple, Map, Object, Sparse, ...) keep the states of their nested
+        /// serializations as members, and such a nested state is not necessarily registered in any
+        /// SubstreamsDeserializeStatesCache (e.g. SerializationLowCardinality never registers its
+        /// state there), so the columns it owns are reachable only through this enumeration.
+        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
+        virtual void forEachNestedState(const std::function<void(const std::shared_ptr<DeserializeBinaryBulkState> &)> &) const {}
     };
 
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;

@@ -68,6 +68,14 @@ struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::Deserializ
         if (nested_column)
             callback(nested_column);
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (reading_info_state)
+            callback(reading_info_state);
+        if (nested_state)
+            callback(nested_state);
+    }
 };
 
 void SerializationMapKeyValue::enumerateStreams(

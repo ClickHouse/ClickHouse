@@ -41,6 +41,12 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
         if (discriminators)
             callback(discriminators);
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (discriminators_state)
+            callback(discriminators_state);
+    }
 };
 
 

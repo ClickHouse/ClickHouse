@@ -77,6 +77,21 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (variant_state)
+            callback(variant_state);
+        if (structure_state)
+            callback(structure_state);
+        for (const auto & flattened_state : flattened_states)
+        {
+            if (flattened_state)
+                callback(flattened_state);
+        }
+        if (flattened_indexes_state)
+            callback(flattened_indexes_state);
+    }
 };
 
 void SerializationDynamic::enumerateStreams(

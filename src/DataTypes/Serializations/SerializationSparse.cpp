@@ -74,6 +74,12 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         if (column_offsets)
             callback(column_offsets);
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (nested)
+            callback(nested);
+    }
 };
 
 void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)
