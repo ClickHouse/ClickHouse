@@ -352,7 +352,10 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     {
         if (workspaces[i].window_function_impl)
             continue;
-        workspace_frame_trees[i].merge_equivalent = workspaces[i].aggregate_function->mergeIsEquivalentToAddingRows();
+        // Zero-sized states (the Nothing placeholders for only-NULL arguments) would
+        // make every segment slot alias the same address; keep them on the recompute path.
+        workspace_frame_trees[i].merge_equivalent = workspaces[i].aggregate_function->sizeOfData() != 0
+            && workspaces[i].aggregate_function->mergeIsEquivalentToAddingRows();
         any_workspace_supports_frame_tree |= workspace_frame_trees[i].merge_equivalent;
     }
 

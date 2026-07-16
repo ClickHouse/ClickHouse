@@ -445,6 +445,16 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );
 
+-- Zero-sized aggregate states (the Nothing placeholders for only-NULL arguments) must
+-- stay on the recompute path.
+SELECT countIf(c != 0 OR s IS NOT NULL) AS mismatches
+FROM
+(
+    SELECT count(NULL) OVER w AS c, sum(toNullable(NULL)) OVER w AS s
+    FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 3000 PRECEDING AND CURRENT ROW)
+);
+
 -- Float rounding over tree-sized frames may differ from sequential summation (which
 -- already depends on the block layout, on master too). Pin what is guaranteed:
 -- identical runs give identical bits, and the frame row multiset stays exact.
