@@ -228,6 +228,9 @@
             },
             "concepts/features/interfaces/cpp",
             "concepts/features/interfaces/schema-inference",
+            "concepts/features/interfaces/documentation-search",
+            "concepts/features/interfaces/web-sql",
+            "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",

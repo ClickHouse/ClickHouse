@@ -2766,7 +2766,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     else
     {
         if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, context_, log);
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -2993,6 +2993,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
             const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            /// These exclusions come from skip-index (and primary-key) analysis, which can diverge
+            /// from the row-level predicate (e.g. a text index with a preprocessor). Store them
+            /// under a key salted with the effective skip-index profile so that only a query that
+            /// ran the same set of indexes consults them; a query that disabled skip indexes (or
+            /// ignored an index) reads its own profile's key and is not poisoned. See issue #108519.
+            const UInt64 profiled_condition_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(*condition_hash, *indexes);
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
@@ -3001,7 +3007,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
                     part_name,
-                    *condition_hash,
+                    profiled_condition_hash,
                     output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
@@ -3192,6 +3198,49 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
 bool ReadFromMergeTree::isVectorColumnReplaced() const
 {
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
+}
+
+void ReadFromMergeTree::addReadColumn(const String & column)
+{
+    if (std::ranges::find(all_column_names, column) != all_column_names.end())
+        return;
+
+    all_column_names.emplace_back(column);
+
+    /// A PREWHERE / row-level-filter ActionsDAG only outputs the columns it was built with, and `transformHeader` below
+    /// runs the read header through it. A column added here after analysis (e.g. the `Quantize` companion subcolumns
+    /// pulled in by the quantized-vector-search rewrite) is neither an input nor an output of those DAGs, so it would be
+    /// dropped after PREWHERE and the rewrite would then fail to find it. Pass it through, mirroring
+    /// `restorePrewhereInputs` but also for a column that is not yet an input of the DAG.
+    const auto column_type = storage_snapshot->getSampleBlockForColumns({column}).getByName(column).type;
+    auto pass_through_filter = [&](ActionsDAG & dag)
+    {
+        if (dag.tryFindInOutputs(column))
+            return;
+        for (const auto * input : dag.getInputs())
+        {
+            if (input->result_name == column)
+            {
+                dag.getOutputs().push_back(input);
+                return;
+            }
+        }
+        dag.getOutputs().push_back(&dag.addInput(column, column_type));
+    };
+    if (query_info.row_level_filter)
+        pass_through_filter(query_info.row_level_filter->actions);
+    if (query_info.prewhere_info)
+        pass_through_filter(query_info.prewhere_info->prewhere_actions);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// If analysis has already been done (like in optimization for projections),
+    /// then update columns to read in analysis result.
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
