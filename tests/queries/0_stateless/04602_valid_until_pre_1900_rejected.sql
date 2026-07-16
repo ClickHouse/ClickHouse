@@ -1,10 +1,13 @@
+-- Tags: no-parallel
+-- ^ creates a globally-named user (the accepted-bound and ALTER cases below); the flaky check runs
+--   the same test concurrently, so a fixed user name would collide (ACCESS_ENTITY_ALREADY_EXISTS)
+--   between parallel repetitions.
+
 -- The stored access entity encoding (`AuthenticationData::toAST`) writes a pre-epoch `VALID UNTIL`
 -- deadline as a date-time string that older servers - whose `DateLUT` has no year earlier than 1900 -
 -- can still parse. Accepting a deadline before that bound would make `SHOW CREATE USER` show a
 -- different (clamped) deadline after a restart or replication round-trip than the one that was
 -- originally specified, so it must be rejected instead.
--- No user is ever created by a rejected statement (it fails before the user is stored), so the test
--- keeps no global state and stays parallel-safe without a no-parallel tag.
 
 DROP USER IF EXISTS user_04602_valid_until;
 
