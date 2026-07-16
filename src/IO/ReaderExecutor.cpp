@@ -291,11 +291,11 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
     ChainedBuffers chain;
     size_t got_total = 0;
 
-    auto fill = [&](auto && read_chunk)
+    auto fill = [&](size_t limit, auto && read_chunk)
     {
-        while (got_total < want)
+        while (got_total < limit)
         {
-            const size_t chunk = std::min(block_size, want - got_total);
+            const size_t chunk = std::min(block_size, limit - got_total);
             auto block = std::make_shared<OwnedChainedBuffer>(chunk);
             const size_t n = read_chunk(block->data(), chunk);
             if (n > 0)
@@ -315,7 +315,7 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
     };
 
     if (long_conn && long_conn->servesObject(object.remote_path)
-        && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
+        && long_conn->canServeAt(object_offset, min_bytes_for_seek))
     {
         stats.add(Stats::LongConnectionHits);
         if (object_offset > long_conn->current_position)
@@ -324,7 +324,10 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
             stats.add(Stats::BytesFromSource, skipped);
             stats.add(Stats::LongConnectionBytes, skipped);
         }
-        fill(from_long_conn);
+        /// A window past the bound is served short (up to `read_until`); the next call reopens at the
+        /// bound with a fresh prediction, so the connection is never drained-and-re-read at the bound.
+        const size_t serve = std::min(want, long_conn->read_until - object_offset);
+        fill(serve, from_long_conn);
         if (long_conn->atBound())
             long_conn.reset();
     }
@@ -334,7 +337,7 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
             dropLongConnection();
         if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
         {
-            fill(from_long_conn);
+            fill(want, from_long_conn);
             if (long_conn && long_conn->atBound())
                 long_conn.reset();
         }
@@ -346,7 +349,7 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
             if (object_offset > 0)
                 buffer->seek(static_cast<off_t>(object_offset), SEEK_SET);
             stats.add(Stats::SourceRequests);
-            fill([&](char * dst, size_t n) { return readIntoBlock(*buffer, dst, n); });
+            fill(want, [&](char * dst, size_t n) { return readIntoBlock(*buffer, dst, n); });
         }
     }
 
@@ -641,7 +644,7 @@ void ReaderExecutor::seek(size_t new_position)
 {
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
     /// Feed the estimator; a held connection that can't continue to `new_position` is dropped
-    /// lazily by the next `readNextWindow` (its `canContinue` check).
+    /// lazily by the next `readNextWindow` (its `canServeAt` check).
     fetch_tracker.recordSeek(toPhys(new_position));
     position = new_position;
     reached_eof = false;

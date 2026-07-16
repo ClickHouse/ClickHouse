@@ -119,7 +119,8 @@ protected:
     {
         auto ex = std::make_unique<ReaderExecutor>(
             std::make_shared<LocalSourceReader>(), StoredObjects{obj}, ReaderExecutor::Options{
-                .min_bytes_for_seek = MIN_BYTES_FOR_SEEK, .block_size = BLOCK,
+                /// Window == block so the file spans many windows; the metrics measure reuse across them.
+                .window_size = BLOCK, .min_bytes_for_seek = MIN_BYTES_FOR_SEEK, .block_size = BLOCK,
                 .max_tail_for_drain = MAX_TAIL_FOR_DRAIN, .long_connection_limit = std::move(limit)});
         return std::make_unique<PipelineReadBuffer>(std::move(ex));
     }

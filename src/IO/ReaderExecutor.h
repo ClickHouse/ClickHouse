@@ -168,10 +168,12 @@ private:
         bool isComplete(bool at_eof) const { return at_eof || atBound(); }
         /// Whether any bytes have been consumed from the stream (read or skipped) since it opened.
         bool consumedAnyBytes() const { return current_position > opened_at; }
-        /// Forward, within `bridgeable_gap`, and `[off, off+want)` stays inside the bound.
-        bool canContinue(size_t off, size_t want, size_t bridgeable_gap) const
+        /// Forward, within `bridgeable_gap`, and still below the bound. A window that crosses the
+        /// bound is served short here (up to `read_until`), not rejected -- rejecting would drain the
+        /// sub-window residual and re-read it on the next connection.
+        bool canServeAt(size_t off, size_t bridgeable_gap) const
         {
-            return off >= current_position && off - current_position <= bridgeable_gap && off + want <= read_until;
+            return off >= current_position && off - current_position <= bridgeable_gap && off < read_until;
         }
 
         /// Read up to `want` bytes from the open stream into `dst`; advances the frontier.
