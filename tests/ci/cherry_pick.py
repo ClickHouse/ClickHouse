@@ -13,19 +13,14 @@ A plan:
             set pr-backported label and finish
             - If not, create either cherrypick PRs or merge cherrypick (in the same
             stage, if mergable) and create backport-PRs
-            - If successful, set pr-backported label on the PR
+            - If successfull, set pr-backported label on the PR
 
-        - for version-specific labels (e.g. v25.12-must-backport):
-            - the label marks the OLDEST release the PR must reach. Backport to
-            that release AND to every newer active release branch, then the same
-            check, cherry-pick, backport, pr-backported
+        - for version-specific labels:
+            - the same, check, cherry-pick, backport, pr-backported
 
 Cherry-pick stage:
     - From time to time the cherry-pick fails, if it was done manually. In the
     case we check if it's even needed, and mark the release as done somehow.
-
-The cross-repo synchronization is described in the KB article:
-https://github.com/ClickHouse/internal-knowledge-base/issues/452
 """
 
 import argparse
@@ -36,14 +31,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Iterable, List, Optional
 
-from github.GithubException import GithubException
-
 from cache_utils import GitHubCache
-from cherry_pick_branches import (
-    branch_version,
-    label_version,
-    select_backport_branches,
-)
 from ci_buddy import CIBuddy
 from ci_utils import Shell
 from env_helper import (
@@ -55,6 +43,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
+from github.GithubException import GithubException
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from pr_info import Labels
 from report import GITHUB_JOB_URL
@@ -65,44 +54,6 @@ from synchronizer_utils import SYNC_PR_PREFIX
 
 class BackportException(Exception):
     pass
-
-
-def recover_git_state() -> None:
-    """
-    Best-effort recovery of the working tree after a git command crashed
-    (e.g. an internal assertion in `merge-ort`) and left `.git/index.lock`
-    behind. In that state subsequent commands -- including
-    `git merge --abort` -- fail with "Unable to create '.git/index.lock'",
-    which would otherwise poison every later PR processed in the same run.
-    """
-    try:
-        # `--absolute-git-dir` -- avoid a relative `.git` resolved against
-        # Python's cwd (which is `tests/ci/`, not the repo root).
-        git_dir = git_runner("git rev-parse --absolute-git-dir")
-    except CalledProcessError:
-        return
-    lock = Path(git_dir) / "index.lock"
-    if lock.exists():
-        logging.warning(
-            "Removing stale %s left by a crashed git process", lock
-        )
-        try:
-            lock.unlink()
-        except OSError as e:
-            logging.error("Failed to remove %s: %s", lock, e)
-            return
-    # Best-effort cleanup of any in-progress merge / cherry-pick and the
-    # working tree. None of these are required to succeed -- they only run
-    # to bring the tree back to a usable state for the next PR.
-    for cmd in (
-        f"{GIT_PREFIX} merge --abort",
-        f"{GIT_PREFIX} cherry-pick --abort",
-        f"{GIT_PREFIX} reset --hard HEAD",
-    ):
-        try:
-            git_runner(cmd)
-        except CalledProcessError as e:
-            logging.info("recover_git_state: %s -> %s (ignored)", cmd, e)
 
 
 class ReleaseBranch:
@@ -232,10 +183,6 @@ close it.
                 )
                 return
             self.create_cherrypick()
-
-        if self.backported:
-            # The `backported` can be set to True if the changes are already applied
-            return
         assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
@@ -293,39 +240,20 @@ close it.
 
         # Second step, create cherrypick branch
         git_runner(
-            f"{GIT_PREFIX} checkout --no-track -B "
+            f"{GIT_PREFIX} branch -f "
             f"{self.cherrypick_branch} {self.pr.merge_commit_sha}"
         )
 
-        # Try to merge backport_branch into cherrypick_branch locally. When it
-        # succeeds, the merge commit (with rename detection etc. resolved) is
-        # baked into cherrypick_branch, so GitHub's merge of the cherry-pick PR
-        # becomes trivial - backport_branch is an ancestor of cherrypick_branch
-        # via the merge commit. This avoids a failure mode where files renamed
-        # between the release branch and master produce conflicts in GitHub's
-        # merge even though local `git merge` resolves them via rename
-        # detection. The rename limit is raised to prevent git from silently
-        # disabling rename detection on large diffs.
-        #
-        # On conflict, cherrypick_branch stays at pr.merge_commit_sha (the
-        # merge --abort restores HEAD), and conflicts are surfaced on the
-        # GitHub PR for manual resolution by the assigned engineer.
+        # Check if there are actually any changes between branches. If no, then no
+        # other actions are required. It's possible when changes are backported
+        # manually to the release branch already
         try:
-            git_runner(
-                f"{GIT_PREFIX} -c merge.renameLimit=999999 "
-                f"merge --no-ff --no-edit {self.backport_branch}"
+            output = git_runner(
+                f"{GIT_PREFIX} merge --no-commit --no-ff {self.cherrypick_branch}"
             )
-            # The merge succeeded. If it produced no tree change vs
-            # backport_branch, the PR is effectively already backported to
-            # the release branch - either "Already up to date" (no merge
-            # commit at all) or an empty merge commit whose resolution
-            # collapsed onto backport_branch's tree (e.g. the PR was
-            # manually applied with equivalent content). In either case,
-            # skip creating an empty cherry-pick PR.
-            if not git_runner(
-                f"{GIT_PREFIX} diff --name-only "
-                f"{self.backport_branch} {self.cherrypick_branch}"
-            ):
+            # 'up-to-date', 'up to date', who knows what else (╯°v°)╯ ^┻━┻
+            if output.startswith("Already up") and output.endswith("date."):
+                # The changes are already in the release branch, we are done here
                 logging.info(
                     "Release branch %s already contain changes from %s",
                     self.name,
@@ -334,15 +262,11 @@ close it.
                 self._backported = True
                 return
         except CalledProcessError:
-            try:
-                git_runner(f"{GIT_PREFIX} merge --abort")
-            except CalledProcessError:
-                # `merge --abort` itself can fail when the merge process
-                # crashed (e.g. merge-ort assertion) and left
-                # `.git/index.lock` behind -- the lock blocks any further
-                # git command in this checkout. Clean it up so subsequent
-                # PRs in the same run are not poisoned.
-                recover_git_state()
+            # There are most probably conflicts, they'll be resolved in PR
+            git_runner(f"{GIT_PREFIX} reset --merge")
+        else:
+            # There are changes to apply, so continue
+            git_runner(f"{GIT_PREFIX} reset --merge")
 
         # Push, create the cherry-pick PR and label it
         for branch in [self.cherrypick_branch, self.backport_branch]:
@@ -645,23 +569,13 @@ class BackportPRs:
         self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
 
-        # A version-specific label `vX.Y-must-backport` is backported to X.Y and
-        # to every newer active release (see `select_backport_branches`). The
-        # named release need not be active itself, so the search must also pick
-        # up PRs labelled for an end-of-life release as long as a newer release
-        # is still active. Include every version-specific label that exists in
-        # the repo whose version is not newer than the newest active release --
-        # a newer label could not expand to any active branch.
-        newest_active = max(branch_version(branch) for branch in self.release_branches)
-        self.labels_to_backport = sorted(
-            label.name
-            for label in self.repo.get_labels()
-            if label_version(label.name) is not None
-            and label_version(label.name) <= newest_active
-        )
+        self.labels_to_backport = [
+            # compatibility labels for the cloud and public release branches
+            f"v{branch.replace('release/', '')}-must-backport"
+            for branch in self.release_branches
+        ]
 
         logging.info("Active releases: %s", ", ".join(self.release_branches))
-        logging.info("Labels to backport: %s", ", ".join(self.labels_to_backport))
 
     def update_local_release_branches(self):
         logging.info("Update local release branches")
@@ -701,7 +615,7 @@ class BackportPRs:
 
         since_date = since_date or self.oldest_commit_date()
         labels_to_backport = labels_to_backport or (
-            self.labels_to_backport + [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE]
+            self.labels_to_backport + [Labels.MUST_BACKPORT]
         )
         repo_name = repo_name or self.repo.full_name
         # To not have a possible TZ issues
@@ -735,10 +649,6 @@ class BackportPRs:
                     "During processing the PR #%s error occurred: %s", pr.number, e
                 )
                 self.error = e
-                # Whatever went wrong, make sure the next PR starts from a
-                # clean working tree -- a leftover `.git/index.lock` from a
-                # crashed git process would otherwise break every later PR.
-                recover_git_state()
 
     def _rolling_out_branches(self) -> List[str]:
         """
@@ -754,7 +664,9 @@ class BackportPRs:
             if Labels.ROLLING_OUT in {label.name for label in release_pr.labels}
         ]
 
-    def _close_prs_for_rolling_out_branch(self, pr: PullRequest, branch: str) -> None:
+    def _close_prs_for_rolling_out_branch(
+        self, pr: PullRequest, branch: str
+    ) -> None:
         """
         Close any open cherry-pick or backport PRs that were previously created
         for a release branch that is now marked `rolling-out`.
@@ -802,43 +714,67 @@ class BackportPRs:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        # Decide the target release branches (pure logic, unit-tested in
-        # `test_cherry_pick_branches.py`). A version-specific label
-        # (`vX.Y-must-backport`) marks the OLDEST release the PR must reach, so
-        # the PR is backported to that release and every newer active release
-        # branch; the lowest such label wins. `skipped` are rolling-out branches
-        # excluded for a general backport that no version-specific label covers.
-        rolling_out = set(self._rolling_out_branches())
-        branch_names, skipped = select_backport_branches(
-            pr_labels,
-            self.release_branches,
-            rolling_out,
-            general_backport_labels={Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE}
-            | Labels.AUTO_BACKPORT,
-            force_backport_label=Labels.MUST_BACKPORT_FORCE,
+        is_general_backport = Labels.MUST_BACKPORT in pr_labels or bool(
+            Labels.AUTO_BACKPORT & set(pr_labels)
         )
-
-        if skipped:
-            logging.info(
-                "PR #%s: skipping rolling-out release branches for general "
-                "backport: %s",
-                pr.number,
-                ", ".join(skipped),
-            )
-            for br in skipped:
-                self._close_prs_for_rolling_out_branch(pr, br)
-
-        if not branch_names:
-            logging.info(
-                "PR #%s: all candidate release branches are rolling-out, "
-                "skipping backport",
-                pr.number,
-            )
-            return
-
-        branches = [
-            ReleaseBranch(br, pr, self.repo) for br in branch_names
-        ]  # type: List[ReleaseBranch]
+        if is_general_backport:
+            # For general backports (pr-must-backport / critical bugfix), skip
+            # release branches that are currently rolling out, unless the PR
+            # carries an explicit version-specific label for that branch.
+            rolling_out = set(self._rolling_out_branches())
+            # Build a per-branch version-specific label so we can honour explicit
+            # overrides (e.g. the PR has both pr-must-backport AND
+            # v25.10-must-backport: the 25.10 branch must be included even if it
+            # is marked rolling-out).
+            branch_specific_label = {
+                branch: f"v{branch.replace('release/', '')}-must-backport"
+                for branch in self.release_branches
+            }
+            skipped = [
+                br
+                for br in self.release_branches
+                if br in rolling_out and branch_specific_label[br] not in pr_labels
+            ]
+            if skipped:
+                logging.info(
+                    "PR #%s: skipping rolling-out release branches for general "
+                    "backport: %s",
+                    pr.number,
+                    ", ".join(skipped),
+                )
+                for br in skipped:
+                    self._close_prs_for_rolling_out_branch(pr, br)
+            branches = [
+                ReleaseBranch(br, pr, self.repo)
+                for br in self.release_branches
+                if br not in rolling_out or branch_specific_label[br] in pr_labels
+            ]  # type: List[ReleaseBranch]
+            if not branches:
+                logging.info(
+                    "PR #%s: all release branches are rolling-out, skipping backport",
+                    pr.number,
+                )
+                return
+        else:
+            branches = [
+                ReleaseBranch(
+                    (
+                        br
+                        if self._repo_name == "ClickHouse/ClickHouse"
+                        else f"release/{br}"
+                    ),
+                    pr,
+                    self.repo,
+                )
+                for br in [
+                    label.split("-", 1)[0][1:]  # v21.8-must-backport
+                    for label in pr_labels
+                    if label in self.labels_to_backport
+                ]
+            ]
+        assert (
+            branches
+        ), f"Unable to determine branches for PR {pr.html_url}, check its labels"
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
@@ -1040,17 +976,7 @@ class CherryPickPRs:
             )
             return
 
-        try:
-            original_pr.remove_from_labels(Labels.PR_BACKPORTS_CREATED)
-        except GithubException as e:
-            if e.status == 404:
-                logging.info(
-                    "Label %s is already removed from PR #%s",
-                    Labels.PR_BACKPORTS_CREATED,
-                    original_pr.number,
-                )
-            else:
-                raise
+        original_pr.remove_from_labels(Labels.PR_BACKPORTS_CREATED)
         pr.create_issue_comment(comment_body)
         logging.info(
             "Removed label %s from PR #%s and posted comment to cherry-pick PR #%s",

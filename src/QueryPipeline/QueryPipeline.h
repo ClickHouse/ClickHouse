@@ -5,11 +5,8 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
-
-#include <list>
 
 namespace DB
 {
@@ -19,7 +16,7 @@ class OutputPort;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using Processors = std::vector<ProcessorPtr>;
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -40,7 +37,7 @@ class ISink;
 class ReadProgressCallback;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class QueryResultCacheWriter;
 
@@ -53,9 +50,7 @@ public:
     QueryPipeline(QueryPipeline &&) noexcept;
     QueryPipeline(const QueryPipeline &) = delete;
 
-    /// Not noexcept: move-assignment appends QueryPlanResourceHolder resources, which allocates
-    /// through memory-tracking containers and can throw MEMORY_LIMIT_EXCEEDED.
-    QueryPipeline & operator=(QueryPipeline &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    QueryPipeline & operator=(QueryPipeline &&) noexcept;
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();

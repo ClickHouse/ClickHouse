@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
 #include <Functions/FunctionsLogical.h>
@@ -98,26 +96,29 @@ ExpressionSide getExpressionSide(
 {
     auto inputs = getExpressionInputs(expr);
 
-    /// Whether at least one input comes from the left/right stream with an unchanged type.
     bool has_left = false;
-    bool has_right = false;
-
-    /// Whether at least one input is not available from either side (e.g. a USING column whose
-    /// type was changed by the JOIN USING clause). We cannot safely assign this expression to one side.
-    bool has_unavailable = false;
-
     for (const auto * input : inputs)
     {
-        bool in_left = left_allowed_inputs.contains(input);
-        bool in_right = right_allowed_inputs.contains(input);
-        has_left |= in_left;
-        has_right |= in_right;
-        has_unavailable |= !in_left && !in_right;
+        if (left_allowed_inputs.contains(input))
+        {
+            has_left = true;
+            break;
+        }
     }
 
-    if (has_left && !has_right && !has_unavailable)
+    bool has_right = false;
+    for (const auto * input : inputs)
+    {
+        if (right_allowed_inputs.contains(input))
+        {
+            has_right = true;
+            break;
+        }
+    }
+
+    if (has_left && !has_right)
         return ExpressionSide::LEFT;
-    else if (!has_left && has_right && !has_unavailable)
+    else if (!has_left && has_right)
         return ExpressionSide::RIGHT;
 
     return ExpressionSide::UNKNOWN;
@@ -181,10 +182,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
             /// We can't push equality condition into JOIN if types are not equal.
             if (!lhs->result_type->equals(*rhs->result_type))
-            {
-                rejected_conjuncts.push_back(conjunct);
                 continue;
-            }
 
             /// We need to check if arguments are coming from different sides of JOIN
             auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
@@ -211,8 +209,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             auto it = conjuncts_to_replace.find(output);
             if (it != conjuncts_to_replace.end())
             {
-                auto const_column = output->result_type->createColumnConst(0, 1);
-                output = &filter_dag.addColumn(std::move(const_column), output->result_type, output->result_name);
+                output = &filter_dag.addColumn(ColumnWithTypeAndName(
+                    output->result_type->createColumnConst(1, 1),
+                    output->result_type,
+                    output->result_name));
             }
         }
 

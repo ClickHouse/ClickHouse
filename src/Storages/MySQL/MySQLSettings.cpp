@@ -29,11 +29,23 @@ namespace ErrorCodes
     DECLARE(Bool, connection_auto_close, true, "Auto-close connection after query execution, i.e. disable connection reuse.", 0) \
     DECLARE(UInt64, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, "Connect timeout (in seconds)", 0) \
     DECLARE(UInt64, read_write_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "Read/write timeout (in seconds)", 0) \
-    DECLARE(Bool, enable_compression, false, "Enable MySQL protocol compression (MYSQL_OPT_COMPRESS).", 0) \
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', or 'date2String'.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
+DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
+
+struct MySQLSettingsImpl : public BaseSettings<MySQLSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MySQLSettings##TYPE NAME = &MySQLSettingsImpl ::NAME;
+
+namespace MySQLSetting
+{
+LIST_OF_MYSQL_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 MySQLSettings::MySQLSettings() : impl(std::make_unique<MySQLSettingsImpl>())
 {
@@ -43,7 +55,9 @@ MySQLSettings::MySQLSettings(const MySQLSettings & settings) : impl(std::make_un
 {
 }
 
-MySQLSettings::MySQLSettings(MySQLSettings && settings) noexcept = default;
+MySQLSettings::MySQLSettings(MySQLSettings && settings) noexcept : impl(std::make_unique<MySQLSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 MySQLSettings::~MySQLSettings() = default;
 
@@ -85,10 +99,10 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
 
     const Settings & settings = context->getQueryContext()->getSettingsRef();
 
-    if (settings[Setting::mysql_datatypes_support_level].value != (*impl)[MySQLSetting::mysql_datatypes_support_level].value)
+    if (settings[Setting::mysql_datatypes_support_level].value != impl->mysql_datatypes_support_level.value)
     {
         static constexpr auto setting_name = "mysql_datatypes_support_level";
-        (*impl)[MySQLSetting::mysql_datatypes_support_level] = settings[Setting::mysql_datatypes_support_level];
+        impl->mysql_datatypes_support_level = settings[Setting::mysql_datatypes_support_level];
 
         if (!storage_def.settings)
         {

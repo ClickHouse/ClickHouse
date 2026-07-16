@@ -193,16 +193,12 @@ def start_cluster():
     ],
 )
 def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
-    # Clean up data from potential previous runs (pytest-repeat with --count)
-    first_node.query("TRUNCATE TABLE polymorphic_table")
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
-
     first_node.query("SYSTEM STOP MERGES")
     second_node.query("SYSTEM STOP MERGES")
 
     for size in [300, 300, 600]:
         insert_random_data("polymorphic_table", first_node, size)
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
     assert first_node.query("SELECT count() FROM polymorphic_table") == "1200\n"
     assert second_node.query("SELECT count() FROM polymorphic_table") == "1200\n"
@@ -229,14 +225,14 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
         insert_random_data("polymorphic_table", first_node, 10)
         insert_random_data("polymorphic_table", second_node, 10)
 
-    first_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
+    first_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
     assert first_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
     assert second_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
 
     first_node.query("OPTIMIZE TABLE polymorphic_table FINAL")
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
     assert first_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
     assert second_node.query("SELECT count() FROM polymorphic_table") == "2000\n"
@@ -255,10 +251,10 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
     )
 
     # Check alters and mutations also work
-    first_node.query("ALTER TABLE polymorphic_table ADD COLUMN IF NOT EXISTS ss String")
+    first_node.query("ALTER TABLE polymorphic_table ADD COLUMN ss String")
     first_node.query("ALTER TABLE polymorphic_table UPDATE ss = toString(id) WHERE 1")
 
-    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=60)
+    second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
 
     first_node.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
     first_node.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
@@ -269,16 +265,12 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
 
 # Checks mostly that merge from compact part to compact part works.
 def test_compact_parts_only(start_cluster):
-    # Clean up data from potential previous runs (pytest-repeat with --count)
-    node1.query("TRUNCATE TABLE compact_parts_only")
-    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
-
     for i in range(20):
         insert_random_data("compact_parts_only", node1, 100)
         insert_random_data("compact_parts_only", node2, 100)
 
-    node1.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
-    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
+    node1.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
 
     assert node1.query("SELECT count() FROM compact_parts_only") == "4000\n"
     assert node2.query("SELECT count() FROM compact_parts_only") == "4000\n"
@@ -297,7 +289,7 @@ def test_compact_parts_only(start_cluster):
     )
 
     node1.query("OPTIMIZE TABLE compact_parts_only FINAL")
-    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=60)
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
     assert node2.query("SELECT count() FROM compact_parts_only") == "4000\n"
 
     expected = "Compact\t1\n"
@@ -324,10 +316,6 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
     leader = node3
     follower = node4
 
-    # Clean up data from potential previous runs (pytest-repeat with --count)
-    leader.query("TRUNCATE TABLE {}".format(table))
-    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=60)
-
     assert (
         leader.query(
             "SELECT is_leader FROM system.replicas WHERE table = '{}'".format(table)
@@ -351,7 +339,7 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
         silent=True,
     )
 
-    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=60)
+    follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=20)
 
     expected = "{}\t1\n".format(part_type)
 
@@ -432,18 +420,14 @@ def start_cluster_diff_versions():
 
 
 def test_polymorphic_parts_non_adaptive(start_cluster):
-    # Clean up data from potential previous runs (pytest-repeat with --count)
-    node1.query("TRUNCATE TABLE non_adaptive_table")
-    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=60)
-
     node1.query("SYSTEM STOP MERGES")
     node2.query("SYSTEM STOP MERGES")
 
     insert_random_data("non_adaptive_table", node1, 100)
-    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=60)
+    node2.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=20)
 
     insert_random_data("non_adaptive_table", node2, 100)
-    node1.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=60)
+    node1.query("SYSTEM SYNC REPLICA non_adaptive_table", timeout=20)
 
     assert TSV(
         node1.query(
@@ -465,10 +449,9 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query(
-        "CREATE DATABASE IF NOT EXISTS test_index ENGINE=Ordinary",
+        "CREATE DATABASE test_index ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )  # Different paths with Atomic
-    node1.query("DROP TABLE IF EXISTS test_index.index_compact SYNC")
     node1.query(
         """
         CREATE TABLE test_index.index_compact(a UInt32, s String)

@@ -6,13 +6,15 @@ title: 'UNION Clause'
 doc_type: 'reference'
 ---
 
+# UNION Clause
+
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 
 If you don't specify `ALL` or `DISTINCT`, it will depend on the `union_default_mode` setting. The difference between `UNION ALL` and `UNION DISTINCT` is that `UNION DISTINCT` will do a distinct transform for union result, it is equivalent to `SELECT DISTINCT` from a subquery containing `UNION ALL`.
 
 You can use `UNION` to combine any number of `SELECT` queries by extending their results. Example:
 
-```sql title="Query"
+```sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -29,16 +31,20 @@ Result columns are matched by their index (order inside `SELECT`). If column nam
 
 Type casting is performed for unions. For example, if two queries being combined have the same field with non-`Nullable` and `Nullable` types from a compatible type, the resulting `UNION` has a `Nullable` type field.
 
-Queries that are parts of `UNION` can be enclosed in `()`. [ORDER BY](../../../sql-reference/statements/select/order-by.md) and [LIMIT](../../../sql-reference/statements/select/limit.md) are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with `UNION` in a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
+Queries that are parts of `UNION` can be enclosed in round brackets. [ORDER BY](../../../sql-reference/statements/select/order-by.md) and [LIMIT](../../../sql-reference/statements/select/limit.md) are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with `UNION` in a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
 If you use `UNION` without explicitly specifying `UNION ALL` or `UNION DISTINCT`, you can specify the union mode using the [union_default_mode](/operations/settings/settings#union_default_mode) setting. The setting values can be `ALL`, `DISTINCT` or an empty string. However, if you use `UNION` with `union_default_mode` setting to empty string, it will throw an exception. The following examples demonstrate the results of queries with different values setting.
 
-```sql title="Query"
+Query:
+
+```sql
 SET union_default_mode = 'DISTINCT';
 SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─1─┐
 │ 1 │
 └───┘
@@ -50,12 +56,16 @@ SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 └───┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SET union_default_mode = 'ALL';
 SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─1─┐
 │ 1 │
 └───┘

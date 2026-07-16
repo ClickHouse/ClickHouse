@@ -21,7 +21,6 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Poco/String.h>
 
 

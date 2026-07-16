@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -25,17 +24,7 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    size_t getGroupLength() const { return group_length; }
-    size_t getGroupOffset() const { return group_offset; }
-    const Names & getColumns() const { return columns; }
-
-    void applyOrder();
-
-    /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
-    /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
-    /// partition sets so no `LIMIT BY` group spans two streams.
-    void skipStreamMerging() { skip_stream_merging = true; }
-
+    void applyOrder(SortDescription sort_desc);
 private:
     void updateOutputHeader() override
     {
@@ -47,8 +36,7 @@ private:
 
     Names columns;
 
-    bool input_sorted_by_keys = false;
-    bool skip_stream_merging = false;
+    bool in_order = false;
 };
 
 }

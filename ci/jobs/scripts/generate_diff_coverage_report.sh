@@ -22,14 +22,12 @@ fi
 IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
 FOUND=0
-FIRST_BASE_COMMIT=""
 for TEST_COMMIT in "${COMMITS[@]}"; do
 COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
 echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
-FIRST_BASE_COMMIT="${TEST_COMMIT}"
 FOUND=1
 break
 fi
@@ -39,31 +37,6 @@ if [ $FOUND -eq 0 ]; then
   echo "ERROR: Could not find baseline coverage file after checking ${#COMMITS[@]} commits"
   exit 1
 fi
-
-# Look for a second, older master baseline. The newly-covered-code analysis
-# uses it to cross-validate: a line is considered "newly covered by this PR"
-# only if it is uncovered in BOTH master baselines, which filters out the
-# run-to-run variance of the coverage build (typically ~1000 lines flicker
-# between two adjacent master runs). The second baseline is optional — if
-# none is available, the analysis falls back to single-baseline mode and
-# prints a warning.
-SAW_FIRST=0
-for TEST_COMMIT in "${COMMITS[@]}"; do
-  if [ "${TEST_COMMIT}" = "${FIRST_BASE_COMMIT}" ]; then
-    SAW_FIRST=1
-    continue
-  fi
-  if [ ${SAW_FIRST} -eq 0 ]; then
-    continue
-  fi
-  COVERAGE_URL_2="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
-  echo "Checking second baseline coverage for commit ${TEST_COMMIT}..."
-  if wget --spider "${COVERAGE_URL_2}" 2>&1 | grep -q '200 OK'; then
-    echo "Found second baseline at ${COVERAGE_URL_2}"
-    wget --quiet "${COVERAGE_URL_2}" -O base_llvm_coverage_2.info
-    break
-  fi
-done
 
 export CURRENT_COMMIT
 export BASE_COMMIT
@@ -116,11 +89,6 @@ baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
 
 if [ "$current_sf_count" -eq 0 ] && [ "$baseline_sf_count" -eq 0 ]; then
   echo "No coverage data found for changed files (files may be new or not instrumented), skipping differential coverage report"
-  exit 0
-fi
-
-if [ "$current_sf_count" -eq 0 ]; then
-  echo "Current coverage is empty for changed files (tests may have been removed or disabled). Skipping genhtml — LBC analysis will run separately."
   exit 0
 fi
 

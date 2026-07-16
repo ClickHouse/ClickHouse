@@ -5,7 +5,6 @@
 #include <memory>
 #include <span>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/DiskLocal.h>
@@ -38,7 +37,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
 
 
 namespace fs = std::filesystem;
@@ -165,8 +163,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    chassert(!create->isTemporary());
-    create->reset(create->database);
+    assert(!create->isTemporary());
+    create->database.reset();
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -218,7 +216,7 @@ void DatabaseOnDisk::createTable(
     createDirectories();
 
     const auto & create = query->as<ASTCreateQuery &>();
-    chassert(table_name == create.getTable());
+    assert(table_name == create.getTable());
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -243,7 +241,7 @@ void DatabaseOnDisk::createTable(
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
+        assert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
         attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
@@ -599,7 +597,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     auto db_disk = getDisk();
     {
         std::lock_guard lock(mutex);
-        chassert(tables.empty());
+        assert(tables.empty());
     }
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
@@ -662,7 +660,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        chassert(getUUID() == UUIDHelpers::Nil);
+        assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
@@ -849,7 +847,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & table_name, boo
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
 {
-    auto metadata_ptr = storage->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_ptr = storage->getInMemoryMetadataPtr();
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -872,11 +870,10 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         false,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error,
-        getContext());
+        throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadataPtr(getContext(), false)->comment));
+                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }

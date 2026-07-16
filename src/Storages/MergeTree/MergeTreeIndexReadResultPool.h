@@ -18,10 +18,7 @@ struct SkipIndexReadResult
     std::vector<bool> granules_selected; /// granules selected by skip index(es) at read time
     std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_k;
     TopKThresholdTrackerPtr threshold_tracker;
-    /// Pre-computed index granules for indexes created for the whole part.
-    IndexGranulesMap index_granules;
 };
-
 using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 
 class MergeTreeSkipIndexReader
@@ -37,7 +34,7 @@ public:
         MergeTreeReaderSettings reader_settings_,
         LoggerPtr log_);
 
-    SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+    SkipIndexReadResultPtr read(const RangesInDataPart & part);
 
     void cancel() noexcept { is_cancelled = true; }
 
@@ -200,7 +197,7 @@ public:
     /// another thread, waits for its result. Throws if the builder fails.
     ///
     /// This map uses raw pointer of data part as key because it is unique and stable for the lifetime of the part.
-    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.

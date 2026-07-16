@@ -26,7 +26,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-class ExtractKeyValuePairs final : public IFunction
+class ExtractKeyValuePairs : public IFunction
 {
     KeyValuePairExtractorBuilder getBuilder(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
     {

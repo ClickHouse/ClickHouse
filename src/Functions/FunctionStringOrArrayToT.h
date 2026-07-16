@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
-class FunctionStringOrArrayToT final : public IFunction
+class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

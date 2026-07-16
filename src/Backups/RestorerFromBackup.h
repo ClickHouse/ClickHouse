@@ -9,7 +9,6 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 #include <filesystem>
-#include <unordered_set>
 
 
 namespace DB
@@ -122,10 +121,6 @@ private:
 
     std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessRestorerFromBackup> access_restorer TSA_GUARDED_BY(mutex);
-
-    /// Databases skipped during restore because they use external engines
-    /// and restore_replace_external_engines_to_null is set.
-    std::unordered_set<String> skipped_databases TSA_GUARDED_BY(mutex);
 };
 
 }

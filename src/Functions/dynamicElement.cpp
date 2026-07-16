@@ -30,7 +30,7 @@ namespace
 /** Extract element of Dynamic by type name.
   * Also the function looks through Arrays: you can get Array of Dynamic elements from Array of Dynamic.
   */
-class FunctionDynamicElement final : public IFunction
+class FunctionDynamicElement : public IFunction
 {
 public:
     static constexpr auto name = "dynamicElement";

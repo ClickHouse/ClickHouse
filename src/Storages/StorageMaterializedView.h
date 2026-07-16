@@ -5,14 +5,14 @@
 
 #include <Common/QueryScope.h>
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 namespace DB
 {
 
-class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
+class StorageMaterializedView final : public IStorage, WithMutableContext
 {
 public:
     StorageMaterializedView(
@@ -86,9 +86,9 @@ public:
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

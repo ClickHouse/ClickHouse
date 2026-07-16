@@ -140,7 +140,7 @@ ReadBufferFromPocoSocketBase::ReadBufferFromPocoSocketBase(Poco::Net::Socket & s
     read_event = read_event_;
 }
 
-bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds)
+bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
 {
     /// For secure socket it is important to check if any remaining data available in underlying decryption buffer -
     /// read always retrieves the whole encrypted frame from the wire and puts it into underlying buffer while returning only requested size -

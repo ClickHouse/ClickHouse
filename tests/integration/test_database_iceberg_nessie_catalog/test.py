@@ -20,11 +20,11 @@ from pyiceberg.types import (
     TimestampType,
 )
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
+BASE_URL_LOCAL = "http://localhost:19120/iceberg/"
 BASE_URL = "http://nessie:19120/iceberg/"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "warehouse"
@@ -76,7 +76,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "warehouse", 
-        "storage_endpoint": "http://minio1:9001/warehouse-rest",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
     }
 
     settings.update(additional_settings)
@@ -94,17 +94,14 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
-def get_nessie_local_url(cluster):
-    return f"http://localhost:{cluster.iceberg_rest_catalog_port}/iceberg/"
-
-
 def load_catalog_impl(started_cluster):
-    s3_endpoint = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+    minio_ip = started_cluster.get_instance_ip('minio')
+    s3_endpoint = f"http://{minio_ip}:9002"
 
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=get_nessie_local_url(started_cluster),
+        uri=BASE_URL_LOCAL,
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -285,37 +282,25 @@ def test_hide_sensitive_info(started_cluster):
         properties={"write.metadata.compression-codec": "none"},
     )
 
-    def check_secret_hidden(secret, additional_settings):
-        settings = {
-            "catalog_type": "rest",
-            "warehouse": "warehouse",
-            "storage_endpoint": "http://minio1:9001/warehouse-rest",
-        }
-        settings.update(additional_settings)
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"catalog_credential": "SECRET_1"},
+    )
+    show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+    assert "SECRET_1" not in show_result
+    assert minio_secret_key not in show_result
 
-        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
-        try:
-            node.query(
-                f"""SET allow_experimental_database_iceberg=true;
-CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
-SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
-            )
-        except QueryRuntimeException as e:
-            message = str(e).split("\n(query:")[0]
-            assert secret not in message, (
-                f"Secret {secret!r} leaked into CREATE DATABASE error message"
-            )
-            assert minio_secret_key not in message, (
-                f"minio secret key leaked into CREATE DATABASE error message"
-            )
-            return
-
-        show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-        assert secret not in show_result
-        assert minio_secret_key not in show_result
-
-    check_secret_hidden("SECRET_1", {"catalog_credential": "id:SECRET_1"})
-    check_secret_hidden("SECRET_2", {"auth_header": "Authorization: SECRET_2"})
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
+    )
+    show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+    assert "SECRET_2" not in show_result
+    assert minio_secret_key not in show_result
 
 def test_tables_with_same_location(started_cluster):
     node = started_cluster.instances["node1"]
@@ -367,7 +352,7 @@ def test_backup_database(started_cluster):
     node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
-        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio1:9001/warehouse-rest\\'\n"
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
     )
 
 def test_timestamps(started_cluster):
@@ -419,7 +404,7 @@ def test_timestamps(started_cluster):
         extracted_table_path = table_location.split("warehouse-rest/")[1]
 
     result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`")
-    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 def test_insert(started_cluster):

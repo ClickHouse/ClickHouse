@@ -63,7 +63,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
-    options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    options.withVirtuals();
     options.withSubcolumns();
 
     auto columns_list = storage_snapshot->getColumns(options);
@@ -335,6 +335,17 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
         cond.columns_size = getColumnsSize(cond.table_columns);
 
+        /// Resolve each column to its physical storage name so that subcolumns
+        /// of the same column (e.g. `map.key_k0`, `map.key_k1`) share one group.
+        const auto & storage_columns_description = storage_metadata->getColumns();
+        for (const auto & col : cond.table_columns)
+        {
+            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col))
+                cond.table_storage_columns.insert(resolved->getNameInStorage());
+            else
+                cond.table_storage_columns.insert(col);
+        }
+
         cond.viable =
             !has_invalid_column
             /// Condition depend on some column. Constant expressions are not moved.
@@ -459,23 +470,26 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             /// Keep the original order of conditions in prewhere_conditions.
             position = condition_positions[&(*cond_it)];
             auto prewhere_it = prewhere_conditions.begin();
-            while (prewhere_it != prewhere_conditions.end() && condition_positions[&(*prewhere_it)] < position)
+            while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
                 ++prewhere_it;
             prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
         }
     };
 
-    /// Move condition and all other conditions depend on the same set of columns.
+    /// Move condition and all other conditions that depend on the same set of physical storage columns.
+    /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
+    /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
+    /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
         move_to_prewhere_conditions(cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
 
-        /// Move all other viable conditions that depend on the same set of columns.
+        /// Move all other viable conditions that depend on the same set of storage columns.
         for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
         {
-            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
+            if (jt->viable && jt->table_storage_columns == cond_it->table_storage_columns)
             {
                 move_to_prewhere_conditions(jt++);
             }
