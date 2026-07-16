@@ -480,11 +480,16 @@ def main():
     args = parse_args()
     info = Info()
 
-    version_dict = None
+    version = None
     if not info.is_local_run:
-        version_dict = info.get_kv_data("version")
-    if not version_dict:
-        version_dict = CHVersion.get_current_version_as_dict()
+        version = CHVersion.get_current_version_from_ci_pipeline()
+    if not version:
+        # Repo-read fallback: the merge-queue workflow runs no version_log hook,
+        # so KV storage is empty and this is the only path. The checkout is
+        # shallow there, so the tweak cannot be counted from git history -- read
+        # non-strict and let it degrade to the placeholder tweak instead of
+        # raising, matching the pre-refactor behavior.
+        version = CHVersion.get_current_version(no_strict=True)
         if not info.is_local_run:
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
@@ -492,7 +497,7 @@ def main():
             info.add_workflow_warning(
                 "ClickHouse version has not been found in workflow kv storage"
             )
-    assert version_dict
+    assert version
 
     if not info.is_local_run:
         assert not args.image_path and not args.image_repo
@@ -521,7 +526,7 @@ def main():
         push = True
 
     image = DockerImageData(image_repo, image_path)
-    tags = gen_tags(version_dict["string"], args.tag_type)
+    tags = gen_tags(version.string, args.tag_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
 
@@ -577,7 +582,7 @@ def main():
                     repo_urls,
                     os_,
                     tag,
-                    version_dict["describe"],
+                    version.describe,
                     direct_urls,
                     run_url=info.run_url,
                     sha=info.sha,

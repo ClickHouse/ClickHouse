@@ -1,0 +1,92 @@
+---
+slug: /use-cases/AI/MCP/janai
+sidebarTitle: 'دمج Jan.ai'
+title: 'استخدام خادم ClickHouse MCP مع Jan.ai'
+description: 'يشرح هذا الدليل كيفية إعداد Jan.ai مع خادم ClickHouse MCP.'
+keywords: ['AI', 'Jan.ai', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+> يشرح هذا الدليل كيفية استخدام خادم ClickHouse MCP مع [Jan.ai](https://jan.ai/docs).
+
+<Steps>
+  <Step>
+    ## تثبيت Jan.ai
+
+    Jan.ai هو بديل مفتوح المصدر لـ ChatGPT ويعمل بالكامل دون اتصال بالإنترنت.
+    يمكنك تنزيل Jan.ai لأجهزة [Mac](https://jan.ai/docs/desktop/mac) أو [Windows](https://jan.ai/docs/desktop/windows) أو [Linux](https://jan.ai/docs/desktop/linux).
+
+    وهو تطبيق أصلي، لذا يمكنك تشغيله بمجرد اكتمال تنزيله.
+  </Step>
+
+  <Step>
+    ## إضافة LLM إلى Jan.ai
+
+    يمكننا تمكين النماذج من خلال قائمة الإعدادات.
+
+    لتمكين OpenAI، نحتاج إلى تقديم مفتاح API، كما هو موضح أدناه:
+
+    <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="تمكين نماذج OpenAI" size="md" />
+  </Step>
+
+  <Step>
+    ## تمكين خوادم MCP
+
+    وقت كتابة هذا الدليل، كانت خوادم MCP ميزة تجريبية في Jan.ai.
+    ويمكننا تمكينها عبر تفعيل الميزات التجريبية:
+
+    <Image img="/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp" alt="تمكين خوادم MCP" size="md" />
+
+    بمجرد الضغط على مفتاح التبديل هذا، سنرى `MCP servers` في القائمة اليسرى.
+  </Step>
+
+  <Step>
+    ## تهيئة خادم ClickHouse MCP
+
+    إذا نقرنا على قائمة `MCP servers`، فسنرى قائمة بخوادم MCP التي يمكننا الاتصال بها:
+
+    <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="قائمة خوادم MCP" size="md" />
+
+    جميع هذه الخوادم تكون معطّلة افتراضيًا، لكن يمكننا تمكينها بالنقر على مفتاح التبديل.
+
+    لتثبيت خادم ClickHouse MCP، نحتاج إلى النقر على الرمز `+` ثم ملء النموذج بما يلي:
+
+    <Image img="/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp" alt="إضافة خادم MCP" size="md" />
+
+    بعد إكمال ذلك، سنحتاج إلى تفعيل ClickHouse Server إذا لم يكن مفعّلًا بالفعل:
+
+    <Image img="/images/use-cases/AI_ML/MCP/4_janai_toggle.webp" alt="تمكين خادم MCP" size="md" />
+
+    ستظهر الآن أدوات خادم ClickHouse MCP في نافذة الدردشة:
+
+    <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="أدوات خادم ClickHouse MCP" size="md" />
+  </Step>
+
+  <Step>
+    ## التحدث إلى خادم ClickHouse MCP باستخدام Jan.ai
+
+    حان الوقت لبدء محادثة حول بعض البيانات المخزنة في ClickHouse!
+    لنطرح سؤالًا:
+
+    <Image img="/images/use-cases/AI_ML/MCP/6_janai_question.webp" alt="سؤال" size="md" />
+
+    سيطلب Jan.ai تأكيدًا قبل استدعاء أداة:
+
+    <Image img="/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp" alt="تأكيد الأداة" size="md" />
+
+    ثم سيعرض لنا قائمة باستدعاءات الأدوات التي تم تنفيذها:
+
+    <Image img="/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp" alt="الأدوات التي تم استدعاؤها" size="md" />
+
+    وإذا نقرنا على استدعاء الأداة، يمكننا رؤية تفاصيله:
+
+    <Image img="/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp" alt="الأدوات التي تم استدعاؤها موسعة" size="md" />
+
+    ثم سنرى النتيجة في الأسفل:
+
+    <Image img="/images/use-cases/AI_ML/MCP/10_janai_result.webp" alt="النتيجة" size="md" />
+  </Step>
+</Steps>

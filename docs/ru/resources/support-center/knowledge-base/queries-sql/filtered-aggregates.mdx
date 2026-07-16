@@ -1,0 +1,57 @@
+---
+title: Использование фильтрующих агрегатов в ClickHouse
+description: Узнайте, как применять фильтрующие агрегаты в ClickHouse с помощью агрегатных комбинаторов `-If` и `-Distinct`, чтобы упростить синтаксис запросов и расширить аналитические возможности.
+date: 2023-03-01
+tags: ['Функции']
+keywords: ['Фильтрующие агрегаты']
+---
+
+{frontMatter.description}
+
+{{/* truncate */}}
+
+<div id="using-filtered-aggregates">
+  ## Использование фильтрующих агрегатов
+</div>
+
+ClickHouse предоставляет простой и понятный способ задавать *фильтрующие агрегаты*.
+
+Например, сравните стандартный SQL-способ записи фильтрующих агрегатов (который отлично работает в ClickHouse) с сокращённым синтаксисом с использованием комбинатора агрегатных функций `-If` [комбинатор агрегатных функций](/ru/reference/functions/aggregate-functions/combinators), который можно добавить к любой агрегатной функции:
+
+```sql
+--стандартный SQL
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--ClickHouse с использованием комбинатора агрегатных функций
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+Аналогично, существует агрегатный комбинатор `-Distinct`:
+
+```sql
+--стандартный SQL
+SELECT avg(DISTINCT number)
+
+--ClickHouse с использованием комбинатора агрегатных функций
+SELECT avgDistinct(number)
+```
+
+Почему фильтрующие агрегаты важны? Потому что они позволяют реализовать возможность **&quot;сравнения сегментов&quot;** в сервисах веб-аналитики.
+Например:
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+Подробнее см. на странице [комбинатор агрегатных функций](/ru/reference/functions/aggregate-functions/combinators) в документации.

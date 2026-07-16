@@ -25,6 +25,7 @@ namespace DB
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
     M(BACKUP_COLLECTOR, "BackupCollect") \
@@ -39,7 +40,6 @@ namespace DB
     M(CONFIG_RELOADER, "ConfigReloader") \
     M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
-    M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
@@ -80,6 +80,7 @@ namespace DB
     M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \
     M(KEEPER_TTL_GARBAGE_COLLECTOR, "KeeperTTLGC") \
+    M(KEEPER_CONTAINER_GARBAGE_COLLECTOR, "KeeperCntrGC") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
@@ -129,6 +130,7 @@ namespace DB
     M(PUSHING_ASYNC_EXECUTOR, "QueryPushPipeEx") \
     M(PRETTY_WRITER, "PrettyWriter") \
     M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
+    M(QUERY_RUNNER, "QueryRunner") \
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \

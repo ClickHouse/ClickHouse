@@ -1,0 +1,131 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/claude-agent-sdk
+sidebarTitle: 'Integrar o Claude Agent SDK'
+title: 'Como criar um agente de IA com Claude Agent SDK e o servidor MCP do ClickHouse'
+description: 'Aprenda a criar um agente de IA com Claude Agent SDK e o servidor MCP do ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Claude']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Neste guia, você aprenderá a criar um agente de IA com o [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) que pode interagir com
+[o playground SQL do ClickHouse](https://sql.clickhouse.com/) usando o [servidor MCP do ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Notebook de exemplo**
+
+  Este exemplo está disponível como um notebook no [repositório de exemplos](https://github.com/ClickHouse/examples/blob/main/ai/mcp/claude-agent/claude-agent.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Você precisará ter o Python instalado no sistema.
+* Você precisará ter o `pip` instalado no sistema.
+* Você precisará de uma chave de API da Anthropic
+
+Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
+
+<Steps>
+  <Step>
+    ## Instalar bibliotecas
+
+    Instale a biblioteca Claude Agent SDK executando os seguintes comandos:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q claude-agent-sdk
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## Configurar credenciais
+
+    Em seguida, você precisará fornecer sua chave de API da Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Resposta"
+    Enter Anthropic API Key: ········
+    ```
+
+    Em seguida, defina as credenciais necessárias para se conectar ao playground SQL do ClickHouse:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## Inicializar o servidor MCP e o agente do Claude Agent SDK
+
+    Agora, configure o servidor MCP do ClickHouse para apontar para o playground SQL do ClickHouse
+    e também inicialize nosso agente e faça uma pergunta a ele:
+
+    ```python
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, UserMessage, TextBlock, ToolUseBlock
+    ```
+
+    ```python
+    options = ClaudeAgentOptions(
+        allowed_tools=[
+            "mcp__mcp-clickhouse__list_databases",
+            "mcp__mcp-clickhouse__list_tables", 
+            "mcp__mcp-clickhouse__run_select_query",
+            "mcp__mcp-clickhouse__run_chdb_select_query"
+        ],
+        mcp_servers={
+            "mcp-clickhouse": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--with", "mcp-clickhouse",
+                    "--python", "3.10",
+                    "mcp-clickhouse"
+                ],
+                "env": env
+            }
+        }
+    )
+
+    async for message in query(prompt="Tell me something interesting about UK property sales", options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(f"🤖 {block.text}")
+                if isinstance(block, ToolUseBlock):
+                    print(f"🛠️ {block.name} {block.input}")
+        elif isinstance(message, UserMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(block.text)
+    ```
+
+    Observe que o código dentro do bloco `for` filtra a saída por questão de brevidade.
+
+    ```response title="Resposta"
+    🤖 Vou consultar o banco de dados ClickHouse para encontrar algo interessante sobre vendas de imóveis no Reino Unido.
+
+    Primeiro, vou ver quais bancos de dados estão disponíveis:
+    🛠️ mcp__mcp-clickhouse__list_databases {}
+    🤖 Ótimo! Há um banco de dados "uk". Agora, vou ver quais tabelas estão disponíveis:
+    🛠️ mcp__mcp-clickhouse__list_tables {'database': 'uk'}
+    🤖 Perfeito! A tabela `uk_price_paid` tem mais de 30 milhões de registros de vendas de imóveis. Vou encontrar algo interessante:
+    🛠️ mcp__mcp-clickhouse__run_select_query {'query': "\nSELECT \n    street,\n    town,\n    max(price) as max_price,\n    min(price) as min_price,\n    max(price) - min(price) as price_difference,\n    count() as sales_count\nFROM uk.uk_price_paid\nWHERE street != ''\nGROUP BY street, town\nHAVING sales_count > 100\nORDER BY price_difference DESC\nLIMIT 1\n"}
+    🤖 Aqui vai algo fascinante: **Baker Street, em Londres** (sim, a famosa rua de Sherlock Holmes!) tem a maior variação de preços entre todas as ruas com mais de 100 vendas — imóveis foram vendidos por apenas **£2,500** e por até **£594.3 million**, uma diferença impressionante de mais de £594 milhões!
+
+    Isso faz sentido, já que Baker Street é um dos endereços mais prestigiados de Londres, passando por áreas nobres como Marylebone, e teve 541 vendas registradas neste conjunto de dados.
+    ```
+  </Step>
+</Steps>

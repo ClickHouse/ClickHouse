@@ -1,0 +1,1118 @@
+---
+description: 'highlight-next-line 文档'
+sidebarTitle: '用于存储数据的外部磁盘'
+slug: /operations/storing-data
+title: '用于存储数据的外部磁盘'
+doc_type: 'guide'
+---
+
+ClickHouse 处理的数据通常存储在运行 ClickHouse server 的机器的本地文件系统中。这需要大容量磁盘，成本可能较高。为了避免将数据存储在本地，支持以下几种存储选项：
+
+1. [Amazon S3](https://aws.amazon.com/s3/) 对象存储。
+2. [Azure Blob 存储](https://azure.microsoft.com/en-us/products/storage/blobs)。
+3. 不支持：Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
+
+<br />
+
+<Note>
+  ClickHouse 还支持外部表引擎，它们与本页介绍的外部存储选项不同，因为前者允许读取以通用文件格式 (如 Parquet) 存储的数据。本页介绍的是 ClickHouse `MergeTree` 家族或 `Log` 家族表的存储配置。
+
+  1. 如需处理存储在 `Amazon S3` 磁盘上的数据，请使用 [S3](/zh/reference/engines/table-engines/integrations/s3) 表引擎。
+  2. 如需处理存储在 Azure Blob 存储中的数据，请使用 [AzureBlobStorage](/zh/reference/engines/table-engines/integrations/azureBlobStorage) 表引擎。
+  3. 如需处理 Hadoop Distributed File System (不支持) 中的数据，请使用 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 表引擎。
+</Note>
+
+<div id="configuring-external-storage">
+  ## 配置外部存储
+</div>
+
+[`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 和 [`Log`](/zh/reference/engines/table-engines/log-family/log)
+家族的表引擎可分别通过类型为 `s3`、`azure_blob_storage`、`hdfs` (不支持) 的磁盘，将数据存储到 `S3`、`AzureBlobStorage`、`HDFS` (不支持) 中。
+
+磁盘配置需要：
+
+1. 一个 `type` 配置项，其值必须是 `s3`、`azure_blob_storage`、`hdfs` (不支持) 、`local_blob_storage`、`web` 之一。
+2. 针对具体外部存储类型的配置。
+
+从 ClickHouse 24.1 版本开始，可以使用新的配置选项。
+这需要指定：
+
+1. 值为 `object_storage` 的 `type`
+2. `object_storage_type`，其值必须是 `s3`、`azure_blob_storage` (或从 `24.3` 起简写为 `azure`) 、`hdfs` (不支持) 、`local_blob_storage` (或从 `24.3` 起简写为 `local`) 、`web` 之一。
+
+<br />
+
+此外，还可以指定 `metadata_type` (默认值为 `local`) ，也可将其设置为 `plain`、`web`，以及从 `24.4` 开始支持的 `plain_rewritable`。
+`plain` 元数据类型的用法见[plain storage 部分](/zh/concepts/features/configuration/server-config/storing-data#plain-storage)；`web` 元数据类型只能与 `web` 对象存储类型一起使用；`local` 元数据类型会将元数据文件存储在本地 (每个元数据文件都包含对象存储中文件的映射，以及与这些文件相关的一些附加元信息) 。
+
+例如：
+
+```xml
+<s3>
+    <type>s3</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+等同于以下配置 (从版本 `24.1` 开始) ：
+
+```xml
+<s3>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>local</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+如下配置：
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+等于：
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+完整的存储配置示例如下：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+从 24.1 版本开始，其形式也可以如下：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+要将某种特定的存储设为所有 `MergeTree` 表的默认选项，
+请在配置文件中添加以下部分：
+
+```xml
+<clickhouse>
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+</clickhouse>
+```
+
+如果你想为特定表配置特定的存储策略，
+可以在创建该表时在 settings 中进行定义：
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS storage_policy = 's3';
+```
+
+你也可以用 `disk` 替代 `storage_policy`。在这种情况下，
+配置文件中无需包含 `storage_policy` 部分，只需有一个 `disk`
+部分即可。
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = 's3';
+```
+
+<div id="refresh-parts-interval-and-table-disk">
+  ## refresh_parts_interval 和 table_disk
+</div>
+
+此设置适用于非 Replicated 的 MergeTree 表。在这类表中，parts 可能由外部写入，因此需要从存储中刷新元数据以重新发现这些 parts。
+
+MergeTree 设置 `refresh_parts_interval` 可定期从底层存储刷新数据分区片段列表 (例如发现外部写入的 parts) 。这里的关键区别在于**跨副本共享元数据**与**副本本地元数据** (例如每个副本各自维护本地元数据的 S3) ：只有在元数据共享时，新的 parts 才会对所有副本可见。仅使用对象存储本身并不意味着元数据是共享的。
+
+* **对象存储 (例如 `disk = 's3'`) 并不意味着元数据是共享的。** 当元数据默认按副本存储在本地时，每个副本都会独立管理自己指向对象存储中 blob 的指针。在一个副本上所做的更改，对其他副本不可见。在这种情况下，`refresh_parts_interval` 不会让新的 parts 在副本之间变得可见，因为每个副本读取的都是各自的本地元数据。
+
+* **自动刷新 parts 要求 filesystem 元数据是共享的** (或者表使用表自有的只读元数据，从而能够进行刷新) 。将 `table_disk = true` 与表本地磁盘一起使用 (例如 `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) 是获得正确语义的一种方式：表负责元数据的生命周期管理，存储会被视为只读，因此会执行 `refresh_parts_interval`，并且能够发现外部新增的 parts。
+
+* **使用全局定义的磁盘时** (例如在 `storage_configuration` 中设置 `disk = 's3'`) ，如果采用默认的本地元数据，则每个副本都有自己的元数据状态。即使 blob 可能位于 S3 中，就 `refresh_parts_interval` 而言，该存储也不被视为共享存储，因此在 ClickHouse 外部或在另一个副本上创建的新的 parts 都不会被检测到。
+
+若要自动刷新 parts，请确保元数据是共享的，或按上述方式使用带有 `table_disk = true` 的表级磁盘。如果在元数据为副本本地的情况下仅依赖 `refresh_parts_interval`，则 parts 不会按预期刷新。
+
+<Note>
+  `refresh_parts_interval` 不用于 ReplicatedMergeTree 表。
+  复制表已经通过复制机制同步 parts。
+  此设置仅适用于 parts 由外部写入且需要刷新元数据的非复制表 MergeTree 表。
+</Note>
+
+<div id="dynamic-configuration">
+  ## 动态配置
+</div>
+
+也可以在配置文件中不预先定义磁盘，直接指定存储配置，而是在 `CREATE`/`ATTACH` 查询设置中进行配置。
+
+以下示例查询基于上述动态磁盘配置，展示了如何使用本地磁盘缓存存储在 URL 上的表数据。
+
+```sql highlight={20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=web,
+    endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+  );
+```
+
+下面的示例将为外部存储添加缓存。
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+在下方高亮显示的设置中，请注意，`type=web` 的磁盘嵌套在
+`type=cache` 的磁盘内。
+
+<Note>
+  此示例使用了 `type=web`，但任何磁盘类型都可以配置为动态磁盘，
+  包括本地磁盘。本地磁盘要求其 path 参数位于
+  server 配置参数 `custom_local_disks_base_directory` 中。该参数没有
+  默认值，因此使用本地磁盘时也需要设置它。
+</Note>
+
+也可以将基于配置文件的配置与通过 SQL 定义的配置结合使用：
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+其中，`web` 来自服务端配置文件：
+
+```xml
+<storage_configuration>
+    <disks>
+        <web>
+            <type>web</type>
+            <endpoint>'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'</endpoint>
+        </web>
+    </disks>
+</storage_configuration>
+```
+
+<div id="s3-storage">
+  ### 使用 S3 存储
+</div>
+
+<div id="required-parameters-s3">
+  #### 必需参数
+</div>
+
+| 参数                  | 说明                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`          | 采用 `path` 或 `virtual hosted` [样式](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html) 的 S3 端点 URL。应包含存储数据所用的存储桶和根路径。 |
+| `access_key_id`     | 用于身份验证的 S3 访问密钥 ID。                                                                                                                   |
+| `secret_access_key` | 用于身份验证的 S3 私密访问密钥。                                                                                                                    |
+
+<div id="optional-parameters-s3">
+  #### 可选参数
+</div>
+
+| Parameter                                       | Description                                                                                                                                                                        | Default Value                            |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `region`                                        | S3 区域名称。                                                                                                                                                                           | -                                        |
+| `support_batch_delete`                          | 控制是否检查对批量删除的支持。使用 Google Cloud Storage (GCS) 时，请将其设为 `false`，因为 GCS 不支持批量删除。                                                                                                       | `true`                                   |
+| `use_environment_credentials`                   | 如果存在，则从环境变量 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `AWS_SESSION_TOKEN` 中读取 AWS 凭证。注意：环境凭证会在所有 S3 磁盘之间共享。若要为不同磁盘使用不同的凭证，请改为为每个磁盘显式指定 `access_key_id` 和 `secret_access_key`。  | `false`                                  |
+| `use_insecure_imds_request`                     | 如果为 `true`，则在从 Amazon EC2 元数据获取凭证时使用不安全的 IMDS 请求。                                                                                                                                  | `false`                                  |
+| `expiration_window_seconds`                     | 检查基于过期时间的凭证是否已过期时使用的宽限期 (秒) 。                                                                                                                                                      | `120`                                    |
+| `proxy`                                         | S3 端点的代理配置。`proxy` 块中的每个 `uri` 元素都应包含一个代理 URL。                                                                                                                                     | -                                        |
+| `connect_timeout_ms`                            | 套接字连接超时时间 (毫秒) 。                                                                                                                                                                   | `10000` (10 秒)                           |
+| `request_timeout_ms`                            | 请求超时时间 (毫秒) 。                                                                                                                                                                      | `5000` (5 秒)                             |
+| `retry_attempts`                                | 失败请求的重试次数。                                                                                                                                                                         | `10`                                     |
+| `single_read_retries`                           | 读取过程中连接中断时的重试次数。                                                                                                                                                                   | `4`                                      |
+| `min_bytes_for_seek`                            | 使用寻道操作而不是顺序读取时的最小字节数。                                                                                                                                                              | `1 MB`                                   |
+| `metadata_path`                                 | 用于存储 S3 元数据文件的本地文件系统路径。                                                                                                                                                            | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`                             | 如果为 `true`，则在启动期间跳过磁盘访问检查。                                                                                                                                                         | `false`                                  |
+| `header`                                        | 向请求中添加指定的 HTTP 请求头。可多次指定。                                                                                                                                                          | -                                        |
+| `server_side_encryption_customer_key_base64`    | 访问使用 SSE-C 加密的 S3 对象所需的请求头。                                                                                                                                                        | -                                        |
+| `server_side_encryption_kms_key_id`             | 访问使用 [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) 的 S3 对象所需的请求头。空字符串表示使用 AWS 托管的 S3 密钥。                                     | -                                        |
+| `server_side_encryption_kms_encryption_context` | SSE-KMS 的加密上下文请求头 (与 `server_side_encryption_kms_key_id` 一起使用) 。                                                                                                                   | -                                        |
+| `server_side_encryption_kms_bucket_key_enabled` | 为 SSE-KMS 启用 S3 bucket key (与 `server_side_encryption_kms_key_id` 一起使用) 。                                                                                                          | 与 bucket 级设置一致                           |
+| `s3_max_put_rps`                                | 开始限流前每秒允许的最大 PUT 请求数。                                                                                                                                                              | `0` (无限制)                                |
+| `s3_max_put_burst`                              | 达到 RPS 限制前允许的最大并发 PUT 请求数。                                                                                                                                                         | 与 `s3_max_put_rps` 相同                    |
+| `s3_max_get_rps`                                | 开始限流前每秒允许的最大 GET 请求数。                                                                                                                                                              | `0` (无限制)                                |
+| `s3_max_get_burst`                              | 达到 RPS 限制前允许的最大并发 GET 请求数。                                                                                                                                                         | 与 `s3_max_get_rps` 相同                    |
+| `read_resource`                                 | [调度](/zh/concepts/features/configuration/server-config/workload-scheduling)读取请求使用的资源名称。                                                                                               | 空字符串 (已禁用)                               |
+| `write_resource`                                | [调度](/zh/concepts/features/configuration/server-config/workload-scheduling)写入请求使用的资源名称。                                                                                               | 空字符串 (已禁用)                               |
+| `key_template`                                  | 使用 [re2](https://github.com/google/re2/wiki/Syntax) 语法定义对象键的生成格式。要求启用 `storage_metadata_write_full_object_key` 标志。与 `endpoint` 中的 `root path` 不兼容。需要指定 `key_compatibility_prefix`。 | -                                        |
+| `key_compatibility_prefix`                      | 与 `key_template` 配合使用时必需。用于指定 `endpoint` 中先前的 `root path`，以便读取旧版本元数据。                                                                                                              | -                                        |
+| `read_only`                                     | 仅允许从该磁盘读取。                                                                                                                                                                         | -                                        |
+
+<Note>
+  也支持通过 `s3` 类型使用 Google Cloud Storage (GCS)。请参阅[基于 GCS 的 MergeTree](/zh/integrations/connectors/data-sources/gcs)。
+</Note>
+
+<div id="plain-storage">
+  ### 使用 Plain Storage
+</div>
+
+在 `22.10` 版本中，引入了一种新的磁盘类型 `s3_plain`，可提供一次写入型存储。
+它的配置参数与 `s3` 磁盘类型相同。
+与 `s3` 磁盘类型不同，它会原样存储数据。换句话说，
+它不会使用随机生成的 blob 名称，而是使用普通文件名
+(与 ClickHouse 在本地磁盘上存储文件的方式相同) ，并且不会在本地存储任何
+元数据。例如，这些元数据可根据 `s3` 上的数据推导出来。
+
+这种磁盘类型可用于保留表的静态版本，因为它不允许
+对现有数据执行 merge，也不允许插入新
+数据。该磁盘类型的一个典型用法是基于它创建 backups，这可以通过
+`BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')` 来完成。之后，
+你可以执行 `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')`
+或使用 `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`。
+
+配置：
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+从 `24.1` 起，可以使用
+`plain` 元数据类型配置任何对象存储磁盘 (`s3`、`azure`、`hdfs` (不支持) 、`local`) 。
+
+配置：
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>azure</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+<div id="s3-plain-rewritable-storage">
+  ### 使用 S3 Plain Rewritable 存储
+</div>
+
+`24.4` 中引入了一种新的磁盘类型 `s3_plain_rewritable`。
+与 `s3_plain` 磁盘类型类似，它不需要额外的存储空间来保存
+元数据文件，而是将元数据存储在 S3 中。
+不同于 `s3_plain` 磁盘类型，`s3_plain_rewritable` 允许执行合并，
+并支持 `INSERT` 操作。
+不支持[变更](/zh/reference/statements/alter/index#mutations)和表的复制。
+
+这种磁盘类型的一个适用场景是非复制的 `MergeTree` 表。虽然
+`s3` 磁盘类型也适用于非复制的 `MergeTree` 表，但如果你不需要该表的本地元数据，
+并且可以接受受限的操作集，则可以选择
+`s3_plain_rewritable` 磁盘类型。例如，它对
+系统表就可能很有用。
+
+配置：
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+等于
+
+```xml
+<s3_plain_rewritable>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain_rewritable</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+自 `24.5` 起，可以使用 `plain_rewritable` 元数据类型来配置任何对象存储磁盘
+(`s3`、`azure`、`local`) 。
+
+<div id="azure-blob-storage">
+  ### 使用 Azure Blob 存储
+</div>
+
+`MergeTree` 家族表引擎可使用类型为 `azure_blob_storage` 的磁盘将数据存储到 [Azure Blob 存储](https://azure.microsoft.com/en-us/services/storage/blobs/) 中。
+
+配置示例：
+
+```xml
+<storage_configuration>
+    ...
+    <disks>
+        <blob_storage_disk>
+            <type>azure_blob_storage</type>
+            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+            <container_name>container</container_name>
+            <account_name>account</account_name>
+            <account_key>pass123</account_key>
+            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </blob_storage_disk>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+<div id="azure-blob-storage-connection-parameters">
+  #### 连接参数
+</div>
+
+| 参数                          | 描述                                                                                                        | 默认值                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------- |
+| `storage_account_url` (必填)  | Azure Blob 存储账户 URL。示例：`http://account.blob.core.windows.net` 或 `http://azurite1:10000/devstoreaccount1`。 | -                   |
+| `container_name`            | 目标容器名称。                                                                                                   | `default-container` |
+| `container_already_exists`  | 控制容器创建行为：<br />- `false`：创建新容器 <br />- `true`：直接连接到现有容器 <br />- 未设置：检查容器是否存在，并在需要时创建                      | -                   |
+
+身份验证参数 (磁盘会尝试所有可用方法**以及** Managed Identity Credential) ：
+
+| 参数                  | 描述                                               |
+| ------------------- | ------------------------------------------------ |
+| `connection_string` | 用于通过连接字符串进行身份验证。                                 |
+| `account_name`      | 用于通过 Shared Key 进行身份验证 (与 `account_key` 配合使用) 。  |
+| `account_key`       | 用于通过 Shared Key 进行身份验证 (与 `account_name` 配合使用) 。 |
+
+<div id="azure-blob-storage-limit-parameters">
+  #### 限制参数
+</div>
+
+| 参数                                   | 描述                             |
+| ------------------------------------ | ------------------------------ |
+| `s3_max_single_part_upload_size`     | 上传到 Blob Storage 的单个块的最大大小。    |
+| `min_bytes_for_seek`                 | 可寻道区域的最小大小。                    |
+| `max_single_read_retries`            | 从 Blob Storage 读取一个数据块的最大重试次数。 |
+| `max_single_download_retries`        | 从 Blob Storage 下载可读缓冲区的最大重试次数。 |
+| `thread_pool_size`                   | 用于实例化 `IDiskRemote` 的最大线程数。    |
+| `s3_max_inflight_parts_for_one_file` | 单个对象的并发 PUT 请求最大数量。            |
+
+<div id="azure-blob-storage-other-parameters">
+  #### 其他参数
+</div>
+
+| Parameter                        | Description                                                                          | Default Value                            |
+| -------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `metadata_path`                  | 用于存储 Blob Storage 元数据文件的本地文件系统路径。                                                    | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | 如果为 `true`，则在启动时跳过磁盘访问检查。                                                            | `false`                                  |
+| `read_resource`                  | 用于[调度](/zh/concepts/features/configuration/server-config/workload-scheduling)读取请求的资源名称。 | 空字符串 (已禁用)                               |
+| `write_resource`                 | 用于[调度](/zh/concepts/features/configuration/server-config/workload-scheduling)写入请求的资源名称。 | 空字符串 (已禁用)                               |
+| `metadata_keep_free_space_bytes` | 为元数据磁盘预留的可用空间大小。                                                                     | -                                        |
+
+可在集成测试目录中找到可用的配置示例 (例如，[test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) 或 [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)) 。
+
+<Info>
+  **零拷贝复制尚不能用于生产环境**
+
+  在 ClickHouse 22.8 及更高版本中，零拷贝复制默认处于禁用状态。不建议在生产环境中使用此功能。
+</Info>
+
+<div id="using-hdfs-storage-unsupported">
+  ## 使用 HDFS 存储 (不支持)
+</div>
+
+在此示例配置中：
+
+* 磁盘类型为 `hdfs` (不支持)
+* 数据存储在 `hdfs://hdfs1:9000/clickhouse/`
+
+顺便说明一下，HDFS 目前不受支持，因此使用时可能会遇到一些问题。如果出现任何问题，欢迎提交修复的拉取请求。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+请注意，HDFS 在某些特殊情况下可能无法正常工作。
+
+<div id="encrypted-virtual-file-system">
+  ### 使用数据加密
+</div>
+
+你可以对存储在 [S3](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)、[HDFS](#using-hdfs-storage-unsupported) (不受支持) 的外部磁盘或本地磁盘上的数据进行加密。要启用加密模式，必须在配置文件中定义一个类型为 `encrypted` 的磁盘，并选择一个用于保存数据的底层磁盘。`encrypted` 磁盘会在写入时即时加密所有文件，而从 `encrypted` 磁盘读取文件时则会自动解密。因此，你可以像使用普通磁盘一样使用 `encrypted` 磁盘。
+
+磁盘配置示例：
+
+```xml
+<disks>
+  <disk1>
+    <type>local</type>
+    <path>/path1/</path>
+  </disk1>
+  <disk2>
+    <type>encrypted</type>
+    <disk>disk1</disk>
+    <path>path2/</path>
+    <key>_16_ascii_chars_</key>
+  </disk2>
+</disks>
+```
+
+例如，当 ClickHouse 将某个表中的数据写入 `disk1` 上的文件 `store/all_1_1_0/data.bin` 时，实际上该文件会写入物理磁盘上的 `/path1/store/all_1_1_0/data.bin` 路径。
+
+将同一文件写入 `disk2` 时，实际上它会以加密方式写入物理磁盘上的 `/path1/path2/store/all_1_1_0/data.bin` 路径。
+
+<div id="required-parameters-encrypted-disk">
+  ### 必需参数
+</div>
+
+| Parameter | Type   | Description                                            |
+| --------- | ------ | ------------------------------------------------------ |
+| `type`    | String | 必须设置为 `encrypted`，以创建加密磁盘。                             |
+| `disk`    | String | 用于底层存储的磁盘类型。                                           |
+| `key`     | Uint64 | 用于加密和解密的密钥。可通过 `key_hex` 以十六进制形式指定。也可使用 `id` 属性指定多个密钥。 |
+
+<div id="optional-parameters-encrypted-disk">
+  ### 可选参数
+</div>
+
+| 参数               | 类型     | 默认值           | 描述                                                                                                        |
+| ---------------- | ------ | ------------- | --------------------------------------------------------------------------------------------------------- |
+| `path`           | String | 根目录           | 数据在磁盘上的保存位置。                                                                                              |
+| `current_key_id` | String | -             | 用于加密的密钥 ID。所有指定的密钥均可用于解密。                                                                                 |
+| `algorithm`      | 枚举     | `AES_128_CTR` | 加密算法。可选值：<br />- `AES_128_CTR` (16 字节密钥) <br />- `AES_192_CTR` (24 字节密钥) <br />- `AES_256_CTR` (32 字节密钥)  |
+
+磁盘配置示例：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>...
+            </disk_s3>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+                <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
+                <current_key_id>1</current_key_id>
+            </disk_s3_encrypted>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="using-local-cache">
+  ### 使用本地缓存
+</div>
+
+从 22.3 版本开始，可以在存储配置中为磁盘配置本地缓存。
+对于 22.3 - 22.7 版本，仅 `s3` 磁盘类型支持缓存。对于 &gt;= 22.8 版本，所有磁盘类型都支持缓存：S3、Azure、Local、Encrypted 等。
+对于 &gt;= 23.5 版本，仅远程磁盘类型支持缓存：S3、Azure、HDFS (不支持) 。
+缓存使用 `LRU` 缓存策略。
+
+22.8 及以上版本的配置示例：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+22.8 之前版本的配置示例：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>10737418240</data_cache_max_size>
+            </s3>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+File Cache **磁盘配置设置**：
+
+这些设置应在磁盘配置部分中定义。
+
+| Parameter                             | Type    | Default    | Description                                                                                       |
+| ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------- |
+| `path`                                | String  | -          | **必填**。用于存储缓存的目录路径。                                                                               |
+| `max_size`                            | Size    | -          | **必填**。缓存的最大大小，单位可以是字节或可读格式 (例如 `10Gi`) 。达到限制时，文件会按 LRU 策略被逐出。支持 `ki`、`Mi`、`Gi` 格式 (自 v22.10 起) 。 |
+| `cache_on_write_operations`           | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用直写缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                 |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | 基于 `max_query_cache_size` 启用按查询的缓存大小限制。                                                           |
+| `enable_cache_hits_threshold`         | Boolean | `false`    | 启用后，数据仅在被读取多次后才会被缓存。                                                                              |
+| `cache_hits_threshold`                | Integer | `0`        | 数据被缓存前所需的读取次数 (需要 `enable_cache_hits_threshold`) 。                                                |
+| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 对较大的读取范围跳过缓存。                                                                                     |
+| `bypass_cache_threshold`              | Size    | `256Mi`    | 触发绕过缓存的读取范围大小 (需要 `enable_bypass_cache_with_threshold`) 。                                         |
+| `max_file_segment_size`               | Size    | `8Mi`      | 单个缓存文件段的最大大小，单位可以是字节或可读格式。                                                                        |
+| `max_elements`                        | Integer | `10000000` | 缓存文件的最大数量。                                                                                        |
+| `load_metadata_threads`               | Integer | `16`       | 启动时用于加载缓存元数据的线程数。                                                                                 |
+| `use_split_cache`                     | Boolean | `false`    | 将文件拆分为 system/data 两类。                                                                            |
+| `split_cache_ratio`                   | Double  | `0.1`      | `split&#95;cache` 中 system 部分占缓存总大小的比例。                                                           |
+
+> **注意**：Size 值支持 `ki`、`Mi`、`Gi` 等单位 (例如 `10Gi`) 。
+
+<div id="file-cache-query-profile-settings">
+  ## File Cache 查询/profile 设置
+</div>
+
+| Setting                                                                 | Type    | Default                 | Description                                                                            |
+| ----------------------------------------------------------------------- | ------- | ----------------------- | -------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | Boolean | `true`                  | 按查询启用/禁用缓存，即使使用的是 `cache` 磁盘类型也是如此。                                                    |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                 | 启用后，仅当数据已存在于缓存中时才使用缓存；新数据不会被缓存。                                                        |
+| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`) | 启用写穿缓存。要求在缓存配置中启用 `cache_on_write_operations`。                                         |
+| `enable_filesystem_cache_log`                                           | Boolean | `false`                 | 启用详细的缓存使用日志，并将其写入 `system.filesystem_cache_log`。                                       |
+| `filesystem_cache_allow_background_download`                            | Boolean | `true`                  | 允许在后台完成部分已下载分段的剩余下载。禁用后，当前查询/session 的下载会保持在前台执行。                                      |
+| `max_query_cache_size`                                                  | Size    | `false`                 | 每个查询的最大缓存大小。要求在缓存配置中启用 `enable_filesystem_query_cache_limit`。                          |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                  | 控制达到 `max_query_cache_size` 时的行为：<br />- `true`：停止下载新数据 <br />- `false`：淘汰旧数据，为新数据腾出空间 |
+
+<Warning>
+  缓存配置设置和缓存查询设置对应的是最新版本的 ClickHouse，
+  较早版本可能不支持其中某些功能。
+</Warning>
+
+<div id="cache-system-tables-file-cache">
+  #### 缓存相关系统表
+</div>
+
+| Table Name                    | Description        | Requirements                            |
+| ----------------------------- | ------------------ | --------------------------------------- |
+| `system.filesystem_cache`     | 显示文件系统缓存的当前状态。     | 无                                       |
+| `system.filesystem_cache_log` | 提供每个查询的详细缓存使用统计信息。 | 需要 `enable_filesystem_cache_log = true` |
+
+<div id="cache-commands-file-cache">
+  #### 缓存命令
+</div>
+
+<div id="system-clear-filesystem-cache-on-cluster">
+  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
+</div>
+
+仅当未提供 `<cache_name>` 时，才支持此命令
+
+<div id="show-filesystem-caches">
+  ##### `SHOW FILESYSTEM CACHES`
+</div>
+
+显示 server 上已配置的文件系统缓存列表。
+(对于小于或等于 `22.8` 的版本，该命令名为 `SHOW CACHES`)
+
+```sql title="Query"
+SHOW FILESYSTEM CACHES
+```
+
+```text title="Response"
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+<div id="describe-filesystem-cache">
+  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
+</div>
+
+显示指定缓存的配置及一些常规统计信息。
+缓存名称可通过 `SHOW FILESYSTEM CACHES` 命令获取。 (在小于或等于 `22.8` 的版本中，
+该命令名为 `DESCRIBE CACHE`)
+
+```sql title="Query"
+DESCRIBE FILESYSTEM CACHE 's3_cache'
+```
+
+```text title="Response"
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─boundary_alignment─┬─cache_on_write_operations─┬─cache_hits_threshold─┬─current_size─┬─current_elements─┬─path───────┬─background_download_threads─┬─enable_bypass_cache_with_threshold─┐
+│ 10000000000 │      1048576 │             104857600 │            4194304 │                         1 │                    0 │         3276 │               54 │ /s3_cache/ │                           2 │                                  0 │
+└─────────────┴──────────────┴───────────────────────┴────────────────────┴───────────────────────────┴──────────────────────┴──────────────┴──────────────────┴────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+| 缓存当前状态指标                  | 缓存异步指标                 | 缓存 profile events                                                                         |
+| ------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `FilesystemCacheSize`     | `FilesystemCacheBytes` | `CachedReadBufferReadFromSourceBytes`, `CachedReadBufferReadFromCacheBytes`               |
+| `FilesystemCacheElements` | `FilesystemCacheFiles` | `CachedReadBufferReadFromSourceMicroseconds`, `CachedReadBufferReadFromCacheMicroseconds` |
+|                           |                        | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
+|                           |                        | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
+
+<div id="web-storage">
+  ### 使用静态 Web 存储 (只读)
+</div>
+
+这是一个只读磁盘。其数据只能读取，不能修改。新表
+通过 `ATTACH TABLE` 查询加载到该磁盘 (见下方示例) 。本地磁盘
+实际上不会被使用，每个 `SELECT` 查询都会触发一次 `http` 请求，以
+拉取所需数据。对表数据进行任何修改都会导致
+异常，也就是说，不允许执行以下类型的查询：[`CREATE TABLE`](/zh/reference/statements/create/table)、
+[`ALTER TABLE`](/zh/reference/statements/alter/index)、[`RENAME TABLE`](/zh/reference/statements/rename#rename-table)、
+[`DETACH TABLE`](/zh/reference/statements/detach) 和 [`TRUNCATE TABLE`](/zh/reference/statements/truncate)。
+Web 存储可用于只读场景。一个示例用途是托管
+示例数据，或用于迁移数据。有一个工具 `clickhouse-static-files-uploader`，
+它会为指定表准备一个数据目录 (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`) 。
+对于所需的每个表，都会生成一个文件目录。这些文件可以上传
+到例如提供静态文件的 Web 服务器。完成这些准备后，
+你可以通过 `DiskWeb` 将该表加载到任何 ClickHouse server 中。
+
+在此示例配置中：
+
+* 磁盘类型为 `web`
+* 数据托管在 `http://nginx:80/test1/`
+* 使用了本地存储上的缓存
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  如果某个 Web 数据集预计不会经常使用，也可以在查询中临时配置存储；请参见[动态配置](#dynamic-configuration)，这样就无需编辑配置文件。
+
+  GitHub 上托管了一个[演示数据集](https://github.com/ClickHouse/web-tables-demo)。如需为 Web 存储准备自己的表，请参阅工具 [clickhouse-static-files-uploader](/zh/concepts/features/tools-and-utilities/static-files-disk-uploader)
+</Tip>
+
+在这个 `ATTACH TABLE` 查询中，提供的 `UUID` 与数据目录名称一致，而端点是 GitHub 原始内容的 URL。
+
+```sql highlight={1,20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+```
+
+这里有一个现成的测试用例。你需要将此配置添加到 config 中：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+            </web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+然后执行以下查询：
+
+```sql
+ATTACH TABLE test_hits UUID '1ae36516-d62d-4218-9ae3-6516d62da218'
+(
+    WatchID UInt64,
+    JavaEnable UInt8,
+    Title String,
+    GoodEvent Int16,
+    EventTime DateTime,
+    EventDate Date,
+    CounterID UInt32,
+    ClientIP UInt32,
+    ClientIP6 FixedString(16),
+    RegionID UInt32,
+    UserID UInt64,
+    CounterClass Int8,
+    OS UInt8,
+    UserAgent UInt8,
+    URL String,
+    Referer String,
+    URLDomain String,
+    RefererDomain String,
+    Refresh UInt8,
+    IsRobot UInt8,
+    RefererCategories Array(UInt16),
+    URLCategories Array(UInt16),
+    URLRegions Array(UInt32),
+    RefererRegions Array(UInt32),
+    ResolutionWidth UInt16,
+    ResolutionHeight UInt16,
+    ResolutionDepth UInt8,
+    FlashMajor UInt8,
+    FlashMinor UInt8,
+    FlashMinor2 String,
+    NetMajor UInt8,
+    NetMinor UInt8,
+    UserAgentMajor UInt16,
+    UserAgentMinor FixedString(2),
+    CookieEnable UInt8,
+    JavascriptEnable UInt8,
+    IsMobile UInt8,
+    MobilePhone UInt8,
+    MobilePhoneModel String,
+    Params String,
+    IPNetworkID UInt32,
+    TraficSourceID Int8,
+    SearchEngineID UInt16,
+    SearchPhrase String,
+    AdvEngineID UInt8,
+    IsArtifical UInt8,
+    WindowClientWidth UInt16,
+    WindowClientHeight UInt16,
+    ClientTimeZone Int16,
+    ClientEventTime DateTime,
+    SilverlightVersion1 UInt8,
+    SilverlightVersion2 UInt8,
+    SilverlightVersion3 UInt32,
+    SilverlightVersion4 UInt16,
+    PageCharset String,
+    CodeVersion UInt32,
+    IsLink UInt8,
+    IsDownload UInt8,
+    IsNotBounce UInt8,
+    FUniqID UInt64,
+    HID UInt32,
+    IsOldCounter UInt8,
+    IsEvent UInt8,
+    IsParameter UInt8,
+    DontCountHits UInt8,
+    WithHash UInt8,
+    HitColor FixedString(1),
+    UTCEventTime DateTime,
+    Age UInt8,
+    Sex UInt8,
+    Income UInt8,
+    Interests UInt16,
+    Robotness UInt8,
+    GeneralInterests Array(UInt16),
+    RemoteIP UInt32,
+    RemoteIP6 FixedString(16),
+    WindowName Int32,
+    OpenerName Int32,
+    HistoryLength Int16,
+    BrowserLanguage FixedString(2),
+    BrowserCountry FixedString(2),
+    SocialNetwork String,
+    SocialAction String,
+    HTTPError UInt16,
+    SendTiming Int32,
+    DNSTiming Int32,
+    ConnectTiming Int32,
+    ResponseStartTiming Int32,
+    ResponseEndTiming Int32,
+    FetchTiming Int32,
+    RedirectTiming Int32,
+    DOMInteractiveTiming Int32,
+    DOMContentLoadedTiming Int32,
+    DOMCompleteTiming Int32,
+    LoadEventStartTiming Int32,
+    LoadEventEndTiming Int32,
+    NSToDOMContentLoadedTiming Int32,
+    FirstPaintTiming Int32,
+    RedirectCount Int8,
+    SocialSourceNetworkID UInt8,
+    SocialSourcePage String,
+    ParamPrice Int64,
+    ParamOrderID String,
+    ParamCurrency FixedString(3),
+    ParamCurrencyID UInt16,
+    GoalsReached Array(UInt32),
+    OpenstatServiceName String,
+    OpenstatCampaignID String,
+    OpenstatAdID String,
+    OpenstatSourceID String,
+    UTMSource String,
+    UTMMedium String,
+    UTMCampaign String,
+    UTMContent String,
+    UTMTerm String,
+    FromTag String,
+    HasGCLID UInt8,
+    RefererHash UInt64,
+    URLHash UInt64,
+    CLID UInt32,
+    YCLID UInt64,
+    ShareService String,
+    ShareURL String,
+    ShareTitle String,
+    ParsedParams Nested(
+        Key1 String,
+        Key2 String,
+        Key3 String,
+        Key4 String,
+        Key5 String,
+        ValueDouble Float64),
+    IslandID FixedString(16),
+    RequestNum UInt32,
+    RequestTry UInt8
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS storage_policy='web';
+```
+
+<div id="required-parameters-s3">
+  #### 必需参数
+</div>
+
+| 参数         | 描述                                                      |
+| ---------- | ------------------------------------------------------- |
+| `type`     | `web`。否则不会创建该磁盘。                                        |
+| `endpoint` | `path` 格式的端点 URL。端点 URL 必须包含一个用于存储数据的根路径，也就是数据上传后的存储位置。 |
+
+<div id="optional-parameters-s3">
+  #### 可选参数
+</div>
+
+| 参数                                  | 描述                  | 默认值       |
+| ----------------------------------- | ------------------- | --------- |
+| `min_bytes_for_seek`                | 使用寻道操作而不是顺序读取的最小字节数 | `1` MB    |
+| `remote_fs_read_backoff_threashold` | 读取远程磁盘数据时的最大等待时间    | `10000` 秒 |
+| `remote_fs_read_backoff_max_tries`  | 使用退避机制读取时的最大重试次数    | `5`       |
+
+如果查询因异常 `DB:Exception Unreachable URL` 失败，你可以尝试调整以下设置：[http&#95;connection&#95;timeout](/zh/reference/settings/session-settings#http_connection_timeout)、[http&#95;receive&#95;timeout](/zh/reference/settings/session-settings#http_receive_timeout)、[keep&#95;alive&#95;timeout](/zh/reference/settings/server-settings/settings#keep_alive_timeout)。
+
+要获取用于上传的文件，请运行：
+`clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (可通过查询 `SELECT data_paths FROM system.tables WHERE name = 'table_name'` 找到 `--metadata-path`) 。
+
+通过 `endpoint` 加载文件时，文件必须加载到 `<endpoint>/store/` 路径下，但配置中只能填写 `endpoint`。
+
+如果服务器在启动表时，磁盘加载过程中 URL 无法访问，系统会捕获所有错误。在这种情况下如果出现错误，可以通过 `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name` 重新加载表 (使其重新可见) 。如果元数据在服务器启动时已成功加载，则表会立即可用。
+
+使用 [http&#95;max&#95;single&#95;read&#95;retries](/zh/concepts/features/configuration/server-config/storing-data#web-storage) 设置来限制单次 HTTP 读取期间的最大重试次数。
+
+<div id="zero-copy">
+  ### 零拷贝复制 (尚不适用于生产环境)
+</div>
+
+可以在 `S3` 和 `HDFS` (不受支持) 磁盘上使用零拷贝复制，但不建议这样做。零拷贝复制是指：如果数据远程存储在多台机器上并且需要同步，则只复制元数据 (数据分区片段的路径) ，而不复制数据本身。
+
+<Info>
+  **零拷贝复制尚不适用于生产环境**
+
+  在 ClickHouse 22.8 及更高版本中，零拷贝复制默认被禁用。不建议在生产环境中使用此功能。
+</Info>

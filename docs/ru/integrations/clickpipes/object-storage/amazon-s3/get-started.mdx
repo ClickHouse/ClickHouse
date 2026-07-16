@@ -1,0 +1,14 @@
+---
+sidebarTitle: 'Начало работы'
+description: 'Пошаговое руководство по созданию первого ClickPipe для Amazon S3.'
+slug: /integrations/clickpipes/object-storage/s3/get-started
+title: 'Создание первого ClickPipe для Amazon S3'
+doc_type: 'guide'
+---
+
+import CreateClickPipe from '/snippets/ru/_create_clickpipe.mdx';
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+S3 ClickPipe — это полностью управляемый и отказоустойчивый способ приёма данных из Amazon S3 и S3-совместимых объектных хранилищ в ClickHouse Cloud. Он поддерживает как **однократную загрузку**, так и **непрерывную ингестию** с семантикой «ровно один раз».
+
+<CreateClickPipe provider="s3" />

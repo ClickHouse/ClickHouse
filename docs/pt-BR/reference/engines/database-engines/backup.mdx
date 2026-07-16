@@ -1,0 +1,108 @@
+---
+description: 'Permite anexar instantaneamente uma tabela/um banco de dados a partir de backups no
+  modo somente leitura.'
+sidebarTitle: 'Backup'
+slug: /engines/database-engines/backup
+title: 'Backup'
+doc_type: 'reference'
+---
+
+O banco de dados Backup permite anexar instantaneamente uma tabela/um banco de dados a partir de [backups](/pt-BR/concepts/features/backup-restore/overview) no modo somente leitura.
+
+O banco de dados Backup é compatível com backups incrementais e não incrementais.
+
+<div id="creating-a-database">
+  ## Criar um banco de dados
+</div>
+
+```sql
+CREATE DATABASE backup_database
+ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
+```
+
+O destino do backup pode ser qualquer [destino](/pt-BR/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk) de backup válido, como `Disk`, `S3` ou `File`. Ele é passado como uma função, por exemplo `Disk('disk_name', 'backup_name')`.
+
+**Parâmetros do engine**
+
+* `database_name_inside_backup` — Nome do banco de dados no backup.
+* `backup_destination` — Destino do backup.
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Vamos ver um exemplo com um destino de backup `Disk`. Primeiro, vamos configurar o disco de backups em `storage.xml`:
+
+```xml
+<storage_configuration>
+    <disks>
+        <backups>
+            <type>local</type>
+            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
+        </backups>
+    </disks>
+</storage_configuration>
+<backups>
+    <allowed_disk>backups</allowed_disk>
+    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
+</backups>
+```
+
+Exemplo de uso. Vamos criar um banco de dados de teste, algumas tabelas, inserir alguns dados e, em seguida, criar um backup:
+
+```sql
+CREATE DATABASE test_database;
+
+CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_1 VALUES (0, 'test_database.test_table_1');
+
+CREATE TABLE test_database.test_table_2 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_2 VALUES (0, 'test_database.test_table_2');
+
+CREATE TABLE test_database.test_table_3 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
+
+BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
+```
+
+Agora que temos o backup `test_database_backup`, vamos criar o banco de dados Backup:
+
+```sql
+CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
+```
+
+Agora podemos consultar qualquer tabela do banco de dados:
+
+```sql
+SELECT id, value FROM test_database_backup.test_table_1;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_1 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_2;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_2 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_3;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_3 │
+└────┴────────────────────────────┘
+```
+
+Também é possível trabalhar com este banco de dados Backup como com qualquer banco de dados comum. Por exemplo, consultar as tabelas dele:
+
+```sql
+SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
+```
+
+```text
+┌─database─────────────┬─name─────────┐
+│ test_database_backup │ test_table_1 │
+│ test_database_backup │ test_table_2 │
+│ test_database_backup │ test_table_3 │
+└──────────────────────┴──────────────┘
+```

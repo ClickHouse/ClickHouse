@@ -1,0 +1,35 @@
+---
+title: تنفيذ عبارات SYSTEM على جميع العقد في ClickHouse Cloud
+description: تعرّف على كيفية استخدام `ON CLUSTER` و`clusterAllReplicas` لتنفيذ عبارات SYSTEM والاستعلامات على جميع العقد في خدمة ClickHouse Cloud.
+date: 2023-03-01
+tags: ['عمليات النشر والتوسّع']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+لتنفيذ الاستعلام نفسه على جميع العُقد في خدمة ClickHouse Cloud، يمكننا استخدام [clusterAllReplicas](/ar/reference/functions/table-functions/cluster).
+
+على سبيل المثال، للحصول على صفوف من جدول نظام (محلي على العقدة) من جميع العُقد، يمكنك استخدام:
+
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+وبالمثل، يمكنك تنفيذ [عبارة SYSTEM](/ar/reference/statements/system) نفسها على جميع العقد بتعليمة واحدة، باستخدام بند [ON CLUSTER](/ar/reference/statements/distributed-ddl):
+
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+على سبيل المثال، [لحذف ذاكرة التخزين المؤقت لنظام الملفات](/ar/reference/statements/system#drop-filesystem-cache) من جميع العقد، يمكنك استخدام:
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

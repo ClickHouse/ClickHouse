@@ -1,0 +1,134 @@
+---
+slug: /cloud/manage/postman
+sidebarTitle: 'Acesso programático à API com o Postman'
+title: 'Acesso programático à API com o Postman'
+description: 'Este guia ajudará você a testar a API do ClickHouse Cloud usando o Postman'
+doc_type: 'guide'
+keywords: ['api', 'postman', 'rest api', 'gerenciamento de nuvem', 'integração']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este guia ajudará você a testar a API do ClickHouse Cloud usando o [Postman](https://www.postman.com/product/what-is-postman/).
+O aplicativo Postman pode ser usado no navegador ou baixado para o computador.
+
+<div id="create-an-account">
+  ### Criar uma conta
+</div>
+
+* Há contas gratuitas disponíveis em [https://www.postman.com](https://www.postman.com).
+
+<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="Site do Postman" border />
+
+<div id="create-a-workspace">
+  ### Criar um espaço de trabalho
+</div>
+
+* Dê um nome ao espaço de trabalho e defina o nível de visibilidade.
+
+<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="Criar espaço de trabalho" border />
+
+<div id="create-a-collection">
+  ### Criar uma coleção
+</div>
+
+* No menu no canto superior esquerdo, abaixo de &quot;Explore&quot;, clique em &quot;Import&quot;:
+
+<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > Import" border />
+
+* Uma janela modal será exibida:
+
+<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="Campo de URL da API" border />
+
+* Insira o endereço da API: &quot;https://api.clickhouse.cloud/v1&quot; e pressione &#39;Enter&#39;:
+
+* Selecione &quot;Postman Collection&quot; clicando no botão &quot;Import&quot;:
+
+<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="Collection > Import" border />
+
+<div id="interface-with-the-clickhouse-cloud-api-spec">
+  ### Interaja com a especificação da API do ClickHouse Cloud
+</div>
+
+* A &quot;API spec for ClickHouse Cloud&quot; agora aparecerá em &quot;Collections&quot; (navegação à esquerda).
+
+<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="Importe sua API" border />
+
+* Clique em &quot;API spec for ClickHouse Cloud&quot;. No painel central, selecione a guia &#39;Authorization&#39;:
+
+<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="Importação concluída" border />
+
+<div id="set-authorization">
+  ### Definir a autorização
+</div>
+
+* Use o menu suspenso para selecionar &quot;Basic Auth&quot;:
+
+<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="Autenticação básica" border />
+
+* Insira o nome de usuário e a senha que você recebeu ao configurar suas chaves de API do ClickHouse Cloud:
+
+<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="credenciais" border />
+
+<div id="enable-variables">
+  ### Habilite as variáveis
+</div>
+
+* [Variáveis](https://learning.postman.com/docs/sending-requests/variables/) permitem armazenar e reutilizar valores no Postman, facilitando os testes de API.
+
+<div id="set-the-organization-id-and-service-id">
+  #### Defina o ID da organização e o ID do serviço
+</div>
+
+* Na &quot;Collection&quot;, clique na aba &quot;Variable&quot; no painel central (a Base URL já terá sido definida pela importação anterior da API):
+* Abaixo de `baseURL`, clique no campo vazio &quot;Add new value&quot; e substitua pelos IDs da sua organização e do seu serviço:
+
+<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="ID da organização e ID do serviço" border />
+
+<div id="test-the-clickhouse-cloud-api-functionalities">
+  ## Teste as funcionalidades da API do ClickHouse Cloud
+</div>
+
+<div id="test-get-list-of-available-organizations">
+  ### Teste &quot;GET list of available organizations&quot;
+</div>
+
+* Em &quot;OpenAPI spec for ClickHouse Cloud&quot;, expanda a pasta &gt; V1 &gt; organizations
+* Clique em &quot;GET list of available organizations&quot; e, à direita, pressione o botão azul &quot;Send&quot;:
+
+<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="Testar a recuperação das organizações" border />
+
+* Os resultados retornados devem exibir os detalhes da sua organização com &quot;status&quot;: 200. (Se você receber um &quot;status&quot; 400 sem informações da organização, sua configuração não está correta).
+
+<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="Status" border />
+
+<div id="test-get-organizational-details">
+  ### Teste &quot;GET detalhes organizacionais&quot;
+</div>
+
+* Na pasta `organizationid`, navegue até &quot;GET detalhes organizacionais&quot;:
+* No menu do painel central, em Params, um `organizationid` é obrigatório.
+
+<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="Testar a recuperação de detalhes organizacionais" border />
+
+* Edite esse valor para `orgid`, entre chaves: `{{orgid}}` (como esse valor foi definido anteriormente, um menu aparecerá com o valor):
+
+<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="Enviar teste" border />
+
+* Após clicar no botão &quot;Save&quot;, clique no botão azul &quot;Send&quot; no canto superior direito da tela.
+
+<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="Valor retornado" border />
+
+* Os resultados retornados devem trazer seus detalhes organizacionais com &quot;status&quot;: 200. (Se você receber um &quot;status&quot; 400 sem informações da organização, sua configuração não está correta).
+
+<div id="test-get-service-details">
+  ### Teste &quot;GET service details&quot;
+</div>
+
+* Clique em &quot;GET service details&quot;
+* Edite os valores de `organizationid` e `serviceid` para `{{orgid}}` e `{{serviceid}}`, respectivamente.
+* Clique em &quot;Save&quot; e depois no botão azul &quot;Send&quot;, à direita.
+
+<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="Lista de serviços" border />
+
+* Os resultados retornados devem exibir uma lista dos seus serviços e respectivos detalhes com &quot;status&quot;: 200. (Se você receber &quot;status&quot;: 400 sem informações dos serviços, sua configuração não está correta).

@@ -1,0 +1,44 @@
+---
+title: 데이터 타입 매핑
+---
+
+다음 표는 Apache Avro 포맷이 지원하는 모든 데이터 타입과, `INSERT` 및 `SELECT` 쿼리에서 이에 대응하는 ClickHouse [데이터 타입](/ko/reference/data-types/index)을 보여줍니다.
+
+| Avro 데이터 타입 `INSERT`                        | ClickHouse 데이터 타입                                                                               | Avro 데이터 타입 `SELECT`          |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/ko/reference/data-types/int-uint), [UInt(8\16\32)](/ko/reference/data-types/int-uint) | `int`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/ko/reference/data-types/int-uint), [UInt64](/ko/reference/data-types/int-uint)               | `long`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/ko/reference/data-types/float)                                                          | `float`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/ko/reference/data-types/float)                                                          | `double`                      |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/ko/reference/data-types/string)                                                          | `bytes` or `string` *         |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/ko/reference/data-types/fixedstring)                                             | `fixed(N)`                    |
+| `enum`                                      | [Enum(8\16)](/ko/reference/data-types/enum)                                                        | `enum`                        |
+| `array(T)`                                  | [Array(T)](/ko/reference/data-types/array)                                                         | `array(T)`                    |
+| `map(V, K)`                                 | [Map(V, K)](/ko/reference/data-types/map)                                                          | `map(string, K)`              |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/ko/reference/data-types/date)                                                       | `union(null, T)`              |
+| `union(T1, T2, …)` **                       | [Variant(T1, T2, …)](/ko/reference/data-types/variant)                                             | `union(T1, T2, …)` **         |
+| `null`                                      | [Nullable(Nothing)](/ko/reference/data-types/special-data-types/nothing)                           | `null`                        |
+| `int (date)` ***                            | [Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32)                      | `int (date)` ***              |
+| `long (timestamp-millis)` ***               | [DateTime64(3)](/ko/reference/data-types/datetime)                                                 | `long (timestamp-millis)` *** |
+| `long (timestamp-micros)` ***               | [DateTime64(6)](/ko/reference/data-types/datetime)                                                 | `long (timestamp-micros)` *** |
+| `bytes (decimal)`  ***                      | [DateTime64(N)](/ko/reference/data-types/datetime)                                                 | `bytes (decimal)`  ***        |
+| `int`                                       | [IPv4](/ko/reference/data-types/ipv4)                                                              | `int`                         |
+| `fixed(16)`                                 | [IPv6](/ko/reference/data-types/ipv6)                                                              | `fixed(16)`                   |
+| `bytes (decimal)` ***                       | [Decimal(P, S)](/ko/reference/data-types/decimal)                                                  | `bytes (decimal)` ***         |
+| `string (uuid)` ***                         | [UUID](/ko/reference/data-types/uuid)                                                              | `string (uuid)` ***           |
+| `fixed(16)`                                 | [Int128/UInt128](/ko/reference/data-types/int-uint)                                                | `fixed(16)`                   |
+| `fixed(32)`                                 | [Int256/UInt256](/ko/reference/data-types/int-uint)                                                | `fixed(32)`                   |
+| `record`                                    | [Tuple](/ko/reference/data-types/tuple)                                                            | `record`                      |
+
+* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/ko/reference/settings/formats#output_format_avro_string_column_pattern)
+
+**  [Variant 타입](/ko/reference/data-types/variant)은 필드 값으로 `null`을 암묵적으로 허용하므로, 예를 들어 Avro `union(T1, T2, null)`은 `Variant(T1, T2)`로 변환됩니다.
+따라서 ClickHouse에서 Avro를 생성할 때는 스키마 추론 과정에서 실제로 `null`인 값이 있는지 알 수 없으므로, Avro `union` 타입 목록에 항상 `null` 타입을 포함해야 합니다.
+
+*** [Avro 논리 타입](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+지원되지 않는 Avro 논리 데이터 타입:
+
+* `time-millis`
+* `time-micros`
+* `duration`
