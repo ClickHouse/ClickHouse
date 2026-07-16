@@ -6080,15 +6080,49 @@ void StorageReplicatedMergeTree::shutdown(bool)
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
 
+    /// Serialize the rest with an in-flight first shutdown: the `already_called` cleanup below can be
+    /// reached from the failure path of `startupImpl` while the first (full) shutdown is still running in
+    /// another thread, and some of the members it touches (`session_expired_callback_handler`,
+    /// `replica_is_active_node`) are not atomic. Whichever call comes second waits here and then finds
+    /// only idempotent no-ops left to do.
+    std::lock_guard shutdown_guard{shutdown_mutex};
+
     if (already_called)
     {
-        /// The same race applies to the outdated/unexpected data parts loading tasks: a racing `startup()`
-        /// can re-arm them via `startOutdatedAndUnexpectedDataPartsLoadingTask` after the first `shutdown()`
-        /// already stopped them. The destructor's `shutdown(false)` takes this branch, so stop them again
-        /// here: otherwise an armed task could fire while `~MergeTreeData` destroys the state its callback
-        /// touches (the task holders are destroyed after `outdated_unloaded_data_parts` and
-        /// `unexpected_data_parts`). Stopping is idempotent and waits for a running iteration to finish.
+        /// A racing `startup()` can pass its `shutdown_called` check just before the first (full) shutdown
+        /// runs, and then re-arm what that shutdown has already stopped. The late `shutdown_called` check in
+        /// `startupImpl` routes its cleanup into `shutdown(false)` — this branch — and the destructor's
+        /// `shutdown(false)` takes this branch too. So stop everything a second startup could have armed
+        /// after the first shutdown:
+        ///   - the outdated/unexpected data parts loading tasks (their holders are destroyed after
+        ///     `outdated_unloaded_data_parts` and `unexpected_data_parts`, so an armed task could fire while
+        ///     `~MergeTreeData` destroys the state its callback touches),
+        ///   - the attach and restarting threads, leader election, and everything the restarting thread
+        ///     activates (via `partialShutdown`),
+        ///   - the session-expired callback, the part moves orchestrator and background moves,
+        ///   - the interserver parts exchange endpoint.
+        /// All of these stops are idempotent, so this is safe after a complete first shutdown as well.
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+        if (attach_thread)
+            attach_thread->shutdown();
+
+        restarting_thread.shutdown(/* part_of_full_shutdown */ true);
+        stopBeingLeader();
+        session_expired_callback_handler.reset();
+        partialShutdown();
+        part_moves_between_shards_orchestrator.shutdown();
+        background_moves_assignee.finish();
+
+        auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+        if (data_parts_exchange_ptr)
+        {
+            getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
+            /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+            data_parts_exchange_ptr->blocker.cancelForever();
+            /// Wait for all of them
+            std::lock_guard lock(data_parts_exchange_ptr->rwlock);
+        }
         return;
     }
 

@@ -43,16 +43,29 @@ ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 
 void ReplicatedMergeTreeAttachThread::start()
 {
+    /// A `startup()` racing with a `DETACH` can get here after `shutdown()` has already run;
+    /// don't re-arm the task in that case (it would pointlessly re-run the initialization).
+    /// If `shutdown()` runs between this check and `activateAndSchedule`, the repeated
+    /// `shutdown()` call from `StorageReplicatedMergeTree::shutdown` deactivates the task again.
+    if (shutdown_called)
+    {
+        /// There will be no first try — unblock `waitFirstTry`.
+        if (!first_try_done.exchange(true))
+            first_try_done.notify_one();
+        return;
+    }
+
     task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
 {
     if (!shutdown_called.exchange(true))
-    {
-        task->deactivate();
         LOG_INFO(log, "Attach thread finished");
-    }
+
+    /// Deactivate unconditionally, not only on the first call: a racing `start()` can re-activate
+    /// the task after the first `shutdown()` already deactivated it. Deactivation is idempotent.
+    task->deactivate();
 }
 
 void ReplicatedMergeTreeAttachThread::run()
