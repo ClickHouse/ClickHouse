@@ -19,6 +19,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/Utility.h>
 #endif
 
 #include <algorithm>
@@ -614,42 +615,6 @@ void KeeperClient::runInteractive()
 
 void KeeperClient::connectToKeeper()
 {
-#if USE_SSL
-    /// Configure SSL context if TLS options are provided
-    if (config().has("tls-cert-file") || config().has("tls-key-file") || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
-    {
-        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
-
-        if (config().has("accept-invalid-certificate"))
-        {
-            verification_mode = Poco::Net::Context::VERIFY_NONE;
-        }
-
-        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
-            Poco::Net::Context::TLSV1_2_CLIENT_USE,
-            config().getString("tls-key-file", ""),
-            config().getString("tls-cert-file", ""),
-            config().getString("tls-ca-file", ""),
-            verification_mode,
-            9,
-            true,
-            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
-        ));
-
-        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
-        if (config().has("accept-invalid-certificate"))
-        {
-            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
-        }
-        else
-        {
-            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
-        }
-
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
-    }
-#endif
-
     ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
@@ -660,6 +625,10 @@ void KeeperClient::connectToKeeper()
     clickhouse_config.configuration->keys("zookeeper", keys);
 
     zkutil::ZooKeeperArgs new_zk_args;
+
+    /// Whether any node in the connection uses a secure (TLS) socket. We need to know this
+    /// before creating the socket so that the SSL context can be initialized accordingly.
+    [[maybe_unused]] bool secure = false;
 
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
@@ -675,7 +644,10 @@ void KeeperClient::connectToKeeper()
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
             if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
+            {
                 host = "secure://" + host;
+                secure = true;
+            }
 
             new_zk_args.hosts.push_back(host + ":" + port);
         }
@@ -686,10 +658,58 @@ void KeeperClient::connectToKeeper()
         String port = config().getString("port", "9181");
 
         if (config().has("secure"))
+        {
             host = "secure://" + host;
+            secure = true;
+        }
 
         new_zk_args.hosts.push_back(host + ":" + port);
     }
+
+#if USE_SSL
+    /// Initialize the SSL client context when a secure connection is requested, or when TLS
+    /// options are explicitly provided. Without this, a SecureStreamSocket falls back to the
+    /// default (empty) context and verification against a self-signed CA fails.
+    if (secure || config().has("tls-cert-file") || config().has("tls-key-file")
+        || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
+    {
+        const auto & loaded_config = *clickhouse_config.configuration;
+
+        /// Explicit --tls-* command line options take precedence; otherwise fall back to the
+        /// <openSSL><client> section of the config file (the same keys clickhouse-server uses).
+        String tls_key_file = config().getString("tls-key-file", loaded_config.getString("openSSL.client.privateKeyFile", ""));
+        String tls_cert_file = config().getString("tls-cert-file", loaded_config.getString("openSSL.client.certificateFile", ""));
+        String tls_ca_file = config().getString("tls-ca-file", loaded_config.getString("openSSL.client.caConfig", ""));
+
+        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
+        if (loaded_config.has("openSSL.client.verificationMode"))
+            verification_mode = Poco::Net::Utility::convertVerificationMode(loaded_config.getString("openSSL.client.verificationMode"));
+
+        if (config().has("accept-invalid-certificate"))
+            verification_mode = Poco::Net::Context::VERIFY_NONE;
+
+        bool load_default_ca_file = loaded_config.getBool("openSSL.client.loadDefaultCAFile", true);
+
+        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
+            Poco::Net::Context::TLSV1_2_CLIENT_USE,
+            tls_key_file,
+            tls_cert_file,
+            tls_ca_file,
+            verification_mode,
+            9,
+            load_default_ca_file,
+            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
+        ));
+
+        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
+        if (verification_mode == Poco::Net::Context::VERIFY_NONE)
+            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
+        else
+            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
+
+        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
+    }
+#endif
 
     new_zk_args.availability_zones.resize(new_zk_args.hosts.size());
     new_zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
