@@ -949,9 +949,9 @@ void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
         /// counting turns into a use-after-free, so it must participate in the ownership check.
         if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
         {
-            if (low_cardinality->isSharedDictionary())
+            const auto & dictionary = low_cardinality->getDictionaryPtr();
+            if (low_cardinality->isSharedDictionary() && dictionary)
             {
-                const auto & dictionary = low_cardinality->getDictionaryPtr();
                 ++tree_references[dictionary.get()];
                 walk(*dictionary);
             }
