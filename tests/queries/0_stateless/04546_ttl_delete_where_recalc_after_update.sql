@@ -161,3 +161,73 @@ ALTER TABLE apply_patches_materialized_chain APPLY PATCHES SETTINGS mutations_sy
 SELECT count() FROM apply_patches_materialized_chain;
 
 DROP TABLE apply_patches_materialized_chain;
+
+-- CLEAR COLUMN must also feed dependency analysis: clearing a base column that a DELETE
+-- WHERE MATERIALIZED column is derived from has to recalculate the TTL, otherwise the part
+-- keeps its old rows_where_ttl_info and a row that only starts matching after the clear is
+-- silently retained. Observe the count right after CLEAR COLUMN (an OPTIMIZE FINAL would
+-- re-evaluate TTL from scratch and hide the bug).
+DROP TABLE IF EXISTS clear_column_ttl_recalc;
+
+CREATE TABLE clear_column_ttl_recalc
+(
+    d DateTime,
+    src UInt8,
+    flag UInt8 MATERIALIZED (src = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0;
+
+-- src = 5 -> flag = 0, so the (expired) row does not match DELETE WHERE flag = 1 yet.
+INSERT INTO clear_column_ttl_recalc (d, src) VALUES ('2000-01-01 00:00:00', 5);
+ALTER TABLE clear_column_ttl_recalc
+    MODIFY TTL d + INTERVAL 1 SECOND DELETE WHERE flag = 1
+    SETTINGS materialize_ttl_after_modify = 0, mutations_sync = 2;
+
+-- Row still present (TTL not recalculated yet).
+SELECT count() FROM clear_column_ttl_recalc;
+
+-- CLEAR src -> src = 0 -> flag recomputes to 1, so the expired row now matches DELETE WHERE
+-- and the mutation must drop it (count 0), not keep stale TTL metadata (count 1).
+ALTER TABLE clear_column_ttl_recalc CLEAR COLUMN src SETTINGS mutations_sync = 2;
+SELECT count() FROM clear_column_ttl_recalc;
+
+DROP TABLE clear_column_ttl_recalc;
+
+-- A projection or skip index reading only a derived MATERIALIZED column (m2 in src -> m1 -> m2)
+-- must be rebuilt when a mutation rewrites m2, otherwise MutateTask hardlinks the old
+-- projection/index files and queries read stale data even though the base part is correct.
+DROP TABLE IF EXISTS derived_materialized_projection_index;
+
+CREATE TABLE derived_materialized_projection_index
+(
+    id UInt64,
+    src UInt64,
+    m1 UInt64 MATERIALIZED src,
+    m2 UInt64 MATERIALIZED m1,
+    INDEX ix m2 TYPE minmax GRANULARITY 1,
+    PROJECTION p (SELECT m2, count() GROUP BY m2)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1;
+
+INSERT INTO derived_materialized_projection_index (id, src) VALUES (1, 5), (2, 5), (3, 7);
+
+-- Rewrite src for id = 1; m1 and m2 (which only the projection/index read) must recompute to 7.
+ALTER TABLE derived_materialized_projection_index UPDATE src = 7 WHERE id = 1 SETTINGS mutations_sync = 2;
+
+-- Projection must agree with the base part: m2 = 5 -> 1 row, m2 = 7 -> 2 rows.
+SELECT m2, count() FROM derived_materialized_projection_index
+GROUP BY m2 ORDER BY m2
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT m2, count() FROM derived_materialized_projection_index
+GROUP BY m2 ORDER BY m2
+SETTINGS optimize_use_projections = 0;
+
+-- Skip index on the derived column must be rebuilt too: a stale minmax [5,5] granule for
+-- id = 1 would wrongly prune the row whose m2 became 7. Expect 2 (id = 1 and id = 3).
+SELECT count() FROM derived_materialized_projection_index WHERE m2 = 7;
+
+DROP TABLE derived_materialized_projection_index;

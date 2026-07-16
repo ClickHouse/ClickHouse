@@ -681,6 +681,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// just like for a classical ALTER UPDATE (see the READ_COLUMN branch below,
     /// which only rebuilds when the column type changes and so misses patches).
     NameSet patch_updated_columns;
+    /// Base columns removed by CLEAR COLUMN (DROP_COLUMN with clear). Collected here in the
+    /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
+    /// below, before the per-command stage loop runs.
+    NameSet clear_column_names;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -698,7 +702,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             has_rewrite_parts = true;
 
         if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+        {
             has_clear_column = true;
+            clear_column_names.insert(command.column_name);
+        }
 
         /// The _row_exists mask is handled by APPLY_DELETED_MASK, not as a data column.
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
@@ -925,6 +932,26 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
+    /// MATERIALIZED columns transitively derived from base columns removed by CLEAR COLUMN.
+    /// Clearing resets the base column to its type default and the derived chain is recomputed
+    /// against it, so their new values likewise drive dependencies (e.g. a TTL DELETE WHERE that
+    /// references such a column). Without seeding these, getColumnDependencies sees no TTL input
+    /// change, execute_ttl_type stays NONE and the part keeps stale rows_where_ttl_info.
+    NameSet clear_affected_materialized;
+    if (!clear_column_names.empty())
+        clear_affected_materialized = affected_materialized_closure(clear_column_names);
+
+    /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
+    /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis
+    /// and to decide which projections / skip indices / statistics must be rebuilt, since a
+    /// rebuild predicate that only looked at the mutation's explicit columns would miss a
+    /// projection or index that reads a derived MATERIALIZED column (e.g. m2 in src -> m1 -> m2).
+    NameSet all_affected_materialized;
+    for (const auto & [source_column, affected_materialized] : column_to_affected_materialized)
+        all_affected_materialized.insert(affected_materialized.begin(), affected_materialized.end());
+    all_affected_materialized.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
+    all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
+
     if (settings.recalculate_dependencies_of_updated_columns)
     {
         /// Patch-updated columns change data without a type change, so they must
@@ -933,12 +960,13 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
         columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        /// Base columns removed by CLEAR COLUMN also change data (to the type default) and so
+        /// must enter dependency analysis alongside their derived MATERIALIZED closure below.
+        columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
         /// MATERIALIZED columns recomputed by the mutation are not in updated_columns
         /// but their new values still drive dependencies (e.g. a TTL DELETE WHERE that
         /// references a MATERIALIZED column). Seed them so recalculation is triggered.
-        for (const auto & [source_column, affected_materialized] : column_to_affected_materialized)
-            columns_for_dependencies.insert(affected_materialized.begin(), affected_materialized.end());
-        columns_for_dependencies.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
+        columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
 
@@ -1640,7 +1668,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || all_affected_materialized.contains(col);
             });
 
         if (changed)
@@ -1678,7 +1706,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || all_affected_materialized.contains(col);
             });
 
         if (changed)
@@ -1691,7 +1719,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             continue;
 
         if (updated_columns.contains(column.name) || changed_columns.contains(column.name)
-            || patch_updated_columns.contains(column.name))
+            || patch_updated_columns.contains(column.name) || all_affected_materialized.contains(column.name))
             materialized_statistics.insert(column.name);
     }
 
