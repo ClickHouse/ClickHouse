@@ -20,3 +20,15 @@ group by covering custom key cityHash64(y)
 0	33334
 1	33333
 2	33333
+non-deterministic custom key merged rows analyzer=1
+3
+non-deterministic custom key merged rows analyzer=0
+3
+expression group by covering custom key mod(number,3) analyzer=1
+0	33334
+1	33333
+2	33333
+expression group by covering custom key mod(number,3) analyzer=0
+0	33334
+1	33333
+2	33333

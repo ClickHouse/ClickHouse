@@ -59,4 +59,32 @@ SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, 
 GROUP BY y ORDER BY y
 SETTINGS parallel_replicas_custom_key = 'cityHash64(y)', enable_analyzer = 1;
 
+-- Non-deterministic custom key (references only the GROUP BY column y, but rand() scatters rows of
+-- the same group across replicas) -> must NOT skip the merge -> single merged row per group.
+-- Assert the number of output rows is 3 (merged), not one partial row per replica.
+SELECT 'non-deterministic custom key merged rows analyzer=1';
+SELECT count() FROM (
+    SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+    GROUP BY y SETTINGS parallel_replicas_custom_key = 'y + rand()', enable_analyzer = 1
+) SETTINGS enable_analyzer = 1;
+
+SELECT 'non-deterministic custom key merged rows analyzer=0';
+SELECT count() FROM (
+    SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+    GROUP BY y SETTINGS parallel_replicas_custom_key = 'y + rand()', enable_analyzer = 0
+) SETTINGS enable_analyzer = 0;
+
+-- Expression GROUP BY key with a custom key that is a deterministic function of that expression
+-- (custom key equals the GROUP BY expression) -> safe to skip the merge; results must still be the
+-- merged totals.
+SELECT 'expression group by covering custom key mod(number,3) analyzer=1';
+SELECT mod(number, 3) AS m, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY mod(number, 3) ORDER BY m
+SETTINGS parallel_replicas_custom_key = 'mod(number, 3)', enable_analyzer = 1;
+
+SELECT 'expression group by covering custom key mod(number,3) analyzer=0';
+SELECT mod(number, 3) AS m, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY mod(number, 3) ORDER BY m
+SETTINGS parallel_replicas_custom_key = 'mod(number, 3)', enable_analyzer = 0;
+
 DROP TABLE t_04545 SYNC;

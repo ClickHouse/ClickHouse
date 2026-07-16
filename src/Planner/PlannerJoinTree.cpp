@@ -1728,7 +1728,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         /// replica. Otherwise (e.g. `SELECT count()`) merging is required, so keep it enabled by default.
                         bool can_skip_merge = false;
                         if (auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context))
-                            can_skip_merge = customKeyResultCanSkipMerge(select_query_info.query_tree, custom_key_ast);
+                            can_skip_merge = customKeyResultCanSkipMerge(select_query_info.query_tree, custom_key_ast, *query_context);
 
                         if (can_skip_merge)
                             planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);

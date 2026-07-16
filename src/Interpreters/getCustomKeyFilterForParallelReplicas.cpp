@@ -12,13 +12,21 @@
 #include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 
+#include <algorithm>
 
 #include <boost/rational.hpp>
 
@@ -196,18 +204,60 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
 namespace
 {
 
-/// Collect the bare column names referenced by the custom key expression AST.
-NameSet collectCustomKeyColumns(const ASTPtr & custom_key)
+bool containsHash(const std::vector<IASTHash> & hashes, const IASTHash & hash)
 {
-    NameSet columns;
-    for (const auto * identifier : IdentifiersCollector::collect(custom_key))
-        columns.insert(identifier->name());
-    return columns;
+    return std::find(hashes.begin(), hashes.end(), hash) != hashes.end();
+}
+
+/// Returns true if `node` is a deterministic function of the given GROUP BY key expressions, i.e. its
+/// value is fully determined by the group's key values. This is exactly what the no-merge fast path
+/// needs: replica assignment is positiveModulo(custom_key, n) (or a range over custom_key), so every
+/// row that shares a GROUP BY key must map to the same replica.
+///
+/// A subexpression is determined by the keys when it either equals one of the GROUP BY key expressions
+/// (matched by tree hash, so expression keys like `mod(number, 3)` are handled, not only bare columns),
+/// is a constant, or is a deterministic non-stateful function whose arguments are all determined by the
+/// keys. Non-deterministic (`rand()`) or stateful functions are rejected even when they reference only
+/// GROUP BY columns, because they scatter rows of the same group across replicas.
+///
+/// The check is conservative: it operates on the unresolved custom-key AST and compares against the
+/// GROUP BY expressions as ASTs, so if a function alias is spelled differently on the two sides the
+/// fast path is simply not taken (correct, just an unused optimization) rather than taken unsafely.
+bool isDeterministicFunctionOfKeys(const ASTPtr & node, const std::vector<IASTHash> & key_hashes, const Context & context)
+{
+    if (containsHash(key_hashes, node->getTreeHash(/*ignore_aliases=*/true)))
+        return true;
+
+    if (node->as<ASTLiteral>())
+        return true;
+
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        /// Aggregate/window/lambda and unknown functions are not ordinary functions of their arguments.
+        const auto resolver = FunctionFactory::instance().tryGet(function->name, context.shared_from_this());
+        if (!resolver)
+            return false;
+        if (!resolver->isDeterministicInScopeOfQuery() || resolver->isStateful())
+            return false;
+
+        if (!function->arguments || function->arguments->children.empty())
+            return false;
+        for (const auto & argument : function->arguments->children)
+        {
+            if (!isDeterministicFunctionOfKeys(argument, key_hashes, context))
+                return false;
+        }
+        return true;
+    }
+
+    /// A bare identifier (or any other node) that does not itself equal a GROUP BY key is not
+    /// determined by the keys.
+    return false;
 }
 
 }
 
-bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key)
+bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key, const Context & context)
 {
     /// Concatenating per-replica results without merging is only correct when each GROUP BY key is
     /// fully processed by a single replica. That holds when the custom key is a function of the GROUP BY
@@ -220,30 +270,15 @@ bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & c
     if (!group_by || group_by->children.empty())
         return false;
 
-    /// Collect bare GROUP BY key column names (only plain column references count).
-    NameSet group_by_columns;
+    std::vector<IASTHash> key_hashes;
+    key_hashes.reserve(group_by->children.size());
     for (const auto & group_by_element : group_by->children)
-    {
-        if (const auto * identifier = group_by_element->as<ASTIdentifier>())
-            group_by_columns.insert(identifier->name());
-    }
-    if (group_by_columns.empty())
-        return false;
+        key_hashes.push_back(group_by_element->getTreeHash(/*ignore_aliases=*/true));
 
-    /// The custom key must reference only columns that are themselves GROUP BY keys.
-    const NameSet custom_key_columns = collectCustomKeyColumns(custom_key);
-    if (custom_key_columns.empty())
-        return false;
-    for (const auto & column : custom_key_columns)
-    {
-        if (!group_by_columns.contains(column))
-            return false;
-    }
-
-    return true;
+    return isDeterministicFunctionOfKeys(custom_key, key_hashes, context);
 }
 
-bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTPtr & custom_key)
+bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTPtr & custom_key, const Context & context)
 {
     const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
@@ -256,27 +291,32 @@ bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTP
     if (!query_node->hasGroupBy())
         return false;
 
-    /// Collect bare GROUP BY key column names (only plain column references count).
-    NameSet group_by_columns;
-    for (const auto & group_by_element : query_node->getGroupBy().getNodes())
+    /// Resolve the custom key against the query's join tree so its column references and function
+    /// names are canonicalized exactly like the resolved GROUP BY expressions. This lets expression
+    /// GROUP BY keys (e.g. `GROUP BY mod(number, 3)` with a custom key over `mod(number, 3)`) match,
+    /// while `isExpressionFunctionOfKeys` rejects non-deterministic/stateful custom keys (e.g.
+    /// `y + rand()`) because their value is not determined by the group's keys.
+    QueryTreeNodePtr custom_key_tree;
+    try
     {
-        if (const auto * column_node = group_by_element->as<ColumnNode>())
-            group_by_columns.insert(column_node->getColumnName());
+        custom_key_tree = buildQueryTree(custom_key, context.shared_from_this());
+        QueryAnalysisPass query_analysis_pass(query_node->getJoinTree(), /*only_analyze_=*/true);
+        query_analysis_pass.run(custom_key_tree, context.shared_from_this());
     }
-    if (group_by_columns.empty())
+    catch (...)
+    {
+        /// If the custom key cannot be resolved against the query (unknown column, ambiguous name,
+        /// etc.), conservatively keep the merge rather than risk wrong results.
+        return false;
+    }
+
+    QueryTreeNodePtrWithHashSet key_set(query_node->getGroupBy().getNodes().begin(), query_node->getGroupBy().getNodes().end());
+    if (key_set.empty())
         return false;
 
-    /// The custom key AST references bare column names; check they are all GROUP BY keys.
-    const NameSet custom_key_columns = collectCustomKeyColumns(custom_key);
-    if (custom_key_columns.empty())
-        return false;
-    for (const auto & column : custom_key_columns)
-    {
-        if (!group_by_columns.contains(column))
-            return false;
-    }
-
-    return true;
+    /// The custom key itself may be one of the GROUP BY keys (bare column custom key), or a
+    /// deterministic function of them.
+    return key_set.contains(custom_key_tree) || isExpressionFunctionOfKeys(custom_key_tree, key_set);
 }
 
 }

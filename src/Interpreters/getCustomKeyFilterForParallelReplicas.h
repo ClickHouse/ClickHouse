@@ -42,10 +42,12 @@ ASTPtr parseCustomKeyForTable(const String & custom_keys, const Context & contex
 /// aggregation whose GROUP BY keys do not cover the custom key columns (including plain aggregation without
 /// GROUP BY, e.g. `SELECT count()`), concatenating per-replica partial results yields wrong results.
 ///
-/// These helpers return true only when skipping the merge is safe. `custom_key` is the parsed custom key
-/// expression. The check is conservative: it requires the custom key to reference only bare columns that are
-/// themselves plain GROUP BY keys, and rejects GROUP BY WITH TOTALS/ROLLUP/CUBE/GROUPING SETS.
-bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key);
-bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTPtr & custom_key);
+/// These helpers return true only when skipping the merge is safe: when the custom key is a deterministic
+/// function of the GROUP BY key expressions (so every row of a group maps to the same replica). Expression
+/// GROUP BY keys are supported (e.g. `GROUP BY mod(number, 3)` with a custom key over `mod(number, 3)`), and
+/// non-deterministic/stateful custom keys (e.g. `y + rand()`) are rejected. GROUP BY WITH
+/// TOTALS/ROLLUP/CUBE/GROUPING SETS is rejected. `custom_key` is the parsed custom key expression.
+bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key, const Context & context);
+bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTPtr & custom_key, const Context & context);
 
 }
