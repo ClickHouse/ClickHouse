@@ -16,3 +16,12 @@ SELECT count(), countSubstrings(explain, '\n') FROM (EXPLAIN SYNTAX oneline = 1 
 
 -- single_record always collapses the per-line records into exactly one, whatever the line count.
 SELECT count() FROM (EXPLAIN SYNTAX SELECT 1);
+
+-- compatibility = '26.6' predates explain_syntax_single_record, so it restores the pre-26.7
+-- default (single_record = 0): the multi-line reformatted query is returned as several records
+-- again. This is the upgrade-safe legacy path old clients rely on instead of editing every query.
+SET compatibility = '26.6';
+SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+
+-- The EXPLAIN-local single_record option still wins over compatibility when explicitly set.
+SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
