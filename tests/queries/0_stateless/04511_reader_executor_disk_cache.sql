@@ -18,7 +18,7 @@ SET enable_filesystem_cache = 1;
 -- Correct aggregates prove the bytes served through the cache chain are right.
 SELECT count(), sum(k) FROM t_re_disk_cache;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- `ReaderExecutorCacheGetRequests` is emitted only by the executor's cache chain, so a positive
 -- sum over this test's queries proves the executor engaged AND consulted the filesystem cache
