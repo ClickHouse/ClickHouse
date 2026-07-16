@@ -264,7 +264,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
 {
     Poco::JSON::Parser parser;
     auto root = parser.parse(footer_json);
-    const auto & obj = root.extract<Poco::JSON::Object::Ptr>();
+    if (root.type() != typeid(Poco::JSON::Object::Ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer JSON must be an object");
+
+    auto obj = root.extract<Poco::JSON::Object::Ptr>();
 
     if (!obj->has("blobs") || obj->isNull("blobs"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer is missing required field 'blobs'");

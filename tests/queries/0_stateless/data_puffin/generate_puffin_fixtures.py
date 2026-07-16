@@ -496,6 +496,21 @@ def generate_invalid_non_dv_properties() -> None:
         )
 
 
+def generate_invalid_footer_root() -> None:
+    """FileMetadata must be a JSON object.
+
+    Poco's RFC 4627 parser accepts array as a top-level value, so this exercises the
+    Object::Ptr guard. String/number roots fail earlier inside the parser itself.
+    """
+    flags = b"\x00\x00\x00\x00"
+    footer_payload = b"[1, 2, 3]"
+    footer_length = struct.pack("<i", len(footer_payload))
+    write_fixture(
+        "footer_root_array.puffin",
+        PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
 def main() -> None:
     spark_fixture = OUTPUT_DIR / "spark_deletion_vector.puffin"
     if not spark_fixture.exists():
@@ -512,6 +527,7 @@ def main() -> None:
     generate_invalid_property_value_types()
     generate_invalid_integer_fields()
     generate_invalid_string_fields()
+    generate_invalid_footer_root()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()

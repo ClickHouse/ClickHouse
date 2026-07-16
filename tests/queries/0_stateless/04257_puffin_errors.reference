@@ -80,6 +80,8 @@ must be a string
 must be a string
 --- compression_codec_bool.puffin ---
 must be a string
+--- footer_root_array.puffin ---
+footer JSON must be an object
 --- invalid_non_dv_properties_array.puffin ---
 field 'properties' must be an object
 --- invalid_non_dv_properties_string.puffin ---

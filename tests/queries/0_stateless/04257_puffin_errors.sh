@@ -115,6 +115,9 @@ do
     $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF "must be a string"
 done
 
+echo "--- footer_root_array.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/footer_root_array.puffin', PuffinMetadata)" 2>&1 | grep -oF 'footer JSON must be an object'
+
 for PUFFIN_FILE in \
     "$DATA/invalid_non_dv_properties_array.puffin" \
     "$DATA/invalid_non_dv_properties_string.puffin"
