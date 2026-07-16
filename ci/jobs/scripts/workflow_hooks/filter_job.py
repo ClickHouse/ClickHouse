@@ -1,7 +1,7 @@
 import re
 
 from ci.defs.defs import JobNames
-from ci.defs.job_configs import JobConfigs
+from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
@@ -75,6 +75,22 @@ def _has_keeper_stress_changes(changed_files):
             or p.startswith("tests/stress/keeper")
             or p.startswith("programs/keeper-bench")
             or p == "ci/jobs/keeper_stress_job.py"
+        ):
+            return True
+    return False
+
+
+def _has_build_digest_changes(changed_files):
+    """True if any changed file may affect the compiled ClickHouse binary,
+    per `build_digest_config.include_paths`/`exclude_paths` - the same paths
+    that gate the build job's cache digest in `ci/defs/job_configs.py`.
+    """
+    include = [p.removeprefix("./") for p in build_digest_config.include_paths]
+    exclude = [p.removeprefix("./") for p in build_digest_config.exclude_paths]
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if any(p.startswith(inc) for inc in include) and not any(
+            p.startswith(exc) for exc in exclude
         ):
             return True
     return False
@@ -253,6 +269,15 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
+    # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
+    # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
+    if Labels.CI_NO_COVERAGE in _info_cache.pr_labels and (
+        "llvm_coverage" in job_name
+        or "excluded_from_llvm" in job_name
+        or job_name == JobNames.LLVM_COVERAGE
+    ):
+        return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
+
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
         skip = True
@@ -369,16 +394,26 @@ def should_skip_job(job_name):
                 if _is_coverage_it:
                     return True, "Skipped: only unit tests changed, integration coverage not needed"
 
+    # Run the LLVM Coverage merge/report job only when the build itself may have
+    # changed. Coverage numbers only move when the compiled binary changes; a
+    # PR that only touches tests/docs/CI scripts would produce a merge report
+    # identical to master, so skip it. PR-only, for the same reason as the
+    # coverage sub-job skipping above: master coverage runs must always
+    # publish a complete baseline.
+    if (
+        job_name == JobNames.LLVM_COVERAGE
+        and _info_cache.pr_number > 0
+        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+    ):
+        return True, "No build-affecting changes"
+
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # Individual coverage test jobs run normally, but the LLVM merge/report job is skipped
-    # so that partial shard data does not corrupt the master coverage number.
+    # Individual coverage test jobs run normally; the LLVM merge/report job is
+    # already skipped above whenever the build is unaffected.
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):
-        if job_name == JobNames.LLVM_COVERAGE:
-            return True, "Skipped: only CI scripts changed; skipping coverage merge to preserve master coverage number"
-
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
             if match and match.group(1) != "1" or "sequential" in job_name:
@@ -394,4 +429,39 @@ def should_skip_job(job_name):
             ):
                 return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
 
+    return False, ""
+
+
+def should_skip_merge_queue_job(job_name):
+    """Config-time filter for the `MergeQueueCI` workflow.
+
+    The merge queue runs a small, fixed set of jobs (style check, fast test, the
+    `amd_binary` build, and the stateless flaky check). Only the flaky check is
+    conditional: it reruns the PR's new/changed stateless tests as a drift guard,
+    so a PR that changes no stateless tests has nothing for it to do. Filter it
+    out here, at config time, so such a PR does not schedule the runner, restore
+    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is
+    the merge-queue counterpart to the `flaky` branch of `should_skip_job`, kept
+    deliberately minimal so it cannot skip the build/style/fast-test jobs the
+    queue always needs. The skip condition matches the in-job selection in
+    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
+    early exit and the config-time skip never disagree. `get_changed_tests`
+    resolves data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`,
+    even one nested in a subdirectory) back to the tests that consume them, so a
+    fixture-only PR still reruns the affected test surface instead of being
+    skipped here as "no changed tests".
+    """
+    global _info_cache
+    if _info_cache is None:
+        _info_cache = Info()
+
+    if "flaky" not in job_name.lower() or "stateless" not in job_name.lower():
+        return False, ""
+
+    from ci.jobs.scripts.find_tests import Targeting
+
+    targeter = Targeting(info=_info_cache)
+    targeter.job_type = Targeting.STATELESS_JOB_TYPE
+    if not targeter.get_changed_tests():
+        return True, "Skipped, no new/changed stateless tests to rerun in the merge queue"
     return False, ""

@@ -117,6 +117,28 @@ namespace
         return result;
     }
 
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close).
+    ///
+    /// The object identifier already uses the full path, so files that share a base name in
+    /// different directories do not collide. For general (non-data-lake) remote objects the path
+    /// alone is not a stable identity - an object can be overwritten in place under the same path -
+    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
+    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
+    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
+    /// lakes whose object metadata does not carry an ETag).
+    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+    {
+        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+        if (is_data_lake)
+            return identifier;
+        const auto & metadata = object_info.getObjectMetadata();
+        if (!metadata || metadata->etag.empty())
+            return std::nullopt;
+        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+    }
+
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
     {
         const auto * metadata_provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buffer);
@@ -176,6 +198,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -381,6 +404,25 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
+        /// For datalake configurations, ensure datalake_table_state is present in the metadata
+        /// before calling iterate(). The state is normally set by
+        /// updateExternalDynamicMetadataIfExists() during query analysis, but it can be missing
+        /// due to race conditions between concurrent queries (TOCTOU between setInMemoryMetadata
+        /// and getInMemoryMetadataPtr), or when called from code paths that bypass the
+        /// analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
+        if (configuration->isDataLakeConfiguration()
+            && (!storage_metadata || !storage_metadata->datalake_table_state.has_value()))
+        {
+            if (auto state = configuration->getTableStateSnapshot(local_context))
+            {
+                auto fixed_metadata = storage_metadata
+                    ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
+                    : std::make_shared<StorageInMemoryMetadata>();
+                fixed_metadata->setDataLakeTableState(*state);
+                storage_metadata = std::move(fixed_metadata);
+            }
+        }
+
         auto iter = configuration->iterate(
             filter_actions_dag,
             filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
@@ -646,7 +688,7 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -680,12 +722,12 @@ Chunk StorageObjectStorageSource::generate()
                             format_filter_info->filter_actions_dag->dumpNames(),
                             object_info->getFileName());
 
-                        if (!unmatched_ranges.empty())
+                        if (!unmatched_ranges.empty() && query_condition_cache_key)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             query_condition_cache->write(
                                 storage_id.uuid,
-                                query_condition_cache_key,
+                                *query_condition_cache_key,
                                 *format_filter_info->condition_hash,
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
@@ -810,9 +852,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info)
         {
-            const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-            auto matching_marks = query_condition_cache->read(
-                storage_id.uuid, query_condition_cache_key, *format_filter_info->condition_hash);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+            if (query_condition_cache_key)
+                matching_marks = query_condition_cache->read(
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -1271,8 +1315,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
+    /// 4. object etag to detect a concurrent in-place overwrite during the read
     if (!object_info.metadata)
+    {
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
+    else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
+             && object_storage->getType() == ObjectStorageType::S3)
+    {
+        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
+        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
+        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
 
     if (use_page_cache && object_info.metadata->etag.empty())
     {
@@ -1338,6 +1393,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// shows a useful name rather than an empty string.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
+
+    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
+    /// instead of torn cross-generation data.
+    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+        stored_object.etag = object_info.metadata->etag;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -1406,9 +1467,27 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.getPath(), object_size, use_prefetch ? "with" : "without",
         pipeline.describe());
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential windows
+    /// for direct object-storage reads (s3()/azureBlobStorage() and the object-storage engines),
+    /// mirroring the wiring in DiskObjectStorage::prepareRead for the disk-based path.
+    if (modified_read_settings.reader_executor.enabled && modified_read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
+
     auto impl = pipeline.build();
 
-    if (use_prefetch && impl && !impl->supportsReadAt())
+    /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
+    /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
+    /// already implies the object is small, see `object_too_small` above). This covers random-access
+    /// formats (Parquet/ORC/Arrow) too: AsynchronousBoundedReadBuffer::readBigAt serves the requested
+    /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
+    /// small file) and otherwise drops the prefetch and falls back to a positioned read.
+    ///
+    /// The prefetch is issued also when the read goes through the filesystem cache: the cache does
+    /// no read-ahead of its own, and files read via object storage engines (e.g. fresh `S3Queue`
+    /// files) are typically cache misses, so without the prefetch the first read of each small file
+    /// is a synchronous, latency-bound round trip to object storage. The prefetch runs the cache
+    /// miss (and the cache fill) in the background instead.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
@@ -1673,6 +1752,10 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             }
             else
                 object_metadata = object_storage->getObjectMetadata(key, with_tags);
+        }
+        else
+        {
+            object_metadata.is_fetched = false;
         }
 
         if (file_progress_callback)

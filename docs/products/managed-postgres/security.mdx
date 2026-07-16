@@ -1,0 +1,129 @@
+---
+slug: /cloud/managed-postgres/security
+sidebarTitle: 'Security'
+title: 'Security'
+description: 'Security features for ClickHouse Managed Postgres including IP whitelisting, encryption, and Private Link'
+keywords: ['postgres security', 'ip whitelisting', 'encryption', 'tls', 'ssl', 'private link', 'backup retention']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
+
+Managed Postgres is built with enterprise-grade security features to protect your data and meet compliance requirements. This page covers network security, encryption, and backup retention policies.
+
+## IP whitelisting {#ip-whitelisting}
+
+IP filters control which source IP addresses are permitted to connect to your Managed Postgres instance, providing network-level access control to protect your database from unauthorized connections.
+
+<Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List configuration" size="md" border/>
+
+### Configuring IP filters {#configuring-ip-filters}
+
+To configure IP filters:
+
+1. Navigate to the **Settings** tab
+2. Under **IP Filters**, click **Edit**
+3. Add IP addresses or CIDR ranges that should be allowed to connect
+4. Click **Save** to apply the changes
+
+You can specify:
+- Individual IP addresses (e.g., `203.0.113.5`)
+- CIDR ranges for networks (e.g., `192.168.1.0/24`)
+- **Anywhere** to allow all IP addresses (not recommended for production)
+- **Nowhere** to block all connections
+
+<Warning>
+**Production best practices**
+
+If no IP filters are configured, connections from all IP addresses are permitted. For production workloads, restrict access to known IP addresses or CIDR ranges. Consider limiting access to:
+- Your application servers
+- VPN gateway IP addresses
+- Bastion hosts for administrative access
+- CI/CD pipeline IPs for automated deployments
+</Warning>
+
+## Encryption {#encryption}
+
+Managed Postgres encrypts your data both at rest and in transit to ensure comprehensive data protection.
+
+### Encryption at rest {#encryption-at-rest}
+
+All data stored by Managed Postgres is encrypted at rest to protect against unauthorized access to the underlying storage infrastructure.
+
+#### NVMe storage encryption {#nvme-encryption}
+
+Your database files, transaction logs, and temporary files stored on NVMe drives are encrypted using industry-standard encryption algorithms. This encryption is transparent to your applications and requires no configuration.
+
+#### Object storage encryption (S3) {#s3-encryption}
+
+Backups and Write-Ahead Log (WAL) archives stored in object storage are also encrypted at rest. This includes:
+- Full daily backups
+- Incremental WAL archives
+- Point-in-time recovery data
+
+All backup data is stored in dedicated, isolated storage buckets with credentials scoped to each individual instance, ensuring that backup data remains secure and accessible only to authorized systems.
+
+<Info>
+Encryption at rest is enabled by default for all Managed Postgres instances and can't be disabled. No additional configuration is required.
+</Info>
+
+### Encryption in transit {#encryption-in-transit}
+
+All network connections to Managed Postgres are secured using TLS (Transport Layer Security) to protect data as it moves between your applications and the database.
+
+#### TLS/SSL configuration {#tls-ssl}
+
+By default, connections use TLS encryption without certificate verification. For production workloads, we recommend connecting with verified TLS to ensure you're communicating with the correct server.
+
+For more details on TLS configuration and connection options, see the [Connection](/products/managed-postgres/connection#tls) page.
+
+## Private Link {#private-link}
+
+Private Link enables private connectivity between your Managed Postgres instance and your Virtual Private Cloud (VPC) without exposing traffic to the public internet. This provides an additional layer of network isolation and security.
+
+<Info>
+**Manual setup required**
+
+Private Link support is available but requires manual configuration by ClickHouse support. This feature is ideal for enterprise customers with strict network isolation requirements.
+</Info>
+
+### Requesting Private Link setup {#requesting-private-link}
+
+To enable Private Link for your Managed Postgres instance:
+
+1. **Contact ClickHouse support** by creating a support ticket
+2. **Provide the following information**:
+   - Your ClickHouse organization ID
+   - ID/hostname of postgres service
+   - AWS account IDs/ARNs which you'd like to connect the private link with
+     -  (Optional) Any regions other than the Postgres instance region you'd like to connect from
+
+3. **ClickHouse support will**:
+   - Provision the Private Link endpoint on the Managed Postgres side
+   - Provide you with endpoint connection details which you can use to create an endpoint interface.
+
+4. **Setup your Private Link**:
+   - Create the Private Link by heading over to endpoint interface in AWS settings and using the configuration provided by the ClickHouse support.
+   - Once your Private Link is in an "Available" state, you can connect to it by using the Private DNS name provided in the AWS UI.
+
+## Backup retention {#backup-retention}
+
+Managed Postgres automatically backs up your data to protect against accidental deletion, corruption, or other data loss scenarios.
+
+### Retention policy {#retention-policy}
+
+- **Default retention period**: 7 days
+- **Backup frequency**: Daily full backups + continuous WAL archiving (every 60 seconds or 16 MB, whichever comes first)
+- **Recovery granularity**: Point-in-time recovery to any moment within the retention window
+
+### Backup security {#backup-security}
+
+Backups are stored with the same security guarantees as your primary data:
+- **Encryption at rest** in object storage
+- **Isolated storage buckets** per instance with scoped credentials
+- **Access control** limited to the Postgres Instance linked to the backup.
+
+For more details on backup strategies and point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) page.

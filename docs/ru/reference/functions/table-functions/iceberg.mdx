@@ -1,0 +1,801 @@
+---
+description: 'Предоставляет доступный только для чтения интерфейс, подобный таблице, для таблиц Apache Iceberg,
+  хранящихся в Amazon S3, Azure, HDFS или локально.'
+sidebarTitle: 'iceberg'
+slug: /sql-reference/table-functions/iceberg
+title: 'iceberg'
+doc_type: 'reference'
+---
+
+Предоставляет доступный только для чтения интерфейс, подобный таблице, для таблиц Apache [Iceberg](https://iceberg.apache.org/), хранящихся в Amazon S3, Azure, HDFS или локально.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(named_collection[, option=value [,..]])
+
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(named_collection[, option=value [,..]])
+
+icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(named_collection[, option=value [,..]])
+
+icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+Описание этих аргументов соответствует описанию аргументов в табличных функциях `s3`, `azureBlobStorage`, `HDFS` и `file` соответственно.
+`format` указывает формат файлов данных в таблице Iceberg.
+
+Для `icebergS3` можно использовать необязательный параметр `extra_credentials`, чтобы передать `role_arn` для ролевого доступа в ClickHouse Cloud. Шаги по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
+
+<div id="returned-value">
+  ### Возвращаемое значение
+</div>
+
+Таблица с указанной структурой для чтения данных из указанной таблицы Iceberg.
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<Warning>
+  В настоящее время ClickHouse поддерживает чтение формата Iceberg версий v1 и v2 через табличные функции `icebergS3`, `icebergAzure`, `icebergHDFS` и `icebergLocal`, а также через движки таблиц `IcebergS3`, `icebergAzure`, `IcebergHDFS` и `IcebergLocal`.
+</Warning>
+
+<div id="defining-a-named-collection">
+  ## Определение именованной коллекции
+</div>
+
+Ниже приведен пример настройки именованной коллекции для хранения URL-адреса и учетных данных:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
+DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
+```
+
+<div id="iceberg-writes-catalogs">
+  ## Использование каталога данных
+</div>
+
+Таблицы Iceberg также можно использовать с различными каталогами данных, такими как [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) и [Unity Catalog](https://www.unitycatalog.io/).
+
+<Warning>
+  При использовании каталога большинству пользователей стоит использовать движок базы данных `DataLakeCatalog`, который подключает ClickHouse к вашему каталогу и позволяет обнаруживать таблицы. Этот движок базы данных можно использовать вместо ручного создания отдельных таблиц с помощью движка таблицы `IcebergS3`.
+</Warning>
+
+Чтобы использовать каталог, создайте таблицу с движком `IcebergS3` и укажите необходимые настройки.
+
+Например, REST Catalog с хранилищем MinIO:
+
+```sql
+CREATE TABLE `database_name.table_name`
+ENGINE = IcebergS3(
+  'http://minio:9000/warehouse-rest/table_name/',
+  'minio_access_key',
+  'minio_secret_key'
+)
+```
+
+Или, используя каталог данных AWS Glue с S3:
+
+```sql
+CREATE TABLE `my_database.my_table`  
+ENGINE = IcebergS3(
+  's3://my-data-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+<div id="schema-evolution">
+  ## Эволюция схемы
+</div>
+
+На данный момент с помощью CH можно читать таблицы Iceberg, схема которых со временем менялась. Сейчас поддерживается чтение таблиц, в которых столбцы добавлялись и удалялись, а также менялся их порядок. Также можно изменить столбец с обязательным значением на столбец, в котором допускается NULL. Кроме того, поддерживается допустимое приведение для простых типов, а именно:  
+
+* int -&gt; long
+* float -&gt; double
+* decimal(P, S) -&gt; decimal(P&#39;, S) where P&#39; &gt; P.
+
+В настоящее время нельзя изменять вложенные структуры или типы элементов внутри Array и Map.
+
+<div id="partition-pruning">
+  ## Отсечение партиций
+</div>
+
+ClickHouse поддерживает отсечение партиций при выполнении запросов SELECT к таблицам Iceberg, что позволяет повысить производительность запросов за счет пропуска нерелевантных файлов данных. Чтобы включить отсечение партиций, задайте `use_iceberg_partition_pruning = 1`. Дополнительные сведения об отсечении партиций в Iceberg см. по адресу: https://iceberg.apache.org/spec/#partitioning
+
+<div id="time-travel">
+  ## Путешествие во времени
+</div>
+
+ClickHouse поддерживает путешествие во времени для таблиц Iceberg, что позволяет выполнять запросы к историческим данным по определённой временной метке или идентификатору снимка.
+
+<div id="deleted-rows">
+  ## Обработка таблиц с удалёнными строками
+</div>
+
+В настоящее время поддерживаются только таблицы Iceberg с [position deletes](https://iceberg.apache.org/spec/#position-delete-files).
+
+Следующие методы удаления **не поддерживаются**:
+
+* [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+* [Векторы удаления](https://iceberg.apache.org/spec/#deletion-vectors) (появились в v3)
+
+<div id="basic-usage">
+  ### Базовое использование
+</div>
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+```
+
+Примечание: В одном запросе нельзя одновременно указывать параметры `iceberg_timestamp_ms` и `iceberg_snapshot_id`.
+
+<div id="important-considerations">
+  ### Важные моменты
+</div>
+
+* **Снимки** обычно создаются в следующих случаях:
+
+* В таблицу записываются новые данные
+
+* Выполняется компакция данных
+
+* **Изменения схемы обычно не создают снимков** — это приводит к важным особенностям при использовании путешествия во времени с таблицами, схема которых менялась.
+
+<div id="example-scenarios">
+  ### Примеры сценариев
+</div>
+
+Все сценарии приведены для Spark, поскольку CH пока не поддерживает запись в таблицы Iceberg.
+
+<div id="scenario-1">
+  #### Сценарий 1: Изменения схемы без новых снимков
+</div>
+
+Рассмотрим следующую последовательность операций:
+
+```sql
+ -- Создать таблицу с двумя столбцами
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+- - Вставить данные в таблицу
+  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+    (1, 'Mars')
+
+  ts1 = now() // Фрагмент псевдокода
+
+- - Изменить таблицу, добавив новый столбец
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+ 
+  ts2 = now()
+
+- - Вставить данные в таблицу
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+
+   ts3 = now()
+
+- - Запросить таблицу на каждой временной метке
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+
++------------+------------+-----+
+|order_number|product_code|price|
++------------+------------+-----+
+|           1|        Mars| NULL|
+|           2|       Venus|100.0|
++------------+------------+-----+
+```
+
+Результаты запросов для разных временных меток:
+
+* В ts1 &amp; ts2: отображаются только два исходных столбца
+* В ts3: отображаются все три столбца, при этом в поле цены для первой строки указано NULL
+
+<div id="scenario-2">
+  #### Сценарий 2: Различия между исторической и текущей схемами
+</div>
+
+Запрос путешествия во времени для текущего момента может возвращать схему, отличающуюся от текущей схемы таблицы:
+
+```sql
+-- Создать таблицу
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- Вставить начальные данные в таблицу
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+
+-- Изменить таблицу, добавив новый столбец
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+
+  ts = now();
+
+-- Запросить таблицу в текущий момент, используя синтаксис временной метки
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+
+    +------------+------------+
+    |order_number|product_code|
+    +------------+------------+
+    |           2|       Venus|
+    +------------+------------+
+
+-- Запросить таблицу в текущий момент
+  SELECT * FROM spark_catalog.db.time_travel_example_2;
+    +------------+------------+-----+
+    |order_number|product_code|price|
+    +------------+------------+-----+
+    |           2|       Venus| NULL|
+    +------------+------------+-----+
+```
+
+Это происходит потому, что `ALTER TABLE` не создает нового снимка, а для текущей таблицы Spark берет значение `schema_id` из последнего файла метаданных, а не из снимка.
+
+<div id="scenario-3">
+  #### Сценарий 3:  Различия между исторической и текущей схемой
+</div>
+
+Второй момент: при использовании путешествия во времени невозможно получить состояние таблицы на момент, когда в неё ещё не было записано никаких данных:
+
+```sql
+-- Создать таблицу
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2');
+
+  ts = now();
+
+-- Запросить таблицу на конкретную временную метку
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Завершается с ошибкой: Cannot find a snapshot older than ts.
+```
+
+В ClickHouse поведение такое же, как в Spark. Можете мысленно заменить запросы SELECT в Spark на запросы SELECT в ClickHouse, и всё будет работать так же.
+
+<div id="metadata-file-resolution">
+  ## Определение файла metadata.json
+</div>
+
+При использовании табличной функции `iceberg` в ClickHouse системе необходимо найти правильный файл metadata.json, который описывает структуру таблицы Iceberg. Ниже описано, как происходит этот поиск:
+
+<div id="candidate-search">
+  ### Поиск кандидатов (в порядке приоритета)
+</div>
+
+1. **Явное указание пути**:
+   *Если задан `iceberg_metadata_file_path`, система использует этот точный путь, объединяя его с путем к каталогу таблицы Iceberg.
+
+* Если задан этот параметр, все остальные параметры разрешения игнорируются.
+
+2. **Сопоставление UUID таблицы**:
+   *Если указан `iceberg_metadata_table_uuid`, система:
+   *Просматривает только файлы `.metadata.json` в каталоге `metadata`
+   *Отбирает файлы, содержащие поле `table-uuid`, которое соответствует указанному UUID (регистронезависимо)
+
+3. **Поиск по умолчанию**:
+   *Если ни один из указанных выше параметров не задан, кандидатами считаются все файлы `.metadata.json` в каталоге `metadata`
+
+<div id="most-recent-file">
+  ### Выбор самого нового файла
+</div>
+
+После того как по приведённым выше правилам определены файлы-кандидаты, система выбирает самый новый из них:
+
+* Если `iceberg_recent_metadata_file_by_last_updated_ms_field` включён:
+
+* Выбирается файл с наибольшим значением `last-updated-ms`
+
+* В противном случае:
+
+* Выбирается файл с наибольшим номером версии
+
+* (Версия обозначается как `V` в именах файлов формата `V.metadata.json` или `V-uuid.metadata.json`)
+
+**Примечание**: Все упомянутые настройки относятся к настройкам табличной функции (а не к глобальным настройкам или настройкам уровня запроса) и должны быть указаны, как показано ниже:
+
+```sql
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+    SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
+```
+
+**Примечание**: Хотя за разрешение метаданных обычно отвечают каталоги Iceberg, табличная функция `iceberg` в ClickHouse напрямую интерпретирует файлы, хранящиеся в S3, как таблицы Iceberg, поэтому важно понимать эти правила разрешения.
+
+<div id="metadata-cache">
+  ## Кэш метаданных
+</div>
+
+Движок таблицы `Iceberg` и табличная функция поддерживают кэш метаданных, в котором хранится информация о файлах манифеста, списке манифестов и metadata json. Кэш хранится в памяти. Эта возможность управляется настройкой `use_iceberg_metadata_files_cache`, которая включена по умолчанию.
+
+<div id="aliases">
+  ## Псевдонимы
+</div>
+
+Табличная функция `iceberg` теперь — псевдоним `icebergS3`.
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
+
+<div id="writes-into-iceberg-table">
+  ## Запись в таблицу Iceberg
+</div>
+
+Начиная с версии 25.7, ClickHouse поддерживает изменение таблиц Iceberg пользователя.
+
+Сейчас это экспериментальная возможность, поэтому сначала её нужно включить:
+
+```sql
+SET allow_insert_into_iceberg = 1;
+```
+
+<div id="create-iceberg-table">
+  ### Создание таблицы
+</div>
+
+Чтобы создать собственную пустую таблицу Iceberg, используйте те же команды, что и для чтения, но явно задайте схему.
+Операции записи поддерживают все форматы данных из спецификации Iceberg, такие как Parquet, Avro и ORC.
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+CREATE TABLE iceberg_writes_example
+(
+    x Nullable(String),
+    y Nullable(Int32)
+)
+ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
+```
+
+Примечание: Чтобы создать файл указания версии, включите настройку `iceberg_use_version_hint`.
+Если вы хотите сжать файл metadata.json, укажите имя кодека в настройке `iceberg_metadata_compression_method`.
+
+<div id="writes-inserts">
+  ### INSERT
+</div>
+
+После создания новой таблицы вы можете вставлять данные, используя обычный синтаксис ClickHouse.
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Pavel
+y: 777
+
+Row 2:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-writes-delete">
+  ### DELETE
+</div>
+
+ClickHouse также поддерживает удаление лишних строк в формате merge-on-read.
+Этот запрос создаст новый снимок с файлами позиционного удаления.
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-writes-schema-evolution">
+  ### Эволюция схемы
+</div>
+
+ClickHouse позволяет добавлять, удалять, изменять или переименовывать столбцы простых типов (не Tuple, не Array и не Map).
+
+<div id="example">
+  ### Пример
+</div>
+
+```sql
+ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+ALTER TABLE iceberg_writes_example ADD COLUMN z Nullable(Int32);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64),                                 ↴│
+   │↳    `z` Nullable(Int32)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+z: ᴺᵁᴸᴸ
+
+ALTER TABLE iceberg_writes_example DROP COLUMN z;
+SHOW CREATE TABLE iceberg_writes_example;
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+
+ALTER TABLE iceberg_writes_example RENAME COLUMN y TO value;
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `value` Nullable(Int64)                              ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+value: 993
+```
+
+<div id="iceberg-writes-compaction">
+  ### Компакция
+</div>
+
+ClickHouse поддерживает компакцию таблиц Iceberg. Сейчас можно объединять файлы позиционного удаления с файлами данных с одновременным обновлением метаданных. Идентификаторы предыдущих снимков и временные метки остаются без изменений, поэтому функцию путешествия во времени по-прежнему можно использовать с теми же значениями.
+
+Как это использовать:
+
+```sql
+SET allow_experimental_iceberg_compaction = 1
+
+OPTIMIZE TABLE iceberg_writes_example;
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-expire-snapshots">
+  ### Удаление устаревших снимков
+</div>
+
+В таблицах Iceberg после каждой операции INSERT, DELETE или UPDATE накапливаются новые снимки. Со временем это может привести к большому количеству снимков и связанных с ними файлов данных. Команда `expire_snapshots` удаляет старые снимки и очищает файлы данных, на которые больше не ссылается ни один сохранённый снимок.
+
+**Синтаксис:**
+
+```sql
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(
+    ['timestamp']
+    [, expire_before = 'timestamp']
+    [, retention_period = '3d']
+    [, retain_last = 100]
+    [, snapshot_ids = [1, 2, 3, 4]]
+    [, dry_run = 1]
+);
+```
+
+По умолчанию то, какие снимки сохранять, определяется [политикой хранения](#iceberg-snapshot-retention-policy) (свойствами таблицы `min-snapshots-to-keep`, `max-snapshot-age-ms` и переопределениями для отдельных ссылок). Если указан `snapshot_ids`, политика хранения не применяется, и на истечение рассматриваются только перечисленные снимки.
+
+**Аргументы:**
+
+* `'timestamp'` (позиционный) или `expire_before = 'timestamp'` — строка даты и времени (например, `'2024-06-01 00:00:00'`), интерпретируемая в **часовом поясе сервера**. Служит своего рода предохранителем: снимки, у которых `timestamp-ms` равен этому значению или больше него, защищены от истечения, даже если по политике хранения они иначе подлежали бы удалению. Можно использовать вместе с `snapshot_ids`; в этом случае перечисленные снимки с этой временной меткой или новее не истекают.
+* `retention_period = '<duration>'` — переопределяет значение `history.expire.max-snapshot-age-ms` на уровне таблицы только для этого вызова. Снимки старше этого периода (отсчитываемого от текущего момента) становятся кандидатами на истечение. Значение представляет собой строку длительности, состоящую из одной или нескольких записанных подряд пар `{number}{unit}`. Поддерживаемые единицы: `y` (365 дней), `w` (7 дней), `d` (24 часа), `h` (60 минут), `m` (60 секунд), `s` (1 секунда), `ms` (1 миллисекунда). Единицы можно комбинировать, например: `'3d'`, `'12h'`, `'1d12h30m'`, `'500ms'`.
+* `retain_last = N` — переопределяет значение `history.expire.min-snapshots-to-keep` на уровне таблицы только для этого вызова. Независимо от возраста всегда сохраняется не менее `N` снимков.
+* `snapshot_ids = [id1, id2, ...]` — помечает на истечение только перечисленные идентификаторы снимков (кроме снимков, на которые ссылаются текущий снимок, ветви или теги). Этот режим полностью отключает политику хранения и не может использоваться вместе с `retention_period` или `retain_last`.
+* `dry_run = 1` — вычисляет, что было бы помечено на истечение, и возвращает Метрика без записи новых метаданных и удаления файлов.
+
+<Note>
+  `retention_period` и `retain_last` переопределяют только значения хранения по умолчанию **на уровне таблицы**. Переопределения хранения для отдельных ссылок (ветвей/тегов), настроенные в свойствах таблицы Iceberg (например, `refs.<branch>.min-snapshots-to-keep`), никогда не переопределяются — они всегда применяются в соответствии с метаданными таблицы.
+</Note>
+
+**Пример:**
+
+```sql
+SET allow_insert_into_iceberg = 1;
+
+-- Создаём несколько снимков путём вставки данных
+INSERT INTO iceberg_table VALUES (1);
+INSERT INTO iceberg_table VALUES (2);
+INSERT INTO iceberg_table VALUES (3);
+
+-- Удаление устаревших снимков только на основе политики хранения
+ALTER TABLE iceberg_table EXECUTE expire_snapshots();
+
+-- Удаление с защитой: снимки новее указанной временной метки не затрагиваются (позиционный синтаксис)
+ALTER TABLE iceberg_table EXECUTE expire_snapshots('2025-01-01 00:00:00');
+
+-- То же самое через именованный аргумент
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(expire_before = '2025-01-01 00:00:00');
+
+-- Переопределение параметров хранения для одного вызова
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '3d', retain_last = 10);
+
+-- Удаление конкретных снимков по идентификаторам
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(snapshot_ids = [101, 102, 103]);
+
+-- Пробный запуск (без обновления метаданных и удаления файлов)
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_run = 1);
+```
+
+**Вывод:**
+
+Команда возвращает таблицу с двумя столбцами (`metric_name String`, `metric_value Int64`); для каждой метрики выводится одна строка. Имена метрик соответствуют [спецификации Iceberg](https://iceberg.apache.org/docs/latest/spark-procedures/#output):
+
+| metric&#95;name                       | Описание                                                            |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| `deleted_data_files_count`            | Количество удалённых файлов данных                                  |
+| `deleted_position_delete_files_count` | Количество удалённых удалённых файлов позиционного удаления         |
+| `deleted_equality_delete_files_count` | Количество удалённых файлов удаления по равенству                   |
+| `deleted_manifest_files_count`        | Количество удалённых файлов манифестов                              |
+| `deleted_manifest_lists_count`        | Количество удалённых файлов списков манифестов                      |
+| `deleted_statistics_files_count`      | Количество удалённых файлов статистики (в настоящее время всегда 0) |
+| `dry_run`                             | `1` для режима dry-run, `0` для обычного выполнения                 |
+
+Команда выполняет следующие шаги:
+
+1. Оценивает политику хранения (см. ниже), чтобы определить, какие снимки нужно сохранить
+2. Если указан аргумент временной метки, дополнительно защищает все снимки с этой временной меткой и новее
+3. Удаляет снимки, которые не сохраняются политикой и не защищены временной меткой
+4. Определяет, какие файлы связаны исключительно с удалёнными снимками
+5. В обычном режиме: создаёт новые метаданные без удалённых снимков
+6. В обычном режиме: физически удаляет недостижимые списки манифестов, файлы манифестов и файлы данных
+7. В режиме `dry_run = 1`: пропускает шаги 5 и 6 и возвращает только вычисленные метрики
+
+<div id="iceberg-snapshot-retention-policy">
+  #### Политика хранения снимков
+</div>
+
+Команда `expire_snapshots` учитывает [политику хранения снимков Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). Параметры хранения задаются через свойства таблицы Iceberg и переопределения для отдельных ссылок:
+
+| Свойство                               | Область | По умолчанию                                                                    | Описание                                                                                          |
+| -------------------------------------- | ------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `history.expire.min-snapshots-to-keep` | Таблица | `iceberg_expire_default_min_snapshots_to_keep` (по умолчанию `1`)               | Минимальное количество снимков, которое нужно сохранять в цепочке предков каждой ветки            |
+| `history.expire.max-snapshot-age-ms`   | Таблица | `iceberg_expire_default_max_snapshot_age_ms` (по умолчанию `432000000`, 5 дней) | Максимальный возраст снимков (в мс), которые сохраняются в ветке                                  |
+| `history.expire.max-ref-age-ms`        | Таблица | `iceberg_expire_default_max_ref_age_ms` (по умолчанию `∞`)                      | Максимальный возраст ссылки на снимок (ветки или тега) в мс, после которого удаляется сама ссылка |
+
+Каждая ссылка на снимок (`refs` в метаданных Iceberg) может переопределять эти значения с помощью полей для конкретной ссылки: `min-snapshots-to-keep`, `max-snapshot-age-ms` и `max-ref-age-ms`.
+
+**Оценка хранения:**
+
+* **Для каждой ветки** (включая `main`): обход цепочки предков начинается с вершины ветки. Снимки сохраняются, пока выполняется хотя бы одно из следующих условий:
+  * Снимок входит в число первых `min-snapshots-to-keep` в цепочке
+  * Возраст снимка не превышает `max-snapshot-age-ms` (то есть `now - timestamp-ms <= max-snapshot-age-ms`)
+* **Для тегов**: помеченный снимок сохраняется, если только возраст тега не превысил `max-ref-age-ms`; в этом случае ссылка на тег удаляется
+* **Ссылки, кроме `main`**, возраст которых превышает `max-ref-age-ms`, удаляются полностью (ветка `main` не удаляется никогда)
+* **Висячие ссылки**, указывающие на несуществующие снимки, удаляются с предупреждением
+* **Текущий снимок сохраняется всегда** независимо от настроек хранения
+
+**Требуемые привилегии:**
+
+Требуется привилегия `ALTER TABLE EXECUTE`, которая является дочерней по отношению к `ALTER TABLE` в иерархии управления доступом ClickHouse. Её можно выдать отдельно или через родительскую привилегию:
+
+```sql
+-- Предоставить только разрешение EXECUTE
+GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
+
+-- Или предоставить все разрешения ALTER TABLE (включает ALTER TABLE EXECUTE)
+GRANT ALTER TABLE ON my_iceberg_table TO my_user;
+```
+
+<Note>
+  * Поддерживаются только таблицы формата Iceberg version 2 (снимки v1 не гарантируют наличие `manifest-list`, который необходим для безопасного определения файлов для очистки)
+  * Текущий снимок всегда сохраняется, даже если он старше указанной временной метки
+  * Требуется, чтобы параметр `allow_insert_into_iceberg` был включен
+  * Требуется, чтобы параметр `allow_experimental_expire_snapshots` был включен
+  * Собственные механизмы авторизации каталога (аутентификация REST-каталога, AWS Glue IAM и т. д.) действуют независимо при обновлении метаданных в ClickHouse
+</Note>
+
+<div id="iceberg-remove-orphan-files">
+  ### Удаление осиротевших файлов
+</div>
+
+Осиротевшие файлы — это файлы в хранилище, на которые не ссылается ни один снимок в метаданных таблицы Iceberg. Они накапливаются из-за неудачных попыток записи, частичной очистки после компакции и прерванных операций, что приводит к неограниченному росту объема хранилища. Команда `remove_orphan_files` обнаруживает и удаляет эти осиротевшие файлы.
+
+**Синтаксис:**
+
+```sql
+-- Позиционная форма: единственный безымянный аргумент older_than
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
+
+-- Именованная форма
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = 'timestamp',
+    location = 'path',
+    dry_run = 0|1
+)
+
+-- Без аргументов: используются все значения по умолчанию (older_than = 3 дня назад)
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
+```
+
+**Параметры:**
+
+| Parameter    | Type                       | Default                                                                     | Description                                                                                                                                                                                            |
+| ------------ | -------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `older_than` | `String` (временная метка) | 3 дня назад (настраивается через `iceberg_orphan_files_older_than_seconds`) | Рассматривать как потенциально осиротевшие только файлы, время последнего изменения которых старше этой временной метки. Это позволяет избежать удаления файлов из ещё не завершённых операций записи. |
+| `location`   | `String`                   | Расположение таблицы                                                        | Ограничить сканирование конкретным подкаталогом в каталоге таблицы (например, `'data/'` или `'metadata/'`).                                                                                            |
+| `dry_run`    | `UInt64`                   | `0`                                                                         | Если указано `1`, определить осиротевшие файлы и вернуть сводку результатов, ничего не удаляя.                                                                                                         |
+
+**Примеры:**
+
+```sql
+-- Удалить осиротевшие файлы старше указанной временной метки
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
+
+-- Пробный запуск: просмотр файлов, которые будут удалены
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
+
+-- Сканировать только каталог данных
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = '2026-03-01 00:00:00',
+    location = 'data/'
+);
+
+-- Совместное использование позиционного аргумента older_than с именованными аргументами
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    '2026-03-01 00:00:00',
+    dry_run = 1
+);
+```
+
+**Вывод:**
+
+Команда возвращает таблицу со столбцами `metric_name` и `metric_value`, в которой показано количество удалённых файлов (или файлов, которые были бы удалены в режиме dry&#95;run) по категориям. Категории файлов определяются с помощью эвристик на основе соглашений об именовании файлов; файлы, не соответствующие ни одному конкретному шаблону регулярного выражения, по умолчанию относятся к `deleted_data_files_count`:
+
+| metric&#95;name                                     | metric&#95;value |
+| --------------------------------------------------- | ---------------- |
+| deleted&#95;data&#95;files&#95;count                | 5                |
+| deleted&#95;position&#95;delete&#95;files&#95;count | 2                |
+| deleted&#95;equality&#95;delete&#95;files&#95;count | 0                |
+| deleted&#95;manifest&#95;files&#95;count            | 3                |
+| deleted&#95;manifest&#95;lists&#95;count            | 1                |
+| deleted&#95;metadata&#95;files&#95;count            | 0                |
+| deleted&#95;statistics&#95;files&#95;count          | 0                |
+| skipped&#95;missing&#95;metadata&#95;count          | 0                |
+| failed&#95;deletions&#95;count                      | 0                |
+
+**Настройки:**
+
+| Настройка                                 | Тип      | По умолчанию     | Описание                                                             |
+| ----------------------------------------- | -------- | ---------------- | -------------------------------------------------------------------- |
+| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`          | Настройка-флаг, включающая эту возможность (экспериментальную).      |
+| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 дня) | Порог `older_than` по умолчанию в секундах, если аргумент не указан. |
+
+<Note>
+  * **Требуется формат Iceberg версии 2 (или выше).** Таблицы версии 1 отклоняются, поскольку в их снимках отсутствуют указатели `manifest-list`, необходимые для безопасного определения набора достижимых файлов. Выполнение команды для таблицы v1 возвращает ошибку `BAD_ARGUMENTS`.
+  * Обе настройки `allow_insert_into_iceberg` и `allow_iceberg_remove_orphan_files` должны быть включены
+  * Рекомендуется запускать `expire_snapshots` перед `remove_orphan_files`, чтобы сначала очищались файлы, на которые ссылаются только истёкшие снимки
+  * Используйте `dry_run = 1`, чтобы предварительно просмотреть осиротевшие файлы перед удалением
+  * Порог `older_than` защищает от удаления файлов из ещё не завершённых операций записи — значение по умолчанию, равное 3 дням, обеспечивает достаточный запас безопасности
+</Note>
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [движок Iceberg](/ru/reference/engines/table-engines/integrations/iceberg)
+* [кластерная табличная функция Iceberg](/ru/reference/functions/table-functions/icebergCluster)
