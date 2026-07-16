@@ -40,12 +40,12 @@
 #include <GenericDatum.hh>
 #include <Types.hh>
 
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Array.h>
+#include <Poco/JSON/Stringifier.h>
 
 #include <limits>
-#include <set>
 #include <memory>
+#include <set>
 #include <string>
 
 namespace DB
@@ -152,10 +152,7 @@ Row parsePartitionTuple(const IAST & value_ast, const DataTypes & partition_type
 
     const auto * fn = value_ast.as<ASTFunction>();
     if (!fn || fn->name != "tuple")
-        throw Exception(
-            ErrorCodes::INVALID_PARTITION_VALUE,
-            "Expected literal or tuple for partition key, got {}",
-            value_ast.getID());
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", value_ast.getID());
 
     const auto & args = fn->arguments ? fn->arguments->children : ASTs{};
     if (args.size() != partitions_fields_count)
@@ -200,7 +197,7 @@ DataTypes resolvePartitionTypes(
         block.insert(ColumnWithTypeAndName{nullptr, type, name});
 
     SharedHeader sample_block = std::make_shared<const Block>(std::move(block));
-    auto schema_fields        = current_schema.getArray(f_fields);
+    auto schema_fields = current_schema.getArray(f_fields);
 
     if (!schema_fields || schema_fields->size() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find key '{}' in schema {} or fields is empty", f_fields, schema_id);
@@ -248,10 +245,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> AlterDropPartitionExecutor
     auto specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog did not return a metadata file location for table '{}.{}'",
-            namespace_name,
-            table_name);
+            ErrorCodes::BAD_ARGUMENTS, "Catalog did not return a metadata file location for table '{}.{}'", namespace_name, table_name);
 
     DataLakeStorageSettings effective_settings = data_lake_settings;
     effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
@@ -300,7 +294,8 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
 
     auto specs = metadata_object->getArray(f_partition_specs);
     if (!specs || specs->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No 'partition-specs' or empty in metadata file {}", state.table_state.metadata_file_path);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "No 'partition-specs' or empty in metadata file {}", state.table_state.metadata_file_path);
 
     state.metadata_object = metadata_object;
     state.schema_id = static_cast<Int32>(state.snapshot->schema_id_on_snapshot_commit);
@@ -347,7 +342,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     for (size_t i = 0; i < partition_fields->size(); ++i)
     {
         auto field_object = partition_fields->getObject(static_cast<UInt32>(i));
-        auto field_name   = field_object->getValue<String>(f_name);
+        auto field_name = field_object->getValue<String>(f_name);
         state.partition_columns.emplace_back(std::move(field_name));
     }
 
@@ -450,8 +445,8 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
     return targets;
 }
 
-AlterDropPartitionExecutor::DropPlan AlterDropPartitionExecutor::buildDropPlan(
-    const SnapshotState & state, const TargetFilePaths & targets, bool require_all_targets) const
+AlterDropPartitionExecutor::DropPlan
+AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, bool require_all_targets) const
 {
     DropPlan result;
     std::set<Row> changed_partitions;
@@ -464,12 +459,11 @@ AlterDropPartitionExecutor::DropPlan AlterDropPartitionExecutor::buildDropPlan(
     UInt64 removed_position_deletes = 0;
     UInt64 removed_position_delete_files = 0;
 
-    auto process_entries = [&](
-        const std::vector<ProcessedManifestFileEntryPtr> & entries,
-        const std::unordered_set<String> & target_paths,
-        std::unordered_set<String> & unmatched_paths,
-        size_t & entries_to_keep,
-        size_t & entries_to_remove)
+    auto process_entries = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries,
+                               const std::unordered_set<String> & target_paths,
+                               std::unordered_set<String> & unmatched_paths,
+                               size_t & entries_to_keep,
+                               size_t & entries_to_remove)
     {
         for (const auto & entry : entries)
         {
@@ -509,14 +503,12 @@ AlterDropPartitionExecutor::DropPlan AlterDropPartitionExecutor::buildDropPlan(
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
         auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
+
         size_t entries_to_keep = 0;
         size_t entries_to_remove = 0;
+
         process_entries(
-            handle.getFilesWithoutDeleted(FileContentType::DATA),
-            targets.data,
-            unmatched_data,
-            entries_to_keep,
-            entries_to_remove);
+            handle.getFilesWithoutDeleted(FileContentType::DATA), targets.data, unmatched_data, entries_to_keep, entries_to_remove);
         process_entries(
             handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE),
             targets.position_delete,
@@ -571,8 +563,7 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
 
     for (const auto & target_manifest : plan.target_manifests.partially_matched)
     {
-        auto handle = getManifestFileEntriesHandle(
-            object_storage, components, context, log, target_manifest.manifest_key, state.schema_id);
+        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, target_manifest.manifest_key, state.schema_id);
 
         std::vector<ProcessedManifestFileEntryPtr> entries_to_keep;
         auto collect_survivors = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries, const auto & target_paths)
@@ -650,78 +641,77 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
         if (min_entry_seq == std::numeric_limits<Int64>::max())
             min_entry_seq = 0;
 
-        result.push_back(ReplacementManifestWrite{
-            .path = std::move(new_manifest_path),
-            .length = length,
-            .min_sequence_number = min_entry_seq,
-            .existing_rows_count = row_total,
-            .existing_files_count = static_cast<Int64>(entries_to_keep.size()),
-            .content_type = replacement_content_type});
+        result.push_back(
+            ReplacementManifestWrite{
+                .path = std::move(new_manifest_path),
+                .length = length,
+                .min_sequence_number = min_entry_seq,
+                .existing_rows_count = row_total,
+                .existing_files_count = static_cast<Int64>(entries_to_keep.size()),
+                .content_type = replacement_content_type});
     }
     return result;
 }
 
 namespace
 {
-    /// Hide some boilerplate of working with poco's json objects
-    struct MetadataJSONView
+/// Hide some boilerplate of working with poco's json objects
+struct MetadataJSONView
+{
+    Poco::JSON::Object::Ptr metadata;
+
+    Poco::JSON::Object::Ptr findSnapshot(Int64 id)
     {
-        Poco::JSON::Object::Ptr metadata;
+        auto snapshots = metadata->getArray(f_snapshots);
+        if (!snapshots)
+            throw DB::Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No 'snapshots' found in metadata");
 
-        Poco::JSON::Object::Ptr findSnapshot(Int64 id)
+        for (auto i = 0ull; i < snapshots->size(); ++i)
         {
-            auto snapshots = metadata->getArray(f_snapshots);
-            if (!snapshots)
-                throw DB::Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No 'snapshots' found in metadata");
-
-            for (auto i = 0ull; i < snapshots->size(); ++i)
-            {
-                auto snapshot = snapshots->getObject(static_cast<uint32_t>(i));
-                if (snapshot && snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == id)
-                    return snapshot;
-            }
-
-            throw DB::Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot with id '{}' found in metadata", id);
+            auto snapshot = snapshots->getObject(static_cast<uint32_t>(i));
+            if (snapshot && snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == id)
+                return snapshot;
         }
-    };
 
-    struct SnapshotJSONView
+        throw DB::Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot with id '{}' found in metadata", id);
+    }
+};
+
+struct SnapshotJSONView
+{
+    Poco::JSON::Object::Ptr snapshot;
+    const Iceberg::IcebergPathResolver & path_resolver;
+
+    auto getManifestPathResolved() const
     {
-        Poco::JSON::Object::Ptr snapshot;
-        const Iceberg::IcebergPathResolver & path_resolver;
+        auto parent_manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
+        auto resolved_path = path_resolver.resolve(parent_manifest_list);
+        return resolved_path;
+    }
+};
 
-        auto getManifestPathResolved() const
-        {
-            auto parent_manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
-            auto resolved_path = path_resolver.resolve(parent_manifest_list);
-            return resolved_path;
-        }
-    };
-
-    template <typename T>
-    const T & checkAndGetValue(const avro::GenericDatum & datum)
+template <typename T>
+const T & checkAndGetValue(const avro::GenericDatum & datum)
+{
+    if constexpr (std::is_same_v<T, avro::GenericRecord>)
     {
-        if constexpr (std::is_same_v<T, avro::GenericRecord>)
-        {
-            if (datum.type() != avro::AVRO_RECORD)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Unexpected avro's type '{}' (instead of '{}')", datum.type(), avro::AVRO_RECORD);
+        if (datum.type() != avro::AVRO_RECORD)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected avro's type '{}' (instead of '{}')", datum.type(), avro::AVRO_RECORD);
 
-            return datum.value<T>();
-        }
-        else if constexpr (std::is_same_v<T, std::string>)
-        {
-            if (datum.type() != avro::AVRO_STRING)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Unexpected avro's type '{}' (instead of '{}')", datum.type(), avro::AVRO_STRING);
+        return datum.value<T>();
+    }
+    else if constexpr (std::is_same_v<T, std::string>)
+    {
+        if (datum.type() != avro::AVRO_STRING)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected avro's type '{}' (instead of '{}')", datum.type(), avro::AVRO_STRING);
 
-            return datum.value<T>();
-        }
-        else
-        {
-            static_assert(false, "Unimplemented");
-        }
-    };
+        return datum.value<T>();
+    }
+    else
+    {
+        static_assert(false, "Unimplemented");
+    }
+};
 }
 
 AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::writeManifestList(
@@ -732,13 +722,10 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     std::vector<String> & files_for_cleanup)
 {
     auto parent_snapshot_id = state.metadata_object->getValue<Int64>(f_current_snapshot_id);
-    auto metadata_info      = filename_generator.generateMetadataPathWithInfo();
+    auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
     auto [new_snapshot, manifest_list_path] = MetadataGenerator{state.metadata_object}.generateNextMetadata(
-        filename_generator,
-        metadata_info.path,
-        parent_snapshot_id,
-        plan.snapshot_summary_update);
+        filename_generator, metadata_info.path, parent_snapshot_id, plan.snapshot_summary_update);
 
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);
     files_for_cleanup.push_back(storage_manifest_list_path);
@@ -754,7 +741,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     auto buf = object_storage->writeObject(
         StoredObject(storage_manifest_list_path),
         WriteMode::Rewrite,
-        /*attributes=*/ std::nullopt,
+        /*attributes=*/std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getWriteSettings());
 
@@ -801,9 +788,9 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             "IcebergWrites",
             [&](const avro::GenericDatum & datum)
             {
-                const auto & old_entry         = checkAndGetValue<avro::GenericRecord>(datum);
+                const auto & old_entry = checkAndGetValue<avro::GenericRecord>(datum);
                 const auto & old_manifest_path = old_entry.field(Iceberg::f_manifest_path);
-                const auto & manifest_path     = checkAndGetValue<std::string>(old_manifest_path);
+                const auto & manifest_path = checkAndGetValue<std::string>(old_manifest_path);
 
                 if (!skip_manifest_paths.contains(manifest_path))
                     writer.write(copyManifestListEntry(old_entry, schema, version, parent_manifest_list_path));
@@ -878,8 +865,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const TargetFi
     /// table can move from uncompressed to e.g. `vN.gz.metadata.json` (external writer or changed
     /// setting), and the replacement metadata must follow the same convention.
     const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
-    FileNamesGenerator filename_generator(
-        components.path_resolver.getTableLocation(), false, compression_method, write_format);
+    FileNamesGenerator filename_generator(components.path_resolver.getTableLocation(), false, compression_method, write_format);
     filename_generator.setVersion(state.table_state.metadata_version + 1);
     filename_generator.setCompressionMethod(compression_method);
 
@@ -946,8 +932,7 @@ void AlterDropPartitionExecutor::run()
             return;
     }
 
-    throw Exception(
-        ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries to drop partition in Iceberg table");
+    throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries to drop partition in Iceberg table");
 }
 
 }
