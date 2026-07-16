@@ -21,11 +21,14 @@ doc_type: 'guide'
 
 <br/>
 
-There are several options for migrating data into ClickHouse Cloud, depending on where your data resides now:
+There are several migration paths into ClickHouse Cloud, depending on where your data resides now:
 
-- [Self-managed to Cloud](/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): use the `remoteSecure` function to transfer data
-- [Another DBMS](/get-started/migrate/other-methods/clickhouse-local-etl): use the [clickhouse-local] ETL tool along with the appropriate ClickHouse table function for your current DBMS
-- [Anywhere!](/get-started/migrate/other-methods/etl-tool-to-clickhouse): use one of the many popular ETL/ELT tools that connect to all kinds of different data sources
-- [Object Storage](/get-started/migrate/other-methods/object-storage-to-clickhouse): easily insert data from S3 into ClickHouse
-
-In the example [Migrate from Redshift](/get-started/migrate/redshift/migration-guide), we present three different ways to migrate data to ClickHouse.
+| Migration path | Description |
+|---|---|
+| [PostgreSQL](/get-started/migrate/postgres/index) | Migrate PostgreSQL data and queries to ClickHouse. |
+| [BigQuery](/get-started/migrate/bigquery/index) | Migrate datasets and workloads from BigQuery to ClickHouse Cloud. |
+| [Snowflake](/get-started/migrate/snowflake/overview) | Migrate Snowflake data and SQL workloads to ClickHouse Cloud. |
+| [Elasticsearch](/get-started/migrate/elastic/overview) | Migrate Elasticsearch data and queries to ClickHouse. |
+| [Redshift](/get-started/migrate/redshift/overview) | Migrate Redshift data and workloads to ClickHouse Cloud. |
+| [OSS to Cloud](/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) | Transfer data from a self-managed ClickHouse deployment to ClickHouse Cloud. |
+| [Other methods](/get-started/migrate/other-methods/clickhouse-local-etl) | Use clickhouse-local, ETL tools, or object storage for other migration scenarios. |
