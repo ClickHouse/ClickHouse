@@ -349,6 +349,8 @@
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
     M(HashJoinDecompressedColumnsCacheBytes, "Total size in bytes of decompressed right-side blocks cached by hash joins when enable_join_in_memory_compression is on.") \
     M(HashJoinDecompressedColumnsCacheCells, "Number of decompressed right-side blocks cached by hash joins when enable_join_in_memory_compression is on.") \
+    M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
+    M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
     M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \

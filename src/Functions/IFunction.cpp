@@ -301,7 +301,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        ColumnPtr result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        ColumnPtr result_null_map;
         for (const auto & arg : args)
         {
             if (arg.type->isNullable() && !isColumnConst(*arg.column))
@@ -337,8 +337,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         }
 
         double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
-        bool should_short_circuit
-            = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
+        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && result_null_map
+            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
         auto temporary_result_type = removeNullable(result_type);
