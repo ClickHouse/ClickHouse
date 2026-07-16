@@ -737,6 +737,7 @@ Chunk PuffinInputFormat::read()
 
     while (blob_index < footer.blobs.size())
     {
+        const size_t current_blob_index = blob_index;
         const auto & blob = footer.blobs[blob_index++];
 
         if (blob.type != "deletion-vector-v1")
@@ -748,7 +749,12 @@ Chunk PuffinInputFormat::read()
         auto col_rows_data = ColumnUInt64::create();
         auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
 
-        const UInt64 expected_cardinality = parse<UInt64>(blob.properties.at("cardinality"));
+        UInt64 expected_cardinality = 0;
+        if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+                current_blob_index);
 
         auto blob_buf = readBlobBytes(blob, *in, footer.data);
         auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length), expected_cardinality);

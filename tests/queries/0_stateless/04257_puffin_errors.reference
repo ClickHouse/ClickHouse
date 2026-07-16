@@ -12,6 +12,10 @@ Failed to deserialize deletion vector roaring bitmap
 Invalid deletion vector bitmap key
 --- cardinality_mismatch_large_bitmap.puffin ---
 exceeds declared cardinality
+--- invalid_cardinality_non_numeric.puffin ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_negative.puffin ---
+property 'cardinality' must be an unsigned integer
 --- inflated_lz4_content_size.puffin ---
 Puffin footer LZ4 content size
 --- missing_lz4_content_size.puffin ---

@@ -27,6 +27,14 @@ $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/invalid_bitmap_key.pu
 echo "--- cardinality_mismatch_large_bitmap.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/cardinality_mismatch_large_bitmap.puffin', Puffin)" 2>&1 | grep -oF 'exceeds declared cardinality'
 
+for PUFFIN_FILE in \
+    "$DATA/invalid_cardinality_non_numeric.puffin" \
+    "$DATA/invalid_cardinality_negative.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$PUFFIN_FILE', Puffin)" 2>&1 | grep -oF "property 'cardinality' must be an unsigned integer"
+done
+
 echo "--- inflated_lz4_content_size.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 content size'
 
