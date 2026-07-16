@@ -102,3 +102,26 @@ CREATE TABLE t_dl_reject (c ${spec}) ENGINE = DeltaLakeLocal('${reject_path}', P
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_reject" >/dev/null 2>&1
     rm -rf "$reject_path"
 done
+
+# A column whose name is reserved for a virtual column (e.g. `_path`) must be rejected *before* commit 0
+# is written (Code: 44 = ILLEGAL_COLUMN); otherwise a rejected CREATE would leave an orphan Delta table
+# behind at the target path.
+echo "reserved-virtual-column:"
+reserved_path="${TABLE_PATH}_reserved"
+rm -rf "$reserved_path"
+if $CLICKHOUSE_CLIENT --query "
+SET allow_experimental_delta_kernel_rs = 1;
+SET allow_experimental_delta_lake_writes = 1;
+CREATE TABLE t_dl_reserved (_path String, id Int32) ENGINE = DeltaLakeLocal('${reserved_path}', Parquet);
+" 2>&1 | grep -q "Code: 44"; then
+    echo "_path: rejected"
+else
+    echo "_path: NOT rejected"
+fi
+if [ -d "${reserved_path}/_delta_log" ]; then
+    echo "_path: fail: orphan _delta_log left behind"
+else
+    echo "_path: no orphan _delta_log"
+fi
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_reserved" >/dev/null 2>&1
+rm -rf "$reserved_path"

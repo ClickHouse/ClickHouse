@@ -25,3 +25,6 @@ DateTime64(3): rejected
 DateTime64(6, 'UTC'): rejected
 Decimal(50, 2): rejected
 LowCardinality(String): rejected
+reserved-virtual-column:
+_path: rejected
+_path: no orphan _delta_log
