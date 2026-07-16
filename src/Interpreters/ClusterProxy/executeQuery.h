@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Client/ConnectionPool_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -71,10 +73,23 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 
+/// Parallel-replicas state captured from the `ReadFromParallelRemoteReplicasStep` removed from the local
+/// INSERT SELECT plan. Carrying it into the remote-pool pass lets that pass reuse the exact coordinator,
+/// connection pools, and local replica numbering decided while building the local pipeline, instead of
+/// recomputing the active replica set from a fresh liveness snapshot (which may have drifted in between).
+struct LocalPlanParallelReplicasInfo
+{
+    ParallelReplicasReadingCoordinatorPtr coordinator;
+    /// Sized to the coordinator's replica count, with the local replica at `local_replica_index`.
+    std::vector<ConnectionPoolPtr> connection_pools;
+    /// The local replica's number; matches the coordinator's snapshot replica number.
+    std::optional<size_t> local_replica_index;
+};
+
 /// Predicate gating the local-plan branch of `executeQueryWithParallelReplicas`. Also evaluated
 /// on followers in `ReadFromMergeTree` so they take the same topology decision as the initiator.
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context);
-ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan);
+LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
@@ -99,7 +114,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
     std::optional<QueryPipeline> pipeline = std::nullopt,
-    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt);
+    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt,
+    std::vector<ConnectionPoolPtr> reused_connection_pools = {},
+    std::optional<size_t> reused_local_replica_index = std::nullopt);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,

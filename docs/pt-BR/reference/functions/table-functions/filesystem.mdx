@@ -1,0 +1,112 @@
+---
+description: 'Fornece acesso ao sistema de arquivos para listar arquivos e retornar seus metadados e conteúdo.'
+sidebarTitle: 'filesystem'
+slug: /sql-reference/table-functions/filesystem
+title: 'filesystem'
+doc_type: 'referência'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="filesystem-table-function">
+  # Função de tabela filesystem
+</div>
+
+<CloudNotSupportedBadge />
+
+Percorre recursivamente um diretório e retorna uma tabela com metadados dos arquivos (caminhos, tamanhos, tipos, permissões e horários de modificação) e, opcionalmente, o conteúdo dos arquivos.
+
+No modo `clickhouse-server`, o caminho deve estar dentro do diretório [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings#user_files_path). Links simbólicos dentro de `user_files_path` que apontam para fora dele são seguidos, mas apenas as entradas cujo caminho (por meio do link simbólico) começa com `user_files_path` são retornadas.
+
+No modo `clickhouse-local`, não há restrições de caminho.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+filesystem([path])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Parâmetro | Descrição                                                                                                                                                                                                                          |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | O diretório a ser listado. Pode ser um caminho absoluto (deve estar dentro de `user_files_path` no modo servidor) ou um caminho relativo a `user_files_path`. Se estiver vazio ou for omitido, o valor padrão é `user_files_path`. |
+
+<div id="returned_columns">
+  ## Colunas retornadas
+</div>
+
+| Coluna              | Tipo                       | Descrição                                                                                                                                                                                                                                      |
+| ------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`              | `String`                   | Diretório que contém a entrada (não inclui o nome do arquivo ou diretório em si).                                                                                                                                                              |
+| `name`              | `String`                   | Nome do arquivo ou diretório (o último componente do caminho).                                                                                                                                                                                 |
+| `file`              | `String` (ALIAS de `name`) | Alias da coluna `name`.                                                                                                                                                                                                                        |
+| `type`              | `Enum8`                    | Tipo de arquivo: `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`.                                                                                                |
+| `size`              | `Nullable(UInt64)`         | Tamanho do arquivo em bytes (para arquivos regulares). `NULL` para arquivos não regulares (diretórios, links simbólicos etc.) e em caso de erro.                                                                                               |
+| `depth`             | `UInt16`                   | Profundidade da recursão. `0` para o próprio diretório consultado e seus filhos imediatos, `1` para entradas um nível abaixo, e assim por diante.                                                                                              |
+| `modification_time` | `Nullable(DateTime64(6))`  | Data e hora da última modificação, com precisão de microssegundos. `NULL` em caso de erro.                                                                                                                                                     |
+| `is_symlink`        | `Bool`                     | Indica se a entrada é um link simbólico.                                                                                                                                                                                                       |
+| `content`           | `Nullable(String)`         | Conteúdo do arquivo (para arquivos regulares). `NULL` para arquivos não regulares (diretórios, links simbólicos etc.). Erros de leitura geram uma exceção. Ler esta coluna aciona E/S real de arquivo, portanto omita-a se não for necessária. |
+| `owner_read`        | `Bool`                     | O proprietário tem permissão de leitura.                                                                                                                                                                                                       |
+| `owner_write`       | `Bool`                     | O proprietário tem permissão de escrita.                                                                                                                                                                                                       |
+| `owner_exec`        | `Bool`                     | O proprietário tem permissão de execução.                                                                                                                                                                                                      |
+| `group_read`        | `Bool`                     | O grupo tem permissão de leitura.                                                                                                                                                                                                              |
+| `group_write`       | `Bool`                     | O grupo tem permissão de escrita.                                                                                                                                                                                                              |
+| `group_exec`        | `Bool`                     | O grupo tem permissão de execução.                                                                                                                                                                                                             |
+| `others_read`       | `Bool`                     | Outros têm permissão de leitura.                                                                                                                                                                                                               |
+| `others_write`      | `Bool`                     | Outros têm permissão de escrita.                                                                                                                                                                                                               |
+| `others_exec`       | `Bool`                     | Outros têm permissão de execução.                                                                                                                                                                                                              |
+| `set_gid`           | `Bool`                     | Bit Set-GID.                                                                                                                                                                                                                                   |
+| `set_uid`           | `Bool`                     | Bit Set-UID.                                                                                                                                                                                                                                   |
+| `sticky_bit`        | `Bool`                     | Sticky bit.                                                                                                                                                                                                                                    |
+
+Apenas as colunas realmente usadas na consulta são calculadas, portanto selecionar um subconjunto de colunas (especialmente omitindo `content`) é eficiente.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+<div id="list-files">
+  ### Liste os arquivos em user_files
+</div>
+
+```sql
+SELECT name, type, size, depth
+FROM filesystem()
+ORDER BY name;
+```
+
+<div id="find-large-files">
+  ### Localizar arquivos grandes
+</div>
+
+```sql
+SELECT path, name, size
+FROM filesystem()
+WHERE type = 'regular' AND size > 1000000
+ORDER BY size DESC;
+```
+
+<div id="read-contents">
+  ### Ler o conteúdo do arquivo
+</div>
+
+```sql
+SELECT name, content
+FROM filesystem('my_directory')
+WHERE name LIKE '%.csv';
+```
+
+<div id="list-immediate">
+  ### Liste apenas os filhos diretos
+</div>
+
+```sql
+SELECT name, type
+FROM filesystem('my_directory')
+WHERE depth = 0;
+```

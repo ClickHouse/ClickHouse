@@ -1,0 +1,148 @@
+---
+slug: /native-protocol/server
+title: '서버 패킷'
+description: '네이티브 프로토콜 서버'
+doc_type: 'reference'
+keywords: ['native protocol', 'tcp protocol', 'client-server', 'protocol specification', 'networking']
+---
+
+| 값  | 이름                               | 설명                                                                           |
+| -- | -------------------------------- | ---------------------------------------------------------------------------- |
+| 0  | [Hello](#hello)                  | 서버 핸드셰이크 응답                                                                  |
+| 1  | 데이터                             | [client data](/ko/resources/develop-contribute/native-protocol/client#data)와 동일 |
+| 2  | [예외](#exception)          | 쿼리 처리 예외                                                                     |
+| 3  | [Progress](#progress)            | 쿼리 진행 상황                                                                     |
+| 4  | [Pong](#pong)                    | Ping 응답                                                                      |
+| 5  | [EndOfStream](#end-of-stream)    | 모든 패킷 전송 완료                                                                  |
+| 6  | [ProfileInfo](#profile-info)     | 프로파일링 데이터                                                                    |
+| 7  | 합계                           | 합계 값                                                                         |
+| 8  | 극값                         | 극값 (min, max)                                                                |
+| 9  | TablesStatusResponse             | TableStatus 요청에 대한 응답                                                        |
+| 10 | [Log](#log)                      | 쿼리 시스템 로그                                                                    |
+| 11 | TableColumns                     | 컬럼 설명                                                                        |
+| 12 | UUIDs                            | 고유한 파트 ID 목록                                                                 |
+| 13 | ReadTaskRequest                  | 다음 작업이 필요한 요청을 나타내는 String(UUID)                                             |
+| 14 | [ProfileEvents](#profile-events) | 서버의 프로파일 이벤트가 포함된 패킷                                                   |
+
+`Data`, `Totals` 및 `Extremes`는 압축할 수 있습니다.
+
+<div id="hello">
+  ## Hello
+</div>
+
+[client Hello](/ko/resources/develop-contribute/native-protocol/client#hello)에 대한 응답입니다.
+
+| field             | 유형      | 값               | 설명             |
+| ----------------- | ------- | --------------- | -------------- |
+| name              | String  | `Clickhouse`    | 서버 이름          |
+| version&#95;major | UVarInt | `21`            | 서버 메이저 버전      |
+| version&#95;minor | UVarInt | `12`            | 서버 마이너 버전      |
+| revision          | UVarInt | `54452`         | 서버 리비전         |
+| tz                | String  | `Europe/Moscow` | 서버 시간대         |
+| display&#95;name  | String  | `Clickhouse`    | UI에 표시되는 서버 이름 |
+| version&#95;patch | UVarInt | `3`             | 서버 패치 버전       |
+
+<div id="exception">
+  ## 예외
+</div>
+
+쿼리 처리 중 서버 예외가 발생합니다.
+
+| field           | type   | value                                  | description                      |
+| --------------- | ------ | -------------------------------------- | -------------------------------- |
+| code            | Int32  | `60`                                   | [ErrorCodes.cpp][codes]를 참조하십시오. |
+| name            | String | `DB::Exception`                        | 서버 메이저 버전                        |
+| message         | String | `DB::Exception: Table X doesn't exist` | 서버 마이너 버전                        |
+| stack&#95;trace | String | ~                                      | C++ 스택 트레이스                      |
+| nested          | Bool   | `true`                                 | 추가 오류                            |
+
+`nested`가 `false`가 될 때까지 예외가 연속된 목록으로 이어질 수 있습니다.
+
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "오류 코드 목록"
+
+<div id="progress">
+  ## Progress
+</div>
+
+서버가 주기적으로 보고하는 쿼리 실행 진행 상황입니다.
+
+<Tip>
+  진행 상황은 **증분값(deltas)** 으로 보고됩니다. 합계는 클라이언트에서 누적하십시오.
+</Tip>
+
+| field           | 유형      | value    | description       |
+| --------------- | ------- | -------- | ----------------- |
+| rows            | UVarInt | `65535`  | 행 수               |
+| bytes           | UVarInt | `871799` | 바이트 수             |
+| total&#95;rows  | UVarInt | `0`      | 총 행 수             |
+| wrote&#95;rows  | UVarInt | `0`      | 클라이언트에서 전송한 행 수   |
+| wrote&#95;bytes | UVarInt | `0`      | 클라이언트에서 전송한 바이트 수 |
+
+<div id="pong">
+  ## Pong
+</div>
+
+[클라이언트 Ping](/ko/resources/develop-contribute/native-protocol/client#ping)에 대한 응답으로, 패킷 본문은 없습니다.
+
+<div id="end-of-stream">
+  ## 스트림 종료
+</div>
+
+더 이상 **데이터** 패킷은 전송되지 않으며, 쿼리 결과의 스트리밍이 서버에서 클라이언트로 모두 완료되었습니다.
+
+패킷 본문은 없습니다.
+
+<div id="profile-info">
+  ## 프로필 정보
+</div>
+
+| 필드                                       | 유형      |
+| ---------------------------------------- | ------- |
+| rows                                     | UVarInt |
+| blocks                                   | UVarInt |
+| bytes                                    | UVarInt |
+| applied&#95;limit                        | Bool    |
+| rows&#95;before&#95;limit                | UVarInt |
+| calculated&#95;rows&#95;before&#95;limit | Bool    |
+
+<div id="log">
+  ## Log
+</div>
+
+서버 로그를 포함하는 **데이터 블록**입니다.
+
+<Tip>
+  컬럼으로 구성된 **데이터 블록**으로 인코딩되지만, 압축되지는 않습니다.
+</Tip>
+
+| 컬럼             | 유형       |
+| -------------- | -------- |
+| time           | DateTime |
+| time&#95;micro | UInt32   |
+| host&#95;name  | String   |
+| query&#95;id   | String   |
+| thread&#95;id  | UInt64   |
+| priority       | Int8     |
+| source         | String   |
+| text           | String   |
+
+<div id="profile-events">
+  ## 프로파일 이벤트
+</div>
+
+프로파일 이벤트가 포함된 **데이터 블록(data block)**입니다.
+
+<Tip>
+  컬럼으로 이루어진 **데이터 블록(data block)**으로 인코딩되지만, 압축되지는 않습니다.
+
+  `value`의 유형은 서버 리비전에 따라 `UInt64` 또는 `Int64`입니다.
+</Tip>
+
+| 컬럼               | 유형              |
+| ---------------- | --------------- |
+| host&#95;name    | String          |
+| current&#95;time | DateTime        |
+| thread&#95;id    | UInt64          |
+| type             | Int8            |
+| name             | String          |
+| value            | UInt64 or Int64 |

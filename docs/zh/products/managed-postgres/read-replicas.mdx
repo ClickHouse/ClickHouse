@@ -1,0 +1,93 @@
+---
+slug: /cloud/managed-postgres/read-replicas
+sidebarTitle: '只读副本'
+title: '只读副本'
+description: '借助 ClickHouse Managed Postgres 中的只读副本，为读密集型工作负载进行扩缩容'
+keywords: ['只读副本', '可扩展性', '读取扩缩容', 'Postgres 副本', '横向扩缩容']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
+
+只读副本可让您为主节点 Managed Postgres 数据库创建一个或多个副本。这些副本会通过 PostgreSQL 的原生复制持续跟随主节点数据库，及时同步变更。
+
+要管理只读副本，请点击仓库上的编辑图标：
+
+<Image img="/images/managed-postgres/warehouse-view.webp" alt="带有编辑图标的仓库视图" size="md" border />
+
+这将打开仓库对话框，您可以在其中查看现有服务并创建新的只读副本：
+
+<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="只读副本管理对话框" size="md" border />
+
+<div id="managing-read-replicas">
+  ## 管理只读副本
+</div>
+
+**只读副本** 页面提供两种视图，可通过右上角的 **Flow** 和 **Table** 控件进行切换。
+
+**Flow** 视图显示复制拓扑——顶部是你的主节点实例，箭头向下指向每个已附加的副本，让你一眼即可查看层级、区域和状态：
+
+<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="显示主实例和副本拓扑的只读副本流视图" size="lg" border />
+
+**Table** 视图会列出每个副本的服务名称、云提供商和区域、服务状态、创建时间，以及 **Detach service** 操作：
+
+<Image img="/images/managed-postgres/read-replicas-table.webp" alt="只读副本表格视图" size="lg" border />
+
+要创建新的副本，请在任一视图右上角单击 **Create read replica**。
+
+<div id="why-use-read-replicas">
+  ## 为何使用只读副本
+</div>
+
+<div id="scalability">
+  ### 可扩展性
+</div>
+
+只读副本可将读密集型工作负载分散到多个专用实例上，从而实现数据库的横向扩展。这对于报表查询、分析处理和实时仪表盘尤其有价值，否则这些负载就会与生产环境流量争夺资源。
+
+<div id="isolation">
+  ### 隔离
+</div>
+
+通过将分析查询和商业智能查询定向到只读副本，可以让主实例专注于写入操作和关键事务工作负载，并保持良好的响应能力。这种隔离可提升整个系统的性能和可预测性。同时，您也无需向分析或报表工具授予写权限——它们可以安全地在副本上运行，而不会有意外修改数据的风险。
+
+<div id="business-continuity">
+  ### 业务连续性
+</div>
+
+只读副本在灾难恢复中可发挥关键作用。如果主数据库发生故障，只读副本可以提升为主节点，从而将停机时间和数据丢失降到最低。除了高可用待机节点外，这还提供了额外一层的韧性保障。
+
+<div id="how-read-replicas-work">
+  ## 只读副本的工作原理
+</div>
+
+Managed Postgres 中的只读副本采用 WAL shipping 架构，而非流式复制。这种设计旨在尽量降低对主节点数据库的影响。
+
+<div id="wal-shipping-from-object-storage">
+  ### 通过对象存储传输 WAL
+</div>
+
+当主节点数据库处理事务时，会生成预写日志 (WAL) 记录。这些 WAL 分段会持续归档到对象存储 (S3) 中。只读副本会从对象存储中拉取并重放这些 WAL 分段，以与主节点保持同步。
+
+这种架构不同于[高可用待机节点](/zh/products/managed-postgres/high-availability)，后者通过与主节点的直接连接使用流式复制。
+
+<div id="why-we-chose-this-approach">
+  ### 为什么我们选择这种方式
+</div>
+
+我们有意将只读副本设计为从对象存储中读取 WAL，而不是作为流式备用节点直接连接到主节点。这样可以让只读副本与主数据库实现完全隔离：
+
+* **主节点零复制开销**：只读副本不会与主节点保持流式连接，因此不会给你的关键工作负载增加任何 CPU、内存或网络负载。
+* **独立扩缩容**：你可以添加或移除只读副本，而不会对主节点性能造成任何影响。
+* **网络隔离**：只读副本在各自独立的网络环境中运行，并使用单独的连接端点。
+
+<div id="replication-lag-characteristics">
+  ### 复制延迟特性
+</div>
+
+这种架构的代价在于复制延迟。WAL 分段会按固定时间间隔从主节点归档 (通常为每 60 秒一次，或在分段写满时归档，以先发生者为准) 。这意味着在正常情况下，只读副本可能会比主节点滞后数十秒。
+
+对于大多数读扩缩容场景——报表、分析、仪表盘——这种延迟是可以接受的。如果你的应用需要近实时读取，请考虑是否可以将查询定向到主节点，或者这一时间窗口内的最终一致性是否能够满足你的要求。

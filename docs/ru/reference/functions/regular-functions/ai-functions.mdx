@@ -1,0 +1,453 @@
+---
+description: 'Документация по функциям ИИ'
+sidebarTitle: 'ИИ'
+slug: /sql-reference/functions/ai-functions
+title: 'Функции ИИ'
+doc_type: 'reference'
+---
+
+Функции ИИ — это встроенные функции ClickHouse, которые можно использовать для вызова ИИ или генерации эмбеддингов при работе с данными, извлечении информации, классификации данных и т. д.
+
+<Note>
+  Функции ИИ являются экспериментальными. Чтобы включить их, установите [`allow_experimental_ai_functions`](/ru/reference/settings/session-settings#allow_experimental_ai_functions).
+</Note>
+
+<Note>
+  Функции ИИ могут возвращать непредсказуемые результаты. Результат во многом зависит от качества промпта и используемой модели.
+</Note>
+
+Все функции используют общую инфраструктуру, которая обеспечивает:
+
+* **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
+* **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+
+<div id="configuration">
+  ## Конфигурация
+</div>
+
+Функции ИИ получают учетные данные провайдера и конфигурацию из [**именованной коллекции**](/ru/concepts/features/configuration/server-config/named-collections). Чтобы указать именованную коллекцию, которую следует использовать для учетных данных, используйте настройку [`ai_function_credentials`](/ru/reference/settings/session-settings#ai_function_credentials).
+
+Пример оператора для создания именованной коллекции с учетными данными провайдера:
+
+```sql
+CREATE NAMED COLLECTION my_ai_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+```
+
+Выберите коллекцию, указав настройку `ai_function_credentials`, для сеанса или отдельного запроса:
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+Когда `ai_function_credentials` пуст (по умолчанию), возникает исключение.
+
+<div id="named-collection-parameters">
+  ### Параметры именованной коллекции
+</div>
+
+| Параметр      | Тип    | По умолчанию | Описание                                                                                                                                                                                                  |
+| ------------- | ------ | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`    | String | —            | Провайдер модели. Поддерживаются: `'openai'`, `'anthropic'`. См. примечание ниже.                                                                                                                         |
+| `endpoint`    | String | —            | URL конечной точки API.                                                                                                                                                                                   |
+| `model`       | String | —            | Имя модели (например, `'gpt-4o-mini'`, `'text-embedding-3-small'`).                                                                                                                                       |
+| `api_key`     | String | —            | Ключ аутентификации для провайдера. Необязательно: если параметр не указан, заголовок аутентификации не отправляется, что позволяет использовать OpenAI-совместимые серверы, не требующие аутентификации. |
+| `max_tokens`  | UInt64 | `1024`       | Максимальное количество выходных токенов на один вызов API.                                                                                                                                               |
+| `api_version` | String | —            | Строка версии API. Используется в Anthropic (`'2023-06-01'`).                                                                                                                                             |
+
+<Note>
+  Любой API, совместимый с OpenAI (например, vLLM, Ollama, LiteLLM), можно использовать, если задать `provider = 'openai'` и указать в `endpoint` конечную точку вашего сервиса.
+</Note>
+
+<div id="query-level-settings">
+  ### Настройки на уровне запроса
+</div>
+
+Выбор именованной коллекции, которая будет использоваться, определяется настройкой [`ai_function_credentials`](/ru/reference/settings/session-settings#ai_function_credentials). Все настройки, связанные с ИИ, перечислены в разделе [Настройки](/ru/reference/settings/session-settings) и имеют префикс `ai_function_`.
+
+<div id="default-and-materialized-columns">
+  ### Использование в столбцах `DEFAULT` и `MATERIALIZED`
+</div>
+
+Параметр `ai_function_credentials` читается при вычислении выражения по умолчанию, а НЕ при определении столбца. Имя коллекции не сохраняется в определении столбца:
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+Для вычисления выражения нужны три условия: должны быть заданы `allow_experimental_ai_functions` и `ai_function_credentials`, а пользователь, который выполняет вычисление, должен иметь `GRANT NAMED COLLECTION` на коллекцию (при разрешении учетных данных выполняется проверка доступа к `NAMED COLLECTION`). Если отсутствует хотя бы одно из них, возникает исключение (`SUPPORT_IS_DISABLED`, ошибка пустых учетных данных или `ACCESS_DENIED`).
+
+Столбец `DEFAULT` вычисляется во время `INSERT`, поэтому оба параметра должны быть заданы в сеансе или запросе, выполняющем вставку:
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+Чтобы можно было выполнять вставку в такие таблицы, не задавая эти параметры для каждого сеанса, укажите оба параметра в [профиле настроек](/ru/concepts/features/configuration/settings/settings-profiles):
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+Столбец `MATERIALIZED` вычисляется при `INSERT`, как и столбец `DEFAULT`, а также пересчитывается мутациями, например `ALTER TABLE ... MATERIALIZE COLUMN`. Мутации выполняются вне пользовательского сеанса и не наследуют секцию `SETTINGS` из запроса, но наследуют настройки из профиля настроек. Чтобы пересчёт, запускаемый мутациями, выполнялся успешно, задайте обе настройки в профиле настроек и выдайте владельцу таблицы право `NAMED COLLECTION`.
+
+<div id="restricting-endpoint-hosts">
+  ### Ограничение хостов конечных точек
+</div>
+
+URL `endpoint` в именованной коллекции AI — это исходящий пункт назначения, к которому сервер подключается от своего имени, потенциально передавая (если указан) `api_key` этой именованной коллекции в заголовках запроса. По умолчанию ClickHouse разрешает любой хост. Чтобы ограничить функции определённым набором провайдеров, настройте [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings#remote_url_allow_hosts) в конфигурации сервера, например:
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+Обратите внимание, что этот параметр является общесерверным и применяется ко всем возможностям, использующим HTTP.
+
+<div id="supported-providers">
+  ## Поддерживаемые провайдеры
+</div>
+
+| Провайдер | Значение `provider` | Функции чата | Примечания                                |
+| --------- | ------------------- | ------------ | ----------------------------------------- |
+| OpenAI    | `'openai'`          | Да           | Провайдер по умолчанию.                   |
+| Anthropic | `'anthropic'`       | Да           | Использует конечную точку `/v1/messages`. |
+
+<div id="observability">
+  ## Обсервабилити
+</div>
+
+Активность функции ИИ отслеживается через ClickHouse [ProfileEvents](/ru/reference/system-tables/query_log):
+
+| ProfileEvent      | Description                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| `AIAPICalls`      | Количество HTTP-запросов, отправленных провайдеру ИИ.                                                    |
+| `AIInputTokens`   | Общее количество использованных входных токенов.                                                         |
+| `AIOutputTokens`  | Общее количество использованных выходных токенов.                                                        |
+| `AIRowsProcessed` | Количество строк, для которых был получен результат.                                                     |
+| `AIRowsSkipped`   | Количество пропущенных строк (превышена квота или возникла ошибка при `ai_function_throw_on_error = 0`). |
+
+Запросите эти события:
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  Внутреннее содержимое тегов ниже во время сборки документации заменяется на
+  документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
+  См.: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+Добавленный в: v26.4.0
+
+Классифицирует заданный текст по одной из указанных категорий с помощью провайдера LLM.
+
+Функция отправляет текст вместе с фиксированным промптом для классификации и форматом ответа в виде JSON Schema, который ограничивает модель так, чтобы она возвращала ровно одну из переданных меток. Если ответ возвращается как объект JSON вида `{"category": "..."}`, метка извлекается, и функция возвращает строку этой метки.
+
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в параметре `ai_function_credentials`.
+
+**Синтаксис**
+
+```sql
+aiClassify(text, categories[, temperature])
+```
+
+**Псевдонимы**: `AIClassify`
+
+**Аргументы**
+
+* `text` — Текст для классификации. [`String`](/ru/reference/data-types/string)
+* `categories` — Константный список возможных меток категорий. [`Array(String)`](/ru/reference/data-types/array)
+* `temperature` — Температура сэмплирования, влияющая на случайность. По умолчанию: `0.0`. [`Float64`](/ru/reference/data-types/float)
+
+**Возвращаемое значение**
+
+Одна из указанных меток категорий или значение по умолчанию для типа столбца (пустая строка), если при запросе произошла ошибка и `ai_function_throw_on_error` отключен. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Классификация тональности**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+positive
+```
+
+**Классификация столбца**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+Добавленный в: v26.6.0
+
+Генерирует эмбеддинг-вектор для заданного текста с помощью настроенного провайдера ИИ.
+
+Функция отправляет текст в настроенную конечную точку эмбеддингов и возвращает полученный вектор в виде `Array(Float32)`.
+В рамках одного блока строк входные данные группируются в батчи размером до
+[`ai_function_embedding_max_batch_size`](/ru/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+элементов в одном HTTP-запросе, чтобы сократить накладные расходы на каждый вызов.
+
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
+Необязательный аргумент `dimensions`, если он поддерживается моделью (например, `text-embedding-3-*` от OpenAI),
+запрашивает вектор заданной размерности; в противном случае возвращается размерность модели по умолчанию.
+
+**Синтаксис**
+
+```sql
+aiEmbed(text[, dimensions])
+```
+
+**Аргументы**
+
+* `text` — Текст для создания эмбеддинга. [`String`](/ru/reference/data-types/string)
+* `dimensions` — Необязательная целевая размерность выходного вектора. `0` или отсутствие значения означает исходную размерность модели. [`UInt64`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Эмбеддинг-вектор или пустой массив, если входное значение — NULL или пустая строка, запрос завершился ошибкой и `ai_function_throw_on_error` отключён, либо была превышена квота при отключённом `ai_function_throw_on_quota_exceeded`. [`Array(Float32)`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Создание эмбеддинга для одной строки**
+
+```sql title=Query
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**С явно заданными измерениями**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**Создать эмбеддинги для текстового столбца**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+Добавленный в: v26.4.0
+
+Извлекает структурированную информацию из неструктурированного текста с помощью провайдера LLM.
+
+Второй аргумент может быть либо произвольной инструкцией на естественном языке (например, `'the main complaint'`), либо
+JSON-кодированной схемой вида `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
+
+В режиме инструкции функция возвращает извлечённое значение в виде обычной строки или пустую строку, если ничего не найдено.
+В режиме схемы функция возвращает строку с объектом JSON, ключи которого соответствуют запрошенной схеме; отсутствующие поля имеют значение `null`.
+
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
+
+**Синтаксис**
+
+```sql
+aiExtract(text, instruction_or_schema[, temperature])
+```
+
+**Псевдонимы**: `AIExtract`
+
+**Аргументы**
+
+* `text` — Текст, из которого нужно извлечь информацию. [`String`](/ru/reference/data-types/string)
+* `instruction_or_schema` — Инструкция для извлечения в свободной форме или константный объект JSON, описывающий извлекаемые поля. [`const String`](/ru/reference/data-types/string)
+* `temperature` — Температура сэмплирования, определяющая степень случайности. По умолчанию: `0.0`. [`const Float64`](/ru/reference/data-types/float)
+
+**Возвращаемое значение**
+
+Одно извлечённое значение (режим инструкции) или строка с объектом JSON (режим схемы). Возвращает значение по умолчанию для типа столбца (пустую строку), если запрос завершился ошибкой и `ai_function_throw_on_error` отключён. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Инструкция в свободной форме**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+late and damaged package
+```
+
+**Извлечение схемы**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+Добавленный в: v26.4.0
+
+Генерирует текст произвольной формы из промпта с помощью провайдера LLM.
+
+Функция отправляет промпт настроенному провайдеру ИИ и возвращает сгенерированный текст.
+Чтобы задать поведение модели (например, тон, формат или роль), можно передать необязательный системный промпт.
+Если системный промпт не указан, по умолчанию используется: `You are a helpful assistant. Provide a clear and concise response.`
+
+Учётные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
+
+**Синтаксис**
+
+```sql
+aiGenerate(prompt[, system_prompt[, temperature]])
+```
+
+**Псевдонимы**: `AIGenerate`
+
+**Аргументы**
+
+* `prompt` — Промпт или вопрос пользователя, отправляемый модели. [`String`](/ru/reference/data-types/string)
+* `system_prompt` — Необязательная постоянная системная инструкция, определяющая поведение модели (например, роль или формат вывода), которая отправляется вместе с каждым промптом. [`String`](/ru/reference/data-types/string)
+* `temperature` — Температура сэмплирования, управляющая случайностью. Значение по умолчанию: `0.7`. [`Float64`](/ru/reference/data-types/float)
+
+**Возвращаемое значение**
+
+Сгенерированный текстовый ответ или значение по умолчанию для типа столбца (пустая строка), если запрос завершился ошибкой и `ai_function_throw_on_error` отключён. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Простой вопрос**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+4
+```
+
+**С системным промптом**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**Сводка значений столбца**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+Добавленный в: v26.4.0
+
+Переводит заданный текст на указанный целевой язык с помощью провайдера LLM.
+
+Дополнительные указания по стилю или диалекту можно передать в качестве третьего аргумента (например, `'keep technical terms untranslated'`).
+
+Учетные данные провайдера и конфигурация берутся из именованной коллекции, указанной в настройке `ai_function_credentials`.
+
+**Синтаксис**
+
+```sql
+aiTranslate(text, target_language[, instructions[, temperature]])
+```
+
+**Псевдонимы**: `AITranslate`
+
+**Аргументы**
+
+* `text` — Текст для перевода. [`String`](/ru/reference/data-types/string)
+* `target_language` — Имя целевого языка или код BCP-47 (например, `'French'`, `'es-MX'`). [`String`](/ru/reference/data-types/string)
+* `instructions` — Необязательные дополнительные инструкции для переводчика в виде константы. [`String`](/ru/reference/data-types/string)
+* `temperature` — Температура сэмплирования, управляющая случайностью. По умолчанию: `0.3`. [`Float64`](/ru/reference/data-types/float)
+
+**Возвращаемое значение**
+
+Переведённый текст или значение по умолчанию для типа столбца (пустая строка), если запрос завершился ошибкой и `ai_function_throw_on_error` отключён. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Перевод на французский**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**Переведите на японский с учетом указаний по стилю**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+{/*AUTOGENERATED_END*/}

@@ -4,17 +4,30 @@
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <algorithm>
 #include <ctime>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
+
+namespace cctz
+{
+class time_zone;
+}
 
 /// NOLINTBEGIN(modernize-macro-to-enum)
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
-#define DATE_LUT_MAX_YEAR 2299 /// Last supported year (complete)
+#define DATE_LUT_MAX_YEAR 2299 /// Last year covered by the lookup table (complete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
+
+/// Years outside the lookup table are handled with cctz. The overall representable range is bounded by the
+/// 4-digit year used when formatting, i.e. [0000, 9999].
+#define DATE_LUT_MIN_REPRESENTABLE_YEAR 0
+#define DATE_LUT_MAX_REPRESENTABLE_YEAR 9999
 
 #define DATE_LUT_SIZE 0x23AB1
 
@@ -28,7 +41,9 @@
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
-#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
+/// It must cover the whole representable range (down to year 0000), otherwise the relative hour/minute helpers below
+/// would feed a negative dividend into C++ truncating division and round pre-1970 values towards zero instead of -inf.
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_REPRESENTABLE_YEAR) * 366L * 86400)
 /// NOLINTEND(modernize-macro-to-enum)
 
 
@@ -227,6 +242,99 @@ private:
     /// Time zone name.
     std::string time_zone;
 
+    /// The loaded cctz time zone, kept for the out-of-range escape paths below.
+    /// The lookup table only covers [DATE_LUT_MIN_YEAR, DATE_LUT_MAX_YEAR]; for time points and day numbers
+    /// outside of this range we fall back to cctz directly instead of clamping to the boundary.
+    std::unique_ptr<cctz::time_zone> cctz_time_zone;
+
+    /// The lookup table covers the local days [DATE_LUT_MIN_YEAR-01-01, DATE_LUT_MAX_YEAR-12-31]. The exact
+    /// Unix-time boundary of that range is time-zone dependent, but it cannot shift by more than the largest
+    /// possible UTC offset (well under a day). So a window shrunk by two days on each side from the UTC bounds
+    /// is guaranteed to be in range for *every* time zone, and uses only compile-time constants — no per-instance
+    /// members and no loads on the hot path. The few near-boundary time points that fall outside this window take
+    /// the (always-correct) cctz escape path. Day numbers are time-zone independent, so they need no margin.
+    static constexpr Time lut_in_range_min = -2208988800 + 2 * 86400; /// after 1900-01-01 00:00:00 UTC, for any time zone
+    static constexpr Time lut_in_range_max = 10413792000 - 2 * 86400; /// before 2300-01-01 00:00:00 UTC, for any time zone
+
+    /// The widest range DateLUTImpl can represent and format: a 4-digit year, i.e. [0000-01-01, 9999-12-31].
+    /// The cctz escape paths clamp to this window so that formatting can never overflow the 4-digit year
+    /// (values further out of range are produced e.g. by fromUnixTimestamp64 with a huge argument).
+    static constexpr Int64 min_representable_day_index = -693961;  /// 0000-01-01, days since DATE_LUT_MIN_YEAR-01-01
+    static constexpr Int64 max_representable_day_index = 2958463;  /// 9999-12-31
+    static constexpr Time min_representable_time = -62167219200;   /// 0000-01-01 00:00:00 UTC
+    static constexpr Time max_representable_time = 253402300799;   /// 9999-12-31 23:59:59 UTC
+
+    /// std::chrono::system_clock::from_time_t can overflow for extreme Int64 inputs, so the cctz escape paths
+    /// bound the UTC timestamp to this window before constructing a time point. It is wider than the
+    /// representable calendar by more than a whole-day timezone offset, so that a local civil value at the
+    /// [0000, 9999] boundary (whose UTC instant can lie just outside the representable window) survives the
+    /// conversion; the local result is clamped to the representable calendar after the timezone conversion.
+    static constexpr Time min_chrono_safe_time = min_representable_time - 2 * 86400;
+    static constexpr Time max_chrono_safe_time = max_representable_time + 2 * 86400;
+
+    /// Whether a value cannot be represented by the lookup table and needs the cctz escape path.
+    /// Only Time (timestamp) and ExtendedDayNum (signed day number) can fall outside of the LUT;
+    /// DateTime (UInt32), Date (DayNum/UInt16) and LUTIndex always fit, so they never take the escape path.
+    template <typename T>
+    static constexpr bool may_be_out_of_lut_range = std::is_same_v<T, Time> || std::is_same_v<T, ExtendedDayNum>;
+
+    static bool isOutOfLUTRange(Time t)
+    {
+        /// Single unsigned comparison against compile-time constants, equivalent to
+        /// (t < lut_in_range_min || t >= lut_in_range_max). Cast before subtracting to avoid signed overflow.
+        return static_cast<UInt64>(t) - static_cast<UInt64>(lut_in_range_min) >= static_cast<UInt64>(lut_in_range_max - lut_in_range_min);
+    }
+
+    static bool isOutOfLUTRange(ExtendedDayNum d)
+    {
+        /// Single unsigned comparison, equivalent to (index < 0 || index >= DATE_LUT_SIZE).
+        return static_cast<UInt32>(static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch) >= DATE_LUT_SIZE;
+    }
+
+    /// The day index (number of days since DATE_LUT_MIN_YEAR-01-01, i.e. a non-normalized LUTIndex value)
+    /// of an out-of-range value. For day numbers it is plain arithmetic; for time points it needs cctz.
+    Int64 outOfRangeDayIndex(Time t) const { return findDayIndexOutOfRange(t); }
+    /// Saturate to the representable window so callers stay consistent with valuesForOutOfRangeDayIndex (which also
+    /// clamps); an extreme Date32 day number would otherwise yield a nonsensical day-of-year / start-of-week / etc.
+    static Int64 outOfRangeDayIndex(ExtendedDayNum d)
+    {
+        return std::clamp(static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch, min_representable_day_index, max_representable_day_index);
+    }
+
+    /// The Values of the day an out-of-range value belongs to.
+    Values outOfRangeValues(Time t) const { return valuesForOutOfRangeDayIndex(findDayIndexOutOfRange(t)); }
+    Values outOfRangeValues(ExtendedDayNum d) const { return valuesForOutOfRangeDayIndex(outOfRangeDayIndex(d)); }
+
+    /// Day number (ExtendedDayNum, counted from the Unix epoch) corresponding to a day index (counted from DATE_LUT_MIN_YEAR).
+    static ExtendedDayNum dayNumOfDayIndex(Int64 day_index)
+    {
+        return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(day_index - daynum_offset_epoch)};
+    }
+    /// Start-of-day Time of a day index, with the cctz escape path for out-of-range indices.
+    Time dateOfDayIndex(Int64 day_index) const { return valuesForOutOfRangeDayIndex(day_index).date; }
+
+    /// The Gregorian (and ISO-week) calendar repeats exactly every 400 years == DATE_LUT_SIZE days, and week
+    /// numbering is timezone-independent. So for out-of-range day numbers we shift into the LUT range by whole
+    /// 400-year cycles, reuse the in-range logic, and adjust the resulting year by 400 * (number of cycles).
+    /// Returns the in-range day number; `cycles` receives the number of cycles added (negative if subtracted).
+    static constexpr Int64 days_in_400_years = DATE_LUT_SIZE;
+    ExtendedDayNum shiftIntoLUTRange(ExtendedDayNum d, Int32 & cycles) const
+    {
+        Int64 index = static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch;
+        Int64 k = 0;
+        if (index < 0)
+            k = (days_in_400_years - 1 - index) / days_in_400_years;
+        else if (index >= days_in_400_years)
+            k = -(index / days_in_400_years);
+        index += k * days_in_400_years;
+        cycles = static_cast<Int32>(k);
+        return dayNumOfDayIndex(index);
+    }
+
+    /// The escape paths implemented with cctz (findDayIndexOutOfRange, valuesForOutOfRangeDayIndex,
+    /// toDateTimeComponentsOutOfRange, addDaysOutOfRange, makeDateOutOfRange, ...) are declared after the
+    /// DateTimeComponents struct below, since some of them return it. They are defined in DateLUTImpl.cpp.
+
     LUTIndex findIndex(Time t) const
     {
         /// First guess.
@@ -252,6 +360,24 @@ private:
         }
 
         return LUTIndex(guess ? static_cast<unsigned>(guess) - 1 : 0);
+    }
+
+    /// Same as findIndex, but for a Time that the caller has already established to be in range (i.e. that passed
+    /// the `!isOutOfLUTRange(t)` gate). The gate's two-day margin guarantees the guess is in [1, DATE_LUT_SIZE - 2],
+    /// so the bound clamps that findIndex repeats are unnecessary and lut[guess - 1 .. guess + 1] are all valid.
+    LUTIndex findIndexInRange(Time t) const
+    {
+        Time guess = (t / 86400) + daynum_offset_epoch;
+        if (unlikely(t < 0))
+            --guess;
+
+        if (t >= lut[guess].date)
+        {
+            if (t < lut[guess + 1].date)
+                return LUTIndex(static_cast<unsigned>(guess));
+            return LUTIndex(static_cast<unsigned>(guess) + 1);
+        }
+        return LUTIndex(static_cast<unsigned>(guess) - 1);
     }
 
     static LUTIndex toLUTIndex(DayNum d)
@@ -303,16 +429,39 @@ private:
         return static_cast<DateOrTime>(rounded_towards_zero - d);
     }
 
+    /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
+    /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
+    /// outside any valid date range this sum can step just past the type boundary even though both operands
+    /// are individually representable. The result for such out-of-range values is meaningless anyway, so we
+    /// saturate to the nearest boundary.
+    static Time addSaturating(Time base, Time offset)
+    {
+        Time res = 0;
+        if (unlikely(__builtin_add_overflow(base, offset, &res)))
+            return offset < 0 ? std::numeric_limits<Time>::min() : std::numeric_limits<Time>::max();
+        return res;
+    }
+
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         chassert(divisor > 0);
 
+        /// Checked before the fast path below: the "whole number of hours" property holds during the epoch,
+        /// but historical (pre-1900) offsets can have a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the
+        /// fast path would round to a UTC boundary instead of the local one for out-of-range values.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(x)))
+            {
+                const Time date = outOfRangeValues(x).date;
+                return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
+            }
+
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
             return roundDownToMultiple(x, divisor);
 
-        Time date = find(x).date;
+        const Time date = find(x).date;
         Time res = date + (x - date) / divisor * divisor;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
@@ -325,6 +474,9 @@ private:
     }
 
 public:
+    /// Defined in the .cpp because of the forward-declared cctz::time_zone held in a unique_ptr.
+    ~DateLUTImpl();
+
     const std::string & getTimeZone() const { return time_zone; }
 
     // Methods only for unit-testing, it makes very little sense to use it from user code.
@@ -363,13 +515,22 @@ public:
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return DayNum{static_cast<DayNum::UnderlyingType>(saturateMinus(toLUTIndex(v).toUnderType(), daynum_offset_epoch))};
         else
+        {
+            if constexpr (may_be_out_of_lut_range<DateOrTime>)
+                if (unlikely(isOutOfLUTRange(v)))
+                    return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(outOfRangeDayIndex(v) - daynum_offset_epoch)};
             return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
+        }
     }
 
     /// Round down to start of monday.
     template <typename DateOrTime>
     Time toFirstDayOfWeek(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dateOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week - 1));
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return lut_saturated[i - (lut[i].day_of_week - 1)].date;
@@ -380,6 +541,10 @@ public:
     template <typename DateOrTime>
     auto toFirstDayNumOfWeek(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_week - 1));
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(i - (lut[i].day_of_week - 1)));
@@ -391,6 +556,10 @@ public:
     template <typename DateOrTime>
     Time toLastDayOfWeek(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dateOfDayIndex(outOfRangeDayIndex(v) + (7 - outOfRangeValues(v).day_of_week));
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return lut_saturated[i + (7 - lut[i].day_of_week)].date;
@@ -401,6 +570,10 @@ public:
     template <typename DateOrTime>
     auto toLastDayNumOfWeek(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) + (7 - outOfRangeValues(v).day_of_week));
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(i + (7 - lut[i].day_of_week)));
@@ -412,6 +585,10 @@ public:
     template <typename DateOrTime>
     Time toFirstDayOfMonth(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dateOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_month - 1));
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return lut_saturated[i - (lut[i].day_of_month - 1)].date;
@@ -422,6 +599,10 @@ public:
     template <typename DateOrTime>
     auto toFirstDayNumOfMonth(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) - (outOfRangeValues(v).day_of_month - 1));
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(i - (lut[i].day_of_month - 1)));
@@ -433,6 +614,13 @@ public:
     template <typename DateOrTime>
     Time toLastDayOfMonth(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                const Values values = outOfRangeValues(v);
+                return dateOfDayIndex(outOfRangeDayIndex(v) + (values.days_in_month - values.day_of_month));
+            }
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return lut_saturated[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
@@ -443,6 +631,13 @@ public:
     template <typename DateOrTime>
     auto toLastDayNumOfMonth(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                const Values values = outOfRangeValues(v);
+                return dayNumOfDayIndex(outOfRangeDayIndex(v) + (values.days_in_month - values.day_of_month));
+            }
+
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(i + (lut[i].days_in_month - lut[i].day_of_month)));
@@ -454,6 +649,13 @@ public:
     template <typename DateOrTime>
     auto toFirstDayNumOfQuarter(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                const Values values = outOfRangeValues(v);
+                return makeDayNumOutOfRange(values.year, (values.month - 1) / 3 * 3 + 1, 1);
+            }
+
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(toFirstDayOfQuarterIndex(v)));
         else
@@ -479,13 +681,23 @@ public:
     template <typename DateOrTime>
     Time toFirstDayOfQuarter(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                const Values values = outOfRangeValues(v);
+                return makeDateOutOfRange(values.year, (values.month - 1) / 3 * 3 + 1, 1);
+            }
+
         return toDate(toFirstDayOfQuarterIndex(v));
     }
 
     /// Round down to start of year.
     Time toFirstDayOfYear(Time t) const
     {
-        return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date;
+        if (unlikely(isOutOfLUTRange(t)))
+            return makeDateOutOfRange(outOfRangeValues(t).year, 1, 1);
+
+        return lut[years_lut[lut[findIndexInRange(t)].year - DATE_LUT_MIN_YEAR]].date;
     }
 
     template <typename DateOrTime>
@@ -497,6 +709,10 @@ public:
     template <typename DateOrTime>
     auto toFirstDayNumOfYear(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return makeDayNumOutOfRange(outOfRangeValues(v).year, 1, 1);
+
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(toFirstDayNumOfYearIndex(v)));
         else
@@ -505,14 +721,26 @@ public:
 
     Time toFirstDayOfNextMonth(Time t) const
     {
-        LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+        {
+            const Values values = outOfRangeValues(t);
+            return makeDateOutOfRange(values.year, values.month + 1, 1);
+        }
+
+        LUTIndex index = findIndexInRange(t);
         index += 32 - lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
     Time toFirstDayOfPrevMonth(Time t) const
     {
-        LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+        {
+            const Values values = outOfRangeValues(t);
+            return makeDateOutOfRange(values.year, values.month - 1, 1);
+        }
+
+        LUTIndex index = findIndexInRange(t);
         index -= lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
@@ -520,31 +748,45 @@ public:
     template <typename DateOrTime>
     UInt8 daysInMonth(DateOrTime value) const
     {
-        const LUTIndex i = toLUTIndex(value);
-        return lut[i].days_in_month;
+        return getValues(value).days_in_month;
     }
 
     UInt8 daysInMonth(Int16 year, UInt8 month) const
     {
         UInt16 idx = year - DATE_LUT_MIN_YEAR;
-        if (unlikely(idx >= DATE_LUT_YEARS))
-            return 31;  /// Implementation specific behaviour on overflow.
+        if (likely(idx < DATE_LUT_YEARS))
+        {
+            /// 32 makes arithmetic more simple.
+            const auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1);
+            return lut[any_day_of_month].days_in_month;
+        }
 
-        /// 32 makes arithmetic more simple.
-        const auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1);
-        return lut[any_day_of_month].days_in_month;
+        /// Out-of-range year: compute with cctz via the first day of the month.
+        const Int64 first_of_month = static_cast<Int64>(makeDayNumOutOfRange(year, month, 1)) + daynum_offset_epoch;
+        return valuesForOutOfRangeDayIndex(first_of_month).days_in_month;
     }
 
     /** Round to start of day, then shift for specified amount of days.
       */
     Time toDateAndShift(Time t, Int32 days) const
     {
-        return lut[findIndex(t) + days].date;
+        if (unlikely(isOutOfLUTRange(t)))
+            return dateOfDayIndex(findDayIndexOutOfRange(t) + days);
+
+        const LUTIndex index = findIndexInRange(t);
+        const Int64 shifted = static_cast<Int64>(index.toUnderType()) + days;
+        if (unlikely(shifted < 0 || shifted >= DATE_LUT_SIZE))
+            return dateOfDayIndex(shifted);
+
+        return lut[index + days].date;
     }
 
     Time toTime(Time t) const
     {
-        const LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+            return toTimeOutOfRange(t);
+
+        const LUTIndex index = findIndexInRange(t);
 
         Time res = t - lut[index].date;
 
@@ -556,7 +798,10 @@ public:
 
     unsigned toHour(Time t) const
     {
-        const LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+            return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.hour);
+
+        const LUTIndex index = findIndexInRange(t);
 
         Time time = t - lut[index].date;
 
@@ -576,7 +821,10 @@ public:
       */
     Time timezoneOffset(Time t) const
     {
-        const LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+            return timezoneOffsetOutOfRange(t);
+
+        const LUTIndex index = findIndexInRange(t);
 
         /// Calculate daylight saving offset first.
         /// Because the "amount_of_offset_change" in LUT entry only exists in the change day, it's costly to scan it from the very begin.
@@ -598,6 +846,11 @@ public:
 
     unsigned toSecond(Time t) const
     {
+        /// Checked before the fast path: the "whole number of minutes" property holds during the epoch,
+        /// but historical (pre-1900) offsets can have a sub-minute component (e.g. Moscow's +2:30:17 LMT).
+        if (unlikely(isOutOfLUTRange(t)))
+            return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.second);
+
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
             Time res = t % 60;
@@ -606,7 +859,7 @@ public:
             return static_cast<unsigned>(res) + 60;
         }
 
-        LUTIndex index = findIndex(t);
+        LUTIndex index = findIndexInRange(t);
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
@@ -623,13 +876,17 @@ public:
 
     unsigned toMinute(Time t) const
     {
+        /// Checked before the fast path: historical (pre-1900) offsets can have a sub-minute component.
+        if (unlikely(isOutOfLUTRange(t)))
+            return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.minute);
+
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return (t / 60) % 60;
 
         /// To consider the DST changing situation within this day
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
 
-        LUTIndex index = findIndex(t);
+        LUTIndex index = findIndexInRange(t);
         UInt32 time = static_cast<UInt32>(t - lut[index].date);
 
         if (time >= lut[index].time_at_offset_change())
@@ -659,11 +916,20 @@ public:
       */
 
     Time fromDayNum(DayNum d) const { return lut_saturated[toLUTIndex(d)].date; }
-    Time fromDayNum(ExtendedDayNum d) const { return lut[toLUTIndex(d)].date; }
+    Time fromDayNum(ExtendedDayNum d) const
+    {
+        if (unlikely(isOutOfLUTRange(d)))
+            return outOfRangeValues(d).date;
+        return lut[toLUTIndex(d)].date;
+    }
 
     template <typename DateOrTime>
     Time toDate(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+                return outOfRangeValues(v).date;
+
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return lut_saturated[toLUTIndex(v)].date;
         else
@@ -671,20 +937,20 @@ public:
     }
 
     template <typename DateOrTime>
-    UInt8 toMonth(DateOrTime v) const { return lut[toLUTIndex(v)].month; }
+    UInt8 toMonth(DateOrTime v) const { return getValues(v).month; }
 
     template <typename DateOrTime>
-    UInt8 toQuarter(DateOrTime v) const { return (lut[toLUTIndex(v)].month - 1) / 3 + 1; }
+    UInt8 toQuarter(DateOrTime v) const { return (getValues(v).month - 1) / 3 + 1; }
 
     template <typename DateOrTime>
-    Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
+    Int16 toYear(DateOrTime v) const { return getValues(v).year; }
 
     template <typename DateOrTime>
-    Int16 toYearSinceEpoch(DateOrTime v) const { return lut[toLUTIndex(v)].year - 1970; }
+    Int16 toYearSinceEpoch(DateOrTime v) const { return getValues(v).year - 1970; }
 
     /// 1-based, starts on Monday
     template <typename DateOrTime>
-    UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
+    UInt8 toDayOfWeek(DateOrTime v) const { return getValues(v).day_of_week; }
 
     template <typename DateOrTime>
     UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
@@ -705,11 +971,20 @@ public:
     }
 
     template <typename DateOrTime>
-    UInt8 toDayOfMonth(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_month; }
+    UInt8 toDayOfMonth(DateOrTime v) const { return getValues(v).day_of_month; }
 
     template <typename DateOrTime>
     UInt16 toDayOfYear(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                const Values values = outOfRangeValues(v);
+                const Int64 day_index = outOfRangeDayIndex(v);
+                const Int64 first_day_of_year_index = static_cast<Int64>(makeDayNumOutOfRange(values.year, 1, 1)) + daynum_offset_epoch;
+                return static_cast<UInt16>(day_index - first_day_of_year_index + 1);
+            }
+
         // TODO: different overload for ExtendedDayNum
         const LUTIndex i = toLUTIndex(v);
         return static_cast<UInt16>(i + 1 - toFirstDayNumOfYearIndex(i));
@@ -721,6 +996,17 @@ public:
     template <typename DateOrTime>
     Int32 toRelativeWeekNum(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                /// Mirror the in-range formula in day-number space (toDayNum(i + (8 - dow)) / 7), using floor
+                /// division so a pre-epoch week number rounds towards -inf; otherwise dateDiff('week', ...) undercounts.
+                const Int64 day_index = outOfRangeDayIndex(v);
+                const UInt8 day_of_week = outOfRangeValues(v).day_of_week;
+                const Int64 shifted = day_index + (8 - day_of_week) - daynum_offset_epoch;
+                return static_cast<Int32>(shifted >= 0 ? shifted / 7 : -((-shifted + 6) / 7));
+            }
+
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
         return toDayNum(i + (8 - toDayOfWeek(i))) / 7;
@@ -730,6 +1016,21 @@ public:
     template <typename DateOrTime>
     Int16 toISOYear(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                Int32 cycles = 0;
+                const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
+                /// The ISO year can fall just outside [0000, 9999] at the boundaries (e.g. 0000-01-01 belongs
+                /// to ISO year -1); clamp it so the returned year stays within the representable range.
+                Int32 iso_year = toISOYear(shifted) - cycles * 400;
+                if (iso_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+                    iso_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                else if (iso_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+                    iso_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                return static_cast<Int16>(iso_year);
+            }
+
         const LUTIndex i = toLUTIndex(v);
         /// That's effectively the year of thursday of current week.
         return toYear(toLUTIndex(i + (4 - toDayOfWeek(i))));
@@ -755,6 +1056,16 @@ public:
     template <typename DateOrTime>
     auto toFirstDayNumOfISOYear(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                Int32 cycles = 0;
+                const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
+                /// Not recursing into toFirstDayNumOfISOYear (it has a deduced return type); use the index helper directly.
+                const ExtendedDayNum first = toDayNum(toFirstDayNumOfISOYearIndex(shifted));
+                return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(first.toUnderType() - cycles * days_in_400_years)};
+            }
+
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
             return toDayNum(LUTIndexWithSaturation(toFirstDayNumOfISOYearIndex(v)));
         else
@@ -763,6 +1074,12 @@ public:
 
     Time toFirstDayOfISOYear(Time t) const
     {
+        if (unlikely(isOutOfLUTRange(t)))
+        {
+            const ExtendedDayNum first = toFirstDayNumOfISOYear(t);
+            return dateOfDayIndex(static_cast<Int64>(first.toUnderType()) + daynum_offset_epoch);
+        }
+
         return lut[toFirstDayNumOfISOYearIndex(t)].date;
     }
 
@@ -771,6 +1088,14 @@ public:
     template <typename DateOrTime>
     UInt8 toISOWeek(DateOrTime v) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                /// The ISO week number is timezone-independent and repeats every 400 years.
+                Int32 cycles = 0;
+                return toISOWeek(shiftIntoLUTRange(toDayNum(v), cycles));
+            }
+
         return static_cast<UInt8>(1 + (toFirstDayNumOfWeek(v) - toDayNum(toFirstDayNumOfISOYearIndex(v))) / 7);
     }
 
@@ -810,6 +1135,25 @@ public:
     template <typename DateOrTime>
     YearWeek toYearWeek(DateOrTime v, UInt8 week_mode) const
     {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                /// Year/week numbering is timezone-independent and repeats every 400 years.
+                Int32 cycles = 0;
+                const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
+                YearWeek yw = toYearWeek(shifted, week_mode);
+                /// The ISO week-year can fall just outside the representable [0000, 9999] range at the
+                /// boundaries (e.g. 0000-01-01 is a Saturday belonging to week-year -1, and 9999-12-31 can
+                /// belong to week-year 10000); clamp it so the UInt16 YYYYWW result does not wrap around.
+                Int32 adjusted_year = static_cast<Int32>(yw.first) - cycles * 400;
+                if (adjusted_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+                    adjusted_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                else if (adjusted_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+                    adjusted_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                yw.first = static_cast<UInt16>(adjusted_year);
+                return yw;
+            }
+
         const bool newyear_day_mode = week_mode & static_cast<UInt8>(WeekModeFlag::NEWYEAR_DAY);
         week_mode = check_week_mode(week_mode);
         const bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
@@ -971,22 +1315,22 @@ public:
     template <typename DateOrTime>
     Int32 toRelativeMonthNum(DateOrTime v) const
     {
-        const LUTIndex i = toLUTIndex(v);
-        return lut[i].year * 12 + lut[i].month;
+        const Values values = getValues(v);
+        return values.year * 12 + values.month;
     }
 
     template <typename DateOrTime>
     Int32 toMonthNumSinceEpoch(DateOrTime v) const
     {
-        const LUTIndex i = toLUTIndex(v);
-        return (lut[i].year - 1970) * 12 + lut[i].month - 1;
+        const Values values = getValues(v);
+        return (values.year - 1970) * 12 + values.month - 1;
     }
 
     template <typename DateOrTime>
     Int32 toRelativeQuarterNum(DateOrTime v) const
     {
-        const LUTIndex i = toLUTIndex(v);
-        return lut[i].year * 4 + (lut[i].month - 1) / 3;
+        const Values values = getValues(v);
+        return values.year * 4 + (values.month - 1) / 3;
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
@@ -1007,7 +1351,7 @@ public:
     template <typename DateOrTime>
     ALWAYS_INLINE Time toRelativeHourNum(DateOrTime v) const
     {
-        return toRelativeHourNum(lut[toLUTIndex(v)].date);
+        return toRelativeHourNum(getValues(v).date);
     }
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
@@ -1021,7 +1365,7 @@ public:
     template <typename DateOrTime>
     Time toStableRelativeHourNum(DateOrTime v) const
     {
-        return toStableRelativeHourNum(lut[toLUTIndex(v)].date);
+        return toStableRelativeHourNum(getValues(v).date);
     }
 
     NO_SANITIZE_UNDEFINED Time toRelativeMinuteNum(Time t) const /// NOLINT
@@ -1033,7 +1377,7 @@ public:
     template <typename DateOrTime>
     Time toRelativeMinuteNum(DateOrTime v) const
     {
-        return toRelativeMinuteNum(lut[toLUTIndex(v)].date);
+        return toRelativeMinuteNum(getValues(v).date);
     }
 
     template <typename DateOrTime>
@@ -1041,6 +1385,13 @@ public:
     {
         if (years == 1)
             return toFirstDayNumOfYear(v);
+
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(v)))
+            {
+                const Int64 rounded_year = static_cast<Int64>(outOfRangeValues(v).year) / static_cast<Int64>(years) * static_cast<Int64>(years);
+                return makeDayNumOutOfRange(rounded_year, 1, 1);
+            }
 
         const LUTIndex i = toLUTIndex(v);
 
@@ -1071,6 +1422,23 @@ public:
     {
         if (months == 1)
             return toFirstDayNumOfMonth(d);
+
+        if constexpr (std::is_same_v<Date, ExtendedDayNum>)
+            if (unlikely(isOutOfLUTRange(d)))
+            {
+                /// Number of months since DATE_LUT_MIN_YEAR-01, rounded down to a multiple of `months`.
+                const Values values = outOfRangeValues(d);
+                const Int64 rel = (static_cast<Int64>(values.year) - DATE_LUT_MIN_YEAR) * 12 + (values.month - 1);
+                const Int64 div = static_cast<Int64>(months);
+                const Int64 rounded = (rel >= 0 ? rel / div : -((-rel + div - 1) / div)) * div;
+                const Int64 absolute_month = static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 + rounded;
+                /// Floor-divide so the month stays in [1, 12] for a negative absolute month (the year is saturated
+                /// in makeDayNumOutOfRange); a plain `% 12` would be negative and wrap when cast to UInt8.
+                const Int64 abs_year = absolute_month >= 0 ? absolute_month / 12 : -((-absolute_month + 11) / 12);
+                const Int64 abs_month = absolute_month - abs_year * 12;
+                return makeDayNumOutOfRange(abs_year, static_cast<UInt8>(abs_month) + 1, 1);
+            }
+
         const Values & values = lut[toLUTIndex(d)];
         UInt32 month_total_index = (values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1;
         if constexpr (std::is_same_v<Date, DayNum>)
@@ -1090,7 +1458,13 @@ public:
         if constexpr (std::is_same_v<Date, DayNum>)
             return DayNum(static_cast<UInt16>(4 + (d - 4) / days * days));
         else
-            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
+        {
+            /// Floor towards -inf so a pre-1970 day number rounds to the start of its interval, not forward in time.
+            const Int64 idays = static_cast<Int64>(days);
+            const Int64 shifted = static_cast<Int64>(d.toUnderType()) - 4;
+            const Int64 rounded = (shifted >= 0 ? shifted / idays : (shifted + 1 - idays) / idays) * idays;
+            return ExtendedDayNum(static_cast<Int32>(4 + rounded));
+        }
     }
 
     template <typename Date>
@@ -1099,6 +1473,18 @@ public:
     {
         if (days == 1)
             return toDate(d);
+
+        if constexpr (std::is_same_v<Date, ExtendedDayNum>)
+            if (unlikely(isOutOfLUTRange(d)))
+            {
+                /// Floor division towards -inf: truncating division would round a pre-epoch day number
+                /// towards zero, i.e. forward in time, past the start of the interval.
+                const Int64 day_num = static_cast<Int64>(d.toUnderType());
+                const Int64 idays = static_cast<Int64>(days);
+                const Int64 rounded_day_num = day_num >= 0 ? day_num / idays * idays : (day_num + 1 - idays) / idays * idays;
+                return dateOfDayIndex(rounded_day_num + daynum_offset_epoch);
+            }
+
         if constexpr (std::is_same_v<Date, DayNum>)
             return lut_saturated[toLUTIndex(ExtendedDayNum(static_cast<Int32>(d / days * days)))].date;
         else
@@ -1119,9 +1505,24 @@ public:
           * the intervals can be shortened or prolonged to the amount of transition.
           */
 
-        UInt64 seconds = hours * 3600;
+        /// `hours` is only validated to be positive by the caller, so an extreme interval count can make
+        /// `hours * 3600` wrap. When it wraps to exactly zero (e.g. `toIntervalHour(4611686018427387904)`),
+        /// the division by `seconds` below would be undefined behaviour. Saturate the divisor instead; the
+        /// rounding result for such meaningless interval counts is discarded anyway.
+        UInt64 seconds = 0;
+        if (unlikely(__builtin_mul_overflow(hours, static_cast<UInt64>(3600), &seconds)))
+            seconds = std::numeric_limits<UInt64>::max();
 
-        const LUTIndex index = findIndex(t);
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(t)))
+            {
+                /// In the out-of-range years we ignore the (extrapolated) intra-day offset changes.
+                const Values values = outOfRangeValues(t);
+                const Time time = (static_cast<Time>(t) - values.date) / static_cast<Time>(seconds) * static_cast<Time>(seconds);
+                return static_cast<DateOrTime>(values.date + time);
+            }
+
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
 
         Time time = t - values.date;
@@ -1145,7 +1546,7 @@ public:
             time = time / seconds * seconds;
         }
 
-        Time res = values.date + time;
+        Time res = addSaturating(values.date, time);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))
@@ -1159,11 +1560,30 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
-        Int64 divisor = 60 * minutes;
+        /// `minutes` is only validated to be positive by the caller, so an extreme interval count can make
+        /// `60 * minutes` wrap, exactly as in `toStartOfHourInterval`. `INTERVAL 4611686018427387904 MINUTE`
+        /// wraps the product to exactly zero, which would then divide by zero in `roundDownToMultiple` (or in
+        /// the reconstruction below) before producing a result. Saturate the divisor to the maximum instead;
+        /// the rounding result for such meaningless interval counts is discarded anyway.
+        UInt64 product = 0;
+        if (unlikely(__builtin_mul_overflow(minutes, static_cast<UInt64>(60), &product)
+                     || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
+            product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+        Int64 divisor = static_cast<Int64>(product);
+
+        /// Checked before the fast path below: historical (pre-1900) offsets can have a sub-minute component,
+        /// so for out-of-range values the fast path would round to a UTC boundary instead of the local one.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(t)))
+            {
+                const Time date = outOfRangeValues(t).date;
+                return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
+            }
+
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
             return roundDownToMultiple(t, divisor);
 
-        Time date = find(t).date;
+        const Time date = find(t).date;
         Time res = date + (t - date) / divisor * divisor;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
@@ -1240,10 +1660,20 @@ public:
         return lut[makeLUTIndex(year, month, day_of_month)].date;
     }
 
+    /// Whether the given year/month/day fall outside of the lookup table but still form a valid calendar date.
+    static bool isMakeDateOutOfRange(Int16 year, UInt8 month, UInt8 day_of_month)
+    {
+        return (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR)
+            && month >= 1 && month <= 12 && day_of_month >= 1 && day_of_month <= 31;
+    }
+
     /** Does not accept daylight saving time as argument: in case of ambiguity, it choose greater timestamp.
       */
     Time makeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDateTimeOutOfRange(year, month, day_of_month, hour, minute, second);
+
         size_t index = makeLUTIndex(year, month, day_of_month);
         Time time_offset = hour * 3600 + minute * 60 + second;
 
@@ -1255,6 +1685,9 @@ public:
 
     std::optional<Time> tryToMakeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDateTimeOutOfRange(year, month, day_of_month, hour, minute, second);
+
         auto index = tryToMakeLUTIndex(year, month, day_of_month);
         if (!index)
             return std::nullopt;
@@ -1277,8 +1710,21 @@ public:
         return time_offset;
     }
 
+    /// Returns the Values of the day the argument belongs to. Returns by value so the out-of-range escape path
+    /// (which computes the Values with cctz) can be used; for in-range values the copy is elided by the optimizer.
     template <typename DateOrTime>
-    const Values & getValues(DateOrTime v) const { return lut[toLUTIndex(v)]; }
+    Values getValues(DateOrTime v) const
+    {
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+        {
+            if (unlikely(isOutOfLUTRange(v)))
+                return outOfRangeValues(v);
+            /// Already gated: skip the redundant bound clamp that findIndex would repeat.
+            if constexpr (std::is_same_v<DateOrTime, Time>)
+                return lut[findIndexInRange(v)];
+        }
+        return lut[toLUTIndex(v)];
+    }
 
     template <typename DateOrTime>
     UInt32 toNumYYYYMM(DateOrTime v) const
@@ -1326,6 +1772,24 @@ public:
         TimeComponents time;
     };
 
+private:
+    /// Escape paths implemented with cctz (defined in DateLUTImpl.cpp). All of them are only reached for
+    /// values outside of [DATE_LUT_MIN_YEAR, DATE_LUT_MAX_YEAR] and are guarded by `unlikely` at the call sites.
+    Int64 findDayIndexOutOfRange(Time t) const;
+    Values valuesForOutOfRangeDayIndex(Int64 day_index) const;
+    DateTimeComponents toDateTimeComponentsOutOfRange(Time t) const;
+    Time toTimeOutOfRange(Time t) const;
+    Time timezoneOffsetOutOfRange(Time t) const;
+    Time addDaysOutOfRange(Time t, Int64 delta) const;
+    Time addMonthsOutOfRange(Time t, Int64 delta) const;
+    Time addYearsOutOfRange(Time t, Int64 delta) const;
+    ExtendedDayNum addMonthsOutOfRange(ExtendedDayNum d, Int64 delta) const;
+    ExtendedDayNum addYearsOutOfRange(ExtendedDayNum d, Int64 delta) const;
+    Time makeDateOutOfRange(Int64 year, UInt8 month, UInt8 day_of_month) const;
+    Time makeDateTimeOutOfRange(Int64 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const;
+    ExtendedDayNum makeDayNumOutOfRange(Int64 year, UInt8 month, UInt8 day_of_month) const;
+
+public:
     DateComponents toDateComponents(Time t) const
     {
         const Values & values = getValues(t);
@@ -1334,7 +1798,10 @@ public:
 
     DateTimeComponents toDateTimeComponents(Time t) const
     {
-        const LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+            return toDateTimeComponentsOutOfRange(t);
+
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
 
         DateTimeComponents res;
@@ -1395,7 +1862,7 @@ public:
     template <typename DateOrTime>
     DateTimeComponents toDateTimeComponents(DateOrTime v) const
     {
-        return toDateTimeComponents(lut[toLUTIndex(v)].date);
+        return toDateTimeComponents(getValues(v).date);
     }
 
     UInt64 toNumYYYYMMDDhhmmss(Time t) const
@@ -1427,7 +1894,17 @@ public:
 
     NO_SANITIZE_UNDEFINED Time addDays(Time t, Int64 delta) const
     {
-        const LUTIndex index = findIndex(t);
+        if (unlikely(isOutOfLUTRange(t)))
+            return addDaysOutOfRange(t, delta);
+
+        const LUTIndex index = findIndexInRange(t);
+
+        /// If the destination day falls outside of the lookup table, recompute everything with cctz.
+        /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+        const Int64 index_value = static_cast<Int64>(index.toUnderType());
+        if (unlikely(delta < -index_value || delta >= static_cast<Int64>(DATE_LUT_SIZE) - index_value))
+            return addDaysOutOfRange(t, delta);
+
         const Values & values = lut[index];
 
         Time time = t - values.date;
@@ -1486,10 +1963,25 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     Time NO_SANITIZE_UNDEFINED addMonths(DateTime t, Int64 delta) const
     {
-        const auto result_day = addMonthsIndex(t, delta);
+        /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+            if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
+                return addMonthsOutOfRange(t, delta);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
+
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+        {
+            /// If the destination month falls outside of the lookup table, recompute everything with cctz.
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            const Int64 base_month_index = static_cast<Int64>(values.year) * 12 + (values.month - 1);
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 - base_month_index
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) * 12 + 11 - base_month_index))
+                return addMonthsOutOfRange(t, delta);
+        }
+
+        const auto result_day = addMonthsIndex(t, delta);
 
         Time time = t - values.date;
         if (time >= values.time_at_offset_change())
@@ -1515,7 +2007,19 @@ public:
         if constexpr (std::is_same_v<Date, DayNum>)
             return toDayNum(LUTIndexWithSaturation(addMonthsIndex(d, delta)));
         else
+        {
+            if (unlikely(isOutOfLUTRange(d)))
+                return addMonthsOutOfRange(d, delta);
+
+            const Values & values = lut[toLUTIndex(d)];
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            const Int64 base_month_index = static_cast<Int64>(values.year) * 12 + (values.month - 1);
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 - base_month_index
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) * 12 + 11 - base_month_index))
+                return addMonthsOutOfRange(d, delta);
+
             return toDayNum(addMonthsIndex(d, delta));
+        }
     }
 
     template <typename DateOrTime>
@@ -1545,10 +2049,23 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     Time addYears(DateTime t, Int64 delta) const
     {
-        auto result_day = addYearsIndex(t, delta);
+        /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+            if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
+                return addYearsOutOfRange(t, delta);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
+
+        if constexpr (!std::is_same_v<DateTime, UInt32>)
+        {
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) - values.year
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) - values.year))
+                return addYearsOutOfRange(t, delta);
+        }
+
+        auto result_day = addYearsIndex(t, delta);
 
         Time time = t - values.date;
         if (time >= values.time_at_offset_change())
@@ -1574,7 +2091,18 @@ public:
         if constexpr (std::is_same_v<Date, DayNum>)
             return toDayNum(LUTIndexWithSaturation(addYearsIndex(d, delta)));
         else
+        {
+            if (unlikely(isOutOfLUTRange(d)))
+                return addYearsOutOfRange(d, delta);
+
+            const Values & values = lut[toLUTIndex(d)];
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) - values.year
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) - values.year))
+                return addYearsOutOfRange(d, delta);
+
             return toDayNum(addYearsIndex(d, delta));
+        }
     }
 
 

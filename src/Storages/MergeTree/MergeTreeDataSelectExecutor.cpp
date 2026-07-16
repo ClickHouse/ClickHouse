@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -12,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -22,6 +24,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -38,6 +42,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -45,6 +50,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
@@ -53,6 +59,8 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 
 
 namespace CurrentMetrics
@@ -71,7 +79,10 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -87,6 +98,7 @@ namespace Setting
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
+    extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
@@ -101,6 +113,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -140,6 +153,25 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     }
 }
 
+/// Maps each primary-key column position to the slot of the matching column in a part's partition
+/// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
+{
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto minmax_names = MergeTreeData::getMinMaxColumns(
+        metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+
+    std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
+    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+    {
+        auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
+        if (it != minmax_names.end())
+            mapping[i] = static_cast<size_t>(it - minmax_names.begin());
+    }
+    return mapping;
+}
+
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -152,14 +184,18 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
-    MarkRanges exact_ranges;
+    std::vector<std::optional<size_t>> pk_to_minmax_slot;
+    if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
+        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+    const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(
+            part, metadata_snapshot, key_condition, nullptr, nullptr, /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
-    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -221,7 +257,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const SelectQueryInfo & select_query_info,
     NamesAndTypesList available_real_columns,
     const RangesInDataParts & parts,
-    KeyCondition & key_condition,
+    ConditionTemplate<KeyCondition>::Ptr & key_condition,
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -275,7 +311,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         /// read) into the relative `SAMPLE 0.1` (how much data to read).
         size_t approx_total_rows = 0;
         if (relative_sample_size > 1 || relative_sample_offset > 1)
-            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition, settings, log);
+            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition->generateUnsubstituted(), settings, log);
 
         if (relative_sample_size > 1)
         {
@@ -430,10 +466,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(
-                        sampling_key.column_names[0],
-                        Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
+                if (!std::ranges::contains(metadata_snapshot->getPrimaryKey().column_names, sampling_key.column_names[0]))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
+
+                key_condition->addTransformation([lower, sampling_key_name = sampling_key.column_names[0], sampling_key_type = sampling_key.data_types[0]](KeyCondition & condition)
+                {
+                    condition.addCondition(sampling_key_name, Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key_type)));
+                });
 
                 ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -449,10 +488,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(
-                        sampling_key.column_names[0],
-                        Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
+                if (!std::ranges::contains(metadata_snapshot->getPrimaryKey().column_names, sampling_key.column_names[0]))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
+
+                key_condition->addTransformation([upper, sampling_key_name = sampling_key.column_names[0], sampling_key_type = sampling_key.data_types[0]](KeyCondition & condition)
+                {
+                    condition.addCondition(sampling_key_name, Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key_type)));
+                });
 
                 ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -493,11 +535,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     return sampling;
 }
 
-void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context)
+ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_folding,
+    ContextPtr context)
 {
-    if (!predicate)
-        return;
+    if (!filter_dag || !filter_dag->predicate)
+        return nullptr;
 
     auto part_offset_type = std::make_shared<DataTypeUInt64>();
     auto part_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -505,37 +550,46 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->predicate, &sample, context);
     if (!dag)
-        return;
+        return nullptr;
 
     /// The _part filter should only be effective in conjunction with the _part_offset filter.
     auto required_columns = dag->getRequiredColumnsNames();
     if (std::find(required_columns.begin(), required_columns.end(), "_part_offset") == required_columns.end())
-        return;
+        return nullptr;
 
-    part_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context, /* boolean_context */ true),
-        context,
-        sample.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
-        {}});
+    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> KeyCondition
+    {
+        return KeyCondition{
+            ActionsDAGWithInversionPushDown(predicate, context, /* boolean_context */ false),
+            context,
+            sample.getNames(),
+            std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+            {}};
+    };
+
+    auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context, /* boolean_context */ true);
+    return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context, skip_folding);
 }
 
-void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
-    std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context)
+ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_folding,
+    ContextPtr context)
 {
-    if (!predicate)
-        return;
+    if (!filter_dag || !filter_dag->predicate)
+        return nullptr;
 
     auto part_offset_type = std::make_shared<DataTypeUInt64>();
     Block sample
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_starting_offset")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->predicate, &sample, context);
     if (!dag)
-        return;
+        return nullptr;
 
     /// Try to recognize and fold expressions of the form:
     ///     _part_offset + _part_starting_offset
@@ -550,7 +604,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     auto matches = matchTrees({node1, node2}, *dag, false /* check_monotonicity */);
     auto new_inputs = resolveMatchedInputs(matches, {node1, node2}, dag->getOutputs());
     if (!new_inputs)
-        return;
+        return nullptr;
     dag = ActionsDAG::foldActionsByProjection(*new_inputs, dag->getOutputs());
 
     /// total_offset_condition is only valid if _part_offset and _part_starting_offset are used *together*.
@@ -558,15 +612,22 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     /// If more than one input remains, it means either of them is used independently,
     /// and we should skip adding total_offset_condition in that case.
     if (dag->getInputs().size() != 1)
-        return;
+        return nullptr;
 
-    auto required_columns = dag->getRequiredColumns();
-    total_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context, /* boolean_context */ true),
-        context,
-        required_columns.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
-        {}});
+    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate) -> KeyCondition
+    {
+        chassert(specialized_dag);
+        auto required_columns = specialized_dag->getRequiredColumns();
+        return KeyCondition{
+            ActionsDAGWithInversionPushDown(predicate, context, /* boolean_context */ false),
+            context,
+            required_columns.getNames(),
+            std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
+            {}};
+    };
+
+    auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context, /* boolean_context */ true);
+    return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context, skip_folding);
 }
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
@@ -627,7 +688,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
-    const std::optional<KeyCondition> & minmax_idx_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
@@ -644,7 +705,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
     if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
-        && (!minmax_idx_condition || minmax_idx_condition->alwaysUnknownOrTrue())
+        && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
         && (!partition_pruner || partition_pruner->isUseless()))
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -674,14 +735,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     if (minmax_idx_condition)
     {
-        auto description = minmax_idx_condition->getDescription();
+        auto description = minmax_idx_condition->generateUnsubstituted().getDescription();
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::MinMax,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
             .num_granules_after = part_filter_counters.num_granules_after_minmax});
-        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
+        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->generateUnsubstituted().toString());
     }
 
     if (partition_pruner)
@@ -754,9 +815,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
     /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
+    ///    the on-the-fly mutations above) no longer describe the values the query sees.
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context)))
     {
         return parts;
     }
@@ -959,8 +1023,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !use_skip_indexes_on_data_read_
-                                && key_condition_rpn_template.has_value()
-                                && key_condition_rpn_template->getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                && key_condition_rpn_template != nullptr
+                                && key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -985,6 +1049,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto [limits, leaf_limits] = getRowLimits(settings, query_info);
         std::atomic<size_t> total_rows{0};
 
+        /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
+        std::vector<std::optional<size_t>> pk_to_minmax_slot;
+        if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts_with_ranges.empty())
+            pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(
+                metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
+        const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
         auto process_part = [&](size_t part_index)
         {
             if (query_status)
@@ -1004,10 +1075,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition,
-                    part_offset_condition,
-                    total_offset_condition,
+                    key_condition->generateForPartition(ranges.data_part->partition),
+                    part_offset_condition ? &part_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
+                    total_offset_condition ? &total_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
+                    pk_to_minmax_slot_ptr,
                     settings,
                     log);
 
@@ -1031,7 +1103,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!skip_indexes.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
-                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+                );
                 const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
@@ -1082,8 +1158,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition,
-                            key_condition_rpn_template,
+                            index_and_condition.condition_template->generateForPartition(ranges.data_part->partition),
+                            key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                             ranges.data_part,
                             ranges.ranges,
                             ranges.read_hints,
@@ -1103,10 +1179,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
+                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
                 {
                     ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
-                                        ranges.ranges, key_condition_rpn_template.value(),
+                                        ranges.ranges, key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1241,7 +1317,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pk_stat.elapsed_us.load() / 1000,
             num_threads);
 
-        auto description = key_condition.getDescription();
+        auto description = key_condition->generateUnsubstituted().getDescription();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKey,
@@ -1281,7 +1357,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition->getDescription(),
+                    .condition = index_and_condition.condition_template->generateForPartition(parts_with_ranges[part_index].data_part->partition)->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1291,7 +1367,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .type = ReadFromMergeTree::IndexType::Skip,
                     .name = index_name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition->getDescription(),
+                    .condition = index_and_condition.condition_template->generateUnsubstituted()->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1367,12 +1443,58 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes)
+{
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(indexes.use_skip_indexes);
+
+    /// Salt with the identity of the skip indexes that index analysis actually used. This set is
+    /// already the effective one: buildIndexes removes indexes disabled via ignore_data_skipping_indices,
+    /// drops indexes no longer present in metadata, and leaves it empty when use_skip_indexes = 0. So
+    /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
+    /// indexes off) changes the key, and a query that did not run an index never reads a verdict
+    /// produced by it. Each index contributes a stable identity: its name, its granularity, and the
+    /// tree hash of its definition AST (type, expression, arguments). name and granularity are plain
+    /// members of ASTIndexDeclaration and are not part of its tree hash, so they are folded in
+    /// separately; otherwise two indexes with the same expression and type but a different name or
+    /// granularity would share a key (the partially-materialized case: a verdict produced while one
+    /// index ran could be served to a query running only the other). The name is length-prefixed so
+    /// distinct (name, granularity) pairs cannot collide by concatenation. Index names are unique
+    /// within a table, so sorting by name is a deterministic, order-independent ordering.
+    std::vector<std::tuple<String, UInt64, IASTHash>> index_identities;
+    index_identities.reserve(indexes.skip_indexes.useful_indices.size());
+    for (const auto & useful_index : indexes.skip_indexes.useful_indices)
+        index_identities.emplace_back(
+            useful_index.index->index.name,
+            useful_index.index->index.granularity,
+            useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
+    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return std::get<0>(l) < std::get<0>(r); });
+
+    hash.update(index_identities.size());
+    for (const auto & [name, granularity, definition_hash] : index_identities)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(granularity);
+        hash.update(definition_hash.low64);
+        hash.update(definition_hash.high64);
+    }
+
+    /// use_skip_indexes_for_disjunctions changes the exclusions produced by the same indexes for OR
+    /// predicates, so two queries with different effective modes must not share a key.
+    hash.update(indexes.use_skip_indexes_for_disjunctions);
+
+    return hash.get64();
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1386,6 +1508,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
+
+    /// Each condition is looked up under two keys (see the write sides):
+    ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
+    ///     MergeTreeSelectProcessor, object storage) which are always sound; and
+    ///   * a hash salted with the effective skip-index profile that index analysis ran
+    ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
+    ///     written by ReadFromMergeTree.
+    /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
+    /// index with a preprocessor), so they must only be consulted by a query that ran the same set
+    /// of indexes; salting the key with the running index set (and disjunction mode) guarantees a
+    /// query that ran a different set (use_skip_indexes = 0, an index dropped/ignored, or a
+    /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
+    /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
+    /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
+    /// skip-index poisoning of issue #108519.
 
     struct Stats
     {
@@ -1408,6 +1545,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         if (apply_top_k_salt && top_k_filter_info)
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
+        /// The skip-index-analysis exclusions written by ReadFromMergeTree are stored under a key
+        /// salted with the effective skip-index profile, computed from the same (top-k-salted)
+        /// condition hash the write side used, so only a query that ran the same set of indexes
+        /// consults them. See getSkipIndexProfiledConditionHash and issue #108519.
+        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, indexes);
+
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1416,14 +1559,33 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
+            /// Row-level entries are sound under any profile; skip-index entries only under the
+            /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
+            /// This is one logical cache consultation, so it must emit at most one
+            /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
+            /// the hit/miss ourselves and suppress the per-read events on both lookups.
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash, /*increment_profile_events=*/false);
+            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash, /*increment_profile_events=*/false);
+            if (!row_level_marks_opt && !skip_index_marks_opt)
             {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
-            auto & matching_marks = *matching_marks_opt;
+            QueryConditionCache::MatchingMarks matching_marks;
+            if (row_level_marks_opt && skip_index_marks_opt
+                && row_level_marks_opt->size() == skip_index_marks_opt->size())
+            {
+                matching_marks = std::move(*row_level_marks_opt);
+                for (size_t i = 0; i < matching_marks.size(); ++i)
+                    matching_marks[i] = matching_marks[i] && (*skip_index_marks_opt)[i];
+            }
+            else if (row_level_marks_opt)
+                matching_marks = std::move(*row_level_marks_opt);
+            else
+                matching_marks = std::move(*skip_index_marks_opt);
             MarkRanges ranges;
             const auto & part = it->data_part;
             size_t min_marks_for_seek = roundRowsOrBytesToMarks(
@@ -1655,9 +1817,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const RangesInDataPart & part_with_ranges,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const std::optional<KeyCondition> & part_offset_condition,
-    const std::optional<KeyCondition> & total_offset_condition,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
     MarkRanges * exact_ranges,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
     LoggerPtr log)
 {
@@ -1690,7 +1853,26 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 
-    size_t num_key_columns = 0;
+    /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
+    /// There is no need to process later key columns.
+    const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
+
+    /// Do not touch the part's minmax index unless some key column the filter uses has a partition-minmax
+    /// bound to consume: `getMinMaxIndex` may lazy-load `minmax_*.idx` from disk, and a bound at a key
+    /// position the filter never references cannot affect the analysis. The minmax index may also be
+    /// absent or uninitialized (e.g. for projection parts); such a part has no usable bounds either.
+    const bool partition_bound_usable = pk_to_minmax_slot
+        && std::any_of(pk_to_minmax_slot->begin(),
+                       pk_to_minmax_slot->begin() + std::min(pk_to_minmax_slot->size(), used_key_prefix_size),
+                       [](const auto & slot) { return slot.has_value(); });
+    const auto part_minmax_index = partition_bound_usable ? part->getMinMaxIndex() : nullptr;
+    const bool part_has_minmax_index = part_minmax_index && part_minmax_index->initialized;
+
+    /// Number of leading primary key columns covered by the index analysis (`index_bounds` has one entry
+    /// per such column). For the sparse representation this is the in-memory index prefix extended to the
+    /// deepest used column with a partition-minmax bound; for the non-sparse one it is all key columns of
+    /// the condition.
+    size_t num_analyzed_key_columns = 0;
 
     /// Non-sparse representation that includes all columns whether Filter needs or not
     DataTypes key_types;
@@ -1701,6 +1883,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// Sparse representation that includes only columns that Filter needs
     std::vector<size_t> used_key_indices;
     size_t sparse_keys_size = 0;
+
+    /// The part of the filter's used key prefix that is loaded in the in-memory index, i.e. the leading key
+    /// columns with per-mark values (`index_columns` holds exactly these; `equal_boundaries_mask` covers
+    /// exactly these). Key columns in [num_used_prefix_key_columns_loaded_in_memory, num_analyzed_key_columns)
+    /// have no per-mark values: they are analysed via their partition-minmax bound (see `index_bounds` below)
+    /// as constant coordinates.
+    size_t num_used_prefix_key_columns_loaded_in_memory = 0;
+
+    /// Number of leading `used_key_indices` entries that refer to key columns loaded in the in-memory index;
+    /// only these get per-mark values in `sparse_key_left`/`sparse_key_right`.
+    size_t num_sparse_keys_loaded_in_memory = 0;
     std::vector<FieldRef> sparse_key_left;
     std::vector<FieldRef> sparse_key_right;
     DataTypes sparse_key_types;
@@ -1708,17 +1901,34 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     if (use_sparse_pk_representation)
     {
-        /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
-        /// There is no need to process later key columns
-        const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
-
         /// If earlier columns have high cardinality, then later columns may not be loaded
         const size_t num_index_columns_loaded = index->size();
 
         /// Do not process more columns than needed
-        num_key_columns = std::min(used_key_prefix_size, num_index_columns_loaded);
+        num_used_prefix_key_columns_loaded_in_memory = std::min(used_key_prefix_size, num_index_columns_loaded);
 
-        for (size_t i = 0; i < num_key_columns; ++i)
+        //// Get PK columns potentially used in `KeyCondition` Filter
+        used_key_indices = key_condition.getUsedColumnsInOrder();
+
+        const auto has_partition_bound = [&](size_t idx)
+        {
+            chassert(!pk_to_minmax_slot || idx < pk_to_minmax_slot->size());
+            return part_has_minmax_index && (*pk_to_minmax_slot)[idx].has_value();
+        };
+
+        /// A key column used by the filter that is not loaded in the in-memory index but is bounded by the part's
+        /// partition minmax can still be analysed: it becomes a constant coordinate whose range is that bound (see
+        /// `index_bounds` below). Cover the deepest such column so the bound is not lost. `used_key_indices` is
+        /// ascending, so the last match is the deepest; it never exceeds `used_key_prefix_size` because the column
+        /// is, by definition, referenced by the filter.
+        size_t partition_bounded_prefix = 0;
+        for (size_t used_column : used_key_indices)
+            if (has_partition_bound(used_column))
+                partition_bounded_prefix = used_column + 1;
+
+        num_analyzed_key_columns = std::max(partition_bounded_prefix, num_used_prefix_key_columns_loaded_in_memory);
+
+        for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
         {
             chassert(i < index->size());
             chassert(index->at(i));
@@ -1726,22 +1936,30 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
         }
 
-        //// Get PK columns potentially used in `KeyCondition` Filter
-        used_key_indices = key_condition.getUsedColumnsInOrder();
-
-        /// Remove used_key_indices entries whose marks not loaded into memory
+        /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
         used_key_indices.erase(
-            std::remove_if(used_key_indices.begin(), used_key_indices.end(), [&](size_t idx) { return idx >= num_key_columns; }),
+            std::remove_if(
+                used_key_indices.begin(),
+                used_key_indices.end(),
+                [&](size_t idx) { return idx >= num_used_prefix_key_columns_loaded_in_memory && !has_partition_bound(idx); }),
             used_key_indices.end());
 
         /// Now we create sparse arrays for efficient processing in `KeyCondition`. The goal is to only send the information
         /// that is needed and avoid creation of `FieldRef`, `Range` both of which under the hood uses Field which are very slow.
         /// In the event of long PK, this can become extremely slow.
-        /// So in the sparse form, we only have keys which are used in `KeyCondition` by some RPN element and marks are loaded into memory
+        /// So in the sparse form, we only have keys which are used in `KeyCondition` by some RPN element and are
+        /// either loaded into memory or bounded by the part's partition minmax.
         sparse_keys_size = used_key_indices.size();
 
-        sparse_key_left.resize(sparse_keys_size);
-        sparse_key_right.resize(sparse_keys_size);
+        /// Only the loaded sparse columns (a leading subsequence, since `used_key_indices` is ascending) have
+        /// per-mark boundary values. The trailing constant-coordinate columns are handled inside `KeyCondition`
+        /// via `index_bounds`, so nothing is written for them per mark range.
+        num_sparse_keys_loaded_in_memory = static_cast<size_t>(
+            std::lower_bound(used_key_indices.begin(), used_key_indices.end(), num_used_prefix_key_columns_loaded_in_memory)
+            - used_key_indices.begin());
+
+        sparse_key_left.resize(num_sparse_keys_loaded_in_memory);
+        sparse_key_right.resize(num_sparse_keys_loaded_in_memory);
 
         /// Datatypes are always same regardless of `MarkRange`, so we construct it only once.
         sparse_key_types.reserve(sparse_keys_size);
@@ -1751,18 +1969,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             sparse_key_types.emplace_back(primary_key.data_types[key_col]);
         }
 
-        /// Equality bitmap for all key columns (not only sparse): `equal_boundaries_mask[i] = (left_key_i == right_key_i)`
+        /// Equality bitmap for the key columns present in the in-memory index (not only sparse):
+        /// `equal_boundaries_mask[i] = (left_key_i == right_key_i)`
         /// For intermediate key columns that are not used by KeyCondition, we still need to know if their left and right
         /// marks are the same or not to properly construct all hyperrectangles. However, this is extremely fast because
         /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
-        equal_boundaries_mask.resize(num_key_columns);
+        equal_boundaries_mask.resize(num_used_prefix_key_columns_loaded_in_memory);
     }
     else
     {
-        num_key_columns = key_condition.getNumKeyColumns();
-        if (num_key_columns > 0)
+        num_analyzed_key_columns = key_condition.getNumKeyColumns();
+        if (num_analyzed_key_columns > 0)
         {
-            for (size_t i = 0; i < num_key_columns; ++i)
+            for (size_t i = 0; i < num_analyzed_key_columns; ++i)
             {
                 if (i < index->size())
                 {
@@ -1780,7 +1999,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
 
-        used_key_size = num_key_columns;
+        used_key_size = num_analyzed_key_columns;
         index_left.resize(used_key_size);
         index_right.resize(used_key_size);
     }
@@ -1810,6 +2029,30 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
+    /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
+    /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
+    /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
+    /// bound of a key column by its key index. For key columns without per-mark values (not loaded in the
+    /// in-memory index) these bounds are the only information: `KeyCondition` analyses them as constant
+    /// coordinates whose range is the bound.
+    /// Partition minmax index is always stored in value-ascending order, so we do not need to consider reverse_flags here.
+    Hyperrectangle index_bounds;
+    index_bounds.reserve(num_analyzed_key_columns);
+    for (size_t i = 0; i < num_analyzed_key_columns; ++i)
+        index_bounds.push_back(Range::createWholeUniverseTypeAware(primary_key.data_types[i]));
+
+    /// pk_to_minmax_slot maps each PK column to its slot in the part's partition-minmax index.
+    if (part_has_minmax_index)
+    {
+        const auto & hyperrectangle = part_minmax_index->hyperrectangle;
+        for (size_t i = 0; i < num_analyzed_key_columns; ++i)
+        {
+            const auto slot = (*pk_to_minmax_slot)[i];
+            if (slot)
+                index_bounds[i] = hyperrectangle[*slot];
+        }
+    }
+
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
         = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -1831,18 +2074,18 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: the right boundary of every key column is +inf. The left and right
+                    /// Last mark: the right boundary of every loaded key column is +inf. The left and right
                     /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
                     /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
                     /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
-                    for (size_t i = 0; i < num_key_columns; ++i)
+                    for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
                         equal_boundaries_mask[i] = col->isNullAt(range.begin);
                     }
 
-                    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+                    for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
 
@@ -1856,8 +2099,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
                 else
                 {
-                    /// Non-final mark: compare PK index values at range.begin and range.end for all key columns.
-                    for (size_t i = 0; i < num_key_columns; ++i)
+                    /// Non-final mark: compare PK index values at range.begin and range.end for all loaded key columns.
+                    for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
 
@@ -1866,8 +2109,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         equal_boundaries_mask[i] = (col->compareAt(range.begin, range.end, *col, 1) == 0);
                     }
 
-                    /// Build left/right boundaries only for used key columns.
-                    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+                    /// Build left/right boundaries only for used loaded key columns. The trailing
+                    /// constant-coordinate columns need no per-range values: `KeyCondition` takes their
+                    /// range from `index_bounds` once per call.
+                    for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
 
@@ -1885,7 +2130,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_right.data(),
                     sparse_key_types,
                     equal_boundaries_mask,
-                    initial_mask);
+                    initial_mask,
+                    &index_bounds);
             }
 
             if (range.end == marks_count)
@@ -1897,9 +2143,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     if ((*index_columns)[i].column)
                         create_field_ref(range.begin, i, left);
                     else
-                        left = NEGATIVE_INFINITY;
+                        left = index_bounds[i].left;
 
-                    right = POSITIVE_INFINITY;
+                    right = index_bounds[i].right;
                 }
             }
             else
@@ -1915,14 +2161,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                     else
                     {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
+                        left = index_bounds[i].left;
+                        right = index_bounds[i].right;
                     }
                 }
             }
-
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
@@ -1993,65 +2237,34 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
-        size_t steps = 0;
-
-        for (const auto & part_range : part_with_ranges.ranges)
+        GenericExclusionSearchSettings search_settings
         {
-            /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-            /// At each step, take the left segment and check if it fits.
-            /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-            /// If the segment is already of one mark length, add it to response and discard it.
+            .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
+            .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
+            .min_marks_for_seek = min_marks_for_seek,
+        };
 
-            std::vector<MarkRange> ranges_stack = {part_range};
-            while (!ranges_stack.empty())
-            {
-                MarkRange range = ranges_stack.back();
-                ranges_stack.pop_back();
+        auto search_result = genericExclusionSearch(
+            part_with_ranges.ranges,
+            [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+            search_settings,
+            exact_ranges != nullptr);
 
-                ++steps;
-
-                auto result = check_in_range(range, BoolMask());
-                if (!result.can_be_true)
-                    continue;
-
-                if (!result.can_be_false || range.end == range.begin + 1)
-                {
-                    /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
-                        res.push_back(range);
-                    else
-                        res.back().end = range.end;
-
-                    if (exact_ranges && !result.can_be_false)
-                    {
-                        if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                            exact_ranges->push_back(range);
-                        else
-                            exact_ranges->back().end = range.end;
-                    }
-                }
-                else
-                {
-                    /// Break the segment and put the result on the stack from right to left.
-                    size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                    size_t end = 0;
-
-                    for (end = range.end; end > range.begin + step; end -= step)
-                        ranges_stack.emplace_back(end - step, end);
-
-                    ranges_stack.emplace_back(range.begin, end);
-                }
-            }
-        }
+        res = std::move(search_result.ranges);
+        if (exact_ranges)
+            *exact_ranges = std::move(search_result.exact_ranges);
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
+        if (search_result.reached_step_limit)
+            ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchStepLimitReached);
         LOG_TRACE(
             log,
-            "Used generic exclusion search {}over index for part {} with {} steps",
+            "Used generic exclusion search {}over index for part {} with {} steps{}",
             exact_ranges ? "with exact ranges " : "",
             part_name,
-            steps);
+            search_result.num_steps,
+            search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
     }
     else
     {
@@ -2440,7 +2653,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
-    const std::optional<KeyCondition> & minmax_idx_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
@@ -2475,7 +2688,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;

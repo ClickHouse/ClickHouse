@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'SSLユーザー証明書認証'
+slug: /guides/sre/ssl-user-auth
+title: '認証用SSLユーザー証明書の設定'
+description: 'このガイドでは、SSLユーザー証明書認証を設定するためのシンプルで最小限の構成を説明します。'
+doc_type: 'guide'
+keywords: ['ssl', '認証', 'セキュリティ', '証明書', 'ユーザー管理']
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+このガイドでは、SSL ユーザー証明書を使用した認証を設定するための、シンプルで最小限の設定について説明します。このチュートリアルは、[TLS の設定ガイド](/ja/concepts/features/security/tls/configuring-tls)を前提としています。
+
+<Note>
+  SSL ユーザー認証は、`https`、`native`、`mysql`、`postgresql` の各インターフェイスを使用する場合にサポートされます。
+
+  ClickHouse ノードでは、安全な認証のために `<verificationMode>strict</verificationMode>` を設定する必要があります (ただし、テスト目的であれば `relaxed` でも動作します) 。
+
+  MySQL インターフェイスで AWS NLB を使用する場合は、以下の未公開オプションを有効にするよう AWS サポートに依頼する必要があります。
+
+  > 当社の NLB の Proxy Protocol v2 を、以下の `proxy_protocol_v2.client_to_server.header_placement,Value=on_first_ack` のように設定できるようにしたいです。
+</Note>
+
+<div id="1-create-ssl-user-certificates">
+  ## 1. SSLユーザー証明書を作成する
+</div>
+
+<Note>
+  この例では、自己署名CAによる自己署名証明書を使用します。本番環境では、CSR を作成し、適切な証明書を取得するために PKI チームまたは証明書プロバイダーに提出してください。
+</Note>
+
+1. Certificate Signing Request (CSR) と秘密鍵を生成します。基本的な形式は次のとおりです。
+   ```bash
+   openssl req -newkey rsa:2048 -nodes -subj "/CN=<my_host>:<my_user>"  -keyout <my_cert_name>.key -out <my_cert_name>.csr
+   ```
+   この例では、このサンプル環境で使用するドメインとユーザーに対して次を使用します。
+   ```bash
+   openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1.marsnet.local:cert_user"  -keyout chnode1_cert_user.key -out chnode1_cert_user.csr
+   ```
+
+<Note>
+  CN は任意であり、証明書の識別子として任意の文字列を使用できます。これは、以降の手順でユーザーを作成する際に使用されます。
+</Note>
+
+2. 認証に使用する新しいユーザー証明書を生成して署名します。基本的な形式は次のとおりです。
+   ```bash
+   openssl x509 -req -in <my_cert_name>.csr -out <my_cert_name>.crt -CA <my_ca_cert>.crt -CAkey <my_ca_cert>.key -days 365
+   ```
+   この例では、このサンプル環境で使用するドメインとユーザーに対して次を使用します。
+   ```bash
+   openssl x509 -req -in chnode1_cert_user.csr -out chnode1_cert_user.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365
+   ```
+
+<div id="2-create-a-sql-user-and-grant-permissions">
+  ## 2. SQLユーザーを作成し、権限を付与する
+</div>
+
+<Note>
+  SQLユーザーを有効化してロールを設定する方法の詳細については、[SQLユーザーとロールの定義](/ja/concepts/features/security/access-rights)ユーザーガイドを参照してください。
+</Note>
+
+1. 証明書認証を使用するSQLユーザーを作成します:
+   ```sql
+   CREATE USER cert_user IDENTIFIED WITH ssl_certificate CN 'chnode1.marsnet.local:cert_user';
+   ```
+
+2. 新しい証明書ユーザーに権限を付与します:
+   ```sql
+   GRANT ALL ON *.* TO cert_user WITH GRANT OPTION;
+   ```
+
+<Note>
+  この演習では説明のため、このユーザーに管理者権限をすべて付与しています。権限設定については、ClickHouseの[RBACドキュメント](/ja/concepts/features/security/access-rights)を参照してください。
+</Note>
+
+<Note>
+  ユーザーとロールはSQLで定義することを推奨します。ただし、現在ユーザーとロールを設定ファイルで定義している場合、ユーザーは次のようになります:
+
+  ```xml
+  <users>
+      <cert_user>
+          <ssl_certificates>
+              <common_name>chnode1.marsnet.local:cert_user</common_name>
+          </ssl_certificates>
+          <networks>
+              <ip>::/0</ip>
+          </networks>
+          <profile>default</profile>
+          <access_management>1</access_management>
+          {/* 追加オプション */}
+      </cert_user>
+  </users>
+  ```
+</Note>
+
+<div id="3-testing">
+  ## 3. テスト
+</div>
+
+1. ユーザー証明書、ユーザー秘密鍵、CA 証明書をリモートノードにコピーします。
+
+2. ClickHouse の[クライアント設定](/ja/concepts/features/interfaces/client#configuration_files)で、証明書と各パスを指定して OpenSSL を設定します。
+
+   ```xml
+   <openSSL>
+       <client>
+           <certificateFile>my_cert_name.crt</certificateFile>
+           <privateKeyFile>my_cert_name.key</privateKeyFile>
+           <caConfig>my_ca_cert.crt</caConfig>
+       </client>
+   </openSSL>
+   ```
+
+3. `clickhouse-client` を実行します。
+   ```bash
+   clickhouse-client --user <my_user> --query 'SHOW TABLES'
+   ```
+
+<Note>
+  設定ファイルで証明書を指定している場合、clickhouse-client に渡したパスワードは無視される点に注意してください。
+</Note>
+
+<div id="4-testing-http">
+  ## 4. HTTP のテスト
+</div>
+
+1. ユーザー証明書、ユーザー秘密鍵、および CA 証明書をリモートノードにコピーします。
+
+2. `curl` を使用して、サンプルの SQL コマンドをテストします。基本的な形式は次のとおりです。
+   ```bash
+   echo 'SHOW TABLES' | curl 'https://<clickhouse_node>:8443' --cert <my_cert_name>.crt --key <my_cert_name>.key --cacert <my_ca_cert>.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: <my_user>" --data-binary @-
+   ```
+   たとえば、次のようになります。
+   ```bash
+   echo 'SHOW TABLES' | curl 'https://chnode1:8443' --cert chnode1_cert_user.crt --key chnode1_cert_user.key --cacert marsnet_ca.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: cert_user" --data-binary @-
+   ```
+   出力は次のようになります。
+   ```response
+   INFORMATION_SCHEMA
+   default
+   information_schema
+   system
+   ```
+
+<Note>
+  パスワードが指定されていない点に注意してください。証明書がパスワードの代わりに使用され、ClickHouse はそれによってユーザーを認証します。
+</Note>
+
+<div id="summary">
+  ## まとめ
+</div>
+
+この記事では、SSL証明書認証用のユーザーを作成して設定するための基本事項を説明しました。この方法は、`clickhouse-client`、または `https` インターフェイスをサポートし、HTTPヘッダーを設定できる任意のクライアントで使用できます。生成された証明書と秘密鍵は、証明書が ClickHouse データベース上の操作に対するユーザーの認証と認可に使用されるため、非公開にし、アクセスを制限して保管してください。証明書と秘密鍵は、パスワードと同様に扱ってください。

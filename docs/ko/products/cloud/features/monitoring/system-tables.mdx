@@ -1,0 +1,113 @@
+---
+title: "ClickHouse의 system 데이터베이스 쿼리하기"
+slug: /cloud/monitoring/system-tables
+description: '시스템 테이블을 직접 쿼리하여 ClickHouse Cloud를 모니터링합니다'
+keywords: ['클라우드', '모니터링', '시스템 테이블', 'query_log', 'clusterAllReplicas', '관측성 대시보드']
+sidebarTitle: '시스템 테이블'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+모든 ClickHouse 인스턴스에는 `system` 데이터베이스에 포함된 [시스템 테이블](/ko/reference/system-tables/overview) 집합이 있으며, 여기에는 다음과 같은 정보가 담겨 있습니다.
+
+* 서버 상태, 프로세스 및 환경
+* 서버 내부 프로세스
+* ClickHouse 바이너리를 빌드할 때 사용된 옵션
+
+이러한 테이블을 직접 쿼리하면 ClickHouse 배포를 모니터링하는 데 유용하며, 특히 심층적인 내부 검사와 디버깅에 도움이 됩니다.
+
+<div id="using-cloud-console">
+  ## ClickHouse Cloud 콘솔 사용하기
+</div>
+
+ClickHouse Cloud 콘솔에는 시스템 테이블을 쿼리할 때 사용할 수 있는 [SQL 콘솔](/ko/products/cloud/features/sql-console-features/sql-console)과 [대시보드 도구](/ko/products/cloud/features/sql-console-features/dashboards)가 함께 제공됩니다. 예를 들어, 아래 쿼리는 지난 2시간 동안 새 파트가 얼마나 많이, 그리고 얼마나 자주 생성되었는지 보여줍니다:
+
+```sql
+SELECT
+    count() AS new_parts,
+    toStartOfMinute(event_time) AS modification_time_m,
+    table,
+    sum(rows) AS total_written_rows,
+    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+FROM clusterAllReplicas(default, system.part_log)
+WHERE (event_type = 'NewPart') AND (event_time > (now() - toIntervalHour(2)))
+GROUP BY
+    modification_time_m,
+    table
+ORDER BY
+    modification_time_m ASC,
+    table DESC
+```
+
+<Tip>
+  **추가 예시 쿼리**
+
+  모니터링 관련 쿼리를 더 보려면 다음 리소스를 참조하십시오.
+
+  * [문제 해결에 유용한 쿼리](/ko/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+  * [삽입 쿼리 모니터링 및 문제 해결](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+  * [select 쿼리 모니터링 및 문제 해결](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+
+  또한 이러한 쿼리를 사용해 Cloud Console에서 [사용자 지정 dashboard를 생성](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud)할 수 있습니다.
+</Tip>
+
+<div id="built-in-advanced-observability-dashboard">
+  ## 기본 제공 고급 관측성 대시보드
+</div>
+
+ClickHouse에는 `$HOST:$PORT/dashboard`에서 접근할 수 있는 기본 제공 고급 관측성 대시보드 기능이 있으며(사용자 이름과 비밀번호 필요), `system.dashboards`에 포함된 Cloud Overview 메트릭을 표시합니다.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="네이티브 고급 관측성 대시보드" border />
+
+<Note>
+  이 대시보드는 ClickHouse 인스턴스에 직접 인증해야 하며, 추가 인증 없이 Cloud Console UI를 통해 접근할 수 있는 [Cloud Console Advanced Dashboard](/ko/products/cloud/features/monitoring/cloud-console#advanced-dashboard)와는 별개입니다.
+</Note>
+
+사용 가능한 시각화와 이를 문제 해결에 활용하는 방법에 관한 자세한 내용은 [고급 대시보드 문서](/ko/products/cloud/features/monitoring/advanced-dashboard)를 참조하십시오.
+
+<div id="querying-across-nodes">
+  ## 노드와 버전 전반에서 쿼리하기
+</div>
+
+전체 cluster를 종합적으로 살펴보려면 `clusterAllReplicas` 함수를 `merge` 함수와 함께 사용할 수 있습니다. `clusterAllReplicas` 함수는 &quot;default&quot; cluster 내 모든 레플리카의 시스템 테이블을 쿼리할 수 있게 해 주며, 노드별 데이터를 하나의 결과로 통합합니다. 여기에 `merge` 함수를 함께 사용하면 cluster에서 특정 table과 관련된 모든 system data를 대상으로 쿼리할 수 있습니다.
+
+예를 들어, 지난 1시간 동안 모든 레플리카에서 가장 오래 실행된 쿼리 상위 5개를 찾으려면 다음과 같습니다.
+
+```sql
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type = 'QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+이 방식은 클러스터 전반의 작업을 모니터링하고 디버깅하는 데 특히 유용하며, 사용자가 ClickHouse Cloud 배포 환경의 상태와 성능을 효과적으로 분석할 수 있도록 합니다.
+
+자세한 내용은 [노드 간 쿼리](/ko/reference/system-tables/overview#querying-across-nodes)를 참조하십시오.
+
+<div id="system-considerations">
+  ## 시스템 관련 고려 사항
+</div>
+
+<Warning>
+  시스템 테이블을 직접 쿼리하면 운영 서비스에 쿼리 부하가 추가되고, ClickHouse Cloud 인스턴스가 유휴 상태로 전환되지 않아(비용에 영향을 줄 수 있음) 모니터링 가용성이 운영 시스템 상태에 종속됩니다. 운영 시스템에 장애가 발생하면 모니터링도 영향을 받을 수 있습니다.
+</Warning>
+
+운영 환경과 분리된 실시간 프로덕션 모니터링이 필요하다면 [Prometheus-compatible metrics endpoint](/ko/products/cloud/features/monitoring/prometheus) 또는 [Cloud Console dashboards](/ko/products/cloud/features/monitoring/cloud-console)를 사용하는 것을 고려하십시오. 둘 다 미리 스크레이프된 메트릭을 사용하므로, 기본 서비스에 쿼리를 실행하지 않습니다.
+
+<div id="related">
+  ## 관련 페이지
+</div>
+
+* [시스템 테이블 참고](/ko/reference/system-tables/overview) — 사용 가능한 모든 시스템 테이블의 전체 참고 문서
+* [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 설정이 필요 없고 서비스 성능에 영향을 주지 않는 대시보드
+* [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus) — 외부 모니터링 도구로 메트릭 내보내기
+* [Advanced dashboard](/ko/products/cloud/features/monitoring/advanced-dashboard) — 대시보드 시각화에 대한 자세한 참고 문서

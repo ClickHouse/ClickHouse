@@ -135,6 +135,18 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
+        /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
+        /// aggregation-method state is constructed for every contiguous run of equal order-key
+        /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
+        /// construction does work proportional to the whole block turns a single block into
+        /// O(number_of_runs * block_size) work. This is the case for the `prealloc_serialized`
+        /// method, which serializes all of the block's keys up front on construction. In that mode
+        /// the per-run path falls back to the plain `serialized` method (lazy, per-row key
+        /// serialization) to keep it linear; see `Aggregator::method_chosen_for_in_order`. The
+        /// whole-block merge stage (`mergeBlocks` in `MergingAggregatedBucketTransform`) keeps
+        /// `prealloc_serialized`, where it is a win.
+        bool aggregation_in_order = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -171,7 +183,7 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -319,6 +331,19 @@ private:
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
+
+    /// The aggregation method used by the per-run in-order path (`executeOnBlockSmall` /
+    /// `mergeOnBlockSmall`, called only from `AggregatingInOrderTransform`). It equals
+    /// `method_chosen`, except that when `Params::aggregation_in_order` is set the `prealloc_serialized`
+    /// variants are replaced by their plain `serialized` counterparts. That path builds a fresh state
+    /// for every run of equal order-key values, so the up-front whole-block serialization done by
+    /// `prealloc_serialized` on construction would make it quadratic. All whole-block paths (including
+    /// `mergeBlocks` used by `MergingAggregatedBucketTransform`) keep `method_chosen`, where
+    /// `prealloc_serialized` is a win. The `serialized` and `prealloc_serialized` methods produce
+    /// byte-identical keys and share the same hash-method context, so mixing them across pipeline
+    /// stages is safe.
+    AggregatedDataVariants::Type method_chosen_for_in_order;
+
     Sizes key_sizes;
 
     HashMethodContextPtr aggregation_state_cache;

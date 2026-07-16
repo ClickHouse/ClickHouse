@@ -1,0 +1,75 @@
+---
+title: '查询超出内存限制'
+description: '查询超出内存限制错误的故障排查'
+date: 2025-07-25
+tags: ['错误和异常']
+keywords: ['OOM', '超出内存限制']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="troubleshooting-out-of-memory-issues">
+  ## 查询超出内存限制
+</div>
+
+对于新用户来说，ClickHouse 往往像魔法一样——每条查询都快得惊人，
+即使面对最大的 数据集和最复杂的查询也是如此。不过，在实际使用中，
+总会遇到 ClickHouse 的性能边界。查询超出内存限制可能由多种原因导致。
+最常见的情况是在高基数字段上执行大型 JOIN 或聚合操作。
+如果性能至关重要，而且这些查询确实必不可少，我们通常会建议用户直接扩容——而
+ClickHouse Cloud 会自动、轻松地完成这项工作，以确保查询始终保持快速响应。不过我们也理解，在
+自管理场景中，这样做有时并不容易，而且也未必需要达到最佳性能。
+在这种情况下，用户还有几种选择。
+
+<div id="aggregations">
+  ### 聚合
+</div>
+
+对于内存密集型的聚合或排序场景，用户可以分别使用设置
+[`max_bytes_before_external_group_by`](/zh/reference/settings/session-settings#max_bytes_before_external_group_by)
+和 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings#max_bytes_ratio_before_external_sort)。
+前者已在[这里](/zh/reference/statements/select/group-by#group-by-in-external-memory)进行了详细讨论。
+
+简而言之，这可以确保当超过内存
+阈值时，聚合操作可以“落盘”到磁盘。这必然会影响查询性能，但也
+有助于避免查询发生 OOM。后者这个排序设置则有助于解决类似的
+内存密集型排序问题。这在
+Distributed 环境中特别重要，因为协调节点会接收来自各个分片的已排序响应。
+在这种情况下，协调服务器可能需要对一个
+大于其可用内存的数据集进行排序。借助 [`max_bytes_before_external_sort`](/zh/reference/settings/session-settings#max_bytes_ratio_before_external_sort)，
+可以允许排序结果落盘到磁盘。对于用户在 `GROUP BY` 后使用带有 `LIMIT` 的 `ORDER BY` 的情况，
+这一设置同样很有帮助，尤其是在 Distributed 查询中。
+
+<div id="joins">
+  ### 连接
+</div>
+
+对于连接操作，用户可以选择不同的 `JOIN` 算法，这有助于
+降低所需内存。默认情况下，连接使用 hash join，它在功能支持方面最完整，
+而且通常也有最佳性能。该算法会将 `JOIN` 的右侧表加载到内存中的哈希
+表中，然后用它来匹配左侧表。因此，为了尽量减少内存占用，
+用户应将较小的表放在右侧。不过，这种方法在受内存限制的场景下
+仍然存在局限。在这类情况下，可以通过 [`join_algorithm`](/zh/reference/settings/session-settings#join_algorithm)
+设置启用 `partial_merge`
+连接。作为 [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) 的一种变体，
+它会先将右侧表按块排序，并为这些块创建 min-max index。
+随后，它会按连接键对左侧表的部分数据进行排序，再与
+右侧表执行连接。min-max index 用于跳过不需要的右侧表块。
+这种方式会占用更少内存，但代价是性能有所下降。在这一思路基础上更进一步，
+`full_sorting_merge` 算法允许在右侧数据非常大、
+无法装入内存且无法执行 lookup 时进行 `JOIN`，例如右侧是一个复杂子查询。
+在这种情况下，如果右侧和左侧数据都放不进内存，就会在磁盘上对两侧进行排序，
+从而支持大表连接。
+
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="连接算法" />
+
+自 20.3 起，ClickHouse 已支持将 `join_algorithm` 设置为 auto。
+这表示 ClickHouse 会采用自适应连接策略：优先使用 hash join
+算法，直到超过内存限制，此时再尝试
+partial&#95;merge 算法。最后，关于连接，我们建议
+读者了解 Distributed joins 的行为方式，以及如何尽量减少
+其内存消耗。更多信息可参见[此处](/zh/reference/statements/in#distributed-subqueries)。

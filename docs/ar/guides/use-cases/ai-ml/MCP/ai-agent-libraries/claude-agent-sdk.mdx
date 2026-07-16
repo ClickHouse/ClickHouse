@@ -1,0 +1,131 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/claude-agent-sdk
+sidebarTitle: 'دمج Claude Agent SDK'
+title: 'كيفية إنشاء وكيل ذكاء اصطناعي باستخدام Claude Agent SDK وClickHouse MCP server'
+description: 'تعرّف على كيفية إنشاء وكيل ذكاء اصطناعي باستخدام Claude Agent SDK وClickHouse MCP server'
+keywords: ['ClickHouse', 'MCP', 'Claude']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+في هذا الدليل، ستتعلّم كيفية إنشاء وكيل ذكاء اصطناعي باستخدام [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) يمكنه التفاعل مع
+[ClickHouse SQL playground](https://sql.clickhouse.com/) باستخدام [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **دفتر ملاحظات توضيحي**
+
+  يمكن العثور على هذا المثال كدفتر ملاحظات في [مستودع examples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/claude-agent/claude-agent.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* ستحتاج إلى تثبيت بايثون على نظامك.
+* ستحتاج إلى تثبيت `pip` على نظامك.
+* ستحتاج إلى مفتاح API من Anthropic
+
+يمكنك تنفيذ الخطوات التالية إما من مفسّر بايثون التفاعلي (REPL) أو عبر برنامج نصي.
+
+<Steps>
+  <Step>
+    ## تثبيت المكتبات
+
+    ثبّت مكتبة Claude Agent SDK بتشغيل الأوامر التالية:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q claude-agent-sdk
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## إعداد بيانات الاعتماد
+
+    بعد ذلك، ستحتاج إلى إدخال مفتاح API الخاص بـ Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="الاستجابة"
+    Enter Anthropic API Key: ········
+    ```
+
+    بعد ذلك، حدِّد بيانات الاعتماد اللازمة للاتصال بـ ClickHouse SQL playground:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## تهيئة خادم MCP ووكيل Claude Agent SDK
+
+    الآن اضبط ClickHouse MCP server بحيث يشير إلى ClickHouse SQL playground،
+    ثم هيِّئ الوكيل واطرح عليه سؤالًا:
+
+    ```python
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, UserMessage, TextBlock, ToolUseBlock
+    ```
+
+    ```python
+    options = ClaudeAgentOptions(
+        allowed_tools=[
+            "mcp__mcp-clickhouse__list_databases",
+            "mcp__mcp-clickhouse__list_tables", 
+            "mcp__mcp-clickhouse__run_select_query",
+            "mcp__mcp-clickhouse__run_chdb_select_query"
+        ],
+        mcp_servers={
+            "mcp-clickhouse": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--with", "mcp-clickhouse",
+                    "--python", "3.10",
+                    "mcp-clickhouse"
+                ],
+                "env": env
+            }
+        }
+    )
+
+    async for message in query(prompt="Tell me something interesting about UK property sales", options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(f"🤖 {block.text}")
+                if isinstance(block, ToolUseBlock):
+                    print(f"🛠️ {block.name} {block.input}")
+        elif isinstance(message, UserMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    print(block.text)
+    ```
+
+    لاحظ أن الشيفرة داخل كتلة `for` تُصفّي المخرجات اختصارًا.
+
+    ```response title="الاستجابة"
+    🤖 سأستعلم من قاعدة بيانات ClickHouse للعثور على معلومة مثيرة للاهتمام حول مبيعات العقارات في المملكة المتحدة.
+
+    دعني أولًا أرى قواعد البيانات المتاحة:
+    🛠️ mcp__mcp-clickhouse__list_databases {}
+    🤖 رائع! توجد قاعدة بيانات باسم "uk". دعني أرى الجداول المتاحة:
+    🛠️ mcp__mcp-clickhouse__list_tables {'database': 'uk'}
+    🤖 ممتاز! يحتوي الجدول `uk_price_paid` على أكثر من 30 مليون سجل لمبيعات العقارات. دعني أبحث عن شيء مثير للاهتمام:
+    🛠️ mcp__mcp-clickhouse__run_select_query {'query': "\nSELECT \n    street,\n    town,\n    max(price) as max_price,\n    min(price) as min_price,\n    max(price) - min(price) as price_difference,\n    count() as sales_count\nFROM uk.uk_price_paid\nWHERE street != ''\nGROUP BY street, town\nHAVING sales_count > 100\nORDER BY price_difference DESC\nLIMIT 1\n"}
+    🤖 إليك معلومة لافتة: **Baker Street في لندن** (نعم، شارع شيرلوك هولمز الشهير!) سجّل أكبر نطاق سعري بين جميع الشوارع التي شهدت أكثر من 100 عملية بيع؛ إذ بيعت فيه عقارات بأسعار منخفضة تصل إلى **£2,500** ومرتفعة تصل إلى **£594.3 million**، بفارق هائل يتجاوز £594 million!
+
+    وهذا منطقي، لأن Baker Street يُعد من أرقى العناوين في لندن، ويمر عبر مناطق ثرية مثل Marylebone، وقد سُجّلت فيه 541 عملية بيع في مجموعة البيانات هذه.
+    ```
+  </Step>
+</Steps>

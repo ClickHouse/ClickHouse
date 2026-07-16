@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -80,6 +81,25 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
+
+    /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
+    /// definition resolves to server-managed credentials (e.g. a named collection later re-bound to
+    /// `use_environment_credentials = 1`, or a server `<s3>` `role_arn` added afterwards) must not silently
+    /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
+    /// refused. Flagging the load lets `getClient` downgrade such a table to an anonymous client (so the server
+    /// still starts and the table is merely inaccessible) instead of escalating, controlled by the server
+    /// setting `s3_load_table_anonymously_if_credentials_restricted`.
+    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
+
+    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
+    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
+    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
+    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
+    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
+    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
+        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+        configuration->force_anonymous_load_fallback = true;
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
@@ -300,7 +320,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
 - `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
-- `storage_class_name` - Options: `STANDARD` or `INTELLIGENT_TIERING`, allow to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -1744,6 +1764,8 @@ This engine uses the same settings as the corresponding object storage engines a
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
 - `paimon_keeper_path` — Keeper path for incremental read state. Must be set and unique per table; supports macros such as `{database}`, `{table}`, `{uuid}`.
 - `paimon_replica_name` — Replica name for incremental read state. Must be set and unique per replica; supports macros such as `{replica}`.
+- `use_paimon_metadata_files_cache` — enables in-memory caching of parsed Paimon metadata files. Table functions evaluate it per query; persistent engines latch it at metadata initialization (drop and recreate to change). Default: `0`.
+- `paimon_metadata_files_cache_size` — server-level cache capacity in bytes; runtime-reloadable via `SYSTEM RELOAD CONFIG`. Default: `1073741824` (1 GiB).
 
 ## Incremental read examples {#incremental-read-examples}
 

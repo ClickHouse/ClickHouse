@@ -1,0 +1,150 @@
+---
+description: 'Documentación del tipo de dato UUID en ClickHouse'
+sidebarTitle: 'UUID'
+slug: /sql-reference/data-types/uuid
+title: 'UUID'
+doc_type: 'reference'
+---
+
+Un identificador único universal (UUID) es un valor de 16 bytes que se utiliza para identificar registros. Para obtener información detallada sobre los UUIDs, consulte [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+
+Aunque existen distintas variantes de UUID, por ejemplo UUIDv4 y UUIDv7 (consulte [aquí](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse no valida que los UUIDs insertados se ajusten a una variante concreta.
+Los UUIDs se tratan internamente como una secuencia de 16 bytes aleatorios con representación [8-4-4-4-12](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) en SQL.
+
+Valor de UUID de ejemplo:
+
+```text
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+```
+
+El UUID predeterminado está compuesto íntegramente por ceros. Se utiliza, por ejemplo, cuando se inserta un nuevo registro pero no se especifica ningún valor para una columna UUID:
+
+```text
+00000000-0000-0000-0000-000000000000
+```
+
+<Warning>
+  Por motivos históricos, los UUIDs se ordenan por su segunda mitad.
+
+  Aunque esto no supone ningún problema para los valores UUIDv4, puede degradar el rendimiento de las columnas UUIDv7 usadas en definiciones de índice primario (su uso en claves de ordenación o claves de partición no presenta problemas).
+  Más concretamente, los valores UUIDv7 constan de un timestamp en la primera mitad y de un contador en la segunda.
+  Por tanto, la ordenación de UUIDv7 en índices dispersos de clave primaria (es decir, los primeros valores de cada gránulo de índice) se hará según el campo de contador.
+  Si se asume que los UUIDs se ordenan por la primera mitad (timestamp), se espera que, en el paso de análisis del índice de clave primaria al inicio de las consultas, se descarten todos los marks salvo los de una sola parte.
+  Sin embargo, al ordenarlos por la segunda mitad (contador), se espera que se devuelva al menos un mark para todas las partes, lo que provoca accesos innecesarios al disco.
+</Warning>
+
+Ejemplo:
+
+```sql title="Query"
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (uuid);
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+SELECT * FROM tab;
+```
+
+```text title="Response"
+┌─uuid─────────────────────────────────┐
+│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
+│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
+│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
+│ 019d2555-7878-77fc-a36f-40826555fb9b │
+│ 019d2555-7870-7432-ba62-5250ac595328 │
+│ 019d2555-7870-7432-ba62-5251da22bd19 │
+│ 019d2555-786c-73e9-a031-4a7936df7d56 │
+│ 019d2555-786c-73e9-a031-4a7a35a9544f │
+│ 019d2555-7868-7333-89d1-2bd1639899c3 │
+│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+└──────────────────────────────────────┘
+
+```
+
+Como solución alternativa, el UUID puede convertirse en una marca temporal extraída de la segunda mitad:
+
+```sql title="Query"
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (UUIDv7ToDateTime(uuid));
+-- Or alternatively:                      [...] PRIMARY KEY (toStartOfHour(UUIDv7ToDateTime(uuid)));
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+SELECT * FROM tab;
+```
+
+Resultado (suponiendo que se insertan los mismos datos):
+
+```text title="Response"
+┌─uuid─────────────────────────────────┐
+│ 019d2555-7868-7333-89d1-2bd1639899c3 │
+│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+│ 019d2555-786c-73e9-a031-4a7936df7d56 │
+│ 019d2555-786c-73e9-a031-4a7a35a9544f │
+│ 019d2555-7870-7432-ba62-5250ac595328 │
+│ 019d2555-7870-7432-ba62-5251da22bd19 │
+│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
+│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
+│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
+│ 019d2555-7878-77fc-a36f-40826555fb9b │
+└──────────────────────────────────────┘
+
+```
+
+ORDER BY (UUIDv7ToDateTime(uuid), uuid)
+
+<div id="generating-uuids">
+  ## Generación de UUIDs
+</div>
+
+ClickHouse proporciona la función [generateUUIDv4](/es/reference/functions/regular-functions/uuid-functions) para generar UUID aleatorios de la versión 4.
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+**Ejemplo 1**
+
+Este ejemplo muestra cómo crear una tabla con una columna UUID e insertar un valor en la tabla.
+
+```sql title="Query"
+CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
+
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
+
+SELECT * FROM t_uuid
+```
+
+```text title="Response"
+┌────────────────────────────────────x─┬─y─────────┐
+│ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
+└──────────────────────────────────────┴───────────┘
+```
+
+**Ejemplo 2**
+
+En este ejemplo, no se especifica ningún valor para la columna UUID al insertar el registro; es decir, se inserta el valor UUID predeterminado:
+
+```sql
+INSERT INTO t_uuid (y) VALUES ('Example 2')
+
+SELECT * FROM t_uuid
+```
+
+```text
+┌────────────────────────────────────x─┬─y─────────┐
+│ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
+│ 00000000-0000-0000-0000-000000000000 │ Example 2 │
+└──────────────────────────────────────┴───────────┘
+```
+
+<div id="restrictions">
+  ## Restricciones
+</div>
+
+El tipo de dato UUID solo admite las funciones que también admite el tipo de dato [String](/es/reference/data-types/string) (por ejemplo, [min](/es/reference/functions/aggregate-functions/min), [max](/es/reference/functions/aggregate-functions/max) y [count](/es/reference/functions/aggregate-functions/count)).
+
+El tipo de dato UUID no es compatible con operaciones aritméticas (por ejemplo, [abs](/es/reference/functions/regular-functions/arithmetic-functions#abs)) ni con funciones agregadas, como [sum](/es/reference/functions/aggregate-functions/sum) y [avg](/es/reference/functions/aggregate-functions/avg).

@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: '배포 옵션'
+description: 'ClickStack 배포 - ClickHouse 관측성 스택'
+doc_type: 'reference'
+keywords: ['ClickStack', '관측성']
+---
+
+ClickStack은 다양한 사용 사례에 맞는 여러 배포 옵션을 제공합니다.
+
+각 배포 옵션은 아래에 요약되어 있습니다. [시작하기 가이드](/ko/clickstack/getting-started/index)에서는 특히 옵션 1과 2를 중점적으로 다룹니다. 빠짐없이 안내하기 위해 여기에도 포함했습니다.
+
+| 이름                 | 설명                                                                      | 적합한 용도                                      | 제한 사항                                    | 예시 링크                                                     |
+| ------------------ | ----------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| Managed ClickStack | ClickHouse Cloud에서 호스팅되는 ClickHouse와 ClickStack UI(HyperDX)입니다.         | 프로덕션 배포, 데모, 개념 검증                          | 없음                                       | [Managed](/ko/clickstack/deployment/managed)                 |
+| All-in-One         | 모든 ClickStack 구성 요소가 포함된 단일 Docker 컨테이너입니다.                             | 비프로덕션 배포, 데모, 개념 검증                         | 프로덕션에는 권장되지 않음                           | [All-in-One](/ko/clickstack/deployment/all-in-one)           |
+| Helm               | Kubernetes 기반 배포를 위한 공식 Helm 차트입니다. ClickHouse Cloud와 프로덕션 스케일링을 지원합니다. | Kubernetes 환경의 프로덕션 배포                      | Kubernetes 지식이 필요하며 Helm을 통한 사용자 지정이 필요함 | [Helm](/ko/clickstack/deployment/helm)                       |
+| Docker Compose     | Docker Compose를 통해 각 ClickStack 구성 요소를 개별적으로 배포합니다.                     | 로컬 테스트, 개념 검증, 단일 서버 프로덕션, 자체 ClickHouse 사용 | 장애 허용이 없으며 여러 컨테이너를 관리해야 함               | [Docker Compose](/ko/clickstack/deployment/docker-compose)   |
+| HyperDX Only       | 자체 ClickHouse와 스키마를 사용하여 HyperDX만 독립적으로 사용합니다.                          | 기존 ClickHouse 사용자, 사용자 지정 이벤트 파이프라인         | ClickHouse는 포함되지 않으며, 수집과 스키마는 직접 관리해야 함 | [HyperDX Only](/ko/clickstack/deployment/hyperdx-only)       |
+| Local Mode Only    | 로컬 스토리지를 사용하며 브라우저에서만 완전히 실행됩니다. backend나 영구 저장이 없습니다.                  | 데모, 디버깅, HyperDX 개발                         | 인증 없음, 영구 저장 없음, 알림 없음, 단일 사용자 전용        | [Local Mode Only](/ko/clickstack/deployment/local-mode-only) |

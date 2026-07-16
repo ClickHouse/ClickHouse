@@ -1,0 +1,124 @@
+---
+slug: /shards
+title: 'テーブルの分片とレプリカ'
+description: 'ClickHouseにおけるテーブルの分片とレプリカとは何か'
+keywords: ['分片', '分片', 'シャーディング', 'レプリカ', 'レプリカ']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<br />
+
+<Note>
+  このトピックは ClickHouse Cloud には当てはまりません。ClickHouse Cloud では、[並列レプリカ](/ja/products/cloud/features/infrastructure/parallel-replicas) は従来の shared-nothing 型 ClickHouse クラスターにおける複数の分片のように機能し、さらにオブジェクトストレージが[レプリカの代わりとなる](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability)ことで、高可用性と耐障害性を実現しています。
+</Note>
+
+<div id="what-are-table-shards-in-clickhouse">
+  ## ClickHouse のテーブル分片とは何ですか？
+</div>
+
+従来の [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) アーキテクチャの ClickHouse クラスターでは、① データ量が大きすぎて単一のサーバーに収まらない場合、または ② 単一のサーバーではデータ処理が遅すぎる場合に、シャーディングが使用されます。次の図は、[uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルが単一マシンの容量を超えるケース①を示しています。
+
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+このような場合、データはテーブル分片として複数の ClickHouse サーバーに分割できます。
+
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+各分片はデータの一部を保持し、個別にクエリできる通常の ClickHouse テーブルとして機能します。ただし、クエリで処理されるのはその一部だけであり、データの分布によってはそれで十分な場合もあります。通常は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) (多くの場合、各サーバー上に作成) がデータセット全体を統一的に参照するためのビューを提供します。分散テーブル自体はデータを保存せず、**SELECT** クエリをすべての分片に転送して結果をまとめ、データが均等に分散されるよう **INSERTS** を振り分けます。
+
+<div id="distributed-table-creation">
+  ## 分散テーブルの作成
+</div>
+
+**SELECT** クエリの転送と **INSERT** のルーティングを説明するために、2 台の ClickHouseサーバー上の 2 つの分片に分割された [テーブルパーツとは](/ja/concepts/core-concepts/parts) の例のテーブルを考えます。まず、この構成に対応する **分散テーブル** を作成するための DDL ステートメントを示します。
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_dist ON CLUSTER test_cluster
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
+```
+
+`ON CLUSTER` 句により、このDDLステートメントは[分散DDLステートメント](/ja/reference/statements/distributed-ddl)となり、ClickHouse は `test_cluster` の[クラスター定義](/ja/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas#configure-clickhouse-servers)に記載されているすべてのサーバーにテーブルを作成します。分散DDLを使用するには、[クラスターアーキテクチャ](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)に追加の[Keeper](https://clickhouse.com/clickhouse/keeper)コンポーネントが必要です。
+
+[Distributedエンジンのパラメータ](/ja/reference/engines/table-engines/special/distributed#distributed-parameters)では、クラスター名 (`test_cluster`) 、分片化されたターゲットテーブルのデータベース名 (`uk`) 、分片化されたターゲットテーブル名 (`uk_price_paid_simple`) 、および INSERT ルーティングに使用する**シャーディングキー**を指定します。この例では、行を分片にランダムに割り当てるために[rand](/ja/reference/functions/regular-functions/random-functions#rand)関数を使用しています。ただし、ユースケースに応じて、複雑なものも含め任意の式をシャーディングキーとして使用できます。次のセクションでは、INSERT ルーティングの仕組みを説明します。
+
+<div id="insert-routing">
+  ## INSERT のルーティング
+</div>
+
+以下の図は、分散テーブルに対する INSERT が ClickHouse でどのように処理されるかを示しています。
+
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① 分散テーブルを対象とする INSERT (1 行のみ) が、そのテーブルをホストしている ClickHouse サーバーに、直接またはロードバランサー経由で送信されます。
+
+② INSERT の各行 (この例では 1 行のみ) について、ClickHouse はシャーディングキー (ここでは `rand()`) を評価し、その結果を分片サーバー数で割った余りを計算して、送信先サーバーの ID として使用します (ID は 0 から始まり、1 ずつ増加します) 。その後、その行は転送され、③ 対応するサーバーのテーブル分片に挿入されます。
+
+次のセクションでは、SELECT 転送の仕組みについて説明します。
+
+<div id="select-forwarding">
+  ## SELECTクエリの転送
+</div>
+
+この図は、ClickHouse で分散テーブルを使用した場合に SELECTクエリがどのように処理されるかを示しています。
+
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① 分散テーブルを対象とする SELECT 集計クエリが、対応する ClickHouse サーバーに直接、またはロードバランサー経由で送信されます。
+
+② 分散テーブルは、ターゲットテーブルの分片を保持しているすべてのサーバーにクエリを転送し、各 ClickHouse サーバーがそれぞれのローカルな集計結果を**並列に**計算します。
+
+次に、最初に対象となった分散テーブルをホストしている ClickHouse サーバーが、③ すべてのローカル結果を収集し、④ それらを最終的なグローバル結果にマージして、⑤ クエリの送信元に返します。
+
+<div id="what-are-table-replicas-in-clickhouse">
+  ## ClickHouse におけるテーブルレプリカとは何ですか？
+</div>
+
+ClickHouse のレプリケーションは、複数のサーバーに**分片データのコピー**を保持することで、**データ整合性**と**フェイルオーバー**を確保します。ハードウェア障害は避けられないため、各分片が複数のレプリカを持つようにすることで、データ損失を防ぎます。書き込みは、直接、または処理対象のレプリカを選択する[分散テーブル](#distributed-table-creation)を介して、任意のレプリカに送ることができます。変更は自動的にほかのレプリカへ伝播されます。障害やメンテナンスが発生した場合でも、データはほかのレプリカで引き続き利用可能であり、障害が発生したホストが復旧すると、自動的に同期して最新の状態に保たれます。
+
+なお、レプリケーションには、[クラスターアーキテクチャ](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)内の[Keeper](https://clickhouse.com/clickhouse/keeper)コンポーネントが必要です。
+
+次の図は、6 台のサーバーで構成された ClickHouse クラスターを示しています。ここでは、先に紹介した 2 つのテーブル分片 `Shard-1` と `Shard-2` が、それぞれ 3 つのレプリカを持っています。このクラスターにクエリが送信されます。
+
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+クエリ処理は、レプリカのない構成と同様に機能し、各分片から 1 つのレプリカだけがクエリを実行します。
+
+> レプリカはデータ整合性とフェイルオーバーを確保するだけでなく、複数のクエリを異なるレプリカ間で並列に実行できるようにすることで、クエリ処理のスループットも向上させます。
+
+① 分散テーブルを対象とするクエリが、対応する ClickHouse サーバーに、直接またはロードバランサー経由で送信されます。
+
+② 分散テーブルはクエリを各分片の 1 つのレプリカに転送し、選択されたレプリカをホストする各 ClickHouse サーバーが、ローカルのクエリ結果を並列に計算します。
+
+残りの処理は、レプリカのない構成の場合と[同じ](#select-forwarding)であり、上の図には示していません。最初に対象となった分散テーブルをホストする ClickHouse サーバーが、すべてのローカル結果を収集し、それらを最終的なグローバル結果にマージして、クエリの送信元に返します。
+
+なお、ClickHouse では ② のクエリ転送戦略を設定できます。デフォルトでは、上の図とは異なり、分散テーブルは利用可能であればローカルレプリカを[優先](/ja/reference/settings/session-settings#prefer_localhost_replica)しますが、ほかのロードバランシング[戦略](/ja/reference/settings/session-settings#load_balancing)も使用できます。
+
+<div id="where-to-find-more-information">
+  ## さらに詳しい情報
+</div>
+
+分片とレプリカについて、この概要レベルの説明を超えてさらに詳しく知りたい場合は、[デプロイとスケーリングのガイド](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)をご覧ください。
+
+また、ClickHouse の分片とレプリカをより深く理解するには、こちらのチュートリアルビデオもぜひご覧ください。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vBjCJtw_Ei0?si=WqopTrnti6usCMRs" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

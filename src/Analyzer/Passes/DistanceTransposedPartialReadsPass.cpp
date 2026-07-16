@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Storages/IStorage.h>
@@ -49,7 +51,12 @@ public:
             = (function_name == "L2DistanceTransposed" || function_name == "cosineDistanceTransposed"
                || function_name == "dotProductTransposed");
 
-        if (!is_distance_function)
+        /// Quantized variants dequantize a QBit(Int8) on the fly and take a full-precision Float32 reference vector.
+        const bool is_quantized
+            = (function_name == "L2DistanceTransposedQuantized" || function_name == "cosineDistanceTransposedQuantized"
+               || function_name == "dotProductTransposedQuantized");
+
+        if (!is_distance_function && !is_quantized)
             return;
 
         auto & function_arguments_nodes = function_node->getArguments().getNodes();
@@ -71,6 +78,15 @@ public:
             if (!used_dims_node || used_dims_node->getValue().getType() != Field::Types::UInt64)
                 return;
         }
+
+        /// The rewrite casts the reference vector to a plain Array and drops the precision/used_dims arguments, which fixes the
+        /// result type at Float64 (or Nullable(Float64), preserved below). A Variant or Dynamic reference vector, however, makes the
+        /// overload resolver evaluate the function per alternative so the original result is itself Variant/Dynamic, and such a value
+        /// cannot even be `_CAST` to an Array. Rewriting would therefore either throw during this pass or silently change the result
+        /// type, so leave such calls untouched and let the ordinary (unoptimized) path evaluate them.
+        auto ref_vec_type = ref_vec_node->getResultType();
+        if (isVariant(ref_vec_type) || isDynamic(ref_vec_type))
+            return;
 
         auto column_source = qbit_node->getColumnSource();
         auto * table_node = column_source->as<TableNode>();
@@ -98,6 +114,11 @@ public:
         const auto * qbit = checkAndGetDataType<DataTypeQBit>(qbit_node->getColumnType().get());
 
         if (!qbit)
+            return;
+
+        /// The quantized variants only operate on QBit(Int8) codes. If the type does not match, leave the function untouched:
+        /// the function's own getReturnTypeImpl will produce the user-facing error.
+        if (is_quantized && !WhichDataType(qbit->getElementType()).isInt8())
             return;
 
         size_t data_width = qbit->getElementSize();
@@ -166,8 +187,21 @@ public:
         if (original_result_type->isNullable() || original_result_type->isLowCardinalityNullable())
             last_size_constant->convertToNullable();
 
-        /// Cast reference vector to match QBit type. This is the only information about the type of the QBit after this pass is applied
-        auto expected_ref_vec_type = std::make_shared<DataTypeArray>(qbit->getElementType());
+        /// Cast reference vector to match QBit type. For the non-quantized functions this is the only information about the type of the
+        /// QBit after this pass is applied. The quantized functions dequantize the Int8 codes to Float32 levels on the fly, so a Float
+        /// reference (the full-precision query) must be cast to Array(Float32); a quantized Array(Int8) reference is left unchanged and
+        /// dequantized on the fly exactly like the QBit codes.
+        DataTypePtr expected_ref_vec_type;
+        if (is_quantized)
+        {
+            const auto * ref_array = checkAndGetDataType<DataTypeArray>(ref_vec_type.get());
+            if (ref_array && WhichDataType(ref_array->getNestedType()).isInt8())
+                expected_ref_vec_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt8>());
+            else
+                expected_ref_vec_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
+        }
+        else
+            expected_ref_vec_type = std::make_shared<DataTypeArray>(qbit->getElementType());
 
         if (ref_vec_node->getResultType()->equals(*expected_ref_vec_type))
         {

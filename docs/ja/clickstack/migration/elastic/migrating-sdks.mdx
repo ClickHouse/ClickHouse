@@ -1,0 +1,53 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-sdks
+title: 'Elastic からの SDKs の移行'
+sidebarTitle: 'SDKs の移行'
+description: 'Elastic からの SDKs の移行'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+Elastic Stack では、アプリケーションをインストルメントするための言語別 SDK が 2 種類提供されています。
+
+1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – これらは Elastic Stack での利用に特化して作られています。現時点では、これらの SDK から直接移行する方法はありません。これらを使用しているアプリケーションは、対応する [ClickStack SDKs](/ja/clickstack/ingesting-data/sdks/index) を使用して再度インストルメントする必要があります。
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – これらは標準的な OpenTelemetry SDK の Elastic によるディストリビューションで、.NET、Java、Node.js、PHP、Python 向けに提供されています。アプリケーションですでに EDOT SDK を使用している場合は、コードを再度インストルメントする必要はありません。代わりに、SDK を再設定して、テレメトリーデータを ClickStack に含まれる OTLP Collector にエクスポートするだけで済みます。詳細は、[&quot;Migrating EDOT SDKs&quot;](#migrating-edot-sdks) を参照してください。
+
+<Info>
+  **可能であれば ClickStack SDKs を使用してください**
+
+  標準の OpenTelemetry SDK もサポートされていますが、各言語では [**ClickStack-distributed SDKs**](/ja/clickstack/ingesting-data/sdks/index) の使用を強く推奨します。これらのディストリビューションには、追加のインストルメンテーション、より適切なデフォルト設定、そして ClickStack のパイプラインや UI とシームレスに連携するよう設計されたカスタム拡張機能が含まれています。ClickStack SDKs を使用することで、標準の OpenTelemetry や EDOT SDK では利用できない例外のスタックトレースなどの高度な機能を利用できます。
+</Info>
+
+<div id="migrating-edot-sdks">
+  ## EDOT SDKs の移行
+</div>
+
+ClickStack の OpenTelemetry ベースの SDK と同様に、Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) も、公式の OpenTelemetry SDK をカスタマイズしたバージョンです。たとえば、[EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) は、Elastic Observability とシームレスに連携できるよう設計された、[OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) のベンダーカスタマイズ版ディストリビューションです。
+
+これらの SDK は標準の OpenTelemetry ライブラリをベースとしているため、ClickStack への移行は容易で、再インストルメンテーションは不要です。必要なのは、テレメトリーデータの送信先が ClickStack OpenTelemetry Collector になるように設定を調整することだけです。
+
+設定は、標準的な OpenTelemetry の仕組みに従います。Python では、通常は環境変数を使ってこれを行います。詳細は、[OpenTelemetry Zero-Code Instrumentation docs](https://opentelemetry.io/docs/zero-code/python/configuration/) を参照してください。
+
+一般的な EDOT SDK の設定は、次のようになります。
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+ClickStack に移行するには、endpoint がローカルの OTLP collector を指すように更新し、authorization header を変更します。
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
+```
+
+インジェスト API key は HyperDX アプリケーションで生成され、Team Settings → API Keys から確認できます。
+
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェスト API keys" size="lg" />

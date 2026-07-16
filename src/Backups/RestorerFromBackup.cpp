@@ -42,6 +42,7 @@
 #include <boost/algorithm/string.hpp>
 
 #if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
@@ -462,9 +463,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 {
     try
     {
-        if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
-            return;
-
         boost::intrusive_ptr<ASTCreateQuery> create_database_query;
         {
             std::lock_guard lock{mutex};
@@ -474,8 +472,44 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             if (database_info.is_predefined_database)
                 return;
 
+            /// In `must-exist` mode RESTORE does not create the database, and the backup may not even contain
+            /// its definition (e.g. when restoring individual tables into an already-existing database), so there
+            /// is nothing to check or create here.
+            if (!database_info.create_database_query)
+                return;
+
             create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
         }
+
+        /// Restoring a MaterializedPostgreSQL database is not supported. Such a database replicates from the live
+        /// PostgreSQL source (its startup schedules `tryStartSynchronization`), so restoring the backup snapshot
+        /// on top of it would mix the snapshot with the current remote state. This is true whether RESTORE recreates
+        /// the database or reuses an existing one (`create_database = 'must-exist'`), so this check must run before
+        /// the `kMustExist` early return below: it makes the whole RESTORE fail during the `CREATING_DATABASES`
+        /// stage, before any backed-up table data is inserted into a live `MaterializedPostgreSQL` database. Fail
+        /// closed and direct the user to restore the data of individual tables instead - the data is still captured
+        /// by the backup (see `StorageMaterializedPostgreSQL::backupData`). In a database backup each table's stored
+        /// definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine),
+        /// so a table can be restored straight into a new, not-yet-existing table.
+        {
+            const auto * storage = create_database_query->storage;
+            const String database_engine_name = storage && storage->engine ? storage->engine->name : "";
+            if (database_engine_name == "MaterializedPostgreSQL")
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_DATABASE,
+                    "Restoring a MaterializedPostgreSQL database ({}) is not supported, because the database "
+                    "replicates from the live PostgreSQL source, so restoring the backup snapshot would mix it with "
+                    "the current remote state. Restore the data of individual tables instead - each table's "
+                    "definition in the backup is already a ReplacingMergeTree, so it can be restored into a new "
+                    "table, e.g.: RESTORE TABLE <src_database>.<table> AS <database>.<new_table> FROM <backup> "
+                    "SETTINGS allow_different_table_def = 1.",
+                    backQuoteIfNeed(database_name));
+        }
+
+        /// In `must-exist` mode RESTORE does not create the database; it must already exist. We still had to run
+        /// the MaterializedPostgreSQL check above before returning, to fail closed for an existing live target.
+        if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
+            return;
 
         /// Generate a new UUID for a database.
         /// The generated UUID will be ignored if the database does not support UUIDs.
@@ -721,6 +755,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
         boost::intrusive_ptr<ASTCreateQuery> create_table_query;
         DatabasePtr database;
+#if CLICKHOUSE_CLOUD
+        String data_path_in_backup;
+        std::optional<ASTs> partitions;
+#endif
 
         {
             std::lock_guard lock{mutex};
@@ -732,7 +770,33 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
             create_table_query = boost::static_pointer_cast<ASTCreateQuery>(table_info.create_table_query->clone());
             database = table_info.database;
+#if CLICKHOUSE_CLOUD
+            data_path_in_backup = table_info.data_path_in_backup;
+            partitions = table_info.partitions;
+#endif
         }
+
+#if CLICKHOUSE_CLOUD
+        /// Capture the source table's UUID before it is overwritten below; a mounted table needs it to
+        /// scope its restore revalidation to the source table's per-part locks.
+        String source_table_uuid;
+        if (create_table_query->has_uuid)
+            source_table_uuid = toString(create_table_query->uuid);
+
+        /// For a lightweight restore, resolve the mount provenance to be persisted when the table is
+        /// created (handed to the storage via the create-query context below).
+        auto snapshot_mount_provenance = computeSnapshotMountProvenance(
+            restore_settings, backup, backup_info_for_restore, context, *create_table_query, data_path_in_backup, source_table_uuid);
+
+        /// Partition-filtered mount restore is unimplemented: provenance is persisted in the table-creation
+        /// multi-op, before the PARTITIONS filter runs in the data phase, so a no-match would strand an empty
+        /// mounted table that reopens an unpinned source. Reject up front, before any table is created.
+        if (snapshot_mount_provenance && partitions && !partitions->empty())
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "mount_readonly_parts_from_snapshot does not support a PARTITIONS filter. Restore the whole table "
+                "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
+#endif
 
         /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
         /// The generated UUID will be ignored if the database does not support UUIDs.
@@ -785,6 +849,9 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         create_query_context->setUnderRestore(true);
+#if CLICKHOUSE_CLOUD
+        create_query_context->setSnapshotMountProvenanceToPersist(snapshot_mount_provenance);
+#endif
 
         /// We shouldn't use the progress callback copied from the restore context because it was originally set in a
         /// protocol handler (e.g. HTTPHandler) for the "RESTORE ASYNC" query which could have already finished

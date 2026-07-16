@@ -1,0 +1,120 @@
+---
+sidebarTitle: 'BladePipe'
+keywords: ['ClickHouse', 'BladePipe', '연결', '통합', 'cdc', 'etl', '데이터 통합']
+slug: /integrations/bladepipe
+description: 'BladePipe 데이터 파이프라인을 사용해 데이터를 ClickHouse로 스트리밍합니다'
+title: 'BladePipe를 ClickHouse에 연결'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.bladepipe.com/" target="_blank">BladePipe</a>는 1초 미만의 지연 시간을 지원하는 실시간 엔드투엔드 데이터 통합 도구로, 여러 플랫폼 전반에서 원활한 데이터 흐름을 지원합니다.
+
+ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나로, 다양한 소스의 데이터를 ClickHouse로 자동 통합할 수 있습니다. 이 페이지에서는 데이터를 ClickHouse로 실시간 로드하는 방법을 단계별로 설명합니다.
+
+<div id="supported-sources">
+  ## 지원되는 소스
+</div>
+
+현재 BladePipe는 다음 소스에서 ClickHouse로의 데이터 통합을 지원합니다:
+
+* MySQL/MariaDB/AuroraMySQL
+* Oracle
+* PostgreSQL/AuroraPostgreSQL
+* MongoDB
+* Kafka
+* PolarDB-MySQL
+* OceanBase
+* TiDB
+
+추후 더 많은 소스를 지원할 예정입니다.
+
+<Steps>
+  <Step>
+    ## BladePipe 다운로드 및 실행
+
+    1. <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>에 로그인합니다.
+
+    2. <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Worker 설치(Docker)</a> 또는 <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Worker 설치(Binary)</a>의 안내에 따라 BladePipe Worker를 다운로드하고 설치합니다.
+
+    <Note>
+      또는 <a href="https://doc.bladepipe.com/productOP/onPremise/installation/install_all_in_one_binary" target="_blank">BladePipe Enterprise</a>를 다운로드하여 배포할 수도 있습니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ## ClickHouse를 대상으로 추가
+
+    <Note>
+      1. BladePipe는 ClickHouse 버전 `20.12.3.3` 이상을 지원합니다.
+      2. ClickHouse를 대상으로 사용하려면 사용자에게 SELECT, INSERT 및 일반 DDL 권한이 있어야 합니다.
+    </Note>
+
+    1. BladePipe에서 &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;를 클릭합니다.
+
+    2. `ClickHouse`를 선택한 다음 ClickHouse 호스트와 포트, 사용자 이름, 비밀번호를 입력해 설정하고 &quot;Test Connection&quot;을 클릭합니다.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="ClickHouse를 대상으로 추가" />
+
+    3. 하단의 &quot;Add DataSource&quot;를 클릭하면 ClickHouse 인스턴스가 추가됩니다.
+  </Step>
+
+  <Step>
+    ## MySQL을 소스로 추가하기
+
+    이 튜토리얼에서는 MySQL 인스턴스를 소스로 사용하여 MySQL 데이터를 ClickHouse로 적재하는 과정을 설명합니다.
+
+    <Note>
+      MySQL을 소스로 사용하려면 사용자에게 <a href="https://doc.bladepipe.com/dataMigrationAndSync/datasource_func/MySQL/privs_for_mysql" target="_blank">필요한 권한</a>이 있는지 확인하십시오.
+    </Note>
+
+    1. BladePipe에서 &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;를 클릭하십시오.
+
+    2. `MySQL`을 선택한 다음 MySQL 호스트와 포트, 사용자 이름, 비밀번호를 입력하여 설정을 완료하고 &quot;Test Connection&quot;을 클릭하십시오.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="MySQL을 소스로 추가하기" />
+
+    3. 하단의 &quot;Add DataSource&quot;를 클릭하면 MySQL 인스턴스가 추가됩니다.
+  </Step>
+
+  <Step>
+    ## 파이프라인 생성
+
+    1. BladePipe에서 &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;을 클릭합니다.
+
+    2. 추가한 MySQL 및 ClickHouse 인스턴스를 선택한 다음 &quot;Test Connection&quot;을 클릭하여 BladePipe가 해당 인스턴스에 연결되어 있는지 확인합니다. 그런 다음 옮길 데이터베이스를 선택합니다.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="소스 및 대상 선택" />
+
+    3. DataJob Type에서 &quot;Incremental&quot;을 선택하고, &quot;Full Data&quot; 옵션도 함께 선택합니다.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="동기화 유형 선택" />
+
+    4. 복제할 테이블을 선택합니다.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="테이블 선택" />
+
+    5. 복제할 컬럼을 선택합니다.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="컬럼 선택" />
+
+    6. DataJob 생성을 확인하면 DataJob이 자동으로 실행됩니다.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob 실행 중" />
+  </Step>
+
+  <Step>
+    ## 데이터 검증
+
+    1. MySQL 인스턴스의 데이터 쓰기를 중지하고 ClickHouse에서 데이터가 머지될 때까지 기다리십시오.
+
+    <Note>
+      ClickHouse의 자동 머지 시점은 예측할 수 없으므로 `OPTIMIZE TABLE xxx FINAL;` 명령을 실행해 수동으로 머지를 트리거할 수 있습니다. 다만 이 수동 머지가 항상 성공하는 것은 아닐 수 있습니다.
+
+      또는 `CREATE VIEW xxx_v AS SELECT * FROM xxx FINAL;` 명령을 실행해 뷰를 생성한 뒤, 해당 뷰에서 쿼리를 수행하여 데이터가 완전히 머지되었는지 확인할 수 있습니다.
+    </Note>
+
+    2. <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">검증용 DataJob</a>을 생성합니다. 검증용 DataJob이 완료되면 결과를 검토하여 ClickHouse의 데이터가 MySQL의 데이터와 동일한지 확인하십시오.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="데이터 검증" />
+  </Step>
+</Steps>
