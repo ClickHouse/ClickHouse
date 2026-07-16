@@ -2492,12 +2492,13 @@ void ClientBase::printCancellationMessage(std::string_view message)
     /// These diagnostics accompany a Ctrl+C, when the output sink may be exactly what is stuck
     /// (e.g. a terminal that stopped draining - the very case the cancellation hook on `std_out`
     /// handles, see #22426): an ordinary blocking write of the diagnostic to that sink would then
-    /// hang the client right after the result-set write was successfully aborted. When the
-    /// diagnostics stream is the process stdout (the same sink `std_out` wraps), write the message
-    /// through the best-effort bounded path instead: on a live terminal it appears immediately, on
-    /// a stuck one it is dropped after a short wait - nothing is reading that terminal anyway. In
-    /// the embedded client output_stream is not the process stdout, so it prints normally there.
-    if (std_out && isStandardOutput(output_stream))
+    /// hang the client right after the result-set write was successfully aborted. `std_out` always
+    /// wraps the same descriptor `output_stream` writes to - the constructor takes them as a single
+    /// paired (fd, stream) argument, for both the standalone client (`STDOUT_FILENO`/`std::cout`)
+    /// and `ClientEmbedded` (the pty/pipe descriptor and its matching stream) - so the message is
+    /// always routed through the best-effort bounded path: on a live sink it appears immediately,
+    /// on a stuck one it is dropped after a short wait, since nothing is reading that sink anyway.
+    if (std_out)
     {
         /// Every interactive print to output_stream ends with std::endl, so this flush is normally
         /// a no-op; it keeps the output ordered if anything is still buffered there.

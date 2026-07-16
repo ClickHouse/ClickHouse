@@ -244,10 +244,6 @@ private:
     /// fighting with - see the definition.
     void printCancellationMessage(std::string_view message);
 
-    /// Whether `stream` is the process's standard output (as opposed to e.g. an in-memory stream
-    /// used by an embedded client) - defined here rather than in ClientBase.cpp so that the latter
-    /// does not need to mention std::cout directly.
-    static bool isStandardOutput(const std::ostream & stream) { return &stream == &std::cout; }
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
