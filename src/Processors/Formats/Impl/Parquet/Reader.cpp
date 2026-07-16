@@ -63,9 +63,15 @@ static int thriftEnumToInt(const E & e)
 }
 
 template <typename E>
+static bool isValidThriftEnum(const E & e, const std::map<int, const char *> & valid_values)
+{
+    return valid_values.contains(thriftEnumToInt(e));
+}
+
+template <typename E>
 static void checkThriftEnum(const E & e, const std::map<int, const char *> & valid_values, const char * what)
 {
-    if (!valid_values.contains(thriftEnumToInt(e)))
+    if (!isValidThriftEnum(e, valid_values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
 }
 
@@ -1034,14 +1040,19 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
         if (s.count == 0)
             continue;
         /// The remaining fields come from Thrift metadata, so a malformed file can carry out-of-range
-        /// enum values just like `PageHeader` can. Validate each one right before comparing it:
-        /// `checkThriftEnum` reads the underlying integer via `memcpy`, avoiding the `-fsanitize=enum`
-        /// undefined behavior of loading an out-of-range enumerator, and rejects malformed metadata as
-        /// `INCORRECT_DATA`.
-        checkThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES, "page type");
+        /// enum values just like `PageHeader` can. Unlike `PageHeader` (which we must decode to read the
+        /// page itself), `encoding_stats` is only advisory input to this optimization's eligibility
+        /// check - the page stream may still be perfectly readable via a full scan even if this metadata
+        /// is garbage. So an unrecognized value here must not throw and fail the whole read; it should
+        /// just make the chunk ineligible for the optimization, the same way a missing `encoding_stats`
+        /// does. We read the underlying integer via `memcpy` (in `isValidThriftEnum`), avoiding the
+        /// `-fsanitize=enum` undefined behavior of loading an out-of-range enumerator.
+        if (!isValidThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES))
+            return false;
         if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
             continue;
-        checkThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+        if (!isValidThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES))
+            return false;
         if (s.encoding != parq::Encoding::PLAIN_DICTIONARY && s.encoding != parq::Encoding::RLE_DICTIONARY)
             return false;
         has_dictionary_data_page = true;
