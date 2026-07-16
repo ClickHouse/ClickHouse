@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/logger_useful.h>
 
 #include <google/cloud/storage/client.h>
@@ -31,6 +32,7 @@ public:
         const String & key_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
+        BlobStorageLogWriterPtr blob_log_,
         std::optional<ObjectAttributes> attributes_ = std::nullopt);
 
     ~WriteBufferFromGCS() override;
@@ -46,9 +48,14 @@ private:
     std::shared_ptr<google::cloud::storage::Client> client;
     const String bucket;
     const String key;
+    const WriteSettings write_settings;
+    BlobStorageLogWriterPtr blob_log;
     const std::optional<ObjectAttributes> attributes;
 
     std::unique_ptr<google::cloud::storage::ObjectWriteStream> write_stream;
+
+    size_t total_bytes_written = 0;
+    UInt64 total_time_microseconds = 0;
 
     LoggerPtr log = getLogger("WriteBufferFromGCS");
 };

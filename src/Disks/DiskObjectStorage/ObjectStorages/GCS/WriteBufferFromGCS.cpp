@@ -3,6 +3,7 @@
 #if USE_GOOGLE_CLOUD
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <google/cloud/storage/object_metadata.h>
@@ -17,12 +18,15 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     const String & bucket_,
     const String & key_,
     size_t buf_size_,
-    const WriteSettings &,
+    const WriteSettings & write_settings_,
+    BlobStorageLogWriterPtr blob_log_,
     std::optional<ObjectAttributes> attributes_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , client(std::move(client_))
     , bucket(bucket_)
     , key(key_)
+    , write_settings(write_settings_)
+    , blob_log(std::move(blob_log_))
     , attributes(std::move(attributes_))
 {
     if (attributes && !attributes->empty())
@@ -51,11 +55,18 @@ void WriteBufferFromGCS::nextImpl()
     if (bytes_to_write == 0)
         return;
 
+    Stopwatch watch;
     write_stream->write(working_buffer.begin(), static_cast<std::streamsize>(bytes_to_write));
+    total_time_microseconds += watch.elapsedMicroseconds();
 
     if (!write_stream->good())
         throwFromGCSStatus(write_stream->last_status(),
             fmt::format("while writing '{}' in bucket '{}'", key, bucket));
+
+    total_bytes_written += bytes_to_write;
+
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->throttle(bytes_to_write);
 }
 
 void WriteBufferFromGCS::finalizeImpl()
@@ -63,10 +74,28 @@ void WriteBufferFromGCS::finalizeImpl()
     /// Flush whatever remains in the working buffer, then close the upload.
     next();
 
+    Stopwatch watch;
     write_stream->Close();
+    total_time_microseconds += watch.elapsedMicroseconds();
 
-    if (!write_stream->metadata())
-        throwFromGCSStatus(write_stream->metadata().status(),
+    const auto & result = write_stream->metadata();
+
+    /// Record the upload in `system.blob_storage_log` (like the S3 and Azure backends do), including
+    /// the failed outcome. The stream is a single (internally resumable) upload, so one event covers
+    /// the whole object.
+    if (blob_log)
+        blob_log->addEvent(
+            BlobStorageLogElement::EventType::Upload,
+            bucket,
+            key,
+            /* local_path_ */ {},
+            total_bytes_written,
+            total_time_microseconds,
+            result ? 0 : static_cast<Int32>(result.status().code()),
+            result ? "" : result.status().message());
+
+    if (!result)
+        throwFromGCSStatus(result.status(),
             fmt::format("while finalizing the upload of '{}' in bucket '{}'", key, bucket));
 }
 

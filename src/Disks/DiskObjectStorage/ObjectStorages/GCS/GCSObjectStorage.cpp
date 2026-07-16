@@ -105,12 +105,20 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLI
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "GCS doesn't support append to files");
 
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
+    /// Unlike S3 and Azure, no scheduler is passed to the writer: the google-cloud-cpp write stream
+    /// is synchronous, and the SDK handles resumable-upload chunking internally, so there are no
+    /// parts to upload in parallel.
     return std::make_unique<WriteBufferFromGCS>(
         getClient(),
         bucket,
         object.remote_path,
         buf_size,
         patchSettings(write_settings),
+        std::move(blob_storage_log),
         std::move(attributes));
 }
 
