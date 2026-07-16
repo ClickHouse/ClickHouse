@@ -769,7 +769,7 @@ void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
             throw Exception(
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
                 "http_column mapping references column '{}' which does not exist in table '{}'.",
-                col_name, query.table_id.getFullTableName());
+                col_name, query.table_id.empty() ? "(table function)" : query.table_id.getFullTableName());
 
         const auto kind = columns_desc.get(col_name).default_desc.kind;
         const bool insertable = (kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Ephemeral)
@@ -778,7 +778,7 @@ void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "http_column mapping references column '{}' in table '{}' which is not insertable{}.",
-                col_name, query.table_id.getFullTableName(),
+                col_name, query.table_id.empty() ? "(table function)" : query.table_id.getFullTableName(),
                 kind == ColumnDefaultKind::Alias ? " (ALIAS columns are never insertable)"
                     : " (MATERIALIZED columns require insert_allow_materialized_columns=1)");
     }

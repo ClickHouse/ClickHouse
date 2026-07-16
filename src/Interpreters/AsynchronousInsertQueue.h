@@ -336,6 +336,7 @@ private:
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
+        const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & context_,

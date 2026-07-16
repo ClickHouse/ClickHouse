@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <Columns/ColumnConst.h>
 #include <Common/Exception.h>
 #include <Core/HTTPHeaderColumns.h>
@@ -30,10 +31,10 @@ namespace ErrorCodes
 class HTTPHeaderColumnsTransform : public ISimpleTransform
 {
 public:
-    /// input_header  - block the format produces (body columns only).
-    /// output_header - full pipeline block (body + http_column_* columns).
+    /// input_header        - block the format produces (body columns only).
+    /// output_header       - full pipeline block (body + http_column_* columns).
     /// http_header_columns - column_name -> header_value from the URL params.
-    /// format_settings - query/session format settings for value deserialization.
+    /// format_settings     - query/session format settings for value deserialization.
     HTTPHeaderColumnsTransform(
         const Block & input_header,
         const Block & output_header,
@@ -67,11 +68,12 @@ public:
             }
             else
             {
-                /// Body column: match by name for FORMAT inserts, or by position for
-                /// INSERT...SELECT (where SELECT output columns have anonymous names).
+                /// Body column: match by name so named formats (JSONEachRow, TSVWithNames,
+                /// etc.) land in the right slot regardless of declaration order.
                 size_t input_pos = input_header.has(col_name)
                     ? input_header.getPositionByName(col_name)
                     : body_col_idx;
+                chassert(input_pos < input_header.columns());
                 col_sources.push_back({false, input_pos, nullptr, nullptr});
                 ++body_col_idx;
             }
@@ -92,6 +94,7 @@ protected:
         {
             if (!src.is_injected)
             {
+                chassert(src.input_idx < input_columns.size());
                 output_columns.push_back(std::move(input_columns[src.input_idx]));
             }
             else

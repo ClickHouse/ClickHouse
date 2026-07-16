@@ -1312,7 +1312,7 @@ try
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
             chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1621,12 +1621,19 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
 template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processPreprocessedEntries(
+    const InsertQuery & key,
     const InsertDataPtr & data,
     const Block & header,
     const ContextPtr & context_,
     LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
+    /// http_column_* injection is only supported on the Parsed path. Preprocessed entries
+    /// arrive as already-complete blocks (e.g. from native protocol clients) and have no
+    /// per-entry raw header strings to inject. A non-empty column name list here means
+    /// something pushed an entry onto the wrong queue shard.
+    chassert(key.http_header_column_names.empty());
+
     size_t total_rows = 0;
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
     auto result_columns = header.cloneEmptyColumns();
