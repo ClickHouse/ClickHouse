@@ -1,17 +1,20 @@
 
-
-
 <Steps>
 <Step title={<>Select <code>Connect your app</code></>} id="select-connect-your-app">
 After creating your ClickHouse Cloud Service, on the `Connect your app` screen, select MySQL from the drop down.
 
-<Image size="lg" img="/images/_snippets/mysql1.webp" alt="ClickHouse Cloud credentials screen showing MySQL interface selection dropdown" border />
+<Frame>
+  <img src="/images/_snippets/mysql1.webp" alt="ClickHouse Cloud credentials screen showing MySQL interface selection dropdown" />
+</Frame>
+
 </Step>
 <Step title="Enable the MySQL interface" id="enable-mysql-interface">
 Toggle the switch to enable the MySQL interface for this specific service.
 This will expose port `3306` for this service and prompt you with a MySQL connection screen that includes your unique MySQL username.
 
-<Image size="lg" img="/images/_snippets/mysql2.webp" alt="ClickHouse Cloud MySQL interface enabling toggle and connection details" border />
+<Frame>
+  <img src="/images/_snippets/mysql2.webp" alt="ClickHouse Cloud MySQL interface enabling toggle and connection details" />
+</Frame>
 
 Alternatively, in order to enable the MySQL interface for an existing service:
 </Step>
@@ -19,12 +22,18 @@ Alternatively, in order to enable the MySQL interface for an existing service:
 Ensure your service is in `Running` state then click on the service you want to enable the MySQL interface for.
 Select "Connect" from the left menu:
 
-<Image size="lg" img="/images/_snippets/mysql3.webp" alt="ClickHouse Cloud service connection screen with Connect option highlighted" border />
+<Frame>
+  <img src="/images/_snippets/mysql3.webp" alt="ClickHouse Cloud service connection screen with Connect option highlighted" />
+</Frame>
+
 </Step>
 <Step title={<>Choose <code>MySQL</code></>} id="choose-mysql">
 Select `MySQL` from the `Connect With` drop down.
 
-<Image size="md" img="/images/_snippets/mysql4.webp" alt="ClickHouse Cloud connection screen showing MySQL option selection" border />
+<Frame>
+  <img src="/images/_snippets/mysql4.webp" alt="ClickHouse Cloud connection screen showing MySQL option selection" />
+</Frame>
+
 </Step>
 <Step title="Enable the MySQL interface" id="enable-mysql-interface-existing-service">
 Toggle the switch to enable the MySQL interface for this specific service.
@@ -32,7 +41,9 @@ This will expose port `3306` for this service and prompt you with your MySQL con
 </Step>
 </Steps>
 
-<Image size="md" img="/images/_snippets/mysql5.webp" alt="ClickHouse Cloud connection screen with MySQL interface enabled showing connection details" border />
+<Frame>
+  <img src="/images/_snippets/mysql5.webp" alt="ClickHouse Cloud connection screen with MySQL interface enabled showing connection details" />
+</Frame>
 
 ## Creating a readonly MySQL user in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 ClickHouse Cloud automatically creates a `mysql4<subdomain>` user that shares the same password as the default user.

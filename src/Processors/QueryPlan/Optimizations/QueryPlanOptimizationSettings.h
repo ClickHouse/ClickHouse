@@ -30,8 +30,6 @@ struct QueryPlanOptimizationSettings
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
-    void keepOnlyExplicitlyEnabled(const Settings & from);
-
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
