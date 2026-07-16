@@ -1317,7 +1317,7 @@ Schedule prefetches more aggressively if memory usage is below than threshold. P
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"}]}]}/>
 
-Skip pages using min/max values from column index.
+Skip pages using min/max values from column index. This page-level pruning is separate from whole-row-group pruning (input_format_parquet_filter_push_down), bloom-filter pruning (input_format_parquet_bloom_filter_push_down) and Iceberg pruning, each of which can already drop data before this setting applies. So disabling this setting alone does not guarantee a full physical scan: a row group may still be pruned by the settings above, leaving read_rows = 0. To force a full physical scan even when a WHERE condition filters out everything, disable this setting together with the other pruning settings listed above.
 
 ## input_format_parquet_prefer_block_bytes {#input_format_parquet_prefer_block_bytes}   
 

@@ -210,7 +210,7 @@ Schedule prefetches more aggressively if memory usage is below than threshold. P
 Approximate memory limit for Parquet reader v3. Limits how many row groups or columns can be read in parallel. When reading multiple files in one query, the limit is on total memory usage across those files.
 )", 0) \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
-Skip pages using min/max values from column index.
+Skip pages using min/max values from column index. This page-level pruning is separate from whole-row-group pruning (input_format_parquet_filter_push_down), bloom-filter pruning (input_format_parquet_bloom_filter_push_down) and Iceberg pruning, each of which can already drop data before this setting applies. So disabling this setting alone does not guarantee a full physical scan: a row group may still be pruned by the settings above, leaving read_rows = 0. To force a full physical scan even when a WHERE condition filters out everything, disable this setting together with the other pruning settings listed above.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
