@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 
@@ -16,7 +17,6 @@
 #include <algorithm>
 #include <cstring>
 #include <type_traits>
-#include <vector>
 
 
 namespace DB
@@ -1385,7 +1385,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
             /// chunks, each sized exactly to the bytes already sitting in the read buffer, and
             /// copy them into the arena in a single allocation only after the whole value has
             /// been read.
-            std::vector<String> chunks;
+            VectorWithMemoryTracking<String> chunks;
             UInt32 bytes_read = 0;
             while (bytes_read < bytes_to_read)
             {
