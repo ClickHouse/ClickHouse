@@ -54,6 +54,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool explain_syntax_single_record;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
@@ -499,7 +500,9 @@ struct QuerySyntaxSettings
 {
     bool oneline = false;
     bool run_query_tree_passes = false;
-    bool single_record = true;
+    /// Overridden by checkAndGetSettings() from Setting::explain_syntax_single_record before any
+    /// `single_record = ...` option in the EXPLAIN statement itself is applied.
+    bool single_record = false;
     Int64 query_tree_passes = -1;
 
     constexpr static char name[] = "SYNTAX";
@@ -518,7 +521,7 @@ struct QuerySyntaxSettings
 };
 
 template <typename Settings>
-ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool set_default_pretty_explain_settings = true)
+ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool default_flag = true)
 {
     ExplainSettings<Settings> settings;
 
@@ -527,12 +530,18 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
     /// we sometimes use EXPLAIN PLAN output for logging
     if constexpr (std::is_same_v<Settings, QueryPlanSettings>)
     {
-        if (set_default_pretty_explain_settings)
+        if (default_flag)
         {
             settings.query_plan_options.actions = true;
             settings.query_plan_options.compact = true;
             settings.query_plan_options.pretty  = true;
         }
+    }
+    else if constexpr (std::is_same_v<Settings, QuerySyntaxSettings>)
+    {
+        /// default_flag carries Setting::explain_syntax_single_record here, applied before any
+        /// `single_record = ...` option in the EXPLAIN statement overrides it below.
+        settings.single_record = default_flag;
     }
 
     if (!ast_settings)
@@ -686,11 +695,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
-            auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
-
             /// EXPLAIN SYNTAX is a reformatted, copy-pasteable query, so by default it is returned
-            /// as one multi-line record instead of one record per line (issue #80410).
-            /// Set single_record = 0 to restore the historical row-per-line output.
+            /// as one multi-line record instead of one record per line (issue #80410), controlled by
+            /// Setting::explain_syntax_single_record so `compatibility` with pre-26.7 versions and the
+            /// `single_record = 0` EXPLAIN option both restore the historical row-per-line output.
+            auto settings = checkAndGetSettings<QuerySyntaxSettings>(
+                ast.getSettings(), query_context->getSettingsRef()[Setting::explain_syntax_single_record]);
             single_record = settings.single_record;
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,

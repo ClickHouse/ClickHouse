@@ -2593,6 +2593,14 @@ Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPL
 `EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
 )", 0) \
     \
+    DECLARE(Bool, explain_syntax_single_record, true, R"(
+Return `EXPLAIN SYNTAX` output as a single record (with embedded newlines) instead of one record per line, so the result is a single, recoverable row (for example, `SELECT count() FROM (EXPLAIN SYNTAX ...)` returns `1`).
+
+Specifying the `single_record` option explicitly in the `EXPLAIN SYNTAX` statement (for example, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) always overrides this setting.
+
+Set to `false` to restore the pre-26.7 one-record-per-line output, or set `compatibility` to any version older than `26.7`.
+)", 0) \
+    \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
