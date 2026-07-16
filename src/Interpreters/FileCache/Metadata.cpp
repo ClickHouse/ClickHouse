@@ -194,7 +194,18 @@ std::string KeyMetadata::getPath() const
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin);
+    /// A fully downloaded regular segment carries its size in the file name; until then
+    /// (while downloading) the file is named just by its offset. `hasSizeInFileName` tells
+    /// which of the two names the file currently has on disk.
+    std::optional<size_t> size;
+    if (file_segment.hasSizeInFileName())
+        size = file_segment.range().size();
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin, size);
+}
+
+std::string KeyMetadata::getFileSegmentPath(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size) const
+{
+    return cache_metadata->getFileSegmentPath(key, offset, segment_kind, *origin, size);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -219,27 +230,31 @@ CacheMetadata::CacheMetadata(
 
 CacheMetadata::~CacheMetadata() = default;
 
-String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
+String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size)
 {
-    String file_suffix;
     switch (segment_kind)
     {
         case FileSegmentKind::Ephemeral:
-            file_suffix = "_temporary";
-            break;
+            /// Temporary (ephemeral) segments are removed on startup, so there is no point
+            /// in encoding their size; keep the historic "_temporary" marker instead.
+            return std::to_string(offset) + "_temporary";
         case FileSegmentKind::Regular:
-            break;
+            /// `<offset>_<size>` once the segment is fully downloaded, just `<offset>` while
+            /// it is still being written (final size not yet known).
+            if (size.has_value())
+                return std::to_string(offset) + "_" + std::to_string(*size);
+            return std::to_string(offset);
     }
-    return std::to_string(offset) + file_suffix;
 }
 
 String CacheMetadata::getFileSegmentPath(
     const Key & key,
     size_t offset,
     FileSegmentKind segment_kind,
-    const OriginInfo & origin) const
+    const OriginInfo & origin,
+    std::optional<size_t> size) const
 {
-    return  fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind);
+    return fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size);
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
