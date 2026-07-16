@@ -201,7 +201,7 @@ TEST(OAuthDeviceFlow, ConnectionFailureBackoff)
     EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(5), 10);
     EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(40), 60);
     EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(60), 60);
-    EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(0), 5);
+    EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(0), 10);
 }
 
 TEST(OAuthDeviceFlow, EvaluateTokenPollAuthorizationPending)
@@ -245,9 +245,23 @@ TEST(OAuthDeviceFlow, EvaluateTokenPollOtherError)
 
 TEST(OAuthDeviceFlow, EvaluateTokenPollNonJsonError)
 {
-    const auto decision = evaluateDeviceTokenPollFailure("gateway timeout", 504, "Gateway Timeout", 5);
+    const auto decision = evaluateDeviceTokenPollFailure("bad request", 400, "Bad Request", 5);
     EXPECT_EQ(decision.action, DeviceTokenPollAction::FailOther);
-    EXPECT_EQ(decision.message, "504 Gateway Timeout: gateway timeout");
+    EXPECT_EQ(decision.message, "400 Bad Request: bad request");
+}
+
+TEST(OAuthDeviceFlow, EvaluateTokenPollTransientHttp5xx)
+{
+    const auto decision = evaluateDeviceTokenPollFailure("gateway timeout", 504, "Gateway Timeout", 5);
+    EXPECT_EQ(decision.action, DeviceTokenPollAction::ContinueTransientFailure);
+    EXPECT_EQ(decision.interval_seconds, 10);
+}
+
+TEST(OAuthDeviceFlow, NormalizePollingInterval)
+{
+    EXPECT_EQ(normalizeDevicePollingInterval(5), 5);
+    EXPECT_EQ(normalizeDevicePollingInterval(0), 5);
+    EXPECT_EQ(normalizeDevicePollingInterval(-1), 5);
 }
 
 TEST(OAuthClientAuth, ParseMethods)

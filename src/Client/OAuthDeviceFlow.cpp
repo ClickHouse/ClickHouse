@@ -273,13 +273,17 @@ std::string browserVerificationURL(
     return verification_uri;
 }
 
+int normalizeDevicePollingInterval(int interval_seconds)
+{
+    return interval_seconds > 0 ? interval_seconds : 5;
+}
+
 int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds)
 {
     /// RFC 8628 Section 3.5: exponential backoff, recommended cap around one minute.
     constexpr int max_interval_seconds = 60;
-    if (current_interval_seconds <= 0)
-        return 5;
-    return std::min(current_interval_seconds * 2, max_interval_seconds);
+    const int normalized = normalizeDevicePollingInterval(current_interval_seconds);
+    return std::min(normalized * 2, max_interval_seconds);
 }
 
 DeviceTokenPollDecision evaluateDeviceTokenPollFailure(
@@ -289,10 +293,26 @@ DeviceTokenPollDecision evaluateDeviceTokenPollFailure(
     int current_interval_seconds)
 {
     DeviceTokenPollDecision decision;
-    decision.interval_seconds = current_interval_seconds;
+    decision.interval_seconds = normalizeDevicePollingInterval(current_interval_seconds);
 
     auto oauth_error = parseOAuthErrorResponse(response_body);
-    const std::string error = oauth_error ? oauth_error->error : "unknown_error";
+    if (!oauth_error)
+    {
+        /// No RFC 6749 error object: retry transient HTTP failures instead of aborting login.
+        if (http_status >= 500)
+        {
+            decision.action = DeviceTokenPollAction::ContinueTransientFailure;
+            decision.interval_seconds = nextPollingIntervalAfterConnectionFailure(current_interval_seconds);
+            decision.message = formatOAuthError(response_body, http_status, http_reason);
+            return decision;
+        }
+
+        decision.action = DeviceTokenPollAction::FailOther;
+        decision.message = formatOAuthError(response_body, http_status, http_reason);
+        return decision;
+    }
+
+    const std::string & error = oauth_error->error;
 
     if (error == "authorization_pending")
     {
@@ -304,27 +324,26 @@ DeviceTokenPollDecision evaluateDeviceTokenPollFailure(
     {
         /// RFC 8628: increase the polling interval by 5 seconds on slow_down.
         decision.action = DeviceTokenPollAction::ContinueSlowDown;
-        decision.interval_seconds = current_interval_seconds + 5;
+        decision.interval_seconds = decision.interval_seconds + 5;
         return decision;
     }
 
     if (error == "access_denied")
     {
         decision.action = DeviceTokenPollAction::FailAccessDenied;
-        decision.message = oauth_error ? formatOAuthError(*oauth_error) : error;
+        decision.message = formatOAuthError(*oauth_error);
         return decision;
     }
 
     if (error == "expired_token")
     {
         decision.action = DeviceTokenPollAction::FailExpiredToken;
-        decision.message = oauth_error ? formatOAuthError(*oauth_error) : error;
+        decision.message = formatOAuthError(*oauth_error);
         return decision;
     }
 
     decision.action = DeviceTokenPollAction::FailOther;
-    decision.message = oauth_error ? formatOAuthError(*oauth_error)
-                                   : formatOAuthError(response_body, http_status, http_reason);
+    decision.message = formatOAuthError(*oauth_error);
     return decision;
 }
 

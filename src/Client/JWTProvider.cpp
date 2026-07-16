@@ -17,7 +17,6 @@
 #include <Poco/URI.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/Dynamic/Var.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
@@ -26,7 +25,6 @@
 
 #include <chrono>
 #include <cstdlib>
-#include <iostream>
 #include <thread>
 #if defined(OS_DARWIN) || defined(OS_LINUX)
 #include <spawn.h>
@@ -286,7 +284,7 @@ void JWTProvider::deviceCodeLogin()
     const std::string verification_uri = device_code_object->optValue<std::string>("verification_uri", "");
     const std::string verification_uri_complete
         = device_code_object->optValue<std::string>("verification_uri_complete", "");
-    int interval_seconds = device_code_object->optValue<int>("interval", 5);
+    int interval_seconds = normalizeDevicePollingInterval(device_code_object->optValue<int>("interval", 5));
     const Poco::Timestamp::TimeVal expires_at_ts
         = Poco::Timestamp().epochTime() + device_code_object->getValue<int>("expires_in");
 
@@ -343,6 +341,11 @@ void JWTProvider::deviceCodeLogin()
                     continue;
                 case DeviceTokenPollAction::ContinueSlowDown:
                     interval_seconds = decision.interval_seconds;
+                    continue;
+                case DeviceTokenPollAction::ContinueTransientFailure:
+                    interval_seconds = decision.interval_seconds;
+                    error_stream << "Warning: token polling failed (" << decision.message
+                                 << "); retrying in " << interval_seconds << "s\n";
                     continue;
                 case DeviceTokenPollAction::FailAccessDenied:
                     throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "IdP login denied: {}", decision.message);

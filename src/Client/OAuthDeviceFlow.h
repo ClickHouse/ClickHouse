@@ -78,6 +78,9 @@ std::string browserVerificationURL(
     const std::string & verification_uri_complete,
     const std::string & verification_uri);
 
+/// Clamp a device-authorization `interval` to a positive RFC-compatible value (default 5).
+int normalizeDevicePollingInterval(int interval_seconds);
+
 /// RFC 8628 Section 3.5: on connection timeout/failure, double the interval (cap at 60s).
 int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds);
 
@@ -86,6 +89,7 @@ enum class DeviceTokenPollAction
 {
     ContinuePending,
     ContinueSlowDown,
+    ContinueTransientFailure, /// Non-OAuth 5xx / malformed responses: backoff and retry
     FailAccessDenied,
     FailExpiredToken,
     FailOther,
