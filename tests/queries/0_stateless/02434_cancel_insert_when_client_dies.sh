@@ -48,12 +48,14 @@ $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 function thread_insert
 {
-    # supress "Killed" messages from bash
+    # supress "Killed" messages from bash, and "LLVM Profile Error:" noise emitted by
+    # coverage-instrumented clients killed mid-run (filtered from stderr by clickhouse-test,
+    # but here client stderr is merged into stdout via 2>&1). See #97020.
     i=0
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        bash -c "insert_data ${TEST_MARK}-${RANDOM}-${RANDOM}-$i" 2>&1| grep -Fav "Killed"
+        bash -c "insert_data ${TEST_MARK}-${RANDOM}-${RANDOM}-$i" 2>&1| grep -Fav "Killed" | grep -Fav "LLVM Profile Error:"
         i=$((i + 1))
     done
 }
