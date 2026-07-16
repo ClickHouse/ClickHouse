@@ -10,13 +10,27 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/Serialization.h>
+
+#include <mutex>
 
 using namespace DB;
 
+namespace DB
+{
+void registerReadFromTableStep(QueryPlanStepRegistry & registry);
+}
+
 namespace
 {
+
+void ensureReadFromTableStepRegistered()
+{
+    static std::once_flag flag;
+    std::call_once(flag, [] { registerReadFromTableStep(QueryPlanStepRegistry::instance()); });
+}
 
 SharedHeader makeHeader()
 {
@@ -47,6 +61,8 @@ const ReadFromTableStep & getReadFromTableStep(const QueryPlan & plan)
 
 TEST(QueryPlanSerialization, ReadFromTableVersionZeroKeepsLegacyParallelReplicasPayload)
 {
+    ensureReadFromTableStepRegistered();
+
     QueryPlan plan = makeReadFromTablePlan(true);
 
     WriteBufferFromOwnString out;
@@ -62,6 +78,8 @@ TEST(QueryPlanSerialization, ReadFromTableVersionZeroKeepsLegacyParallelReplicas
 
 TEST(QueryPlanSerialization, ReadFromTableVersionZeroWithoutParallelReplicasHasNoExtraPayload)
 {
+    ensureReadFromTableStepRegistered();
+
     QueryPlan plan = makeReadFromTablePlan(false);
 
     WriteBufferFromOwnString out;
@@ -77,6 +95,8 @@ TEST(QueryPlanSerialization, ReadFromTableVersionZeroWithoutParallelReplicasHasN
 
 TEST(QueryPlanSerialization, QueryPlanCacheSerializationUsesPrivateVersion)
 {
+    ensureReadFromTableStepRegistered();
+
     QueryPlan plan = makeReadFromTablePlan(false);
 
     WriteBufferFromOwnString out;
