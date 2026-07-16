@@ -1,0 +1,62 @@
+-- max DESC + any/argMax: optimized
+trace_999	2024-01-01 02:46:39	service_4	9999
+trace_998	2024-01-01 02:46:38	service_3	9998
+trace_997	2024-01-01 02:46:37	service_2	9997
+trace_996	2024-01-01 02:46:36	service_1	9996
+trace_995	2024-01-01 02:46:35	service_0	9995
+-- max DESC + any/argMax: reference
+trace_999	2024-01-01 02:46:39	service_4	9999
+trace_998	2024-01-01 02:46:38	service_3	9998
+trace_997	2024-01-01 02:46:37	service_2	9997
+trace_996	2024-01-01 02:46:36	service_1	9996
+trace_995	2024-01-01 02:46:35	service_0	9995
+-- min ASC + argMin: optimized
+trace_0	2024-01-01 00:00:00	0
+trace_1	2024-01-01 00:00:01	1
+trace_2	2024-01-01 00:00:02	2
+trace_3	2024-01-01 00:00:03	3
+trace_4	2024-01-01 00:00:04	4
+-- min ASC + argMin: reference
+trace_0	2024-01-01 00:00:00	0
+trace_1	2024-01-01 00:00:01	1
+trace_2	2024-01-01 00:00:02	2
+trace_3	2024-01-01 00:00:03	3
+trace_4	2024-01-01 00:00:04	4
+-- eligible: TopNAggregating present, Limit kept
+1	1
+-- large limit (ratio gate): not applied
+1
+-- max_ndv_ratio = 0: not applied
+1
+-- max_rows_to_group_by: not applied
+1
+-- max_rows_to_sort: not applied
+1
+-- exact_rows_before_limit (read till end): not applied
+1
+-- low cardinality key: optimized == reference
+1
+-- reverse key: optimized == reference
+1
+-- float key: not applied
+1
+-- float key with NaN: optimized == reference
+1
+-- low cardinality float key: not applied
+1
+-- low cardinality float key with NaN: optimized == reference
+1
+-- computed arg aliasing key: not applied
+1
+-- computed arg aliasing key: optimized == reference
+1
+-- forced projection: rewrite deferred (not applied)
+1
+-- forced projection: optimized == reference
+1
+-- no stats, LIMIT <= max_limit: applied
+1
+-- no stats, max_limit = 0: not applied
+1
+-- external group by: optimized == reference
+1
