@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -18,6 +19,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
@@ -138,6 +140,17 @@ void tryFoldFunctionToConstant(
         if (!best_effort)
             throw;
         return;
+    }
+
+    if (column && !columnMatchesType(*column, *node.result_type))
+    {
+        /// group_by_use_nulls promotes a FunctionNode's declared result type to Nullable via
+        /// FunctionNode::wrap_with_nullable, while the un-wrapped base function used for constant
+        /// folding still returns the non-Nullable type. Reconcile the folded constant to the
+        /// declared type in exactly this case instead of failing the check.
+        auto base_result_type = node.function_base->getResultType();
+        if (node.result_type->equals(*makeNullableOrLowCardinalityNullableSafe(base_result_type)))
+            column = castColumn({column, base_result_type, {}}, node.result_type);
     }
 
     if (column && !columnMatchesType(*column, *node.result_type))
