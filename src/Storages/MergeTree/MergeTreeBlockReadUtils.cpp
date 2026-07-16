@@ -134,7 +134,15 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    /// A DEFAULT expression is attached to the whole column in the metadata, not to its
+    /// subcolumns, and `getDefault` does not understand subcolumn names (e.g. "qb.1").
+    /// So for a subcolumn of a missing DEFAULT column, look up the default by the name in
+    /// storage ("qb"); otherwise the source columns of the default expression would not be
+    /// injected into the read set and the default would be evaluated on empty inputs.
+    String default_column_name = column_name;
+    if (column_in_storage && column_in_storage->isSubcolumn())
+        default_column_name = column_in_storage->getNameInStorage();
+    const auto column_default = storage_snapshot->getDefault(default_column_name);
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
         return false;

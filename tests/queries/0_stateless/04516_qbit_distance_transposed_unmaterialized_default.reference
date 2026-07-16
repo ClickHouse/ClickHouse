@@ -1,0 +1,8 @@
+BFloat16 transposed on unmaterialized DEFAULT matches full-column read
+1
+Int8 quantized transposed on unmaterialized DEFAULT matches full-column read
+1
+BFloat16 transposed after MATERIALIZE COLUMN matches full-column read
+1
+Int8 quantized transposed after MATERIALIZE COLUMN matches full-column read
+1
