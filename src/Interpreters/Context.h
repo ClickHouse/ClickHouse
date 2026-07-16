@@ -108,6 +108,7 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
+class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
@@ -825,7 +826,7 @@ public:
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setFilesystemCachesPath(const String & path);
-    void setFilesystemCacheUser(const String & user);
+    void setFilesystemCacheUser(const String & user) const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -1538,6 +1539,11 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
+
+    void setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<PaimonMetadataFilesCache> getPaimonMetadataFilesCache() const;
+    void clearPaimonMetadataFilesCache() const;
 #endif
 
 #if USE_PARQUET
@@ -1694,7 +1700,7 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the new analyzer in mutations.
+    /// Server-wide override for the analyzer in mutations.
     /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
     /// Set from the main config reload callback.
     void setMutationsUseAnalyzerOverride(std::optional<bool> value);
