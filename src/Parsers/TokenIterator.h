@@ -35,23 +35,29 @@ public:
         /// A significant token is at least ~3 bytes on average for dense numeric literals, so
         /// (bytes to lex) / 4 covers the bulk of them.
         ///
-        /// Bound the estimate by the bytes the lexer may actually consume, not the whole
-        /// begin..end range: the lexer stops at begin + max_query_size, and call sites such as
-        /// parseQuery (multi-statement) and ParserInsertQuery (`INSERT ... FORMAT`) pass an `end`
-        /// far past the current statement. Without this bound a short header before a large
-        /// payload/script would reserve up to the cap (4M tokens ~= 96 MiB) up front.
+        /// The reserve must be bounded by the bytes the lexer will actually consume for the
+        /// *current* statement, not the whole begin..end range: call sites such as parseQuery
+        /// (multi-statement) and ParserInsertQuery (`INSERT ... FORMAT <name>\n<data>`) pass an
+        /// `end` far past the current statement, so a short header in front of a large payload
+        /// must not pre-reserve for payload it will never lex.
         ///
-        /// max_query_size == 0 means "unlimited" (e.g. formatQuery in the client parses one
-        /// statement at a time out of the whole editor buffer with max_query_size=0). There the
-        /// begin..end bound is useless again, so fall back to a conservative default cap instead
-        /// of the whole buffer, keeping the reserve small for a short statement in front of a
-        /// large payload. A single genuinely large query in that mode just falls back to geometric
-        /// growth, which is correct, only slightly slower.
-        size_t bound = max_query_size != 0 ? max_query_size : DBMS_DEFAULT_MAX_QUERY_SIZE;
+        /// We cannot know that boundary here without lexing, so the reserve is bounded two ways:
+        ///  - by max_query_size when set (the lexer stops at begin + max_query_size), and
+        ///  - unconditionally by a hard ceiling max_reserve_tokens.
+        /// The hard ceiling is what makes this safe. max_query_size is 0 on some paths
+        /// (e.g. formatQuery, which parses one statement at a time out of the whole editor
+        /// buffer) and can be raised by the user above the remaining buffer size; in both cases
+        /// the max_query_size bound collapses back to end - begin. The ceiling caps the up-front
+        /// allocation at a constant regardless of buffer size or max_query_size
+        /// (65536 tokens * sizeof(Token) ~= 1.5 MiB), so inline INSERT data and large multi-query
+        /// scripts can never trigger a large reserve. A genuinely huge single statement grows
+        /// geometrically past the ceiling, which is correct and keeps most of the benefit (the
+        /// first, most expensive relocations are still avoided).
         size_t lex_bytes = end > begin ? static_cast<size_t>(end - begin) : 0;
-        lex_bytes = std::min<size_t>(lex_bytes, bound);
-        static constexpr size_t max_reserve = 4 * 1024 * 1024;
-        data.reserve(std::min<size_t>(lex_bytes / 4 + 16, max_reserve));
+        if (max_query_size != 0)
+            lex_bytes = std::min<size_t>(lex_bytes, max_query_size);
+        static constexpr size_t max_reserve_tokens = DBMS_DEFAULT_MAX_QUERY_SIZE / 4;
+        data.reserve(std::min<size_t>(lex_bytes / 4 + 16, max_reserve_tokens));
     }
 
     const Token & operator[] (size_t index)
