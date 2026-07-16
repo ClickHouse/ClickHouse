@@ -31,6 +31,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -75,6 +76,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
 }
+
+/// Forward declaration: reproduces the base-table access check `StorageView::readImpl` performs when
+/// actually reading through a regular (non-parameterized) view, by resolving the view's inner query under
+/// its own security context and running the same per-table check recursively (covering nested views too).
+/// `checkAccessRightsForQueryTree` further down uses it for the analyzer path; `ExplainAnalyzedSyntaxMatcher`
+/// below uses it for the legacy AST-based path, so both are consistent. Declared `static` (rather than in
+/// one of this file's unnamed namespaces) so this one declaration and its later definition - which needs
+/// symbols from the second unnamed namespace below - refer to the same internal-linkage entity throughout.
+static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context);
 
 namespace
 {
@@ -230,6 +240,34 @@ namespace
                 visit(*select, ast, data);
         }
 
+        /// `InterpreterSelectQuery::analyze` (called below) only checks `SELECT` on the view object itself
+        /// (`checkAccessRightsForSelect`, using the view's un-rewritten `table_id`). A real `SELECT` through
+        /// a regular, non-parameterized view goes on to check the base-table privileges too, but only once
+        /// the pipeline is actually built, in `StorageView::readImpl` - which `EXPLAIN SYNTAX` never reaches.
+        /// Look up the view straight from the AST (before it gets rewritten into a subquery below) and
+        /// reproduce that inner check, so a user with `SELECT` on the view but not on its base table is
+        /// denied here too, instead of leaking the expanded view body. Parameterized views are excluded:
+        /// their base-table access is already enforced by the recursive `InterpreterSelectQuery` analysis of
+        /// the subquery they were expanded into by `ExpandParameterizedViewsMatcher` above.
+        static void checkNonParameterizedViewBaseTableAccess(const ASTSelectQuery & select, const ContextPtr & context)
+        {
+            const auto * table_expression = getTableExpression(select, 0);
+            if (!table_expression || !table_expression->database_and_table_name)
+                return;
+
+            const auto * table_identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
+            if (!table_identifier)
+                return;
+
+            auto storage = DatabaseCatalog::instance().tryGetTable(context->resolveStorageID(table_identifier->getTableId()), context);
+            const auto * view = storage ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
+            if (!view || view->isParameterizedView())
+                return;
+
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            checkViewBaseTableAccess(storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context);
+        }
+
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             InterpreterSelectQuery interpreter(
@@ -238,6 +276,9 @@ namespace
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
             {
+                if (!query_info.is_parameterized_view)
+                    checkNonParameterizedViewBaseTableAccess(select, data.getContext());
+
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
@@ -679,22 +720,14 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         /// view that is not inlined (`analyzer_inline_views = 0`, the default) stays as a single `TableNode`,
         /// so its inner query — and the base tables it reads — never appear in `query_tree`. Real execution
         /// still reads them: `StorageView::readImpl` builds the view's inner query under the view's own
-        /// context (the definer for `SQL SECURITY DEFINER`, the invoker otherwise, see
-        /// `StorageView::getViewSubqueryContext`) and checks the base-table privileges there. Reproduce that
+        /// context and checks the base-table privileges there. `checkViewBaseTableAccess` reproduces that
         /// inner pass so a user with `SELECT` on the view but not on its base tables is denied, exactly as a
         /// plain `SELECT` through the view is. Parameterized views are expanded before the tree is built and
         /// checked separately; inlined views already expose their base tables as `TableNode`s handled by the
         /// loop above, so neither is double-checked here.
         if (const auto * view = typeid_cast<const StorageView *>(table_node->getStorage().get());
             view && !view->isParameterizedView())
-        {
-            const auto & view_snapshot = table_node->getStorageSnapshot();
-            auto view_context = StorageView::getViewSubqueryContext(scope_context, view_snapshot);
-            auto view_query_tree = buildQueryTree(view_snapshot->metadata->getSelectQuery().inner_query->clone(), view_context);
-            QueryTreePassManager view_pass_manager(view_context);
-            addQueryTreePasses(view_pass_manager);
-            resolveThenCheckAccessRights(std::move(view_query_tree), view_pass_manager, view_context);
-        }
+            checkViewBaseTableAccess(table_node->getStorageSnapshot(), scope_context);
     }
 }
 
@@ -842,6 +875,17 @@ bool explainQueryTree(
     return true;
 }
 
+}
+
+/// See the forward declaration above `ExpandParameterizedViewsMatcher` for why this is `static` at file
+/// scope rather than inside one of this file's unnamed namespaces.
+static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context)
+{
+    auto view_context = StorageView::getViewSubqueryContext(scope_context, view_snapshot);
+    auto view_query_tree = buildQueryTree(view_snapshot->metadata->getSelectQuery().inner_query->clone(), view_context);
+    QueryTreePassManager view_pass_manager(view_context);
+    addQueryTreePasses(view_pass_manager);
+    resolveThenCheckAccessRights(std::move(view_query_tree), view_pass_manager, view_context);
 }
 
 QueryPipeline InterpreterExplainQuery::executeImpl()
