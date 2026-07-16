@@ -114,8 +114,9 @@ inline bool isIPv4(const std::string & host)
 
 inline bool isIPv6(const std::string & host)
 {
-    std::array<unsigned char, IPV6_BINARY_LENGTH> parsed{};
-    return parseIPv6Whole(host.data(), host.data() + host.size(), parsed.data());
+    /// C array (not `std::array::data()`): clang-analyzer-core.NonNullParamChecker false positive otherwise.
+    unsigned char parsed[IPV6_BINARY_LENGTH]{};
+    return parseIPv6Whole(host.data(), host.data() + host.size(), parsed);
 }
 
 /// Single label of an Internet host name: RFC 952 lexical `<name>` (letters, digits, hyphen; ends with a letter or digit),
