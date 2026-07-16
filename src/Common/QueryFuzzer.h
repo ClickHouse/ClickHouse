@@ -21,6 +21,7 @@
 
 
 class QueryFuzzer_AggregateFunctionVersionPreserved_Test;
+class QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
 
 namespace DB
 {
@@ -51,8 +52,9 @@ class SettingsChanges;
  */
 class QueryFuzzer
 {
-    /// Grants the regression test access to makeAggregateFunctionType (see #109713 review).
+    /// Grant the regression tests access to makeAggregateFunctionType / fuzzDataType (see #109713 review).
     friend class ::QueryFuzzer_AggregateFunctionVersionPreserved_Test;
+    friend class ::QueryFuzzer_AggregateFunctionVersionDroppedOnNameChange_Test;
 
 public:
     explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)

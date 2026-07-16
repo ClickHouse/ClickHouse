@@ -3060,14 +3060,19 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         String new_name = type_aggr->getFunctionName();
         DataTypes new_arg_types = type_aggr->getArgumentsDataTypes();
         Array new_parameters = type_aggr->getParameters();
-        bool changed = fuzzAggregateName(new_name, new_arg_types.size());
+        bool name_changed = fuzzAggregateName(new_name, new_arg_types.size());
+        bool changed = name_changed;
         changed |= fuzzDataTypes(new_arg_types);
         changed |= fuzzAggregateParameters(new_parameters);
         if (changed)
         {
-            /// Keep the leading serialization version (AggregateFunction(1, ...)) parsed from the source AST.
-            if (auto fuzzed = makeAggregateFunctionType(
-                    new_name, new_arg_types, new_parameters, /*simple=*/false, type_aggr->getVersionIfExplicit()))
+            /// Keep the leading serialization version (AggregateFunction(1, ...)) parsed from the source AST,
+            /// but only when the aggregate name is unchanged: a version valid for the old function may be
+            /// out of range for the new one (e.g. AggregateFunction(2, quantiles(...)) rebuilt as
+            /// AggregateFunction(2, sumMap, ...) round-trips through ParserDataType but sumMap::serialize
+            /// rejects version 2). When the name changed, drop to the default (empty) version.
+            std::optional<size_t> version = name_changed ? std::nullopt : type_aggr->getVersionIfExplicit();
+            if (auto fuzzed = makeAggregateFunctionType(new_name, new_arg_types, new_parameters, /*simple=*/false, version))
                 return fuzzed;
         }
         return type;

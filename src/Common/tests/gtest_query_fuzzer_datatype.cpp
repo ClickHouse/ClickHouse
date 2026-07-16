@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/QueryFuzzer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Parsers/NullsAction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -149,4 +151,64 @@ TEST(QueryFuzzer, AggregateFunctionVersionPreserved)
     const auto * aggr = typeid_cast<const DataTypeAggregateFunction *>(rebuilt.get());
     ASSERT_NE(nullptr, aggr);
     EXPECT_EQ(std::nullopt, aggr->getVersionIfExplicit());
+}
+
+/// Regression test for the follow-up #109713 review point: preserving the source serialization version
+/// unconditionally is unsafe once the fuzzer changes the aggregate name. A version is function-specific
+/// (e.g. -Map aggregates only accept 0/1; AggregateFunction(2, quantiles(...)) rebuilt as
+/// AggregateFunction(2, sumMap, ...) round-trips through ParserDataType but sumMap::serialize throws on
+/// version 2 as soon as a state is materialized). fuzzDataType must therefore drop the explicit version
+/// whenever it renames the aggregate. Driving fuzzDataType over many deterministic seeds, every rebuilt
+/// AggregateFunction whose name changed must carry no explicit version (so serialize falls back to the
+/// new function's own default), while an unchanged name keeps the source version verbatim.
+TEST(QueryFuzzer, AggregateFunctionVersionDroppedOnNameChange)
+{
+    tryRegisterAggregateFunctions();
+
+    /// Source: a versioned single-argument aggregate carrying an explicit version. groupBitmap is in the
+    /// arity-1 rename candidate set, so fuzzDataType can rename it to another arity-1 aggregate.
+    const DataTypes arg_types = {std::make_shared<DataTypeUInt32>()};
+    AggregateFunctionProperties properties;
+    auto source_func = AggregateFunctionFactory::instance().get("groupBitmap", NullsAction::EMPTY, arg_types, Array{}, properties);
+
+    bool saw_name_change = false;
+    for (UInt64 seed = 0; seed < 4000; ++seed)
+    {
+        QueryFuzzer fuzzer;
+        fuzzer.setSeed(seed);
+
+        /// A fresh source type each iteration with an explicit version 1.
+        auto source_type = std::make_shared<DataTypeAggregateFunction>(source_func, arg_types, Array{}, /*version=*/size_t(1));
+        DataTypePtr fuzzed;
+        try
+        {
+            fuzzed = fuzzer.fuzzDataType(source_type);
+        }
+        catch (const Exception &)
+        {
+            /// Some randomized shapes are rejected at type-construction time (e.g. Map with a Nullable key);
+            /// the real fuzzer catches these higher up. Not the arm under test - skip the seed.
+            continue;
+        }
+
+        const auto * fuzzed_aggr = typeid_cast<const DataTypeAggregateFunction *>(fuzzed.get());
+        if (!fuzzed_aggr)
+            continue; /// wrapped in Array/Nullable/... - not the arm under test.
+
+        if (fuzzed_aggr->getFunctionName() != source_type->getFunctionName())
+        {
+            saw_name_change = true;
+            /// Renamed aggregate: the stale source version must have been dropped.
+            EXPECT_EQ(std::nullopt, fuzzed_aggr->getVersionIfExplicit())
+                << "seed=" << seed << " new_name=" << fuzzed_aggr->getFunctionName();
+        }
+        else
+        {
+            /// Same aggregate: the explicit source version is preserved verbatim.
+            EXPECT_EQ(std::optional<size_t>(1), fuzzed_aggr->getVersionIfExplicit()) << "seed=" << seed;
+        }
+    }
+
+    /// Sanity: the chosen seed range actually exercises the rename path (otherwise the test proves nothing).
+    EXPECT_TRUE(saw_name_change);
 }
