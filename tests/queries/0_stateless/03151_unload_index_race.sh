@@ -51,12 +51,23 @@ function thread_alter_settings()
 function thread_query_table()
 {
     local TIMELIMIT=$((SECONDS+$1))
+    local ATTEMPTS=0
+    local SUCCESSES=0
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
+        ATTEMPTS=$((ATTEMPTS+1))
         COUNT=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM t where not ignore(*);")
-        if [ "$COUNT" -ne "2000" ];  then
-          echo "$COUNT"
+        # Empty $COUNT is a transiently interrupted read; skip it so the compare emits no bash error.
+        if [ -n "$COUNT" ]; then
+            SUCCESSES=$((SUCCESSES+1))
+            if [ "$COUNT" != "2000" ]; then
+                echo "wrong count: $COUNT"
+            fi
         fi
     done
+    # A reader that issued reads but never once got a valid count is a real failure, not bash noise.
+    if [ "$ATTEMPTS" -gt 0 ] && [ "$SUCCESSES" -eq 0 ]; then
+        echo "reader never got a successful count"
+    fi
 }
 
 export -f thread_alter_settings
