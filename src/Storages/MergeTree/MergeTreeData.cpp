@@ -1298,7 +1298,12 @@ void MergeTreeData::setProperties(
     /// case even when the reintroduced `a` has the same type and default as the old
     /// one: the new `a` is appended at the end, so the position previously occupied
     /// by `a` now holds `b`.
-    if (!attach)
+    ///
+    /// This check runs regardless of `attach`: callers that reload the table's own
+    /// current metadata (attach) pass an identical `old_metadata`/`new_metadata`, so
+    /// the loop below finds no identity change for them, but callers that apply a
+    /// genuine schema change while passing `attach = true` to skip unrelated checks
+    /// still need the cache invalidated.
     {
         const auto & old_columns = old_metadata.columns;
         const auto & new_columns = new_metadata.columns;
