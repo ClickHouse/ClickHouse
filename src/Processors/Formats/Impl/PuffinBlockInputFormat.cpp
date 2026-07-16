@@ -1,5 +1,6 @@
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 #include <zlib.h>
@@ -181,13 +182,31 @@ void requireBlobMetadataField(const Poco::JSON::Object::Ptr & blob_obj, const ch
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field '{}'", blob_index, field_name);
 }
 
+/// Poco stores JSON integers that do not fit signed Int64 as unsigned; convert<Int64>() would throw RangeException.
+std::optional<Int64> tryJsonIntegerAsInt64(const Poco::Dynamic::Var & value)
+{
+    if (value.isInteger() && !value.isSigned())
+    {
+        const auto as_uint64 = value.convert<UInt64>();
+        if (as_uint64 > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return std::nullopt;
+        return static_cast<Int64>(as_uint64);
+    }
+
+    return value.convert<Int64>();
+}
+
 Int64 requireBlobMetadataInt64(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
 {
     requireBlobMetadataField(blob_obj, field_name, blob_index);
     const Poco::Dynamic::Var & value = blob_obj->get(field_name);
     if (!value.isInteger())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be an integer", blob_index, field_name);
-    return value.convert<Int64>();
+
+    auto as_int64 = tryJsonIntegerAsInt64(value);
+    if (!as_int64)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' is out of Int64 range", blob_index, field_name);
+    return *as_int64;
 }
 
 Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, size_t blob_index, size_t field_index)
@@ -196,12 +215,16 @@ Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, si
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] must be an integer", blob_index, field_index);
 
-    const Int64 as_int64 = value.convert<Int64>();
-    if (as_int64 < std::numeric_limits<Int32>::min() || as_int64 > std::numeric_limits<Int32>::max())
+    auto as_int64 = tryJsonIntegerAsInt64(value);
+    if (!as_int64)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] is out of Int64 range", blob_index, field_index);
+
+    if (*as_int64 < std::numeric_limits<Int32>::min() || *as_int64 > std::numeric_limits<Int32>::max())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] is out of Int32 range", blob_index, field_index);
 
-    return static_cast<Int32>(as_int64);
+    return static_cast<Int32>(*as_int64);
 }
 
 String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)

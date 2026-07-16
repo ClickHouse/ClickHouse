@@ -320,6 +320,9 @@ def generate_invalid_integer_fields() -> None:
         "float_fields_element.puffin": ("fields", [1.9]),
         "string_offset.puffin": ("offset", "4"),
         "fields_element_out_of_int32_range.puffin": ("fields", [2**40]),
+        # Poco stores integers that fail signed Int64 parse as UInt64 (2**63 wraps in tryParse64).
+        "offset_out_of_int64_range.puffin": ("offset", 2**64 - 1),
+        "fields_element_out_of_int64_range.puffin": ("fields", [2**64 - 1]),
     }
     for name, (field, value) in cases.items():
         case_payload = json.loads(json.dumps(base))
