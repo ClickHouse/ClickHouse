@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -942,6 +943,8 @@ void SchemaConverter::processPrimitiveColumn(
             return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
         else if (which.isDateTime64())
             return 8 == expected_size && assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == expected_scale;
+        else if (which.isTime64())
+            return 8 == expected_size && assert_cast<const DataTypeTime64 *>(output_type)->getScale() == expected_scale;
         return false;
     };
 
@@ -1099,18 +1102,46 @@ void SchemaConverter::processPrimitiveColumn(
 
         return;
     }
-    else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
+    else if (logical.__isset.TIME || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
     {
-        /// We interpret both timestamp (logical.TIMESTAMP) and time-of-day (logical.TIME)
-        /// types as timestamps, since clickhouse doesn't have time-of-day type.
-        /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
-
+        /// Parquet TIME is time-of-day (units since midnight), not a timestamp.
+        /// Map to Time64 to match the native writer and Arrow reader.
         UInt32 scale = 0;
-        if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
+        if (converted == CONV::TIME_MILLIS || (logical.__isset.TIME && logical.TIME.unit.__isset.MILLIS))
             scale = 3;
-        else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
+        else if (converted == CONV::TIME_MICROS || (logical.__isset.TIME && logical.TIME.unit.__isset.MICROS))
             scale = 6;
-        else if (logical.TIMESTAMP.unit.__isset.NANOS || logical.TIME.unit.__isset.NANOS)
+        else if (logical.__isset.TIME && logical.TIME.unit.__isset.NANOS)
+            scale = 9;
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected TIME units: {}", thriftToString(element));
+
+        if (type != parq::Type::INT64 && type != parq::Type::INT32)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for TIME logical type: {}", thriftToString(element));
+
+        /// TIME is not timezone-aware; do not apply input_format_parquet_local_time_as_utc.
+        out_inferred_type = std::make_shared<DataTypeTime64>(scale);
+        auto converter = std::make_shared<IntConverter>();
+        /// INT32 is used for TIME_MILLIS; INT64 for TIME_MICROS / TIME_NANOS.
+        converter->input_size = type == parq::Type::INT32 ? 4 : 8;
+        converter->field_decimal_scale = scale;
+        out_decoder.allow_stats = is_output_type_decimal(sizeof(Int64), scale);
+        if (converter->input_size == 4)
+            /// Widen INT32 millis ticks to Int64 Time64 storage.
+            converter->output_size = 8;
+
+        out_decoder.fixed_size_converter = std::move(converter);
+
+        return;
+    }
+    else if (logical.__isset.TIMESTAMP || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS)
+    {
+        UInt32 scale = 0;
+        if (converted == CONV::TIMESTAMP_MILLIS || (logical.__isset.TIMESTAMP && logical.TIMESTAMP.unit.__isset.MILLIS))
+            scale = 3;
+        else if (converted == CONV::TIMESTAMP_MICROS || (logical.__isset.TIMESTAMP && logical.TIMESTAMP.unit.__isset.MICROS))
+            scale = 6;
+        else if (logical.__isset.TIMESTAMP && logical.TIMESTAMP.unit.__isset.NANOS)
             scale = 9;
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
@@ -1121,13 +1152,11 @@ void SchemaConverter::processPrimitiveColumn(
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
         String timezone = "UTC";
         if (!options.format.parquet.local_time_as_utc &&
-            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
-             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
+            (logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC))
             timezone = "";
         out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
         auto converter = std::make_shared<IntConverter>();
-        /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
-        /// (i.e. time of day rather than timestamp).
+        /// TIMESTAMP is always INT64. INT32 would be unexpected here but keep the widen path.
         converter->input_size = type == parq::Type::INT32 ? 4 : 8;
 
         if (scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
