@@ -188,7 +188,7 @@ void requireBlobMetadataField(const Poco::JSON::Object::Ptr & blob_obj, const ch
 }
 
 /// Poco stores JSON integers that do not fit signed Int64 as unsigned; convert<Int64>() would throw RangeException.
-std::optional<Int64> tryJsonIntegerAsInt64(const Poco::Dynamic::Var & value)
+std::optional<Int64> tryJSONIntegerAsInt64(const Poco::Dynamic::Var & value)
 {
     if (value.isInteger() && !value.isSigned())
     {
@@ -208,7 +208,7 @@ Int64 requireBlobMetadataInt64(const Poco::JSON::Object::Ptr & blob_obj, const c
     if (!value.isInteger())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be an integer", blob_index, field_name);
 
-    auto as_int64 = tryJsonIntegerAsInt64(value);
+    auto as_int64 = tryJSONIntegerAsInt64(value);
     if (!as_int64)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' is out of Int64 range", blob_index, field_name);
     return *as_int64;
@@ -220,7 +220,7 @@ Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, si
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] must be an integer", blob_index, field_index);
 
-    auto as_int64 = tryJsonIntegerAsInt64(value);
+    auto as_int64 = tryJSONIntegerAsInt64(value);
     if (!as_int64)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] is out of Int64 range", blob_index, field_index);
@@ -232,7 +232,7 @@ Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, si
     return static_cast<Int32>(*as_int64);
 }
 
-String requireJsonStringValue(const Poco::Dynamic::Var & value, size_t blob_index, const char * field_name)
+String requireJSONStringValue(const Poco::Dynamic::Var & value, size_t blob_index, const char * field_name)
 {
     if (!value.isString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be a string", blob_index, field_name);
@@ -242,14 +242,14 @@ String requireJsonStringValue(const Poco::Dynamic::Var & value, size_t blob_inde
 String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
 {
     requireBlobMetadataField(blob_obj, field_name, blob_index);
-    return requireJsonStringValue(blob_obj->get(field_name), blob_index, field_name);
+    return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
 String optBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
 {
     if (!blob_obj->has(field_name) || blob_obj->isNull(field_name))
         return {};
-    return requireJsonStringValue(blob_obj->get(field_name), blob_index, field_name);
+    return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
 void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
