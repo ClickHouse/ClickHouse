@@ -66,13 +66,31 @@ def footer_json_for_blob(blob: bytes, properties: dict[str, str] | None = None) 
     return json.dumps(payload, separators=(", ", ": ")).encode("utf-8")
 
 
-def build_puffin_file(blob: bytes, footer_json: bytes, *, compressed: bool = False) -> bytes:
-    return build_puffin_file_from_blobs([blob], footer_json, compressed=compressed)
+def build_puffin_file(
+    blob: bytes,
+    footer_json: bytes,
+    *,
+    compressed: bool = False,
+    lz4_declare_content_size: bool = True,
+) -> bytes:
+    return build_puffin_file_from_blobs(
+        [blob],
+        footer_json,
+        compressed=compressed,
+        lz4_declare_content_size=lz4_declare_content_size,
+    )
 
 
-def build_puffin_file_from_blobs(blobs: list[bytes], footer_json: bytes, *, compressed: bool = False) -> bytes:
+def build_puffin_file_from_blobs(
+    blobs: list[bytes],
+    footer_json: bytes,
+    *,
+    compressed: bool = False,
+    lz4_declare_content_size: bool = True,
+) -> bytes:
     if compressed:
-        footer_payload = lz4.frame.compress(footer_json)
+        # Puffin requires a single LZ4 frame; Content Size must be present for valid files.
+        footer_payload = lz4.frame.compress(footer_json, store_size=lz4_declare_content_size)
         flags = bytes([0x01, 0x00, 0x00, 0x00])
     else:
         footer_payload = footer_json
@@ -94,15 +112,25 @@ def lz4_header_checksum(descriptor: bytes) -> int:
     return (xxhash.xxh32(descriptor, seed=0).intdigest() >> 8) & 0xFF
 
 
-def add_inflated_content_size(compressed: bytes, fake_size: int) -> bytes:
+def set_lz4_content_size(compressed: bytes, content_size: int) -> bytes:
+    """Replace the Content Size field in an LZ4 frame that already declares it.
+
+    FLG bit 0x08 is Content Size; the previous implementation wrongly used 0x10
+    (Block Checksum), which produced frames that fail decompression.
+    """
     data = bytearray(compressed)
-    flg = data[4] | 0x10
-    bd = data[5]
-    blocks = data[7:]
-    content_size = struct.pack("<Q", fake_size)
-    descriptor = bytes([flg, bd]) + content_size
-    header_checksum = lz4_header_checksum(descriptor)
-    return bytes(data[:4]) + descriptor + bytes([header_checksum]) + blocks
+    if len(data) < 15:
+        raise ValueError("LZ4 frame is too short to contain a Content Size field")
+    if (data[4] & 0x08) == 0:
+        raise ValueError("LZ4 frame does not declare Content Size")
+    struct.pack_into("<Q", data, 6, content_size)
+    descriptor = bytes(data[4:14])
+    data[14] = lz4_header_checksum(descriptor)
+    return bytes(data)
+
+
+def add_inflated_content_size(compressed: bytes, fake_size: int) -> bytes:
+    return set_lz4_content_size(compressed, fake_size)
 
 
 def write_fixture(name: str, content: bytes) -> None:
@@ -149,12 +177,25 @@ def generate_invalid_bitmap_key() -> None:
 def generate_inflated_lz4_content_size(source: Path) -> None:
     puffin = source.read_bytes()
     blob, footer_json = extract_blob_and_footer_json(puffin)
-    footer_payload = add_inflated_content_size(lz4.frame.compress(footer_json), INFLATED_CONTENT_SIZE)
+    footer_payload = set_lz4_content_size(lz4.frame.compress(footer_json, store_size=True), INFLATED_CONTENT_SIZE)
     footer_length = struct.pack("<i", len(footer_payload))
     flags = bytes([0x01, 0x00, 0x00, 0x00])
     write_fixture(
         "inflated_lz4_content_size.puffin",
         PUFFIN_MAGIC + blob + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
+def generate_missing_lz4_content_size() -> None:
+    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
+    write_fixture(
+        "missing_lz4_content_size.puffin",
+        build_puffin_file(
+            BLOB_PLACEHOLDER,
+            footer_json,
+            compressed=True,
+            lz4_declare_content_size=False,
+        ),
     )
 
 
@@ -352,6 +393,7 @@ def main() -> None:
     generate_invalid_roaring_bitmap()
     generate_invalid_bitmap_key()
     generate_inflated_lz4_content_size(spark_fixture)
+    generate_missing_lz4_content_size()
     generate_missing_required_fields()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()

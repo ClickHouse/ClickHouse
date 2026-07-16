@@ -30,6 +30,9 @@ $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$DATA/cardinality_mismatch_
 echo "--- inflated_lz4_content_size.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/inflated_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 content size'
 
+echo "--- missing_lz4_content_size.puffin ---"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/missing_lz4_content_size.puffin', PuffinMetadata)" 2>&1 | grep -oF 'Puffin footer LZ4 frame must declare content size'
+
 for PUFFIN_FILE in \
     "$DATA/missing_snapshot_id.puffin" \
     "$DATA/missing_sequence_number.puffin" \

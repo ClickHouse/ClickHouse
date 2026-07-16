@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <unordered_map>
@@ -123,19 +122,18 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
     if (common::mulOverflow(size, PUFFIN_FOOTER_LZ4_MAX_RATIO, max_decompressed_size))
         throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer compressed payload is too large");
 
+    if (frame_info.contentSize == 0)
+        throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer LZ4 frame must declare content size");
+
+    if (frame_info.contentSize > max_decompressed_size)
+        throw Exception(
+            ErrorCodes::LZ4_DECODER_FAILED,
+            "Puffin footer LZ4 content size {} exceeds decompression limit {}",
+            frame_info.contentSize,
+            max_decompressed_size);
+
     String result;
-    if (frame_info.contentSize != 0)
-    {
-        if (frame_info.contentSize > max_decompressed_size)
-            throw Exception(
-                ErrorCodes::LZ4_DECODER_FAILED,
-                "Puffin footer LZ4 content size {} exceeds decompression limit {}",
-                frame_info.contentSize,
-                max_decompressed_size);
-        result.resize(static_cast<size_t>(frame_info.contentSize));
-    }
-    else
-        result.resize(std::min(std::max(size * 2, static_cast<size_t>(256)), max_decompressed_size));
+    result.resize(static_cast<size_t>(frame_info.contentSize));
 
     size_t dst_offset = 0;
     while (true)
@@ -154,18 +152,13 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
             break;
 
         if (dst_offset == result.size())
-        {
-            if (result.size() >= max_decompressed_size)
-                throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer decompressed size exceeds limit {}", max_decompressed_size);
-
-            const size_t new_size = std::min(result.size() * 2, max_decompressed_size);
-            if (new_size == result.size())
-                throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer decompressed size exceeds limit {}", max_decompressed_size);
-            result.resize(new_size);
-        }
+            throw Exception(
+                ErrorCodes::LZ4_DECODER_FAILED,
+                "Puffin footer decompressed size exceeds declared content size {}",
+                frame_info.contentSize);
     }
 
-    if (frame_info.contentSize != 0 && dst_offset != frame_info.contentSize)
+    if (dst_offset != frame_info.contentSize)
         throw Exception(
             ErrorCodes::LZ4_DECODER_FAILED,
             "Puffin footer LZ4 decompressed size {} does not match content size {}",
