@@ -3036,9 +3036,14 @@ def test_key_value_args(started_cluster):
         f"select a from s3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', structure = 'a Int32, b DateTime') where b = '2'"
     )
 
-    # Check compression_method
-    assert "inflate failed" in node.query_and_get_error(
+    # Check compression_method: reading non-gzip data as gzip must fail.
+    # libdeflate reports "Not a gzip stream"; the zlib-ng fallback build reports "inflate failed".
+    compression_error = node.query_and_get_error(
         f"select a from s3('{url}', format = TSVRaw, structure = 'a Int32, b String', access_key_id = 'minio', secret_access_key = '{minio_secret_key}', compression_method = 'gzip') where b = '2'"
+    )
+    assert (
+        "Not a gzip stream" in compression_error
+        or "inflate failed" in compression_error
     )
     assert 2 == int(
         node.query(
@@ -3615,6 +3620,97 @@ def test_query_condition_cache(started_cluster):
     )
     assert misses_after_drop > 0, f"Expected cache misses after drop, got {misses_after_drop}"
     assert hits_after_drop == 0, f"Expected no hits after drop, got {hits_after_drop}"
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_query_condition_cache_overwrite_invalidation(started_cluster):
+    # The Query Condition Cache keys object-storage entries by path plus the ETag content-version
+    # token, so overwriting an object in place (same path, new content, new ETag) must miss the
+    # cache and return the new rows instead of reusing stale row-group information.
+    instance = started_cluster.instances["dummy"]
+    bucket = started_cluster.minio_bucket
+    table_name = f"test_qcc_overwrite_{generate_random_string()}"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.parquet"
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int64, val String)
+        ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'Parquet')
+        SETTINGS output_format_parquet_row_group_size = 1
+        """
+    )
+
+    # First version of the object: every matching row carries val = 'v1'.
+    # Keep the row count small: with output_format_parquet_row_group_size = 1 each row is its own
+    # row group, so numbers(200) still produces enough row groups for the WHERE id < 100 filter to
+    # prune half of them (real cache misses and hits) while staying lighter than a single-write test
+    # like test_query_condition_cache. This test writes twice (v1 then the v2 overwrite), so a large
+    # count would make it the slowest, most memory-hungry test in the module and it would time out /
+    # get OOM-killed when the flaky check runs the whole module 3x concurrently under ASan.
+    instance.query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number AS id, 'v1' AS val
+        FROM numbers(200)
+        """
+    )
+
+    instance.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
+    settings = {
+        "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
+    }
+
+    def profile_event(query_id, event):
+        return int(
+            instance.query(
+                f"SELECT ProfileEvents['{event}'] "
+                f"FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    # First read: populates the cache (miss), returns the v1 content.
+    query_id_first = f"qcc_ow_first_{generate_random_string()}"
+    result_first = instance.query(select_query, query_id=query_id_first, settings=settings)
+    assert result_first.strip() == "v1", f"Expected v1 rows, got {result_first!r}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    misses_first = profile_event(query_id_first, "QueryConditionCacheMisses")
+    assert misses_first > 0, f"Expected cache misses on first run, got {misses_first}"
+
+    # Second read: served from the cache.
+    query_id_second = f"qcc_ow_second_{generate_random_string()}"
+    result_second = instance.query(select_query, query_id=query_id_second, settings=settings)
+    assert result_second.strip() == "v1", f"Expected v1 rows, got {result_second!r}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    hits_second = profile_event(query_id_second, "QueryConditionCacheHits")
+    assert hits_second > 0, f"Expected cache hits on second run, got {hits_second}"
+
+    # Overwrite the same object in place with new content (same path, new ETag).
+    instance.query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number AS id, 'v2' AS val
+        FROM numbers(200)
+        """,
+        settings={"s3_truncate_on_insert": 1},
+    )
+
+    # Third read: the ETag changed, so the cache must miss (no stale hit) and return the new rows.
+    query_id_third = f"qcc_ow_third_{generate_random_string()}"
+    result_third = instance.query(select_query, query_id=query_id_third, settings=settings)
+    assert result_third.strip() == "v2", f"Expected new (v2) rows after overwrite, got {result_third!r}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    misses_third = profile_event(query_id_third, "QueryConditionCacheMisses")
+    hits_third = profile_event(query_id_third, "QueryConditionCacheHits")
+    assert misses_third > 0, f"Expected cache miss after overwrite, got {misses_third}"
+    assert hits_third == 0, f"Expected no stale cache hit after overwrite, got {hits_third}"
 
     instance.query(f"DROP TABLE {table_name}")
 
