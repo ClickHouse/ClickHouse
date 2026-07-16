@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include <Processors/QueryPlan/JoinStep.h>
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
 
@@ -26,6 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/RowRefs.h>
@@ -40,9 +42,11 @@
 #include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
+#include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 namespace DB
 {
@@ -622,6 +626,33 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+StepAnalysisReport HashJoin::getAnalysisReport() const
+{
+    StepAnalysisReport report;
+
+    if (matched_rows_stats)
+    {
+        report = buildMatchedRowsReport({
+            .left_rows = matched_rows_stats->getInputLeft(),
+            .matched_left = matched_rows_stats->getMatchedLeft(),
+            .right_rows = matched_rows_stats->getInputRight(),
+            .matched_right = matched_rows_stats->getMatchedRight()});
+    }
+    else
+    {
+        MetricList right_metrics;
+        right_metrics.emplace_back("rows", getRightTableRowCount(), StepMetric::Format::Quantity);
+        report.push_back({"right", std::move(right_metrics)});
+    }
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back("unique keys", getTotalRowCount(), StepMetric::Format::Quantity);
+    hash_table_metrics.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
+    report.push_back({"hash table", std::move(hash_table_metrics)});
+
+    return report;
+}
+
 bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 {
     return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
@@ -963,6 +994,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             /// TODO: Do not calculate them every time
             total_rows = getTotalRowCount();
             total_bytes = getTotalByteCount();
+            /// `total_bytes` here is the pre-shrink size (shrink happens below), so this captures the
+            /// build high-water mark for free on the path where a shrink can lower it.
+            peak_build_bytes = std::max(peak_build_bytes, total_bytes);
         }
     }
     data->keys_to_join = total_rows;
@@ -1235,6 +1269,8 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
 JoinResultPtr HashJoin::joinBlockImplCross(Block block) const
 {
+    if (matched_rows_stats)
+        matched_rows_stats->collectProbeBlock(block.rows(), block.rows());
     return std::make_unique<CrossJoinResult>(*this, std::move(block));
 }
 
@@ -1329,48 +1365,7 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    const bool prefer_use_maps_all = preferUseMapsAll();
-    {
-        std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
-        maps_vector.reserve(table_join->getClauses().size());
-        for (size_t i = 0; i < table_join->getClauses().size(); ++i)
-            maps_vector.push_back(&data->maps[i]);
-
-        JoinResultPtr res;
-        if (joinDispatch(
-                kind,
-                strictness,
-                maps_vector,
-                prefer_use_maps_all,
-                [&](auto kind_, auto strictness_, auto & maps_vector_)
-                {
-                    if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
-                    {
-                        res = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
-                            *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-                    }
-                    else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
-                    {
-                        res = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
-                            *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-                    }
-                    else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
-                    {
-                        res = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
-                            *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
-                    }
-                }))
-        {
-            /// Joined
-            return res;
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
-    }
+    return runJoinDispatch(ScatteredBlock(std::move(block)));
 }
 
 JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
@@ -1391,15 +1386,19 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             cond_column_name.second);
     }
 
+    return runJoinDispatch(std::move(block));
+}
+
+JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
+{
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
     maps_vector.reserve(table_join->getClauses().size());
-
     for (size_t i = 0; i < table_join->getClauses().size(); ++i)
         maps_vector.push_back(&data->maps[i]);
 
     const bool prefer_use_maps_all = preferUseMapsAll();
     JoinResultPtr res;
-    [[maybe_unused]] const bool joined = joinDispatch(
+    const bool joined = joinDispatch(
         kind,
         strictness,
         maps_vector,
@@ -1427,7 +1426,9 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
             }
         });
 
-    chassert(joined);
+    if (!joined)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
+
     return res;
 }
 
@@ -1594,6 +1595,9 @@ public:
         {
             fillNullsFromBlocks(columns_right, rows_added);
         }
+
+        if (auto * stats = parent.matched_rows_stats.get())
+            stats->collectNonJoined(rows_added);
 
         return rows_added;
     }
@@ -2709,9 +2713,20 @@ void HashJoin::onBuildPhaseFinish()
     }
     updateNonJoinedRowsStatus();
 
-    build_phase_finished = true;
+    /// In case addBlockToJoin is returning early
+    /// we take a peak snapshot
+    size_t total_bytes = getTotalByteCount();
+    peak_build_bytes = std::max(peak_build_bytes, getTotalByteCount());
 
-    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
+    if (table_join->collectAnalyzeStats())
+    {
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
+        if (rightMatchedSource(kind, strictness) == RightMatchedSource::RefsBitmap)
+            matched_rows_stats->prepareRightBitmap(data->columns);
+    }
+
+    build_phase_finished = true;
+    LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());
 }
 
 bool HashJoin::hasPostBuildPhase() const

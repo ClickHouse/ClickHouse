@@ -144,6 +144,8 @@ public:
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
+    StepAnalysisReport getAnalysisReport() const override { return {}; }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {

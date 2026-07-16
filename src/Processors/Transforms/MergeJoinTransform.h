@@ -19,6 +19,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
@@ -158,10 +159,17 @@ private:
 };
 
 
+struct AsofRightRowRef
+{
+    size_t chunk_generation = 0;
+    size_t row = 0;
+    bool operator==(const AsofRightRowRef &) const = default;
+};
+
 class AsofJoinState : boost::noncopyable
 {
 public:
-    void set(const FullMergeJoinCursor & rcursor, size_t rpos);
+    void set(const FullMergeJoinCursor & rcursor, size_t rpos, size_t chunk_generation);
     void reset();
 
     bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
@@ -173,7 +181,7 @@ public:
 
     JoinKeyRow key;
     Chunk value;
-    size_t value_row = 0;
+    AsofRightRowRef value_ref;
 };
 
 /*
@@ -245,6 +253,17 @@ public:
     void logElapsed(double seconds);
     MergedStats getMergedStats() const override;
 
+    /// Participation counters for EXPLAIN ANALYZE (total and matched rows per side).
+    JoinAnalysisCounters getJoinAnalysisCounters() const
+    {
+        return {
+            .left_rows = stat.num_rows[0],
+            .matched_left = stat.matched_left,
+            .right_rows = stat.num_rows[1],
+            .matched_right = stat.matched_right,
+        };
+    }
+
 private:
     std::optional<Status> handleAnyJoinState();
     Status anyJoin();
@@ -254,6 +273,8 @@ private:
 
     std::optional<Status> handleAsofJoinState();
     Status asofJoin();
+
+    void countAsofMatch(AsofRightRowRef right_ref);
 
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
@@ -274,6 +295,7 @@ private:
     AnyJoinState any_join_state;
     std::unique_ptr<AllJoinState> all_join_state;
     AsofJoinState asof_join_state;
+    std::optional<AsofRightRowRef> last_asof_matched_right;
 
     JoinKind kind;
     JoinStrictness strictness;
@@ -286,6 +308,10 @@ private:
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
         size_t num_bytes[2] = {0, 0};
+
+        /// Distinct rows of each side that ended up in the output with a partner.
+        size_t matched_left = 0;
+        size_t matched_right = 0;
 
         size_t max_blocks_loaded = 0;
     };
@@ -319,6 +345,8 @@ public:
     String getName() const override { return "MergeJoinTransform"; }
 
     void setAsofInequality(ASOFJoinInequality asof_inequality_) { algorithm.setAsofInequality(asof_inequality_); }
+
+    JoinAnalysisCounters getJoinAnalysisCounters() const { return algorithm.getJoinAnalysisCounters(); }
 
 protected:
     void onFinish() override;

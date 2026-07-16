@@ -10,10 +10,12 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -476,6 +478,52 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     return global_total_bytes.load(std::memory_order_relaxed);
 }
 
+size_t ConcurrentHashJoin::getRightRows() const
+{
+    size_t res = 0;
+    for (const auto & hash_join : hash_joins)
+        res += hash_join->data->getRightTableRowCount();
+    return res;
+}
+
+size_t ConcurrentHashJoin::getUniqueKeys() const
+{
+    if (hash_joins.empty())
+        return 0;
+
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+        return hash_joins[0]->data->getTotalRowCount();
+
+    size_t res = 0;
+    for (const auto & hash_join : hash_joins)
+        res += hash_join->data->getTotalRowCount();
+    return res;
+}
+
+StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
+{
+    JoinAnalysisCounters counters;
+    counters.right_rows = getRightRows();
+    for (const auto & hash_join : hash_joins)
+    {
+        const auto * stats = hash_join->data->getMatchStats();
+        if (!stats)
+            continue;
+        counters.left_rows += stats->getInputLeft();
+        counters.matched_left += stats->getMatchedLeft();
+        counters.matched_right += stats->getMatchedRight();
+    }
+
+    StepAnalysisReport report = buildMatchedRowsReport(counters);
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back("unique keys", getUniqueKeys(), StepMetric::Format::Quantity);
+    hash_table_metrics.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
+    report.push_back({"hash table", std::move(hash_table_metrics)});
+
+    return report;
+}
+
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 {
     for (const auto & hash_join : hash_joins)
@@ -779,6 +827,10 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
+    /// Capture the build peak now, while each slot still holds only its own disjoint data
+    for (const auto & hash_join : hash_joins)
+        peak_build_bytes += hash_join->data->getPeakBuildBytes();
+
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.

@@ -6,6 +6,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
 
 #if defined(OS_LINUX)

@@ -6,6 +6,7 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 
 #include <algorithm>
@@ -172,8 +173,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         join_features.is_asof_join,
         is_join_get);
 
+    if constexpr (rightMatchedSource(KIND, STRICTNESS) == RightMatchedSource::RefsBitmap)
+        added_columns.match_stats = join.matched_rows_stats.get();
+
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
-    added_columns.need_filter = join_features.need_filter || has_required_right_keys;
+    bool need_collect_stats = join.getTableJoin().collectAnalyzeStats();
+    added_columns.need_filter = join_features.need_filter || has_required_right_keys || need_collect_stats;
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
@@ -183,6 +188,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
+
+    if (auto * stats = join.matched_rows_stats.get())
+    {
+        const size_t probed_rows = processed_rows ? processed_rows : block.rows();
+        stats->collectProbeBlock(probed_rows, added_columns.matched_rows.size());
+    }
 
     std::optional<ScatteredBlock> next_scattered_block;
     if (0 < processed_rows && processed_rows < block.rows())
@@ -379,11 +390,15 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
     JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    {
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    }
     else
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    {
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    }
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

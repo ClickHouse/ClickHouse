@@ -1,4 +1,5 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <DataTypes/NullableUtils.h>
 
 namespace DB
@@ -242,6 +243,9 @@ void AddedColumns<true>::applyLazyDefaults() {}
 template <>
 void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaults)
 {
+    if (match_stats) [[unlikely]]
+        match_stats->markRightMatched(ref_word);
+
     if (has_defaults)
         applyLazyDefaults();
 
@@ -277,6 +281,9 @@ void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaul
 template <>
 void AddedColumns<true>::appendFromBlock(UInt64 ref_word, bool)
 {
+    if (match_stats) [[unlikely]]
+        match_stats->markRightMatched(ref_word);
+
 #ifndef NDEBUG
     /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
     /// the head ref of either, whose block is valid for the column-structure assertion.

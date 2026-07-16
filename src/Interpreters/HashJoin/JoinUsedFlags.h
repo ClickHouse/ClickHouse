@@ -234,6 +234,35 @@ public:
                 return false;
         return true;
     }
+
+    /// Method used to allocate `per_row_flags` for cases of join
+    /// when normally we don't use setUsed, but we still need statistics
+    /// about matched of rows in the right table
+    void allocPerRowFalse(UInt32 block_no, size_t rows)
+    {
+        per_row_flags[block_no] = UsedFlagsForColumns(rows);
+    }
+
+    /// Mark a single right row as matched (idempotent, thread-safe). Used by
+    /// `MatchedRowsStats::markRightMatched` to build the matched-right-rows bitmap
+    /// for EXPLAIN ANALYZE, independently of the join's own `setUsed` flags.
+    void setPerRow(UInt32 block_no, size_t row_num)
+    {
+        auto & flag = per_row_flags[block_no][row_num];
+        if (!flag.load(std::memory_order_relaxed))
+            flag.store(true, std::memory_order_relaxed);
+    }
+
+    /// Used to return statistics for matched of right rows in EXPLAIN ANALYZE
+    size_t countUsed() const
+    {
+        size_t count = 0;
+        for (const auto & [_, flags] : per_row_flags)
+            for (const auto & flag : flags)
+                count += flag.load(std::memory_order_relaxed);
+
+        return count;
+    }
 };
 
 }

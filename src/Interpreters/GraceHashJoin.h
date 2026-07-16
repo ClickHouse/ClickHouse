@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -48,6 +49,23 @@ class GraceHashJoin final : public IJoin
 
     using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
+    struct GraceHashJoinStats
+    {
+        size_t right_rows = 0;
+        size_t unique_keys = 0;
+        size_t peak_in_memory_bytes = 0;
+        size_t num_rehashes = 0;
+        size_t num_buckets = 0;
+        TemporaryDataBuffer::Stat left_spill;
+        TemporaryDataBuffer::Stat right_spill;
+
+        UInt64 left_rows_total = 0;
+        UInt64 matched_left = 0;
+        UInt64 matched_right = 0;
+
+        void foldIn(const HashJoin & in_memory_join);
+    };
+
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
@@ -84,6 +102,7 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+    StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
@@ -132,6 +151,8 @@ private:
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
 
+    GraceHashJoinStats collectStats() const;
+
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
@@ -161,6 +182,8 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+
+    GraceHashJoinStats stats;
 
     mutable std::mutex totals_mutex;
 };

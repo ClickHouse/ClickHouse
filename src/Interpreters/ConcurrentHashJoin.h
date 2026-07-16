@@ -63,6 +63,16 @@ public:
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+
+    size_t getRightRows() const;
+
+    size_t getUniqueKeys() const;
+
+    /// Sum of the per-slot build peaks, snapshotted before the two-level merge (see onBuildPhaseFinish).
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    StepAnalysisReport getAnalysisReport() const override;
+
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
@@ -129,6 +139,10 @@ private:
 
     StatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
+
+    /// Sum of per-slot build peaks, captured at the start of `onBuildPhaseFinish` (before the
+    /// two-level merge moves all buckets into slot 0, which would otherwise double-count).
+    size_t peak_build_bytes = 0;
 
     std::mutex totals_mutex;
     Block totals;

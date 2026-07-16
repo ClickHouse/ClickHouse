@@ -16,6 +16,8 @@ namespace ErrorCodes
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class MatchedRowsStats;
+
 struct JoinOnKeyColumns
 {
     Names key_names;
@@ -262,6 +264,10 @@ public:
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
     bool has_columns_to_add;
+
+    /// Non-owning; set only under EXPLAIN ANALYZE for RefsBitmap join kinds. When non-null,
+    /// appendFromBlock marks matched right rows in the participation bitmap.
+    MatchedRowsStats * match_stats = nullptr;
 
     void reserve(bool need_replicate)
     {

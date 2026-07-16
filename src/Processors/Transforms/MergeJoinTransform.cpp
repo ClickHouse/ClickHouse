@@ -313,11 +313,11 @@ void AnyJoinState::setValue(Chunk value_)
 bool AnyJoinState::empty() const { return keys[0].row.empty() && keys[1].row.empty(); }
 
 
-void AsofJoinState::set(const FullMergeJoinCursor & rcursor, size_t rpos)
+void AsofJoinState::set(const FullMergeJoinCursor & rcursor, size_t rpos, size_t chunk_generation)
 {
     key = JoinKeyRow(rcursor, rpos);
     value = rcursor.getCurrent().clone();
-    value_row = rpos;
+    value_ref = {chunk_generation, rpos};
 }
 
 void AsofJoinState::reset()
@@ -523,7 +523,9 @@ struct AllJoinImpl
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
                      std::unique_ptr<AllJoinState> & state,
-                     int null_direction_hint)
+                     int null_direction_hint,
+                     size_t & matched_left,
+                     size_t & matched_right)
     {
         right_map.clear();
         right_map.reserve(max_block_size);
@@ -545,6 +547,8 @@ struct AllJoinImpl
             {
                 size_t lnum = nextDistinct(left_cursor);
                 size_t rnum = nextDistinct(right_cursor);
+                matched_left += lnum;
+                matched_right += rnum;
                 bool all_fit_in_block = !max_block_size || std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
                 bool have_all_ranges = left_cursor.isValid() && right_cursor.isValid();
                 if (all_fit_in_block && have_all_ranges)
@@ -650,6 +654,10 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
             {
                 size_t pos = cursors[i].getRow();
                 size_t num = nextDistinct(cursors[i]);
+                if (i == 0)
+                    stat.matched_left += num;
+                else
+                    stat.matched_right += num;
                 all_join_state->addRange(i, cursors[i].getCurrent().clone(), pos, num);
             }
         }
@@ -713,8 +721,9 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
         for (const auto & col : left_columns)
             result_cols[i++]->insertFrom(*col, left_cursor.getRow());
         for (const auto & col : asof_join_state.value.getColumns())
-            result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
+            result_cols[i++]->insertFrom(*col, asof_join_state.value_ref.row);
         chassert(i == result_cols.size());
+        countAsofMatch(asof_join_state.value_ref);
         left_cursor.next();
     }
 
@@ -743,7 +752,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
 {
     PaddedPODArray<UInt64> idx_map[2];
 
-    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
+    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint, stat.matched_left, stat.matched_right);
     chassert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
@@ -803,7 +812,9 @@ struct AnyJoinImpl
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
                      AnyJoinState & any_join_state,
-                     int null_direction_hint)
+                     int null_direction_hint,
+                     size_t & matched_left,
+                     size_t & matched_right)
     {
         chassert(enabled);
 
@@ -833,12 +844,16 @@ struct AnyJoinImpl
                 {
                     size_t lnum = nextDistinct(left_cursor);
                     right_map.resize_fill(right_map.size() + lnum, rpos);
+                    matched_left += lnum;
+                    matched_right += 1;
                 }
 
                 if constexpr (isRightOrFull(kind))
                 {
                     size_t rnum = nextDistinct(right_cursor);
                     left_map.resize_fill(left_map.size() + rnum, lpos);
+                    matched_right += rnum;
+                    matched_left += 1;
                 }
 
                 if constexpr (isInner(kind))
@@ -847,6 +862,8 @@ struct AnyJoinImpl
                     nextDistinct(right_cursor);
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
+                    matched_left += 1;
+                    matched_right += 1;
                 }
             }
             else if (cmp < 0)
@@ -900,7 +917,10 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
             if (length && isLeft(kind) && source_num == 0)
             {
                 if (any_join_state.value)
+                {
+                    stat.matched_left += length;
                     result = copyChunkResized(current.getCurrent(), any_join_state.value, start_pos, length);
+                }
                 else
                     result = createBlockWithDefaults(source_num, start_pos, length);
             }
@@ -908,7 +928,10 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
             if (length && isRight(kind) && source_num == 1)
             {
                 if (any_join_state.value)
+                {
+                    stat.matched_right += length;
                     result = copyChunkResized(any_join_state.value, current.getCurrent(), start_pos, length);
+                }
                 else
                     result = createBlockWithDefaults(source_num, start_pos, length);
             }
@@ -944,7 +967,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_left, stat.matched_right);
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -972,6 +995,16 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     return Status(std::move(result));
 }
 
+
+void MergeJoinAlgorithm::countAsofMatch(AsofRightRowRef right_ref)
+{
+    ++stat.matched_left;
+    if (last_asof_matched_right != right_ref)
+    {
+        ++stat.matched_right;
+        last_asof_matched_right = right_ref;
+    }
+}
 
 MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 {
@@ -1018,6 +1051,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : right_columns)
                     result_cols[i++]->insertFrom(*col, rpos);
                 chassert(i == result_cols.size());
+                countAsofMatch({stat.num_blocks[1], rpos});
 
                 left_cursor.next();
                 continue;
@@ -1034,7 +1068,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
              || (asof_inequality == ASOFJoinInequality::GreaterOrEquals && asof_cmp >= 0))
             {
                 /// condition is satisfied, remember this row and move next to try to find better match
-                asof_join_state.set(right_cursor, rpos);
+                asof_join_state.set(right_cursor, rpos, stat.num_blocks[1]);
                 right_cursor.next();
                 continue;
             }
@@ -1048,8 +1082,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                     for (const auto & col : left_columns)
                         result_cols[i++]->insertFrom(*col, lpos);
                     for (const auto & col : asof_join_state.value.getColumns())
-                        result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
+                        result_cols[i++]->insertFrom(*col, asof_join_state.value_ref.row);
                     chassert(i == result_cols.size());
+                    countAsofMatch(asof_join_state.value_ref);
                 }
                 else
                 {
@@ -1079,8 +1114,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : left_columns)
                     result_cols[i++]->insertFrom(*col, lpos);
                 for (const auto & col : asof_join_state.value.getColumns())
-                    result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
+                    result_cols[i++]->insertFrom(*col, asof_join_state.value_ref.row);
                 chassert(i == result_cols.size());
+                countAsofMatch(asof_join_state.value_ref);
                 left_cursor.next();
                 continue;
             }

@@ -37,6 +37,13 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
+struct StepMetric;
+struct MetricGroup;
+using MetricList = std::vector<StepMetric>;
+using StepAnalysisReport = std::vector<MetricGroup>;
+
+using ProcessorsByGroup = std::unordered_map<size_t, std::vector<IProcessor *>>;
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -182,6 +189,8 @@ public:
     /// Follow the pattern of classes with multi stage execution that already implements these methods
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
+
+    virtual StepAnalysisReport getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;

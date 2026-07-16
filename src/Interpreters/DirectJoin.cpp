@@ -2,6 +2,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -158,6 +159,18 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     IColumn::Offsets offsets;
     Chunk joined_chunk = storage->getByKeys({key_col}, attribute_names, null_map, offsets);
 
+    if (table_join->collectAnalyzeStats())
+    {
+        /// One lookup per probed left row; a missed key contributes exactly one zero to `null_map`, so
+        /// the number of matched left rows is `total - zeros`. Holds for both one-to-one stores (one
+        /// row per key) and the one-to-many MergeTree entity (matched keys are all-ones, a miss is a
+        /// single zero).
+        const size_t total = key_col.column->size();
+        const size_t matched = total - (null_map.size() - countBytesInFilter(null_map));
+        left_rows_total.fetch_add(total, std::memory_order_relaxed);
+        left_rows_matched.fetch_add(matched, std::memory_order_relaxed);
+    }
+
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block sample_storage_block = storage->getSampleBlock(attribute_names);
     MutableColumns result_columns = convertBlockStructure(sample_storage_block, right_block_to_use, joined_chunk.mutateColumns(), null_map);
@@ -207,6 +220,15 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     }
 
     return IJoinResult::createFromBlock(std::move(block));
+}
+
+StepAnalysisReport DirectKeyValueJoin::getAnalysisReport() const
+{
+    StepAnalysisReport report;
+    const UInt64 left_rows = left_rows_total.load(std::memory_order_relaxed);
+    const UInt64 matched_left = left_rows_matched.load(std::memory_order_relaxed);
+    report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
+    return report;
 }
 
 }

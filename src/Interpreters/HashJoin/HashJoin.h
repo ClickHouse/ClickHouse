@@ -13,6 +13,7 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -28,6 +29,8 @@ namespace DB
 class TableJoin;
 class ExpressionActions;
 using Sizes = std::vector<size_t>;
+
+class MatchedRowsStats;
 
 namespace JoinStuff
 {
@@ -196,6 +199,13 @@ public:
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
+    /// Number of right-side rows ingested into the build.
+    size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
+    /// Peak bytes the build occupied, captured during the build phase so it survives `data` release.
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    StepAnalysisReport getAnalysisReport() const override;
+    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     bool alwaysReturnsEmptySet() const final;
 
@@ -537,6 +547,19 @@ public:
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
+    struct ProbeStats
+    {
+        UInt64 total_left_rows = 0;
+        UInt64 matched_left_rows = 0;
+
+        ProbeStats & operator+=(const ProbeStats & other)
+        {
+            total_left_rows += other.total_left_rows;
+            matched_left_rows += other.matched_left_rows;
+            return *this;
+        }
+    };
+
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
@@ -568,6 +591,8 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+
+    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
     bool have_compressed = false;
 
@@ -603,6 +628,11 @@ private:
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
 
+    /// Peak of `getTotalByteCount()` observed during the build phase. Stored separately so it
+    /// survives `data.reset()` (the maps are released after the query, before EXPLAIN ANALYZE reads
+    /// stats). Updated only during build, which is serialized per `HashJoin`, so no atomic is needed.
+    size_t peak_build_bytes = 0;
+
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
 
@@ -627,6 +657,11 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     JoinResultPtr joinBlockImplCross(Block block) const;
+
+    /// Shared probe path for `joinBlock` and `joinScatteredBlock`: runs the join dispatch on an
+    /// already-prepared block and folds the per-block probe statistics carried by the result into
+    /// our counters.
+    JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;
 

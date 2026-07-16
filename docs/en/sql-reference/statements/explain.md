@@ -763,6 +763,61 @@ The maximum number in `parallelism` is computed as a minimum between:
 2. The maximum number of query processing threads set in `max_threads`.
 :::
 
+For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left:` for the probe side (the left table) and `Right:` for the build side (the right table) — followed by one or more lines specific to the join algorithm (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge` or `direct`). Most algorithms report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
+
+The per-side lines share the same shape:
+
+```txt
+Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+```
+
+For each side `EXPLAIN ANALYZE` reports:
+
+- `rows <rows>` — the total number of rows of that side that passed through the join.
+- `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side, i.e. the rows that participated in the output. For an anti join it is instead the number of rows that did not find a partner.
+- `match rate <match_rate>%` — the percentage of that side's rows that matched, computed as `100 * <matched_rows> / <rows>`.
+- `fanout <fanout>` — the average number of output rows produced per matched row on that side, computed as `<output_rows> / <matched_rows>`. It is most informative for `ALL` joins, where a single row can be replicated once for every partner it matches; for `ANY`, `SEMI` and `ANTI` joins it stays close to `1`.
+
+Depending on the join algorithm, additional lines are then shown.
+
+For `hash` and `parallel_hash` joins a `Hash table:` line describes the hash table built from the right table:
+
+```txt
+Hash table: unique keys <unique_keys> · memory <peak_memory>
+```
+
+- `unique keys <unique_keys>` — the number of unique keys stored in the hash table during the build phase.
+- `memory <peak_memory>` — the peak memory used by the hash table during the build phase.
+
+For `grace_hash` join the `Hash table:` line additionally reports how the join adapted to the memory limit, and a `Spill:` line reports whether data was spilled to disk:
+
+```txt
+Hash table: unique keys <unique_keys> · memory <peak_memory> · buckets <buckets> · rehashes <rehashes>
+Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_bytes>
+```
+
+- `buckets <buckets>` — the number of buckets the grace hash join ended up with by the end of execution. This is always a power of `2`.
+- `rehashes <rehashes>` — how many times the number of buckets had to be doubled in order to fit into the memory limit.
+- `Spill:` — a `yes`/`no` flag telling whether any spilling to disk happened. When it did, `left spilled <left_spilled_bytes>` and `right spilled <right_spilled_bytes>` report the compressed bytes spilled from the left (probe) and right (build) sides; when nothing was spilled the line is simply `Spill: no`.
+
+For `partial_merge` join the `Right:` line carries extra information about how the right table was buffered and sorted, and the sorting time is shown on the `Stage (build)` and `Stage (probe)` lines:
+
+```txt
+Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+  Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time>
+  Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time>
+```
+
+- `size <right_size>` — the in-memory size of the buffered right table.
+- `blocks <right_blocks>` — the number of blocks the right table was buffered into.
+- `storage <in-memory|external>` — whether the right table fit into memory (`in-memory`) or had to be spilled to disk (`external`). When it is `external`, an extra `spilled <spilled_bytes>` reports the compressed bytes written to disk.
+- `sort time <sort_time>` — the time spent sorting the right table (on the build stage) and each incoming left block (on the probe stage). Its percentage is a share of *that stage's own busy time* (the sum of its processors' elapsed time), unlike the stage `time` percentage, which is a share of the *whole query's execution time*.
+
+For `full_sorting_merge` join only the common `Left:` and `Right:` lines are printed.
+
+For `direct` join only the `Left:` line is printed, since the right side is a key-value store that is looked up directly rather than materialized into rows.
+
 With `processors = 1`, an extra line is printed under each stage, showing the distribution of elapsed time across the stage's processors:
 
 ```txt

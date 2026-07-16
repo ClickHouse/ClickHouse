@@ -65,6 +65,11 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
+    StepAnalysisReport getAnalysisReport() const override
+    {
+        return join->getAnalysisReport();
+    }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {

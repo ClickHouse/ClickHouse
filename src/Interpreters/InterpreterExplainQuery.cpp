@@ -1183,6 +1183,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
             optimization_settings.query_plan_with_parallel_replicas_builder = parallel_replicas_builder;
+            optimization_settings.collect_analyze_stats = true;
 
             watch.restart();
             plan.optimize(optimization_settings);
