@@ -35,8 +35,6 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
-    options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
-
     return options;
 }
 
@@ -514,7 +512,6 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 | `input_format_parquet_preserve_order`                                          | Avoid reordering rows when reading from Parquet files. Usually makes it much slower.                                                                                                                                              | `0`         |
 | `input_format_parquet_filter_push_down`                                        | When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.                                                                                          | `1`         |
 | `input_format_parquet_bloom_filter_push_down`                                  | When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.                                                                                                          | `0`         |
-| `input_format_parquet_dictionary_filter_push_down`                             | When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, for equality and `IN` conditions, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to `0` to disable. Takes precedence over the bloom filter when both are available. | `1048576`   |
 | `input_format_parquet_allow_missing_columns`                                   | Allow missing columns while reading Parquet input formats                                                                                                                                                                          | `1`         |
 | `input_format_parquet_local_file_min_bytes_for_seek`                           | Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format                                                                                                                          | `8192`      |
 | `input_format_parquet_enable_row_group_prefetch`                               | Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.                                                                                                                          | `1`         |
