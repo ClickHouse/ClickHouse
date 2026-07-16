@@ -357,17 +357,42 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
+    /// A bounded stream reads only the first snapshot and then stops, instead of
+    /// subscribing for further updates.
+    if (subscription->isBounded() && first_snapshot_processed)
+    {
+        /// Tear down the spent snapshot sub-pipeline before finishing.
+        if (!current_sub_pipeline.empty())
+            return Status::UpdatePipeline;
+
+        output.finish();
+        return Status::Finished;
+    }
+
     if (canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
         return Status::Ready;
 
     if (!current_sub_pipeline.empty())
         return Status::UpdatePipeline;
 
+    /// Bounded stream with nothing to read: finish once the first enrichment round has
+    /// established the safe segment (this also covers an empty first snapshot). Keep
+    /// waiting on the fd only until that first enrichment happens.
+    if (subscription->isBounded() && subscription->enrichmentDone())
+    {
+        output.finish();
+        return Status::Finished;
+    }
+
     return Status::Async;
 }
 
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 {
+    /// A non-empty `reading_up_to_block_numbers` means a snapshot sub-pipeline has just finished.
+    if (!reading_up_to_block_numbers.empty())
+        first_snapshot_processed = true;
+
     for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
     {
         auto & position = last_emitted_positions[partition_id];

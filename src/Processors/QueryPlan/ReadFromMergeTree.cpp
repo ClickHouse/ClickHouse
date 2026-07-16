@@ -3395,14 +3395,16 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
     SharedHeader header = getOutputHeader();
-    MergeTreeCursor starting_positions = buildMergeTreeCursor(query_info.table_expression_modifiers->getStreamSettings()->cursor_tree);
+    const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+    MergeTreeCursor starting_positions = buildMergeTreeCursor(stream_settings.cursor_tree);
+    const bool bounded = stream_settings.bounded;
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
+        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i, bounded);
         data.subscription_manager.registerSubscription(subscription);
         pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
             header,

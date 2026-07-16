@@ -21,6 +21,8 @@ public:
 
     struct StreamSettings
     {
+        /// If true, read only the first snapshot and then finish (do not subscribe for updates).
+        bool bounded = false;
         /// Null means "no cursor" (read from the beginning of the table).
         CursorTreeNodePtr cursor_tree;
     };
@@ -105,6 +107,9 @@ TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
 
 inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
 {
+    if (lhs.bounded != rhs.bounded)
+        return false;
+
     if ((lhs.cursor_tree == nullptr) != (rhs.cursor_tree == nullptr))
         return false;
 

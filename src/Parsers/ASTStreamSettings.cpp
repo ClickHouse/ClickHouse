@@ -46,8 +46,19 @@ ASTStreamSettings::ASTStreamSettings(StreamSettings settings_)
 
 void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
+    bool need_space = false;
+
+    if (settings.bounded)
+    {
+        ostr << "BOUNDED";
+        need_space = true;
+    }
+
     if (settings.cursor_tree.has_value())
     {
+        if (need_space)
+            ostr << ' ';
+
         auto tree = buildCursorTree(settings.cursor_tree.value());
         ostr << "CURSOR ";
         formatNested(ostr, tree.get());

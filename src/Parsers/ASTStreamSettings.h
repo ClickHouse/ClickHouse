@@ -17,6 +17,8 @@ class ASTStreamSettings : public IAST
 public:
     struct StreamSettings
     {
+        /// If true, read only the first snapshot and then finish (do not subscribe for updates).
+        bool bounded = false;
         std::optional<Map> cursor_tree;
     };
 

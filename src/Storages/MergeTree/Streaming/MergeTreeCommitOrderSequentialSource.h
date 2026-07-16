@@ -59,6 +59,9 @@ private:
     /// Runtime information
     MergeTreeCursor last_emitted_positions;
 
+    /// For bounded streams: set once the first snapshot has been fully read.
+    bool first_snapshot_processed = false;
+
     Processors current_sub_pipeline;
     std::unique_ptr<QueryPlanResourceHolder> current_resources;
     std::map<String, Int64> reading_up_to_block_numbers;

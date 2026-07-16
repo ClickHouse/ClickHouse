@@ -3,9 +3,10 @@
 namespace DB
 {
 
-MergeTreeBoundsSubscription::MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_)
+MergeTreeBoundsSubscription::MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_, bool bounded_)
     : query_subscriptions_count(query_subscriptions_count_)
     , current_subscription_index(current_subscription_index_)
+    , bounded(bounded_)
 {
 }
 
@@ -47,6 +48,28 @@ void MergeTreeBoundsSubscription::disable()
     }
 
     wake.notify();
+}
+
+void MergeTreeBoundsSubscription::onEnrichmentRound()
+{
+    {
+        std::lock_guard guard(mutex);
+        if (is_disabled)
+            return;
+        enrichment_done = true;
+    }
+
+    /// A bounded stream may be parked on the wakeup fd waiting to learn the first safe
+    /// segment. Wake it after every round - even one that advanced nothing - so it can
+    /// read the first snapshot or finish (e.g. over an empty table).
+    if (bounded)
+        wake.notify();
+}
+
+bool MergeTreeBoundsSubscription::enrichmentDone() const
+{
+    std::lock_guard guard(mutex);
+    return enrichment_done;
 }
 
 }

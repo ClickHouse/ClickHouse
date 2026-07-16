@@ -168,7 +168,7 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << settings.nl_or_ws << indent_str << "STREAM";
 
         const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
-        if (typed_stream_settings.settings.cursor_tree.has_value())
+        if (typed_stream_settings.settings.bounded || typed_stream_settings.settings.cursor_tree.has_value())
         {
             ostr << ' ';
             stream_settings->format(ostr, settings, state, frame);

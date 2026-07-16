@@ -68,9 +68,13 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
 
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserKeyword s_bounded{Keyword::BOUNDED};
     ParserKeyword s_cursor{Keyword::CURSOR};
 
     ASTStreamSettings::StreamSettings settings;
+
+    if (s_bounded.ignore(pos, expected))
+        settings.bounded = true;
 
     if (s_cursor.ignore(pos, expected))
     {

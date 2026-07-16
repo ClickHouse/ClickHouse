@@ -981,6 +981,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 {
                     stream_settings = TableExpressionModifiers::StreamSettings{};
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
+                    stream_settings->bounded = ast_stream_settings.settings.bounded;
                     if (ast_stream_settings.settings.cursor_tree.has_value())
                         stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
                 }

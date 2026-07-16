@@ -482,6 +482,7 @@ static ASTPtr convertIntoTableExpressionAST(
         if (stream_settings.has_value())
         {
             ASTStreamSettings::StreamSettings ast_stream_settings;
+            ast_stream_settings.bounded = stream_settings->bounded;
             if (stream_settings->cursor_tree)
                 ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
 
