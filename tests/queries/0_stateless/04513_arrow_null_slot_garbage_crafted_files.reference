@@ -34,12 +34,21 @@
 === struct_int128_binary_garbage_under_null, native_reader=1
 \N
 (7)
+=== struct_array_ipv6_binary_garbage_under_null, native_reader=1
+\N
+(['::1'])
 === struct_date32_garbage_under_null as Tuple(d Int32), native_reader=1
 (0)
 (42)
 === struct_date32_garbage_under_null as Tuple(d Date32), native_reader=1
 ('1970-01-01')
 ('1970-02-12')
+=== struct_ipv6_binary_garbage_under_null as Tuple(v IPv6), native_reader=1
+('::')
+('::1')
+=== struct_int128_binary_garbage_under_null as Tuple(n Int128), native_reader=1
+(0)
+(7)
 === struct_date32_garbage_under_null, native_reader=0
 \N
 ('1970-02-12')
@@ -76,12 +85,21 @@
 === struct_int128_binary_garbage_under_null, native_reader=0
 \N
 (7)
+=== struct_array_ipv6_binary_garbage_under_null, native_reader=0
+\N
+(['::1'])
 === struct_date32_garbage_under_null as Tuple(d Int32), native_reader=0
 (0)
 (42)
 === struct_date32_garbage_under_null as Tuple(d Date32), native_reader=0
 ('1970-01-01')
 ('1970-02-12')
+=== struct_ipv6_binary_garbage_under_null as Tuple(v IPv6), native_reader=0
+('::')
+('::1')
+=== struct_int128_binary_garbage_under_null as Tuple(n Int128), native_reader=0
+(0)
+(7)
 === list_date32_garbage_in_null_slot_range, native reader
 ['1970-01-01']
 ['1970-01-02']

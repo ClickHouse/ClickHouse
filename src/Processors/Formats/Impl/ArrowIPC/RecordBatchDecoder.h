@@ -7,6 +7,7 @@
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -40,6 +41,15 @@ private:
 /// leaves the value bytes of such slots undefined, so value-level validation must not reject them
 /// and their values decode as type defaults.
 using InvisibleRowsMask = NullMap;
+
+/// Reinterprets the raw bytes of a variable-width binary column (`ColumnString`) as an IPv6 or big
+/// integer, matching the Apache Arrow library reader's `readIPv6ColumnFromBinaryData` /
+/// `readColumnWithBigNumberFromBinaryData`. `null_map` (may be null) marks rows skipped in the width
+/// check and defaulted in the output — the caller passes the composed invisible-rows set, so bytes no
+/// one can observe neither fail the check nor force the fallback. Returns nullptr when the target is
+/// not one of those types, or when any visible row is not exactly the target width — the column is
+/// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
+MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
 /// The union of a row-aligned null map with an optional second one: returns `own` unchanged when
 /// `other` is null, otherwise fills `storage` with the element-wise OR and returns it. The inputs are

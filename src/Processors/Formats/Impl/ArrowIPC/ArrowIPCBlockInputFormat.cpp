@@ -531,47 +531,6 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
     return out;
 }
 
-/// Reinterpret the raw bytes of a variable-width binary column (`ColumnString`) as an IPv6 or big integer,
-/// matching the library reader's `readIPv6ColumnFromBinaryData` / `readColumnWithBigNumberFromBinaryData`.
-/// `null_map` (may be null) marks rows skipped in the width check and defaulted in the output. Returns
-/// nullptr when the target is not one of those types, or when any non-null row is not exactly the target
-/// width - in that case the column is left as String for the subsequent cast (matching the library, which
-/// falls back to text parsing rather than failing).
-MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null)
-{
-    const WhichDataType which(to_no_null);
-    size_t width = 0;
-    if (which.isIPv6() || which.isInt128() || which.isUInt128())
-        width = 16;
-    else if (which.isInt256() || which.isUInt256())
-        width = 32;
-    else
-        return nullptr;
-
-    const size_t rows = str.size();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        if (null_map && (*null_map)[i])
-            continue;
-        if (str.getDataAt(i).size() != width)
-            return nullptr;
-    }
-
-    auto out = to_no_null->createColumn();
-    out->reserve(rows);
-    for (size_t i = 0; i < rows; ++i)
-    {
-        if (null_map && (*null_map)[i])
-        {
-            out->insertDefault();
-            continue;
-        }
-        const auto ref = str.getDataAt(i);
-        out->insertData(ref.data(), ref.size());
-    }
-    return out;
-}
-
 /// Recursively rewrite the raw-byte leaves (fixed_size_binary / binary) of a decoded column into the
 /// UUID / IPv6 / big-integer types the requested `to_type` asks for, descending through Nullable, Array,
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
@@ -603,7 +562,9 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
             auto [new_nested, new_nested_type]
                 = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_no_null, combined);
-            if (new_nested.get() == col_nullable->getNestedColumnPtr().get())
+            /// A leaf the decoder already converted comes back with the same column but a new type, so
+            /// change detection must look at both.
+            if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
                 return {col, from_type};
             if (new_nested->canBeInsideNullable())
                 return {ColumnNullable::create(new_nested, col_nullable->getNullMapColumnPtr()),
@@ -620,9 +581,11 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             return {col, from_type};
         auto [new_data, new_data_type] = reinterpretRawBytes(
             col_arr->getDataPtr(), from_arr->getNestedType(), to_arr->getNestedType(), /*ancestor_nulls=*/nullptr);
-        if (new_data.get() == col_arr->getDataPtr().get())
+        if (new_data.get() == col_arr->getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
             return {col, from_type};
-        auto new_arr = ColumnArray::create(IColumn::mutate(std::move(new_data)), IColumn::mutate(col_arr->getOffsetsPtr()));
+        /// The immutable factory shares both children; `IColumn::mutate` here would deep-clone the
+        /// (possibly unchanged and shared) element column just to rewrap it.
+        auto new_arr = ColumnArray::create(new_data, col_arr->getOffsetsPtr());
         return {std::move(new_arr), std::make_shared<DataTypeArray>(new_data_type)};
     }
 
@@ -642,7 +605,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         for (size_t i = 0; i < to_elems.size(); ++i)
         {
             auto [c, t] = reinterpretRawBytes(col_tup->getColumnPtr(i), from_elems[i], to_elems[i], ancestor_nulls);
-            if (c.get() != col_tup->getColumnPtr(i).get())
+            if (c.get() != col_tup->getColumnPtr(i).get() || t.get() != from_elems[i].get())
                 changed = true;
             new_cols[i] = std::move(c);
             new_types[i] = std::move(t);
@@ -668,7 +631,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         auto to_nested = std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{to_map->getKeyType(), to_map->getValueType()}));
         auto [new_nested, new_nested_type] = reinterpretRawBytes(col_map->getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls);
-        if (new_nested.get() == col_map->getNestedColumnPtr().get())
+        if (new_nested.get() == col_map->getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
         auto new_map_type = std::make_shared<DataTypeMap>(new_tuple.getElement(0), new_tuple.getElement(1));
@@ -685,6 +648,12 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
     const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
 
+    /// The decoder already converts a variable binary leaf whose type hint reaches it (mask-aware, so
+    /// it also covers invisibility this phase cannot see: dropped struct null maps, masked list
+    /// ranges); only the declared type needs reconciling then.
+    if (nested.getDataType() == to_no_null->getTypeId())
+        return {col, nullable ? std::make_shared<DataTypeNullable>(to_no_null) : to_no_null};
+
     /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
     /// exempt from the width sniff and decode as defaults.
     NullMap combined_storage;
@@ -697,7 +666,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
         typed = reinterpretFixedStringLeaf(*fixed, to_no_null);
     else if (const auto * str = typeid_cast<const ColumnString *>(&nested))
-        typed = reinterpretStringLeaf(*str, null_map, to_no_null);
+        typed = ArrowIPC::reinterpretStringLeaf(*str, null_map, to_no_null);
     if (!typed)
         return {col, from_type};
 

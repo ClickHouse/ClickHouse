@@ -170,6 +170,33 @@ DataTypePtr mapEntriesHint(const DataTypePtr & hint)
         return std::make_shared<DataTypeTuple>(DataTypes{map->getKeyType(), map->getValueType()});
     return nullptr;
 }
+
+/// The value width of a type stored in Arrow as raw variable binary bytes (IPv6, big integers), or 0
+/// for every other type. The single source of truth for which types `reinterpretStringLeaf` handles.
+size_t rawByteWidth(const WhichDataType & which)
+{
+    if (which.isIPv6() || which.isInt128() || which.isUInt128())
+        return 16;
+    if (which.isInt256() || which.isUInt256())
+        return 32;
+    return 0;
+}
+
+/// The IPv6 / big-integer type a hint requests for a variable binary leaf, or null when it requests
+/// none of those. The conversion runs right after the leaf decodes (see the Utf8/Binary and view
+/// branches of `decodeInner`), where the invisible-rows mask still exists — hidden bytes under a
+/// dropped struct null map or in a masked list range must not force the column into the text-parsed
+/// String fallback. The post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` then only
+/// reconciles the declared type.
+DataTypePtr rawByteTargetType(const DataTypePtr & hint)
+{
+    if (!hint)
+        return nullptr;
+    DataTypePtr stripped = stripHint(hint);
+    if (rawByteWidth(WhichDataType(stripped)) != 0)
+        return stripped;
+    return nullptr;
+}
 }
 
 void DictionaryRegistry::set(Int64 id, ColumnPtr values, bool is_delta)
@@ -198,6 +225,36 @@ ColumnPtr DictionaryRegistry::get(Int64 id) const
     if (it == dictionaries.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch references unknown dictionary id {}", id);
     return it->second;
+}
+
+MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null)
+{
+    const size_t width = rawByteWidth(WhichDataType(to_no_null));
+    if (width == 0)
+        return nullptr;
+
+    const size_t rows = str.size();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (null_map && (*null_map)[i])
+            continue;
+        if (str.getDataAt(i).size() != width)
+            return nullptr;
+    }
+
+    auto out = to_no_null->createColumn();
+    out->reserve(rows);
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (null_map && (*null_map)[i])
+        {
+            out->insertDefault();
+            continue;
+        }
+        const auto ref = str.getDataAt(i);
+        out->insertData(ref.data(), ref.size());
+    }
+    return out;
 }
 
 const flatbuf::FieldNode & RecordBatchDecoder::nextNode()
@@ -610,6 +667,12 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     string_column.insertData(data_slice.ptr + prev, static_cast<size_t>(end - prev));
                 prev = end;
             }
+            /// A type hint can request the raw bytes as an IPv6 or big integer (how the ClickHouse
+            /// writer stores those types); convert here, where the invisible-rows mask still exempts
+            /// hidden bytes from the width sniff (see `rawByteTargetType`).
+            if (const DataTypePtr raw_target = rawByteTargetType(effective_hint))
+                if (MutableColumnPtr typed = reinterpretStringLeaf(string_column, invisible_rows, raw_target))
+                    return typed;
             break;
         }
         case TypeKind::BinaryView:
@@ -667,6 +730,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     string_column.insertData(data.ptr + offset, static_cast<size_t>(length));
                 }
             }
+            /// Same raw-byte type-hint conversion as the Utf8/Binary branch above.
+            if (const DataTypePtr raw_target = rawByteTargetType(effective_hint))
+                if (MutableColumnPtr typed = reinterpretStringLeaf(string_column, invisible_rows, raw_target))
+                    return typed;
             break;
         }
         case TypeKind::FixedSizeBinary:

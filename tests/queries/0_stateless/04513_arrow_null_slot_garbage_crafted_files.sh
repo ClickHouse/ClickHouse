@@ -36,6 +36,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #                                                force the whole column down the text-parsed String
 #                                                fallback (that would corrupt the visible rows too)
 #   struct_int128_binary_garbage_under_null:     as above for Nullable(Tuple(n Int128))
+#   struct_array_ipv6_binary_garbage_under_null: struct<a: list<binary>> read as
+#                                                Nullable(Tuple(a Array(IPv6))); the NULL row's list
+#                                                element is not 16 bytes (the width sniff must see the
+#                                                invisibility through the list offsets)
 #
 # Read only with the native reader — a NULL list/map slot whose offsets span a non-empty range
 # (spec-legal: offsets stay monotonic, the range's bytes are undefined). The Apache Arrow library
@@ -87,6 +91,10 @@ for reader in 1 0; do
     $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_int128_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(n Int128))')
         SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
 
+    echo "=== struct_array_ipv6_binary_garbage_under_null, native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_array_ipv6_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(a Array(IPv6)))')
+        SETTINGS allow_experimental_nullable_tuple_type = 1, input_format_arrow_use_native_reader = $reader"
+
     # Without the nullable-tuple setting the struct is read as a plain Tuple: its null map is dropped
     # and the NULL row becomes a visible one, which must show type defaults, not the hidden bytes.
     # The numeric type hint additionally selects the raw date32 read that skips the range check.
@@ -95,6 +103,12 @@ for reader in 1 0; do
         SETTINGS input_format_arrow_use_native_reader = $reader"
     echo "=== struct_date32_garbage_under_null as Tuple(d Date32), native_reader=$reader"
     $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_date32_garbage_under_null.arrow', 'Arrow', 's Tuple(d Date32)')
+        SETTINGS input_format_arrow_use_native_reader = $reader"
+    echo "=== struct_ipv6_binary_garbage_under_null as Tuple(v IPv6), native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_ipv6_binary_garbage_under_null.arrow', 'Arrow', 's Tuple(v IPv6)')
+        SETTINGS input_format_arrow_use_native_reader = $reader"
+    echo "=== struct_int128_binary_garbage_under_null as Tuple(n Int128), native_reader=$reader"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$CUR_DIR/data_arrow/struct_int128_binary_garbage_under_null.arrow', 'Arrow', 's Tuple(n Int128)')
         SETTINGS input_format_arrow_use_native_reader = $reader"
 done
 
