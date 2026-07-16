@@ -493,10 +493,11 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
                 /// reading before the suffix and resolve the value in their own time zone, which keeps
                 /// the deadline in the deep past (i.e. the credential stays expired) even though the
                 /// exact instant may shift by the time zone offset. The value is clamped to
-                /// `1900-01-01 00:00:00 UTC`, the lower bound of the datetime range supported by every
-                /// reader of this format; all deadlines in the past are equivalent (already expired).
-                static constexpr time_t min_datetime_form = -2208988800; /// 1900-01-01 00:00:00 UTC
-                node->valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(std::max(valid_until, min_datetime_form)));
+                /// `MIN_VALID_UNTIL_TIME`, the lower bound of the datetime range supported by every reader
+                /// of this format; `CREATE`/`ALTER USER` rejects deadlines earlier than that bound (see
+                /// `getValidUntilFromAST`), so this clamp only guards `AuthenticationData` objects built
+                /// without going through query parsing (e.g. directly via `setValidUntil`).
+                node->valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(std::max(valid_until, MIN_VALID_UNTIL_TIME)));
             }
         }
         else

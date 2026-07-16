@@ -124,6 +124,14 @@ namespace DB
             const auto & utc_time_zone = DateLUT::instance("UTC");
 
             parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+
+            /// Deadlines before this bound cannot be represented exactly in the stored access entity
+            /// encoding, so accepting them here would only be discovered later, as a silently clamped
+            /// value after a restart or replication round-trip (see `AuthenticationData::toAST`).
+            if (time < MIN_VALID_UNTIL_TIME)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
         }
         else
         {

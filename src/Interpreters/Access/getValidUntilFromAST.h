@@ -9,6 +9,13 @@
 
 namespace DB
 {
+    /// The stored access entity encoding (see `AuthenticationData::toAST`) writes a pre-epoch deadline as
+    /// a date-time string that older servers - whose `DateLUT` supports no year earlier than 1900 - can
+    /// still parse in their own time zone. `CREATE`/`ALTER USER ... VALID UNTIL` therefore rejects deadlines
+    /// before this bound: accepting them would make `SHOW CREATE USER` show a different (clamped) deadline
+    /// after a restart or replication round-trip than the one that was originally specified.
+    constexpr time_t MIN_VALID_UNTIL_TIME = -2208988800; /// 1900-01-01 00:00:00 UTC
+
     /// Returns the current wall-clock time in seconds. When resolving `VALID FOR <interval>`, sample it
     /// once per `CREATE`/`ALTER USER` statement and pass it to every `getValidUntilFromAST` call, so that
     /// all `VALID FOR` clauses in the same query resolve against the same reference point, instead of each
