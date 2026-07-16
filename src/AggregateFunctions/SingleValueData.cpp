@@ -1362,18 +1362,23 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         const UInt32 bytes_to_read = size - 1;
 
         /// `rhs_size` is taken from possibly corrupted or truncated user input and may be
-        /// arbitrarily large (up to ~2 GiB). If the existing buffer is already big enough,
-        /// reuse it directly. Otherwise, do not pre-allocate the whole declared size upfront,
-        /// or incomplete input with a huge declared size would attempt a huge allocation
-        /// before failing to read. Instead grow the destination only as bytes actually arrive,
-        /// via Arena::allocContinue, which extends the current Arena chunk in place when there
-        /// is room and otherwise copies just the bytes read so far -- unlike allocating an ever
-        /// bigger buffer on every refill, which would leak every intermediate allocation
-        /// (Arena never frees). Either way, incomplete input fails with CANNOT_READ_ALL_DATA
-        /// without a large allocation up front.
-        if (capacity < bytes_to_read)
+        /// arbitrarily large (up to ~2 GiB). Do not pre-allocate the whole declared size
+        /// before the data has actually been read: incomplete input with a huge declared size
+        /// must fail cleanly with CANNOT_READ_ALL_DATA rather than attempting a huge allocation
+        /// up front (which can trip the memory tracker and fail with MEMORY_LIMIT_EXCEEDED).
+        ///
+        /// When the existing buffer is already large enough, read into it directly. Otherwise
+        /// stage the payload in a temporary heap buffer that grows only as bytes actually
+        /// arrive. The heap releases its intermediate buffers as it grows, unlike the Arena,
+        /// which never frees (see Arena::allocContinue) -- so a valid large state is not
+        /// inflated by every intermediate reallocation. Only once the whole payload has arrived
+        /// do we make a single Arena allocation (rounded up to a power of two) and copy into it.
+        ///
+        /// The reuse branch requires `capacity >= size` (not just `>= bytes_to_read`) so that
+        /// the legacy-format fixup below can safely append one byte at index `size - 1`.
+        if (capacity < size)
         {
-            const char * range_start = nullptr;
+            String tmp;
             UInt32 bytes_read = 0;
             while (bytes_read < bytes_to_read)
             {
@@ -1384,21 +1389,25 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
                         bytes_read,
                         bytes_to_read);
 
-                const UInt32 chunk = static_cast<UInt32>(std::min<size_t>(bytes_to_read - bytes_read, buf.available()));
-                memcpy(arena->allocContinue(chunk, range_start), buf.position(), chunk);
+                const size_t chunk = std::min<size_t>(bytes_to_read - bytes_read, buf.available());
+                tmp.append(buf.position(), chunk);
                 buf.position() += chunk;
-                bytes_read += chunk;
+                bytes_read += static_cast<UInt32>(chunk);
             }
 
-            large_data = const_cast<char *>(range_start);
-            capacity = bytes_to_read;
+            readChar(last_char, buf);
+
+            /// Reserve exactly what we need, including the legacy-format fixup byte when the
+            /// trailing character is not the expected zero terminator. `allocateLargeDataIfNeeded`
+            /// rounds up to a power of two, so the fixup below stays within bounds.
+            allocateLargeDataIfNeeded(bytes_to_read + (last_char != 0 ? 1 : 0), arena);
+            memcpy(large_data, tmp.data(), bytes_to_read);
         }
         else
         {
             buf.readStrict(large_data, bytes_to_read);
+            readChar(last_char, buf);
         }
-
-        readChar(last_char, buf);
     }
 
     /// Compatibility with an invalid format in certain old versions.
