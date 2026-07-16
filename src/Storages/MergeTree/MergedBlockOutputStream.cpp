@@ -3,6 +3,7 @@
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Formats/FormatFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -61,6 +62,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         save_marks_in_cache,
         save_primary_index_in_memory,
         blocks_are_granules_size);
+
+    /// Parquet part writer builds its WriteOptions from these; harmless for other part types.
+    writer_settings.format_settings = getFormatSettings(
+        data_part->storage.getContext(), data_part->storage.getContext()->getSettingsRef());
 
     data_part_storage->createDirectories();
 

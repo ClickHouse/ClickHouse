@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -147,6 +148,12 @@ struct MergeTreeWriterSettings
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
     bool compress_per_column_in_compact_parts{};
+
+    /// Format settings used when a data part is stored in `Parquet` format.
+    /// Populated by the caller (it has the query context); the whole struct is kept because the
+    /// Parquet part writer needs both the parquet write knobs and the text-serialization settings
+    /// (e.g. for JSON columns).
+    FormatSettings format_settings;
 };
 
 }

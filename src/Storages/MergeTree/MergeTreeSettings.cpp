@@ -82,6 +82,10 @@ namespace ErrorCodes
     DECLARE(UInt64, min_rows_for_wide_part, 0, R"(
     Minimal number of rows to create a data part in `Wide` format instead of `Compact`.
     )", 0) \
+    DECLARE(Bool, enable_parquet_part_format, false, R"(
+    Experimental. When enabled, new data parts are stored in `Parquet` format
+    (a single `data.parquet` file per part) instead of the native `Wide`/`Compact` format.
+    )", 0) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
     The maximum number of streams (columns) that can be flushed in parallel
     (analog of max_insert_delayed_streams_for_parallel_write for merges). Works

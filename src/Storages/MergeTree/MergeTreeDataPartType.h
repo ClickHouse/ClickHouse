@@ -22,6 +22,9 @@ public:
         /// Data of all columns is stored in one file. Marks are also stored in single file.
         Compact,
 
+        /// Data of all columns is stored in one parquet file.
+        Parquet,
+
         Unknown,
     };
 

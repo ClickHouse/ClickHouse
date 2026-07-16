@@ -40,6 +40,8 @@ public:
     size_t getNumberOfOpenStreams() const override { return 1; }
 
 private:
+    friend class MergeTreeDataPartWriterParquet;
+
     /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
     void fillDataChecksums(MergeTreeDataPartChecksums & checksums);
     void finishDataSerialization(bool sync);

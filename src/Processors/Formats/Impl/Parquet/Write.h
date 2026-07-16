@@ -168,6 +168,11 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
+/// Builds WriteOptions from the parquet-related fields of FormatSettings. Shared by
+/// ParquetBlockOutputFormat and the MergeTree Parquet part writer so that every knob
+/// (compression, dictionary, bloom filter, page index, ...) is mapped in one place.
+WriteOptions writeOptionsFromFormatSettings(const FormatSettings & format_settings);
+
 SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
 
 void prepareColumnForWrite(
@@ -195,6 +200,7 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header);
+    const Block & header,
+    const std::vector<parq::KeyValue> & extra_key_value_metadata = {});
 
 }

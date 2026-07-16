@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -92,10 +93,12 @@ std::string MarkType::getFileExtension() const
 
     switch (part_type)
     {
-        case MergeTreeDataPartType::Wide:
-            return res + "2";
+            case MergeTreeDataPartType::Wide:
+                return res + "2";
         case MergeTreeDataPartType::Compact:
             return res + (with_substreams ? "4" : "3");
+        case MergeTreeDataPartType::Parquet:
+            return res + "5";
         case MergeTreeDataPartType::Unknown:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
     }

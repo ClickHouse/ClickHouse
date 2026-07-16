@@ -86,6 +86,7 @@ namespace CurrentMetrics
 
     extern const Metric PartsWide;
     extern const Metric PartsCompact;
+    extern const Metric PartsParquet;
 }
 
 namespace ProfileEvents
@@ -435,6 +436,9 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::add(CurrentMetrics::PartsCompact);
             return;
+        case MergeTreeDataPartType::Parquet:
+            CurrentMetrics::add(CurrentMetrics::PartsParquet);
+            return;
         case MergeTreeDataPartType::Unknown:
             return;
     }
@@ -449,6 +453,9 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
             return;
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::sub(CurrentMetrics::PartsCompact);
+            return;
+        case MergeTreeDataPartType::Parquet:
+            CurrentMetrics::sub(CurrentMetrics::PartsParquet);
             return;
         case MergeTreeDataPartType::Unknown:
             return;
