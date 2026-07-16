@@ -4244,11 +4244,6 @@ let image_preview_y = 0;
 /// finishes after the cursor has left, or after a different image link was entered,
 /// must not reveal the preview - the `load` handler checks this before showing.
 let image_preview_hovered_url = null;
-/// URL of the link currently under the cursor, tracked regardless of whether the
-/// preview is actually showing (i.e. regardless of `image_preview_modifier_held`),
-/// so pressing the modifier while already hovering a link starts the preview
-/// immediately instead of requiring the cursor to re-enter the link.
-let image_preview_candidate_url = null;
 /// The preview only loads and displays while Ctrl (Cmd on Mac) is held: merely
 /// moving the cursor over a table cell must not make the browser fetch a URL taken
 /// from untrusted query results, so an explicit modifier key is required.
@@ -4258,14 +4253,12 @@ function setImagePreviewModifierHeld(held)
 {
     if (held === image_preview_modifier_held) { return; }
     image_preview_modifier_held = held;
-    if (held && image_preview_candidate_url !== null)
-    {
-        showImagePreview(image_preview_candidate_url);
-    }
-    else
-    {
-        hideImagePreview();
-    }
+    /// Pressing the modifier does not fetch anything by itself: the fetch stays on the
+    /// pointer path (`mouseenter`/`mousemove` over the link with the modifier already
+    /// held), so an unrelated shortcut such as `Ctrl+Enter` or `Cmd+C` while the cursor
+    /// happens to rest on an image link cannot trigger an outbound request.
+    /// Releasing the modifier hides the preview.
+    if (!held) { hideImagePreview(); }
 }
 
 window.addEventListener('keydown', (event) => {
@@ -4338,27 +4331,28 @@ function attachImagePreview(link, url) {
     link.addEventListener('mouseenter', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
-        image_preview_candidate_url = url;
         if (image_preview_modifier_held) { showImagePreview(url); }
     });
     link.addEventListener('mousemove', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
+        /// Pressing the modifier while already over the link starts the preview on the
+        /// next cursor movement: the bare `keydown` must not fetch (see
+        /// `setImagePreviewModifierHeld`), and once the preview is active for this URL
+        /// (`image_preview_hovered_url`), further movement only repositions it.
+        if (image_preview_modifier_held && image_preview_hovered_url !== url) { showImagePreview(url); }
         positionImagePreview();
     });
     link.addEventListener('mouseleave', () => {
-        dismissImagePreview();
+        hideImagePreview();
     });
 }
 
-/// Hide the floating image preview and stop any pending work for it, without forgetting
-/// which link the cursor is over (`image_preview_candidate_url`): releasing the modifier
-/// hides the preview through here, but keeping the candidate lets pressing the modifier
-/// again re-preview the same still-hovered link. Clearing `image_preview_hovered_url`
-/// suppresses an in-flight `load` that would otherwise reveal a stale preview; detaching
-/// the source aborts a still-running download, so a slow or large image does not keep
-/// loading invisibly after the preview is dismissed (re-showing the link refetches,
-/// normally from the browser cache).
+/// Hide the floating image preview and stop any pending work for it. Clearing
+/// `image_preview_hovered_url` suppresses an in-flight `load` that would otherwise
+/// reveal a stale preview; detaching the source aborts a still-running download, so a
+/// slow or large image does not keep loading invisibly after the preview is dismissed
+/// (re-showing the link refetches, normally from the browser cache).
 function hideImagePreview() {
     image_preview_hovered_url = null;
     if (image_preview)
@@ -4369,18 +4363,6 @@ function hideImagePreview() {
         image_preview.removeAttribute('src');
         delete image_preview.dataset.url;
     }
-}
-
-/// Forget the link under the cursor (`image_preview_candidate_url`) and hide the preview.
-/// Used by every teardown path other than modifier release: `mouseleave`, and - like the
-/// table balloons below - any `scroll` (this `position: fixed` preview would otherwise
-/// stay pinned when the hovered link scrolls out from under a stationary cursor, which
-/// delivers no mouse event, so `mouseleave` does not fire) and result `clear()`. After
-/// any of these the cursor is no longer over the link, so a later modifier press must not
-/// fetch the now-stale candidate URL - unlike `hideImagePreview`, which keeps it.
-function dismissImagePreview() {
-    image_preview_candidate_url = null;
-    hideImagePreview();
 }
 
 /// Hide the currently visible table-info balloon on any scroll: it uses
@@ -4420,9 +4402,9 @@ function positionTableBalloon(table) {
 
 document.addEventListener('scroll', () => {
     /// The image preview follows the cursor and has no keyboard-focus counterpart, so
-    /// dismiss it on any scroll: the link may have moved out from under a stationary
-    /// cursor, so forget it too (see `dismissImagePreview`) rather than merely hiding.
-    dismissImagePreview();
+    /// hide it on any scroll: the link may have moved out from under a stationary
+    /// cursor, which delivers no mouse event, so `mouseleave` does not fire.
+    hideImagePreview();
     /// When a table row (or one of its balloon links) is focused via the keyboard,
     /// keep its balloon glued to the row across the scroll instead of hiding it.
     const focused_table = document.activeElement?.closest?.('.table');
@@ -6378,13 +6360,11 @@ query_area.onkeydown = (e) => {
 
 function clear()
 {
-    /// Also dismiss the floating image preview here, not only from `mouseleave` / `scroll`:
+    /// Also hide the floating image preview here, not only from `mouseleave` / `scroll`:
     /// rerunning a query (`Ctrl+Enter`) tears down the hovered result cell through this
     /// path without delivering either event, so the `position: fixed` preview would
-    /// otherwise stay pinned over the next result until some later scroll. Forget the
-    /// hovered link too (see `dismissImagePreview`) so a later modifier press does not
-    /// fetch the URL of a cell that no longer exists.
-    dismissImagePreview();
+    /// otherwise stay pinned over the next result until some later scroll.
+    hideImagePreview();
     resultEl.clear();
     resultEl.style.display = '';
     progressEl.clear();
