@@ -933,19 +933,12 @@ Pipe IcebergMetadata::alterPartition(
             commands.size());
 
     const auto & command = commands.at(0);
+    chassert(command.type == PartitionCommand::Type::DROP_PARTITION);
 
-    switch (command.type)
-    {
-        case PartitionCommand::Type::DROP_PARTITION: {
-            if (command.part || command.detach)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
+    if (command.part || command.detach)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
 
-            alterPartitionDropImpl(command, context, std::move(catalog), std::move(storage_id));
-            break;
-        }
-        default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
-    }
+    alterPartitionDropImpl(command, context, std::move(catalog), std::move(storage_id));
 
     persistent_components.invalidateMetadataCache();
     return {};
