@@ -288,6 +288,58 @@ SecondPullOutcome attemptSecondPull(size_t first_rows, size_t second_rows, size_
     return {second_chunk_pulled, work_threw_budget_error};
 }
 
+/// Drive one scatter through two SEPARATE input blocks, draining exactly one lane between the two pushes so
+/// the first block's remaining shard chunks stay resident while a starving output opens up to admit the
+/// second. Returns the shared counter with both blocks' shard chunks still buffered. Used to check that a
+/// physical buffer referenced, by pointer, by both blocks (not just within one of them) is only charged once.
+Int64 twoBlocksResidentBytes(
+    const SharedHeader & header, Columns first_columns, Columns second_columns, size_t num_shards, const ColumnNumbers & key_columns)
+{
+    const size_t first_rows = first_columns.at(0)->size();
+    const size_t second_rows = second_columns.at(0)->size();
+    auto counter = std::make_shared<std::atomic<Int64>>(0);
+
+    /// Unbounded budget: this test measures the counter, it must not throw.
+    BufferedShardByHashTransform transform(
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), counter);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+    for (auto & sink : sinks)
+        sink->setNeeded();
+
+    source_output.push(Chunk(std::move(first_columns), first_rows));
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        transform.work();
+    }
+
+    /// The downstream merge consumes one lane, so that output starves for more data on the next prepare(). The
+    /// first block's charge otherwise stays resident (its other shard chunks are still parked).
+    if (sinks.front()->hasData())
+        sinks.front()->pull();
+
+    source_output.push(Chunk(std::move(second_columns), second_rows));
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        transform.work();
+    }
+
+    return counter->load();
+}
+
 }
 
 /// The admission decision for the shared buffer budget runs on each pulled chunk's measured size: a chunk whose
@@ -565,4 +617,47 @@ TEST(BufferedShardByHashTransform, PortResidentChunksChargedUntilConsumed)
     EXPECT_GT(while_parked, 0);
     /// ...and fully released once the downstream pulls them out of the ports (no leftover charge).
     EXPECT_EQ(after_consumed, 0);
+}
+
+/// The buffer budget must de-duplicate a physical buffer shared, by pointer, across more than one *buffered
+/// block*, not only within one block. `ColumnConst::cloneResized` - used both by `scatter` and by the query
+/// engine when it hands out an already-evaluated constant to a later block - keeps the same backing `data`
+/// object, so two SEPARATE blocks pulled one after another can reference the identical payload column.
+/// Charging each block's registration independently (a fresh de-duplication set per pull, forgotten once the
+/// pull is over) would bill the payload once per block that references it; the shared counter must instead
+/// charge it exactly once for as long as either block still holds it.
+TEST(BufferedShardByHashTransform, SharedPayloadAcrossBufferedBlocksChargedOnce)
+{
+    const size_t num_shards = 8;
+    const size_t first_rows = 4000;
+    const size_t second_rows = 4000;
+    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates both blocks' bytes.
+
+    auto payload = ColumnString::create();
+    const std::string big_value(value_len, 'x');
+    payload->insertData(big_value.data(), big_value.size());
+    const ColumnPtr shared_data = std::move(payload);
+    const Int64 payload_bytes = static_cast<Int64>(shared_data->allocatedBytes());
+    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+
+    /// Two SEPARATE `ColumnConst` wrappers - mirroring what `cloneResized` produces - both referencing the
+    /// identical backing `data` object by pointer.
+    ColumnPtr first_constant = ColumnConst::create(shared_data, first_rows);
+    ColumnPtr second_constant = ColumnConst::create(shared_data, second_rows);
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns first_columns{makeDistinctKeyColumn(first_rows), first_constant};
+    Columns second_columns{makeDistinctKeyColumn(second_rows), second_constant};
+    const Int64 buffered
+        = twoBlocksResidentBytes(header, std::move(first_columns), std::move(second_columns), num_shards, ColumnNumbers{0});
+
+    /// Charged once across BOTH blocks: at least one payload (not dropped), and below two payloads (the
+    /// regression this guards: charging it once per block that references it would double it).
+    EXPECT_GE(buffered, payload_bytes);
+    EXPECT_LT(buffered, 2 * payload_bytes);
 }

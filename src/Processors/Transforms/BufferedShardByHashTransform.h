@@ -50,10 +50,11 @@ public:
     /// each pulled block's measured size and re-checked after the block is split (`scatter` can grow
     /// buffers beyond the pre-split size), so the buffered bytes can transiently exceed the cap by up to one
     /// block's post-split footprint per transform before the exception is raised. Both measurements charge
-    /// every distinct physical buffer exactly once, however many references the block holds to it (a
-    /// `ColumnConst` payload projected into several columns, a shared `LowCardinality` dictionary). A chunk's
-    /// footprint cannot be known before reading it, so any earlier enforcement would reject chunks whose
-    /// actual bytes fit. The
+    /// every distinct physical buffer exactly once, however many references hold it live - within one block
+    /// (a `ColumnConst` payload projected into several columns, a shared `LowCardinality` dictionary) and
+    /// across every block currently buffered (the same payload/dictionary object referenced, by pointer, by
+    /// more than one pulled block - see `shared_object_refcounts`). A chunk's footprint cannot be known before
+    /// reading it, so any earlier enforcement would reject chunks whose actual bytes fit. The
     /// cap is a guardrail against unbounded read-ahead with an actionable error, not a byte-exact memory
     /// limit — the query memory tracker (`max_memory_usage`) remains the hard limit.
     BufferedShardByHashTransform(
@@ -88,18 +89,31 @@ private:
     /// `scatter` can share one physical buffer across all shard chunks of a block (the canonical cases are a
     /// `LowCardinality` dictionary - `ColumnLowCardinality::scatter` keeps a single dictionary shared across
     /// the shards, at any nesting depth - and a `ColumnConst` payload, wrapped unchanged for every shard).
-    /// `generateOutputChunks` charges the exact bytes actually resident after the split: it sums each buffered
-    /// shard chunk's `allocatedBytes()` and then discounts every buffer `scatter` shares across the shards so
-    /// it is charged once per block (identified by pointer, see `subtractDuplicateSharedSubobjects`). This
-    /// captures buffers `scatter` grows beyond the pre-split block (e.g. `ColumnString` does not reserve
-    /// `chars`, so each shard regrows its own `chars` buffer) without the two errors of a naive per-shard
-    /// measure: counting a shared buffer once per shard (inflating the counter up to `num_shards` times) or,
-    /// with `Chunk::bytes()`, dropping a shared dictionary entirely (it reports zero owned bytes). The charge
-    /// is held until `outstanding_chunks` reaches zero, i.e. until the block no longer keeps any buffer alive.
+    /// `generateOutputChunks` charges the exact bytes actually resident after the split via
+    /// `chargeColumnAndDescendants`, which also de-duplicates a buffer shared with any OTHER block still
+    /// buffered (see `shared_object_refcounts`), not only within this one block. `touched_objects` records
+    /// every physical buffer (pointer) this block's charge registered, so its exact contribution can be
+    /// reversed - one buffer at a time, correctly leaving alone whatever another still-live block shares with
+    /// it - once the block no longer keeps any of its shard chunks alive (see `releaseTouchedObjects`).
     struct BlockBudget
     {
-        Int64 bytes = 0;             /// The block's exact resident bytes after the split (a shared buffer counted once).
+        std::vector<const void *> touched_objects;
         size_t outstanding_chunks = 0; /// Shard chunks from this block still buffered (in a queue or an output port).
+    };
+
+    /// Bookkeeping for one physical buffer (by pointer) referenced by at least one currently-buffered charge
+    /// (a block's shard chunks, or the transient pre-split `pending_input_chunk`). `refcount` counts every
+    /// live *visit* that currently holds a reference to it via `chargeColumnAndDescendants` (a block visits a
+    /// buffer once per shard chunk that reaches it, so a dictionary shared across `num_shards` shard chunks of
+    /// one block has `refcount == num_shards`, released by exactly that many calls to
+    /// `releaseTouchedObjects`); `bytes` is the buffer's own size (excluding whatever is reachable from it,
+    /// which is tracked as separate entries), cached at the moment it was first ever registered - it must not
+    /// be re-measured at release time, since the underlying chunk that kept the column alive may already be
+    /// gone by then.
+    struct SharedObjectAccounting
+    {
+        size_t refcount = 0;
+        Int64 bytes = 0;
     };
 
     /// Queue bookkeeping that maintains the shared buffered-bytes counter.
@@ -123,16 +137,37 @@ private:
     /// pre-split admission check (via `budget_exceeded`) and the post-split reconciliation re-check in work().
     [[noreturn]] void throwBufferBudgetExceeded() const;
 
+    /// Registers `column` - and everything reachable from it (a `LowCardinality` dictionary, or any nested
+    /// subcolumn `scatter` may share across the shards or across a different buffered block) - as referenced
+    /// by the charge currently being computed (a block's shard chunks, or the transient pre-split
+    /// `pending_input_chunk`). Every visit, including a repeat one, is appended to `touched` and bumps the
+    /// object's `shared_object_refcounts` entry, so `releaseTouchedObjects` can later reverse this call exactly,
+    /// however many times the same object was visited.
+    ///
+    /// `total_bytes` is increased by the object's own bytes - excluding whatever is reachable from it, which is
+    /// registered, and billed, separately - the moment it is registered for the first time ever (i.e. no other
+    /// currently-buffered charge, from this or an earlier block, already references it); a repeat visit (this
+    /// object is already referenced by this or an earlier still-buffered charge) adds nothing and does not
+    /// descend further, since whichever visit registered it first already registered its whole subtree. This is
+    /// what makes a buffer shared across many shard chunks of one block - or across more than one buffered block
+    /// (e.g. `ColumnConst::cloneResized` keeps the same backing payload) - charged exactly once for as long as
+    /// any of them still holds it.
+    void chargeColumnAndDescendants(const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes);
+    /// Reverses `chargeColumnAndDescendants` for every object in `touched`: releases this charge's reference to
+    /// each, and once an object's refcount reaches zero (no buffered charge references it any longer), subtracts
+    /// its cached bytes from the shared counter and forgets it.
+    void releaseTouchedObjects(const std::vector<const void *> & touched);
+
     /// Charge/release the just-pulled input chunk against the shared budget. Charging happens the moment
     /// the chunk is pulled (before it is split), so the budget accounts for the in-flight read-ahead of
     /// every scatter and the admission decision runs on the chunk's measured size. When the chunk is split
-    /// the same charge is carried over as the block's charge (no discharge/re-charge), so the counter is
-    /// continuous across the split.
+    /// the post-split shard chunks are registered first and this provisional charge is released after (see
+    /// `generateOutputChunks`), so any buffer the split shares with it (unchanged by the split, e.g. a
+    /// `LowCardinality` dictionary) never drops to a zero refcount in between.
     ///
     /// `already_reserved` bytes were added to the counter before the pull as a provisional reservation (see
     /// the admission path in prepare()); chargePendingInput adds only the difference to the chunk's measured
-    /// size (every distinct physical buffer charged once, however many references the chunk holds to it), so
-    /// the reservation is reconciled rather than double-charged. It also records the chunk's size as
+    /// size, so the reservation is reconciled rather than double-charged. It also records the chunk's size as
     /// `reservation_estimate` to reserve before the next pull.
     void chargePendingInput(Int64 already_reserved);
     void dischargePendingInput();
@@ -154,9 +189,10 @@ private:
     /// Input chunk that was pulled in prepare() and will be split in work().
     bool has_pending_input_chunk = false;
     Chunk pending_input_chunk;
-    /// Bytes charged against the shared budget for `pending_input_chunk`. Carried over as the block's charge
-    /// when the chunk is split, or released if the chunk is dropped before it is split.
-    Int64 pending_input_bytes = 0;
+    /// Objects `chargePendingInput` registered for `pending_input_chunk` (see `chargeColumnAndDescendants`),
+    /// released via `releaseTouchedObjects` once the chunk is split (`generateOutputChunks`) or dropped before
+    /// it is split.
+    std::vector<const void *> pending_input_touched;
 
     /// Pre-split measured size of the last chunk this scatter pulled. Published to the shared counter
     /// *before* the next pull as a provisional reservation, so concurrent scatters (each prepare() runs under
@@ -181,6 +217,16 @@ private:
     std::unordered_map<size_t, BlockBudget> block_budgets;
     /// Monotonic id assigned to each input block when it is split.
     size_t next_block_id = 0;
+
+    /// One entry per physical buffer (by pointer) currently referenced by at least one live charge - a
+    /// block's shard chunks (`block_budgets[...].touched_objects`) or the transient pre-split
+    /// `pending_input_chunk` (`pending_input_touched`). Populated and consumed only by
+    /// `chargeColumnAndDescendants`/`releaseTouchedObjects`; this is what lets a buffer `scatter` shares across
+    /// shard chunks of one block - or the same physical buffer referenced, by pointer, by more than one
+    /// buffered block (e.g. successive blocks sharing a `ColumnConst`/`LowCardinality` payload the query
+    /// evaluates once) - be charged exactly once for as long as any of them still holds it, rather than once
+    /// per block that references it.
+    std::unordered_map<const void *, SharedObjectAccounting> shared_object_refcounts;
 
     /// Reused across input chunks to skip per-chunk reallocation.
     PaddedPODArray<UInt32> hash_buffer;

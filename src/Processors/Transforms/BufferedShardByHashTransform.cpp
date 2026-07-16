@@ -1,5 +1,3 @@
-#include <unordered_set>
-
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
@@ -17,60 +15,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-namespace
-{
-
-/// `scatter` can share one physical buffer across a block's shard chunks while `allocatedBytes()` reports it
-/// on every shard: `ColumnLowCardinality::scatter` builds a single dictionary and `setShared`s it into every
-/// shard, and `ColumnConst::scatter` wraps the same backing `data` column for every shard. The outer
-/// `ColumnTuple`/`ColumnArray`/`ColumnNullable`/`ColumnMap` delegate `scatter` to their nested columns, so the
-/// sharing appears at any nesting depth. Summing `allocatedBytes()` over the shards therefore counts such a
-/// shared subobject up to `num_shards` times. This walks a shard chunk's columns recursively (pointer identity)
-/// and, whenever the same column object is reached again, subtracts its bytes from `block_bytes`, so every
-/// shared buffer is charged exactly once per block; a genuinely per-shard (distinct) buffer keeps its full
-/// charge. `LowCardinality` needs an explicit case because `forEachSubcolumn` skips a shared dictionary
-/// (the column does not own it) - the exact object this must de-duplicate.
-void subtractDuplicateSharedSubobjects(const IColumn & column, std::unordered_set<const void *> & counted, Int64 & block_bytes)
-{
-    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
-    {
-        if (!counted.insert(lc->getDictionaryPtr().get()).second)
-            block_bytes -= static_cast<Int64>(lc->getDictionary().allocatedBytes());
-        /// The index column is owned per shard and already counted; the dictionary is the only shared buffer.
-        return;
-    }
-
-    column.forEachSubcolumn([&](const auto & subcolumn)
-    {
-        if (!counted.insert(subcolumn.get()).second)
-        {
-            /// This exact object was already counted through an earlier occurrence (its bytes are included in
-            /// every referencing parent's `allocatedBytes()`), so remove the duplicate charge. Its subtree was
-            /// de-duplicated together with the first occurrence, so don't descend into it again.
-            block_bytes -= static_cast<Int64>(subcolumn->allocatedBytes());
-            return;
-        }
-        subtractDuplicateSharedSubobjects(*subcolumn, counted, block_bytes);
-    });
-}
-
-/// Adds `column`'s `allocatedBytes()` to `bytes`, de-duplicated against everything already charged through the
-/// same `counted` set: a column object already charged in full through an earlier reference contributes nothing,
-/// and a distinct column has any subobject it shares with a previously charged column discounted by the walk
-/// above. Sharing does not only appear across a block's shard chunks after `scatter`: a single source chunk can
-/// reference the same physical buffer more than once (e.g. one `ColumnConst` literal projected into two columns
-/// of the block holds the same payload twice), so the pre-split admission charge and the post-split resident
-/// charge both run this same ownership-aware accounting - a naive `allocatedBytes()` sum would charge such a
-/// buffer once per reference and could reject a chunk whose actual bytes fit the budget.
-void addAllocatedBytesOnce(const IColumn & column, std::unordered_set<const void *> & counted, Int64 & bytes)
-{
-    if (!counted.insert(&column).second)
-        return;
-    bytes += static_cast<Int64>(column.allocatedBytes());
-    subtractDuplicateSharedSubobjects(column, counted, bytes);
-}
-
-}
 
 BufferedShardByHashTransform::BufferedShardByHashTransform(
     SharedHeader header,
@@ -124,8 +68,61 @@ void BufferedShardByHashTransform::releaseQueuedChunk(size_t block_id)
     /// the block keeps it alive.
     if (--it->second.outstanding_chunks == 0)
     {
-        total_buffered_bytes->fetch_sub(it->second.bytes, std::memory_order_relaxed);
+        releaseTouchedObjects(it->second.touched_objects);
         block_budgets.erase(it);
+    }
+}
+
+void BufferedShardByHashTransform::chargeColumnAndDescendants(
+    const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes)
+{
+    touched.push_back(&column);
+    auto [it, is_new] = shared_object_refcounts.try_emplace(&column);
+    ++it->second.refcount;
+    if (!is_new)
+        return; /// Already referenced by this or an earlier still-buffered charge; its subtree was already
+                /// registered (and billed) when it was first seen, so nothing more to add or to descend into.
+
+    /// Genuinely new: nothing currently buffered accounts for this object yet. `allocatedBytes()` already
+    /// recursively sums every reachable subobject, so start from it and subtract whatever is registered - and
+    /// billed - separately below, leaving this node's own exclusive bytes (typically negligible wrapper/offset
+    /// overhead for a composite column). Recursing keeps registering subobjects regardless of whether each one
+    /// turns out to be new (billed via its own entry) or a duplicate (already billed elsewhere): either way its
+    /// bytes must not also be attributed to this node.
+    Int64 self_bytes = static_cast<Int64>(column.allocatedBytes());
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        /// `forEachSubcolumn` skips a shared dictionary (the column does not own it), so it needs an explicit
+        /// case; the index column is owned per shard and contributes nothing beyond what's already in
+        /// `self_bytes`.
+        const IColumn & dictionary = lc->getDictionary();
+        self_bytes -= static_cast<Int64>(dictionary.allocatedBytes());
+        chargeColumnAndDescendants(dictionary, touched, total_bytes);
+    }
+    else
+    {
+        column.forEachSubcolumn([&](const auto & subcolumn)
+        {
+            self_bytes -= static_cast<Int64>(subcolumn->allocatedBytes());
+            chargeColumnAndDescendants(*subcolumn, touched, total_bytes);
+        });
+    }
+
+    it->second.bytes = self_bytes;
+    total_bytes += self_bytes;
+}
+
+void BufferedShardByHashTransform::releaseTouchedObjects(const std::vector<const void *> & touched)
+{
+    for (const void * ptr : touched)
+    {
+        auto it = shared_object_refcounts.find(ptr);
+        chassert(it != shared_object_refcounts.end());
+        if (--it->second.refcount == 0)
+        {
+            total_buffered_bytes->fetch_sub(it->second.bytes, std::memory_order_relaxed);
+            shared_object_refcounts.erase(it);
+        }
     }
 }
 
@@ -159,12 +156,14 @@ void BufferedShardByHashTransform::chargePendingInput(Int64 already_reserved)
 {
     /// Charge the chunk's measured size the moment it is pulled, before it is split, so the shared counter
     /// accounts for the in-flight read-ahead of every scatter and the admission decision in prepare() runs on
-    /// measured bytes. The measurement is ownership-aware, like the post-split accounting: a source chunk can
-    /// reference the same physical buffer more than once (e.g. one `ColumnConst` literal projected into two
-    /// columns of the block), and a raw `allocatedBytes()` sum would charge such a buffer once per reference,
-    /// arming the admission rejection for bytes the chunk does not actually hold. The pre-split size is only
-    /// an estimate of the post-split resident bytes - `scatter` can grow per-shard buffers beyond the source (e.g.
-    /// `ColumnString` regrows each shard's `chars`) - so once the split is done `generateOutputChunks`
+    /// measured bytes. `chargeColumnAndDescendants` is ownership-aware, and not only within this one chunk: a
+    /// source chunk can reference the same physical buffer more than once (e.g. one `ColumnConst` literal
+    /// projected into two columns of the block), and the very same buffer can also already be registered by an
+    /// earlier still-buffered block or chunk (e.g. a `LowCardinality` dictionary, or a `ColumnConst` payload
+    /// `cloneResized` keeps by pointer, shared across successive pulls); either way it is charged exactly once
+    /// for as long as anything still buffered references it, rather than once per reference. The pre-split size
+    /// is only an estimate of the post-split resident bytes - `scatter` can grow per-shard buffers beyond the
+    /// source (e.g. `ColumnString` regrows each shard's `chars`) - so once the split is done `generateOutputChunks`
     /// reconciles this charge to the exact bytes actually buffered.
     ///
     /// `already_reserved` bytes were added to the counter before the pull as a provisional reservation (see
@@ -172,19 +171,18 @@ void BufferedShardByHashTransform::chargePendingInput(Int64 already_reserved)
     /// exact size rather than double-charging it. Record that size as the estimate to reserve before the next
     /// pull.
     Int64 measured_bytes = 0;
-    std::unordered_set<const void *> counted_subobjects;
+    pending_input_touched.clear();
     for (const auto & column : pending_input_chunk.getColumns())
-        addAllocatedBytesOnce(*column, counted_subobjects, measured_bytes);
+        chargeColumnAndDescendants(*column, pending_input_touched, measured_bytes);
 
-    pending_input_bytes = measured_bytes;
-    total_buffered_bytes->fetch_add(pending_input_bytes - already_reserved, std::memory_order_relaxed);
-    reservation_estimate = pending_input_bytes;
+    total_buffered_bytes->fetch_add(measured_bytes - already_reserved, std::memory_order_relaxed);
+    reservation_estimate = measured_bytes;
 }
 
 void BufferedShardByHashTransform::dischargePendingInput()
 {
-    total_buffered_bytes->fetch_sub(pending_input_bytes, std::memory_order_relaxed);
-    pending_input_bytes = 0;
+    releaseTouchedObjects(pending_input_touched);
+    pending_input_touched.clear();
 }
 
 bool BufferedShardByHashTransform::allOutputsFinished() const
@@ -405,13 +403,13 @@ void BufferedShardByHashTransform::work()
         generateOutputChunks();
         has_pending_input_chunk = false;
 
-        /// `generateOutputChunks` reconciled the provisional pre-split charge to the exact post-split resident
+        /// `generateOutputChunks` replaced the provisional pre-split charge with the exact post-split resident
         /// bytes, which `scatter` can grow beyond that pre-split estimate (e.g. `ColumnString` does not reserve
-        /// `chars`, so each shard regrows its own `chars` buffer). If that reconciliation pushed the shared
-        /// counter past the cap, fail here: prepare()'s budget checks only run on the `may_pull` path before a
-        /// pull, and the last scatter can reach EOF and drain straight to Finished without another pull, so the
-        /// query could otherwise complete having buffered more than `max_buffered_bytes`. The carve-out matches
-        /// the pre-split path: once every output is finished the buffered data is needed by nobody.
+        /// `chars`, so each shard regrows its own `chars` buffer). If that pushed the shared counter past the
+        /// cap, fail here: prepare()'s budget checks only run on the `may_pull` path before a pull, and the
+        /// last scatter can reach EOF and drain straight to Finished without another pull, so the query could
+        /// otherwise complete having buffered more than `max_buffered_bytes`. The carve-out matches the
+        /// pre-split path: once every output is finished the buffered data is needed by nobody.
         ///
         /// This check running only after the split is the enforcement granularity of the budget (see the
         /// constructor comment): the split of one already-admitted block can transiently exceed the cap before
@@ -462,11 +460,6 @@ void BufferedShardByHashTransform::work()
 void BufferedShardByHashTransform::generateOutputChunks()
 {
     const auto num_rows = pending_input_chunk.getNumRows();
-    /// The provisional charge added when this chunk was pulled (`chargePendingInput`, the whole pre-split
-    /// block via `allocatedBytes()`) is already in the shared counter. Below we replace it with the exact
-    /// bytes actually resident after the split and reconcile the counter by the difference.
-    const Int64 provisional_bytes = pending_input_bytes;
-    pending_input_bytes = 0;
     auto columns = pending_input_chunk.detachColumns();
 
     chassert(!columns.empty());
@@ -494,14 +487,15 @@ void BufferedShardByHashTransform::generateOutputChunks()
     /// Charge the exact bytes resident after the split. `scatter` copies each column into independent per-shard
     /// buffers, so the post-split total can exceed the pre-split block (e.g. `ColumnString` does not reserve
     /// `chars`, so each shard regrows its own `chars` buffer by doubling); the pre-split provisional estimate
-    /// would under-count that. Sum each buffered shard chunk's `allocatedBytes()`, then discount any buffer
-    /// `scatter` shares across the shards (a `LowCardinality` dictionary, a `ColumnConst` payload) so it is
-    /// charged exactly once per block (see `subtractDuplicateSharedSubobjects`) - counting a shared buffer once
-    /// per shard would inflate the counter up to `num_shards` times and trip the budget spuriously on safe
-    /// inputs.
+    /// would under-count that. `chargeColumnAndDescendants` charges every distinct buffer exactly once for as
+    /// long as anything buffered still references it - a buffer `scatter` shares across the shards of this
+    /// block (a `LowCardinality` dictionary, a `ColumnConst` payload), and one shared with another still-live
+    /// block (e.g. the same dictionary read again from the same part). Registering these post-split objects
+    /// before releasing the pre-split charge below (rather than reconciling by a byte delta) means such a
+    /// buffer's refcount never drops to zero in between the two.
     const size_t block_id = next_block_id++;
     Int64 block_bytes = 0;
-    std::unordered_set<const void *> counted_subobjects;
+    std::vector<const void *> block_touched;
     size_t enqueued_chunks = 0;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -514,7 +508,7 @@ void BufferedShardByHashTransform::generateOutputChunks()
             continue;
 
         for (const auto & column : shard_columns[shard])
-            addAllocatedBytesOnce(*column, counted_subobjects, block_bytes);
+            chargeColumnAndDescendants(*column, block_touched, block_bytes);
 
         enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
         ++enqueued_chunks;
@@ -524,15 +518,19 @@ void BufferedShardByHashTransform::generateOutputChunks()
     {
         /// The block keeps its buffers (including any shared dictionaries) alive as long as any of its shard
         /// chunks is buffered, so the bytes are part of the block's charge and released with it (when its last
-        /// shard chunk drains). Reconcile the provisional charge already in the counter to these exact bytes.
-        total_buffered_bytes->fetch_add(block_bytes - provisional_bytes, std::memory_order_relaxed);
-        block_budgets[block_id].bytes = block_bytes;
+        /// shard chunk drains).
+        total_buffered_bytes->fetch_add(block_bytes, std::memory_order_relaxed);
+        block_budgets[block_id].touched_objects = std::move(block_touched);
     }
-    else
-    {
-        /// No shard chunk was buffered (every row went to an already-finished output), so release the charge.
-        total_buffered_bytes->fetch_sub(provisional_bytes, std::memory_order_relaxed);
-    }
+    /// Otherwise no shard chunk was buffered (every row went to an already-finished output): nothing above was
+    /// registered, so there is nothing to release for this block.
+
+    /// Release the provisional pre-split charge now that the exact post-split objects are registered above -
+    /// any buffer this block shares with the pre-split chunk (unchanged by the split, e.g. a `LowCardinality`
+    /// dictionary or a `ColumnConst` payload) was just re-registered, so its refcount is already at least 2 and
+    /// releasing the pre-split reference here only drops it back to what this block itself holds.
+    releaseTouchedObjects(pending_input_touched);
+    pending_input_touched.clear();
 }
 
 }
