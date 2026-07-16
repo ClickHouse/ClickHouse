@@ -1,4 +1,4 @@
--- Tags: no-shared-merge-tree
+-- Tags: no-parallel-replicas
 -- Bounded streaming reads the first snapshot (everything committed so far) and then
 -- finishes, instead of subscribing for updates like a plain STREAM query. Because it
 -- terminates, it can be exercised with a plain synchronous query.
