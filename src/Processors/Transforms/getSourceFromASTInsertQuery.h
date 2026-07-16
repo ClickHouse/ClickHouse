@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferWrapperBase.h>
 #include <cstddef>
 #include <memory>
 #include <string_view>
@@ -60,12 +61,16 @@ void setInsertSchemaMismatchDiagnostic(
 /// Used to make the parse-error diagnostic above available for data that comes from a source which
 /// cannot be re-read once consumed and has no backing ASTInsertQuery::data (e.g. a client reading the
 /// data of an INSERT from stdin, separately from the query text).
-class PrefixCapturingReadBuffer : public ReadBuffer
+class PrefixCapturingReadBuffer : public ReadBuffer, public ReadBufferWrapperBase
 {
 public:
     PrefixCapturingReadBuffer(ReadBuffer & in_, size_t max_bytes_to_capture_);
 
     std::string_view getCapturedPrefix() const { return captured; }
+
+    /// Keep diagnostics that inspect the buffer chain (e.g. the file name added to error messages)
+    /// working as if the wrapper were not there.
+    const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
 private:
     bool nextImpl() override;
