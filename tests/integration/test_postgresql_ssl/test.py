@@ -31,6 +31,13 @@ PG_DATA_DIR = "/postgres/data"
 # Paths on the ClickHouse node where the fixture drops the certificates.
 CA_CERT_PATH = "/etc/clickhouse-server/postgresql-ca.crt"
 WRONG_CA_CERT_PATH = "/etc/clickhouse-server/postgresql-wrong-ca.crt"
+# Client certificate/key used to exercise the sslcert/sslkey (client-auth) path.
+CLIENT_CERT_PATH = "/etc/clickhouse-server/postgresql-client.crt"
+CLIENT_KEY_PATH = "/etc/clickhouse-server/postgresql-client.key"
+# A database that only accepts connections presenting a verified client
+# certificate (see the `pg_hba.conf` written by `enable_postgres_ssl`).
+CERT_DB = "certdb"
+CERT_TABLE = "cert_table"
 
 
 def pg_connect(sslmode="prefer", timeout=2):
@@ -69,21 +76,36 @@ def wait_for(predicate, timeout, description):
 
 
 def enable_postgres_ssl():
-    # Generate a self-signed server certificate. It is used both as the server
-    # certificate and as the CA for verify-ca/verify-full. CN and SAN match the
-    # host name the ClickHouse node connects to.
+    # Build a tiny PKI inside the PostgreSQL container: one CA that signs both the
+    # server certificate (so verify-ca/verify-full can validate the server) and a
+    # client certificate (so the sslcert/sslkey client-authentication path can be
+    # exercised). The server certificate CN/SAN match the host name the ClickHouse
+    # node connects to; the client certificate CN is the PostgreSQL user name,
+    # which the `cert` authentication method maps to that user.
     pg_exec(
-        f"openssl req -new -x509 -days 3650 -nodes "
-        f"-out {PG_DATA_DIR}/server.crt -keyout {PG_DATA_DIR}/server.key "
-        f"-subj '/CN={PG_HOST}' -addext 'subjectAltName=DNS:{PG_HOST}'"
+        "set -e\n"
+        f"cd {PG_DATA_DIR}\n"
+        "openssl req -new -x509 -days 3650 -nodes -out ca.crt -keyout ca.key "
+        "-subj '/CN=Test PostgreSQL CA' -addext 'basicConstraints=critical,CA:TRUE'\n"
+        f"openssl req -new -nodes -out server.csr -keyout server.key -subj '/CN={PG_HOST}'\n"
+        f"printf 'subjectAltName=DNS:{PG_HOST}\\n' > server_ext.cnf\n"
+        "openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial "
+        "-days 3650 -out server.crt -extfile server_ext.cnf\n"
+        "openssl req -new -nodes -out client.csr -keyout client.key -subj '/CN=postgres'\n"
+        "openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial "
+        "-days 3650 -out client.crt\n"
+        # PostgreSQL refuses a group/world-readable key and must own its files.
+        "chmod 600 server.key ca.key\n"
+        "chown postgres:postgres ca.crt server.crt server.key\n"
     )
-    pg_exec(f"chmod 600 {PG_DATA_DIR}/server.key")
-    pg_exec(f"chown postgres:postgres {PG_DATA_DIR}/server.key {PG_DATA_DIR}/server.crt")
 
-    # Turn SSL on and wait until an encrypted connection is accepted.
+    # Turn SSL on (the server cert/key default to server.crt/server.key in PGDATA)
+    # and trust our CA for client certificates, then wait for encryption to be up.
     conn = pg_connect()
-    conn.cursor().execute("ALTER SYSTEM SET ssl = 'on'")
-    conn.cursor().execute("SELECT pg_reload_conf()")
+    cursor = conn.cursor()
+    cursor.execute("ALTER SYSTEM SET ssl = 'on'")
+    cursor.execute(f"ALTER SYSTEM SET ssl_ca_file = '{PG_DATA_DIR}/ca.crt'")
+    cursor.execute("SELECT pg_reload_conf()")
     conn.close()
 
     def ssl_is_up():
@@ -94,14 +116,17 @@ def enable_postgres_ssl():
 
     wait_for(ssl_is_up, 30, "PostgreSQL to accept SSL connections")
 
-    # Now require SSL for every TCP connection so a plaintext attempt is refused.
-    # `hostssl all all all trust` matches both ordinary and logical-replication
-    # connections (the latter are matched by database name / `all`).
+    # Require SSL for every TCP connection so a plaintext attempt is refused, and
+    # require a verified client certificate for connections to CERT_DB (the `cert`
+    # method maps the certificate CN to the database user). `hostssl all all all
+    # trust` matches both ordinary and logical-replication connections (the latter
+    # are matched by database name / `all`).
     pg_exec(
         "cat > %s/pg_hba.conf <<'EOF'\n"
         "local all all trust\n"
+        "hostssl %s all all cert\n"
         "hostssl all all all trust\n"
-        "EOF" % PG_DATA_DIR
+        "EOF" % (PG_DATA_DIR, CERT_DB)
     )
     pg_connect(sslmode="require").cursor().execute("SELECT pg_reload_conf()")
 
@@ -114,16 +139,28 @@ def enable_postgres_ssl():
 
     wait_for(plaintext_is_refused, 30, "PostgreSQL to reject plaintext connections")
 
-    # Export the server certificate to the ClickHouse node so it can be used as
-    # sslrootcert, plus an unrelated CA to check that verification actually fails.
-    ca_pem = pg_exec(f"cat {PG_DATA_DIR}/server.crt")
-    node_write_file(CA_CERT_PATH, ca_pem)
+    # A database reachable only with a valid client certificate, seeded over the
+    # local socket (which uses `trust`, so it needs no certificate).
+    pg_exec(f"psql -v ON_ERROR_STOP=1 -U postgres -c 'DROP DATABASE IF EXISTS {CERT_DB}'")
+    pg_exec(f"psql -v ON_ERROR_STOP=1 -U postgres -c 'CREATE DATABASE {CERT_DB}'")
+    pg_exec(
+        f"psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "
+        f"\"CREATE TABLE {CERT_TABLE} (key integer PRIMARY KEY, value integer); "
+        f"INSERT INTO {CERT_TABLE} SELECT i, i * 10 FROM generate_series(0, 9) AS i\""
+    )
+
+    # Export the CA to the ClickHouse node for use as sslrootcert, an unrelated CA
+    # to check that verification actually fails, and the client certificate/key.
+    node_write_file(CA_CERT_PATH, pg_exec(f"cat {PG_DATA_DIR}/ca.crt"))
+    node_write_file(CLIENT_CERT_PATH, pg_exec(f"cat {PG_DATA_DIR}/client.crt"))
+    node_write_file(CLIENT_KEY_PATH, pg_exec(f"cat {PG_DATA_DIR}/client.key"))
+    # libpq refuses a client key that is group/world-readable.
+    node.exec_in_container(["bash", "-c", f"chmod 600 {CLIENT_KEY_PATH}"])
     pg_exec(
         "openssl req -new -x509 -days 3650 -nodes "
         "-out /tmp/wrong-ca.crt -keyout /tmp/wrong-ca.key -subj '/CN=wrong'"
     )
-    wrong_ca_pem = pg_exec("cat /tmp/wrong-ca.crt")
-    node_write_file(WRONG_CA_CERT_PATH, wrong_ca_pem)
+    node_write_file(WRONG_CA_CERT_PATH, pg_exec("cat /tmp/wrong-ca.crt"))
 
 
 def seed_table(name, count):
@@ -202,6 +239,54 @@ def test_postgresql_table_engine_over_ssl(started_cluster):
     node.query("DROP TABLE ch_pg_ssl")
 
 
+def test_postgresql_dictionary_over_ssl(started_cluster):
+    # The dictionary source used to accept `sslmode` and then silently ignore it;
+    # this checks the whole chain (sslmode + sslrootcert) is now honored.
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_ssl")
+    node.query(
+        f"""
+        CREATE DICTIONARY dict_pg_ssl (key UInt32, value UInt32)
+        PRIMARY KEY key
+        SOURCE(POSTGRESQL(
+            host '{PG_HOST}' port 5432
+            user 'postgres' password '{pg_pass}'
+            db 'postgres' table 'test_table'
+            sslmode 'verify-full' sslrootcert '{CA_CERT_PATH}'))
+        LAYOUT(HASHED())
+        LIFETIME(MIN 0 MAX 0)
+        """
+    )
+    assert node.query("SELECT count() FROM dict_pg_ssl").strip() == "10"
+    assert (
+        node.query("SELECT dictGetUInt32(dict_pg_ssl, 'value', toUInt64(5))").strip()
+        == "50"
+    )
+    node.query("DROP DICTIONARY dict_pg_ssl")
+
+
+def test_client_certificate_authentication(started_cluster):
+    # CERT_DB requires a verified client certificate, so a successful read proves
+    # the sslcert/sslkey parameters are forwarded to libpq and accepted.
+    assert (
+        node.query(
+            "SELECT count() FROM postgresql(pg_ssl_cert, "
+            f"sslmode='verify-full', sslrootcert='{CA_CERT_PATH}', "
+            f"sslcert='{CLIENT_CERT_PATH}', sslkey='{CLIENT_KEY_PATH}')"
+        ).strip()
+        == "10"
+    )
+
+
+def test_client_certificate_is_required(started_cluster):
+    # The same connection without a client certificate must be rejected, so the
+    # positive test above really did authenticate with the certificate.
+    error = node.query_and_get_error(
+        "SELECT count() FROM postgresql(pg_ssl_cert, "
+        f"sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')"
+    )
+    assert "POSTGRESQL_CONNECTION_FAILURE" in error
+
+
 def test_materialized_postgresql_database_ssl(started_cluster):
     seed_table("mat_table", 50)
     node.query("DROP DATABASE IF EXISTS mpg_ssl")
@@ -225,4 +310,18 @@ def test_materialized_postgresql_database_ssl(started_cluster):
     assert node.query("SELECT sum(value) FROM mpg_ssl.mat_table").strip() == str(
         sum(i * 10 for i in range(50))
     )
+
+    # Insert a row after the database exists so the WAL consumer (not just the
+    # initial snapshot) has to replicate it over the verify-full connection.
+    conn = pg_connect(sslmode="require")
+    conn.cursor().execute("INSERT INTO mat_table VALUES (50, 500)")
+    conn.close()
+
+    wait_for(
+        lambda: node.query("SELECT value FROM mpg_ssl.mat_table WHERE key = 50").strip()
+        == "500",
+        120,
+        "MaterializedPostgreSQL to replicate a post-create insert over SSL",
+    )
+    assert node.query("SELECT count() FROM mpg_ssl.mat_table").strip() == "51"
     node.query("DROP DATABASE mpg_ssl")

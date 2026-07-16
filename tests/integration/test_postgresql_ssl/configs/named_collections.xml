@@ -8,5 +8,13 @@
             <database>postgres</database>
             <table>test_table</table>
         </pg_ssl>
+        <pg_ssl_cert>
+            <user>postgres</user>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
+            <host>postgres1</host>
+            <port>5432</port>
+            <database>certdb</database>
+            <table>cert_table</table>
+        </pg_ssl_cert>
     </named_collections>
 </clickhouse>
