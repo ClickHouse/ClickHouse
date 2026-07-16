@@ -129,6 +129,20 @@ from version_helper import (
     update_contributors,
 )
 
+# The empty-patch-release guard lives in `ci/jobs/scripts/release_checks.py` so
+# the `CI Tests` unit suite can exercise it without this module's release-only
+# dependencies. Import it here, at module load, while the working tree is still
+# the checked-out branch: `prepare()` later checks out the release ref (which may
+# predate this helper), and importing under that `checkout()` would read a tree
+# where the file does not exist. This script runs from `tests/ci` with the repo
+# root off `sys.path`, so add it before importing.
+_REPO_ROOT = str(Path(__file__).resolve().parents[2])
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+from ci.jobs.scripts.release_checks import (  # noqa: E402  pylint: disable=wrong-import-position
+    is_empty_patch_release,
+)
+
 CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
 CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
 RELEASE_INFO_FILE = "/tmp/release_info.json"
@@ -291,17 +305,10 @@ class ReleaseInfo:
                 # (only-repo/only-docker) rebuild an already-tagged release and
                 # do not tag, so skip the check. This is checked before the
                 # out-of-order check below because "nothing to release" is the
-                # more fundamental condition.
-                #
-                # The guard lives in `ci/jobs/scripts/release_checks.py` so the
-                # `CI Tests` unit suite can exercise it without this module's
-                # release-only dependencies. This script runs from `tests/ci`
-                # with repo root off `sys.path`, so add it and import lazily.
-                repo_root = str(Path(__file__).resolve().parents[2])
-                if repo_root not in sys.path:
-                    sys.path.append(repo_root)
-                from ci.jobs.scripts.release_checks import is_empty_patch_release
-
+                # more fundamental condition. `is_empty_patch_release` is
+                # imported at module load (see top of file); it must not be
+                # imported here, under `checkout()`, where the working tree may
+                # predate the helper.
                 if not _skip_out_of_order_check and is_empty_patch_release(
                     version.patch, version.tweak
                 ):
