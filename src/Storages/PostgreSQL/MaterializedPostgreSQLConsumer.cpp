@@ -253,6 +253,21 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
 
         insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
     }
+    catch (const Exception & e)
+    {
+        /// insertPostgreSQLValue translates a foreign pqxx::conversion_error into a DB::Exception with
+        /// BAD_ARGUMENTS, so a bad source value now surfaces here as that instead of the raw pqxx error.
+        /// Keep handling it exactly like the raw conversion error: log and insert a default so replication
+        /// keeps advancing. Letting it propagate would leave the WAL position unadvanced and cause the
+        /// buffered row to be re-inserted on every retry (indefinite row duplication).
+        if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+
+        LOG_ERROR(log, "Conversion failed while inserting PostgreSQL value {}, "
+                  "will insert default value. Error: {}", value, e.message());
+
+        insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
+    }
 }
 
 void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_data, size_t column_idx)
