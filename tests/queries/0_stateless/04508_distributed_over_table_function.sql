@@ -409,3 +409,25 @@ DROP TABLE dist_over_tf;
 DROP DICTIONARY dict_src;
 DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- `joinGet`'s first argument names a `Join`-engine table, resolved against the current database at read time
+-- (`FunctionJoinGet` -> `Context::resolveStorageID`) unless already qualified, exactly like `dictGet`'s
+-- dictionary name argument - `AddDefaultDatabaseVisitor` now qualifies it the same way, so it is frozen at
+-- CREATE time here too, otherwise `Distributed(cluster, numbers(joinGet('j', ...)))` would still depend on the
+-- current database of whatever session queries the table later. Verified by querying from a different current
+-- database holding a decoy `join_src` of the same name.
+CREATE TABLE join_src (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO join_src VALUES (0, 1);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(joinGet('join_src', 'v', toUInt64(0))));
+SHOW CREATE TABLE dist_over_tf;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.join_src (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.join_src VALUES (0, 5);
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
+USE {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE dist_over_tf;
+DROP TABLE join_src;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.join_src;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

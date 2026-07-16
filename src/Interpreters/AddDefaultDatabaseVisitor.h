@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -195,6 +196,7 @@ private:
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+        bool is_join_get = functionIsJoinGet(function.name);
 
         for (auto & child : function.children)
         {
@@ -223,6 +225,35 @@ private:
                             auto dictionary_name = literal_value.safeGet<String>();
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
                             literal_value = qualified_dictionary_name.getFullName();
+                        }
+                    }
+                    else if (is_join_get && i == 0)
+                    {
+                        /// The first argument of `joinGet`/`joinGetOrNull` names a `Join`-engine table, resolved
+                        /// against the current database at read time (`FunctionJoinGet` -> `Context::resolveStorageID`)
+                        /// unless already qualified. Qualify it here the same way plain table identifiers are
+                        /// qualified below, so it does not depend on the current database of whatever context
+                        /// evaluates the function later (e.g. a stored `VIEW`, or a table function frozen at `CREATE`
+                        /// time by `StorageDistributed`).
+                        if (auto * identifier = child->children[i]->as<ASTIdentifier>())
+                        {
+                            /// Identifier already qualified
+                            if (identifier->compound())
+                                continue;
+
+                            child->children[i] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+                        }
+                        else if (auto * literal = child->children[i]->as<ASTLiteral>())
+                        {
+                            auto & literal_value = literal->value;
+
+                            if (literal_value.getType() != Field::Types::String)
+                                continue;
+
+                            auto qualified_table_name = QualifiedTableName::parseFromString(literal_value.safeGet<String>());
+                            if (qualified_table_name.database.empty())
+                                qualified_table_name.database = database_name;
+                            literal_value = qualified_table_name.getFullName();
                         }
                     }
                     else if (is_operator_in && i == 1)

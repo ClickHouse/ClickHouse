@@ -2319,8 +2319,9 @@ void registerStorageDistributed(StorageFactory & factory)
             {
                 /// Bind the table function to the current database at CREATE time, so that the persisted
                 /// target does not depend on the current database of whatever session queries the table
-                /// later: expand CTEs, qualify unqualified table identifiers (and dictionary names in
-                /// `dictGet`) with the current database, and replace `currentDatabase()` with its value.
+                /// later: expand CTEs, qualify unqualified table identifiers (and the table name argument
+                /// of `dictGet` and `joinGet`) with the current database, and replace `currentDatabase()`
+                /// with its value.
                 /// This is the same normalization `CREATE VIEW` applies to its stored `SELECT`, and the
                 /// table-function analogue of how the classic form freezes its `database` argument (e.g.
                 /// a bare `currentDatabase()`) by evaluating it to a literal below. The normalized form
@@ -2485,7 +2486,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
-The table function is bound to the current database at `CREATE` time: unqualified table identifiers and dictionary names inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and the qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and the qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
 
 :::note Read-only
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).

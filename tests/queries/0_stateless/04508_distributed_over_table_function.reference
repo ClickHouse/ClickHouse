@@ -48,3 +48,5 @@ CREATE TABLE default.dist_over_tf_subq\n(\n    `number` UInt64\n)\nENGINE = Dist
 6
 CREATE TABLE default.dist_over_tf\n(\n    `key` UInt64,\n    `val` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', dictionary(\'default.dict_src\'))
 1
+CREATE TABLE default.dist_over_tf\n(\n    `number` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(joinGet(\'default.join_src\', \'v\', toUInt64(0))))
+1
