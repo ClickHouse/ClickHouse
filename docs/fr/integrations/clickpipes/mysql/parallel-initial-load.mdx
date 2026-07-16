@@ -1,0 +1,75 @@
+---
+title: 'Snapshot parallèle dans le MySQL ClickPipe'
+description: 'Documentation sur le snapshot parallèle dans le MySQL ClickPipe'
+slug: /integrations/clickpipes/mysql/parallel_initial_load
+sidebarTitle: 'Fonctionnement du snapshot parallèle'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce document explique le fonctionnement du snapshot/chargement initial parallélisé du MySQL ClickPipe et présente les paramètres du snapshot permettant de le contrôler.
+
+<div id="overview-mysql-snapshot">
+  ## Vue d&#39;ensemble
+</div>
+
+Le chargement initial est la première phase d’un ClickPipe CDC, au cours de laquelle le ClickPipe synchronise vers ClickHouse les données historiques des tables de la base de données source, avant de démarrer le CDC. Très souvent, les développeurs effectuent cette opération sur un seul thread.
+Cependant, le MySQL ClickPipe peut paralléliser ce processus, ce qui peut considérablement accélérer le chargement initial.
+
+<div id="key-mysql-snapshot">
+  ### Colonne de clé de partition
+</div>
+
+Une fois le feature flag activé, vous devriez voir le paramètre ci-dessous dans le sélecteur de table de ClickPipe (lors de la création comme de la modification d’un ClickPipe) :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="Colonne de clé de partition" size="md" />
+
+Le MySQL ClickPipe utilise une colonne de votre table source pour effectuer un partitionnement logique. Cette colonne est appelée **colonne de clé de partition**. Elle sert à diviser la table source en partitions, qui peuvent ensuite être traitées en parallèle par le ClickPipe.
+
+<Warning>
+  Pour obtenir un gain de performances notable, la colonne de clé de partition doit faire l’objet d’un index dans la table source. Vous pouvez le vérifier en exécutant `SHOW INDEX FROM <table_name>` dans MySQL.
+</Warning>
+
+<div id="logical-partitioning-mysql-snapshot">
+  ### Partitionnement logique
+</div>
+
+Examinons les paramètres ci-dessous :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="Paramètres du snapshot" size="md" />
+
+<div id="numrows-mysql-snapshot">
+  #### Nombre de lignes de l’instantané par partition
+</div>
+
+Ce paramètre détermine combien de lignes composent une partition. Le ClickPipe lira la table source par lots de cette taille, et ces lots seront traités en parallèle selon le parallélisme de chargement initial défini. La valeur par défaut est de 100 000 lignes par partition.
+
+<div id="parallelism-mysql-snapshot">
+  #### Parallélisme du chargement initial
+</div>
+
+Ce paramètre contrôle le nombre de partitions traitées en parallèle. La valeur par défaut est de 4, ce qui signifie que ClickPipe lira 4 partitions de la table source en parallèle. Cette valeur peut être augmentée pour accélérer le chargement initial, mais il est recommandé de la maintenir à un niveau raisonnable en fonction des caractéristiques de votre instance source afin d&#39;éviter de surcharger la base de données source. ClickPipe ajustera automatiquement le nombre de partitions en fonction de la taille de la table source et du nombre de lignes par partition.
+
+<div id="tables-parallel-mysql-snapshot">
+  #### Nombre de tables du snapshot en parallèle
+</div>
+
+Sans lien direct avec le snapshot en parallèle, ce paramètre contrôle le nombre de tables traitées en parallèle pendant le chargement initial. La valeur par défaut est 1. Notez que cela s’ajoute au parallélisme des partitions. Ainsi, si vous avez 4 partitions et 2 tables, le ClickPipe lira 8 partitions en parallèle.
+
+<div id="monitoring-parallel-mysql-snapshot">
+  ### Surveillance du snapshot parallèle dans MySQL
+</div>
+
+Vous pouvez exécuter **SHOW processlist** dans MySQL pour voir le snapshot parallèle en action. Le ClickPipe établira plusieurs connexions à la base de données source, chacune lisant une partition différente de la table source. Si vous voyez des requêtes **SELECT** avec des intervalles différents, cela signifie que le ClickPipe est en train de lire les tables sources. Vous pouvez également y voir le COUNT(*) ainsi que la requête de partitionnement.
+
+<div id="limitations-parallel-mysql-snapshot">
+  ### Limitations
+</div>
+
+* Les paramètres du snapshot ne peuvent pas être modifiés après la création du pipe. Si vous souhaitez les changer, vous devrez créer un nouveau ClickPipe.
+* Lors de l&#39;ajout de tables à un ClickPipe existant, vous ne pouvez pas modifier les paramètres du snapshot. ClickPipe utilisera les paramètres existants pour les nouvelles tables.

@@ -1,5 +1,6 @@
 #include <Storages/Statistics/Statistics.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -17,6 +18,7 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -37,6 +39,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunction & b)
+{
+    if (a.sizeOfData() != b.sizeOfData())
+        return false;
+    const auto & a_types = a.getArgumentTypes();
+    const auto & b_types = b.getArgumentTypes();
+    if (a_types.size() != b_types.size())
+        return false;
+    for (size_t i = 0; i < a_types.size(); ++i)
+        if (!a_types[i]->equals(*b_types[i]))
+            return false;
+    return true;
+}
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
 {
@@ -122,6 +138,16 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
 }
 
+/// Returns the first available uniq-style cardinality estimator (prefers Uniq over UniqV2 because Uniq has better precision).
+static const IStatistics * findUniqStats(const ColumnStatistics::StatsMap & m)
+{
+    if (auto it = m.find(StatisticsType::Uniq); it != m.end())
+        return it->second.get();
+    if (auto it = m.find(StatisticsType::UniqV2); it != m.end())
+        return it->second.get();
+    return nullptr;
+}
+
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
@@ -159,6 +185,17 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 
 bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 {
+    /// A collector is built once from the declared column type, so merging a part statistic built on a
+    /// different type (e.g. a MODIFY COLUMN that flips nullability) feeds mismatched aggregate-state
+    /// layouts to ColumnStatistics::merge. Treat a different declared type as a different structure so
+    /// the merge path rebuilds the statistics instead of merging incompatible states. Compare type
+    /// names rather than equals(): custom-named types like Bool share UInt8's typeid and compare equal
+    /// under equals(), but carry a distinct serialized statistics layout, so a name difference matters.
+    const auto & lhs_type = stats_desc.data_type;
+    const auto & rhs_type = other.stats_desc.data_type;
+    if (!lhs_type || !rhs_type || lhs_type->getName() != rhs_type->getName())
+        return false;
+
     if (stats.size() != other.stats.size())
         return false;
 
@@ -168,6 +205,8 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
     for (; i != stats.end(); ++i, ++j)
     {
         if (i->first != j->first)
+            return false;
+        if (!i->second->isCompatibleWith(*j->second))
             return false;
     }
 
@@ -246,10 +285,11 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (val.isNaN())
         return 0;
 
-    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    const IStatistics * uniq_stats = findUniqStats(stats);
+    if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+        if (uniq_stats->estimateCardinality() < 2048)
         {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
         }
@@ -260,9 +300,9 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (stats.contains(StatisticsType::Uniq))
+    if (uniq_stats != nullptr)
     {
-        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+        UInt64 cardinality = uniq_stats->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
@@ -299,9 +339,9 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
-    if (stats.contains(StatisticsType::Uniq))
+    if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
-        return stats.at(StatisticsType::Uniq)->estimateCardinality();
+        return uniq_stats->estimateCardinality();
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
@@ -361,8 +401,8 @@ Estimate ColumnStatistics::getEstimate() const
     for (const auto & [type, _] : stats)
         info.types.insert(type);
 
-    if (stats.contains(StatisticsType::Uniq))
-        info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+    if (const IStatistics * uniq_stats = findUniqStats(stats))
+        info.estimated_cardinality = uniq_stats->estimateCardinality();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {
@@ -565,18 +605,44 @@ ColumnsStatistics ColumnsStatistics::cloneEmpty() const
     return result;
 }
 
+namespace
+{
+
+/// A collector is built once from the declared column type, so a block column of a different type
+/// mis-casts inside the aggregate function. Do not silently adapt the column here: a mismatch means
+/// the mutation pipeline or metadata produced a column disagreeing with the statistics' metadata,
+/// which is a bug to surface with diagnostics, not to hide.
+void checkColumnTypeMatchesStatistics(const String & column_name, const ColumnStatisticsPtr & stat, const DataTypePtr & column_type)
+{
+    auto stats_data_type = stat->getDataType();
+    if (!column_type->equals(*stats_data_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Type mismatch when building statistics for column '{}': statistics expect type {} but block has type {}",
+            column_name, stats_data_type->getName(), column_type->getName());
+}
+
+}
+
 void ColumnsStatistics::build(const Block & block)
 {
     for (const auto & [column_name, stat] : *this)
-        stat->build(block.getByName(column_name).column);
+    {
+        const auto & col = block.getByName(column_name);
+        checkColumnTypeMatchesStatistics(column_name, stat, col.type);
+        stat->build(col.column);
+    }
 }
 
 void ColumnsStatistics::buildIfExists(const Block & block)
 {
     for (const auto & [column_name, stat] : *this)
     {
-        if (block.has(column_name))
-            stat->build(block.getByName(column_name).column);
+        if (!block.has(column_name))
+            continue;
+        const auto & col = block.getByName(column_name);
+        checkColumnTypeMatchesStatistics(column_name, stat, col.type);
+        stat->build(col.column);
     }
 }
 
@@ -625,6 +691,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
+
+    registerValidator(StatisticsType::UniqV2, uniqV2StatisticsValidator);
+    registerCreator(StatisticsType::UniqV2, uniqV2StatisticsCreator);
 
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
@@ -682,7 +751,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
@@ -698,7 +767,7 @@ ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::g
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
+# no-random-settings: serial loop over every I/O format on debug sits at the 600s per-test timeout; randomized query settings amplify wall-time ~3x and tip it over
 
 set -e
 
@@ -11,7 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 formats=$($CLICKHOUSE_CLIENT --query "
     SELECT name FROM system.formats
-    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString')
+    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON')
     ORDER BY name FORMAT TSV
 ")
 

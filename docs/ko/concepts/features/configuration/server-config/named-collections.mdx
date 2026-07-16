@@ -1,0 +1,741 @@
+---
+description: '이름이 지정된 컬렉션에 대한 문서'
+sidebarTitle: '이름이 지정된 컬렉션'
+slug: /operations/named-collections
+title: '이름이 지정된 컬렉션'
+doc_type: '참고'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+이름이 지정된 컬렉션은 외부 소스와의 통합을 구성할 때 사용할
+key-value 쌍 모음을 저장하는 방법을 제공합니다. 이름이 지정된 컬렉션은
+딕셔너리, 테이블, 테이블 함수, 객체 스토리지와 함께 사용할 수 있습니다.
+
+이름이 지정된 컬렉션은 DDL 또는 설정 파일에서 구성할 수 있으며,
+ClickHouse가 시작될 때 적용됩니다. 이를 통해 객체를 더 쉽게 생성할 수 있고,
+관리자 권한이 없는 사용자에게 자격 증명을 숨길 수 있습니다.
+
+이름이 지정된 컬렉션의 키는 해당
+함수, 테이블 엔진, 데이터베이스 등의 매개변수 이름과 일치해야 합니다. 아래 예시에서는
+각 유형별 매개변수 목록으로 연결되는 링크를 제공합니다.
+
+이름이 지정된 컬렉션에 설정된 매개변수는 SQL에서 재정의할 수 있으며, 이는 아래 예시에서
+확인할 수 있습니다. 이 기능은 `[NOT] OVERRIDABLE` 키워드와 XML 속성
+및/또는 구성 옵션 `allow_named_collection_override_by_default`를 사용해 제한할 수 있습니다.
+
+<Warning>
+  재정의가 허용되면 관리자 권한이 없는 사용자도
+  숨기려는 자격 증명을 알아낼 수 있습니다.
+  이러한 목적으로 이름이 지정된 컬렉션을 사용한다면,
+  `allow_named_collection_override_by_default`를 비활성화해야 합니다
+  (기본적으로 활성화되어 있습니다).
+</Warning>
+
+<div id="storing-named-collections-in-the-system-database">
+  ## system 데이터베이스에 이름이 지정된 컬렉션 저장하기
+</div>
+
+<div id="ddl-example">
+  ### DDL 예시
+</div>
+
+```sql
+CREATE NAMED COLLECTION name AS
+key_1 = 'value' OVERRIDABLE,
+key_2 = 'value2' NOT OVERRIDABLE,
+url = 'https://connection.url/'
+```
+
+위 예시에서는 다음과 같습니다:
+
+* `key_1`은 항상 재정의할 수 있습니다.
+* `key_2`는 절대 재정의할 수 없습니다.
+* `url`은 `allow_named_collection_override_by_default` 값에 따라 재정의할 수도 있고 할 수 없을 수도 있습니다.
+
+<div id="permissions-to-create-named-collections-with-ddl">
+  ### DDL로 이름이 지정된 컬렉션을 생성하기 위한 권한
+</div>
+
+DDL로 이름이 지정된 컬렉션을 관리하려면 사용자에게 `named_collection_control` 권한이 있어야 합니다. 이 권한은 `/etc/clickhouse-server/users.d/`에 파일을 추가하여 부여할 수 있습니다. 다음 예시에서는 사용자 `default`에 `access_management`와 `named_collection_control` 권한을 모두 부여합니다:
+
+```xml title='/etc/clickhouse-server/users.d/user_default.xml' highlight={6}
+<clickhouse>
+  <users>
+    <default>
+      <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex replace=true>
+      <access_management>1</access_management>
+      <named_collection_control>1</named_collection_control>
+    </default>
+  </users>
+</clickhouse>
+```
+
+<Tip>
+  위 예시에서 `password_sha256_hex` 값은 비밀번호의 SHA256 해시를 16진수로 표현한 값입니다. 사용자 `default`에 대한 이 구성에는 `replace=true` 속성이 있습니다. 기본 구성에 일반 텍스트 `password`가 설정되어 있으므로, 하나의 사용자에 대해 일반 텍스트 비밀번호와 sha256 hex 비밀번호를 동시에 설정할 수는 없습니다.
+</Tip>
+
+<div id="storage-for-named-collections">
+  ### 이름이 지정된 컬렉션용 저장소
+</div>
+
+이름이 지정된 컬렉션은 로컬 디스크 또는 ZooKeeper/Keeper에 저장할 수 있습니다. 기본적으로는 로컬 저장소가 사용됩니다.
+또한 [디스크 암호화](/ko/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)에서 사용하는 것과 동일한 알고리즘으로 암호화해 저장할 수도 있으며,
+기본값으로는 `aes_128_ctr`이 사용됩니다.
+
+이름이 지정된 컬렉션 저장소를 구성하려면 `type`을 지정해야 합니다. 이 값으로는 `local` 또는 `keeper`/`zookeeper`를 사용할 수 있습니다. 암호화된 저장소의 경우
+`local_encrypted` 또는 `keeper_encrypted`/`zookeeper_encrypted`를 사용할 수 있습니다.
+
+ZooKeeper/Keeper를 사용하려면 설정 파일의
+`named_collections_storage` 섹션에 `path`(이름이 지정된 컬렉션이 저장될 ZooKeeper/Keeper 내 경로)도 설정해야 합니다. 다음 예시에서는 암호화와 ZooKeeper/Keeper를 사용합니다:
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper_encrypted</type>
+    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <algorithm>aes_128_ctr</algorithm>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>1000</update_timeout_ms>
+  </named_collections_storage>
+</clickhouse>
+```
+
+선택 사항인 구성 매개변수 `update_timeout_ms`의 기본값은 `5000`입니다.
+
+<div id="storing-named-collections-in-configuration-files">
+  ## 설정 파일에 이름이 지정된 컬렉션 저장
+</div>
+
+<div id="xml-example">
+  ### XML 예시
+</div>
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+     <named_collections>
+        <name>
+            <key_1 overridable="true">value</key_1>
+            <key_2 overridable="false">value_2</key_2>
+            <url>https://connection.url/</url>
+        </name>
+     </named_collections>
+</clickhouse>
+```
+
+위 예시에서:
+
+* `key_1`은 항상 재정의할 수 있습니다.
+* `key_2`는 절대 재정의할 수 없습니다.
+* `url`은 `allow_named_collection_override_by_default` 값에 따라 재정의할 수도 있고 재정의할 수 없을 수도 있습니다.
+
+<div id="modifying-named-collections">
+  ## 이름이 지정된 컬렉션 수정하기
+</div>
+
+DDL 쿼리로 생성한 이름이 지정된 컬렉션은 DDL을 사용해 변경하거나 삭제할 수 있습니다. XML 파일로 생성한 이름이 지정된 컬렉션은 해당 XML을 수정하거나 삭제하여 관리할 수 있습니다.
+
+<div id="alter-a-ddl-named-collection">
+  ### DDL 이름이 지정된 컬렉션 수정
+</div>
+
+컬렉션 `collection2`의 `key1` 및 `key3` 키를 변경하거나 추가합니다
+(이 경우 해당 키의 `overridable` 플래그 값은 변경되지 않습니다):
+
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
+```
+
+`key1` 키를 변경하거나 추가하고, 항상 재정의할 수 있도록 설정합니다:
+
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4 OVERRIDABLE
+```
+
+`collection2`에서 `key2` 키를 제거합니다:
+
+```sql
+ALTER NAMED COLLECTION collection2 DELETE key2
+```
+
+`collection2` 컬렉션에서 키 `key1`을 변경하거나 추가하고, 키 `key3`를 삭제합니다:
+
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4, DELETE key3
+```
+
+`overridable` 플래그의 기본 설정을 적용하려면
+해당 키를 제거한 후 다시 추가해야 합니다.
+
+```sql
+ALTER NAMED COLLECTION collection2 DELETE key1;
+ALTER NAMED COLLECTION collection2 SET key1=4;
+```
+
+<div id="drop-the-ddl-named-collection-collection2">
+  ### DDL 이름이 지정된 컬렉션 `collection2`를 삭제합니다:
+</div>
+
+```sql
+DROP NAMED COLLECTION collection2
+```
+
+<div id="named-collections-for-accessing-s3">
+  ## S3 액세스용 이름이 지정된 컬렉션
+</div>
+
+매개변수 설명은 [s3 테이블 함수](/ko/reference/functions/table-functions/s3)를 참고하십시오.
+
+<div id="ddl-example">
+  ### DDL 예시
+</div>
+
+```sql
+CREATE NAMED COLLECTION s3_mydata AS
+access_key_id = 'AKIAIOSFODNN7EXAMPLE',
+secret_access_key = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+format = 'CSV',
+url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
+```
+
+<div id="xml-example">
+  ### XML 예시
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <s3_mydata>
+            <access_key_id>AKIAIOSFODNN7EXAMPLE</access_key_id>
+            <secret_access_key>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secret_access_key>
+            <format>CSV</format>
+            <url>https://s3.us-east-1.amazonaws.com/yourbucket/mydata/</url>
+        </s3_mydata>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="s3-function-and-s3-table-named-collection-examples">
+  ### s3() 함수 및 S3 Table용 이름이 지정된 컬렉션 예시
+</div>
+
+아래 두 예시에서는 동일한 이름이 지정된 컬렉션 `s3_mydata`를 사용합니다:
+
+<div id="s3-function">
+  #### s3() 함수
+</div>
+
+```sql
+INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
+   format = 'TSV', structure = 'number UInt64', compression_method = 'gzip')
+SELECT * FROM numbers(10000);
+```
+
+<Tip>
+  위 예시의 `s3()` 함수에서 첫 번째 인수는 컬렉션 이름인 `s3_mydata`입니다. 이름이 지정된 컬렉션을 사용하지 않으면 액세스 키 ID, secret, 포맷, URL을 `s3()` 함수를 호출할 때마다 모두 전달해야 합니다.
+</Tip>
+
+<div id="s3-table">
+  #### S3 테이블
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (number Int64)
+ENGINE=S3(s3_mydata, url='https://s3.us-east-1.amazonaws.com/yourbucket/mydata/test_file.tsv.gz', format = 'TSV')
+SETTINGS input_format_with_names_use_header = 0;
+
+SELECT * FROM s3_engine_table LIMIT 3;
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+└────────┘
+```
+
+<div id="named-collections-for-accessing-mysql-database">
+  ## MySQL 데이터베이스 액세스를 위한 이름이 지정된 컬렉션
+</div>
+
+매개변수에 대한 설명은 [mysql](/ko/reference/functions/table-functions/mysql)을 참조하십시오.
+
+<div id="ddl-example">
+  ### DDL 예시
+</div>
+
+```sql
+CREATE NAMED COLLECTION mymysql AS
+user = 'myuser',
+password = 'mypass',
+host = '127.0.0.1',
+port = 3306,
+database = 'test',
+connection_pool_size = 8,
+replace_query = 1
+```
+
+<div id="xml-example">
+  ### XML 예시
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mymysql>
+            <user>myuser</user>
+            <password>mypass</password>
+            <host>127.0.0.1</host>
+            <port>3306</port>
+            <database>test</database>
+            <connection_pool_size>8</connection_pool_size>
+            <replace_query>1</replace_query>
+        </mymysql>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="mysql-function-mysql-table-mysql-database-and-dictionary-named-collection-examples">
+  ### mysql() 함수, MySQL 테이블, MySQL 데이터베이스 및 딕셔너리의 이름이 지정된 컬렉션 예시
+</div>
+
+다음 4개의 예시에서는 동일한 이름이 지정된 컬렉션 `mymysql`을 사용합니다:
+
+<div id="mysql-function">
+  #### mysql() 함수
+</div>
+
+```sql
+SELECT count() FROM mysql(mymysql, table = 'test');
+
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<Note>
+  이름이 지정된 컬렉션에는 `table` 매개변수가 지정되어 있지 않으므로, 함수 호출에서 `table = 'test'`로 지정합니다.
+</Note>
+
+<div id="mysql-table">
+  #### MySQL 테이블
+</div>
+
+```sql
+CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
+SELECT count() FROM mytable;
+
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<Note>
+  DDL은 connection&#95;pool&#95;size에 대한 이름이 지정된 컬렉션 설정을 덮어씁니다.
+</Note>
+
+<div id="mysql-database">
+  #### MySQL 데이터베이스
+</div>
+
+```sql
+CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
+
+SHOW TABLES FROM mydatabase;
+
+┌─name───┐
+│ source │
+│ test   │
+└────────┘
+```
+
+<div id="mysql-dictionary">
+  #### MySQL 딕셔너리
+</div>
+
+```sql
+CREATE DICTIONARY dict (A Int64, B String)
+PRIMARY KEY A
+SOURCE(MYSQL(NAME mymysql TABLE 'source'))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'B', 2);
+
+┌─dictGet('dict', 'B', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+<div id="named-collections-for-accessing-postgresql-database">
+  ## PostgreSQL 데이터베이스에 액세스하기 위한 이름이 지정된 컬렉션
+</div>
+
+매개변수에 대한 설명은 [postgresql](/ko/reference/functions/table-functions/postgresql)을 참조하십시오. 또한 다음과 같은 별칭이 있습니다:
+
+* `username`은 `user`의 별칭입니다
+* `db`는 `database`의 별칭입니다.
+
+컬렉션에서는 `host:port` 대신 `addresses_expr` 매개변수를 사용합니다. `host`, `hostname`, `port`와 같은 다른 선택적 매개변수도 있으므로 이 매개변수는 선택 사항입니다. 다음 의사 코드는 우선순위를 설명합니다:
+
+```sql
+CASE
+    WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
+    WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+    WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+END
+```
+
+생성 예시:
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+user = 'pguser',
+password = 'jw8s0F4',
+host = '127.0.0.1',
+port = 5432,
+database = 'test',
+schema = 'test_schema'
+```
+
+구성 예시:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mypg>
+            <user>pguser</user>
+            <password>jw8s0F4</password>
+            <host>127.0.0.1</host>
+            <port>5432</port>
+            <database>test</database>
+            <schema>test_schema</schema>
+        </mypg>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="example-of-using-named-collections-with-the-postgresql-function">
+  ### postgresql 함수에서 이름이 지정된 컬렉션을 사용하는 예시
+</div>
+
+```sql
+SELECT * FROM postgresql(mypg, table = 'test');
+
+┌─a─┬─b───┐
+│ 2 │ two │
+│ 1 │ one │
+└───┴─────┘
+SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
+
+┌─a─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<div id="example-of-using-named-collections-with-database-with-engine-postgresql">
+  ### PostgreSQL 엔진을 사용하는 데이터베이스에서 이름이 지정된 컬렉션을 사용하는 예시
+</div>
+
+```sql
+CREATE TABLE mypgtable (a Int64) ENGINE = PostgreSQL(mypg, table = 'test', schema = 'public');
+
+SELECT * FROM mypgtable;
+
+┌─a─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<Note>
+  PostgreSQL은 테이블을 생성할 때 명명된 컬렉션의 데이터를 복사합니다. 이후 컬렉션이 변경되어도 기존 테이블에는 영향을 미치지 않습니다.
+</Note>
+
+<div id="example-of-using-named-collections-with-database-with-engine-postgresql">
+  ### PostgreSQL 엔진을 사용하는 데이터베이스에서 이름이 지정된 컬렉션을 사용하는 예시
+</div>
+
+```sql
+CREATE DATABASE mydatabase ENGINE = PostgreSQL(mypg);
+
+SHOW TABLES FROM mydatabase
+
+┌─name─┐
+│ test │
+└──────┘
+```
+
+<div id="example-of-using-named-collections-with-a-dictionary-with-source-postgresql">
+  ### POSTGRESQL 소스를 사용하는 딕셔너리에서 이름이 지정된 컬렉션을 사용하는 예시
+</div>
+
+```sql
+CREATE DICTIONARY dict (a Int64, b String)
+PRIMARY KEY a
+SOURCE(POSTGRESQL(NAME mypg TABLE test))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+<div id="named-collections-for-accessing-a-remote-clickhouse-database">
+  ## 원격 ClickHouse 데이터베이스에 접속하기 위한 이름이 지정된 컬렉션
+</div>
+
+매개변수 설명은 [remote](/ko/reference/functions/table-functions/remote#parameters)에서 확인하십시오.
+
+구성 예시는 다음과 같습니다:
+
+```sql
+CREATE NAMED COLLECTION remote1 AS
+host = 'remote_host',
+port = 9000,
+database = 'system',
+user = 'foo',
+password = 'secret',
+secure = 1
+```
+
+```xml
+<clickhouse>
+    <named_collections>
+        <remote1>
+            <host>remote_host</host>
+            <port>9000</port>
+            <database>system</database>
+            <user>foo</user>
+            <password>secret</password>
+            <secure>1</secure>
+        </remote1>
+    </named_collections>
+</clickhouse>
+```
+
+`remoteSecure`를 사용하므로 연결에는 `secure`가 필요하지 않지만, 딕셔너리에는 사용할 수 있습니다.
+
+<div id="example-of-using-named-collections-with-the-remoteremotesecure-functions">
+  ### `remote`/`remoteSecure` 함수에서 이름이 지정된 컬렉션을 사용하는 예시
+</div>
+
+```sql
+SELECT * FROM remote(remote1, table = one);
+┌─dummy─┐
+│     0 │
+└───────┘
+
+SELECT * FROM remote(remote1, database = merge(system, '^one'));
+┌─dummy─┐
+│     0 │
+└───────┘
+
+INSERT INTO FUNCTION remote(remote1, database = default, table = test) VALUES (1,'a');
+
+SELECT * FROM remote(remote1, database = default, table = test);
+┌─a─┬─b─┐
+│ 1 │ a │
+└───┴───┘
+```
+
+<div id="example-of-using-named-collections-with-a-dictionary-with-source-clickhouse">
+  ### 소스로 ClickHouse를 사용하는 딕셔너리에서 이름이 지정된 컬렉션을 사용하는 예시
+</div>
+
+```sql
+CREATE DICTIONARY dict(a Int64, b String)
+PRIMARY KEY a
+SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 1);
+┌─dictGet('dict', 'b', 1)─┐
+│ a                       │
+└─────────────────────────┘
+```
+
+<div id="named-collections-for-accessing-kafka">
+  ## Kafka에 액세스하기 위한 이름이 지정된 컬렉션
+</div>
+
+매개변수 설명은 [Kafka](/ko/reference/engines/table-engines/integrations/kafka)를 참조하십시오.
+
+<div id="ddl-example">
+  ### DDL 예시
+</div>
+
+```sql
+CREATE NAMED COLLECTION my_kafka_cluster AS
+kafka_broker_list = 'localhost:9092',
+kafka_topic_list = 'kafka_topic',
+kafka_group_name = 'consumer_group',
+kafka_format = 'JSONEachRow',
+kafka_max_block_size = '1048576';
+
+```
+
+<div id="xml-example">
+  ### XML 예시
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_kafka_cluster>
+            <kafka_broker_list>localhost:9092</kafka_broker_list>
+            <kafka_topic_list>kafka_topic</kafka_topic_list>
+            <kafka_group_name>consumer_group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_max_block_size>1048576</kafka_max_block_size>
+        </my_kafka_cluster>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="example-of-using-named-collections-with-a-kafka-table">
+  ### Kafka 테이블에서 이름이 지정된 컬렉션 사용 예시
+</div>
+
+다음 두 예시에서는 동일한 이름이 지정된 컬렉션 `my_kafka_cluster`를 사용합니다.
+
+```sql
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+SETTINGS kafka_num_consumers = 4,
+         kafka_thread_per_consumer = 1;
+```
+
+<div id="named-collections-for-backups">
+  ## 백업용 이름이 지정된 컬렉션
+</div>
+
+매개변수 설명은 [Backup 및 복원](/ko/concepts/features/backup-restore/overview)을 참조하십시오.
+
+<div id="ddl-example">
+  ### DDL 예시
+</div>
+
+```sql
+BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
+```
+
+<div id="xml-example">
+  ### XML 예시
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <named_collection_s3_backups>
+            <url>https://my-s3-bucket.s3.amazonaws.com/backup-S3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </named_collection_s3_backups>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="named-collections-for-accessing-mongodb-table-and-dictionary">
+  ## MongoDB 테이블 및 딕셔너리 액세스를 위한 이름이 지정된 컬렉션
+</div>
+
+매개변수에 대한 설명은 [mongodb](/ko/reference/functions/table-functions/mongodb)를 참조하십시오.
+
+<div id="ddl-example">
+  ### DDL 예시
+</div>
+
+```sql
+CREATE NAMED COLLECTION mymongo AS
+user = '',
+password = '',
+host = '127.0.0.1',
+port = 27017,
+database = 'test',
+collection = 'my_collection',
+options = 'connectTimeoutMS=10000'
+```
+
+<div id="xml-example">
+  ### XML 예시
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mymongo>
+            <user></user>
+            <password></password>
+            <host>127.0.0.1</host>
+            <port>27017</port>
+            <database>test</database>
+            <collection>my_collection</collection>
+            <options>connectTimeoutMS=10000</options>
+        </mymongo>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="mongodb-table">
+  #### MongoDB 테이블
+</div>
+
+```sql
+CREATE TABLE mytable(log_type VARCHAR, host VARCHAR, command VARCHAR) ENGINE = MongoDB(mymongo, options='connectTimeoutMS=10000&compressors=zstd')
+SELECT count() FROM mytable;
+
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+<Note>
+  DDL은 옵션에 대한 이름이 지정된 컬렉션 설정을 덮어씁니다.
+</Note>
+
+<div id="mongodb-dictionary">
+  #### MongoDB 딕셔너리
+</div>
+
+```sql
+CREATE DICTIONARY dict
+(
+    `a` Int64,
+    `b` String
+)
+PRIMARY KEY a
+SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED())
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+<Note>
+  이름이 지정된 컬렉션에서는 컬렉션 이름으로 `my_collection`을 지정합니다. 함수 호출에서는 다른 컬렉션을 선택하기 위해 `collection = 'my_dict'`로 이를 덮어씁니다.
+</Note>

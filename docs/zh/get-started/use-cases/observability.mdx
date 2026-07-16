@@ -1,0 +1,46 @@
+---
+slug: /cloud/get-started/cloud/use-cases/observability
+title: '可观测性'
+description: '使用 ClickHouse Cloud 对分布式应用进行可观测性、监控、日志管理和系统性能分析'
+keywords: ['使用场景', '可观测性']
+sidebarTitle: '可观测性'
+doc_type: 'guide'
+---
+
+import { PrimaryButton } from "/snippets/zh/components/PrimaryButton/PrimaryButton.jsx";
+
+<div id="clickstack">
+  ## 用于可观测性的 ClickHouse
+</div>
+
+ClickHouse 的早期采用者很早就认识到一个根本事实：可观测性本质上是一个数据问题。
+你选择的数据库，决定了可观测性平台的成本、规模和能力——这也是为什么，无论是自建平台还是创办可观测性公司，为时间序列数据选对数据库，往往都是最重要的架构决策。
+
+这正是 ClickHouse 多年来始终处于可观测性技术栈核心的原因。
+从 Netflix、eBay 这样的行业巨头，到 Sentry、Dash0 这样的可观测性初创公司，ClickHouse 都在支撑海量的日志、指标和链路追踪。
+其列式存储、高压缩率和向量化执行引擎能够显著降低成本，并提供工程师调试线上系统所需的亚秒级查询能力，无需再等待缓慢的工具。
+
+## ClickStack
+
+在 ClickHouse 的可观测性场景中，核心是 ClickStack——一个创新的可观测性平台。它将日志、链路追踪和指标统一存储在同一个 ClickHouse 数据库中，彻底改变了您处理这些数据的方式。
+这种统一的方法让您能够轻松地在整个基础设施和应用中关联各类信号。
+
+ClickStack 由三个无缝协同工作的核心组件构成：
+
+<Tabs>
+  <Tab title="OpenTelemetry" icon="/images/integrations/logos/logo_otel.webp">
+    > ClickStack 版 OpenTelemetry Collector 充当您的数据摄取网关。OpenTelemetry 已成为可观测性数据的行业标准，因此这个 collector 自然也就成了处理遥测数据流的理想选择。
+  </Tab>
+
+  <Tab title="ClickHouse" icon="/images/icons/icon-clickhouse-tab.svg">
+    > 之所以选择 ClickHouse，是因为它在处理高基数数据以及可观测性工作负载所需的高速聚合方面表现卓越。
+  </Tab>
+
+  <Tab title="HyperDX" icon="/images/hyperdx-logo.webp">
+    > HyperDX 提供直观的用户界面，将您的所有数据整合到一起，并具备强大的查询和关联能力。
+  </Tab>
+</Tabs>
+
+ClickStack 的一大突出优势在于它的灵活性。虽然它原生支持 OpenTelemetry，并且与 OpenTelemetry 生态系统配合最佳，但并不局限于此。您可以从多种来源摄取数据，包括 S3、Kafka 和其他 agent，从而能够灵活利用现有基础设施。
+
+<PrimaryButton label="阅读 ClickStack 文档" href="/zh/clickstack" />

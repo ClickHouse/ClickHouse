@@ -1,32 +1,22 @@
-import os.path as p
 import random
 import threading
 import time
-from random import randrange
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
     assert_nested_table_is_created,
-    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
-    create_postgres_schema,
     create_postgres_table,
     create_replication_slot,
-    drop_postgres_schema,
-    drop_postgres_table,
     drop_replication_slot,
     get_postgres_conn,
-    postgres_table_template,
-    postgres_table_template_2,
-    postgres_table_template_3,
-    postgres_table_template_4,
     queries,
 )
-from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -124,7 +114,7 @@ def test_virtual_columns(started_cluster):
 
 def test_multiple_databases(started_cluster):
     NUM_TABLES = 5
-    conn = get_postgres_conn(
+    get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         database=False,
@@ -306,7 +296,6 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
     time.sleep(2)
 
-
     with started_cluster.pause_container_using_signal("postgres1"):
         # for i in range(NUM_TABLES):
         #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
@@ -447,6 +436,114 @@ def test_user_managed_slots(started_cluster):
     pg_manager.drop_materialized_db()
     drop_replication_slot(replication_connection, slot_name)
     replication_connection.close()
+
+
+def test_bool_and_bool_array(started_cluster):
+    """Test for https://github.com/ClickHouse/ClickHouse/issues/62544
+    A PostgreSQL `boolean[]` column failed to replicate through
+    MaterializedPostgreSQL because the array parser did not understand
+    PostgreSQL's 't'/'f' boolean text format. This checks both the initial
+    snapshot and the streaming replication path (INSERT and UPDATE), including
+    NULL scalars, NULL array elements and NULL arrays. Rows are written directly
+    in PostgreSQL so the values arrive over the wire exactly as '{t,f,...}'.
+    """
+    table_name = "test_bool_array"
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    cursor.execute(
+        f'CREATE TABLE "{table_name}" '
+        "(key integer PRIMARY KEY, b boolean, arr boolean[])"
+    )
+    cursor.execute(
+        f'INSERT INTO "{table_name}" VALUES '
+        "(1, 't', '{t,t,t,f,f,f,t,t}'), "
+        "(2, 'f', '{f,f}'), "
+        "(3, NULL, '{t,NULL,f}'), "
+        "(4, 't', NULL)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+
+    # Initial snapshot.
+    check_tables_are_synchronized(instance, table_name)
+    assert (
+        instance.query(f"SELECT * FROM test_database.{table_name} ORDER BY key")
+        == "1\t1\t[1,1,1,0,0,0,1,1]\n"
+        "2\t0\t[0,0]\n"
+        "3\t\\N\t[1,NULL,0]\n"
+        "4\t1\t[]\n"
+    )
+
+    # Streaming replication: INSERT and UPDATE performed directly in PostgreSQL.
+    cursor.execute(f"""INSERT INTO "{table_name}" VALUES (5, 'f', '{{f,NULL,t,f}}')""")
+    cursor.execute(
+        f"""UPDATE "{table_name}" SET b = 'f', arr = '{{t,t,t}}' WHERE key = 1"""
+    )
+
+    check_tables_are_synchronized(instance, table_name)
+    assert (
+        instance.query(f"SELECT * FROM test_database.{table_name} ORDER BY key")
+        == "1\t0\t[1,1,1]\n"
+        "2\t0\t[0,0]\n"
+        "3\t\\N\t[1,NULL,0]\n"
+        "4\t1\t[]\n"
+        "5\t0\t[0,NULL,1,0]\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_merge_table_over_materialized_postgresql(started_cluster):
+    """
+    Reading a MaterializedPostgreSQL table through Merge forces FINAL on the child read
+    """
+    table_name = "postgresql_replica_final"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(3)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table_name}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+
+    try:
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+
+        # Stop merges so the nested ReplacingMergeTree keeps both versions of the
+        # updated row and the read has to deduplicate them with FINAL.
+        instance.query(f"SYSTEM STOP MERGES {table_name}")
+        pg_manager.execute(f"UPDATE {table_name} SET value = 42 WHERE key = 1")
+
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+
+        expected = "0\t0\n1\t42\n2\t2\n"
+        direct_query = f"SELECT key, value FROM {table_name} ORDER BY key, value"
+        merge_query = (
+            f"SELECT key, value FROM merge('default', '^{table_name}$')"
+            " ORDER BY key, value"
+        )
+
+        for query in [direct_query, merge_query]:
+            explain = instance.query(f"EXPLAIN actions=1 {query}")
+            assert "FINAL: 1" in explain, explain
+
+        assert instance.query(direct_query) == expected
+        assert instance.query(merge_query) == expected
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 if __name__ == "__main__":

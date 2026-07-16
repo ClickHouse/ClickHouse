@@ -1,0 +1,85 @@
+---
+description: 'Документация по модификатору типа данных Nullable в ClickHouse'
+sidebarTitle: 'Nullable(T)'
+slug: /sql-reference/data-types/nullable
+title: 'Nullable(T)'
+doc_type: 'reference'
+---
+
+Позволяет хранить специальный маркер ([NULL](/ru/reference/syntax)), обозначающий «отсутствующее значение», наряду с обычными значениями, допустимыми для `T`. Например, столбец типа `Nullable(Int8)` может хранить значения типа `Int8`, а в строках, где значение отсутствует, будет храниться `NULL`.
+
+`T` не может быть ни одним из следующих составных типов данных:
+
+* [Array](/ru/reference/data-types/array) — Не поддерживается
+* [Map](/ru/reference/data-types/map) — Не поддерживается
+* [Tuple](/ru/reference/data-types/tuple) — Доступна бета-поддержка*
+
+Однако составные типы данных **могут содержать** значения типа `Nullable`, например `Array(Nullable(Int8))` или `Tuple(Nullable(String), Nullable(Int64))`.
+
+<Info>
+  **Бета: Nullable Tuple**
+
+  * [Nullable(Tuple(...))](/ru/reference/data-types/tuple#nullable-tuple) поддерживается, если включен параметр `enable_nullable_tuple_type = 1`.
+</Info>
+
+Поле типа `Nullable` нельзя включать в индексы таблицы.
+
+`NULL` — значение по умолчанию для любого типа `Nullable`, если иное не указано в конфигурации сервера ClickHouse.
+
+<div id="storage-features">
+  ## Особенности хранилища
+</div>
+
+Чтобы хранить значения типа `Nullable` в столбце таблицы, ClickHouse помимо обычного файла со значениями использует отдельный файл с масками `NULL`. Записи в файле масок позволяют ClickHouse различать `NULL` и значение по умолчанию соответствующего типа данных для каждой строки таблицы. Из-за дополнительного файла столбец `Nullable` занимает больше места в хранилище по сравнению с аналогичным обычным столбцом.
+
+<Note>
+  Использование `Nullable` почти всегда отрицательно сказывается на производительности, учитывайте это при проектировании баз данных.
+</Note>
+
+<div id="finding-null">
+  ## Поиск NULL
+</div>
+
+Найти значения `NULL` в столбце можно с помощью подстолбца `null`, не считывая весь столбец целиком. Он возвращает `1`, если соответствующее значение равно `NULL`, и `0` в противном случае.
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+```text title="Response"
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+<div id="usage-example">
+  ## Пример использования
+</div>
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
+```
+
+```sql
+INSERT INTO t_null VALUES (1, NULL), (2, 3)
+```
+
+```sql
+SELECT x + y FROM t_null
+```
+
+```text
+┌─plus(x, y)─┐
+│       ᴺᵁᴸᴸ │
+│          5 │
+└────────────┘
+```

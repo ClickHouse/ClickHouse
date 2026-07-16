@@ -1,19 +1,17 @@
-import glob
+import io
 import json
 import logging
-import os
 import random
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
 import requests
-import urllib3
 import pytz
-from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -21,7 +19,6 @@ from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
-    FloatType,
     NestedField,
     StringType,
     StructType,
@@ -29,12 +26,10 @@ from pyiceberg.types import (
     TimestamptzType
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
-from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
-from helpers.test_tools import TSV, csv_compare
-from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
+from helpers.s3_tools import get_file_contents
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -107,7 +102,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse-rest/data",
+        location="s3://warehouse-rest/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -287,6 +282,118 @@ def test_list_tables(started_cluster):
     )
 
 
+def escape_like_literal(s):
+    # Escape SQL LIKE wildcards (`%`, `_`) and `\` so the value matches literally
+    # (ClickHouse keeps the backslash, so one backslash in the query text suffices).
+    return re.sub(r"([\\%_])", r"\\\1", s)
+
+
+def test_namespace_filter_pushdown(started_cluster):
+    """
+    Verify that `system.tables` predicates that fully bind the namespace
+    (`name = '<ns>.<table>'`, `name LIKE '<ns>.%'`) only fetch the table list
+    from the targeted namespace instead of enumerating the whole catalog.
+    See issue #105022.
+
+    Checking the result rows alone is not enough: an implementation that lists
+    the whole catalog and filters in memory would return the same rows. To prove
+    the scoped catalog API is actually used we also count the per-namespace
+    `Received tables response for namespace: <ns>` log line that `RestCatalog`
+    emits for every namespace whose `.../tables` endpoint it hits. A scoped query
+    must bump the count for the targeted namespace while leaving the sibling
+    namespace untouched; a regression to a full-catalog scan would also fetch the
+    sibling and fail the assertion.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace_1 = f"{root_namespace}.target.scope"
+    namespace_2 = f"{root_namespace}.other.scope"
+    namespace_1_tables = ["scoped_a", "scoped_b"]
+    namespace_2_tables = ["other_a", "other_b"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in [namespace_1, namespace_2]:
+        catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    for table in namespace_1_tables:
+        create_table(catalog, namespace_1, table)
+    for table in namespace_2_tables:
+        create_table(catalog, namespace_2, table)
+
+    def namespace_listings(namespace):
+        # Number of times RestCatalog has fetched the table list of `namespace`
+        # so far. `count_in_log` only scans the current (non-rotated) log file,
+        # which is what we want for before/after deltas within a single test.
+        return int(
+            node.count_in_log(f"Received tables response for namespace: {namespace}")
+        )
+
+    def assert_scoped(query, expected):
+        # Run a query that should be scoped to `namespace_1` and assert both the
+        # result rows and that only the target namespace's table list was fetched.
+        before_target = namespace_listings(namespace_1)
+        before_sibling = namespace_listings(namespace_2)
+
+        assert expected == node.query(query).strip()
+
+        # The catalog requests run on a background thread pool, so the log line
+        # may land slightly after the query returns. Wait for the target listing
+        # to confirm the query really reached the catalog before checking that the
+        # sibling was left alone.
+        for _ in range(30):
+            if namespace_listings(namespace_1) > before_target:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(
+                f"Scoped query did not fetch the table list of '{namespace_1}': {query}"
+            )
+
+        assert namespace_listings(namespace_2) == before_sibling, (
+            f"Scoped query for '{namespace_1}' also fetched the sibling namespace "
+            f"'{namespace_2}' — namespace push-down regressed to a full-catalog "
+            f"scan: {query}"
+        )
+
+    expected_ns1 = "\n".join(sorted(f"{namespace_1}.{t}" for t in namespace_1_tables))
+
+    # Case-sensitive LIKE pushdown. The namespace's literal `_` is a LIKE wildcard,
+    # so escape it (`\_`) to bind the namespace exactly.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{escape_like_literal(namespace_1)}.%' ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # `startsWith` pushdown, pinned directly: the analyzer rewrites perfect-prefix
+    # `name LIKE 'prefix%'` to `startsWith(name, 'prefix')`, which must also scope.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND startsWith(name, '{namespace_1}.') ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # The same query written as `LIKE`, with the rewrite forced on, to guard the
+    # analyzer-rewrite path end-to-end even if the default flips in the future.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{escape_like_literal(namespace_1)}.%' ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true, optimize_rewrite_like_perfect_affix = 1",
+        expected_ns1,
+    )
+
+    # Equality pushdown for a fully-qualified table name.
+    one_table = f"{namespace_1}.{namespace_1_tables[0]}"
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        one_table,
+    )
+
+
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -339,7 +446,7 @@ def test_check_database(started_cluster):
 
     try:
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
     
         assert "fault when checking database" in node.query_and_get_error(
@@ -347,7 +454,7 @@ def test_check_database(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 
@@ -437,7 +544,7 @@ def test_hide_sensitive_info(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(namespace)
 
-    table = create_table(catalog, namespace, table_name)
+    create_table(catalog, namespace, table_name)
 
     def check_secret_hidden(secret, additional_settings):
         settings = {
@@ -752,6 +859,52 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
+@pytest.mark.parametrize(
+    "fields_to_remove",
+    [
+        ["snapshots"],
+        ["metadata-log"],
+        ["snapshot-log"],
+        ["snapshots", "metadata-log", "snapshot-log"],
+    ],
+)
+def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
+    # The Iceberg spec marks snapshots / metadata-log / snapshot-log as optional, so external
+    # engines may create empty-table metadata that omits any of them. Inserting into such a table
+    # must still succeed instead of aborting in the metadata write path.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_insert_no_optional_arrays_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    assert iceberg_table.metadata_location.startswith("s3://")
+    metadata_bucket, metadata_key = iceberg_table.metadata_location[len("s3://"):].split("/", 1)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, metadata_bucket, metadata_key))
+    for field in fields_to_remove:
+        metadata.pop(field, None)
+    metadata_bytes = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(
+        metadata_bucket,
+        metadata_key,
+        io.BytesIO(metadata_bytes),
+        len(metadata_bytes),
+        content_type="application/json",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
+
+
 def test_create(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -817,7 +970,7 @@ def test_cluster_select(started_cluster):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    catalog = load_catalog_impl(started_cluster)
+    load_catalog_impl(started_cluster)
     create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
     create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
     create_clickhouse_iceberg_table(started_cluster, node1, root_namespace, table_name, "(x String)")
@@ -834,7 +987,7 @@ def test_cluster_select(started_cluster):
     for replica in [node1, node2]:
         cluster_secondary_queries = (
             replica.query(
-                f"""
+                """
                 SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
                 WHERE
                     type = 'QueryStart' AND
@@ -859,7 +1012,7 @@ def test_used_storages_in_query_log(started_cluster):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    catalog = load_catalog_impl(started_cluster)
+    load_catalog_impl(started_cluster)
     create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
     create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
     create_clickhouse_iceberg_table(
@@ -977,22 +1130,27 @@ def test_system_tables_with_nullptr_table(started_cluster):
     node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
 
     try:
-        ## This triggers getFilteredTables with engine_column populated (the crash site).
+        ## getFilteredTables with engine_column populated (a former crash site). The table
+        ## whose storage object could not be resolved is now KEPT in the listing with an empty
+        ## engine, rather than being silently dropped.
         result = node.query(
-            f"SELECT engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
-        ## With the failpoint, all tables return nullptr so we get empty result.
-        assert result.strip() == ""
+        assert table_name in result
+        ## engine is empty for the unresolved table (nothing after the name + tab).
+        assert f"{table_name}\t" in result or f"{table_name}." in result
 
-        ## This triggers the fillData main loop path.
+        ## fillData main loop path: the row is present (not dropped) even though every
+        ## storage-dependent column is defaulted.
         result = node.query(
-            f"SELECT * FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
-        assert result.strip() == ""
+        assert int(result.strip()) >= 1
 
-        ## Also test with count() to exercise a different code path.
+        ## A predicate on engine still filters correctly: the unresolved table has an empty
+        ## engine, so it does not match a concrete engine pattern.
         result = node.query(
             f"SELECT count(engine) FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"AND engine LIKE '%ReplicatedMergeTree' "
@@ -1013,6 +1171,192 @@ def test_system_tables_with_nullptr_table(started_cluster):
     assert int(result.strip()) > 0
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/110032.
+
+    When a table's metadata is unresolvable, a system.tables scan of the whole
+    DataLakeCatalog database must not abort (with database_datalake_require_metadata_access=1)
+    nor silently drop the table (with =0). Either way the table stays listed by name, with
+    default/empty values for the storage-dependent columns.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## Simulate a per-table metadata resolution failure (throws).
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+
+    try:
+        for require in (1, 0):
+            settings = (
+                f"SETTINGS show_data_lake_catalogs_in_system_tables = 1, "
+                f"database_datalake_require_metadata_access = {require}"
+            )
+
+            ## Name-only fast path always worked; still lists the table.
+            result = node.query(
+                f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"name-only path, require={require}"
+
+            ## The whole-database scan requesting a storage-dependent column must NOT abort
+            ## and must NOT drop the table -- it is kept with an empty engine.
+            result = node.query(
+                f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"full scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert int(result.strip()) >= 1, f"count, require={require}"
+
+            ## total_rows (a per-column stat that needs the opened storage) is defaulted, not fatal.
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND total_rows IS NULL {settings}"
+            )
+            assert int(result.strip()) >= 1, f"total_rows default, require={require}"
+
+            ## parameterized_view_parameters needs the opened storage too. Selecting it alongside
+            ## other columns must keep the column aligned (defaulted to an empty array), not abort.
+            result = node.query(
+                f"SELECT name, parameterized_view_parameters FROM system.tables "
+                f"WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"parameterized_view_parameters scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND empty(parameterized_view_parameters) {settings}"
+            )
+            assert int(result.strip()) >= 1, f"parameterized_view_parameters default, require={require}"
+
+            ## create_table_query / engine_full / as_select re-enter the catalog metadata query
+            ## for a null-storage row. Selecting them must not re-throw and abort the scan; the
+            ## columns are defaulted to empty strings for the unresolvable table.
+            result = node.query(
+                f"SELECT name, create_table_query, engine_full, as_select FROM system.tables "
+                f"WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"create_table_query scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
+            )
+            assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## Direct access to the broken table still surfaces the error (query_and_get_error already
+    ## asserts the query failed; here we check it is the injected metadata failure).
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        assert "Injected metadata resolution failure" in node.query_and_get_error(
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` "
+            f"SETTINGS database_datalake_require_metadata_access = 1"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):
+    """
+    Regression test for the StorageMerge consumer of DatabaseDataLake::getTablesIterator.
+
+    Only system.tables (getTablesIteratorWithHint) keeps a row with a null storage object
+    for a table whose metadata is unresolvable. Every other consumer -- StorageMerge in
+    particular -- dereferences the storage object of every iterated row unconditionally
+    (ReadFromMerge::getSelectedTables skips null storage with `continue` without advancing
+    the iterator, so it would loop forever; traverseTablesUntil callers such as
+    supportsPrewhere / totalRows deref the table directly). getTablesIterator therefore must
+    NOT yield null-storage rows: it propagates the error when
+    database_datalake_require_metadata_access=1 and drops the unresolved table otherwise.
+
+    A SELECT through a Merge table over the catalog with one broken table must fail cleanly
+    or return only the resolvable tables' rows, never hang or crash during planning.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_merge_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## An explicitly-created Merge table with a declared structure skips schema inference, so a
+    ## SELECT through it reaches ReadFromMerge::getSelectedTables directly -- the read path the
+    ## bot flagged, where a null-storage iterator row would spin forever (`if (!storage)
+    ## continue;` never advances the iterator). (The merge() table function cannot exercise this
+    ## because it forces schema inference first, which resolves/errors before the read path.)
+    node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
+    node.query(
+        f"CREATE TABLE default.merge_over_datalake (symbol Nullable(String)) "
+        f"ENGINE = Merge('{CATALOG_NAME}', '.*broken_table.*')"
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## Pre-fix, getTablesIterator handed StorageMerge a null-storage iterator row for the
+    ## broken table; ReadFromMerge::getSelectedTables then spun forever (`if (!storage)
+    ## continue;` never advances the iterator), so the SELECT hung. With the fix that row is
+    ## never yielded to StorageMerge -- the error is propagated (require_metadata_access
+    ## defaults to 1 in the storage context) instead. Either way the query must COMPLETE
+    ## within the timeout (a hang would trip the timeout and fail the test) and the server
+    ## must survive. A generous-but-bounded timeout converts the pre-fix hang into a clean
+    ## test failure rather than hanging the whole job.
+    def run_merge_select(require):
+        ## Completes (error or result) within the timeout == no infinite loop; return the
+        ## outcome text for a sanity assertion. A hang raises and fails the test.
+        try:
+            return node.query(
+                "SELECT count() FROM default.merge_over_datalake "
+                f"SETTINGS database_datalake_require_metadata_access = {require}",
+                timeout=60,
+            ).strip()
+        except QueryRuntimeException as e:
+            return str(e)
+
+    try:
+        for require in (1, 0):
+            outcome = run_merge_select(require)
+            ## Either a clean numeric result (unresolved table dropped -> 0 rows) or the
+            ## injected metadata error -- never a hang, never a crash/LOGICAL_ERROR.
+            assert (
+                outcome.isdigit()
+                or "Injected metadata resolution failure" in outcome
+                or "metadata" in outcome
+            ), f"require={require}: {outcome}"
+            assert "LOGICAL_ERROR" not in outcome, f"require={require}: {outcome}"
+
+            ## Server is still alive (i.e. no crash from a null-storage deref).
+            assert node.query("SELECT 1").strip() == "1", f"require={require}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+        node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
 
 def test_delete_on_lazy_initialized_table(started_cluster):
     """
@@ -1108,7 +1452,10 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
 
-    num_columns = 10
+    # Concurrent ADD COLUMN commits must contend on the REST catalog to surface
+    # the commit-conflict/retry race. A handful of concurrent writers is enough
+    # to interleave; the original count of 10 just multiplied catalog round-trips.
+    num_columns = 4
 
     def add_column(idx):
         node.query(
@@ -1168,6 +1515,69 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def test_writes_mutate_update(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_mutate_update_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('999', 3);", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\t1\n456\t2\n999\t3\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = '777' WHERE x = '123';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\t2\n777\t1\n999\t3\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = 'goshan dr' WHERE x = '777';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\t2\n999\t3\ngoshan dr\t1\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = 'pudge1000-7' WHERE y = 2;", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "999\t3\ngoshan dr\t1\npudge1000-7\t2\n"
+
+
+def test_writes_mutate_delete(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_mutate_delete_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    # DELETE on empty table is a no-op.
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'pudge1000-7';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == ""
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('789'), ('890'), ('999');", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n890\n999\n"
+
+    # No-match DELETE keeps the table intact.
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'pudge1000-7';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n890\n999\n"
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '789';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n890\n999\n"
+
+    # Lightweight DELETE syntax should work identically against catalog tables.
+    node.query(f"DELETE FROM {table_ref} WHERE x = '123';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n999\n"
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '999';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n"
 
 
 def test_iceberg_file_progress_callback(started_cluster):

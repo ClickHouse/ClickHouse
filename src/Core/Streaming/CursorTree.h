@@ -4,6 +4,7 @@
 #include <Core/Streaming/CursorTree_fwd.h>
 
 #include <base/types.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <variant>
 
@@ -14,7 +15,7 @@ namespace DB
 /// Example: partition/shard etc.
 class CursorTreeNode
 {
-    using Data = std::map<String, std::variant<Int64, CursorTreeNodePtr>>;
+    using Data = MapWithMemoryTracking<String, std::variant<Int64, CursorTreeNodePtr>>;
 
 public:
     bool hasSubtree(const String & key) const;

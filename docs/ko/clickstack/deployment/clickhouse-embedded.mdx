@@ -1,0 +1,170 @@
+---
+slug: /use-cases/observability/clickstack/deployment/clickhouse-embedded
+title: 'ClickHouse에 내장'
+description: 'ClickHouse 서버에 내장된 ClickStack 사용 - ClickHouse 관측성 스택'
+doc_type: 'guide'
+keywords: ['ClickStack 내장', 'ClickHouse 내장', 'ClickStack ClickHouse 서버', '내장 관측성']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다. 즉, 추가 구성 요소를 배포하지 않고도 ClickHouse 인스턴스에서 ClickStack UI (HyperDX)에 액세스할 수 있습니다. 이 배포 방식은 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)의 공개 데모와 유사하지만, 사용자의 ClickHouse 인스턴스와 데이터를 사용한다는 점이 다릅니다.
+
+<div id="suitable-for">
+  ### 적합한 사용 사례
+</div>
+
+* 최소한의 설정으로 ClickStack을 사용해 보려는 경우
+* 관측성 UI로 보유한 ClickHouse 데이터를 살펴보려는 경우
+* 데모 및 평가
+
+<div id="limitations">
+  ### 제한 사항
+</div>
+
+이 내장 버전은 **프로덕션 환경용으로 설계되지 않았습니다**. [프로덕션 준비가 완료된 OSS 배포](/ko/clickstack/deployment/oss)와 비교하면 다음 기능은 제공되지 않습니다.
+
+* [알림](/ko/clickstack/features/alerts)
+* [대시보드](/ko/clickstack/features/dashboards/overview) 및 [검색](/ko/clickstack/features/search) 영속성 — 대시보드와 저장된 검색은 세션 간에 유지되지 않습니다
+* 사용자 지정 가능한 쿼리 설정
+* [이벤트 패턴](/ko/clickstack/features/event-patterns)
+
+<div id="deployment-steps">
+  ## 배포 단계
+</div>
+
+<Tabs>
+  <Tab title="Docker">
+    <Steps>
+      <Step>
+        ### ClickHouse 시작
+
+        비밀번호를 설정한 상태로 ClickHouse 서버 이미지를 가져와 실행합니다:
+
+        ```shell
+        docker run --rm -it -p 8123:8123 -e CLICKHOUSE_PASSWORD=password clickhouse/clickhouse-server:head-alpine
+        ```
+
+        <Tip>
+          **비밀번호 없이 실행**
+
+          비밀번호 없이 실행하려면 기본 액세스 관리를 명시적으로 활성화해야 합니다:
+
+          ```shell
+          docker run --rm -it -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 clickhouse/clickhouse-server:head-alpine
+          ```
+        </Tip>
+      </Step>
+
+      <Step>
+        ### ClickStack UI 열기
+
+        브라우저에서 [http://localhost:8123](http://localhost:8123)를 열고 **ClickStack**을 클릭합니다.
+
+        로컬 인스턴스에 연결하려면 사용자 이름 `default`와 비밀번호 `password`를 입력합니다.
+
+        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="인증" size="lg" />
+      </Step>
+
+      <Step>
+        ### 소스 생성
+
+        기존 OpenTelemetry 테이블이 있으면 ClickStack이 이를 감지하여 소스를 자동으로 생성합니다.
+
+        새로 설치한 경우 소스를 생성하라는 안내가 표시됩니다. **Table** 필드에 적절한 테이블 이름(예: `otel_logs`)을 입력하고 **Save New Source**를 클릭합니다.
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="소스 생성" size="lg" />
+
+        아직 데이터가 없다면 [데이터 수집](/ko/clickstack/ingesting-data/index)에서 사용 가능한 옵션을 확인하십시오.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Binary">
+    <Steps>
+      <Step>
+        ### ClickHouse 시작
+
+        ClickHouse를 다운로드하고 시작합니다:
+
+        ```shell
+        curl https://clickhouse.com/ | sh
+        ```
+
+        <Accordion title="선택 사항: 시스템 로그 테이블 활성화">
+          ClickHouse 자체의 내부 로그와 메트릭을 살펴보려면 서버를 시작하기 전에 작업 디렉터리에 구성 스니펫을 만드십시오:
+
+          ```shell
+          mkdir -p config.d && cat > config.d/query_logs.xml << 'EOF'
+          <clickhouse>
+              <query_log>
+                  <database>system</database>
+                  <table>query_log</table>
+              </query_log>
+              <query_thread_log>
+                  <database>system</database>
+                  <table>query_thread_log</table>
+              </query_thread_log>
+              <query_views_log>
+                  <database>system</database>
+                  <table>query_views_log</table>
+              </query_views_log>
+              <metric_log>
+                  <database>system</database>
+                  <table>metric_log</table>
+              </metric_log>
+              <asynchronous_metric_log>
+                  <database>system</database>
+                  <table>asynchronous_metric_log</table>
+              </asynchronous_metric_log>
+          </clickhouse>
+          EOF
+          ```
+
+          이 기능을 활성화하면 ClickStack을 연 뒤 `system.query_log`를 가리키는 **Log Source**를 생성할 수 있습니다:
+
+          | Setting              | Value                                                                                                                                   |
+          | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+          | **Name**             | `Query Logs`                                                                                                                            |
+          | **Database**         | `system`                                                                                                                                |
+          | **Table**            | `query_log`                                                                                                                             |
+          | **Timestamp Column** | `event_time`                                                                                                                            |
+          | **Default Select**   | `event_time, query_kind, query, databases, tables, initial_user, projections, memory_usage, written_rows, read_rows, query_duration_ms` |
+        </Accordion>
+
+        서버를 시작합니다:
+
+        ```shell
+        ./clickhouse server
+        ```
+      </Step>
+
+      <Step>
+        ### ClickStack UI 열기
+
+        브라우저에서 [http://localhost:8123](http://localhost:8123)를 열고 **ClickStack**을 클릭합니다. 로컬 인스턴스 연결은 자동으로 생성됩니다.
+      </Step>
+
+      <Step>
+        ### 소스 생성
+
+        기존 OpenTelemetry 테이블이 있으면 ClickStack이 이를 감지하여 소스를 자동으로 생성합니다.
+
+        아직 데이터가 없다면 [데이터 수집](/ko/clickstack/ingesting-data/index)에서 사용 가능한 옵션을 확인하십시오.
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="소스 생성" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+평가 단계를 넘어 실제 도입을 준비하고 있다면, 프로덕션용 배포를 고려하십시오:
+
+* [All-in-One](/ko/clickstack/deployment/all-in-one) — 영속성과 인증을 포함한 모든 구성 요소를 담은 단일 컨테이너
+* [Docker Compose](/ko/clickstack/deployment/docker-compose) — 더 세밀한 제어를 위한 개별 구성 요소
+* [Helm](/ko/clickstack/deployment/helm) — 프로덕션 Kubernetes 배포에 권장
+* [Managed ClickStack](/ko/clickstack/getting-started/managed) — ClickHouse Cloud에서 완전 관리형으로 제공

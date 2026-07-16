@@ -71,6 +71,18 @@ ${CLICKHOUSE_CLIENT} --query "
 echo "Test OPTIMIZE with permission"
 ${CLICKHOUSE_CLIENT} --user="${username}" --query "OPTIMIZE TABLE test_alias FINAL;"
 
+# Test: CHECK TABLE requires CHECK on both the alias and the target table.
+echo "Test CHECK TABLE without permission"
+${CLICKHOUSE_CLIENT} --user="${username}" --query "CHECK TABLE test_alias;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+${CLICKHOUSE_CLIENT} --query "GRANT CHECK ON test_alias TO ${username};"
+echo "Test CHECK TABLE with alias permission only"
+${CLICKHOUSE_CLIENT} --user="${username}" --query "CHECK TABLE test_alias;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+${CLICKHOUSE_CLIENT} --query "GRANT CHECK ON test_table TO ${username};"
+echo "Test CHECK TABLE with both alias and target permission"
+${CLICKHOUSE_CLIENT} --user="${username}" --query "SET check_query_single_value_result = 1; CHECK TABLE test_alias;"
+
 # Test: ALTER
 echo "Test ALTER without permission"
 ${CLICKHOUSE_CLIENT} --user="${username}" --query "ALTER TABLE test_alias ADD COLUMN status String DEFAULT 'active';" 2>&1 | grep -o "ACCESS_DENIED" | uniq

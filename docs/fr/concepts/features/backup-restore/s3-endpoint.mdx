@@ -1,0 +1,198 @@
+---
+description: "Vue d’ensemble de la sauvegarde et de la restauration de ClickHouse"
+sidebarTitle: "point de terminaison S3"
+slug: /operations/backup/s3_endpoint
+title: "SAUVEGARDE / RESTAURATION vers ou depuis un point de terminaison S3"
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/fr/_syntax.mdx';
+
+Cet article traite de la sauvegarde vers un bucket S3 ou de la restauration depuis celui-ci
+via un point de terminaison S3.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+<Syntax />
+
+<div id="usage-examples">
+  ## Exemple d’utilisation
+</div>
+
+<div id="incremental-backup-to-an-s3-endpoint">
+  ### Sauvegarde incrémentielle vers un point de terminaison S3
+</div>
+
+Dans cet exemple, nous allons créer une sauvegarde vers un point de terminaison S3, puis effectuer une restauration à partir de celle-ci.
+
+<Note>
+  Pour une explication des différences entre une sauvegarde complète et une sauvegarde incrémentielle,
+  consultez [&quot;Types de sauvegarde&quot;](/fr/concepts/features/backup-restore/overview#backup-types)
+</Note>
+
+Vous aurez besoin des informations suivantes pour utiliser cette méthode :
+
+| Paramètre                  | Exemple                                                      |
+| -------------------------- | ------------------------------------------------------------ |
+| Un point de terminaison S3 | `https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/` |
+| ID de la clé d’accès       | `BKIOZLE2VYN3VXXTP9RC`                                       |
+| Clé d’accès secrète        | `40bwYnbqN7xU8bVePaUCh3+YEyGXu8UOMV9ANpwL`                   |
+
+<Tip>
+  La création d’un bucket S3 est expliquée dans la section [&quot;utiliser le stockage objet S3 comme disque ClickHouse&quot;](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#configuring-s3-for-clickhouse-use)
+</Tip>
+
+La destination d’une sauvegarde est spécifiée comme suit :
+
+```sql
+S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extra_credentials>')
+```
+
+<br />
+
+<Steps>
+  <Step>
+    #### Préparation
+
+    Créez la base de données et la table suivantes, puis insérez-y des données aléatoires :
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test_db;
+    CREATE TABLE test_db.test_table
+    (
+        `key` Int,
+        `value` String,
+        `array` Array(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    ```
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 1000
+    ```
+  </Step>
+
+  <Step>
+    #### Créer une sauvegarde de base
+
+    Les sauvegardes incrémentielles nécessitent une sauvegarde de *base* comme point de départ. Le premier paramètre de
+    la destination S3 est l’endpoint S3, suivi du répertoire dans le bucket
+    à utiliser pour cette sauvegarde. Dans cet exemple, le répertoire s’appelle `my_backup`.
+
+    Exécutez la commande suivante pour créer la sauvegarde de base :
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ de442b75-a66c-4a3c-a193-f76f278c70f3 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Ajoutez plus de données
+
+    Les sauvegardes incrémentielles ne contiennent que les différences entre la sauvegarde de base et
+    le contenu actuel de la table sauvegardée. Ajoutez plus de données avant d&#39;effectuer la
+    sauvegarde incrémentielle :
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 100
+    ```
+  </Step>
+
+  <Step>
+    #### Effectuer une sauvegarde incrémentielle
+
+    Cette commande de sauvegarde est similaire à celle de la sauvegarde de base, mais elle ajoute `SETTINGS base_backup` ainsi que l’emplacement de la sauvegarde de base. Notez que la destination de la sauvegarde incrémentielle n&#39;est pas le même répertoire que celui de la sauvegarde de base : c&#39;est le même endpoint, mais avec un répertoire cible différent dans le bucket. La sauvegarde de base se trouve dans `my_backup` et la sauvegarde incrémentielle sera écrite dans `my_incremental` :
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    SETTINGS base_backup = S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Restaurer depuis la sauvegarde incrémentielle
+
+    Cette commande restaure la sauvegarde incrémentielle dans une nouvelle table, `test_table_restored`.
+    Notez que lors de la restauration d&#39;une sauvegarde incrémentielle, la sauvegarde de base est également incluse.
+    Indiquez uniquement la **sauvegarde incrémentielle** lors de la restauration :
+
+    ```sql
+    RESTORE TABLE data AS test_db.test_table_restored FROM S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status───┐
+    │ ff0c8c39-7dff-4324-a241-000796de11ca │ RESTORED │
+    └──────────────────────────────────────┴──────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifiez le nombre de lignes
+
+    La table d’origine `data` a fait l’objet de deux insertions : l’une de 1 000 lignes et l’autre de 100 lignes, soit un total de 1 100.
+    Vérifiez que la table restaurée contient bien 1 100 lignes :
+
+    ```sql
+    SELECT count()
+    FROM test_db.test_table_restored
+    ```
+
+    ```response
+    ┌─count()─┐
+    │    1100 │
+    └─────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifiez le contenu
+
+    Cette commande compare le contenu de la table d’origine, `test_table`, avec celui de la table restaurée `test_table_restored` :
+
+    ```sql
+    SELECT throwIf((
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table
+       ) != (
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table_restored
+    ), 'Data does not match after BACKUP/RESTORE')
+    ```
+  </Step>
+</Steps>

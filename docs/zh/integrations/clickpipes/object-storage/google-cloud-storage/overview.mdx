@@ -1,0 +1,228 @@
+---
+sidebarTitle: '概述'
+description: '将对象存储无缝连接到 ClickHouse Cloud。'
+slug: /integrations/clickpipes/object-storage/gcs/overview
+title: 'Google Cloud Storage 与 ClickHouse Cloud 集成'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+GCS ClickPipe 提供了一种完全托管且具备高弹性的 Google Cloud Storage (GCS) 数据摄取方式。它支持 **一次性** 和 **持续摄取** 两种模式，并具备精确一次语义。
+
+GCS ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以借助 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
+
+<div id="supported-formats">
+  ## 支持的格式
+</div>
+
+* [JSON](/zh/reference/formats/JSON/JSON)
+* [CSV](/zh/reference/formats/CSV/CSV)
+* [TSV](/zh/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/zh/reference/formats/Parquet/Parquet)
+* [Avro](/zh/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## 功能
+</div>
+
+<div id="one-time-ingestion">
+  ### 一次性摄取
+</div>
+
+默认情况下，GCS ClickPipe 会通过一次批量操作，将指定存储桶中与某个模式匹配的所有文件加载到 ClickHouse 目标表中。摄取任务完成后，ClickPipe 会自动停止。这种一次性摄取模式提供精确一次语义，确保每个文件都能被可靠地处理，且不会重复。
+
+<div id="continuous-ingestion">
+  ### 持续摄取
+</div>
+
+启用持续摄取后，ClickPipes 会持续从指定路径摄取数据。默认情况下，GCS ClickPipe 依赖文件的隐式[词典序](#continuous-ingestion-lexicographical-order)来确定摄取顺序。也可以将其配置为通过已[配置为针对存储桶提供通知](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line)的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅，以按[任意顺序](#continuous-ingestion-any-order)摄取文件。
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### 词典序
+</div>
+
+GCS ClickPipe 假定文件会按词典序添加到存储桶中，并依赖这种隐含顺序依次摄取文件。这意味着，任何新文件的名称**都必须**在词典序上大于最后一个已摄取的文件。例如，名为 `file1`、`file2` 和 `file3` 的文件会依次被摄取；但如果向存储桶中新增一个 `file 0`，它将被**忽略**，因为该文件名在词典序上并不大于最后一个已摄取的文件。
+
+在这种模式下，GCS ClickPipe 会先对指定路径中的**所有文件**执行初始加载，然后按可配置的时间间隔轮询新文件 (默认每 30 秒一次) 。**无法**从某个特定文件或某个时间点开始摄取——ClickPipes 始终都会加载指定路径中的所有文件。
+
+<div id="continuous-ingestion-any-order">
+  #### 任意顺序
+</div>
+
+<Tip>
+  请参阅[为持续摄取配置无序模式](/zh/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)了解分步说明。
+</Tip>
+
+可以通过设置一个接收存储桶通知的 [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) 订阅，将 GCS ClickPipe 配置为摄取不具有隐式顺序的文件。这样一来，ClickPipes 就可以监听对象创建事件，并摄取任何新文件，而无需依赖文件命名约定。
+
+<Note>
+  公共存储桶**不**支持无序模式。该模式要求使用**服务账号**身份验证，并且需要一个连接到该存储桶的 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) 订阅。
+</Note>
+
+在此模式下，GCS ClickPipe 会先对所选路径中的**所有文件**执行初始加载，然后通过 Pub/Sub 订阅监听与指定路径匹配的 `OBJECT_FINALIZE` 通知。对于先前已处理过的文件、不匹配该路径的文件，或其他类型事件的任何消息，都会被**忽略**。**无法**从某个特定文件或时间点开始摄取——ClickPipes 始终会加载所选路径中的所有文件。
+
+<div id="file-pattern-matching">
+  ### 文件模式匹配
+</div>
+
+对象存储 ClickPipes 遵循 POSIX 文件模式匹配标准。所有模式均**区分大小写**，匹配的是存储桶 名称之后的**完整路径**。为获得更好的性能，请尽可能使用最具体的模式 (例如使用 `data-2024-*.csv`，而不是 `*.csv`) 。
+
+<div id="supported-patterns">
+  #### 支持的模式
+</div>
+
+| 模式             | 描述                                | 示例                  | 匹配结果                                                              |
+| -------------- | --------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`            | 精确匹配**一个**字符 (不包括 `/`)            | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`            | 匹配**零个或多个**字符 (不包括 `/`)           | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> 递归 | 匹配**零个或多个**字符 (包括 `/`) 。支持递归遍历目录。 | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**示例：**
+
+* `https://bucket.s3.amazonaws.com/folder/*.csv`
+* `https://bucket.s3.amazonaws.com/logs/**/data.json`
+* `https://bucket.s3.amazonaws.com/file-?.parquet`
+* `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### 不支持的模式
+</div>
+
+| 模式          | 描述          | 示例                     | 替代方案                            |
+| ----------- | ----------- | ---------------------- | ------------------------------- |
+| `{abc,def}` | 大括号展开 - 备选项 | `{logs,data}/file.csv` | 为每个 path 分别创建 ClickPipes。       |
+| `{N..M}`    | 数值范围展开      | `file-{1..100}.csv`    | 使用 `file-*.csv` 或 `file-?.csv`。 |
+
+**示例：**
+
+* `https://bucket.s3.amazonaws.com/{documents-01,documents-02}.json`
+* `https://bucket.s3.amazonaws.com/file-{1..100}.csv`
+* `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### 精确一次语义
+</div>
+
+在摄取大型数据集时，可能会出现各种故障，导致部分写入或数据重复。对象存储 ClickPipes 能够在插入失败时保持稳健，并提供精确一次语义。这是通过使用临时“暂存”表来实现的。数据会先插入暂存表中。如果这次插入出了问题，就可以截断暂存表，并在干净的状态下重试插入。只有在插入成功完成后，暂存表中的分区才会被移动到目标表。想进一步了解这一策略，请参阅[这篇博文](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)。
+
+<div id="virtual-columns">
+  ### 虚拟列
+</div>
+
+要跟踪已摄取了哪些文件，请将 `_file` 虚拟列加入列映射列表。`_file` 虚拟列包含源对象的文件名，可用于查询哪些文件已处理。
+
+<div id="access-control">
+  ## 访问控制
+</div>
+
+<div id="permissions">
+  ### 权限
+</div>
+
+GCS ClickPipe 支持公有和私有存储桶。**不支持**[请求者付费](https://docs.cloud.google.com/storage/docs/requester-pays)存储桶。
+
+<div id="gcs-bucket">
+  #### GCS 存储桶
+</div>
+
+ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
+
+* [`roles/storage.objectViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectViewer)
+
+此角色包含 [`storage.objects.list`](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/list) 和 [&#96;storage.objects.get](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get#required-permissions) IAM 权限，允许 ClickPipes 列出并拉取指定存储桶中的对象。
+
+<div id="pubsub-subscription">
+  #### Pub/Sub 订阅
+</div>
+
+使用[无序模式](#continuous-ingestion-any-order)时，服务账号必须对该 Pub/Sub 订阅具有以下角色：
+
+* [`roles/pubsub.subscriber`](https://cloud.google.com/pubsub/docs/access-control#roles) — 用于接收并确认消息。
+* [`roles/pubsub.viewer`](https://cloud.google.com/pubsub/docs/access-control#roles) — 用于获取订阅元数据。
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+<div id="service-account">
+  #### 服务账号
+</div>
+
+使用带有 Pub/Sub 通知的[无序模式](#continuous-ingestion-any-order)时，必须使用服务账号进行身份验证。选择 **服务账号** 作为身份验证方法，并上传服务账号密钥 JSON 文件。
+
+<div id="hmac-credentials">
+  #### HMAC 凭据
+</div>
+
+要使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)进行身份验证，请在设置 ClickPipe 连接时，在 **身份验证方法** 中选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 (例如 `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) 和秘密密钥 (例如 `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) 。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="GCS ClickPipes 的 HMAC 凭据" size="lg" border />
+
+请按照[本指南](/zh/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret)创建带有 HMAC 密钥的服务账号。
+
+<div id="network-access">
+  ### 网络访问
+</div>
+
+GCS ClickPipes 分别通过两条不同的网络路径执行元数据发现和数据摄取：对应为 ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外配置一层网络安全措施 (例如出于合规原因) ，则**必须为这两条路径都配置网络访问**。
+
+* 对于**基于 IP 的访问控制**，你的 GCS 存储桶的 [IP 过滤规则](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) 必须允许 [此处](/zh/integrations/clickpipes/home#list-of-static-ips) 列出的 ClickPipes 服务区域静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
+
+  ```bash
+  # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+<div id="advanced-settings">
+  ## 高级设置
+</div>
+
+ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的需求。如果您的场景需要进一步微调，可以调整以下设置：
+
+| 设置                                   | 默认值     | 说明                                                                                                                |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB    | 单个插入批次中可处理的字节数。                                                                                                   |
+| `Max file count`                     | 100     | 单个插入批次中可处理的最大文件数。                                                                                                 |
+| `Max threads`                        | auto(3) | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                               |
+| `Max insert threads`                 | 1       | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings#max_insert_threads)。                                      |
+| `Min insert block size bytes`        | 1GB     | 可插入表中的[块最小字节数](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                                 |
+| `Max download threads`               | 4       | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                                           |
+| `Object storage polling interval`    | 30s     | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                    |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)方式推送到已附加视图。                           |
+| `Use cluster function`               | true    | 是否在多个节点间并行处理文件。                                                                                                   |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
+
+<div id="scaling">
+  ### 扩缩容
+</div>
+
+对象存储 ClickPipes 会根据[已配置的垂直自动扩缩容设置](/zh/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)所确定的 ClickHouse 服务最小规模进行扩缩容。ClickPipe 的规模在创建管道时确定，之后对 ClickHouse 服务设置所做的更改不会影响 ClickPipe 的规模。
+
+为提高大型摄取作业的吞吐量，我们建议先对 ClickHouse 服务进行扩缩容，再创建 ClickPipe。
+
+<div id="known-limitations">
+  ## 已知限制
+</div>
+
+<div id="file-size">
+  ### 文件大小
+</div>
+
+ClickPipes 只会尝试摄取大小 **不超过 10GB** 的对象。如果文件超过 10GB，系统会在 ClickPipes 专用错误表中追加一条错误记录。
+
+<div id="compatibility">
+  ### 兼容性
+</div>
+
+GCS ClickPipe 通过 Cloud Storage 的 [XML API](https://docs.cloud.google.com/storage/docs/interoperability) 实现互操作，因此必须使用 `https://storage.googleapis.com/` 存储桶前缀 (而非 `gs://`) ，并使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) 进行身份验证。
+
+<div id="view-support">
+  ### 视图支持
+</div>
+
+也支持目标表上的 materialized views。ClickPipes 不仅会为目标表创建暂存表，也会为任何依赖的 materialized view 创建暂存表。
+
+我们不会为非物化视图创建暂存表。这意味着，如果你的目标表有一个或多个下游 materialized views，这些 materialized views 应避免通过基于目标表的视图来查询数据。否则，你可能会发现 materialized view 中会缺失数据。
