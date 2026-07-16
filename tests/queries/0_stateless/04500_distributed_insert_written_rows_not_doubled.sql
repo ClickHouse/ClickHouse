@@ -1,8 +1,19 @@
--- Tags: no-parallel, no-replicated-database, distributed
+-- Tags: no-parallel, no-replicated-database, distributed, no-parallel-replicas
 -- Tag reason: creates a Distributed table over a two-shards-localhost cluster and checks
--- global system.query_log / system.view_refreshes accounting.
+-- global system.query_log / system.view_refreshes accounting. The exact written_rows /
+-- written_bytes values depend on the distributed execution path, so pin the routing settings
+-- that select the local-shard synchronous path this test exercises. no-parallel-replicas keeps
+-- the runner from injecting enable_parallel_replicas + cluster_for_parallel_replicas, which
+-- reroutes the INSERT / the system.query_log SELECT through a cluster with no local replica.
 
 SET allow_experimental_refreshable_materialized_view = 1;
+
+-- Deterministically select the local-shard, synchronous, no-parallel-replicas path. Without
+-- these, randomized distributed settings change the accounting and the test flakes.
+SET distributed_foreground_insert = 1;
+SET prefer_localhost_replica = 1;
+SET parallel_distributed_insert_select = 0;
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS local_04500;
 DROP TABLE IF EXISTS dist_04500;
