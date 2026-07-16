@@ -7,6 +7,9 @@
 namespace DB
 {
 
+/// avoid second copy
+extern template class FunctionComparison<EqualsOp, NameEquals, true>;
+
 REGISTER_FUNCTION(IsDistinctFrom)
 {
     FunctionDocumentation::Description description = R"(
