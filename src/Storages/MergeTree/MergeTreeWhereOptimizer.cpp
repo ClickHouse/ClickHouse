@@ -107,6 +107,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
+
+    if (estimator)
+        total_rows = estimator->getTotalRows();
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -494,6 +497,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 pk_positions.emplace(cond.min_position_in_primary_key);
             }
 
+            /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
+            /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+            /// When total_rows or estimated_row_count are unavailable (both 0), degrades to columns_size.
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size)
+                / std::max(1.0, static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count));
+
             res.emplace_back(std::move(cond));
         }
     }
@@ -519,6 +528,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             Condition cond({conjunct});
             cond.table_columns = columns;
             cond.columns_size = getColumnsSize(columns);
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()

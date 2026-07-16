@@ -81,6 +81,14 @@ private:
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
+        /// Combined I/O cost and selectivity score (lower is better).
+        /// Computed as: columns_size / max(1, total_rows - estimated_row_count).
+        /// This implements the classic conjunctive filter ordering rule:
+        /// put cheaper-per-rejected-row conditions first.
+        /// When statistics are unavailable (estimated_row_count=0, total_rows=0),
+        /// degrades to columns_size.
+        double cost_with_selectivity = 0;
+
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
@@ -98,19 +106,20 @@ private:
             }
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, table_columns.size: {})",
+                "columns_size: {}, cost_with_selectivity: {}, table_columns.size: {})",
                 names,
                 viable,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
+                cost_with_selectivity,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, estimated_row_count, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, cost_with_selectivity, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -184,6 +193,7 @@ private:
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
+    UInt64 total_rows = 0;
 };
 
 
