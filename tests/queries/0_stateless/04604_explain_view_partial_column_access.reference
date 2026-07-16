@@ -1,0 +1,18 @@
+-- Selecting only the granted column 'y': allowed, matching a plain SELECT
+SELECT y: OK
+EXPLAIN QUERY TREE y: OK
+EXPLAIN SYNTAX y: OK
+EXPLAIN SYNTAX y (legacy): OK
+-- Selecting the non-granted column 'z': denied, matching a plain SELECT
+SELECT z: ACCESS_DENIED
+EXPLAIN QUERY TREE z: ACCESS_DENIED
+EXPLAIN SYNTAX z: ACCESS_DENIED
+EXPLAIN SYNTAX z (legacy): ACCESS_DENIED
+-- Selecting both columns: denied, matching a plain SELECT
+SELECT y, z: ACCESS_DENIED
+EXPLAIN QUERY TREE y, z: ACCESS_DENIED
+-- With inlining the base table is already exposed directly in the tree; behavior stays the same
+SELECT y (inline): OK
+EXPLAIN QUERY TREE y (inline): OK
+SELECT z (inline): ACCESS_DENIED
+EXPLAIN QUERY TREE z (inline): ACCESS_DENIED

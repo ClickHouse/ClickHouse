@@ -19,6 +19,7 @@
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -80,11 +81,16 @@ namespace ErrorCodes
 /// Forward declaration: reproduces the base-table access check `StorageView::readImpl` performs when
 /// actually reading through a regular (non-parameterized) view, by resolving the view's inner query under
 /// its own security context and running the same per-table check recursively (covering nested views too).
-/// `checkAccessRightsForQueryTree` further down uses it for the analyzer path; `ExplainAnalyzedSyntaxMatcher`
-/// below uses it for the legacy AST-based path, so both are consistent. Declared `static` (rather than in
-/// one of this file's unnamed namespaces) so this one declaration and its later definition - which needs
-/// symbols from the second unnamed namespace below - refer to the same internal-linkage entity throughout.
-static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context);
+/// `column_names` are the columns requested from the view itself (empty when unknown, e.g. the
+/// trivial-count fallback), matching the `column_names` real execution passes into
+/// `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery` for the view's inner query - so a
+/// user who can read only some of the view's output columns is not also required to have access to base
+/// columns the view happens to select but this particular read never asked for. `checkAccessRightsForQueryTree`
+/// further down uses it for the analyzer path; `ExplainAnalyzedSyntaxMatcher` below uses it for the legacy
+/// AST-based path, so both are consistent. Declared `static` (rather than in one of this file's unnamed
+/// namespaces) so this one declaration and its later definition - which needs symbols from the second
+/// unnamed namespace below - refer to the same internal-linkage entity throughout.
+static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names);
 
 namespace
 {
@@ -249,7 +255,7 @@ namespace
         /// denied here too, instead of leaking the expanded view body. Parameterized views are excluded:
         /// their base-table access is already enforced by the recursive `InterpreterSelectQuery` analysis of
         /// the subquery they were expanded into by `ExpandParameterizedViewsMatcher` above.
-        static void checkNonParameterizedViewBaseTableAccess(const ASTSelectQuery & select, const ContextPtr & context)
+        static void checkNonParameterizedViewBaseTableAccess(const ASTSelectQuery & select, const ContextPtr & context, const Names & column_names)
         {
             const auto * table_expression = getTableExpression(select, 0);
             if (!table_expression || !table_expression->database_and_table_name)
@@ -265,7 +271,7 @@ namespace
                 return;
 
             auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-            checkViewBaseTableAccess(storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context);
+            checkViewBaseTableAccess(storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
         }
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
@@ -277,7 +283,10 @@ namespace
             if (query_info.view_query)
             {
                 if (!query_info.is_parameterized_view)
-                    checkNonParameterizedViewBaseTableAccess(select, data.getContext());
+                    /// `getRequiredColumns` reflects `syntax_analyzer_result->requiredSourceColumns()`, i.e. the same
+                    /// columns real execution would request from the view via `storage->read` (see `StorageView::readImpl`'s
+                    /// `column_names` parameter), computed by the `analyze()`-mode interpreter above from this very query.
+                    checkNonParameterizedViewBaseTableAccess(select, data.getContext(), interpreter.getRequiredColumns());
 
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
@@ -727,7 +736,7 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         /// loop above, so neither is double-checked here.
         if (const auto * view = typeid_cast<const StorageView *>(table_node->getStorage().get());
             view && !view->isParameterizedView())
-            checkViewBaseTableAccess(table_node->getStorageSnapshot(), scope_context);
+            checkViewBaseTableAccess(table_node->getStorageSnapshot(), scope_context, column_names);
     }
 }
 
@@ -879,10 +888,43 @@ bool explainQueryTree(
 
 /// See the forward declaration above `ExpandParameterizedViewsMatcher` for why this is `static` at file
 /// scope rather than inside one of this file's unnamed namespaces.
-static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context)
+static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names)
 {
     auto view_context = StorageView::getViewSubqueryContext(scope_context, view_snapshot);
-    auto view_query_tree = buildQueryTree(view_snapshot->metadata->getSelectQuery().inner_query->clone(), view_context);
+    ASTPtr inner_query = view_snapshot->metadata->getSelectQuery().inner_query->clone();
+
+    if (!column_names.empty())
+    {
+        /// Wrap the inner query so only `column_names` are selected from it, exactly as
+        /// `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery` do for a real read through the
+        /// view (see `StorageView::readImpl`). Resolving the wrapped query still runs the usual query tree
+        /// passes, including the one that prunes subquery output columns the outer projection does not use, so
+        /// base-table columns the view happens to select but this particular read never asked for are not
+        /// resolved - and therefore not checked - matching what real execution actually reads.
+        auto select_query = make_intrusive<ASTSelectQuery>();
+
+        auto table_expression_ast = make_intrusive<ASTTableExpression>();
+        table_expression_ast->children.push_back(make_intrusive<ASTSubquery>(std::move(inner_query)));
+        table_expression_ast->subquery = table_expression_ast->children.back();
+
+        auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
+        tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
+        tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
+
+        ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
+        tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
+
+        auto projection_expression_list_ast = make_intrusive<ASTExpressionList>();
+        projection_expression_list_ast->children.reserve(column_names.size());
+        for (const auto & column_name : column_names)
+            projection_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(column_name));
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
+
+        inner_query = std::move(select_query);
+    }
+
+    auto view_query_tree = buildQueryTree(inner_query, view_context);
     QueryTreePassManager view_pass_manager(view_context);
     addQueryTreePasses(view_pass_manager);
     resolveThenCheckAccessRights(std::move(view_query_tree), view_pass_manager, view_context);
