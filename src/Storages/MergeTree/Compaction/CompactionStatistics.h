@@ -19,6 +19,10 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
 /** Estimate the amount of memory used by the input and output IO buffers of a merge:
   *   (number of input column streams over all source parts) * read IO buffer size
   * + (number of output column streams of the result part)   * write IO buffer size.
+  * "Source parts" here includes future_part.patch_parts as well as future_part.parts: when
+  * apply_patches_on_merge applies a patch part during the merge, MergeTreeReadTask::createReaders opens a
+  * genuine reader (and IO buffers) for it too, and its columns count towards the output substream estimate
+  * exactly like any other source part.
   * The number of on-disk streams of a wide part is taken from its actual substream layout
   * (columns_substreams.txt), so that dynamic substreams of JSON / Dynamic columns are counted correctly
   * instead of being collapsed to a single stream by the default serialization.

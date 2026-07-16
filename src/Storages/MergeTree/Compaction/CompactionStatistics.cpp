@@ -336,13 +336,24 @@ UInt64 estimateNeededMemoryForMerge(
                 query_settings[Setting::azure_max_inflight_parts_for_one_file]));
     }
 
+    /// A merge that applies patch parts (lightweight updates, apply_patches_on_merge) opens a separate
+    /// reader for every patch part alongside the base parts' readers (MergeTreeReadTask::createReaders
+    /// builds new_readers.patches, one MergeTreeReader per entry of future_part.patch_parts), and the
+    /// patched columns it writes are read from patches just as much as from the base parts. A patch part
+    /// is a regular IMergeTreeDataPart - it only physically stores the columns it patches, so counting its
+    /// own on-disk streams and bytes like a base part is exact, not an overestimate. Fold patch parts into
+    /// the same source-parts accounting used below for input memory and output substream estimation, so
+    /// patch-only JSON / Dynamic substreams and patch bytes are not silently dropped from the reservation.
+    MergeTreeData::DataPartsVector source_and_patch_parts = future_part.parts;
+    source_and_patch_parts.insert(source_and_patch_parts.end(), future_part.patch_parts.begin(), future_part.patch_parts.end());
+
     /// Input side: one reader stream per column substream of every source part. The reader buffers hold
     /// a window of the compressed file plus the decompressed block, so they can never hold more than the
     /// part's own data: cap the per-part estimate by the part size.
     UInt64 input_memory = 0;
     UInt64 sum_input_bytes_compressed = 0;
     UInt64 sum_input_bytes_uncompressed = 0;
-    for (const auto & part : future_part.parts)
+    for (const auto & part : source_and_patch_parts)
     {
         /// Compact and in-memory parts read all columns through a single shared stream.
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
@@ -360,10 +371,11 @@ UInt64 estimateNeededMemoryForMerge(
     /// serialization count would collapse such columns to a single stream. Estimate the result substreams
     /// as the union of the source parts' substreams (see countOutputStreams) - this both counts the actual
     /// dynamic substreams and covers the case where different source parts contribute disjoint dynamic
-    /// paths that all appear in the merged part.
+    /// paths that all appear in the merged part. Patch parts are included: a patched JSON / Dynamic column
+    /// can carry a path that exists only in a patch, not in any base part.
     const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
     const size_t output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? countOutputStreams(output_columns, future_part.parts, settings)
+        ? countOutputStreams(output_columns, source_and_patch_parts, settings)
         : 1;
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
