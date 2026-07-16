@@ -134,6 +134,7 @@ possible_properties = {
         0.2, 0.2, 0.0, 1.0
     ),
     "background_schedule_pool_size": no_zero_threads_lambda,
+    "background_streaming_schedule_pool_size": no_zero_threads_lambda,
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
@@ -194,6 +195,9 @@ possible_properties = {
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "enable_webterminal": true_false_lambda,
+    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "encryption_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
+    "encryption_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "global_profiler_cpu_time_period_ns": threshold_generator(0.2, 0.2, 0, 1000000000),
     "global_profiler_real_time_period_ns": threshold_generator(0.2, 0.2, 0, 1000000000),
@@ -288,6 +292,8 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "max_prefixes_deserialization_thread_pool_size": threads_lambda,
+    # 0 disables ReaderExecutor connection reuse
+    "max_remote_read_connections": threshold_generator(0.2, 0.2, 0, 1000),
     "max_remote_read_network_bandwidth_for_server": threshold_generator(
         0.2, 0.2, 0, 1000
     ),
@@ -401,9 +407,11 @@ possible_properties = {
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
     "restore_threads": no_zero_threads_lambda,
+    "s3_allow_server_credentials_for_system_table_disks": true_false_lambda,
     "s3_credentials_provider_max_cache_size": threshold_generator(
         0.2, 0.2, 0, 104857600
     ),
+    "s3_load_table_anonymously_if_credentials_restricted": true_false_lambda,
     "s3queue_disable_streaming": true_false_lambda,
     "show_license_expiration_warnings": true_false_lambda,  # Cloud setting
     "shutdown_wait_backups_and_restores": true_false_lambda,
@@ -467,6 +475,7 @@ possible_properties = {
     "unique_key_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_separate_cache_arena": true_false_lambda,
     "use_shared_merge_tree_log_pipeline": true_false_lambda,  # Cloud setting
+    "user_profile_events_per_cpu": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
     "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),

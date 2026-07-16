@@ -832,6 +832,30 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
+
+    /// Interserver secret: prove cluster-secret knowledge for this request, since
+    /// `TablesStatusRequest` is sent before any query is authenticated. Mirrors the
+    /// per-query hash; reuses the `salt`/`nonce` already exchanged during the Hello.
+    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS && !cluster_secret.empty())
+    {
+#if USE_SSL
+        std::string data(salt);
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
+        data += cluster_secret;
+        data += "TablesStatusRequest";
+        /// Bind the hash to the request body so a relayed hash cannot be reused for a
+        /// different set of tables (mirrors how the per-query secret hash covers the query).
+        data += request.getAuthDigest();
+
+        std::string hash = encodeSHA256(data);
+        writeStringBinary(hash, *out);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+#endif
+    }
+
     request.write(*out, server_revision);
     out->finishChunk();
     out->next();
@@ -1207,7 +1231,7 @@ void Connection::sendScalarsData(Scalars & data)
 
     if (compression == Protocol::Compression::Enable)
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            "Sent data for {} scalars, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), compressed {:.3f} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1217,7 +1241,7 @@ void Connection::sendScalarsData(Scalars & data)
             ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            "Sent data for {} scalars, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1318,7 +1342,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     if (compression == Protocol::Compression::Enable)
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            "Sent data for {} external tables, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), compressed {:.3f} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1328,7 +1352,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            "Sent data for {} external tables, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
