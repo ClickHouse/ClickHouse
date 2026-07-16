@@ -613,6 +613,95 @@ Further example datasets that use approximate vector search:
 - [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
 - [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
 
+### Vector search with quantized codecs {#vector-search-with-quantized-codecs}
+
+:::note
+The `Quantized` codec is experimental. Enable it with `SET allow_experimental_codecs = 1`.
+If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
+:::
+
+#### Introduction {#quantized-codecs-introduction}
+
+A [vector similarity index](#vector-similarity-index) answers a nearest-neighbor query by traversing a graph and performs very well when the graph can be held in memory.
+Two conditions limit its applicability:
+
+- **Scale.** The time to build the graph and the memory required to store it — in addition to the vectors themselves — become the dominant cost.
+- **Filtering.** Under a selective `WHERE` filter, graph traversal becomes ineffective, because it either cannot reach the small set of rows that satisfy the predicate or must inspect a disproportionate number of candidates to locate them.
+
+An exhaustive scan is subject to neither limitation: it requires no auxiliary structure, parts merge by concatenation, and a filter simply reduces the number of rows to be scanned.
+Its single disadvantage is the volume of data it must read: a scan over vectors stored at full `Float32` precision is dominated by storage I/O, because the entire vector column has to be read from disk (or object storage) — for a dense embedding column that is the largest column in the table, and it compresses poorly.
+
+The `Quantized` column codec addresses this disadvantage.
+Each vector is stored twice: the original full-precision values, unchanged, together with a compact *quantized code* in a companion stream.
+A vector-search query first scans the codes using an inexpensive, SIMD-friendly distance function to assemble a shortlist of the most promising candidates, and then re-ranks that shortlist against the full-precision vectors.
+Because a code is a fraction of the size of the raw vector, the shortlist scan reads far fewer bytes from storage — and touches the full-precision column only for the handful of shortlisted candidates — while the final ranking remains accurate.
+
+#### Declaring the codec {#quantized-codecs-declaring}
+
+Attach a `Quantized(...)` codec to an `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
+The codec is experimental, so enable `allow_experimental_codecs` first:
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+The full-precision data is stored as usual; the codec only adds the companion code stream.
+The codec is fixed at table creation and cannot be added or changed with `ALTER TABLE`.
+
+#### Quantization methods {#quantized-codecs-methods}
+
+Each method is a different point on the size / accuracy / metric trade-off. The `dimensions` argument is the vector length.
+
+- `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. `cosineDistance` only.
+- `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). `cosineDistance` only.
+- `Quantized('int8', dimensions)` — one `Int8` code per coordinate plus the vector norm (`dimensions + 4` bytes); the largest but most faithful flat code. Supports `L2Distance` and `cosineDistance`.
+- `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: keeps only the `leading_dimensions` leading coordinates, as `Int8` (with a per-vector scale) or `BFloat16`. Tiny codes for embeddings trained with Matryoshka Representation Learning. Supports `L2Distance` and `cosineDistance`.
+- `Quantized('product', dimensions, nbits, m)` — Product Quantization: a per-part codebook trained with k-means; each vector becomes `m` codes of `nbits` bits (so `dimensions` must be a multiple of `m`). The most compact option and highest recall per byte, at the cost of a training step during insert. Supports `L2Distance` and `cosineDistance`.
+
+`rabitq` and `turboquant` require `dimensions` to be a multiple of 8.
+
+#### Searching transparently {#quantized-codecs-searching}
+
+There is no special query syntax — write the same top-`k` query you would use for [exact search](#exact-nearest-neighbor-search):
+
+```sql
+WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+With `vector_search_use_quantized_codes = 1`, the optimizer rewrites the query into the two-stage plan automatically: it scans the quantized codes to collect a shortlist, then rescores the shortlist against the full-precision `vec`.
+The setting is off by default, so without it the same query runs as a plain exact scan — the codec never changes results, it only offers a faster path when you opt in.
+Use a distance function the chosen method supports: `cosineDistance` for all methods, `L2Distance` additionally for `int8`, `prefix` and `product`.
+
+#### Settings {#quantized-codecs-settings}
+
+- `allow_experimental_codecs` — must be enabled to declare a `Quantized` codec (default: `0`).
+- `vector_search_use_quantized_codes` — enable the two-stage shortlist-and-rescore rewrite (default: `0`). When off, matching queries scan the full-precision vectors exactly.
+- `vector_search_index_fetch_multiplier` — how many candidates to shortlist relative to the query's `LIMIT`: the scan keeps the top `LIMIT × multiplier` codes before rescoring. Larger values improve recall at the cost of more rescoring. The default is `1` (no oversampling), so raising it — for example to `10` or more — is usually needed for good recall.
+
+#### Built for scale {#quantized-codecs-built-for-scale}
+
+The codec is a good fit for ClickHouse because the expensive part — the scan — is exactly what the ClickHouse engine is built to do well:
+
+- **Vectorized.** The scan kernels are written for SIMD, with runtime dispatch to the widest instructions the CPU supports: a hardware `popcount` for the sign-code methods (`rabitq`, `turboquant`) and wide fused-multiply-add for the others.
+- **Parallel across cores and parts.** A flat scan is trivially parallel, and ClickHouse treats it as such: distances are computed across all available threads and over all parts of a table at once, with only the final top-`k` merge serialized.
+- **Distributed.** On a sharded cluster the work fans out across machines — each shard scans its own slice in parallel and the coordinator merges the shortlists.
+- **Columnar and filter-friendly.** The quantized codes occupy their own column, compressed and read through the same I/O path as every other column, so a selective `WHERE` simply leaves fewer codes to scan.
+- **No separate build step.** The codes are produced as the vectors are written and merge by concatenation — there is no index to construct, tune, or rebuild, so a table is ready to search as soon as its data lands.
+
+The codes are only ever a candidate generator; the full-precision column, retained in place, provides the final accurate ranking.
+
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).
