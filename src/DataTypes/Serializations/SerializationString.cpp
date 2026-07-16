@@ -618,6 +618,22 @@ SerializationString::SerializationString(MergeTreeStringSerializationVersion ver
 {
 }
 
+/// A per-row size read from the separate `.size` sub-stream is untrusted: a corrupt or desynced
+/// sizes stream would otherwise reach `data.resize()`/`ignore()` and abort in Allocator::checkSize.
+/// Same bound as the single-stream path (deserializeBinaryImpl). Declared in SerializationString.h so
+/// SerializationStringSize (the `s.size` subcolumn reader) rejects the same corruption identically.
+void checkStringSizeFromSizeStream(UInt64 size)
+{
+    static constexpr size_t max_string_size = 16_GiB;
+    if (size > max_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. The size and data sub-streams are "
+            "inconsistent; the part is likely truncated or corrupted.",
+            size,
+            max_string_size);
+}
+
 namespace
 {
 
@@ -656,21 +672,6 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 
         ostr.write(reinterpret_cast<const char *>(sizes.data()), sizeof(UInt64) * count);
     }
-}
-
-/// A per-row size read from the separate `.size` sub-stream is untrusted: a corrupt or desynced
-/// sizes stream would otherwise reach `data.resize()`/`ignore()` and abort in Allocator::checkSize.
-/// Same bound as the single-stream path (deserializeBinaryImpl).
-void checkStringSizeFromSizeStream(UInt64 size)
-{
-    static constexpr size_t max_string_size = 16_GiB;
-    if (size > max_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. The size and data sub-streams are "
-            "inconsistent; the part is likely truncated or corrupted.",
-            size,
-            max_string_size);
 }
 
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)

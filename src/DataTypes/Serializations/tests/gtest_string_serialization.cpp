@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationStringSize.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/MemoryTracker.h>
@@ -447,5 +448,105 @@ TEST(StringSerialization, WithSizeStreamMidRangeCorruptSizeLeavesColumnConsisten
         const auto & result_string = assert_cast<const ColumnString &>(*result);
         const IColumn::Offset last_offset = result_string.getOffsets().empty() ? 0 : result_string.getOffsets().back();
         ASSERT_LE(last_offset, result_string.getChars().size());
+    }
+}
+
+/// The `s.size` subcolumn is read by SerializationStringSize::deserializeBinaryBulkWithSizeStream, a
+/// SEPARATE reader of the same `.size` substream. It must reject a short/truncated size stream the same
+/// way the String path does: before the fix, `num_read_rows < rows_offset + limit` reached the
+/// compaction step, where `actual_new_size = size() - rows_offset` underflows (with rows_offset >
+/// num_read_rows) and the loop walks past the end of `data`; with rows_offset == 0 it silently returns
+/// too few `s.size` rows.
+TEST(StringSerialization, StringSizeSubcolumnShortSizeStreamThrows)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    auto src = makeVariedStringColumn(rows);
+
+    auto string_serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        string_serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    /// Keep only the first 100 UInt64 lengths. The `s.size` reader requests all `rows` from offset 0.
+    std::string sizes_bytes = sizes_out.str();
+    ASSERT_GE(sizes_bytes.size(), 100 * sizeof(UInt64));
+    std::string truncated_sizes = sizes_bytes.substr(0, 100 * sizeof(UInt64));
+
+    ReadBufferFromString sizes_in(truncated_sizes);
+    ReadBufferFromString data_in(data_out.str());
+
+    auto size_serialization = SerializationStringSize::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    size_serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnUInt64::create();
+    try
+    {
+        size_serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        FAIL() << "s.size deserialize accepted a short size stream and produced "
+               << assert_cast<const ColumnUInt64 &>(*result).size() << " rows for " << rows << " requested";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+}
+
+/// An oversized per-row size in the `.size` substream must fail with the same corruption exception on
+/// the `s.size` subcolumn path instead of being exposed as subcolumn data.
+TEST(StringSerialization, StringSizeSubcolumnOversizeThrows)
+{
+    MainThreadStatus::getInstance();
+    constexpr size_t rows = 500;
+    constexpr size_t corrupt_index = 250;
+    auto src = makeVariedStringColumn(rows);
+
+    auto string_serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        string_serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    std::string sizes_bytes = sizes_out.str();
+    ASSERT_GE(sizes_bytes.size(), (corrupt_index + 1) * sizeof(UInt64));
+    const UInt64 corrupt_size = 0x8000000000000000ULL | 1ULL;
+    memcpy(sizes_bytes.data() + corrupt_index * sizeof(UInt64), &corrupt_size, sizeof(UInt64));
+
+    ReadBufferFromString sizes_in(sizes_bytes);
+    ReadBufferFromString data_in(data_out.str());
+
+    auto size_serialization = SerializationStringSize::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    size_serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr result = ColumnUInt64::create();
+    try
+    {
+        size_serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        FAIL() << "s.size deserialize exposed an oversized `.size` entry as subcolumn data";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 }
