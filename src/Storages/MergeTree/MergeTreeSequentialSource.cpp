@@ -41,6 +41,10 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_window_size;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_plan_look_ahead_max_window;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_fill_ahead_lead;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_hold_consumed;
 }
 
 /// Lightweight (in terms of logic) stream for reading single part from
@@ -161,19 +165,18 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (read_with_direct_io)
         read_settings.local_fs_settings.direct_io_threshold = 1;
 
-    /// Merges/mutations read through the executor with a streaming profile: one long
-    /// connection streams the whole part (a whole-object extent takes the structural
-    /// open rule in `shouldOpenLongConnection`), so the window no longer drives the
-    /// request count and is sized down for memory - the compact acceptance shape reads
-    /// at 2 GETs / 1.0x amplification, matching legacy. `hold_consumed` keeps a
-    /// trailing window of consumed bytes for the compact reader's intra-stripe
-    /// backward hops (merges read cache-bypassed, so no retention tier sits below).
-    read_settings.reader_executor.hold_consumed = 2 * 1024 * 1024;
-    read_settings.reader_executor.window_size
-        = std::min<size_t>(read_settings.reader_executor.window_size, 1 * 1024 * 1024);
+    /// Merges/mutations read through the executor with a streaming profile, set by the
+    /// `merge_reader_executor_*` MergeTree settings: one long connection streams the
+    /// whole part (a whole-object extent takes the structural open rule in
+    /// `shouldOpenLongConnection`), so the window does not drive the request count and
+    /// is sized for memory - the compact acceptance shape reads at 2 GETs / 1.0x
+    /// amplification, matching legacy.
+    const auto & merge_tree_settings = *storage.getSettings();
+    read_settings.reader_executor.window_size = merge_tree_settings[MergeTreeSetting::merge_reader_executor_window_size];
     read_settings.reader_executor.plan_look_ahead_max_window
-        = std::min<size_t>(read_settings.reader_executor.plan_look_ahead_max_window, 8 * 1024 * 1024);
-    read_settings.reader_executor.fill_ahead_lead = 2 * 1024 * 1024;
+        = merge_tree_settings[MergeTreeSetting::merge_reader_executor_plan_look_ahead_max_window];
+    read_settings.reader_executor.fill_ahead_lead = merge_tree_settings[MergeTreeSetting::merge_reader_executor_fill_ahead_lead];
+    read_settings.reader_executor.hold_consumed = merge_tree_settings[MergeTreeSetting::merge_reader_executor_hold_consumed];
 
     /// Configure throttling
     switch (type)

@@ -1308,6 +1308,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"merge_reader_executor_window_size", 1048576, 1048576, "New setting. Read window size for merge/mutation reads through the experimental ReaderExecutor."},
+            {"merge_reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New setting. Plan window size for merge/mutation reads through the experimental ReaderExecutor."},
+            {"merge_reader_executor_fill_ahead_lead", 2097152, 2097152, "New setting. Fill-ahead lead for merge/mutation reads through the experimental ReaderExecutor."},
+            {"merge_reader_executor_hold_consumed", 0, 0, "New setting. Consumed-bytes retention for merge/mutation reads through the experimental ReaderExecutor."},
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
