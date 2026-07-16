@@ -902,14 +902,29 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
                 "The size and data sub-streams are inconsistent; the part is likely truncated or corrupted.");
     }
 
-    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
-    size_t bytes_to_read = offsets.back() - prev_last_offset;
+    /// The append + data read below mutate the caller-owned `column` in place (this override does not go
+    /// through the generic clone-and-assign path). Each of `appendStringSizesToColumnStringOffsets` (offsets
+    /// reserve/push), `data.resize`, and `readBigStrict` can throw: a fault-injected MEMORY_LIMIT_EXCEEDED
+    /// from resize, or a short data stream, would otherwise leave the committed offsets with a too-small
+    /// `chars` buffer (`offsets.back() > chars.size()`). Snapshot both buffers and roll back on any throw so
+    /// the column stays internally consistent, mirroring `deserializeBinary`/`deserializeBinaryImpl`.
     auto & data = mutable_string_column.getChars();
-    size_t initial_size = data.size();
-    data.resize(initial_size + bytes_to_read);
-    stream->ignore(bytes_to_skip);
-    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    data.resize(initial_size + bytes_to_read);
+    const size_t offsets_size_before = offsets.size();
+    const size_t chars_size_before = data.size();
+    try
+    {
+        appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
+        const size_t bytes_to_read = offsets.back() - prev_last_offset;
+        data.resize(chars_size_before + bytes_to_read);
+        stream->ignore(bytes_to_skip);
+        stream->readBigStrict(reinterpret_cast<char *>(&data[chars_size_before]), bytes_to_read);
+    }
+    catch (...)
+    {
+        offsets.resize_assume_reserved(offsets_size_before);
+        data.resize_assume_reserved(chars_size_before);
+        throw;
+    }
     column = std::move(mutable_column);
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();

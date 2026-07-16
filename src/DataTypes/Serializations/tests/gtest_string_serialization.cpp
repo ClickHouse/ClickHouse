@@ -550,3 +550,82 @@ TEST(StringSerialization, StringSizeSubcolumnOversizeThrows)
         ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 }
+
+/// The WITH_SIZE_STREAM analogue of IncorrectStateAfterMemoryLimitExceeded. After the size slice passes
+/// validation, the override still appends offsets and then runs fallible in-place ops (data.resize,
+/// ignore, readBigStrict) on the caller-owned column. A MEMORY_LIMIT_EXCEEDED fault injected at
+/// data.resize (assumeMutable does not clone) would leave the committed offsets with the old chars
+/// buffer, so offsets.back() > chars.size() reappears on the exception path. The append/read block is
+/// now rolled back on any throw, so any column the caller is left holding stays internally consistent.
+TEST(StringSerialization, WithSizeStreamConsistentAfterMemoryLimitExceeded)
+{
+    MainThreadStatus::getInstance();
+    /// Large enough that the offsets/chars allocations are reliably tracked and faulted (small columns
+    /// produce too few tracked allocations to ever inject a fault).
+    constexpr size_t rows = 1'000'000;
+    auto src = ColumnString::create();
+    src->insertMany("foobar", rows);
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    WriteBufferFromOwnString sizes_out;
+    WriteBufferFromOwnString data_out;
+    {
+        ISerialization::SerializeBinaryBulkSettings settings;
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
+        serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
+    }
+
+    /// On every iteration a MEMORY_LIMIT_EXCEEDED may be injected at any tracked allocation (offsets
+    /// reserve / data.resize). Whatever the caller is left holding must stay internally consistent
+    /// regardless of where the throw landed. Accumulate both a throw path and a clean-success path.
+    size_t memory_limit_exceeded_errors = 0;
+    size_t consistent_success = 0;
+    while (memory_limit_exceeded_errors < 10 || consistent_success < 10)
+    {
+        ReadBufferFromString sizes_in(sizes_out.str());
+        ReadBufferFromString data_in(data_out.str());
+
+        ISerialization::DeserializeBinaryBulkSettings settings;
+        ISerialization::DeserializeBinaryBulkStatePtr state;
+        settings.position_independent_encoding = false;
+        settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+        ColumnPtr result = ColumnString::create();
+
+        bool threw = false;
+        total_memory_tracker.setFaultProbability(0.2);
+        try
+        {
+            serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        }
+        catch (Exception & e)
+        {
+            total_memory_tracker.setFaultProbability(0);
+            if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+            ++memory_limit_exceeded_errors;
+            threw = true;
+        }
+        total_memory_tracker.setFaultProbability(0);
+
+        /// The key assertion: no offsets committed without matching chars, on both the throw and the
+        /// success path.
+        if (result)
+        {
+            const auto & result_string = assert_cast<const ColumnString &>(*result);
+            const IColumn::Offset last_offset = result_string.getOffsets().empty() ? 0 : result_string.getOffsets().back();
+            ASSERT_LE(last_offset, result_string.getChars().size());
+            if (!threw && !result_string.empty() && last_offset == result_string.getChars().size())
+                ++consistent_success;
+        }
+    }
+
+    /// The test only exercises the exception path if faults were actually injected; the successful runs
+    /// confirm the rollback did not corrupt the normal path.
+    ASSERT_GT(memory_limit_exceeded_errors, 0u);
+    ASSERT_GT(consistent_success, 0u);
+}
