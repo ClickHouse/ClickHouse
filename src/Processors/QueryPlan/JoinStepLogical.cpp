@@ -1995,6 +1995,53 @@ static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, Acti
     return dag;
 }
 
+UInt64 JoinStepLogical::getRightHashTableCacheKey() const
+{
+    if (!right_subtree_raw_hash)
+        return 0;
+
+    /// Resolve the right equi-key DAG nodes the same way the physical-conversion path does
+    /// (`preCalculateKeys` + the cache-key block in `convertLogicalJoinToPhysical`): the join
+    /// key names may live in the DAG outputs (when transformed) or in the inputs (when used
+    /// directly), so try both lookups. Read-only: unlike `preCalculateKeys` this must not
+    /// mutate `join_operator.expression`.
+    auto lookup = [this](const String & name) -> const ActionsDAG::Node *
+    {
+        auto ref = expression_actions.findNode(name, /*is_input=*/false, /*throw_if_not_found=*/false);
+        if (!ref)
+            ref = expression_actions.findNode(name, /*is_input=*/true, /*throw_if_not_found=*/false);
+        return ref ? ref.getNode() : nullptr;
+    };
+
+    std::vector<const ActionsDAG::Node *> right_key_nodes;
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals)
+            continue;
+
+        const ActionsDAG::Node * right_node = nullptr;
+        if (lhs.fromLeft() && rhs.fromRight())
+            right_node = rhs.getNode();
+        else if (lhs.fromRight() && rhs.fromLeft())
+            right_node = lhs.getNode();
+        else
+            continue;
+
+        const auto * resolved = lookup(right_node->result_name);
+        if (!resolved)
+            return 0;
+        right_key_nodes.push_back(resolved);
+    }
+
+    if (right_key_nodes.empty())
+        return 0;
+
+    const UInt64 contribution = QueryPlanOptimizations::calculateJoinStepCacheKeyContributionFromRightKeys(
+        serializationName(), right_key_nodes);
+    return right_subtree_raw_hash ^ contribution;
+}
+
 std::optional<std::pair<JoinStepLogical::ActionsDAGWithKeys, JoinStepLogical::ActionsDAGWithKeys>>
 JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const SharedHeader & right_header)
 {

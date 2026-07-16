@@ -179,6 +179,16 @@ public:
     UInt64 getRightSubtreeRawHash() const { return right_subtree_raw_hash; }
     void setRightSubtreeRawHash(UInt64 right_subtree_raw_hash_) { right_subtree_raw_hash = right_subtree_raw_hash_; }
 
+    /// Full `HashTablesStatistics` cache key for this join's right (build) side: the
+    /// parent-independent `right_subtree_raw_hash` combined with the contribution of the
+    /// right equi-key set, matching the key under which the hash table is stored during
+    /// physical conversion. Used by the join runtime filter to look up a size hint. Returns
+    /// the key for the join's current equi-key set; if some keys are later demoted to a
+    /// residual filter (`demoteLowNdvKeysToResidual`) the physical hash table is keyed on the
+    /// kept subset, so this lookup may miss - a miss only means the filter is sized without a
+    /// hint, never an incorrect result.
+    UInt64 getRightHashTableCacheKey() const;
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
