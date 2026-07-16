@@ -6,6 +6,8 @@ title: 'INTO OUTFILE Clause'
 doc_type: 'reference'
 ---
 
+# INTO OUTFILE Clause
+
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
 Compressed files are supported. Compression type is detected by the extension of the file name (mode `'auto'` is used by default). Or it can be explicitly specified in a `COMPRESSION` clause. The compression level for a certain compression type can be specified in a `LEVEL` clause.
@@ -18,7 +20,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
-`level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `gzip`, `deflate` and `lz4` types, `1-22` for `zstd` type and `1-9` for other compression types. For `gzip` and `deflate`, levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels `1-9`.
+`level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `lz4` type, `1-22` for `zstd` type and `1-9` for other compression types.
 
 ## Implementation Details {#implementation-details}
 
@@ -33,11 +35,13 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 Execute the following query using [command-line client](../../../interfaces/client.md):
 
-```bash title="Query"
+```bash
 clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
 zcat select.gz 
 ```
 
-```text title="Response"
+Result:
+
+```text
 1,"ABC"
 ```

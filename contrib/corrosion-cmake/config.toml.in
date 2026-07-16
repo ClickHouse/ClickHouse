@@ -8,7 +8,6 @@ strip = true
 inherits = "release"
 lto = true
 
-@RUST_DEV_PROFILE@
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 

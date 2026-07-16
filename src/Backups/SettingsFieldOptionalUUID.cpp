@@ -13,9 +13,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
 }
 
-SettingFieldOptionalUUID::operator Field() const { return Field(value ? ::DB::toString(*value) : ""); }
-
-String SettingFieldOptionalUUID::toString() const { return value ? ::DB::toString(*value) : ""; }
+SettingFieldOptionalUUID::operator Field() const { return Field(value ? toString(*value) : ""); }
 
 SettingFieldOptionalUUID::SettingFieldOptionalUUID(const Field & field)
 {

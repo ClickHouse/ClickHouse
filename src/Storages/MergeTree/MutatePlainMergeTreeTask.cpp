@@ -8,7 +8,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -116,9 +115,6 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
-#if CLICKHOUSE_CLOUD
-                data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
-#endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 
@@ -135,14 +131,10 @@ bool MutatePlainMergeTreeTask::executeStep()
                     transaction.commit(lock);
                 }
 
+                storage.updateMutationEntriesErrors(future_part, true, "", "");
                 mutate_task->updateProfileEvents();
 
-                /// Write the part log entry before reporting the mutation as done, otherwise a
-                /// synchronous mutation (mutations_sync) may return to the client before the
-                /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log({});
-
-                storage.updateMutationEntriesErrors(future_part, true, "", "");
 
                 state = State::NEED_FINISH;
                 return true;
@@ -154,15 +146,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
                 String error_code_name(ErrorCodes::getName(getCurrentExceptionCode()));
-                mutate_task->updateProfileEvents();
-
-                /// Same ordering as the success path: queue the failed part log entry before
-                /// publishing the mutation error, otherwise a synchronous mutation (mutations_sync)
-                /// may return to the client (it also unblocks on the failure reason) before the
-                /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
-                write_part_log(ExecutionStatus::fromCurrentException("", true));
-
                 storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
+                mutate_task->updateProfileEvents();
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 throw;
             }

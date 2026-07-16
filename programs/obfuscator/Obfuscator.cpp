@@ -51,9 +51,6 @@
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
 #include <Common/ErrnoException.h>
-#include <Common/ThreadPool.h>
-#include <IO/SharedThreadPools.h>
-#include <Common/scope_guard_safe.h>
 #include <bit>
 
 
@@ -872,7 +869,7 @@ public:
 
         while (pos < end)
         {
-            Table::LookupResult it = {};
+            Table::LookupResult it;
 
             size_t context_size = params.order;
             while (true)
@@ -1212,19 +1209,11 @@ public:
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wmissing-declarations"
 
-int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {
     using namespace DB;
     namespace po = boost::program_options;
-
-    /// Join global-pool threads before the statics they may have accessed are destroyed.
-    /// That way, accesses happen-before destruction.
-    SCOPE_EXIT_SAFE({
-        DB::StaticThreadPool::shutdownAll();
-        GlobalThreadPool::shutdown();
-    });
 
     registerFormats();
 
@@ -1257,10 +1246,10 @@ try
         || !options.contains("output-format"))
     {
         std::cout << documentation << "\n"
-            << "\nUsage: clickhouse obfuscator [options] < in > out\n"
+            << "\nUsage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    clickhouse obfuscator --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
@@ -1294,7 +1283,7 @@ try
 
     bool silent = options["silent"].as<bool>();
 
-    MarkovModelParameters markov_model_params{};
+    MarkovModelParameters markov_model_params;
 
     markov_model_params.order = options["order"].as<UInt64>();
     markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();

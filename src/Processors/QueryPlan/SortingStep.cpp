@@ -11,15 +11,15 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
-#include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
 
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/scope_guard_safe.h>
@@ -42,15 +42,14 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// `MergingSortedTransform` is supposed to consume virtual rows.
-/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual rows before output,
-/// otherwise they can reach downstream steps and cause issues, both because the attached conversions are valid only for the current step
-/// and because the virtual rows are empty chunks that some downstream transforms (e.g. `LimitTransform` with `WITH TIES`) do not expect.
+/// MergingSortedTransform supposed to consume virtual row
+/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual row before output,
+/// otherwise it can reach downstream steps and cause issues because of conversions are valid only for current step.
 class RemoveVirtualRowTransform : public ISimpleTransform
 {
 public:
     explicit RemoveVirtualRowTransform(SharedHeader header)
-        : ISimpleTransform(header, header, /*skip_empty_chunks=*/ true)
+        : ISimpleTransform(header, header, false)
     {
     }
 
@@ -58,13 +57,6 @@ public:
 
     void transform(Chunk & chunk) override
     {
-        if (isVirtualRow(chunk))
-        {
-            /// Drop the virtual row entirely: it was a marker for the merging algorithm,
-            /// and there is no merging in this branch (single stream), so it has no downstream purpose.
-            chunk.clear();
-            return;
-        }
         chunk.getChunkInfos().extract<MergeTreeReadInfo>();
     }
 
@@ -118,7 +110,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
+size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
 {
     if (max_bytes_ratio_before_external_sort == 0.)
         return 0;
@@ -261,7 +253,7 @@ SortingStep::SortingStep(
 SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription sort_description_,
-    const Settings & settings_,
+    size_t max_block_size_,
     UInt64 limit_,
     bool always_read_till_end_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
@@ -269,37 +261,14 @@ SortingStep::SortingStep(
     , result_description(std::move(sort_description_))
     , limit(limit_)
     , always_read_till_end(always_read_till_end_)
-    , sort_settings(settings_)
+    , sort_settings(max_block_size_)
 {
+    sort_settings.max_block_size = max_block_size_;
 }
 
 void SortingStep::updateOutputHeader()
 {
     output_header = input_headers.front();
-}
-
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
-{
-    limit_by_columns = std::move(limit_by_columns_);
-    limit_by_group_length = limit_by_group_length_;
-}
-
-void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
-{
-    if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
-        return;
-
-    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns);
-    if (sort_prefix.size() != limit_by_columns.size())
-        return;
-
-    pipeline.addSimpleTransform(
-        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, sort_prefix);
-        });
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -309,8 +278,6 @@ void SortingStep::updateLimit(size_t limit_)
         limit = limit_;
         transform_traits.preserves_number_of_rows = false;
     }
-    if (limit)
-        use_buffering = false;
 }
 
 void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
@@ -344,7 +311,36 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        scatterByPartition(pipeline, threads, key_columns);
+        pipeline.transform([&](OutputPortRawPtrs ports)
+        {
+            Processors processors;
+            for (auto * port : ports)
+            {
+                auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
+                connect(*port, scatter->getInputs().front());
+                processors.push_back(scatter);
+            }
+            return processors;
+        });
+
+        if (streams > 1)
+        {
+            pipeline.transform([&](OutputPortRawPtrs ports)
+            {
+                Processors processors;
+                for (size_t i = 0; i < threads; ++i)
+                {
+                    size_t output_it = i;
+                    auto resize = std::make_shared<ResizeProcessor>(stream_header, streams, 1);
+                    auto & inputs = resize->getInputs();
+
+                    for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
+                        connect(*ports[output_it], *input_it);
+                    processors.push_back(resize);
+                }
+                return processors;
+            });
+        }
     }
 }
 
@@ -509,8 +505,6 @@ void SortingStep::fullSort(
 
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
-    addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
-
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
@@ -541,8 +535,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::MergingSorted)
     {
-        addPerStreamLimitByIfNeeded(pipeline, result_description);
-
         mergingSorted(pipeline, result_description, limit);
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -553,12 +545,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (type == Type::FinishSorting)
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
-
-        /// Do not apply `LIMIT BY` before the final sort order is known. Suffix sort
-        /// keys can change which rows are first inside a `LIMIT BY` group.
-        if (!need_finish_sorting)
-            addPerStreamLimitByIfNeeded(pipeline, result_description);
-
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
         if (need_finish_sorting)
@@ -575,8 +561,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
-
-        addPerStreamLimitByIfNeeded(pipeline, result_description);
 
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -613,24 +597,6 @@ void SortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
-
-    if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
-    {
-        settings.out << prefix << "Per-stream LIMIT BY columns: ";
-
-        bool first = true;
-        for (const auto & column : limit_by_columns)
-        {
-            if (!first)
-                settings.out << ", ";
-            first = false;
-
-            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
-        }
-        settings.out << '\n';
-
-        settings.out << prefix << "Per-stream LIMIT BY length " << limit_by_group_length << '\n';
-    }
 }
 
 void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -645,16 +611,6 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
     if (limit)
         map.add("Limit", limit);
-
-    if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
-    {
-        auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & column : limit_by_columns)
-            columns_array->add(column);
-
-        map.add("Per-stream LIMIT BY Columns", std::move(columns_array));
-        map.add("Per-stream LIMIT BY Length", limit_by_group_length);
-    }
 }
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
@@ -680,11 +636,6 @@ void SortingStep::serialize(Serialization & ctx) const
     writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
-QueryPlanStepPtr SortingStep::clone() const
-{
-    return std::make_unique<SortingStep>(*this);
-}
-
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
@@ -695,7 +646,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size = 0;
+    UInt64 partition_desc_size;
     readVarUInt(partition_desc_size, ctx.in);
 
     if (partition_desc_size)
@@ -705,7 +656,6 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
-void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Sorting", SortingStep::deserialize);

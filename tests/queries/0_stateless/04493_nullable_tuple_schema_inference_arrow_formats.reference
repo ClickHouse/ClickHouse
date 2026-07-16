@@ -70,27 +70,27 @@ SELECT count() FROM test_04493;
 3
 DROP TABLE test_04493;
 -- Parquet (native reader)
-DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet');
+DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 id	Int64					
 s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
 n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
-SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id;
+SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 0	(0,'x')	(0,(0,'y'))
 1	(NULL,NULL)	(100,(1000,'y'))
 2	(20,'x')	(NULL,(NULL,NULL))
-CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet');
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 SELECT count() FROM test_04493;
 3
 DROP TABLE test_04493;
 -- Parquet (legacy Arrow-based reader where available)
 DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 0;
 id	Int64					
-s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
-n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+s	Tuple(\n    a Int64,\n    b String)					
+n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
 SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id SETTINGS input_format_parquet_use_native_reader_v3 = 0;
 0	(0,'x')	(0,(0,'y'))
-1	(NULL,NULL)	(100,(1000,'y'))
-2	(20,'x')	(NULL,(NULL,NULL))
+1	(0,'')	(100,(1000,'y'))
+2	(20,'x')	(0,(0,''))
 CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 0;
 SELECT count() FROM test_04493;
 3

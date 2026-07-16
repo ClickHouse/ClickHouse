@@ -185,13 +185,16 @@ try
 
     auto read_mallctl = [&]<typename T>(const char * name, std::type_identity<T>) -> std::optional<T>
     {
-        T value{};
-        if (!Jemalloc::tryGetValue(name, value))
+        try
         {
-            errors.add(name);
+            return Jemalloc::getValue<T>(name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("KeeperJemallocStatusHandler", std::string("Failed to read mallctl '") + name + "'");
+            errors.add(std::string(name));
             return std::nullopt;
         }
-        return value;
     };
 
     auto prof_enabled = read_mallctl("opt.prof", std::type_identity<bool>{});
@@ -204,12 +207,15 @@ try
     {
         prof_active = read_mallctl("prof.active", std::type_identity<bool>{});
         lg_sample = read_mallctl("prof.lg_sample", std::type_identity<size_t>{});
-        /// MibCache::tryGetValue rather than getValue: surface mallctl absence as a JSON `errors`
-        /// entry instead of asserting in debug builds (jemalloc may be built without prof.*).
-        if (bool tai = false; Jemalloc::getThreadProfileInitMib().tryGetValue(tai))
-            thread_active_init = tai;
-        else
+        try
+        {
+            thread_active_init = Jemalloc::getThreadProfileInitMib().getValue();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("KeeperJemallocStatusHandler", "Failed to read prof.thread_active_init");
             errors.add("prof.thread_active_init");
+        }
     }
     else if (prof_enabled.has_value())
     {
