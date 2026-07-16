@@ -244,7 +244,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
 
         /// FIXME: in all other places schema_id is int32
         if (snapshot->schema_id_on_snapshot_commit > std::numeric_limits<Int32>::max())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg schema_id {} exceeds Int32 range", snapshot->schema_id_on_snapshot_commit);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg schema_id {} exceeds Int32 range", snapshot->schema_id_on_snapshot_commit);
 
         state.snapshot = std::move(snapshot);
         state.table_state = std::move(table_state);
@@ -532,11 +532,9 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
                     removed_files_size += parsed_entry.file_size_in_bytes;
                     break;
                 case FileContentType::EQUALITY_DELETE:
-                    /// Discovery never matches equality-delete entries, so we
-                    /// should never see one here. Treat as a hard error rather
-                    /// than silently miscount.
+                    /// Reject invalid input rather than silently miscounting an equality-delete entry.
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "DROP PARTITION encountered an equality-delete entry, which is not supported");
+                        ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION encountered an equality-delete entry, which is not supported");
             }
             changed_partitions.insert(parsed_entry.partition_key_value);
         }
