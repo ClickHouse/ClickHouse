@@ -754,6 +754,13 @@ def test_drop_partition_preserves_trino_file_metadata(iceberg_db):
         cluster,
         f'SELECT tag, k, v, d FROM "{NAMESPACE}"."{table_name}" ORDER BY tag, k',
     )
-    expected = "2\tc\t20\t3.0\n3\td\t30\t4.0\n"
-    assert clickhouse_rows == expected
-    assert trino_rows == expected
+    def parse_rows(output):
+        result = []
+        for line in output.strip().splitlines():
+            tag, key, value, double_value = line.split("\t")
+            result.append((int(tag), key, int(value), float(double_value)))
+        return result
+
+    expected = [(2, "c", 20, 3.0), (3, "d", 30, 4.0)]
+    assert parse_rows(clickhouse_rows) == expected
+    assert parse_rows(trino_rows) == expected
