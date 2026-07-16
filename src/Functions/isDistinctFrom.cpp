@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/isDistinctFrom.h>
+#include <Functions/isNotDistinctFrom.h>
 
 
 namespace DB
@@ -77,8 +78,10 @@ ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cm
     const ColumnWithTypeAndName & column_type_name1,
     size_t input_rows_count) const
 {
+    /// executeArrayLexicographicImpl expects the resolver to return 1 for equal element
+    /// pairs, so use the null-safe equality probe (`FunctionIsNotDistinctFrom`) for inversion
     FunctionOverloadResolverPtr equals_resolver
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsDistinctFrom>(params));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
 
     return executeArrayLexicographicImpl(
         column_type_name0,

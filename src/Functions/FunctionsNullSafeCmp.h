@@ -7,6 +7,8 @@
 #include <Common/quoteString.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 namespace DB
 {
 
@@ -14,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 enum class NullSafeCmpMode : uint8_t
@@ -98,8 +99,16 @@ public:
         }
 
         if (!tryGetLeastSupertype(arguments))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+        {
+            /// Types like `UInt64` vs `Int64` (or arrays/tuples of them) have no least common
+            /// supertype but are still comparable element-wise using accurate comparison, exactly
+            /// like the regular `=` / `!=` operators.
+            FunctionOverloadResolverPtr comparator = std::make_unique<FunctionToOverloadResolverAdaptor>(
+                std::make_shared<FunctionComparison<CompareOp, CompareName, true /*is null safe*/>>(params));
+            ColumnsWithTypeAndName probe_args{
+                {nullptr, removeNullable(left_ele_type), ""}, {nullptr, removeNullable(right_ele_type), ""}};
+            comparator->build(probe_args);
+        }
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -118,6 +127,66 @@ public:
         {
             bool is_null = column_variant_or_dynamic.isNullAt(i);
             data[i] = is_equal_mode ? is_null : !is_null;
+        }
+        return res;
+    }
+
+    /// Null-safe comparison for types that have no least common supertype (e.g.
+    /// `Nullable(UInt64)` vs `Nullable(Int64)`).
+    ColumnPtr executeNullableWithoutSupertype(const ColumnsWithTypeAndName & columns_with_type_and_name, size_t input_rows_count) const
+    {
+        auto extract_nested_column_info = [](const ColumnWithTypeAndName & arg, ColumnPtr & null_map, ColumnWithTypeAndName & nested)
+        {
+            ColumnPtr full_column = arg.column->convertToFullColumnIfConst();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get()))
+            {
+                null_map = nullable->getNullMapColumnPtr();
+                nested.column = nullable->getNestedColumnPtr();
+                nested.type = removeNullable(arg.type);
+            }
+            else
+            {
+                null_map = nullptr;
+                nested.column = full_column;
+                nested.type = arg.type;
+            }
+        };
+
+        ColumnPtr left_null_map;
+        ColumnPtr right_null_map;
+        ColumnWithTypeAndName left_nested;
+        ColumnWithTypeAndName right_nested;
+        extract_nested_column_info(columns_with_type_and_name[0], left_null_map, left_nested);
+        extract_nested_column_info(columns_with_type_and_name[1], right_null_map, right_nested);
+
+        /// Accurate value comparison of the non-Nullable nested columns (always yields UInt8).
+        FunctionOverloadResolverPtr comparator = std::make_unique<FunctionToOverloadResolverAdaptor>(
+            std::make_shared<FunctionComparison<CompareOp, CompareName, true /*is null safe*/>>(params));
+
+        ColumnsWithTypeAndName nested_args{left_nested, right_nested};
+        auto executable = comparator->build(nested_args);
+        ColumnPtr value_cmp = executable->execute(nested_args, executable->getResultType(), input_rows_count, /* dry_run = */ false);
+        value_cmp = value_cmp->convertToFullColumnIfConst();
+
+        const auto & value_data = assert_cast<const ColumnUInt8 &>(*value_cmp).getData();
+        const ColumnUInt8::Container * left_nulls
+            = left_null_map ? &assert_cast<const ColumnUInt8 &>(*left_null_map).getData() : nullptr;
+        const ColumnUInt8::Container * right_nulls
+            = right_null_map ? &assert_cast<const ColumnUInt8 &>(*right_null_map).getData() : nullptr;
+
+        auto res = ColumnUInt8::create(input_rows_count);
+        auto & res_data = res->getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const bool left_is_null = left_nulls && (*left_nulls)[i];
+            const bool right_is_null = right_nulls && (*right_nulls)[i];
+
+            if (left_is_null && right_is_null)
+                res_data[i] = is_equal_mode ? 1 : 0;
+            else if (left_is_null != right_is_null)
+                res_data[i] = is_equal_mode ? 0 : 1;
+            else
+                res_data[i] = value_data[i];
         }
         return res;
     }
@@ -164,28 +233,39 @@ public:
                     : type_and_name_right_col);
         }
 
-        // get common type for null-safe comparison
-        DataTypePtr common_type = getLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
+        // get common type for null-safe comparison; may be null for types with no least common
+        // supertype (e.g. `UInt64` vs `Int64`), which are still comparable element-wise.
+        DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
 
-        ColumnPtr c0_converted = castColumn(arguments[0], common_type);
-        ColumnPtr c1_converted = castColumn(arguments[1], common_type);
-
-        // To address: Nullable vs Nullable
-        if (c0_converted->isNullable() && c1_converted->isNullable())
+        if (common_type)
         {
-            auto c_res = ColumnUInt8::create();
-            ColumnUInt8::Container & vec_res = c_res->getData();
-            vec_res.resize(arguments[0].column->size());
-            c0_converted = c0_converted->convertToFullColumnIfConst();
-            c1_converted = c1_converted->convertToFullColumnIfConst();
+            ColumnPtr c0_converted = castColumn(arguments[0], common_type);
+            ColumnPtr c1_converted = castColumn(arguments[1], common_type);
 
-            for (size_t i = 0; i < input_rows_count ; i++)
-                vec_res[i] = c0_converted->compareAt(i, i, *c1_converted, 1) == 0 ? is_equal_mode : !is_equal_mode;
+            // To address: Nullable vs Nullable
+            if (c0_converted->isNullable() && c1_converted->isNullable())
+            {
+                auto c_res = ColumnUInt8::create();
+                ColumnUInt8::Container & vec_res = c_res->getData();
+                vec_res.resize(arguments[0].column->size());
+                c0_converted = c0_converted->convertToFullColumnIfConst();
+                c1_converted = c1_converted->convertToFullColumnIfConst();
 
-            return c_res;
+                for (size_t i = 0; i < input_rows_count ; i++)
+                    vec_res[i] = c0_converted->compareAt(i, i, *c1_converted, 1) == 0 ? is_equal_mode : !is_equal_mode;
+
+                return c_res;
+            }
+        }
+        else if (type_and_name_left_col.type->isNullable() || type_and_name_right_col.type->isNullable())
+        {
+            // No common supertype and at least one side is Nullable (e.g. `Nullable(UInt64)` vs
+            // `Nullable(Int64)`).
+            return executeNullableWithoutSupertype(arguments, input_rows_count);
         }
 
-        // To address normal
+        // To address regular case (also covers types with no common supertype that are not Nullable,
+        // e.g. `UInt64` vs `Int64` and `Array(UInt64)` vs `Array(Int64)`;
         ColumnPtr res;
         FunctionOverloadResolverPtr comparator
             = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<CompareOp, CompareName, true /*is null safe cmp mode*/>>(params));

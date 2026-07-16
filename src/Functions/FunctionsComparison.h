@@ -1486,9 +1486,7 @@ public:
 
 
                     /// Supported only when the element comparison produces a non-Nullable result
-                    /// (covers the mixed signed/unsigned integer case). Nullable/Nothing element
-                    /// results keep the previous behavior (throw below), as before this change.
-                    /// the same apply for String/FixedString types
+                    /// (covers the mixed signed/unsigned integer case). The same apply for String/FixedString types
                     bool has_string_type = WhichDataType(left_nested_type).isStringOrFixedString()
                         || WhichDataType(right_nested_type).isStringOrFixedString();
                     if (!element_result_type->isNullable() && !element_result_type->onlyNull() && !isNothing(element_result_type)
