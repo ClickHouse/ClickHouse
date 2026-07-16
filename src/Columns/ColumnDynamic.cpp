@@ -10,6 +10,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -315,10 +316,28 @@ void ColumnDynamic::get(size_t n, Field & res) const
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
-    /// Check if value is not in shared variant.
-    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+    const auto discr = variant_col.globalDiscriminatorAt(n);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        variant_col.getValueNameImpl(name_buf, n, options);
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return;
+    }
+
+    /// Prefix the value with its dynamic type name. A Dynamic's runtime type is part of the value,
+    /// but the underlying value string alone does not encode it, so two constants that differ only
+    /// in their dynamic type (e.g. UInt8(1) vs UInt16(1), or Array(UInt8) vs Array(UInt16)) render
+    /// to the same string and collapse to a single action node in the DAG (addConstantIfNecessary
+    /// dedups by name). The type name (not the numeric discriminator) is required: the discriminator
+    /// is per-column, so independently built single-type Dynamic constants both place their type at
+    /// discriminator 0. This mirrors updateHashWithValue, which already hashes the type name.
+    if (options.notFull(name_buf))
+        name_buf << getTypeNameAt(n) << '_';
+
+    /// Check if value is not in shared variant.
+    if (discr != getSharedVariantDiscriminator())
+    {
+        variant_col.getVariantByGlobalDiscriminator(discr).getValueNameImpl(name_buf, variant_col.offsetAt(n), options);
         return;
     }
 

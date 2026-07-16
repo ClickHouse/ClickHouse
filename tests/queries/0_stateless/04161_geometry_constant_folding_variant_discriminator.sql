@@ -16,3 +16,13 @@ SELECT wkt(readWKT('LINESTRING(0 0,1 0,0 0)')), wkt(readWKT('MULTILINESTRING((0 
 -- Results must match the pre-folding path (row columns) exactly.
 SELECT wkt(readWKT(l)), wkt(readWKT(m)), wkt(readWKT(p))
 FROM (SELECT materialize('LINESTRING EMPTY') AS l, materialize('MULTILINESTRING EMPTY') AS m, materialize('MULTIPOLYGON EMPTY') AS p);
+
+-- Same root cause via Dynamic: the runtime type is part of the value, and two constants that
+-- differ only in their dynamic type must not collapse. The type name (not the per-column
+-- numeric discriminator) has to be part of the action node name.
+SELECT number, dynamicType(if(number = 0, CAST(toUInt8(1), 'Dynamic'), CAST(toUInt16(1), 'Dynamic'))) FROM numbers(2);
+SELECT number, dynamicType(multiIf(number = 0, CAST(CAST([1], 'Array(UInt8)'), 'Dynamic'), CAST(CAST([1], 'Array(UInt16)'), 'Dynamic'))) FROM numbers(2);
+
+-- Same root cause via an explicit Variant with layout-duplicate alternatives.
+SET allow_suspicious_variant_types = 1;
+SELECT number, variantType(if(number = 0, CAST(toUInt8(1), 'Variant(UInt8, UInt16)'), CAST(toUInt16(1), 'Variant(UInt8, UInt16)'))) FROM numbers(2);
