@@ -5319,6 +5319,112 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
 
+        /// SELECT-list alias map, computed lazily once per resolveJoin and reused for all USING identifiers.
+        /// The projection list is not mutated during resolveJoin, so the cache stays valid across identifiers.
+        std::optional<ScopeAliases> select_list_aliases;
+
+        /** Find a SELECT-list node whose alias matches the USING identifier.
+          * Top-level projection aliases are checked first (existing pick-first behavior, kept for compatibility);
+          * if none match, search aliases defined on subexpressions of the SELECT list.
+          */
+        auto find_aliased_node_in_projection = [&select_list_aliases](const QueryNode * query_node_,
+                                                   const String & identifier_full_name_) -> QueryTreeNodePtr
+        {
+            for (const auto & projection_node : query_node_->getProjection().getNodes())
+            {
+                if (projection_node->hasAlias() && identifier_full_name_ == projection_node->getAlias())
+                    return projection_node;
+            }
+
+            /// QueryExpressionsAliasVisitor applies the SELECT-list scoping rules (skips lambdas and nested
+            /// non-CTE queries) and stores clones of the aliased nodes. It needs a mutable node, so clone first.
+            if (!select_list_aliases)
+            {
+                auto projection_list_clone = query_node_->getProjectionNode()->clone();
+                select_list_aliases.emplace();
+                QueryExpressionsAliasVisitor visitor(*select_list_aliases);
+                visitor.visit(projection_list_clone);
+            }
+
+            /// A lambda alias must not become a USING column.
+            auto it = select_list_aliases->alias_name_to_expression_node.find(identifier_full_name_);
+            if (it == select_list_aliases->alias_name_to_expression_node.end())
+                return nullptr;
+
+            /// Do not pick an arbitrary expression among duplicated aliases.
+            for (const auto & duplicated_node : select_list_aliases->nodes_with_duplicated_aliases)
+            {
+                if (duplicated_node->hasAlias() && duplicated_node->getAlias() == identifier_full_name_)
+                    return nullptr;
+            }
+
+            return it->second;
+        };
+
+        /** While resolving JOIN USING identifier, try to resolve identifier from parent subquery projection.
+          * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
+          * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
+          */
+        auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_projection](
+                                                                   const String & identifier_full_name_,
+                                                                   const QueryTreeNodePtr & left_table_expression,
+                                                                   const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
+        {
+            const QueryNode * query_node = scope_.scope_node ? scope_.scope_node->as<QueryNode>() : nullptr;
+            if (!query_node)
+                return nullptr;
+
+            auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name_);
+            if (!matched_node)
+                return nullptr;
+
+            auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
+            left_subquery->getProjection().getNodes().push_back(matched_node->clone());
+            auto subquery_join_tree = left_table_expression;
+            if (subquery_join_tree->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpression();
+            left_subquery->getJoinTree() = subquery_join_tree;
+
+            IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
+            /// We are using alias column mechanism for USING column from projection.
+            /// It will be calculated right after reading, so column will be not nullable there.
+            left_subquery_scope.join_use_nulls = false;
+
+            resolveQuery(left_subquery, left_subquery_scope);
+
+            const auto & resolved_nodes = left_subquery->getProjection().getNodes();
+            if (resolved_nodes.size() == 1)
+            {
+                /// Added column should not conflict with existing column names
+                NameSet existing_columns;
+                if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
+                    return nullptr;
+
+                NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
+                while (existing_columns.contains(column_name_type.name))
+                    column_name_type.name = "_" + column_name_type.name;
+
+                auto [expression_source, is_single_source] = getExpressionSource(resolved_nodes.front());
+                /// Do not support `SELECT t1.a + t2.a AS id ... USING id`
+                if (!is_single_source)
+                    return nullptr;
+
+                /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
+                /// and left_table_expression is a JOIN or CROSS_JOIN node, we must not assign the JOIN
+                /// as the column source. That would create a ColumnNode with a JOIN/CROSS_JOIN source
+                /// and non-ListNode expression, which CollectSourceColumnsVisitor doesn't expect.
+                if (!expression_source
+                    && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
+                        || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+                    return nullptr;
+
+                /// Create ColumnNode with expression from parent projection
+                return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(),
+                    expression_source ? expression_source : left_table_expression);
+            }
+            return nullptr;
+        };
+
         for (auto & join_using_node : join_using_list.getNodes())
         {
             auto * identifier_node = join_using_node->as<IdentifierNode>();
@@ -5339,105 +5445,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             join_using_identifiers.insert(identifier_full_name);
 
             const auto & settings = scope.context->getSettingsRef();
-
-            /** Find a SELECT-list node whose alias matches the USING identifier.
-              * Top-level projection aliases are checked first (existing pick-first behavior, kept for compatibility);
-              * if none match, search aliases defined on subexpressions of the SELECT list.
-              */
-            auto find_aliased_node_in_projection = [](const QueryNode * query_node_,
-                                                       const String & identifier_full_name_) -> QueryTreeNodePtr
-            {
-                for (const auto & projection_node : query_node_->getProjection().getNodes())
-                {
-                    if (projection_node->hasAlias() && identifier_full_name_ == projection_node->getAlias())
-                        return projection_node;
-                }
-
-                /// QueryExpressionsAliasVisitor applies the SELECT-list scoping rules (skips lambdas and nested
-                /// non-CTE queries) and stores clones of the aliased nodes. It needs a mutable node, so clone first.
-                auto projection_list_clone = query_node_->getProjectionNode()->clone();
-                ScopeAliases select_list_aliases;
-                QueryExpressionsAliasVisitor visitor(select_list_aliases);
-                visitor.visit(projection_list_clone);
-
-                /// A lambda alias must not become a USING column.
-                auto it = select_list_aliases.alias_name_to_expression_node.find(identifier_full_name_);
-                if (it == select_list_aliases.alias_name_to_expression_node.end())
-                    return nullptr;
-
-                /// Do not pick an arbitrary expression among duplicated aliases.
-                for (const auto & duplicated_node : select_list_aliases.nodes_with_duplicated_aliases)
-                {
-                    if (duplicated_node->hasAlias() && duplicated_node->getAlias() == identifier_full_name_)
-                        return nullptr;
-                }
-
-                return it->second;
-            };
-
-            /** While resolving JOIN USING identifier, try to resolve identifier from parent subquery projection.
-              * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
-              * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
-              */
-            auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_projection](
-                                                                       const String & identifier_full_name_,
-                                                                       const QueryTreeNodePtr & left_table_expression,
-                                                                       const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
-            {
-                const QueryNode * query_node = scope_.scope_node ? scope_.scope_node->as<QueryNode>() : nullptr;
-                if (!query_node)
-                    return nullptr;
-
-                auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name_);
-                if (!matched_node)
-                    return nullptr;
-
-                auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
-                left_subquery->getProjection().getNodes().push_back(matched_node->clone());
-                auto subquery_join_tree = left_table_expression;
-                if (subquery_join_tree->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-                    subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpression();
-                left_subquery->getJoinTree() = subquery_join_tree;
-
-                IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
-                /// We are using alias column mechanism for USING column from projection.
-                /// It will be calculated right after reading, so column will be not nullable there.
-                left_subquery_scope.join_use_nulls = false;
-
-                resolveQuery(left_subquery, left_subquery_scope);
-
-                const auto & resolved_nodes = left_subquery->getProjection().getNodes();
-                if (resolved_nodes.size() == 1)
-                {
-                    /// Added column should not conflict with existing column names
-                    NameSet existing_columns;
-                    if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
-                        return nullptr;
-
-                    NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
-                    while (existing_columns.contains(column_name_type.name))
-                        column_name_type.name = "_" + column_name_type.name;
-
-                    auto [expression_source, is_single_source] = getExpressionSource(resolved_nodes.front());
-                    /// Do not support `SELECT t1.a + t2.a AS id ... USING id`
-                    if (!is_single_source)
-                        return nullptr;
-
-                    /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
-                    /// and left_table_expression is a JOIN or CROSS_JOIN node, we must not assign the JOIN
-                    /// as the column source. That would create a ColumnNode with a JOIN/CROSS_JOIN source
-                    /// and non-ListNode expression, which CollectSourceColumnsVisitor doesn't expect.
-                    if (!expression_source
-                        && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
-                            || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
-                        return nullptr;
-
-                    /// Create ColumnNode with expression from parent projection
-                    return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(),
-                        expression_source ? expression_source : left_table_expression);
-                }
-                return nullptr;
-            };
 
             QueryTreeNodes result_table_expressions;
 

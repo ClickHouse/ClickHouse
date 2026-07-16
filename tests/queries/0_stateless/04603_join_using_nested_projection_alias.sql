@@ -63,3 +63,11 @@ SELECT sum(y + 1 AS id) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id, 3 AS y) t2
 -- case 7: duplicated nested alias with different expressions must not be picked arbitrarily.
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 SELECT sum(x + 1 AS id) + sum(x + 2 AS id) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id); -- { serverError UNKNOWN_IDENTIFIER }
+
+-- case 6b: with the setting on, the nested alias takes priority even when a real left
+-- column exists; its expression must resolve from the left table, so this throws
+-- (old-analyzer-compatible), while without the setting the column resolves.
+SET analyzer_compatibility_join_using_top_level_identifier = 1;
+SELECT sum(y + 1 AS id) FROM (SELECT 1 AS x, 5 AS id) t1 JOIN (SELECT 2 AS id, 3 AS y) t2 USING (id); -- { serverError UNKNOWN_IDENTIFIER }
+SET analyzer_compatibility_join_using_top_level_identifier = 0;
+SELECT sum(y + 1 AS id) FROM (SELECT 1 AS x, 5 AS id) t1 JOIN (SELECT 2 AS id, 3 AS y) t2 USING (id);
