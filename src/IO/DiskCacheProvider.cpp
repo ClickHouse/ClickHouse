@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
 }
 
@@ -68,7 +69,7 @@ void preadSegmentNode(
     ReaderAnchorCache * anchors,
     StreamingReaderSlot * stream_slot)
 {
-    const String path = segment.getPath();
+    String path = segment.getPath();
     const size_t offset_in_file = overlap_start - segment.range().left;
 
     auto buf = std::make_shared<OwnedChainedBuffer>(overlap_size);
@@ -90,11 +91,39 @@ void preadSegmentNode(
         cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
         cache_file_read_settings.local_fs_settings.buffer_size = 0;
         cache_file_read_settings.local_throttler = local_throttler;
-        reader = createReadBufferFromFileBase(
-            path, cache_file_read_settings,
-            /*read_hint=*/std::nullopt,
-            /*file_size=*/std::nullopt,
-            segment.getFlagsForLocalRead());
+        const auto open_cache_file = [&](const String & file_path)
+        {
+            return createReadBufferFromFileBase(
+                file_path, cache_file_read_settings,
+                /*read_hint=*/std::nullopt,
+                /*file_size=*/std::nullopt,
+                segment.getFlagsForLocalRead());
+        };
+        try
+        {
+            reader = open_cache_file(path);
+        }
+        catch (const Exception & e)
+        {
+            /// A fully downloaded segment's file is renamed from `<offset>` to
+            /// `<offset>_<size>` on completion, and `getPath` is lock-free, so the name
+            /// computed above can go stale between it and the open. The rename surfaces
+            /// only as `FILE_DOESNT_EXIST`; recompute the path under the segment lock -
+            /// the rename runs under the same lock, so this observes the final name -
+            /// and retry once. An unchanged path means the missing file is not explained
+            /// by a rename: propagate.
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+            String current_path;
+            {
+                auto segment_lock = segment.lock();
+                current_path = segment.getPath();
+            }
+            if (current_path == path)
+                throw;
+            path = current_path;
+            reader = open_cache_file(path);
+        }
         reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
     }
 
