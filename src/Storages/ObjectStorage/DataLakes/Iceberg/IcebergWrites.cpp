@@ -159,13 +159,7 @@ Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
     const WhichDataType which(type);
     if (which.isTime())
     {
-        Int64 seconds = 0;
-        if (field.getType() == Field::Types::Int64)
-            seconds = field.safeGet<Int64>();
-        else if (field.getType() == Field::Types::UInt64)
-            seconds = static_cast<Int64>(field.safeGet<UInt64>());
-        else
-            seconds = field.safeGet<Int32>();
+        const Int64 seconds = field.safeGet<Int64>();
 
         Int64 microseconds = 0;
         if (common::mulOverflow(seconds, Int64(1'000'000), microseconds))
