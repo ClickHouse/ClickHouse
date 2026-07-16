@@ -50,6 +50,8 @@ public:
               const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
 
+    size_t getActiveConnections() const override;
+
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
