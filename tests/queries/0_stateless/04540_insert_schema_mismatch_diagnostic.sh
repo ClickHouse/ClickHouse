@@ -33,4 +33,12 @@ echo "-- clickhouse-client, asynchronous insert, type mismatch"
 printf 'INSERT INTO test_mismatch FORMAT TSV\n1\tpage_view\t/users/profile\n' \
     | $CLICKHOUSE_CLIENT --async_insert 1 --wait_for_async_insert 1 2>&1 | check
 
+echo "-- HTTP interface, synchronous insert, type mismatch"
+printf 'INSERT INTO test_mismatch FORMAT TSV\n1\tpage_view\t/users/profile\n' \
+    | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=0" --data-binary @- 2>&1 | check
+
+echo "-- HTTP interface, asynchronous insert, type mismatch"
+printf 'INSERT INTO test_mismatch FORMAT TSV\n1\tpage_view\t/users/profile\n' \
+    | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1" --data-binary @- 2>&1 | check
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_mismatch"
