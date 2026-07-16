@@ -141,6 +141,38 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
+    /// If the log entry pins a set of patch parts, resolve them locally so that the mutation applies
+    /// exactly this set (mirrors MergeFromLogEntryTask). This guarantees byte-identical mutated parts
+    /// across replicas; otherwise a replica would derive patches from its own visible state, which may
+    /// differ (issue #100493). Missing patch parts fall back to fetching the mutated part.
+    if (!entry.patch_parts.empty())
+    {
+        MergeTreeData::DataPartsVector patch_parts;
+        patch_parts.reserve(entry.patch_parts.size());
+
+        for (const auto & patch_part_name : entry.patch_parts)
+        {
+            auto patch_part = storage.getActiveContainingPart(patch_part_name);
+
+            if (!patch_part || patch_part->name != patch_part_name)
+            {
+                LOG_DEBUG(log, "Don't have all patch parts (at least {} is missing) for mutation {}; "
+                    "will try to fetch part instead.", patch_part_name, entry.new_part_name);
+
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = true,
+                    .part_log_writer = part_log_writer,
+                };
+            }
+
+            patch_parts.push_back(patch_part);
+        }
+
+        future_mutated_part->patch_parts = std::move(patch_parts);
+        future_mutated_part->patches_pinned = true;
+    }
+
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",

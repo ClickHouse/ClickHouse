@@ -24,6 +24,10 @@ struct FutureMergedMutatedPart
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
     MergeTreeData::DataPartsVector patch_parts;
+    /// True when patch_parts was pinned from a replicated log entry (MUTATE_PART) instead of being
+    /// derived from local visible state. In that case the mutation must apply exactly this set so
+    /// that all replicas produce byte-identical parts (issue #100493).
+    bool patches_pinned = false;
     std::vector<std::string> blocking_parts_to_remove;
     MergeType merge_type = MergeType::Regular;
     bool final = false;

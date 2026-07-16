@@ -112,6 +112,66 @@ def test_lwu_replicated_database(started_cluster, db_engine, table_engine):
     )
 
 
+def test_lwu_replicated_mutation_pins_patches(started_cluster):
+    # Regression test for issue #100493: a replica must apply exactly the same set of patch parts
+    # (from lightweight updates) as the replica that assigned the mutation. Otherwise two replicas
+    # executing the same MUTATE_PART entry could materialize byte-different parts from divergent
+    # local patch state, raising CHECKSUM_DOESNT_MATCH and getting stuck fetching the part.
+    node1.query("DROP TABLE IF EXISTS t_lwu_pin SYNC")
+    node2.query("DROP TABLE IF EXISTS t_lwu_pin SYNC")
+
+    settings = {"enable_lightweight_update": 1, "mutations_sync": 0}
+
+    for node, replica in [(node1, "r1"), (node2, "r2")]:
+        node.query(
+            f"""
+            CREATE TABLE t_lwu_pin (id UInt64, a UInt64, b UInt64)
+            ENGINE = ReplicatedMergeTree('/test/t_lwu_pin', '{replica}')
+            ORDER BY id
+            SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+                     apply_patches_on_merge = 0
+            """
+        )
+
+    node1.query("INSERT INTO t_lwu_pin SELECT number, number, number FROM numbers(10000)")
+    node2.query("SYSTEM SYNC REPLICA t_lwu_pin")
+
+    # Delay patch-part replication to node2 so that, at the moment a mutation is assigned, the two
+    # replicas have different sets of visible patch parts. This is exactly the window that used to
+    # produce divergent mutated parts.
+    node2.query("SYSTEM STOP FETCHES t_lwu_pin")
+
+    # Mixed lightweight UPDATE + DELETE (both required to trigger the original divergence).
+    node1.query(
+        "UPDATE t_lwu_pin SET b = b + 1 WHERE id >= 1000 AND id < 2000", settings=settings
+    )
+    node1.query("DELETE FROM t_lwu_pin WHERE id >= 5000 AND id < 6000", settings=settings)
+    node1.query(
+        "UPDATE t_lwu_pin SET a = a + 7 WHERE id >= 1500 AND id < 2500", settings=settings
+    )
+
+    # Force materialization of the patches into a mutated part on the assigning replica.
+    node1.query("ALTER TABLE t_lwu_pin APPLY PATCHES IN PARTITION tuple()")
+    node1.query("SYSTEM SYNC REPLICA t_lwu_pin", settings={"receive_timeout": 60})
+
+    # Let node2 catch up and execute the same mutation. With the fix it waits for the pinned patch
+    # parts and produces a byte-identical result; without the fix it would loop on CHECKSUM_DOESNT_MATCH.
+    node2.query("SYSTEM START FETCHES t_lwu_pin")
+    node2.query("SYSTEM SYNC REPLICA t_lwu_pin", settings={"receive_timeout": 60})
+
+    expected = node1.query("SELECT id, a, b FROM t_lwu_pin ORDER BY id")
+    assert TSV(node2.query("SELECT id, a, b FROM t_lwu_pin ORDER BY id")) == TSV(expected)
+
+    # No replica should have gotten stuck on a checksum mismatch while executing the mutation.
+    for node in (node1, node2):
+        assert not node.contains_in_log(
+            "Data after mutation is not byte-identical"
+        ), f"unexpected checksum mismatches on {node.name}"
+
+    node1.query("DROP TABLE t_lwu_pin SYNC")
+    node2.query("DROP TABLE IF EXISTS t_lwu_pin SYNC")
+
+
 @pytest.mark.parametrize("table_engine", ["ReplicatedMergeTree"])
 def test_lwu_upgrade(started_cluster, table_engine):
     node3.query("DROP TABLE IF EXISTS lwu_table_upgrade SYNC")

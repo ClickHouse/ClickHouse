@@ -176,6 +176,20 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (isAlterMutation())
                 out << "\nalter_version\n" << alter_version;
+
+            /// Pin the exact set of patch parts that must be applied while producing the
+            /// mutated part, so that every replica executing this entry materializes an
+            /// identical set (mirrors MERGE_PARTS). Optional trailing field: older versions
+            /// ignore it, so no format bump is needed. The keyword must not share its first
+            /// character with any other field in the mutate parse loop ('alter_version',
+            /// 'to_uuid') or the trailing fields ('part_type', 'storage_type', 'quorum'),
+            /// because checkString() consumes the matching prefix even on a partial mismatch.
+            if (!patch_parts.empty())
+            {
+                out << "\nmutation_patches: " << patch_parts.size();
+                for (const auto & s : patch_parts)
+                    out << "\n" << s;
+            }
             break;
 
         case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
@@ -380,6 +394,21 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                 in >> alter_version;
             else if (checkString("to_uuid\n", in))
                 in >> new_part_uuid;
+            else if (checkString("mutation_patches:", in))
+            {
+                size_t num_patches = 0;
+                in >> " " >> num_patches >> "\n";
+
+                for (size_t i = 0; i < num_patches; ++i)
+                {
+                    String patch_name;
+                    in >> patch_name;
+                    patch_parts.push_back(std::move(patch_name));
+
+                    if (i + 1 != num_patches)
+                        in >> "\n";
+                }
+            }
             else
                 trailing_newline_found = true;
         }

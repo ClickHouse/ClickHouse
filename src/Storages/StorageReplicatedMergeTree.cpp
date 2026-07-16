@@ -4524,6 +4524,9 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             /// Choose a part to mutate.
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
+            /// Active patch parts to pin into the mutation log entry (filtered per source part inside
+            /// createLogEntryToMutatePart). Empty unless the table has lightweight updates.
+            DataPartsVector active_patch_parts = getPatchPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
             {
                 fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_bytes_for_mutation = 1; });
@@ -4542,7 +4545,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     future_merged_part->uuid,
                     expected->first,
                     expected->second,
-                    merge_predicate->getVersion());
+                    merge_predicate->getVersion(),
+                    active_patch_parts);
 
                 if (create_result == CreateMergeEntryResult::Ok)
                     return AttemptStatus::EntryCreated;
@@ -4723,7 +4727,8 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
 
 StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::createLogEntryToMutatePart(
-    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version)
+    const IMergeTreeDataPart & part, const UUID & new_part_uuid, Int64 mutation_version, int32_t alter_version, int32_t log_version,
+    const DataPartsVector & patch_parts)
 {
     auto zookeeper = getZooKeeper();
 
@@ -4753,6 +4758,21 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.new_part_uuid = new_part_uuid;
     entry.create_time = time(nullptr);
     entry.alter_version = alter_version;
+
+    /// Pin the patch parts that apply to this mutation so that every replica materializes
+    /// an identical set. MUTATE_PART used to derive patches from each replica's local visible
+    /// state, which could differ between replicas (a patch committed on one replica but not yet
+    /// on another), producing byte-different mutated parts and CHECKSUM_DOESNT_MATCH (issue #100493).
+    /// Filtering by mutation_version mirrors the mutation snapshot (getPatchPartsByPartition with
+    /// max_mutation_versions); per-part block intersection is applied deterministically downstream.
+    for (const auto & patch : patch_parts)
+    {
+        if (patch->info.getOriginalPartitionId() == part.info.getPartitionId()
+            && !patchHasHigherDataVersion(*patch, mutation_version))
+        {
+            entry.patch_parts.push_back(patch->name);
+        }
+    }
 
     Coordination::Requests ops;
     Coordination::Responses responses;
