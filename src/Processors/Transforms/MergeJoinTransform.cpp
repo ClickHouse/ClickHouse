@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -168,7 +169,7 @@ bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
 
 size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
-    chassert(impl.isValid());
+    assert(impl.isValid());
     size_t start_pos = impl.getRow();
     while (sameNext(impl))
     {
@@ -206,7 +207,7 @@ void copyColumnsResized(const TColumns & cols, size_t start, size_t size, Chunk 
         else
         {
             /// cut column
-            chassert(start + size <= col->size());
+            assert(start + size <= col->size());
             result_chunk.addColumn(col->cut(start, size));
         }
     }
@@ -229,7 +230,7 @@ Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
 
 void inline addRange(PaddedPODArray<UInt64> & values, UInt64 start, UInt64 end)
 {
-    chassert(end > start);
+    assert(end > start);
     for (UInt64 i = start; i < end; ++i)
         values.push_back(i);
 }
@@ -543,7 +544,7 @@ struct AllJoinImpl
         size_t rpos = std::numeric_limits<size_t>::max();
         size_t lpos = std::numeric_limits<size_t>::max();
         int cmp = 0;
-        chassert(left_cursor.isValid() && right_cursor.isValid());
+        assert(left_cursor.isValid() && right_cursor.isValid());
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -568,7 +569,7 @@ struct AllJoinImpl
                 }
                 else
                 {
-                    chassert(state == nullptr);
+                    assert(state == nullptr);
                     state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
@@ -652,7 +653,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
 
     if (all_join_state)
     {
-        chassert(cursors.size() == 2);
+        assert(cursors.size() == 2);
         /// Accumulate blocks with same key in all_join_state
         for (size_t i = 0; i < 2; ++i)
         {
@@ -754,7 +755,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
     PaddedPODArray<UInt64> idx_map[2];
 
     dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
-    chassert(idx_map[0].size() == idx_map[1].size());
+    assert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
 
@@ -815,7 +816,7 @@ struct AnyJoinImpl
                      AnyJoinState & any_join_state,
                      int null_direction_hint)
     {
-        chassert(enabled);
+        assert(enabled);
 
         size_t num_rows = isLeft(kind) ? left_cursor.rowsLeft() :
                           isRight(kind) ? right_cursor.rowsLeft() :
@@ -829,7 +830,7 @@ struct AnyJoinImpl
 
         size_t rpos = std::numeric_limits<size_t>::max();
         size_t lpos = std::numeric_limits<size_t>::max();
-        chassert(left_cursor.isValid() && right_cursor.isValid());
+        assert(left_cursor.isValid() && right_cursor.isValid());
         int cmp = 0;
         while (left_cursor.isValid() && right_cursor.isValid())
         {
@@ -956,7 +957,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
 
     dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
 
-    chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
+    assert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
 
     /// build result block from indices

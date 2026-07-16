@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -127,10 +128,7 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
-    {
-        tuple->computeHashInto(row_begin, row_end, hash_out, initial);
-    }
+    WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -182,12 +180,7 @@ public:
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     void finalize() override { tuple->finalize(); }
 
-    bool structureEquals(const IColumn & rhs) const override
-    {
-        if (const auto * rhs_qbit = typeid_cast<const ColumnQBit *>(&rhs))
-            return dimension == rhs_qbit->dimension && tuple->structureEquals(*rhs_qbit->tuple);
-        return false;
-    }
+    bool structureEquals(const IColumn & rhs) const override { return tuple->structureEquals(rhs); }
     bool isFinalized() const override { return tuple->isFinalized(); }
 
     /// Efficient access to the underlying tuple

@@ -3,7 +3,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -193,7 +192,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ASTStorage & storage_ast = *ast_create_query.storage;
 
         bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
 
         if (is_extended_storage_def)
         {
@@ -207,11 +206,6 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
                 storage_ast.reset(storage_ast.sample_by);
-
-            if (metadata.unique_key.definition_ast)
-                storage_ast.set(storage_ast.unique_key, metadata.unique_key.definition_ast);
-            else if (storage_ast.unique_key != nullptr) /// UNIQUE KEY was removed
-                storage_ast.reset(storage_ast.unique_key);
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
@@ -352,57 +346,30 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
-
-    const String & new_comment = command.comment.value();
-
-#if CLICKHOUSE_CLOUD
-    if (SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName()))
-    {
-        if (!SharedDatabaseCatalog::isInitialQuery(query_context))
-        {
-            std::lock_guard lock{mutex};
-            comment = new_comment;
-            return;
-        }
-
-        /// Build the create query with the new comment, but leave the in-memory value
-        /// untouched, so concurrent readers never observe an uncommitted comment.
-        ASTPtr create_query;
-        {
-            std::lock_guard lock{mutex};
-            const String old_comment = comment;
-            comment = new_comment;
-            try
-            {
-                create_query = getCreateDatabaseQueryImpl();
-                if (!create_query)
-                    throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-            }
-            catch (...)
-            {
-                comment = old_comment;
-                throw;
-            }
-            comment = old_comment;
-        }
-
-        auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
-        query_context->setVersionToWaitSharedCatalog(version_to_wait);
-
-        std::lock_guard lock{mutex};
-        comment = new_comment;
-        return;
-    }
-#endif
-
     std::lock_guard lock{mutex};
+
     const String old_comment = comment;
-    comment = new_comment;
+    comment = command.comment.value();
+
     try
     {
+#if CLICKHOUSE_CLOUD
+        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
+        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
+            return;
+#endif
         const ASTPtr create_query = getCreateDatabaseQueryImpl();
         if (!create_query)
             throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+#if CLICKHOUSE_CLOUD
+        if (managed_by_shared_catalog)
+        {
+
+            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+            query_context->setVersionToWaitSharedCatalog(version_to_wait);
+            return;
+        }
+#endif
         DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
@@ -506,7 +473,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
     {
-        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -528,7 +495,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 
     if (table_id.hasUUID())
     {
-        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
@@ -575,7 +542,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         kv.second->flushAndShutdown();
         if (table_id.hasUUID())
         {
-            chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         }
     }

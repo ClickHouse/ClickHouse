@@ -4,7 +4,6 @@
 -- This also applies when GROUP BY ALL and ORDER BY ALL are used together.
 
 SET enable_analyzer = 1;
-SET optimize_truncate_order_by_after_group_by_keys = 1;
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (a String, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;

@@ -7,7 +7,6 @@
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -23,7 +22,6 @@ namespace DB::ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace ProfileEvents
@@ -384,7 +382,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             body_stream->Rewind();
 
             /// Manual copy
-            VectorWithMemoryTracking<uint8_t> buffer(8192);
+            std::vector<uint8_t> buffer(8192);
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)
@@ -429,25 +427,14 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             if (redirects_left > 0)
             {
                 auto location = poco_response.get("location");
+                remote_host_filter.checkURL(Poco::URI(location));
 
                 if (!location.empty())
                 {
                     // Check if the redirect URL is allowed by the remote host filter
                     remote_host_filter.checkURL(Poco::URI(location));
-                    // Update request URL and retry. The Azure SDK Url parser calls
-                    // std::stoi on the port substring and throws std::invalid_argument /
-                    // std::out_of_range for malformed ports — translate to DB::Exception
-                    // so a malicious or buggy redirect target does not abort the server
-                    // in debug/sanitizer builds via getCurrentExceptionMessageAndPattern.
-                    try
-                    {
-                        request.GetUrl() = Azure::Core::Url(location);
-                    }
-                    catch (const std::logic_error & e)
-                    {
-                        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                            "Azure HTTP redirect Location header has malformed URL '{}': {}", location, e.what());
-                    }
+                    // Update request URL and retry
+                    request.GetUrl() = Azure::Core::Url(location);
                     return makeRequestInternalImpl(request, context, redirects_left - 1);
                 }
             }

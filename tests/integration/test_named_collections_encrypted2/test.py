@@ -61,38 +61,6 @@ def wait_not_exists(node, collection, timeout=10):
     return False
 
 
-def wait_zk_child_exists(zk, path, child, timeout=10):
-    """Poll ZK children of `path` until `child` is present.
-
-    ClickHouse and the test's kazoo client use independent ZK sessions, possibly
-    connected to different nodes of the ZK ensemble. The kazoo session can lag
-    briefly behind a write made via ClickHouse's session — this lag is normally
-    sub-millisecond but is amplified under sanitizer builds (TSan/MSan).
-    """
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            if child in zk.get_children(path):
-                return True
-        except Exception:
-            pass
-        time.sleep(0.3)
-    return False
-
-
-def wait_zk_child_absent(zk, path, child, timeout=10):
-    """Poll ZK children of `path` until `child` is gone."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            if child not in zk.get_children(path):
-                return True
-        except Exception:
-            pass
-        time.sleep(0.3)
-    return False
-
-
 def check_encrypted(zk, collection):
     content = zk.get(f"{ZK_PATH}/{collection}.sql")[0]
     assert content[:3] == b"ENC"
@@ -558,11 +526,11 @@ def test_zk_node_lifecycle(cluster):
 
     node1.query("CREATE NAMED COLLECTION zk_test AS key='val'")
 
-    assert wait_zk_child_exists(zk, ZK_PATH, "zk_test.sql")
+    assert "zk_test.sql" in zk.get_children(ZK_PATH)
 
     node1.query("DROP NAMED COLLECTION zk_test")
     assert wait_not_exists(node1, "zk_test")
-    assert wait_zk_child_absent(zk, ZK_PATH, "zk_test.sql")
+    assert "zk_test.sql" not in zk.get_children(ZK_PATH)
 
 
 def test_remote_select_insert(cluster):

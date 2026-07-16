@@ -24,7 +24,7 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 namespace
 {
 
-class FunctionH3NumHexagons final : public IFunction
+class FunctionH3NumHexagons : public IFunction
 {
 public:
     static constexpr auto name = "h3NumHexagons";

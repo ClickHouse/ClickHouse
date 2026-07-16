@@ -50,7 +50,53 @@ TEST(AccessChangesNotifier, BatchFinishedCoalescesRecompute)
     EXPECT_EQ(per_entity_calls, num_entities + 1);
     EXPECT_EQ(batch_calls, 2u);
 
-    /// An empty queue must not invoke the batch hook (nothing changed, nothing to rebuild).
+    /// An empty queue still invokes the batch hook: real handlers early-return on their per-entity
+    /// flag, so this is cheap, and it must keep firing so a rebuild that previously threw is retried
+    /// without waiting for a fresh access change (see BatchFinishedRetriedAfterThrow).
     notifier.sendNotifications();
-    EXPECT_EQ(batch_calls, 2u);
+    EXPECT_EQ(batch_calls, 3u);
+}
+
+/// A per-batch rebuild that throws must not lose the pending work: the caches clear their "needs
+/// rebuild" flag only on success, so the notifier has to keep invoking batch-finished handlers on
+/// later sendNotifications() calls - including ones that drain no events - otherwise the derived
+/// state stays stale until some unrelated access change happens to queue a notification (and an
+/// up-to-date SYSTEM RELOAD USERS, which diffs to zero, would never trigger the retry).
+TEST(AccessChangesNotifier, BatchFinishedRetriedAfterThrow)
+{
+    AccessChangesNotifier notifier;
+
+    bool need_rebuild = false; /// mirrors RowPolicyCache::need_mix_filters and friends
+    size_t rebuilds = 0;
+    bool fail_next_rebuild = true;
+
+    auto entity_subscription = notifier.subscribeForChanges(
+        AccessEntityType::ROW_POLICY,
+        [&](const UUID &, const AccessEntityPtr &) { need_rebuild = true; });
+
+    auto batch_subscription = notifier.subscribeForBatchFinished(
+        [&]
+        {
+            if (!need_rebuild)
+                return;
+            if (fail_next_rebuild)
+            {
+                fail_next_rebuild = false;
+                throw std::runtime_error("rebuild failed"); /// caught and logged by sendNotifications()
+            }
+            ++rebuilds;
+            need_rebuild = false; /// cleared only after a successful rebuild
+        });
+
+    notifier.onEntityRemoved(UUIDHelpers::generateV4(), AccessEntityType::ROW_POLICY);
+    notifier.sendNotifications(); /// first attempt throws; the work stays pending
+    EXPECT_EQ(rebuilds, 0u);
+
+    /// No new event is queued, yet the pending rebuild must still be retried and now succeed.
+    notifier.sendNotifications();
+    EXPECT_EQ(rebuilds, 1u);
+
+    /// Once it has succeeded an empty flush is a no-op, guarded by the handler's own flag.
+    notifier.sendNotifications();
+    EXPECT_EQ(rebuilds, 1u);
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
@@ -156,9 +155,9 @@ public:
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
-        /// Processor wants to add new processors and/or remove finished neighbours.
-        /// Update must be obtained by updatePipeline() call.
-        UpdatePipeline,
+        /// Processor wants to add other processors to pipeline.
+        /// New processors must be obtained by expandPipeline() call.
+        ExpandPipeline,
     };
 
     static std::string statusToName(std::optional<Status> status);
@@ -236,21 +235,16 @@ public:
      */
     virtual void onAsyncJobReady() {}
 
-    /** You must call this method if 'prepare' returned UpdatePipeline.
+    /** You must call this method if 'prepare' returned ExpandPipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
-      * Method should return set of new already connected processors or disconnected finished processors.
-      * All returned processors must be connected only to each other or current processor.
+      * Method should return set of new already connected processors.
+      * All added processors must be connected only to each other or current processor.
       *
-      * Method can't move data from/to port or perform calculations.
-      * 'prepare' should be called again after this operation.
+      * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
+      * 'prepare' should be called again after expanding pipeline.
       */
-    struct PipelineUpdate
-    {
-        Processors to_add;
-        Processors to_remove;
-    };
-    virtual PipelineUpdate updatePipeline();
+    virtual Processors expandPipeline();
 
     /// Why the processor is being cancelled, chosen by the caller of cancel.
     enum class CancelReason : uint8_t

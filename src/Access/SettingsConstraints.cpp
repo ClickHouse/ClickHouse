@@ -18,9 +18,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_ddl;
-    extern const SettingsBool dynamic_disk_allow_from_env;
-    extern const SettingsBool dynamic_disk_allow_include;
-    extern const SettingsBool dynamic_disk_allow_from_zk;
     extern const SettingsUInt64 readonly;
 }
 
@@ -146,7 +143,7 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
         }
     }
 
-    for (const auto & [other_alias, other_resolved_name] : other.settings_alias_cache)
+    for (const auto & [other_alias, other_resolved_name] : settings_alias_cache)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
 }
 
@@ -329,15 +326,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    /// Resolve aliases upfront, mirroring the Settings overload above. Otherwise a user can
-    /// bypass a constraint declared on the canonical setting name by writing to an alias,
-    /// because the constraint lookup is a plain hashmap lookup on the (still un-resolved) name.
-    std::string_view setting_name = MergeTreeSettings::resolveName(change.name);
-
     Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
     if (new_value.isNull())
         return false;
-    return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
+    return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change,
@@ -406,12 +398,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         return false;
     }
 
-    /// Track the effective value through clamping so that the disallowed-values loop below
-    /// compares against the post-clamp value. Otherwise an overlap between a clamp target and
-    /// a disallowed entry (e.g. min == disallowed) would let the clamped value through.
-    Field effective_value = new_value;
-
-    if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
+    if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -419,10 +406,9 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
         }
         change.value = min_value;
-        effective_value = min_value;
     }
 
-    if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
+    if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -430,22 +416,14 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
         }
         change.value = max_value;
-        effective_value = max_value;
     }
 
     for (const auto & value : disallowed_values)
     {
-        bool equals = equals_or_cannot_compare(value, effective_value);
+        bool equals = equals_or_cannot_compare(value, new_value);
         if (equals)
-        {
-            if (reaction == THROW_ON_VIOLATION)
-                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
-                    setting_name, applyVisitor(FieldVisitorToString(), value));
-            /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
-            /// deny-list, not a range. Drop the change and let the caller proceed with the
-            /// existing value rather than failing the query.
-            return false;
-        }
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
+                setting_name, applyVisitor(FieldVisitorToString(), value));
     }
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))

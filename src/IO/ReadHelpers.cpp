@@ -10,7 +10,6 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <cstdint>
 #include <cstdlib>
 #include <bit>
 #include <utility>
@@ -55,20 +54,9 @@ inline void parseHex(IteratorSrc src, IteratorDst dst)
         dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
 }
 
-/// Returns true if all bytes in [begin, end) are valid hexadecimal digits (0-9, a-f, A-F).
-static inline bool areHexChars(const UInt8 * begin, const UInt8 * end)
+UUID parseUUID(std::span<const UInt8> src)
 {
-    for (const UInt8 * p = begin; p != end; ++p)
-        if (unhex(static_cast<char>(*p)) == 0xff)
-            return false;
-    return true;
-}
-
-template <typename ReturnType>
-static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
+    UUID uuid;
     const auto * src_ptr = src.data();
     const auto size = src.size();
 
@@ -79,21 +67,6 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
 #endif
     if (size == 36)
     {
-        /// Validate 8-4-4-4-12 layout: dashes at positions 8, 13, 18, 23 and hex digits in the rest.
-        if (src_ptr[8] != '-' || src_ptr[13] != '-' || src_ptr[18] != '-' || src_ptr[23] != '-'
-            || !areHexChars(src_ptr, src_ptr + 8)
-            || !areHexChars(src_ptr + 9, src_ptr + 13)
-            || !areHexChars(src_ptr + 14, src_ptr + 18)
-            || !areHexChars(src_ptr + 19, src_ptr + 23)
-            || !areHexChars(src_ptr + 24, src_ptr + 36))
-        {
-            if constexpr (throw_exception)
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_UUID,
-                    "Cannot parse UUID from String: invalid format, expected 32 or 36 hexadecimal digits with dashes at positions 8, 13, 18, 23");
-            else
-                return ReturnType(false);
-        }
         parseHex<4>(src_ptr, dst + 8);
         parseHex<2>(src_ptr + 9, dst + 12);
         parseHex<2>(src_ptr + 14, dst + 14);
@@ -102,39 +75,13 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
     }
     else if (size == 32)
     {
-        if (!areHexChars(src_ptr, src_ptr + 32))
-        {
-            if constexpr (throw_exception)
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_UUID,
-                    "Cannot parse UUID from String: invalid format, expected 32 hexadecimal digits");
-            else
-                return ReturnType(false);
-        }
         parseHex<8>(src_ptr, dst + 8);
         parseHex<8>(src_ptr + 16, dst);
     }
     else
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
-        else
-            return ReturnType(false);
-    }
+        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
 
-    return ReturnType(true);
-}
-
-UUID parseUUID(std::span<const UInt8> src)
-{
-    UUID uuid;
-    parseUUIDImpl<void>(src, uuid);
     return uuid;
-}
-
-bool tryParseUUID(std::span<const UInt8> src, UUID & uuid)
-{
-    return parseUUIDImpl<bool>(src, uuid);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -230,46 +177,15 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 }
 
 
-/// Diagnostic predicate for the bounds-corruption class of bug tracked in
-/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates the
-/// caller-supplied `[rb.position(), end)` source range against the working
-/// buffer `[rb.buffer().begin(), rb.buffer().end())` WITHOUT performing
-/// relational pointer comparisons on the untrusted range. C++ relational
-/// comparisons between pointers from different allocations are UB; if
-/// `working_buffer` is corrupt and its begin/end / `end` come from different
-/// allocations, the predicates `end >= rb.position()`, `end <= rb.buffer().end()`,
-/// and `rb.position() >= rb.buffer().begin()` could trigger UB before
-/// `chassert` ever reports the bug. Compare the four pointers as integer
-/// addresses instead.
-static void assertReadBufferRangeForAppend(ReadBuffer & rb, const char * end)
-{
-    auto pos_addr = reinterpret_cast<std::uintptr_t>(rb.position());
-    auto end_addr = reinterpret_cast<std::uintptr_t>(end);
-    auto wb_begin_addr = reinterpret_cast<std::uintptr_t>(rb.buffer().begin());
-    auto wb_end_addr = reinterpret_cast<std::uintptr_t>(rb.buffer().end());
-    chassert(pos_addr <= end_addr);
-    chassert(end_addr <= wb_end_addr);
-    chassert(pos_addr >= wb_begin_addr);
-}
-
 template <typename T>
 static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
-    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
-    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. If
-    /// `working_buffer` becomes inverted or extends past the underlying owned
-    /// `Memory<>`, the `s.append` below memcpys an arbitrary span and corrupts
-    /// the destination `String`'s heap arena. The exception then surfaces
-    /// either at the memcpy itself (unmapped source) or much later when the
-    /// oversized `String` is freed.
-    assertReadBufferRangeForAppend(rb, end);
     s.append(rb.position(), end - rb.position());
 }
 
 template <>
 inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
-    assertReadBufferRangeForAppend(rb, end);
     if (rb.isPadded())
         s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
     else
@@ -279,7 +195,6 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
 template <>
 inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
 {
-    assertReadBufferRangeForAppend(rb, end);
     s.insert(rb.position(), end);
 }
 
@@ -532,7 +447,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
         return error("Cannot parse escape sequence: unexpected eof", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
     }
 
-    chassert(buf.hasPendingData());
+    assert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -733,7 +648,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = nullptr;
+        char * next_pos;
         if constexpr (support_crlf)
         {
             next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
@@ -1188,7 +1103,7 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
     readCSVStringInto<String, true>(s, buf, settings);
 }
 
-static void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
+void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
@@ -1890,7 +1805,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         if (*buf.position() == '+')
             ++buf.position();
 
-        double v = 0;
+        double v;
         if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
@@ -2207,8 +2122,8 @@ void skipNullTerminated(ReadBuffer & buf)
 
 void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
-    chassert(current >= in.position());
-    chassert(current <= in.buffer().end());
+    assert(current >= in.position());
+    assert(current <= in.buffer().end());
 
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
@@ -2219,7 +2134,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     if (new_bytes == 0)
         return;
 
-    chassert(in.position() + additional_bytes <= in.buffer().end());
+    assert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
@@ -2227,7 +2142,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
 {
-    chassert(current <= in.buffer().end());
+    assert(current <= in.buffer().end());
 
     if (current < in.buffer().end())
         return true;
@@ -2237,8 +2152,8 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
     bool loaded_more = !in.eof();
     // A sanity check. Buffer position may be in the beginning of the buffer
     // (normal case), or have some offset from it (AIO).
-    chassert(in.position() >= in.buffer().begin());
-    chassert(in.position() <= in.buffer().end());
+    assert(in.position() >= in.buffer().begin());
+    assert(in.position() <= in.buffer().end());
     current = in.position();
 
     return loaded_more;
@@ -2471,7 +2386,7 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
         /// It's an integer, float or decimal. They all can be parsed as float.
         auto parse_func = [](ReadBuffer & in)
         {
-            Float64 tmp = 0;
+            Float64 tmp;
             if constexpr (throw_exception)
                 readFloatText(tmp, in);
             else

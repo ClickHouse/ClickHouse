@@ -12,7 +12,7 @@ import pytest
 from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_queue_common import (
     run_query,
     random_str,
@@ -1540,6 +1540,8 @@ def test_persistent_processing(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 10,
             "cleanup_interval_min_ms": 100,
@@ -1608,6 +1610,8 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -1800,7 +1804,10 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
     logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
 
     # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
-    assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
+    if is_arm():
+        assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status} on ARM"
+    else:
+        assert 250 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status} on x64"
 
     # Process 19 more files
     files_to_generate = 19
@@ -1893,6 +1900,8 @@ def test_deduplication(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -2045,6 +2054,8 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
         file_format="parquet",
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,

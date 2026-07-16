@@ -13,6 +13,11 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
 
+# Coverage data lives in the public ClickHouse CIDB, accessible from any CI environment.
+# Use this URL for all coverage queries so that private-repo CI (which may not have
+# access to an internal CIDB) can still query test coverage data.
+_PUBLIC_CIDB_URL = "https://play.clickhouse.com"
+
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
 # widespread failures (e.g. build broken, environment issue) where every test failed,
@@ -50,60 +55,12 @@ class Targeting:
 
     def __init__(self, info: Info):
         self.info = info
-        self._cidb = None
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
         else:
             self.job_type = None
-
-    def _ci_db(self):
-        # Queries run as the privileged CI user. The public `play` user is
-        # rate/row/time-limited and must be used only for links handed to humans
-        # (see CIDB.get_link_to_test_case_statistics).
-        if self._cidb is None:
-            url, user, passwd = (
-                self.info.get_secret(Settings.SECRET_CI_DB_URL)
-                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_USER))
-                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
-                .get_value()
-            )
-            self._cidb = CIDB(url=url, user=user, passwd=passwd)
-        return self._cidb
-
-    # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
-    _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
-
-    @classmethod
-    def _derive_test_name(cls, fpath: str):
-        """Map a changed file under `tests/queries/0_stateless/` to a test name.
-
-        Returns the test base name (without extension) suitable for `clickhouse-test --test`,
-        or `None` if the file does not correspond to a real test (e.g. a data file like
-        `02995_settings_26_4_1.tsv`, which is consumed by `02995_new_settings_history.sh`
-        but has no test of its own).
-        """
-        fname = os.path.basename(fpath)
-
-        # Direct hit: the changed file is itself a test source file.
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            if fname.endswith(ext):
-                return fname[: -len(ext)]
-
-        # Supporting file (`.reference`, `.reference.j2`, `.tsv`, ...). Walk the
-        # extensions one at a time looking for a sibling test source file with
-        # the same base name. This catches reference updates like
-        # `00172_hits_joins.reference.j2` → `00172_hits_joins.sql.j2` while
-        # rejecting orphan data files like `02995_settings_26_4_1.tsv`.
-        test_dir = Path("tests/queries/0_stateless")
-        candidate = fname
-        while "." in candidate:
-            candidate = candidate.rsplit(".", 1)[0]
-            for ext in cls._TEST_FILE_EXTENSIONS:
-                if (test_dir / f"{candidate}{ext}").is_file():
-                    return candidate
-        return None
 
     def get_changed_tests(self):
         # TODO: add support for integration tests
@@ -130,19 +87,13 @@ class Targeting:
                     print(f"File '{fpath}' was removed — skipping")
                     continue
 
-                test_base_name = self._derive_test_name(fpath)
-                if test_base_name is None:
-                    # Avoid emitting a regex like `02995_settings_26_4_1.` that
-                    # matches no test — clickhouse-test exits with code 1 when
-                    # "no tests were run", failing the flaky check.
-                    print(
-                        f"File '{fpath}' is not a test source and has no sibling test — skipping"
-                    )
-                    continue
+                print(f"Detected changed test file: '{fpath}'")
 
-                print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
+                fname = os.path.basename(fpath)
+                fname_without_ext = os.path.splitext(fname)[0]
+
                 # Add '.' suffix to precisely match this test only
-                result.add(f"{test_base_name}.")
+                result.add(f"{fname_without_ext}.")
 
             elif fpath.startswith("tests/queries/"):
                 # Log any other changed file under tests/queries for future debugging
@@ -153,13 +104,16 @@ class Targeting:
         return sorted(result)
 
     def get_previously_failed_tests(self):
+        from ci.praktika.cidb import CIDB
+        from ci.praktika.settings import Settings
+
         assert self.job_type, "Unsupported job type"
         assert (
             self.info.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
-        cidb = self._ci_db()
+        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
         if self.job_type == self.INTEGRATION_JOB_TYPE:
             test_name_pattern = "^test_"
         elif self.job_type == self.STATELESS_JOB_TYPE:
@@ -417,7 +371,7 @@ class Targeting:
         HAVING region_test_count <= {BROAD_REGION_HARD_CAP}
         """
 
-        cidb = self._ci_db()
+        cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
         t_query = time.monotonic()
         raw = cidb.query(query, log_level="") or ""
         print(f"[find_tests] CIDB query: {time.monotonic()-t_query:.2f}s, response={len(raw)} bytes")
@@ -1030,7 +984,9 @@ class Targeting:
         # broader callee coverage and higher overlap with domain-related tests.
         FILE_SEED_RC = 30   # narrower than MAX_TESTS_PER_LINE; avoids pulling in broad seeds
         if sparse_files:
-            _cidb = self._ci_db()
+            from ci.praktika.cidb import CIDB
+            from ci.praktika.settings import Settings
+            _cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
             # sparse_files are already stored-paths (./src/...)
             sparse_conds = " OR ".join(
                 f"file = '{self._escape_sql_string(f)}'"
@@ -1173,7 +1129,9 @@ class Targeting:
         """
 
         try:
-            cidb = self._ci_db()
+            from ci.praktika.cidb import CIDB
+            from ci.praktika.settings import Settings
+            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             elapsed = time.monotonic() - t0
@@ -1366,7 +1324,9 @@ class Targeting:
         """
 
         try:
-            cidb = self._ci_db()
+            from ci.praktika.cidb import CIDB
+            from ci.praktika.settings import Settings
+            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             print(

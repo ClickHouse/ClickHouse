@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
+# no-parallel because of the `FLUSH ASYNC INSERT QUEUE` command
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,5 +59,5 @@ do
     echo "good async insert"
     cat $file_3
 
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_inserts;"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE;"
 done

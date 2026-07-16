@@ -1,15 +1,13 @@
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
 #include <Common/callOnce.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -28,7 +26,6 @@
 namespace DB
 {
 struct ReadSettings;
-struct FilesystemCacheSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -46,9 +43,6 @@ struct FileCacheReserveStat
         size_t moving_count = 0;
         size_t invalidated_count = 0;
 
-        size_t candidates_iteration_steps = 0;
-        size_t clients_iterated = 0;
-
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
@@ -58,8 +52,6 @@ struct FileCacheReserveStat
             evicting_count += other.evicting_count;
             moving_count += other.moving_count;
             invalidated_count += other.invalidated_count;
-            candidates_iteration_steps += other.candidates_iteration_steps;
-            clients_iterated += other.clients_iterated;
             return *this;
         }
 
@@ -67,10 +59,7 @@ struct FileCacheReserveStat
     };
 
     Stat total_stat;
-    std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
-
-    Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
-    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     enum class State
     {
@@ -85,8 +74,8 @@ struct FileCacheReserveStat
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
         total_stat += other.total_stat;
-        for (size_t i = 0; i < stat_by_kind.size(); ++i)
-            stat_by_kind[i] += other.stat_by_kind[i];
+        for (const auto & [name, stat_] : other.stat_by_kind)
+            stat_by_kind[name] += stat_;
         return *this;
     }
 };
@@ -168,16 +157,6 @@ public:
         size_t file_segments_limit,
         const UserID & user_id);
 
-    /// Cache-only / must-exist lookup: returns existing segments covering [offset, offset + size)
-    /// contiguously with a sufficient downloaded prefix, otherwise an EMPTY holder. Never fills holes,
-    /// synthesizes DETACHED placeholders or creates segments. State is deliberately not checked:
-    /// a committed Ephemeral segment stays PARTIALLY_DOWNLOADED (DOWNLOADED requires !is_unbound).
-    FileSegmentsHolderPtr getDownloadedContiguousOrEmpty(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        const UserID & user_id);
-
     FileSegmentsHolderPtr set(
         const Key & key,
         size_t offset,
@@ -251,7 +230,7 @@ public:
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -265,8 +244,6 @@ public:
 
     const String & getName() const { return name; }
 
-    static void onSegmentEvicted(const FileSegment & segment);
-
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -277,10 +254,9 @@ private:
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
-    std::unique_ptr<ThreadFromGlobalPool> load_metadata_main_thread;
+    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
     const bool allow_dynamic_cache_resize;
-    const size_t dynamic_resize_lock_wait_ms;
 
     BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
@@ -302,17 +278,15 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
-    std::shared_timed_mutex dynamic_resize_lock;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::atomic<size_t> cache_reserve_active_threads = 0;
 
     std::mutex apply_settings_mutex;
 
-    FileCachePriorityPtr main_priority;
-
-    /// Must be declared after main_priority: metadata holds iterators that reference
-    /// the priority's internal state, so metadata must be destroyed first
     CacheMetadata metadata;
+
+    FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;
@@ -352,15 +326,10 @@ private:
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
     /// file segments.
-    /// If `ignore_bypass_threshold` is true, the `enable_bypass_cache_with_threshold`
-    /// short-circuit is skipped, so the actual cached segments are inspected even for
-    /// large ranges. This is required by callers that need to know what is really
-    /// downloaded (e.g. `getDownloadedContiguousOrEmpty`).
     FileSegments getImpl(
         const LockedKey & locked_key,
         const FileSegment::Range & range,
-        size_t file_segments_limit,
-        bool ignore_bypass_threshold = false) const;
+        size_t file_segments_limit) const;
 
     /// Split range into subranges by max_file_segment_size,
     /// each subrange size must be less or equal to max_file_segment_size.

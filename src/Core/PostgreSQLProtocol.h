@@ -219,7 +219,7 @@ public:
 
     void dropMessage()
     {
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, *in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -512,12 +512,12 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
+        UInt8 message_type;
         readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, in);
         readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism = 0;
+        Int32 size_sasl_mechanism;
         readBinaryBigEndian(size_sasl_mechanism, in);
         /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
         if (size_sasl_mechanism < -1)
@@ -572,9 +572,9 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
+        UInt8 message_type;
         readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -618,7 +618,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(password, in);
     }
@@ -698,7 +698,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -714,16 +714,16 @@ class ParseQuery : FrontMessage
 public:
     String function_name;
     String sql_query;
-    Int16 num_params{};
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
-        Int32 oid_param = 0;
+        Int32 oid_param;
         for (int i = 0; i < num_params; ++i)
             readBinaryBigEndian(oid_param, in);
     }
@@ -762,18 +762,18 @@ public:
     String portal_name;
     String function_name;
     std::vector<String> parameters;
-    Int16 num_params{};
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
-        Int16 num_format_params = 0;
+        Int16 num_format_params;
         readBinaryBigEndian(num_format_params, in);
-        Int16 format_param = 0;
+        Int16 format_param;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
@@ -781,7 +781,7 @@ public:
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
         {
-            Int32 sz_param = 0;
+            Int32 sz_param;
             readBinaryBigEndian(sz_param, in);
             /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
             /// any other negative value is malformed.
@@ -798,9 +798,9 @@ public:
             parameters.push_back(current_param);
         }
 
-        Int16 num_format_params_result = 0;
+        Int16 num_format_params_result;
         readBinaryBigEndian(num_format_params_result, in);
-        Int16 format_param_result = 0;
+        Int16 format_param_result;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
     }
@@ -836,12 +836,12 @@ public:
 class DescribeQuery : FrontMessage
 {
 public:
-    char describe{};
+    char describe;
     String function_name;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
@@ -858,11 +858,11 @@ class ExecuteQuery : FrontMessage
 {
 public:
     String portal_name;
-    Int32 max_rows{};
+    Int32 max_rows;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
@@ -905,16 +905,13 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
-    /// 'S' for prepared statement, 'P' for portal
-    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
-        Int8 byte = 0;
+        Int8 byte;
         readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
@@ -927,13 +924,9 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
-    CloseQueryComplete() = default;
-
     void serialize(WriteBuffer & out) const override
     {
-        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
-        /// the PostgreSQL message protocol.
-        out.write('3');
+        out.write('C');
         writeBinaryBigEndian(size(), out);
     }
 
@@ -953,7 +946,7 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
     }
 
@@ -1102,7 +1095,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -1172,7 +1165,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         if (sz < static_cast<Int32>(sizeof(Int32)))
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -1180,7 +1173,7 @@ public:
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
-            char byte = 0;
+            char byte;
             readBinary(byte, in);
             query.push_back(byte);
         }
@@ -1197,7 +1190,7 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
     }
 
@@ -1726,60 +1719,34 @@ public:
         return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(const String & function_name)
+    void deleteStatement(ASTDeallocate * query)
     {
-        auto it = statements.find(function_name);
+        auto it = statements.find(query->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
 
-    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
-    /// statement or portal is not an error — it is a silent no-op that still
-    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
-    /// from the extended-query `Close` handler so a stray `Close` does not
-    /// terminate the connection.
-    void tryDeleteStatement(const String & function_name)
-    {
-        statements.erase(function_name);
-    }
-
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        /// We only support the unnamed portal (an empty `portal_name`).
-        /// Reject named portals explicitly: with a single bind slot we cannot
-        /// keep their state correct, and silently overwriting would let
-        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
-        if (!query->portal_name.empty())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Named portals are not supported in the PostgreSQL wire protocol, "
-                "got portal name '{}'", query->portal_name);
+        if (bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
 
-        /// For the unnamed portal, a new `Bind` replaces the previous one
-        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
-        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
-        if (!bind_query)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
-
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         return result;
     }
 
-    void resetBindQuery()
+    void resetBindQuery(const String& function_name)
     {
+        statements.erase(function_name);
         bind_query.reset();
-    }
-
-    bool bindReferencesStatement(const String & function_name) const
-    {
-        return bind_query && bind_query->function_name == function_name;
     }
 
 private:

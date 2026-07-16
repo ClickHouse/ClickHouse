@@ -122,7 +122,6 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
     return required_access;
 }
 
-void registerInterpreterOptimizeQuery(InterpreterFactory & factory);
 void registerInterpreterOptimizeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

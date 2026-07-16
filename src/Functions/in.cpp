@@ -26,7 +26,7 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-class FunctionIn final : public IFunction
+class FunctionIn : public IFunction
 {
 public:
     FunctionIn(String name_, bool negative_, bool null_is_skipped_, bool ignore_set_)
@@ -58,12 +58,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// We can't use the default constant-folding wrapper because it would wrap a
-    /// dry-run result as a ColumnConst, and `FilterTransform`'s header evaluation
-    /// would then see a subquery-IN with an unbuilt set as "always false" (the
-    /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
-    /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override
+    {
+        /// Never return constant for -IgnoreSet functions to avoid constant folding.
+        return !ignore_set;
+    }
 
     bool useDefaultImplementationForDynamic() const override
     {
@@ -88,8 +87,10 @@ public:
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        if (input_rows_count == 0)
+            return ColumnUInt8::create();
 
-        /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
+        /// Second argument must be ColumnSet.
         ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
@@ -97,6 +98,21 @@ public:
         if (!column_set)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
                 getName(), column_set_ptr->getName());
+
+        ColumnsWithTypeAndName columns_of_key_columns;
+
+        /// First argument may be a tuple or a single column.
+        const ColumnWithTypeAndName & left_arg = arguments[0];
+        const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
+        const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
+        const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
+
+        ColumnPtr materialized_tuple;
+        if (const_tuple)
+        {
+            materialized_tuple = const_tuple->convertToFullColumn();
+            tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
+        }
 
         auto future_set = column_set->getData();
         if (!future_set)
@@ -109,31 +125,8 @@ public:
 
         auto set = future_set->get();
         if (!set)
-        {
-            if (dry_run)
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
-        }
 
-        /// Empty set: return a constant result. Must be checked before input_rows_count == 0
-        /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
-        if (set->getTotalRowCount() == 0)
-            return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
-
-        /// Unwrap ColumnConst for the first argument if needed.
-        ColumnWithTypeAndName left_arg = arguments[0];
-        bool left_is_const = isColumnConst(*left_arg.column);
-
-        if (left_is_const)
-            left_arg.column = assert_cast<const ColumnConst &>(*left_arg.column).getDataColumnPtr();
-        else if (input_rows_count == 0)
-            return ColumnUInt8::create();
-
-        const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
-        const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
-
-        ColumnsWithTypeAndName columns_of_key_columns;
         auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
@@ -147,10 +140,18 @@ public:
         else
             columns_of_key_columns.emplace_back(left_arg);
 
+        bool is_const = false;
+        if (columns_of_key_columns.size() == 1)
+        {
+            auto & arg = columns_of_key_columns.at(0);
+            if (typeid_cast<const ColumnConst *>(arg.column.get()))
+                is_const = true;
+        }
+
         auto res = set->execute(columns_of_key_columns, negative);
 
-        if (left_is_const)
-            return ColumnConst::create(std::move(res), input_rows_count);
+        if (is_const)
+            res = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(res->getUInt(0)));
 
         if (res->size() != input_rows_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());

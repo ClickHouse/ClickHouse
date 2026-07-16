@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -216,19 +217,6 @@ public:
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
 
-        /// Persist finalized sizes so the next add()/resetBuffersIfNeeded() cycle
-        /// preserves all previously accumulated data. Without this, window functions
-        /// with growing frames (e.g. UNBOUNDED PRECEDING AND CURRENT ROW) lose all
-        /// prior data when the buffer is recreated after finalization.
-        data(place).merged_uncompressed_size = uncompressed_size;
-        data(place).merged_compressed_size = compressed_size;
-
-        /// Reset buffers so that a repeated insertResultInto without an
-        /// intervening add (unchanged window frame) does not re-count the
-        /// already-persisted finalized bytes.
-        data(place).compressed_buf.reset();
-        data(place).null_buf.reset();
-
         Float64 ratio = 0;
         if (compressed_size > 0)
             ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
@@ -238,7 +226,7 @@ public:
 };
 }
 
-static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
+AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
     if (arguments.size() != 1)
@@ -293,7 +281,6 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
 
-void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

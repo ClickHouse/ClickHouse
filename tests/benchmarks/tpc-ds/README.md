@@ -128,6 +128,9 @@ ORDER BY v1.sum_sales - v1.avg_monthly_sales, v1.s_store_name
 LIMIT 100;
 ```
 
+## Q51
+The result contains ᴺᵁᴸᴸ. This is correct, but we were using format_tsv_null_representation='' setting to represent nulls as empty strings. This is due to https://github.com/ClickHouse/ClickHouse/issues/95168. Note: running this query for the first time may produce '', but consecutive runs will produce 'ᴺᵁᴸᴸ'.
+
 ## Q57
 The query doesn't work out-of-the-box due to https://github.com/ClickHouse/ClickHouse/issues/94858. The alternative formulation with a minor fix works.
 
@@ -414,8 +417,12 @@ ORDER BY
 LIMIT 100;
 ```
 
+## Q64-65
+The result contains ᴺᵁᴸᴸ. This is correct, but we were using format_tsv_null_representation='' setting to represent nulls as empty strings. This is due to https://github.com/ClickHouse/ClickHouse/issues/95168. Note: running this query for the first time may produce '', but consecutive runs will produce 'ᴺᵁᴸᴸ'.
+
+
 ## Q75
-The query doesn't work out-of-the-box due to https://github.com/ClickHouse/ClickHouse/issues/106707. The alternative formulation with a minor fix works.
+The query doesn't work out-of-the-box due to https://github.com/ClickHouse/ClickHouse/issues/94671. The alternative formulation with a minor fix works.
 
 Original:
 ```sql

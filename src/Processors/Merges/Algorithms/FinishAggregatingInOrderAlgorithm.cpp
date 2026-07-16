@@ -124,7 +124,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     addToAggregation();
 
     /// At least one chunk should be fully aggregated.
-    chassert(!inputs_to_update.empty());
+    assert(!inputs_to_update.empty());
     Status status(inputs_to_update.back());
     inputs_to_update.pop_back();
 

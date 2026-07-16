@@ -10,8 +10,6 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandMkDir.cpp
     CommandMove.cpp
     CommandRead.cpp
-    CommandReadBitmap.cpp
-    CommandReadChecksums.cpp
     CommandRemove.cpp
     CommandSwitchDisk.cpp
     CommandWrite.cpp

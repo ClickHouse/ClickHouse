@@ -76,25 +76,14 @@ WHERE (l.x = 'FRANCE' AND r.y = 'GERMANY') OR (l.x = 'GERMANY' AND r.y = 'FRANCE
 ORDER BY l.x
 FORMAT TSV;
 
--- Analyzer identifier-resolution crash (NULL deref) reachable from this query family.
--- scope.join_using_columns holds raw pointers to a stack-local map pushed while resolving
--- one JOIN side; a statically-dead if/multiIf branch that references an unknown identifier
--- throws UNKNOWN_IDENTIFIER, which the constant-fold path swallows. The push was not undone
--- on that throw, so a later identifier lookup dereferenced a dangling pointer. Must not crash.
-SELECT '--- analyzer no crash ---';
-SELECT count() > 0
-FROM viewExplain('EXPLAIN', 'actions = 1', (
-    SELECT DISTINCT l.x, r.y
-    FROM l04330 AS l
-    SEMI LEFT JOIN r04330 AS r USING (a)
-    WHERE xor(toLowCardinality(100), '1' = l.x, multiIf(toString(NULL),
-        plus(if(and(divide('9', NULL), toString(NULL, NULL)),
-            isNull(toFixedString('9', t04330.x, 20)), notEquals('9', r.s)), 0),
-        and(toString(NULL, NULL), divide(NULL, ';'))))
-    ORDER BY l.x DESC NULLS FIRST
-))
-SETTINGS use_join_disjunctions_push_down = 1, enable_join_runtime_filters = 0, enable_parallel_replicas = 0
-FORMAT TSV;
+-- NOTE (26.4 backport): the original test additionally covered the secondary analyzer fix in
+-- IdentifierResolver.cpp (a dangling pointer in scope.join_using_columns left behind when an
+-- UNKNOWN_IDENTIFIER thrown from a statically-dead branch is swallowed during resolution). That
+-- crash is only reachable on branches that swallow analysis errors from dead multiIf branches.
+-- 26.4 does not do this (the special-multiIf constant folding was added to master after 26.4 and
+-- is unrelated to this fix), so on 26.4 the unknown identifier simply propagates and the scenario
+-- cannot be reproduced. The IdentifierResolver.cpp change is kept for parity with master, but the
+-- corresponding query is omitted from this backport because it would only error here, never crash.
 
 DROP TABLE l04330;
 DROP TABLE r04330;

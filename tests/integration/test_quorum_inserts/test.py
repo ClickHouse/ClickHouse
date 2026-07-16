@@ -384,6 +384,78 @@ def test_insert_quorum_with_ttl(started_cluster):
     zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
 
 
+def test_auto_quorum_rejects_when_too_few_live_replicas(started_cluster):
+    # Regression test for insert_quorum = 'auto': the majority quorum size must be
+    # computed from the actual replica count (replicas_number / 2 + 1), not from a
+    # not-yet-initialized member that used to leave it at 0 (giving 0 / 2 + 1 == 1,
+    # which active_replicas == 1 can never undercut, silently bypassing the check).
+    table_name = "test_auto_quorum_too_few_live_replicas_" + uuid.uuid4().hex
+    create_query = (
+        f"CREATE TABLE {table_name} "
+        "(a Int8, d Date) "
+        "Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/{table}', '{replica}') "
+        "PARTITION BY d ORDER BY a"
+    )
+
+    # Two registered replicas -> majority quorum size is 2 / 2 + 1 == 2.
+    zero.query(create_query)
+    first.query(create_query)
+
+    # Make the second replica inactive while it stays registered, so only one of the
+    # two replicas is alive. Detaching removes its /is_active node but keeps it in /replicas.
+    first.query(f"DETACH TABLE {table_name}")
+
+    is_active_path = f"/clickhouse/tables/0/{table_name}/replicas/first"
+    for _ in range(120):
+        if (
+            zero.query(
+                f"SELECT count() FROM system.zookeeper "
+                f"WHERE path = '{is_active_path}' AND name = 'is_active'"
+            ).strip()
+            == "0"
+        ):
+            break
+        time.sleep(1)
+    else:
+        raise Exception("Replica 'first' did not become inactive")
+
+    # With only one of two replicas alive, an 'auto' (majority) quorum insert must fail
+    # up front, before writing any local part. A short timeout makes sure that, if the
+    # regression were present, we would observe a quorum timeout instead of this error.
+    error = zero.query_and_get_error(
+        f"INSERT INTO {table_name}(a,d) VALUES (1, '2011-01-01')",
+        settings={"insert_quorum": "auto", "insert_quorum_timeout": 5000},
+    )
+    assert "TOO_FEW_LIVE_REPLICAS" in error, error
+    assert "Number of alive replicas (1) is less than requested quorum (2/2)" in error, error
+
+    # The insert must have failed before committing anything locally ...
+    assert TSV("") == TSV(
+        zero.query(
+            f"SELECT * FROM {table_name}",
+            settings={"select_sequential_consistency": 0},
+        )
+    )
+
+    # ... and before creating a quorum/status node, so it cannot poison the next insert
+    # with UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE.
+    assert "0" == zero.query(
+        f"SELECT count() FROM system.zookeeper "
+        f"WHERE path = '/clickhouse/tables/0/{table_name}/quorum' AND name = 'status'"
+    ).strip()
+
+    # Once the second replica is back, a majority is available again and the insert succeeds.
+    first.query(f"ATTACH TABLE {table_name}")
+    first.query(f"SYSTEM SYNC REPLICA {table_name}", timeout=20)
+    zero.query(
+        f"INSERT INTO {table_name}(a,d) VALUES (1, '2011-01-01')",
+        settings={"insert_quorum": "auto", "insert_quorum_timeout": 20000},
+    )
+    assert TSV("1\t2011-01-01\n") == TSV(zero.query(f"SELECT * FROM {table_name}"))
+
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
+
+
 def test_insert_quorum_with_keeper_loss_connection(started_cluster):
     table_name = "test_insert_quorum_with_keeper_loss_" + uuid.uuid4().hex
     create_query = (
