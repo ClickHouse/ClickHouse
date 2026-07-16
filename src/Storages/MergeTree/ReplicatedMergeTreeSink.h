@@ -147,9 +147,6 @@ protected:
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;
     UInt64 num_blocks_processed = 0;
-    /// Total size of parts already written (but not yet active) earlier in the current INSERT;
-    /// bounds the `materialize_statistics_on_insert` size gate across a whole multi-chunk INSERT.
-    UInt64 bytes_written_in_current_insert = 0;
 
     LoggerPtr log;
 

@@ -66,9 +66,6 @@ protected:
     bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
-    /// Total size of parts already written (but not yet active) earlier in the current INSERT;
-    /// bounds the `materialize_statistics_on_insert` size gate across a whole multi-chunk INSERT.
-    UInt64 bytes_written_in_current_insert = 0;
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();

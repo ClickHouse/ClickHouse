@@ -79,17 +79,8 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
-      *
-      * `bytes_already_written_in_insert` is the total size of parts written earlier in the same
-      * INSERT that are not yet active (e.g. from previous `writeTempPart` calls before the
-      * temporary parts of this chunk are committed): it lets the `materialize_statistics_on_insert`
-      * size gate bound a highly-partitioned or multi-chunk bulk load, not just a single part.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(
-        BlockWithPartition & block,
-        StorageMetadataPtr metadata_snapshot,
-        ContextPtr context,
-        UInt64 bytes_already_written_in_insert = 0);
+    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
@@ -137,8 +128,7 @@ private:
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number,
-        UInt64 bytes_already_written_in_insert = 0);
+        UInt64 block_number);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,

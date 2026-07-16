@@ -665,13 +665,10 @@ Block MergeTreeDataWriter::mergeBlock(
     return header->cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
-    BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context, UInt64 bytes_already_written_in_insert)
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(
-        block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context),
-        data.insert_increment.get(), bytes_already_written_in_insert);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get());
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -690,8 +687,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
-    UInt64 block_number,
-    UInt64 bytes_already_written_in_insert)
+    UInt64 block_number)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -810,13 +806,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
         /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
         /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
-        /// is an O(1) atomic load; parts of the current INSERT are not active yet, so we also add
-        /// `bytes_already_written_in_insert` (the total size of parts the caller already wrote earlier
-        /// in the same INSERT, tracked by the sink) and the size of the block being written
-        /// (`block.bytes()`, the same estimate used below for the part size), so a highly-partitioned
-        /// or multi-chunk bulk load into an otherwise empty table is bounded too. `0` disables the limit.
-        if (max_table_size == 0
-            || data.getTotalActiveSizeInBytes() + bytes_already_written_in_insert + block.bytes() <= max_table_size)
+        /// is an O(1) atomic load; parts of the current INSERT are not active yet, so we add the size
+        /// of the block being written (`block.bytes()`, the same estimate used below for the part size)
+        /// to still bound the very first bulk load into an otherwise empty table. `0` disables the limit.
+        if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
             statistics = ColumnsStatistics(metadata_snapshot->getColumns());

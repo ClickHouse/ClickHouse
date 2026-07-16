@@ -406,10 +406,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
 MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
-    auto temp_part = storage.writer.writeTempPart(block, metadata_snapshot, context, bytes_written_in_current_insert);
-    if (block.block)
-        bytes_written_in_current_insert += block.block->bytes();
-    return temp_part;
+    return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
 void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)

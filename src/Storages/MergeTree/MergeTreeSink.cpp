@@ -344,10 +344,7 @@ void MergeTreeSink::finishDelayedChunk()
 
 MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
-    auto temp_part = storage.writer.writeTempPart(block, metadata_snapshot, context, bytes_written_in_current_insert);
-    if (block.block)
-        bytes_written_in_current_insert += block.block->bytes();
-    return temp_part;
+    return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
