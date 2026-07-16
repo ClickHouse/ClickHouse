@@ -12,3 +12,5 @@ uniqCombined	4
 sum adapted	Nullable(Float64)
 anyIf native	Variant(Float64, UInt8)
 sumIf adapted	Nullable(Float64)
+groupFormat keeps Variant schema	1
+groupFormatMerge keeps Variant schema	1

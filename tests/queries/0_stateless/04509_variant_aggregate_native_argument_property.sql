@@ -37,4 +37,15 @@ SELECT 'sum adapted', toTypeName(sum(v)) FROM t_variant_native_prop;
 SELECT 'anyIf native', toTypeName(anyIf(v, k > 15)) FROM t_variant_native_prop;
 SELECT 'sumIf adapted', toTypeName(sumIf(v, k > 15)) FROM t_variant_native_prop;
 
+-- groupFormat accepts an argument of any type natively and formats it using the original argument types it
+-- captures at creation, so a schema-carrying format must expose the real Variant type. It must not be rerouted
+-- through the supertype adapter, which would collapse the argument to Nullable(supertype) in the formatted schema.
+SELECT 'groupFormat keeps Variant schema',
+       groupFormat('JSONCompactEachRowWithNamesAndTypes')(CAST(1 AS Variant(UInt8, UInt64))) LIKE '%Variant(%';
+-- The same must hold for the state / merge forms: the stored state type keeps the Variant, so a round trip
+-- through the state formats with the real Variant schema rather than the adapter's Nullable(supertype).
+SELECT 'groupFormatMerge keeps Variant schema',
+       groupFormatMerge('JSONCompactEachRowWithNamesAndTypes')(s) LIKE '%Variant(%'
+FROM (SELECT groupFormatState('JSONCompactEachRowWithNamesAndTypes')(CAST(1 AS Variant(UInt8, UInt64))) AS s);
+
 DROP TABLE t_variant_native_prop;
