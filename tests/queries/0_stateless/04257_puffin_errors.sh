@@ -138,6 +138,14 @@ echo "--- footer_root_array.puffin ---"
 $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$DATA/footer_root_array.puffin', PuffinMetadata)" 2>&1 | grep -oF 'footer JSON must be an object'
 
 for PUFFIN_FILE in \
+    "$DATA/malformed_footer_json.puffin" \
+    "$DATA/footer_integer_overflow.puffin"
+do
+    echo "--- $(basename "$PUFFIN_FILE") ---"
+    $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$PUFFIN_FILE', PuffinMetadata)" 2>&1 | grep -oF 'Cannot parse Puffin footer JSON'
+done
+
+for PUFFIN_FILE in \
     "$DATA/invalid_non_dv_properties_array.puffin" \
     "$DATA/invalid_non_dv_properties_string.puffin"
 do

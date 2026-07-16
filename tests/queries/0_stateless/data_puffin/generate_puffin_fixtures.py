@@ -545,6 +545,26 @@ def generate_invalid_footer_root() -> None:
     )
 
 
+def generate_unparseable_footer_json() -> None:
+    """Malformed JSON / oversize integers must fail with BAD_ARGUMENTS, not STD_EXCEPTION."""
+    flags = b"\x00\x00\x00\x00"
+    cases = {
+        "malformed_footer_json.puffin": b"{",
+        # Larger than UInt64::max; Poco NumberParser throws SyntaxException.
+        "footer_integer_overflow.puffin": (
+            b'{"blobs": [{"type": "apache-datasketches-theta-v1", "fields": [], '
+            b'"snapshot-id": 99999999999999999999999999999999, "sequence-number": 1, '
+            b'"offset": 4, "length": 4, "properties": {}}]}'
+        ),
+    }
+    for name, footer_payload in cases.items():
+        footer_length = struct.pack("<i", len(footer_payload))
+        write_fixture(
+            name,
+            PUFFIN_MAGIC + BLOB_PLACEHOLDER + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+        )
+
+
 def main() -> None:
     spark_fixture = OUTPUT_DIR / "spark_deletion_vector.puffin"
     if not spark_fixture.exists():
@@ -563,6 +583,7 @@ def main() -> None:
     generate_invalid_integer_fields()
     generate_invalid_string_fields()
     generate_invalid_footer_root()
+    generate_unparseable_footer_json()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()

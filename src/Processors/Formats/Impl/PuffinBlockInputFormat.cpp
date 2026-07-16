@@ -291,7 +291,20 @@ void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & 
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)
 {
     Poco::JSON::Parser parser;
-    auto root = parser.parse(footer_json);
+    Poco::Dynamic::Var root;
+    try
+    {
+        root = parser.parse(footer_json);
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Puffin footer JSON: {}", e.displayText());
+    }
+
     if (root.type() != typeid(Poco::JSON::Object::Ptr))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer JSON must be an object");
 
