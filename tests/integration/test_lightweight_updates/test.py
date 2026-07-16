@@ -120,7 +120,16 @@ def test_lwu_replicated_mutation_pins_patches(started_cluster):
     node1.query("DROP TABLE IF EXISTS t_lwu_pin SYNC")
     node2.query("DROP TABLE IF EXISTS t_lwu_pin SYNC")
 
-    settings = {"enable_lightweight_update": 1, "mutations_sync": 0}
+    # lightweight_deletes_sync must be 1, not the default 2: a DELETE runs as a heavyweight
+    # mutation (lightweight_delete_mode defaults to alter_update) whose sync mode is taken from
+    # lightweight_deletes_sync, overriding mutations_sync. With the default 2 the DELETE on node1
+    # would synchronously wait for node2 to apply the mutation, but node2 has fetches stopped on
+    # purpose, so it would hang until the query timeout. 1 waits only for the local replica.
+    settings = {
+        "enable_lightweight_update": 1,
+        "mutations_sync": 0,
+        "lightweight_deletes_sync": 1,
+    }
 
     for node, replica in [(node1, "r1"), (node2, "r2")]:
         node.query(
