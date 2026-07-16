@@ -120,6 +120,12 @@ MESSAGES_TO_RETRY = [
     # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds)
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Session expired",
+    # Server-global (total) memory tracker firing under heavy parallel co-scheduling
+    # on ASan shards: the OvercommitTracker kills queries across all co-scheduled
+    # tests once total RSS nears the shared server cap. Emitted only by the global
+    # tracker (programs/server/Server.cpp: setDescription("(total)")), never by a
+    # per-query/per-user limit, so retrying cannot mask a real per-query assertion.
+    "(total) memory limit exceeded",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
