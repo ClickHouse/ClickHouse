@@ -2,6 +2,7 @@
 #if USE_AVRO
 
 #include <optional>
+#include <limits>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
