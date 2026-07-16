@@ -331,6 +331,7 @@ void registerCodecPco(CompressionCodecFactory & factory)
 #else
 
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
 
 namespace DB
 {
