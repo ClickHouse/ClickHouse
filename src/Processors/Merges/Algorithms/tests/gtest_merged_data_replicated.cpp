@@ -2,9 +2,12 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -323,4 +326,111 @@ TEST(MergedDataReplicated, RestoringFlagReenablesWrapping)
     ASSERT_EQ(result.getNumRows(), 1);
     ASSERT_TRUE(result.getColumns()[1]->isReplicated());
     ASSERT_EQ(result.getColumns()[1]->getInt(0), 200);
+}
+
+/// End-to-end test that drives the ACTUAL `MergingSortedAlgorithm` transition this optimization
+/// depends on, not just a manually toggled `MergedData` flag.
+///
+/// The fast path is enabled by `initialize` because none of the initial inputs are
+/// `ColumnReplicated`. A late chunk then arrives for a source via `consume` carrying a
+/// non-sort `ColumnReplicated` column (as from a JOIN with `enable_lazy_columns_replication = 1`).
+/// `consume` must raise `may_have_replicated_columns` back to `true` BEFORE those rows are fed to
+/// `MergedData::insertRow`; otherwise the fast path inserts a `ColumnReplicated` source into a
+/// regular destination and hits the type-mismatch assertion.
+///
+/// Crucially this test never calls `setMayHaveReplicatedColumns` itself, so it fails if a later
+/// refactor drops or reorders the `consume` flag update, whereas the `MergedData`-only tests
+/// (which toggle the flag manually) would stay green.
+///
+/// The late replicated chunk carries TWO rows whose keys straddle the other source's remaining
+/// key (20 < 50 < 60). That defeats the "current cursor is totally less than the next" direct
+/// `insertChunk` fast-forward (which ignores the hint anyway), forcing the replicated rows through
+/// the `insertRow` fast path this optimization actually guards.
+TEST(MergedDataReplicated, MergingSortedAlgorithmRaisesHintOnLateReplicatedChunk)
+{
+    Block header;
+    header.insert(ColumnWithTypeAndName(ColumnInt64::create(), std::make_shared<DataTypeInt64>(), "key"));
+    header.insert(ColumnWithTypeAndName(ColumnInt64::create(), std::make_shared<DataTypeInt64>(), "value"));
+    auto shared_header = std::make_shared<const Block>(header);
+
+    SortDescription description;
+    description.emplace_back(SortColumnDescription("key", 1, 1));
+
+    MergingSortedAlgorithm algorithm(
+        shared_header,
+        /*num_inputs=*/ 2,
+        description,
+        /*max_block_size_=*/ 1000,
+        /*max_block_size_bytes_=*/ 0,
+        /*max_dynamic_subcolumns_=*/ {},
+        SortingQueueStrategy::Default);
+
+    /// Initial inputs are all regular (no `ColumnReplicated`), so `initialize` enables the fast path.
+    IMergingAlgorithm::Inputs inputs(2);
+    {
+        auto key_col = ColumnInt64::create();
+        auto val_col = ColumnInt64::create();
+        key_col->insertValue(5);
+        key_col->insertValue(50);
+        val_col->insertValue(50);
+        val_col->insertValue(500);
+        inputs[0].chunk.setColumns(Columns{std::move(key_col), std::move(val_col)}, 2);
+    }
+    {
+        auto key_col = ColumnInt64::create();
+        auto val_col = ColumnInt64::create();
+        key_col->insertValue(10);
+        val_col->insertValue(100);
+        inputs[1].chunk.setColumns(Columns{std::move(key_col), std::move(val_col)}, 1);
+    }
+    algorithm.initialize(std::move(inputs));
+
+    /// Merge what is available; source 1 is exhausted first and its next chunk is requested via `consume`.
+    IMergingAlgorithm::Status status = algorithm.merge();
+
+    /// A late chunk arrives for source 1 with a `ColumnReplicated` non-sort column (as from a JOIN
+    /// with `enable_lazy_columns_replication = 1`). If `consume` forgets to raise the hint, the
+    /// still-enabled fast path in `insertRow` inserts this replicated source into the regular
+    /// destination: an assertion failure in debug/sanitizer builds, a wrong value in release.
+    IMergingAlgorithm::Input late_input;
+    {
+        auto key_col = ColumnInt64::create();
+        key_col->insertValue(20);
+        key_col->insertValue(60);
+        auto val_nested = ColumnInt64::create();
+        val_nested->insertValue(200);
+        val_nested->insertValue(600);
+        ColumnPtr val_replicated = ColumnReplicated::create(ColumnPtr(std::move(val_nested)));
+        late_input.chunk.setColumns(Columns{std::move(key_col), std::move(val_replicated)}, 2);
+    }
+    ASSERT_NO_THROW(algorithm.consume(late_input, /*source_num=*/ 1));
+
+    /// Drain the merge and collect the merged output.
+    std::vector<Int64> keys;
+    std::vector<Int64> values;
+    auto collect = [&](const Chunk & chunk)
+    {
+        for (size_t i = 0; i < chunk.getNumRows(); ++i)
+        {
+            keys.push_back(chunk.getColumns()[0]->getInt(i));
+            values.push_back(chunk.getColumns()[1]->getInt(i));
+        }
+    };
+    if (status.chunk && status.chunk.hasRows())
+        collect(status.chunk);
+
+    for (size_t guard = 0; guard < 100; ++guard)
+    {
+        IMergingAlgorithm::Status next = algorithm.merge();
+        if (next.chunk && next.chunk.hasRows())
+            collect(next.chunk);
+        if (next.is_finished)
+            break;
+    }
+
+    /// All rows must be present in fully sorted key order with correct values, including the two
+    /// values that came from the late `ColumnReplicated` chunk (20 -> 200, 60 -> 600).
+    ASSERT_EQ(keys.size(), 5u);
+    EXPECT_EQ(keys, (std::vector<Int64>{5, 10, 20, 50, 60}));
+    EXPECT_EQ(values, (std::vector<Int64>{50, 100, 200, 500, 600}));
 }
