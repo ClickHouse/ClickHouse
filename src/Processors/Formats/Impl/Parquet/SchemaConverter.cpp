@@ -1302,9 +1302,19 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
-        out_inferred_type = std::make_shared<DataTypeUUID>();
+        /// The converter must match the output type: `UUID` and `UUID2` layouts order differently,
+        /// so decoding min/max stats in the wrong layout would break filter pushdown.
+        if (type_hint && WhichDataType(type_hint->getTypeId()).isUUID2())
+        {
+            out_inferred_type = type_hint;
+            out_decoder.fixed_size_converter = std::make_shared<UUID2Converter>();
+        }
+        else
+        {
+            out_inferred_type = std::make_shared<DataTypeUUID>();
+            out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        }
         out_decoder.allow_stats = true; // UUIDs support min/max stats
-        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1404,11 +1414,16 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 WhichDataType which(type_hint->getTypeId());
 
-                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
-                if (which.isUUID() && element.type_length == 16)
+                /// Handle explicit UUID/UUID2 type hint (e.g. SELECT x::UUID).
+                /// The converter must match the output type: the two layouts order differently,
+                /// so decoding min/max stats in the wrong layout would break filter pushdown.
+                if ((which.isUUID() || which.isUUID2()) && element.type_length == 16)
                 {
                     out_inferred_type = type_hint;
-                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                    if (which.isUUID2())
+                        out_decoder.fixed_size_converter = std::make_shared<UUID2Converter>();
+                    else
+                        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
                     out_decoder.allow_stats = true;
                     return;
                 }

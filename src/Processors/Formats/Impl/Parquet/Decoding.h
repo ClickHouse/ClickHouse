@@ -225,6 +225,17 @@ struct UUIDConverter : public FixedSizeConverter
     void convertField(std::span<const char> data, bool is_max, Field & out) const override;
 };
 
+/// Like UUIDConverter, but produces values in the `UUID2` in-memory layout (plain big-endian
+/// integer of the canonical bytes) instead of the historical `UUID` one. The two layouts order
+/// differently, so min/max stats must be decoded by the converter matching the output type.
+struct UUID2Converter : public FixedSizeConverter
+{
+    UUID2Converter() { input_size = 16; }
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+    void convertField(std::span<const char> data, bool is_max, Field & out) const override;
+};
+
 struct TrivialStringConverter : public StringConverter
 {
     bool isTrivial() const override { return true; }
