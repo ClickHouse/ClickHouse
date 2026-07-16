@@ -72,7 +72,7 @@ do_basic_tests() {
         -H 'X-Event-Type: from-header' \
         "${CLICKHOUSE_URL}${CONFLICT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
         -d '{"event_type":"from-body","payload":"conflict-test","signature":"s"}' \
-        | expect_match 'INCORRECT_DATA|Unknown field'
+        | expect_match 'INCORRECT_DATA'
 
     echo "--- ${mode}: basic header-to-column mapping"
     ${CLICKHOUSE_CURL} -sS \
@@ -121,7 +121,7 @@ do_basic_tests() {
 
     echo "--- ${mode}: filtered header (Authorization) is rejected"
     ${CLICKHOUSE_CURL} -sS \
-        -H 'Authorization: Bearer secret-token' \
+        -H 'Authorization: Basic ZGVmYXVsdDo=' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_Authorization=event_type" \
         -d '{"payload":"filtered"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
 
@@ -151,7 +151,7 @@ do_basic_tests() {
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Count: not-a-number' \
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+typed+(payload)+FORMAT+JSONEachRow&http_column_X-Count=count" \
-        -d '{"payload":"type-err"}' 2>&1 | expect_match 'CANNOT_PARSE_TEXT|Cannot parse'
+        -d '{"payload":"type-err"}' 2>&1 | expect_match 'BAD_QUERY_PARAMETER'
 
     echo "--- ${mode}: INSERT ... SELECT rejected"
     ${CLICKHOUSE_CURL} -sS \
@@ -215,14 +215,14 @@ ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t_conflict+(payload)+FORMAT+CSVWithNames&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1" \
     --data-binary $'event_type,payload\nfrom-body,conflict' \
-    | expect_match 'INCORRECT_DATA|Unknown field'
+    | expect_match 'INCORRECT_DATA'
 
 echo "--- error: case-insensitive body field matches http_column_* target"
 ${CLICKHOUSE_CURL} -sS \
     -H 'X-Event-Type: push' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t_conflict+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&input_format_skip_unknown_fields=1&input_format_column_name_matching_mode=ignore_case" \
     -d '{"EVENT_TYPE":"from-body","payload":"conflict"}' \
-    | expect_match 'INCORRECT_DATA|Unknown field'
+    | expect_match 'INCORRECT_DATA'
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_conflict"
 
 echo "--- error: column listed in both INSERT list and http_column_*"
@@ -232,7 +232,7 @@ ${CLICKHOUSE_CURL} -sS \
     -d '{"payload":"conflict"}' 2>&1 | expect_match 'DUPLICATE_COLUMN'
 
 echo "--- error: non-existent column"
-${CLICKHOUSE_CURL} -sS \
+${CLICKHOUSE_CURL} -sS -H 'X-E: val' \
     "${CLICKHOUSE_URL}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-E=no_col" \
     -d '{"payload":"x"}' 2>&1 | expect_match 'NO_SUCH_COLUMN_IN_TABLE'
 
@@ -293,8 +293,11 @@ do_remote_tests() {
     echo "--- ${mode}: INSERT INTO FUNCTION remote()"
     ${CLICKHOUSE_CURL} -sS \
         -H 'X-Event-Type: remote-event' \
-        "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+FUNCTION+remote('127.0.0.1',currentDatabase(),t)+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
+        "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+FUNCTION+remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}',currentDatabase(),t)+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type" \
         -d '{"payload":"remote"}'
+    flush
+    # The remote() call itself may be queued asynchronously on the receiving side,
+    # so flush a second time to drain that entry too.
     flush
     ${CLICKHOUSE_CLIENT} -q "SELECT event_type, payload FROM t"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
@@ -324,7 +327,7 @@ do_default_tests() {
         "${CLICKHOUSE_URL}${INSERT_EXTRA}&query=INSERT+INTO+t+FORMAT+JSONEachRow&http_column_X-A=a&input_format_defaults_for_omitted_fields=1" \
         -d '{"payload":"default-no-list"}'
     flush
-    ${CLICKHOUSE_CLIENT} -q "SELECT a, b, payload FROM t"
+    ${CLICKHOUSE_CLIENT} -q "SELECT a, b, payload FROM t ORDER BY payload"
     ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
 }
 
@@ -341,12 +344,16 @@ ASYNC_BUF="async_insert=1&wait_for_async_insert=0&async_insert_use_adaptive_busy
 ASYNC_BUF_WAIT="async_insert=1&wait_for_async_insert=1&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_min_ms=300000&async_insert_busy_timeout_max_ms=300000"
 
 # Test 0: multi-header, middle-entry failure isolation.
-# Three entries, two mapped headers (code FixedString(4) + tag String).
-# After ALTER, the middle entry's code value ('abcd', 4 bytes) no longer fits
-# FixedString(2). Entries 1 and 3 must survive with their own header values.
+# Three entries, two mapped headers (code String + tag String).
+# After ALTER to FixedString(2), the middle entry's code value ('abcd', 4 chars)
+# no longer fits. Entries 1 and 3 must survive with their own header values.
+# String (not FixedString(4)) is used as the initial type because ALTER to a
+# smaller FixedString checks the metadata sample block (which is 4 null bytes
+# for FixedString(4) and can't fit in FixedString(2)), making the ALTER itself
+# fail even on an empty table. String's default '' fits any FixedString.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t;
-    CREATE TABLE t (code FixedString(4), tag String, payload String)
+    CREATE TABLE t (code String, tag String, payload String)
     ENGINE = MergeTree ORDER BY tuple();
 "
 
@@ -365,19 +372,20 @@ ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code&http_column_X-Tag=tag" \
     -d '{"payload":"entry3"}'
 
+echo "--- async: multi-header middle-entry failure isolation (alter)"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 
-echo "--- async: multi-header middle-entry failure isolation"
+echo "--- async: multi-header middle-entry failure isolation (results)"
 ${CLICKHOUSE_CLIENT} -q "SELECT code, tag, payload FROM t ORDER BY payload"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 
-# Test 1: FixedString(4) -> FixedString(2) shrink.
-# Both entries are enqueued before the ALTER; the one with the 4-byte value must
-# fail in isolation while the 2-byte entry survives.
+# Test 1: String -> FixedString(2) drift.
+# Both entries are enqueued before the ALTER; the one with the 4-char value must
+# fail in isolation while the 2-char entry survives.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t;
-    CREATE TABLE t (code FixedString(4), payload String) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE t (code String, payload String) ENGINE = MergeTree ORDER BY tuple();
 "
 
 ${CLICKHOUSE_CURL} -sS \
@@ -390,6 +398,7 @@ ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&${ASYNC_BUF}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"exact-valid"}'
 
+echo "--- async: schema drift same TypeIndex (FixedString shrink) (alter)"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 
@@ -397,11 +406,10 @@ echo "--- async: schema drift same TypeIndex (FixedString shrink) - valid entry 
 ${CLICKHOUSE_CLIENT} -q "SELECT code, payload FROM t ORDER BY payload"
 
 # Test 2: Dedup — a failed entry's token must remain retryable.
-# Recreate the table with FixedString(4) so push-time validation passes for 'abcd'.
 # Both entries are enqueued BEFORE the ALTER that invalidates 'abcd'.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t;
-    CREATE TABLE t (code FixedString(4), payload String) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE t (code String, payload String) ENGINE = MergeTree ORDER BY tuple();
 "
 
 ${CLICKHOUSE_CURL} -sS \
@@ -414,6 +422,7 @@ ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&${ASYNC_BUF}&insert_deduplication_token=token-invalid&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
     -d '{"payload":"dedup-invalid"}'
 
+echo "--- async: failed dedup token remains retryable after schema drift (alter)"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(2)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
 
@@ -449,24 +458,37 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_tags"
 
 # Test 4: waiter with wait_for_async_insert=1 must receive an error, not silent success,
 # when schema drift makes the buffered value unparseable at flush time.
-${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE t"
+# Recreate t with code String so ALTER to FixedString(1) succeeds on an empty
+# table (String default '' fits FixedString(1); FixedString(N) default is N null
+# bytes which would fail the metadata sample-block cast check for any N > 1).
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS t;
+    CREATE TABLE t (code String, payload String) ENGINE = MergeTree ORDER BY tuple();
+"
 
-drift_response=$(
-    ${CLICKHOUSE_CURL} -sS \
-        -H 'X-Code: abcd' \
-        "${CLICKHOUSE_URL}&${ASYNC_BUF_WAIT}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
-        -d '{"payload":"drift-waiter"}' 2>&1
-) &
-drift_pid=$!
+# Run ALTER+FLUSH in background: wait until the entry is queued, then shrink
+# the column to invalidate the buffered value and trigger the flush.
+{
+    for _ in $(seq 1 100); do
+        ${CLICKHOUSE_CLIENT} -q \
+            "SELECT count() FROM system.asynchronous_inserts WHERE database=currentDatabase() AND table='t'" \
+            2>/dev/null | grep -q '^[1-9]' && break
+        sleep 0.1
+    done
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(1)"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
+} &
 
-# Entry is now queued; shrink column to invalidate the buffered value.
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE t MODIFY COLUMN code FixedString(1)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.t"
-wait "${drift_pid}"
+# curl runs in the foreground; it blocks until the flush above resolves the wait.
+drift_response=$(${CLICKHOUSE_CURL} -sS \
+    -H 'X-Code: abcd' \
+    "${CLICKHOUSE_URL}&${ASYNC_BUF_WAIT}&query=INSERT+INTO+t+(payload)+FORMAT+JSONEachRow&http_column_X-Code=code" \
+    -d '{"payload":"drift-waiter"}')
+wait
 
 echo "--- async: schema drift with wait_for_async_insert=1, waiter receives error"
 # Waiter must have received an error (TYPE_MISMATCH or similar).
-echo "${drift_response}" | expect_match 'TYPE_MISMATCH|type.mismatch'
+echo "${drift_response}" | expect_match 'BAD_QUERY_PARAMETER|TOO_LARGE_STRING_SIZE'
 # No rows must have been inserted.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"

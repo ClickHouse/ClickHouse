@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
 #include <Core/HTTPHeaderColumns.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/parseColumnFromString.h>
@@ -8,6 +9,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_QUERY_PARAMETER;
+}
+
 
 /// Injects HTTP header values as INSERT columns for the sync path.
 ///
@@ -35,23 +42,38 @@ public:
         : ISimpleTransform(input_header, output_header, false)
     {
         col_sources.reserve(output_header.columns());
+        size_t body_col_idx = 0;
         for (size_t i = 0; i < output_header.columns(); ++i)
         {
             const auto & col_name = output_header.getByPosition(i).name;
-            if (input_header.has(col_name))
+            if (http_header_columns.contains(col_name))
             {
-                /// Body column: pass through from input at the corresponding position.
-                col_sources.push_back({false, input_header.getPositionByName(col_name), nullptr, nullptr});
+                /// Injected column: parse the header value once.
+                /// find() is guaranteed non-null here: contains() was just true.
+                const String & str_value = *http_header_columns.find(col_name);
+                const auto & col_type = output_header.getByPosition(i).type;
+                MutableColumnPtr parsed;
+                try
+                {
+                    parsed = parseColumnValueFromString(col_type, str_value, format_settings);
+                }
+                catch (const DB::Exception & e)
+                {
+                    throw DB::Exception(DB::ErrorCodes::BAD_QUERY_PARAMETER,
+                        "http_column parameter for column '{}' contains value '{}' that cannot be parsed as {}: {}",
+                        col_name, str_value, col_type->getName(), e.message());
+                }
+                col_sources.push_back({true, 0, std::move(parsed), col_type});
             }
             else
             {
-                /// Injected column: parse the header value once. A missing column
-                /// contributes an empty value.
-                const String * mapped = http_header_columns.find(col_name);
-                const String str_value = mapped ? *mapped : String{};
-                const auto & col_type = output_header.getByPosition(i).type;
-                auto parsed = parseColumnValueFromString(col_type, str_value, format_settings);
-                col_sources.push_back({true, 0, std::move(parsed), col_type});
+                /// Body column: match by name for FORMAT inserts, or by position for
+                /// INSERT...SELECT (where SELECT output columns have anonymous names).
+                size_t input_pos = input_header.has(col_name)
+                    ? input_header.getPositionByName(col_name)
+                    : body_col_idx;
+                col_sources.push_back({false, input_pos, nullptr, nullptr});
+                ++body_col_idx;
             }
         }
     }

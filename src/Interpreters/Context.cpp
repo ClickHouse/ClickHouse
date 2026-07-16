@@ -1352,7 +1352,9 @@ ContextData::ContextData(const ContextData &o) :
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
-    http_header_columns(o.http_header_columns),
+    /// http_header_columns intentionally not copied: they are request-scoped
+    /// (set by the HTTP handler from URL params) and must not bleed into
+    /// sub-contexts such as distributed local shard execution.
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),

@@ -837,6 +837,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        /// http_header_columns are request-scoped and not copied by createCopy;
+        /// restore them explicitly so HTTPHeaderColumnsTransform is still added.
+        mutable_context->setHTTPHeaderColumns(context->getHTTPHeaderColumns());
         context = mutable_context;
     }
 

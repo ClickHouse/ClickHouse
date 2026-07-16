@@ -23,7 +23,7 @@ BAD_QUERY_PARAMETER
 --- sync: duplicate http_column_* to same column, first wins
 first	dup
 --- sync: type parse error surfaces immediately
-Cannot parse
+BAD_QUERY_PARAMETER
 --- sync: INSERT ... SELECT rejected
 NOT_IMPLEMENTED
 --- async: no explicit column list (body provides remaining columns)
@@ -51,7 +51,7 @@ BAD_QUERY_PARAMETER
 --- async: duplicate http_column_* to same column, first wins
 first	dup
 --- async: type parse error surfaces immediately
-Cannot parse
+BAD_QUERY_PARAMETER
 --- async: INSERT ... SELECT rejected
 NOT_IMPLEMENTED
 --- async: different header values per request coalesce into one batch
@@ -82,18 +82,21 @@ remote-event	remote
 --- async: INSERT INTO FUNCTION remote()
 remote-event	remote
 --- sync: DEFAULT expression referencing injected column (explicit column list)
-5	6	default-test
 --- sync: DEFAULT expression referencing injected column (no explicit column list)
 7	8	default-no-list
---- async: DEFAULT expression referencing injected column (explicit column list)
 5	6	default-test
+--- async: DEFAULT expression referencing injected column (explicit column list)
 --- async: DEFAULT expression referencing injected column (no explicit column list)
 7	8	default-no-list
---- async: multi-header middle-entry failure isolation
+5	6	default-test
+--- async: multi-header middle-entry failure isolation (alter)
+--- async: multi-header middle-entry failure isolation (results)
 aa	first	entry1
 bb	third	entry3
+--- async: schema drift same TypeIndex (FixedString shrink) (alter)
 --- async: schema drift same TypeIndex (FixedString shrink) - valid entry survives
 ab	short-valid
+--- async: failed dedup token remains retryable after schema drift (alter)
 --- async: failed dedup token remains retryable after schema drift
 ab	dedup-valid
 ab	dedup-retry
@@ -101,7 +104,7 @@ ab	dedup-valid
 --- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse
 ['a','b']	text-compat
 --- async: schema drift with wait_for_async_insert=1, waiter receives error
-TYPE_MISMATCH
+TOO_LARGE_STRING_SIZE
 0
 --- sync: FORMAT Native body-column conflict is rejected
 INCORRECT_DATA

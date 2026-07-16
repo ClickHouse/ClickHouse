@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_QUERY_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
 }
@@ -606,7 +607,16 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             /// (e.g. "not-a-number" for UInt64) surface immediately to the client.
             /// We store only the raw string; flush time re-parses against the
             /// then-current column type, which handles schema drift naturally.
-            parseColumnValueFromString(col_type, str_value, format_settings);
+            try
+            {
+                parseColumnValueFromString(col_type, str_value, format_settings);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+                    "http_column parameter for column '{}' contains value '{}' that cannot be parsed as {}: {}",
+                    col_name, str_value, col_type->getName(), e.message());
+            }
             /// Store only the value; its position matches http_col_names, so the
             /// column name is recovered from the key at flush.
             entry->http_header_column_values.push_back(str_value);
