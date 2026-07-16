@@ -77,17 +77,27 @@ void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> ca
             /// (the headline case of #22426). A non-blocking write is needed, but O_NONBLOCK must
             /// not be set on `fd` itself: the flag lives on the open file description, which a
             /// terminal fd shares with fd 2 and the parent shell, so it would leak to unrelated
-            /// writers (see 3f8b12c2736). Instead, re-open the terminal via /proc/self/fd to get a
-            /// private open file description with O_NONBLOCK. This is Linux-only: the BSD/macOS
-            /// /dev/fd equivalent behaves like dup() and shares the open file description, which
-            /// would reintroduce the leak. If the re-open fails, the responsive path falls back to
-            /// the bounded blocking write below. The descriptor is kept for the lifetime of this
-            /// buffer, so repeated hook installations (one per query in the client) reuse it.
+            /// writers (see 3f8b12c2736). Instead, re-open the terminal by its path to get a private
+            /// open file description with O_NONBLOCK - unlike dup() (and the BSD/macOS /dev/fd
+            /// equivalent, which behaves like dup() and would reintroduce the leak), a plain
+            /// path-based open() of a device file always creates an independent OFD. On Linux,
+            /// /proc/self/fd/<fd> resolves to that path without needing readlink(); on Darwin,
+            /// fcntl(F_GETPATH) recovers it explicitly. Other platforms, and a failed re-open on
+            /// these two, fall back to the bounded blocking write below. The descriptor is kept for
+            /// the lifetime of this buffer, so repeated hook installations (one per query in the
+            /// client) reuse it.
 #if defined(OS_LINUX)
             if (is_tty && nonblocking_write_fd < 0)
             {
                 const std::string proc_fd_path = "/proc/self/fd/" + toString(fd);
                 nonblocking_write_fd = ::open(proc_fd_path.c_str(), O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
+            }
+#elif defined(OS_DARWIN)
+            if (is_tty && nonblocking_write_fd < 0)
+            {
+                char tty_path[PATH_MAX];
+                if (0 == ::fcntl(fd, F_GETPATH, tty_path))
+                    nonblocking_write_fd = ::open(tty_path, O_WRONLY | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
             }
 #endif
         }
