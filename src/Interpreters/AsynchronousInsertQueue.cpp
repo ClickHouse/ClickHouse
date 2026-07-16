@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
 static const NameSet settings_to_skip
@@ -471,7 +472,11 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
 
-        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context);
+        if (const auto * insert_query = query->as<ASTInsertQuery>();
+            insert_query && insert_query->compression && query_context->getApplicationType() == Context::ApplicationType::SERVER)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
+
+        auto read_buf = getReadBufferFromASTInsertQuery(query);
 
         LimitReadBuffer limit_buf(
             *read_buf,
