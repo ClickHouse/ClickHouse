@@ -1499,45 +1499,30 @@ static bool joinStepHasDuplicateInputNames(const JoinStepLogical & join_step)
     return false;
 }
 
-/// Walk the join steps the optimizer would flatten into the query graph (mirroring `buildQueryGraph`)
-/// and report whether any of them has duplicate-named inputs, in which case reordering must be skipped.
-static bool joinGraphHasDuplicateInputNames(
-    const QueryPlan::Node & node,
+static size_t collectJoinGraphInputDuplicates(
+    const QueryPlan::Node * node,
     int join_steps_limit,
     const JoinSettings & join_settings,
-    bool merge_expression_into_join)
+    bool merge_expression_into_join,
+    bool & found_duplicate);
+
+/// Mirrors `buildQueryGraph` for a single join node: checks the join step's own inputs and descends
+/// into its flattenable children, spending the flattening budget left-first (the right side only gets
+/// `join_steps_limit - lhs_count`, exactly as `buildQueryGraph` does). Returns the number of relations
+/// the node flattens into and sets `found_duplicate` if any reconstructed step has duplicate inputs.
+static size_t collectJoinGraphInputDuplicatesForJoin(
+    const QueryPlan::Node & join_node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    bool merge_expression_into_join,
+    bool & found_duplicate)
 {
-    const auto * join_step = typeid_cast<const JoinStepLogical *>(node.step.get());
-    if (!join_step || node.children.size() != 2)
-        return false;
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
+    if (!join_step || join_node.children.size() != 2)
+        return 1;
 
     if (joinStepHasDuplicateInputNames(*join_step))
-        return true;
-
-    const auto descend = [&](const QueryPlan::Node * child, int child_limit)
-    {
-        const auto * effective = child;
-        if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
-            expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-            && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
-        {
-            effective = effective->children[0];
-        }
-
-        if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(effective->step.get());
-            child_join_step && !child_join_step->isOptimized())
-        {
-            const auto child_join_kind = child_join_step->getJoinOperator().kind;
-            const bool allow_child_join_kind
-                = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
-                && child_join_step->getJoinOperator().strictness == JoinStrictness::All
-                && child_join_step->typeChangingSides().empty();
-
-            if (child_join_step->getJoinSettings() == join_settings && child_limit > 1 && allow_child_join_kind)
-                return joinGraphHasDuplicateInputNames(*effective, child_limit, join_settings, merge_expression_into_join);
-        }
-        return false;
-    };
+        found_duplicate = true;
 
     const auto join_kind = join_step->getJoinOperator().kind;
     const auto type_changing_sides = join_step->typeChangingSides();
@@ -1546,8 +1531,58 @@ static bool joinGraphHasDuplicateInputNames(
     const bool allow_right_subgraph
         = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
 
-    return descend(node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0)
-        || descend(node.children[1], allow_right_subgraph ? join_steps_limit - 1 : 0);
+    const size_t lhs_count = collectJoinGraphInputDuplicates(
+        join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, found_duplicate);
+    const size_t rhs_count = collectJoinGraphInputDuplicates(
+        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, merge_expression_into_join, found_duplicate);
+    return lhs_count + rhs_count;
+}
+
+/// Mirrors `addChildQueryGraph`: peels a trivial/mergeable expression step, then either flattens a
+/// child join into multiple relations or treats the node as a single opaque relation. A child join
+/// that is not flattened is reconstructed by its own `optimizeJoinLogicalImpl` call (with its own
+/// pre-check), so we deliberately do not descend into it here.
+static size_t collectJoinGraphInputDuplicates(
+    const QueryPlan::Node * node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    bool merge_expression_into_join,
+    bool & found_duplicate)
+{
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
+        expression_step && node->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
+        && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
+    {
+        node = node->children[0];
+    }
+
+    if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(node->step.get());
+        child_join_step && !child_join_step->isOptimized())
+    {
+        const auto child_join_kind = child_join_step->getJoinOperator().kind;
+        const bool allow_child_join_kind
+            = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
+            && child_join_step->getJoinOperator().strictness == JoinStrictness::All
+            && child_join_step->typeChangingSides().empty();
+
+        if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
+            return collectJoinGraphInputDuplicatesForJoin(*node, join_steps_limit, join_settings, merge_expression_into_join, found_duplicate);
+    }
+    return 1;
+}
+
+/// Walk the join steps the optimizer would flatten into the query graph (mirroring `buildQueryGraph`,
+/// including its left-first budget accounting) and report whether any of them has duplicate-named
+/// inputs, in which case reordering must be skipped.
+static bool joinGraphHasDuplicateInputNames(
+    const QueryPlan::Node & node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    bool merge_expression_into_join)
+{
+    bool found_duplicate = false;
+    collectJoinGraphInputDuplicatesForJoin(node, join_steps_limit, join_settings, merge_expression_into_join, found_duplicate);
+    return found_duplicate;
 }
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
