@@ -974,7 +974,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_asan_ubsan:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
     name: "Unit tests (asan_ubsan)"
@@ -1018,7 +1018,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_tsan:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
     name: "Unit tests (tsan)"
@@ -1062,7 +1062,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_msan:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
     name: "Unit tests (msan)"
@@ -1106,7 +1106,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_asan_ubsan_function_prop_fuzzer:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
     name: "Unit tests (asan_ubsan, function_prop_fuzzer)"
@@ -1150,7 +1150,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_tsan_function_prop_fuzzer:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
     name: "Unit tests (tsan, function_prop_fuzzer)"
@@ -1194,7 +1194,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_msan_function_prop_fuzzer:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
     name: "Unit tests (msan, function_prop_fuzzer)"
@@ -1634,7 +1634,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (arm_release)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_distributed_plan_parallel_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDEvMik=') }}
     name: "Stateless tests (amd_asan_ubsan, distributed plan, parallel, 1/2)"
@@ -1685,7 +1685,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, distributed plan, parallel, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_distributed_plan_parallel_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDIvMik=') }}
     name: "Stateless tests (amd_asan_ubsan, distributed plan, parallel, 2/2)"
@@ -1736,7 +1736,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, distributed plan, parallel, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 32g]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMS8yKQ==') }}
     name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 1/2)"
@@ -1787,7 +1787,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 32g]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMi8yKQ==') }}
     name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 2/2)"
@@ -1838,7 +1838,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_debug_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
     needs: [build_amd_debug, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (amd_debug, parallel)"
@@ -1940,7 +1940,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_tsan_parallel_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgcGFyYWxsZWwsIDEvMik=') }}
     name: "Stateless tests (amd_tsan, parallel, 1/2)"
@@ -1991,7 +1991,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, parallel, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_tsan_parallel_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 64g]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgcGFyYWxsZWwsIDIvMik=') }}
     name: "Stateless tests (amd_tsan, parallel, 2/2)"
@@ -2348,7 +2348,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 4/4)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_msan_wasmedge_sequential_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 32g]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHNlcXVlbnRpYWwsIDEvMik=') }}
     name: "Stateless tests (amd_msan, WasmEdge, sequential, 1/2)"
@@ -2399,7 +2399,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, sequential, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_msan_wasmedge_sequential_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 32g]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHNlcXVlbnRpYWwsIDIvMik=') }}
     name: "Stateless tests (amd_msan, WasmEdge, sequential, 2/2)"
@@ -2450,7 +2450,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_debug_distributed_plan_s3_storage_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_debug, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsIGRpc3RyaWJ1dGVkIHBsYW4sIHMzIHN0b3JhZ2UsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (amd_debug, distributed plan, s3 storage, parallel)"
@@ -2552,7 +2552,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_tsan_s3_storage_parallel_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDEvMik=') }}
     name: "Stateless tests (amd_tsan, s3 storage, parallel, 1/2)"
@@ -2603,7 +2603,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_tsan_s3_storage_parallel_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDIvMik=') }}
     name: "Stateless tests (amd_tsan, s3 storage, parallel, 2/2)"
@@ -2654,7 +2654,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_tsan_s3_storage_sequential_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 32g]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCwgMS8yKQ==') }}
     name: "Stateless tests (amd_tsan, s3 storage, sequential, 1/2)"
@@ -2705,7 +2705,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_tsan_s3_storage_sequential_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 32g]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCwgMi8yKQ==') }}
     name: "Stateless tests (amd_tsan, s3 storage, sequential, 2/2)"
@@ -2756,7 +2756,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_binary_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBwYXJhbGxlbCk=') }}
     name: "Stateless tests (arm_binary, parallel)"
@@ -3210,7 +3210,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 8/8)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (arm_asan_ubsan, azure, parallel)"
@@ -3261,7 +3261,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, parallel)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_sequential_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 32g]
     needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHNlcXVlbnRpYWwsIDEvMik=') }}
     name: "Stateless tests (arm_asan_ubsan, azure, sequential, 1/2)"
@@ -3312,7 +3312,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, sequential, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_sequential_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 32g]
     needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHNlcXVlbnRpYWwsIDIvMik=') }}
     name: "Stateless tests (arm_asan_ubsan, azure, sequential, 2/2)"
@@ -3363,7 +3363,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDEvNik=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)"
@@ -3414,7 +3414,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDIvNik=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)"
@@ -3465,7 +3465,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDMvNik=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)"
@@ -3516,7 +3516,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDQvNik=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)"
@@ -3567,7 +3567,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDUvNik=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)"
@@ -3618,7 +3618,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDYvNik=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)"
@@ -3669,7 +3669,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_arm_binary_distributed_plan_1_4:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIGRpc3RyaWJ1dGVkIHBsYW4sIDEvNCk=') }}
     name: "Integration tests (arm_binary, distributed plan, 1/4)"
@@ -3720,7 +3720,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 1/4)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_arm_binary_distributed_plan_2_4:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIGRpc3RyaWJ1dGVkIHBsYW4sIDIvNCk=') }}
     name: "Integration tests (arm_binary, distributed plan, 2/4)"
@@ -3771,7 +3771,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 2/4)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_arm_binary_distributed_plan_3_4:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIGRpc3RyaWJ1dGVkIHBsYW4sIDMvNCk=') }}
     name: "Integration tests (arm_binary, distributed plan, 3/4)"
@@ -3822,7 +3822,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 3/4)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_arm_binary_distributed_plan_4_4:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIGRpc3RyaWJ1dGVkIHBsYW4sIDQvNCk=') }}
     name: "Integration tests (arm_binary, distributed plan, 4/4)"
@@ -3873,7 +3873,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, distributed plan, 4/4)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_tsan_1_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzYp') }}
     name: "Integration tests (amd_tsan, 1/6)"
@@ -3924,7 +3924,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_tsan_2_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzYp') }}
     name: "Integration tests (amd_tsan, 2/6)"
@@ -3975,7 +3975,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_tsan_3_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzYp') }}
     name: "Integration tests (amd_tsan, 3/6)"
@@ -4026,7 +4026,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_tsan_4_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0LzYp') }}
     name: "Integration tests (amd_tsan, 4/6)"
@@ -4077,7 +4077,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_tsan_5_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1LzYp') }}
     name: "Integration tests (amd_tsan, 5/6)"
@@ -4128,7 +4128,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_tsan_6_6:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2LzYp') }}
     name: "Integration tests (amd_tsan, 6/6)"
@@ -4179,7 +4179,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_1_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCAxLzgp') }}
     name: "Integration tests (amd_msan, 1/8)"
@@ -4230,7 +4230,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 1/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_2_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCAyLzgp') }}
     name: "Integration tests (amd_msan, 2/8)"
@@ -4281,7 +4281,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 2/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_3_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCAzLzgp') }}
     name: "Integration tests (amd_msan, 3/8)"
@@ -4332,7 +4332,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 3/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_4_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCA0Lzgp') }}
     name: "Integration tests (amd_msan, 4/8)"
@@ -4383,7 +4383,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 4/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_5_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCA1Lzgp') }}
     name: "Integration tests (amd_msan, 5/8)"
@@ -4434,7 +4434,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 5/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_6_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCA2Lzgp') }}
     name: "Integration tests (amd_msan, 6/8)"
@@ -4485,7 +4485,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 6/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_7_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCA3Lzgp') }}
     name: "Integration tests (amd_msan, 7/8)"
@@ -4536,7 +4536,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 7/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_msan_8_8:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9tc2FuLCA4Lzgp') }}
     name: "Integration tests (amd_msan, 8/8)"
@@ -5363,7 +5363,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'AST fuzzer (amd_msan)' --workflow "MasterCI" --ci --timestamp
 
   buzzhouse_amd_debug:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_debug, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnV6ekhvdXNlIChhbWRfZGVidWcp') }}
     name: "BuzzHouse (amd_debug)"
@@ -5414,7 +5414,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "MasterCI" --ci --timestamp
 
   buzzhouse_arm_asan_ubsan:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64, 16c]
     needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnV6ekhvdXNlIChhcm1fYXNhbl91YnNhbik=') }}
     name: "BuzzHouse (arm_asan_ubsan)"
@@ -5465,7 +5465,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'BuzzHouse (arm_asan_ubsan)' --workflow "MasterCI" --ci --timestamp
 
   buzzhouse_amd_tsan:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnV6ekhvdXNlIChhbWRfdHNhbik=') }}
     name: "BuzzHouse (amd_tsan)"
@@ -5516,7 +5516,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "MasterCI" --ci --timestamp
 
   buzzhouse_amd_msan:
-    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnV6ekhvdXNlIChhbWRfbXNhbik=') }}
     name: "BuzzHouse (amd_msan)"
