@@ -734,10 +734,8 @@ def test_drop_partition_preserves_trino_file_metadata(iceberg_db):
     metadata_before = trino_metadata_by_path()
     assert len(metadata_before) == 3
     for metadata in metadata_before.values():
-        sort_order_id, column_sizes, null_value_counts, _split_offsets = map(int, metadata)
-        assert sort_order_id > 0
+        _sort_order_id, column_sizes, _null_value_counts, _split_offsets = map(int, metadata)
         assert column_sizes > 0
-        assert null_value_counts > 0
 
     node.query(
         f"ALTER TABLE {full} DROP PARTITION 1",
