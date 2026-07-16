@@ -103,6 +103,7 @@ public:
 
     /// Counters.
     UInt64 incompleteConnections() const { return ex.stats.get(ReaderExecutor::Stats::IncompleteConnections); }
+    UInt64 bytesFromSource() const { return ex.stats.get(ReaderExecutor::Stats::BytesFromSource); }
     UInt64 sourceRequests() const { return ex.stats.get(ReaderExecutor::Stats::SourceRequests); }
     UInt64 prefetchHits() const { return ex.stats.get(ReaderExecutor::Stats::PrefetchHits); }
 

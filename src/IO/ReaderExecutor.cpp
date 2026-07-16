@@ -1289,9 +1289,10 @@ ChainedBuffers ReaderExecutor::readFromSource(
         /// The read is forward-continuable from `offset` but CROSSES the channel bound. Serve the
         /// prefix up to `read_until` from the held connection - it drains exactly to its bound and
         /// releases clean - then read the remainder from a fresh GET below (the same request a
-        /// reopen would cost, but the connection is no longer abandoned mid-run as an incomplete).
-        /// Only split on a block boundary; if `read_until` does not land on one (rare - the reach
-        /// is cache-aligned), or the connection cannot continue at all, drop and reopen.
+        /// reopen would cost, but the connection is no longer abandoned mid-run as an incomplete,
+        /// and no byte is drained-and-refetched). A bound falling INSIDE a block re-cuts that
+        /// block at the bound (an exact-span piece plus the remainder) - reach-predicted bounds
+        /// are arbitrary byte values, so the mid-block case is the common one.
         bool split = false;
         if ((*lc)->servesObject(object.remote_path)
             && (*lc)->canStartServing(offset, min_bytes_for_seek))
@@ -1301,18 +1302,34 @@ ChainedBuffers ReaderExecutor::readFromSource(
             size_t n = 0;
             while (n < blocks.size() && prefix_bytes + blocks[n]->size() <= prefix_span)
                 prefix_bytes += blocks[n++]->size();
-            if (prefix_bytes == prefix_span && n > 0)
+            std::shared_ptr<OwnedChainedBuffer> recut_head;
+            std::shared_ptr<OwnedChainedBuffer> recut_tail;
+            if (prefix_bytes < prefix_span && n < blocks.size())
+            {
+                const size_t cut = prefix_span - prefix_bytes;
+                recut_head = std::make_shared<OwnedChainedBuffer>(cut);
+                recut_tail = std::make_shared<OwnedChainedBuffer>(blocks[n]->size() - cut);
+            }
+            if (prefix_bytes == prefix_span || recut_head)
             {
                 VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> prefix;
                 VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> suffix;
                 for (size_t i = 0; i < blocks.size(); ++i)
+                {
+                    if (i == n && recut_head)
+                    {
+                        prefix.push_back(std::move(recut_head));
+                        suffix.push_back(std::move(recut_tail));
+                        continue;   /// `blocks[n]` replaced by the two cut pieces
+                    }
                     (i < n ? prefix : suffix).push_back(std::move(blocks[i]));
+                }
                 head = serveFromLongConnection(*lc, offset, std::move(prefix), file_pos, stop, out_stats);
                 if (*lc)
                     return head;   /// EOF before the bound: the read ends here
-                file_pos += prefix_bytes;
+                file_pos += prefix_span;
                 offset += prefix_span;   /// == read_until; continue with the suffix below
-                want -= prefix_bytes;
+                want -= prefix_span;
                 blocks = std::move(suffix);
                 split = true;
             }
@@ -1363,10 +1380,12 @@ ChainedBuffers ReaderExecutor::readFromSource(
     }
 
     /// A one-shot GET dropped before it was fully consumed is not pool-reusable:
-    /// only the unbounded case (unknown size AND no advertised extent) that did not
+    /// only the open-ended case (unknown size AND no advertised extent) that did not
     /// reach EOF can produce that, since bounded one-shots are read to their bound.
-    /// Zero transfer means the lazy GET never started - nothing to count.
-    if (!hit_eof && total_read > 0 && (!stateless_bounded || total_read < want))
+    /// A reader with no right-bounded support (a local file) has no connection to
+    /// abandon - nothing to count. Zero transfer means the lazy GET never started.
+    if (!hit_eof && total_read > 0 && opened->supportsRightBoundedReads()
+        && (!stateless_bounded || total_read < want))
         out_stats.add(Stats::IncompleteConnections);
 
     return chain;

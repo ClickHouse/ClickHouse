@@ -4978,19 +4978,19 @@ TEST(ReaderExecutor, ProfileEventsCountSourceReadsAndBytes)
     /// No cache tiers configured: the cache counters stay 0.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
-    /// No read extent is set, so each one-shot opens the whole object and is dropped
-    /// at its window's end, before the object bound: counted as incomplete. (Extent-
-    /// bounded reads - e.g. MergeTree mark ranges - drain to the bound and count 0.)
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 4u);
+    /// Local readers have no right-bounded support and no connection to abandon, so
+    /// the one-shots count 0 incomplete - as a bounded remote one-shot would (a known
+    /// size bounds each stateless read to exactly its window).
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
 }
 
 TEST(ReaderExecutor, ModeledCostMatchesFormula)
 {
     TestThreadGroup tg;
 
-    /// Modeled cost = 30ms/source request + 20ms/MiB from source + 5ms/incomplete
-    /// connection (cache terms 0): 4 window-sized requests + 1 MiB transferred + 4
-    /// one-shot connections dropped before the object bound (no read extent is set).
+    /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache and
+    /// incomplete-connection terms 0): 4 window-sized requests + 1 MiB transferred.
+    /// The local one-shots count no incomplete connections (nothing to abandon).
     constexpr size_t size = 1024 * 1024;
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", String(size, 'C')}});
@@ -5005,13 +5005,13 @@ TEST(ReaderExecutor, ModeledCostMatchesFormula)
 
     const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
     const auto requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
-    EXPECT_EQ(cost, 30000u * 4 + 20000u + 5000u * 4);  // 4 reads + 1 MiB + 4 incomplete
+    EXPECT_EQ(cost, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
     EXPECT_EQ(requested, size);
 
     /// The KPI: modeled ms per requested MiB.
     const double ms_per_mib = (static_cast<double>(cost) / 1000.0)
         / (static_cast<double>(requested) / (1024.0 * 1024.0));
-    EXPECT_DOUBLE_EQ(ms_per_mib, 160.0);
+    EXPECT_DOUBLE_EQ(ms_per_mib, 140.0);
 }
 
 TEST(ReaderExecutor, ModeledCostScalesWithSourceRequests)
@@ -6123,6 +6123,65 @@ TEST(ReaderExecutor, LongConnectionDropBeforeBoundCountsIncomplete)
     EXPECT_FALSE(inspect(ex).hasLongConn());
     EXPECT_EQ(inspect(ex).incompleteConnections(), 1u);
     EXPECT_EQ(rig.limit->getActiveCount(), 0u);
+}
+
+/// A piece that straddles the connection bound MID-BLOCK is split at the bound: the
+/// straddling block is re-cut into an exact-span piece served from the connection
+/// (which drains exactly to `read_until` and releases clean) and a remainder read on a
+/// fresh GET. Reach-predicted bounds are arbitrary byte values, so this is the common
+/// straddle shape. Neither failure mode of a drop may appear: no incomplete connection
+/// (abort) and no drained-and-refetched bytes - every byte crosses the wire once.
+TEST(ReaderExecutor, LongConnectionSplitsAtMidBlockBound)
+{
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    LongConnRig rig(size, /*min_bytes_for_seek=*/4096, block, /*max_tail_for_drain=*/1024);
+    auto & ex = *rig.executor;
+    /// Plant a connection whose bound falls inside the third block: two whole blocks
+    /// fit, then 1808 bytes of block [8192,12288) - wider than the drain allowance,
+    /// so the old drop path would abort the connection as incomplete.
+    inspect(ex).openLongConnection(0, 10000);
+
+    String got;
+    while (true)
+    {
+        auto chain = ex.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    }
+    EXPECT_EQ(got, rig.content);
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 0u)
+        << "the straddling piece splits at the bound - the connection is never abandoned";
+    EXPECT_EQ(inspect(ex).bytesFromSource(), size)
+        << "every byte crosses the wire exactly once - no drained-and-refetched tail";
+}
+
+/// Same straddle with a tail INSIDE the drain allowance (bound 512 bytes past a block
+/// edge, drain allowance 1024): the old path would drain-and-discard those 512 bytes
+/// and refetch them on the fallback GET; the split serves them instead.
+TEST(ReaderExecutor, LongConnectionSplitServesWouldBeDrainedTail)
+{
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    LongConnRig rig(size, /*min_bytes_for_seek=*/4096, block, /*max_tail_for_drain=*/1024);
+    auto & ex = *rig.executor;
+    inspect(ex).openLongConnection(0, 2 * block + 512);
+
+    String got;
+    while (true)
+    {
+        auto chain = ex.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    }
+    EXPECT_EQ(got, rig.content);
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 0u);
+    EXPECT_EQ(inspect(ex).bytesFromSource(), size)
+        << "the would-be-drained 512-byte tail is served, not discarded and refetched";
 }
 
 TEST(ReaderExecutor, LongConnectionDropDrainsSmallTail)
