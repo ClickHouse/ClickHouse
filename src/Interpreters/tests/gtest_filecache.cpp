@@ -48,6 +48,7 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -78,6 +79,7 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 namespace DB::FileCacheSetting
 {
@@ -1272,6 +1274,506 @@ TEST_F(FileCacheTest, CachedReadBuffer)
         cached_buffer->next();
         assertEqual(cache->dumpQueue(), {Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9), Range(10, 14)});
     }
+}
+
+namespace
+{
+
+/// Behaves like a remote reader (e.g. `ReadBufferFromS3`): supports right-bounded reads (so
+/// `getRemoteReadBuffer` uses it as is, without wrapping) and reports the remote object's metadata.
+/// The metadata reflects the current size of the underlying file, so a file smaller than the object
+/// size the cached buffer was created with imitates a remote object that was overwritten with
+/// shorter content between listing and reading.
+class FakeRemoteReadBuffer : public BoundedReadBuffer
+{
+public:
+    explicit FakeRemoteReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override
+    {
+        return RemoteFileMetadata{.size = static_cast<size_t>(fs::file_size(getFileName())), .last_modification_time = 0};
+    }
+};
+
+/// A source that fails on the first read, imitating e.g. a network error in a remote reader.
+class FailingReadBuffer : public BoundedReadBuffer
+{
+public:
+    explicit FailingReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
+
+    bool nextImpl() override
+    {
+        throw std::runtime_error("Simulated source read failure");
+    }
+};
+
+/// The query scope required for reading through the cache (a query id and a query context bound to
+/// the current thread).
+struct TestQueryScope
+{
+    explicit TestQueryScope(const std::string & query_id = "query_id")
+    {
+        ServerUUID::setRandomForUnitTests();
+
+        Poco::XML::DOMParser dom_parser;
+        std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+        getMutableContext().context->setConfig(config);
+
+        query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        chassert(&DB::CurrentThread::get() == &thread_status);
+        query_scope = DB::QueryScope::create(query_context);
+    }
+
+    DB::ThreadStatus thread_status;
+    ContextMutablePtr query_context;
+    DB::QueryScope query_scope;
+};
+
+void setupCacheSettings(FileCacheSettings & settings, size_t max_file_segment_size)
+{
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = max_file_segment_size;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+}
+
+void writeSourceFile(const std::string & path, const std::string & data)
+{
+    WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE);
+    wb.write(data.data(), data.size());
+    wb.next();
+    wb.finalize();
+}
+
+std::string makeSourceData(size_t size)
+{
+    std::string data(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = 'a' + i % 26;
+    return data;
+}
+
+}
+
+/// The following CachedReadBuffer* tests cover the failure paths of CachedOnDiskReadBufferFromFile
+/// on which a downloader releases the file segment while unwinding. A segment's remote reader is
+/// shared between the readers of the segment and synchronized only by the downloader election, so
+/// before the failing downloader publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION` (which wakes up
+/// the waiters and makes the reader extractable) it must withdraw the reader from the segment with
+/// `resetRemoteFileReader` -- otherwise another reader could take it over and mutate it while the
+/// unwinding frame still references it. `FileSegment::setDownloadFinishedWithoutContinuation`
+/// chasserts that invariant at the publication point, so these tests fail deterministically in
+/// debug and sanitizer builds if one of those withdrawals is removed; where the withdrawal is
+/// observable in the segment's final state, the tests additionally assert it directly.
+
+/// The remote object was truncated (overwritten with shorter content) between listing and reading,
+/// detected in the middle of a plain read (`nextImpl`, the EOF branch of `readFromFileSegment`).
+TEST_F(FileCacheTest, CachedReadBufferTruncatedObject)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    /// The object was listed with size 30, but only 24 bytes exist by the time it is read.
+    const std::string data = makeSourceData(24);
+    const size_t expected_object_size = 30;
+    std::string file_path = fs::current_path() / "test_truncated_object";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    setupCacheSettings(settings, /* max_file_segment_size */ 5);
+    auto cache = std::make_shared<DB::FileCache>("truncated_object", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Pin the segment in which the truncation will be detected (EOF falls into [20, 24]),
+    /// to observe its state after the failure.
+    auto probe = cache->getOrSet(key, 20, 5, expected_object_size, {}, 0, user);
+    ASSERT_EQ(probe->size(), 1);
+
+    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, read_buffer_creator,
+        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+        "test", expected_object_size, false, false, std::nullopt, nullptr);
+
+    WriteBufferFromOwnString result;
+    try
+    {
+        copyData(*cached_buffer, result);
+        FAIL() << "Expected CANNOT_READ_ALL_DATA";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+
+    /// Everything before the truncation point was read and downloaded.
+    EXPECT_EQ(result.str(), data);
+    EXPECT_EQ(probe->front().getDownloadedSize(), 4);
+
+    /// The failing downloader released the segment so that the readers waiting on it can take over,
+    /// and withdrew the shared remote reader beforehand: a woken-up waiter must not be able to grab
+    /// a reader that the unwinding frame still references.
+    EXPECT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+    EXPECT_FALSE(probe->front().extractRemoteFileReader());
+}
+
+/// The truncation is detected while predownloading: the second reader seeks into a partially
+/// downloaded segment, becomes its downloader, has to predownload the gap [current write offset,
+/// seek offset) first, and hits EOF inside it (the seek offset lies beyond the truncated object).
+TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectPredownload)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    /// The object was listed with size 10, but only 4 bytes exist by the time it is read.
+    const std::string data = makeSourceData(4);
+    const size_t expected_object_size = 10;
+    std::string file_path = fs::current_path() / "test_truncated_object_predownload";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    setupCacheSettings(settings, /* max_file_segment_size */ 10);
+    auto cache = std::make_shared<DB::FileCache>("truncated_object_predownload", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Pin the single segment [0, 9] to observe its state after the failure.
+    auto probe = cache->getOrSet(key, 0, expected_object_size, expected_object_size, {}, 0, user);
+    ASSERT_EQ(probe->size(), 1);
+
+    /// The first reader downloads bytes [0, 2) and stops mid-segment, leaving the segment
+    /// PARTIALLY_DOWNLOADED with the shared remote reader registered in it for reuse.
+    auto first_reader = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, read_buffer_creator,
+        read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 2, /* local_fs_buffer_size */ 2,
+        "test", expected_object_size, false, false, std::nullopt, nullptr);
+
+    ASSERT_TRUE(first_reader->next());
+    EXPECT_EQ(std::string(first_reader->buffer().begin(), first_reader->buffer().end()), data.substr(0, 2));
+    ASSERT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED);
+    ASSERT_EQ(probe->front().getCurrentWriteOffset(), 2);
+
+    /// The second reader seeks to offset 5 and becomes the downloader, reusing the reader registered
+    /// by the first one. It predownloads bytes [2, 4) and then hits EOF with one more byte to
+    /// predownload, because the requested offset lies beyond the truncated object.
+    auto second_reader = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, read_buffer_creator,
+        read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 8, /* local_fs_buffer_size */ 8,
+        "test", expected_object_size, /* allow_seeks_after_first_read */ true, false, std::nullopt, nullptr);
+
+    second_reader->seek(5, SEEK_SET);
+    try
+    {
+        second_reader->next();
+        FAIL() << "Expected CANNOT_READ_ALL_DATA";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+
+    /// The bytes that did exist were predownloaded before the failure was detected.
+    EXPECT_EQ(probe->front().getDownloadedSize(), 4);
+
+    /// As in the plain-read test: released for waiting readers, with the shared reader withdrawn.
+    EXPECT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+    EXPECT_FALSE(probe->front().extractRemoteFileReader());
+}
+
+/// The truncated object is detected under `readBigAt`, which has its own segment-completion cleanup
+/// (its state does not outlive the call, unlike the `nextImpl` path).
+TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectReadBigAt)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    /// The object was listed with size 10, but only 4 bytes exist by the time it is read.
+    const std::string data = makeSourceData(4);
+    const size_t expected_object_size = 10;
+    std::string file_path = fs::current_path() / "test_truncated_object_read_big_at";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    setupCacheSettings(settings, /* max_file_segment_size */ 10);
+    auto cache = std::make_shared<DB::FileCache>("truncated_object_read_big_at", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Pin the single segment [0, 9] to observe its state after the failure.
+    auto probe = cache->getOrSet(key, 0, expected_object_size, expected_object_size, {}, 0, user);
+    ASSERT_EQ(probe->size(), 1);
+
+    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, read_buffer_creator,
+        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+        "test", expected_object_size, false, false, std::nullopt, nullptr);
+
+    std::vector<char> to(expected_object_size, 0);
+    try
+    {
+        cached_buffer->readBigAt(to.data(), to.size(), 0, {});
+        FAIL() << "Expected CANNOT_READ_ALL_DATA";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
+
+    /// Everything before the truncation point was read and downloaded.
+    EXPECT_EQ(std::string(to.data(), data.size()), data);
+    EXPECT_EQ(probe->front().getDownloadedSize(), 4);
+
+    /// As in the plain-read test: released for waiting readers, with the shared reader withdrawn.
+    EXPECT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+    EXPECT_FALSE(probe->front().extractRemoteFileReader());
+}
+
+/// The source reader of a `readBigAt` call fails mid-read. The unwinding `readBigAt` releases
+/// downloader ownership in its cleanup, and must withdraw the shared remote reader from the segment
+/// while doing so: the reader still borrows the caller's `to` buffer (the normal un-borrowing is
+/// skipped on the exception path precisely because the reader may already be shared), so a new
+/// downloader must get a fresh reader instead of one pointing into the unwound caller's memory.
+TEST_F(FileCacheTest, CachedReadBufferReadBigAtSourceFailure)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(10);
+    std::string file_path = fs::current_path() / "test_read_big_at_source_failure";
+    writeSourceFile(file_path, data);
+
+    auto failing_read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FailingReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    setupCacheSettings(settings, /* max_file_segment_size */ 10);
+    auto cache = std::make_shared<DB::FileCache>("read_big_at_source_failure", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Pin the single segment [0, 9] to observe its state after the failure.
+    auto probe = cache->getOrSet(key, 0, data.size(), data.size(), {}, 0, user);
+    ASSERT_EQ(probe->size(), 1);
+
+    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, failing_read_buffer_creator,
+        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+        "test", data.size(), false, false, std::nullopt, nullptr);
+
+    std::vector<char> to(data.size(), 0);
+    EXPECT_THROW(cached_buffer->readBigAt(to.data(), to.size(), 0, {}), std::runtime_error);
+
+    /// Become the next downloader of the segment, as a reader waiting on it would.
+    auto & file_segment = probe->front();
+    ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
+    EXPECT_FALSE(file_segment.getRemoteFileReader());
+    file_segment.completePartAndResetDownloader();
+
+    /// The segment stays usable: a reader with a healthy source reads it end to end.
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+    auto recovered_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, read_buffer_creator,
+        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+        "test", data.size(), false, false, std::nullopt, nullptr);
+    WriteBufferFromOwnString result;
+    copyData(*recovered_buffer, result);
+    EXPECT_EQ(result.str(), data);
+}
+
+/// The same source failure as above, through the `nextImpl` path.
+TEST_F(FileCacheTest, CachedReadBufferSourceFailure)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(10);
+    std::string file_path = fs::current_path() / "test_source_failure";
+    writeSourceFile(file_path, data);
+
+    auto failing_read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FailingReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    setupCacheSettings(settings, /* max_file_segment_size */ 10);
+    auto cache = std::make_shared<DB::FileCache>("source_failure", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Pin the single segment [0, 9] to observe its state after the failure.
+    auto probe = cache->getOrSet(key, 0, data.size(), data.size(), {}, 0, user);
+    ASSERT_EQ(probe->size(), 1);
+
+    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, failing_read_buffer_creator,
+        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+        "test", data.size(), false, false, std::nullopt, nullptr);
+
+    EXPECT_THROW(cached_buffer->next(), std::runtime_error);
+
+    /// Become the next downloader of the segment, as a reader waiting on it would; the failed
+    /// downloader must have withdrawn the shared remote reader on its unwind path.
+    auto & file_segment = probe->front();
+    ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
+    EXPECT_FALSE(file_segment.getRemoteFileReader());
+    file_segment.completePartAndResetDownloader();
+
+    /// The segment stays usable: a reader with a healthy source reads it end to end.
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+    auto recovered_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+        file_path, key, cache, user, read_buffer_creator,
+        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+        "test", data.size(), false, false, std::nullopt, nullptr);
+    WriteBufferFromOwnString result;
+    copyData(*recovered_buffer, result);
+    EXPECT_EQ(result.str(), data);
+}
+
+/// A cached read can be issued from a destructor while an unrelated exception is being unwound --
+/// e.g. `MergeTreeData::Transaction` rollback reading version metadata from an `s3` disk. The read
+/// must succeed: the exception detection in the cleanups of `nextImplStep` and `readBigAt` compares
+/// `std::uncaught_exceptions` against the count captured on entry, and a plain `> 0` check would
+/// treat every successfully completed step as failed and drop the read state mid-read (an earlier
+/// revision of the ownership-handoff fix did exactly that and failed with a null dereference).
+TEST_F(FileCacheTest, CachedReadBufferReadDuringExceptionUnwinding)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(30);
+    std::string file_path = fs::current_path() / "test_read_during_unwinding";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    setupCacheSettings(settings, /* max_file_segment_size */ 5);
+    auto cache = std::make_shared<DB::FileCache>("read_during_unwinding", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto make_cached_buffer = [&]()
+    {
+        return std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, user, read_buffer_creator,
+            read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+            "test", data.size(), false, false, std::nullopt, nullptr);
+    };
+
+    std::string remote_read_result;
+    std::string cached_read_result;
+    std::string read_big_at_result;
+    std::string error;
+    bool outer_exception_caught = false;
+
+    try
+    {
+        /// The guard's destructor runs the reads while the exception below is being unwound.
+        SCOPE_EXIT({
+            try
+            {
+                {
+                    /// The data is not cached yet: REMOTE_FS_READ_AND_PUT_IN_CACHE.
+                    auto cached_buffer = make_cached_buffer();
+                    WriteBufferFromOwnString result;
+                    copyData(*cached_buffer, result);
+                    remote_read_result = result.str();
+                }
+                {
+                    /// Now the data is cached: CACHED.
+                    auto cached_buffer = make_cached_buffer();
+                    WriteBufferFromOwnString result;
+                    copyData(*cached_buffer, result);
+                    cached_read_result = result.str();
+                }
+                {
+                    std::vector<char> to(data.size(), 0);
+                    const size_t size = make_cached_buffer()->readBigAt(to.data(), to.size(), 0, {});
+                    read_big_at_result = std::string(to.data(), size);
+                }
+            }
+            catch (...)
+            {
+                error = getCurrentExceptionMessage(true);
+            }
+        });
+        throw std::runtime_error("The exception being unwound while the cached reads run");
+    }
+    catch (const std::runtime_error &)
+    {
+        outer_exception_caught = true;
+    }
+
+    EXPECT_TRUE(outer_exception_caught);
+    EXPECT_EQ(error, "");
+    EXPECT_EQ(remote_read_result, data);
+    EXPECT_EQ(cached_read_result, data);
+    EXPECT_EQ(read_big_at_result, data);
 }
 
 TEST_F(FileCacheTest, TemporaryDataReadBufferSize)

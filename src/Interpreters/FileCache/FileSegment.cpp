@@ -819,6 +819,13 @@ void FileSegment::setDownloadFinishedWithoutContinuation()
 {
     auto lk = lock();
     assertIsDownloaderUnlocked("setDownloadFinishedWithoutContinuation", lk);
+    /// This publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and wakes up the waiters, and from that
+    /// moment the segment's remote reader is up for grabs: `extractRemoteFileReader` is gated only on
+    /// the state, not on being the downloader. The caller must withdraw the reader
+    /// (`resetRemoteFileReader`) beforehand, while still owning it exclusively as the downloader;
+    /// otherwise the caller's own references to the reader (e.g. diagnostics on its unwind path)
+    /// would race with the reader's new owner.
+    chassert(!download_data || !download_data->remote_file_reader);
     setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lk);
     cv.notify_all();
 }
