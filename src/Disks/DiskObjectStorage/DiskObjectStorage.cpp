@@ -488,6 +488,15 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
     return metadata_storage->getLastChanged(path);
 }
 
+bool DiskObjectStorage::isRemote() const
+{
+    for (const auto & location : cluster->getEnabledLocations())
+        if (object_storages->takePointingTo(location)->isRemote())
+            return true;
+
+    return false;
+}
+
 struct stat DiskObjectStorage::stat(const String & path) const
 {
     return metadata_storage->stat(path);
