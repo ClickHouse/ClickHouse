@@ -305,8 +305,8 @@ bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTP
     }
     catch (...)
     {
-        /// If the custom key cannot be resolved against the query (unknown column, ambiguous name,
-        /// etc.), conservatively keep the merge rather than risk wrong results.
+        /// Ok to swallow: if the custom key cannot be resolved against the query (unknown column,
+        /// ambiguous name, etc.), conservatively keep the merge rather than risk wrong results.
         return false;
     }
 
