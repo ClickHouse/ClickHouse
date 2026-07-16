@@ -18,7 +18,8 @@ This step-by-step guide shows you how to configure Amazon RDS MySQL to replicate
 
 The binary log is a set of log files that contain information about data modifications made to an MySQL server instance, and binary log files are required for replication. To configure binary log retention in RDS MySQL, you must [enable binary logging](#enable-binlog-logging) and [increase the binlog retention interval](#binlog-retention-interval).
 
-### 1. Enable binary logging via automated backup {#enable-binlog-logging}
+<Steps>
+<Step title="Enable binary logging via automated backup" id="enable-binlog-logging">
 
 The automated backups feature determines whether binary logging is turned on or off for MySQL. Automated backups can be configured for your instance in the RDS Console by navigating to **Modify** > **Additional configuration** > **Backup** and selecting the **Enable automated backups** checkbox (if not selected already).
 
@@ -26,7 +27,8 @@ The automated backups feature determines whether binary logging is turned on or 
 
 We recommend setting the **Backup retention period** to a reasonably long value, depending on the replication use case.
 
-### 2. Increase the binlog retention interval {#binlog-retention-interval}
+</Step>
+<Step title="Increase the binlog retention interval" id="binlog-retention-interval">
 
 <Warning>
 If ClickPipes tries to resume replication and the required binlog files have been purged due to the configured binlog retention value, the ClickPipe will enter an errored state and a resync is required.
@@ -41,6 +43,9 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 ```
 
 If this configuration isn't set or is set to a low interval, it can lead to gaps in the binary logs, compromising ClickPipes' ability to resume replication. 
+
+</Step>
+</Steps>
 
 ## Configure binlog settings {#binlog-settings}
 

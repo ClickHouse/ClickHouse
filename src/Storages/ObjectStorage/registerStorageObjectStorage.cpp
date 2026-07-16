@@ -1764,6 +1764,8 @@ This engine uses the same settings as the corresponding object storage engines a
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
 - `paimon_keeper_path` — Keeper path for incremental read state. Must be set and unique per table; supports macros such as `{database}`, `{table}`, `{uuid}`.
 - `paimon_replica_name` — Replica name for incremental read state. Must be set and unique per replica; supports macros such as `{replica}`.
+- `use_paimon_metadata_files_cache` — enables in-memory caching of parsed Paimon metadata files. Table functions evaluate it per query; persistent engines latch it at metadata initialization (drop and recreate to change). Default: `0`.
+- `paimon_metadata_files_cache_size` — server-level cache capacity in bytes; runtime-reloadable via `SYSTEM RELOAD CONFIG`. Default: `1073741824` (1 GiB).
 
 ## Incremental read examples {#incremental-read-examples}
 

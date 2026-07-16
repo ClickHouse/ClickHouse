@@ -24,6 +24,7 @@ import xml.etree.ElementTree as ET
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
@@ -529,6 +530,14 @@ def parse_args():
 def main():
     args = parse_args()
     os.makedirs(temp_dir, exist_ok=True)
+
+    # This job starts its own servers below (the temporary dataset server in
+    # configure_datasets and the profiled server in start_server, once per PGO
+    # and BOLT pass) on fixed shared ports. Before the first of them, clear any
+    # clickhouse-server leaked by a previous CI job on this reused runner;
+    # otherwise its held ports make those starts fail
+    # (see kill_leftover_server_processes).
+    kill_leftover_server_processes()
 
     stages = list(JobStages)
     if args.param:
