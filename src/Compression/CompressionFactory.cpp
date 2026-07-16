@@ -268,6 +268,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecFPC(*this);
     registerCodecGCD(*this);
     registerCodecALP(*this);
+    registerCodecQuantized(*this);
 #if USE_SZ3
     registerCodecSZ3(*this);
 #endif

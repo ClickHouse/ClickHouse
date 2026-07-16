@@ -10,12 +10,38 @@
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 #include <Poco/JSON/Object.h>
 
+#include <functional>
+#include <unordered_map>
+
+namespace DB
+{
+struct DatabaseDataLakeSettings;
+}
+
 namespace DataLake
 {
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+
+/// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
+/// supports altering settings registers its own validator; catalog types without
+/// a registered validator do not support altering settings and get `NOT_IMPLEMENTED`.
+class CatalogSettingsAlterValidatorFactory
+{
+public:
+    using Validator = std::function<void(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)>;
+
+    static CatalogSettingsAlterValidatorFactory & instance();
+
+    void registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator);
+
+    void validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const;
+
+private:
+    std::unordered_map<DB::DatabaseDataLakeCatalogType, Validator> validators;
+};
 
 struct DataLakeSpecificProperties
 {
@@ -237,6 +263,28 @@ public:
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
     {
         return std::nullopt;
+    }
+
+    /// Result of `prepareSettingsChanges`: the new catalog state built off to the side,
+    /// ready to be published by `commitSettingsChanges`.
+    struct PreparedSettingsChanges
+    {
+        virtual ~PreparedSettingsChanges() = default;
+    };
+    using PreparedSettingsChangesPtr = std::unique_ptr<PreparedSettingsChanges>;
+
+    /// Validate `ALTER DATABASE ... MODIFY SETTING` changes and build the new catalog
+    /// state without publishing anything (may throw, may do network I/O). The state
+    /// becomes visible only after `commitSettingsChanges`, so the caller can persist
+    /// the changes in between and abandon the prepared state on failure.
+    virtual PreparedSettingsChangesPtr prepareSettingsChanges(const DB::SettingsChanges & changes);
+
+    /// Publish the state built by `prepareSettingsChanges`. Must not fail.
+    virtual void commitSettingsChanges(PreparedSettingsChangesPtr prepared);
+
+    void applySettingsChanges(const DB::SettingsChanges & changes)
+    {
+        commitSettingsChanges(prepareSettingsChanges(changes));
     }
 
 protected:

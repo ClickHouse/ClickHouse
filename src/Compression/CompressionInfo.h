@@ -51,7 +51,8 @@ enum class CompressionMethodByte : uint8_t
     /// ZSTD_QPL        = 0x9b, /// Removed, don't reuse for another codec
     ALP             = 0x9c,
     SZ3             = 0x9d,
-    PCO             = 0x9e,
+    Quantized       = 0x9e,
+    PCO             = 0x9f,
 };
 
 }

@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     extern const int TEMPORARY_DATA_NOT_IN_CACHE;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace
@@ -320,7 +321,11 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     auto path = file_segment.getPath();
     if (info.cache_file_reader)
     {
-        chassert(info.cache_file_reader->getFileName() == path);
+        /// A fully downloaded regular segment's file is renamed from `<offset>` to `<offset>_<size>`
+        /// (see `FileSegment::renameToIncludeSizeInNameUnlocked`), so a reader opened while the segment
+        /// was still downloading carries the old name. Reopen it under the current name in that case;
+        /// the caller (`prepareReadFromFileSegmentState`) seeks the returned buffer, so this is safe.
+        /// The already opened descriptor stays valid across the rename, so reusing it is also fine.
         if (info.cache_file_reader->getFileName() == path)
             return info.cache_file_reader;
 
@@ -352,10 +357,121 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     local_read_settings.local_fs_settings.buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
     local_read_settings.local_throttler = info.local_throttler;
 
-    info.cache_file_reader
-        = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    auto open_cache_file = [&](const String & path_to_open)
+    {
+        return createReadBufferFromFileBase(
+            path_to_open, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    };
 
-    if (getFileSizeFromReadBuffer(*info.cache_file_reader) == 0)
+    try
+    {
+        info.cache_file_reader = open_cache_file(path);
+    }
+    catch (const Exception & e)
+    {
+        /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>_<size>`
+        /// (`FileSegment::renameToIncludeSizeInNameUnlocked`) while we may still be reading it —
+        /// reads are allowed before the segment is fully downloaded. `getPath` is lock-free, so the
+        /// name computed above can become stale if the rename happens right before we open the file,
+        /// and the open then fails because the file has already moved to its new name. That race can
+        /// surface only as `FILE_DOESNT_EXIST` (the old name is gone); any other error is unrelated to
+        /// the rename, so propagate it immediately.
+        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+
+        /// Recompute the path while holding the segment lock — the rename runs under the same lock, so
+        /// this serializes against it and observes the final name — and retry once. If the path is
+        /// unchanged, the missing file is not explained by a rename, so propagate it.
+        String current_path;
+        {
+            auto segment_lock = file_segment.lock();
+            current_path = file_segment.getPath();
+        }
+        if (current_path == path)
+            throw;
+
+        path = current_path;
+        info.cache_file_reader = open_cache_file(path);
+    }
+
+    /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`), and
+    /// startup metadata loading trusts that size without a `stat` (see `FileCache::loadMetadataForKey`).
+    /// If such a file was truncated outside ClickHouse, the segment is restored as fully `DOWNLOADED`
+    /// but the on-disk file is shorter than recorded. Detect that here -- the file is already open, so
+    /// reading its size needs no extra `stat` -- and treat it as a possible inconsistency rather than a
+    /// `LOGICAL_ERROR` (a corrupted cache must not surface as a server-bug-class exception). Bypass the
+    /// broken segment by returning `nullptr` so the caller re-fetches the data from the source. This
+    /// covers the empty-file case (`cache_file_size == 0 < downloaded_size`) as well.
+    ///
+    /// We deliberately do *not* remove the broken segment from this read path. Removal
+    /// (`LockedKey::removeFileSegmentImpl`) invalidates the segment's priority-queue entry
+    /// (`queue_iterator->invalidate()`) while holding only the key and segment locks, not the cache
+    /// priority lock. A concurrent `FileSegment::increasePriority` -> `SLRUFileCachePriority::tryIncreasePriority`
+    /// marks the same entry `Moving` under the key lock, releases the key lock to do the protected-queue
+    /// work, then invalidates the old entry under the priority lock. If a read-path removal invalidates the
+    /// entry inside that window, `tryIncreasePriority` double-invalidates it and aborts with a
+    /// `LOGICAL_ERROR` (`Entry::setInvalidatedFlag`). As `EvictionCandidates` documents, priority-queue
+    /// entries may only be invalidated under the cache priority lock, which this read path does not hold.
+    /// Leaving the segment in place also closes the concurrent-reader windows around detachment: every read
+    /// of the truncated file re-detects the short size and bypasses, so no reader is left with a stale
+    /// descriptor. The corrupted entry lingers (reads keep bypassing) until a path that already holds the
+    /// cache lock -- eviction, `LockedKey::sync`, or metadata reload -- removes it; external truncation is
+    /// rare, so the small accounting drift until then is acceptable.
+    ///
+    /// The recovery is gated on `hasSizeInFileName`: it applies only to a segment whose size was trusted
+    /// from the file name without a `stat`. Such a segment is renamed to `<offset>_<size>` only once it is
+    /// fully downloaded, after which the file is immutable at `downloaded_size` bytes -- so a shorter
+    /// on-disk file can only mean an external truncation. A segment *without* the size suffix can legitimately
+    /// be shorter than `downloaded_size` under normal operation and must not trip this recovery: a legacy
+    /// `<offset>` file had its size `stat`-ed at load (so a mismatch is not the trusted-size case), and an
+    /// in-progress download is renamed only on completion, so while `DOWNLOADING` its file is momentarily
+    /// shorter than the already-advanced `downloaded_size`. Without this gate the check fires spuriously on
+    /// such segments during ordinary reads (observed as `... is shorter than its recorded size ... truncated
+    /// outside ClickHouse` warnings on plain `<offset>` cache files). `hasSizeInFileName` is a lock-free
+    /// atomic read and stays valid after a detach.
+    ///
+    /// Among size-in-filename segments, `downloaded_size` is final for a `DOWNLOADED` one and for a
+    /// `DETACHED` one (`downloaded_size` is not reset on detach).
+    ///
+    /// The on-disk size is measured *after* observing this final state, not before. A reader can reach
+    /// here for a segment that is still `DOWNLOADING`, reading its already-written prefix (see
+    /// `createReadFromFileSegmentState`: a `DOWNLOADING` segment routes to `ReadType::CACHED` when the
+    /// requested offset is within the downloaded prefix). If the size were sampled first and the state
+    /// observed afterwards, a concurrent download completing in between -- `setDownloadedUnlocked` writes
+    /// the final bytes, renames to `<offset>_<size>`, then publishes `DOWNLOADED` -- would leave us
+    /// comparing a stale, partial length against the now-final `downloaded_size` and reporting a spurious
+    /// truncation (observed as `... is shorter than its recorded size ...` warnings during ordinary reads
+    /// that repopulate the cache). Because we observe the final state first, and a size-in-filename
+    /// `DOWNLOADED`/`DETACHED` segment's file is immutable at `downloaded_size` bytes, the size read next
+    /// is the final one -- a shorter value can then only mean an external truncation. (The open descriptor
+    /// survives the rename, so re-reading its size sees the completed file.)
+    const auto download_state = file_segment.state();
+    const bool trust_size_from_filename
+        = file_segment.hasSizeInFileName()
+        && (download_state == FileSegment::State::DOWNLOADED
+            || download_state == FileSegment::State::DETACHED);
+
+    const size_t cache_file_size = getFileSizeFromReadBuffer(*info.cache_file_reader);
+
+    if (trust_size_from_filename
+        && cache_file_size < file_segment.getDownloadedSize())
+    {
+        LOG_WARNING(
+            getLogger("CachedOnDiskReadBufferFromFile"),
+            "Cache file {} is shorter than its recorded size ({} < {}); it was likely truncated outside "
+            "ClickHouse. Bypassing the cache; the data will be re-fetched from the source",
+            path, cache_file_size, file_segment.getDownloadedSize());
+
+        /// Returning `nullptr` tells the caller to bypass the cache and read from the source -- the same
+        /// outcome as the `DETACHED` state -- rather than failing the read. Throwing `CANNOT_READ_ALL_DATA`
+        /// here would be misinterpreted as a broken part during `MergeTree` part loading (when the truncated
+        /// file happens to back a mark/metadata file), and the part would be wrongly detached instead of
+        /// self-healing.
+        info.cache_file_reader.reset();
+        return nullptr;
+    }
+
+    if (cache_file_size == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
     return info.cache_file_reader;
@@ -473,6 +589,17 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
             case ReadType::CACHED:
             {
                 buf = getCacheReadBuffer(file_segment, info_);
+                if (!buf)
+                {
+                    /// `getCacheReadBuffer` found the cache file truncated outside ClickHouse and asks us to
+                    /// bypass the cache. The broken segment is intentionally left in place (see the detailed
+                    /// comment in `getCacheReadBuffer`: removing it from this read path would invalidate its
+                    /// priority-queue entry without holding the cache priority lock). Read from the source
+                    /// instead, producing the same read outcome as the `DETACHED` branch, so a truncated cache
+                    /// file is transparently re-fetched rather than failing the read.
+                    type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    buf = getRemoteReadBuffer(file_segment, offset, type, info_);
+                }
                 break;
             }
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:

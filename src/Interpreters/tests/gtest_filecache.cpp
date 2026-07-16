@@ -850,12 +850,13 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         download(cache.getOrSet(key, 0, 10, file_size, {}, 0, user));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
-        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
+        /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`).
+        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
 
         cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
+        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
     }
 
     std::cerr << "Step 14\n";
@@ -3130,6 +3131,112 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+}
+
+TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
+{
+    /// Regression: encoding the segment size in the file name (`<offset>` -> `<offset>_<size>`) is a
+    /// best-effort startup optimization done from `setDownloadedUnlocked` while the segment is still
+    /// `DOWNLOADING` with its downloader set. If the `rename` were allowed to throw, completion would
+    /// abort before clearing the downloader, leaving the segment owned by the unwinding query (no other
+    /// reader could acquire it), and `FileSegmentsHolder::reset` would hit its `chassert(false)`.
+    /// Here we force the rename to fail and assert the segment still completes consistently: it becomes
+    /// `DOWNLOADED`, the downloader is cleared, and the file keeps its legacy `<offset>` name.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("rename_size_in_name_failure");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("rename_size_in_name_failure", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("rename_size_in_name_failure_key");
+
+    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(holder->size(), 1u);
+    auto seg = *holder->begin();
+    ASSERT_EQ(seg->state(), State::EMPTY);
+
+    /// Fully download the segment but do not complete yet, so completion will trigger the rename.
+    download(seg, /*complete=*/false);
+    ASSERT_EQ(seg->state(), State::DOWNLOADING);
+    ASSERT_EQ(seg->getDownloadedSize(), 8u);
+
+    /// Make `fs::rename` fail: occupy the target `<offset>_<size>` name with a directory, so renaming
+    /// the regular file onto it is rejected by the filesystem.
+    const auto new_path = cache->getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */8);
+    const auto legacy_path = cache->getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */std::nullopt);
+    ASSERT_NE(new_path, legacy_path);
+    fs::create_directories(new_path);
+
+    /// Completion must not propagate the rename failure.
+    ASSERT_NO_THROW(FileSegment::complete(FileSegmentPtr(seg), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false));
+
+    /// The segment is fully completed and not stranded under a stale downloader.
+    ASSERT_EQ(seg->state(), State::DOWNLOADED);
+    ASSERT_TRUE(seg->getDownloader().empty());
+
+    /// The size could not be encoded, so the file keeps its legacy `<offset>` name.
+    ASSERT_FALSE(seg->hasSizeInFileName());
+    ASSERT_EQ(seg->getPath(), legacy_path);
+    ASSERT_TRUE(fs::is_regular_file(legacy_path));
+    ASSERT_EQ(fs::file_size(legacy_path), 8u);
+
+    /// Drop all in-memory references and destroy the first cache instance before reopening the same
+    /// directory below. `FileCache::initialize` acquires an exclusive `status` lock on the cache
+    /// directory (and holds it for the cache's lifetime); a second live `FileCache` on the same path
+    /// would otherwise fail with "Another server instance in same directory is already running".
+    /// Destroying the cache only releases the lock — it keeps the persisted files on disk — which is
+    /// exactly the restart we want to model here.
+    /// `holder` is a `FileSegmentsHolderPtr` (a `std::unique_ptr<FileSegmentsHolder>`) whose pointee
+    /// also has a `reset` method, so a bare `holder.reset()` is an ambiguous call (flagged by
+    /// `readability-ambiguous-smartptr-reset-call`); assign `nullptr` to unambiguously destroy the
+    /// holder (which completes and releases its segments via `~FileSegmentsHolder`).
+    holder = nullptr;
+    seg.reset();
+    cache.reset();
+
+    /// Reopen the cache from disk (a real restart). The persisted state is now the real segment under
+    /// its legacy `<offset>` name next to the stale `<offset>_<size>` directory. `loadMetadataForKey`
+    /// must restore the segment from the legacy file and must not treat the directory as a second
+    /// segment for the same offset — otherwise it hits the duplicate-offset `chassert(false)` in
+    /// debug/sanitizer builds or nondeterministically deletes the real file in release.
+    auto reloaded = std::make_shared<DB::FileCache>("rename_size_in_name_failure_reload", settings);
+    reloaded->initialize();
+
+    /// Exactly one segment is restored (from the legacy file); the directory artifact is ignored.
+    ASSERT_EQ(reloaded->getFileSegmentsNum(), 1u);
+    ASSERT_EQ(reloaded->getUsedCacheSize(), 8u);
+
+    /// Startup kept the legacy `<offset>` file intact.
+    ASSERT_TRUE(fs::is_regular_file(legacy_path));
+    ASSERT_EQ(fs::file_size(legacy_path), 8u);
+
+    /// The restored segment is fully downloaded and reusable.
+    auto reloaded_holder = reloaded->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(reloaded_holder->size(), 1u);
+    ASSERT_EQ((*reloaded_holder->begin())->state(), State::DOWNLOADED);
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
