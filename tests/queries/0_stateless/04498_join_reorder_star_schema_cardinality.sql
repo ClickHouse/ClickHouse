@@ -4,14 +4,17 @@
 -- cardinality when `estimated_rows` is used as NDV proxy, causing the optimizer
 -- to think the intermediate result is tiny and swap the wrong way.
 --
--- The fix: automatic join side swapping should not move a composite subtree
--- containing a much larger base relation to the build side only because the
--- intermediate join cardinality was underestimated.
+-- The fix: when column statistics are missing for both sides of an equi-join,
+-- cap each side's NDV at the other side's row count. A join key can match at
+-- most as many distinct values as the other table has rows, so this prevents
+-- the excessively high NDV (from the large fact table's estimated_rows) from
+-- driving selectivity to near-zero.
 --
 -- Without the fix, the intermediate result of `(fact JOIN dim_a)` is estimated
 -- as ~50 rows, so the swap logic sees `50 < 100` (`dim_b`) and flips the join,
--- placing the fact-side on the build (right). With the fix, swap is not
--- triggered and the fact table stays on the probe (left) side.
+-- placing the fact-side on the build (right). With the fix, the cardinality is
+-- estimated as ~100000, so the swap is not triggered and the fact table stays
+-- on the probe (left) side.
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_analyzer = 1;
