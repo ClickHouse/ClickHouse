@@ -43,6 +43,11 @@ public:
     /// aborts during serialization (e.g. WITH TOTALS const key). Keep the type identical to the column.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Same reasoning for Variant: the default Variant adaptor executes per subtype and reassembles a
+    /// bare Variant, dropping any custom name (e.g. Geometry). Since we pass the column through verbatim,
+    /// keep the declared type exactly equal to the argument type.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.front();
