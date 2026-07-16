@@ -38,6 +38,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 
@@ -370,6 +375,20 @@ void StorageSystemUserQueryLog::read(
         query_plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(expected_header))));
         return;
     }
+
+    /// `query_log.engine` can configure the backing table as a delegating storage, e.g. `Distributed`.
+    /// The internal query below runs under a context that has full access only locally: a delegating
+    /// storage forwards the outer query's `ClientInfo`, not this local full access, to whatever it
+    /// delegates to. So the delegate would be read under the calling user's own identity there, which
+    /// either fails for a user without explicit grants (breaking the promise that `system.user_query_log`
+    /// needs none) or, if that identity does have grants, does not visibly narrow to the calling user on
+    /// the initiator's side the way a local read does. Refuse rather than silently depend on either.
+    if (source_table->isRemote())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The query log table {} configured via `query_log.database`/`query_log.table` is a delegating "
+            "storage (engine {}), so `system.user_query_log` cannot read it under a local full-access context. "
+            "Reconfigure `query_log.engine` to a local storage, or set `query_log.enable_user_query_log` to 0",
+            source_table->getStorageID().getNameForLogs(), source_table->getName());
 
     /// The pipeline over the query log table is built inside an opaque source step: plan-level
     /// optimizations of the outer query (e.g. filter push-down and filter merging) must not move any
