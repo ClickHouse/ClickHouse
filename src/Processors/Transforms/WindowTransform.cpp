@@ -438,6 +438,9 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
 
 WindowTransform::~WindowTransform()
 {
+    // The tree states may only be destroyed while the arena is still alive.
+    resetFrameTrees();
+
     // Some states may be not created yet if the creation failed.
     for (auto & ws : workspaces)
     {
@@ -1187,7 +1190,16 @@ void WindowTransform::FrameAggregateTree::buildParents(Arena * arena_ptr)
         if (level + 1 == levels.size())
             levels.emplace_back(Level(parent));
 
-        chassert(levels[level + 1].end_segment == parent);
+        auto & parent_level = levels[level + 1];
+        if (parent_level.end_segment != parent)
+        {
+            // A skip below also skipped the completion trigger of parents at this level;
+            // everything built here starts before that gap, hence before the frame start.
+            chassert(parent_level.end_segment < parent);
+            destroySegments(level + 1, parent_level.begin_segment, parent_level.end_segment);
+            parent_level = Level(parent);
+        }
+
         auto * parent_state = createSegment(level + 1);
         for (UInt64 child = parent * fanout; child < (parent + 1) * fanout; ++child)
             function->merge(parent_state, segmentState(level, child), arena_ptr);

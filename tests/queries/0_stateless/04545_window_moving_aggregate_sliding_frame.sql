@@ -397,4 +397,21 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
 );
 
+-- The frame shrinks exactly when a higher-level segment group of the tree completes
+-- (the key jump is aligned so the skipped group is the last child of a built level-2
+-- group), then regrows past two level-2 spans. Regression for a parent segment being
+-- built into the wrong slot after such a skip.
+SELECT countIf(c != cnt OR s != expected_s) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        if(n < 16200, greatest(toInt64(n) - 12000, 0), greatest(toInt64(16200), toInt64(n) - 12000)) AS lo,
+        toInt64(n) - lo + 1 AS cnt,
+        intDiv((lo + toInt64(n)) * cnt, 2) AS expected_s,
+        count() OVER w AS c, sum(n) OVER w AS s
+    FROM (SELECT number AS n, if(number < 16200, number, number + 13000) AS k FROM numbers(30000))
+    WINDOW w AS (ORDER BY k RANGE BETWEEN 12000 PRECEDING AND CURRENT ROW)
+);
+
 DROP TABLE moving_aggregate_test;
