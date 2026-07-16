@@ -15,6 +15,7 @@ from typing import List
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -276,125 +277,16 @@ class ClickHouseProc:
             f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
         )
 
-    def _install_light(self):
-        """
-        Installs ClickHouse config into ci temporary directory, this way of installation does not require mounting /etc|var/clickhouse-server into docker container.
-        To be used only with start_light(). This method is suitable for jobs that do not require complex configuration, such as clickbench.
-        Jobs like functional tests are hard/not-reasonable to adapt to use this way of installation, thus they have to mount config and other directories into default directories.
-        """
-        Utils.add_to_PATH(temp_dir)
-        commands = [
-            f"mkdir -p {temp_dir}/users.d",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}",
-            # make it ipv4 only
-            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {temp_dir}/config.xml',
-            f"cp -r --dereference ./programs/server/config.d {temp_dir}",
-            f"chmod +x {temp_dir}/clickhouse",
-            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-server",
-            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-client",
-        ]
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        if not res:
-            print("Failed to install ClickHouse config")
-
-        return res
-
-    def start_light(self):
-        """
-        Start ClickHouse server with config installed with _install_config()
-        """
-        print("Starting ClickHouse server")
-        # check binary available and do decompression in the meantime
-        assert Shell.check("clickhouse --version", verbose=True)
-        self.pid_file = f"{temp_dir}/clickhouse-server.pid"
-        self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
-        print("Command: ", self.start_cmd)
-        self.log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
-        self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
-        )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
-            return False
-        print("ClickHouse server process started -> wait ready")
-        res = self.wait_ready()
-        if res:
-            print("ClickHouse server ready")
-        else:
-            print("ClickHouse server NOT ready")
-
-        # wait_ready() flushes system logs on its success path (pre-creating the
-        # system log tables once the server is listening).
-        self.save_system_metadata_files_from_remote_database_disk()
-        return res
-
-    def install_clickbench_config(self):
-        res = self._install_light()
-        if not res:
-            return False
-
-        # tweak for clickbench
-        content = """
-profiles:
-    default:
-        allow_introspection_functions: 1
-"""
-        file_path = f"{temp_dir}/users.d/allow_introspection_functions.yaml"
-        with open(file_path, "w") as file:
-            file.write(content)
-        return True
-
-    def install_fuzzer_config(self):
-        res = self._install_light()
-        if not res:
-            return False
-        commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/limit-recursion-settings.xml {temp_dir}/users.d",
-        ]
-
-        c1 = """
-<clickhouse>
-    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
-</clickhouse>
-"""
-        file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        with open(file_path, "w") as file:
-            file.write(c1)
-
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        return res
-
-    def install_vector_search_config(self):
-        # Large values are set, ClickHouse will auto downsize
-        c1 = """
-<max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
-<cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
-<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
-<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
-<vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
-</clickhouse>
-        """
-        commands = [f'sed -i "s|</clickhouse>||g" {temp_dir}/config.xml']
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-
-        with open(f"{temp_dir}/config.xml", "a") as config_file:
-            config_file.write(c1)
-        return res
-
-    def create_log_export_config(self):
+    def create_log_export_config(self, config_dir=None):
         print("Create log export config")
-        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        # Write into the config dir the server actually reads. Callers that run
+        # the server from a non-default location (e.g. `ClickHouseService` under
+        # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
+        # `system_logs_export` cluster lands in the default `ch_config_dir` and
+        # the server starts without it, failing replication setup with `Code:
+        # 701. Requested cluster 'system_logs_export' not found`.
+        config_dir = config_dir or self.ch_config_dir
+        config_file = Path(config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.log_export_host, self.log_export_password = (
@@ -452,6 +344,7 @@ profiles:
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
             Shell.check("dmesg --clear", verbose=True)
+            kill_leftover_server_processes()
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
@@ -560,14 +453,26 @@ profiles:
         # False). Every step MUST stay non-strict: a strict=True step would
         # raise before we can record the reason and signal failure. Record the
         # concrete failing sub-step so it reaches CIDB test_context_raw.
+        # storage_policy = 'default' pins these diagnostic tables to local disk.
+        # On s3 storage runs the default merge_tree policy is S3
+        # (s3_storage_policy_for_merge_tree_by_default.xml), which would put the
+        # audit log on S3, so (1) every audit-event insert writes parts to S3 and
+        # thereby generates more audit events (a feedback loop that inflates the
+        # table), and (2) the post-run `select * ... into outfile` dump reads all
+        # of it back from S3 - on amd_tsan this JSON-typed table grew to ~700k
+        # rows / ~1.5 GB and the dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap,
+        # failing the "Scraping system tables" check. These are diagnostics ABOUT
+        # S3 activity; there is no reason to store them ON S3. 'default' is a
+        # local policy on every stateless config (no config remaps it), so this
+        # is a no-op on non-s3 runs.
         setup_steps = [
             (
                 "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
             ),
             (
                 "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
             ),
             (
                 "set clickminio logger_webhook config",
@@ -740,7 +645,10 @@ profiles:
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
-        attempts = 30
+        # A debug or sanitizer server can legitimately take over a minute from
+        # fork to listening; the loop below exits early on success and detects a
+        # dead server via proc.poll(), so a generous deadline costs nothing.
+        attempts = 60
         delay = 2
         if replica_num == 1:
             pid_file = self.pid_file_replica_1

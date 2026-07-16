@@ -65,6 +65,7 @@ DEFINE_ICEBERG_FIELD(record_count);
 DEFINE_ICEBERG_FIELD(file_path);
 DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
+DEFINE_ICEBERG_FIELD(sort_order_id);
 DEFINE_ICEBERG_FIELD(refs);
 DEFINE_ICEBERG_FIELD(branch);
 DEFINE_ICEBERG_FIELD(tag);
@@ -80,10 +81,16 @@ DEFINE_ICEBERG_FIELD(statistics);
 DEFINE_ICEBERG_FIELD(properties);
 DEFINE_ICEBERG_FIELD(owner);
 DEFINE_ICEBERG_FIELD(column_sizes);
+DEFINE_ICEBERG_FIELD(value_counts);
 DEFINE_ICEBERG_FIELD(null_value_counts);
 DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
+/// Fields of a manifest-list `partitions` field_summary record.
+DEFINE_ICEBERG_FIELD(contains_null);
+DEFINE_ICEBERG_FIELD(contains_nan);
+DEFINE_ICEBERG_FIELD(lower_bound);
+DEFINE_ICEBERG_FIELD(upper_bound);
 DEFINE_ICEBERG_FIELD(key_metadata);
 DEFINE_ICEBERG_FIELD(replace);
 
@@ -178,6 +185,7 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, key_metadata);
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not

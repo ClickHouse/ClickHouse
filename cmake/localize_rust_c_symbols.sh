@@ -37,6 +37,9 @@
 
 set -eu
 
+# Keep sort and comm on the same portable bytewise ordering.
+export LC_ALL=C
+
 LIB_PATH="${1:-}"
 AR="${2:-}"
 OBJCOPY="${3:-}"

@@ -23,6 +23,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #if USE_AVRO
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #endif
 #if USE_PARQUET
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -570,6 +571,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, paimon_metadata_files_cache_policy, DEFAULT_PAIMON_METADATA_CACHE_POLICY, "Paimon metadata cache policy name.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_size, DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE, "Maximum size of paimon metadata cache in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_max_entries, DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES, "Maximum size of paimon metadata files cache in entries. Zero means no entry-count limit.", 0) \
+    DECLARE(Double, paimon_metadata_files_cache_size_ratio, DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the paimon metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache policy name.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
@@ -1546,6 +1551,19 @@ The directory with top level domains.
 <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
 ```
 )", 0) \
+    DECLARE(Bool, interserver_tables_status_require_auth, true, R"(
+Require interserver `TablesStatusRequest` to be authenticated with the cluster
+`<secret>`. Clients new enough to send a secret hash (protocol revision
+`DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) are always validated; this
+setting additionally rejects older clients that send no hash, which is what closes the
+unauthenticated table-status disclosure by default.
+
+Defaults to `true` (secure by default). During a rolling upgrade a not-yet-upgraded
+node speaks the old protocol and sends no hash, so a `Distributed` query initiated on
+such a node against an already-upgraded node would have its `TablesStatusRequest`
+rejected. If you must run a mixed-version cluster, set this to `false` on the upgraded
+nodes until every node is upgraded, then remove the override.
+)", 0) \
     DECLARE(String, interserver_http_host, "", R"(
 The hostname that can be used by other servers to access this server.
 
@@ -2119,6 +2137,15 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+    if (context->getPaimonMetadataFilesCache())
+    {
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_size",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_max_entries",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
