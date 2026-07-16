@@ -79,6 +79,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
@@ -114,6 +115,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
@@ -150,6 +152,9 @@ ALTER TABLE table DROP INDEX text_idx;
   The separators can be specified using an optional parameter, for example, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
+- `splitByRegexp(re)` splits strings along a user-defined regular expression separator `re` (see function [splitByRegexp](/sql-reference/functions/splitting-merging-functions.md/#splitByRegexp)).
+  The regular expression is mandatory, for example, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  Unlike the fixed separator strings of `splitByString`, a regular expression separator can preserve tokens containing special characters (such as `C++` or `C#`) which the other tokenizers would split apart.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
@@ -444,7 +449,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` | yes |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [like](/sql-reference/functions/string-search-functions.md/#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
@@ -731,7 +736,7 @@ Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhr
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK` tokenizers.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, or `asciiCJK` tokenizers.
 
 Example:
 
@@ -1140,7 +1145,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, and `asciiCJK`.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
