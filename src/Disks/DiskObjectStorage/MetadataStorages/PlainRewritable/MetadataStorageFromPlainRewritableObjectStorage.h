@@ -75,6 +75,9 @@ public:
     Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
 
+    /// Object storage key prefix common to all blobs of this disk.
+    std::string getCommonKeyPrefix() const;
+
 private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableMetrics> metrics;

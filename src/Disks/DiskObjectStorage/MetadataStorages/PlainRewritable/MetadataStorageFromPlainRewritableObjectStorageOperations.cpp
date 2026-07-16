@@ -391,7 +391,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     const auto normalized_path_from = normalizePath(path);
     const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(PlainRewritableLayout::EPHEMERAL_TEMP_NAME_LENGTH));
 
     copy_started = true;
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
@@ -531,8 +531,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
-    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(PlainRewritableLayout::EPHEMERAL_TEMP_NAME_LENGTH));
+    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(PlainRewritableLayout::EPHEMERAL_TEMP_NAME_LENGTH));
     file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
@@ -669,7 +669,7 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     chassert(metrics);
-    tmp_path = getRandomASCIIString(16);
+    tmp_path = getRandomASCIIString(PlainRewritableLayout::EPHEMERAL_TEMP_NAME_LENGTH);
     move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", object_storage, fs_tree, layout, metrics);
 }
 

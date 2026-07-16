@@ -4,6 +4,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace DB
@@ -12,6 +13,16 @@ namespace DB
 PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
     : object_storage_common_key_prefix(object_storage_common_key_prefix_)
 {
+}
+
+bool PlainRewritableLayout::looksLikeEphemeralName(std::string_view name)
+{
+    /// Ephemeral names are produced by `getRandomASCIIString(EPHEMERAL_TEMP_NAME_LENGTH)`,
+    /// which draws characters uniformly from ['a', 'z']. Backing directory names use a different
+    /// length (DIRECTORY_REMOTE_NAME_LENGTH), so the length check alone disambiguates them.
+    if (name.size() != EPHEMERAL_TEMP_NAME_LENGTH)
+        return false;
+    return std::all_of(name.begin(), name.end(), [](char c) { return c >= 'a' && c <= 'z'; });
 }
 
 std::string PlainRewritableLayout::constructMetadataDirectoryKey() const
