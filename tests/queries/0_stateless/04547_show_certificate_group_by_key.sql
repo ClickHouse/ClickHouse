@@ -12,9 +12,9 @@ FROM
     SELECT count()
     FROM clusterAllReplicas('test_cluster_two_shards', system.one)
     GROUP BY showCertificate()
-    SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0
 )
-WHERE explain LIKE '%Keys: showCertificate()%';
+WHERE explain LIKE '%Keys: showCertificate()%'
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
 
 SELECT count()
 FROM clusterAllReplicas('test_cluster_two_shards', system.one)
