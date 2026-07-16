@@ -78,11 +78,11 @@ ColumnPtr makeUInt64ValueColumn(size_t num_rows)
 Int64 bufferedBytesAfterSplit(const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns)
 {
     const size_t num_rows = columns.at(0)->size();
-    auto counter = std::make_shared<std::atomic<Int64>>(0);
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     /// Unbounded budget: this test measures the counter, it must not throw.
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), counter);
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -110,7 +110,7 @@ Int64 bufferedBytesAfterSplit(const SharedHeader & header, Columns columns, size
         transform.work();
     }
 
-    return counter->load();
+    return budget->total_buffered_bytes.load();
 }
 
 /// Drive one pull-and-split cycle, read the shared counter while the shard chunks are still parked in the
@@ -120,10 +120,10 @@ std::pair<Int64, Int64> portResidentThenConsumedBytes(
     const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns)
 {
     const size_t num_rows = columns.at(0)->size();
-    auto counter = std::make_shared<std::atomic<Int64>>(0);
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), counter);
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -146,14 +146,14 @@ std::pair<Int64, Int64> portResidentThenConsumedBytes(
             break;
         transform.work();
     }
-    const Int64 while_parked = counter->load();
+    const Int64 while_parked = budget->total_buffered_bytes.load();
 
     /// The downstream merge pulls every chunk out of the ports; the next prepare() must reclaim their charges.
     for (auto & sink : sinks)
         if (sink->hasData())
             sink->pull();
     transform.prepare();
-    const Int64 after_consumed = counter->load();
+    const Int64 after_consumed = budget->total_buffered_bytes.load();
 
     return {while_parked, after_consumed};
 }
@@ -166,17 +166,16 @@ struct BudgetedSplitOutcome
 
 /// Feed one input block to a transform with a budget of `max_buffered_bytes` bytes and drive prepare()/work()
 /// cycles until the transform stops or work() throws the budget error. The single block exercises the admission
-/// path end to end: the first pull reserves nothing (no estimate yet), so the admission decision runs purely on
-/// the pulled chunk's measured size.
+/// path end to end: the admission decision runs purely on the pulled chunk's measured size.
 BudgetedSplitOutcome splitOneChunkUnderBudget(
     const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns, size_t max_buffered_bytes)
 {
     const size_t num_rows = columns.at(0)->size();
-    auto counter = std::make_shared<std::atomic<Int64>>(0);
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, max_buffered_bytes, counter);
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, max_buffered_bytes, budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -208,7 +207,7 @@ BudgetedSplitOutcome splitOneChunkUnderBudget(
             break;
         }
     }
-    outcome.buffered_bytes = counter->load();
+    outcome.buffered_bytes = budget->total_buffered_bytes.load();
     return outcome;
 }
 
@@ -220,12 +219,11 @@ struct SecondPullOutcome
 
 /// Drive one scatter to the point where it pulls a *second* input chunk (of `second_rows` rows) while the first
 /// block (of `first_rows` rows) is still buffered, under a shared budget of `max_buffered_bytes` bytes. Priming
-/// the first block warms `reservation_estimate` and leaves the block's charge resident in the output ports;
-/// draining one lane makes that output starve so the transform wants to pull again. Returns whether the second
-/// chunk was pulled and whether work() then threw the buffer-budget error. The admission decision must run on
-/// the second chunk's measured size, not on the reservation estimated from the first chunk: a second chunk
-/// whose actual bytes fit the budget proceeds even when the estimate would not, and a second chunk whose actual
-/// bytes cross the cap makes work() throw before it is split.
+/// the first block leaves its charge resident in the output ports; draining one lane makes that output starve so
+/// the transform wants to pull again. Returns whether the second chunk was pulled and whether work() then threw
+/// the buffer-budget error. The admission decision runs on the second chunk's own measured size: a second chunk
+/// whose actual bytes fit the remaining budget proceeds, and one whose actual bytes cross the cap makes work()
+/// throw before it is split.
 SecondPullOutcome attemptSecondPull(size_t first_rows, size_t second_rows, size_t num_shards, size_t max_buffered_bytes)
 {
     Block header_block{
@@ -233,11 +231,11 @@ SecondPullOutcome attemptSecondPull(size_t first_rows, size_t second_rows, size_
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
     };
     auto header = std::make_shared<const Block>(std::move(header_block));
-    auto counter = std::make_shared<std::atomic<Int64>>(0);
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     /// Demand-driven mode (max_queue_length == 0) is the only mode that enforces max_buffered_bytes.
     BufferedShardByHashTransform transform(
-        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, max_buffered_bytes, counter);
+        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, max_buffered_bytes, budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -252,7 +250,7 @@ SecondPullOutcome attemptSecondPull(size_t first_rows, size_t second_rows, size_
     for (auto & sink : sinks)
         sink->setNeeded();
 
-    /// Prime: push the first block and split it into the ports (parked, charged; estimate warmed).
+    /// Prime: push the first block and split it into the ports (parked, charged).
     source_output.push(Chunk(Columns{makeDistinctKeyColumn(first_rows), makeUInt64ValueColumn(first_rows)}, first_rows));
     for (int step = 0; step < 8; ++step)
     {
@@ -297,11 +295,11 @@ Int64 twoBlocksResidentBytes(
 {
     const size_t first_rows = first_columns.at(0)->size();
     const size_t second_rows = second_columns.at(0)->size();
-    auto counter = std::make_shared<std::atomic<Int64>>(0);
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
 
     /// Unbounded budget: this test measures the counter, it must not throw.
     BufferedShardByHashTransform transform(
-        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), counter);
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
 
     OutputPort source_output(header);
     connect(source_output, transform.getInputs().front());
@@ -337,7 +335,61 @@ Int64 twoBlocksResidentBytes(
         transform.work();
     }
 
-    return counter->load();
+    return budget->total_buffered_bytes.load();
+}
+
+/// Drive TWO separate scatters that SHARE one budget, each buffering a block whose payload column is the
+/// identical `ColumnPtr` (by pointer, as a constant the query evaluates once and every stream references).
+/// Both blocks are left resident in their scatters' ports simultaneously. Returns the shared counter, used to
+/// check that a physical buffer held by more than one scatter at once is charged once for the whole stage, not
+/// once per scatter.
+Int64 twoScattersSharingBudgetResidentBytes(
+    const SharedHeader & header, Columns first_columns, Columns second_columns, size_t num_shards, const ColumnNumbers & key_columns)
+{
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+
+    /// Everything below must outlive the measurement: each scatter holds raw pointers to its connected ports.
+    std::vector<std::shared_ptr<BufferedShardByHashTransform>> transforms;
+    std::vector<std::unique_ptr<OutputPort>> sources;
+    std::vector<std::vector<std::unique_ptr<InputPort>>> sinks_per_transform;
+
+    auto add_and_buffer = [&](Columns columns)
+    {
+        const size_t num_rows = columns.at(0)->size();
+        auto transform = std::make_shared<BufferedShardByHashTransform>(
+            header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+
+        auto source = std::make_unique<OutputPort>(header);
+        connect(*source, transform->getInputs().front());
+
+        std::vector<std::unique_ptr<InputPort>> sinks;
+        for (auto & output : transform->getOutputs())
+        {
+            auto sink = std::make_unique<InputPort>(header);
+            connect(output, *sink);
+            sinks.push_back(std::move(sink));
+        }
+        for (auto & sink : sinks)
+            sink->setNeeded();
+
+        source->push(Chunk(std::move(columns), num_rows));
+        /// Split the block into the ports and leave it resident (nothing is pulled downstream).
+        for (int step = 0; step < 8; ++step)
+        {
+            if (transform->prepare() != IProcessor::Status::Ready)
+                break;
+            transform->work();
+        }
+
+        transforms.push_back(std::move(transform));
+        sources.push_back(std::move(source));
+        sinks_per_transform.push_back(std::move(sinks));
+    };
+
+    add_and_buffer(std::move(first_columns));
+    add_and_buffer(std::move(second_columns));
+
+    return budget->total_buffered_bytes.load();
 }
 
 }
@@ -382,13 +434,13 @@ TEST(BufferedShardByHashTransform, ChunkThatCrossesBudgetThrowsBeforeSplit)
     EXPECT_FALSE(loose.work_threw_budget_error);
 }
 
-/// The reservation published before a pull is this scatter's *last* pulled size — only an estimate of the next
-/// chunk. It must act as a soft gate: on a variable-width stream, a wide block followed by a narrow one leaves
-/// an estimate far above the narrow chunk's actual bytes, and rejecting on that estimate would fail a query
-/// whose buffered bytes never cross the cap. This primes the estimate with a wide block under a budget that the
-/// estimate crosses but the narrow chunk's actual bytes do not, and checks the narrow chunk is pulled and
-/// processed without the budget error.
-TEST(BufferedShardByHashTransform, OverEstimatedReservationDoesNotRejectSmallerChunk)
+/// Admission is decided on each chunk's *own* measured size, never on an estimate carried over from an earlier,
+/// wider chunk. On a variable-width stream a wide block can leave the buffered bytes high, but a following
+/// narrow chunk whose actual bytes fit the remaining headroom must still be admitted - rejecting it on anything
+/// but its measured size would fail a query whose buffered bytes never cross the cap. This primes a wide block,
+/// then pulls a narrow chunk under a budget with headroom for the narrow chunk's actual bytes (but not for
+/// another wide chunk), and checks the narrow chunk is pulled and processed without the budget error.
+TEST(BufferedShardByHashTransform, NarrowChunkAfterWideBlockAdmittedOnMeasuredSize)
 {
     const size_t wide_rows = 20000;
     const size_t narrow_rows = 500;
@@ -403,11 +455,10 @@ TEST(BufferedShardByHashTransform, OverEstimatedReservationDoesNotRejectSmallerC
     const Int64 wide_resident_after_split = bufferedBytesAfterSplit(
         header, Columns{makeDistinctKeyColumn(wide_rows), makeUInt64ValueColumn(wide_rows)}, num_shards, ColumnNumbers{0});
     ASSERT_GT(wide_resident_after_split, 0);
-    /// The estimate the transform reserves before the second pull is the wide chunk's pre-split size.
+    /// Half a wide chunk of headroom above the first block's resident bytes: enough for the narrow chunk (both
+    /// its pre-split measured size and its post-split resident bytes), but far short of another wide chunk.
     const Int64 wide_chunk_bytes = static_cast<Int64>(
         Chunk(Columns{makeDistinctKeyColumn(wide_rows), makeUInt64ValueColumn(wide_rows)}, wide_rows).allocatedBytes());
-    /// Both measured sizes of the narrow chunk (admission checks the pre-split size, the post-split re-check
-    /// its exact resident bytes) must fit under the budget headroom the wide estimate does not fit under.
     const Int64 narrow_chunk_bytes = static_cast<Int64>(
         Chunk(Columns{makeDistinctKeyColumn(narrow_rows), makeUInt64ValueColumn(narrow_rows)}, narrow_rows).allocatedBytes());
     const Int64 narrow_resident_after_split = bufferedBytesAfterSplit(
@@ -416,8 +467,7 @@ TEST(BufferedShardByHashTransform, OverEstimatedReservationDoesNotRejectSmallerC
     ASSERT_LT(narrow_chunk_bytes, headroom);
     ASSERT_LT(narrow_resident_after_split, headroom);
 
-    /// The wide-block estimate crosses this budget (resident + wide_chunk_bytes > budget), but the narrow
-    /// chunk's actual bytes fit; a hard reservation gate would spuriously throw here.
+    /// The narrow chunk's actual bytes fit this budget; only a stale wide-chunk estimate would spuriously throw.
     const auto outcome = attemptSecondPull(
         wide_rows, narrow_rows, num_shards, static_cast<size_t>(wide_resident_after_split + headroom));
     EXPECT_TRUE(outcome.second_chunk_pulled);
@@ -658,6 +708,48 @@ TEST(BufferedShardByHashTransform, SharedPayloadAcrossBufferedBlocksChargedOnce)
 
     /// Charged once across BOTH blocks: at least one payload (not dropped), and below two payloads (the
     /// regression this guards: charging it once per block that references it would double it).
+    EXPECT_GE(buffered, payload_bytes);
+    EXPECT_LT(buffered, 2 * payload_bytes);
+}
+
+/// The buffer budget must de-duplicate a physical buffer shared, by pointer, across SIBLING SCATTERS of the
+/// stage, not only within one scatter. A shuffle stage runs one `BufferedShardByHashTransform` per input
+/// stream, all sharing one `BufferedShardByHashBudget`; a constant aggregate argument is evaluated once and its
+/// backing `data` column handed to every stream (`ColumnConst::cloneResized` keeps the same pointer), so two
+/// scatters can buffer the identical payload at the same time. A per-scatter de-duplication table would bill
+/// the payload once per scatter that holds it; the shared table in the budget must charge it exactly once for
+/// as long as any scatter still holds it.
+TEST(BufferedShardByHashTransform, SharedPayloadAcrossSiblingScattersChargedOnce)
+{
+    const size_t num_shards = 8;
+    const size_t first_rows = 4000;
+    const size_t second_rows = 4000;
+    const size_t value_len = 1 << 20;  /// A 1 MiB constant string payload - dominates both scatters' bytes.
+
+    auto payload = ColumnString::create();
+    const std::string big_value(value_len, 'x');
+    payload->insertData(big_value.data(), big_value.size());
+    const ColumnPtr shared_data = std::move(payload);
+    const Int64 payload_bytes = static_cast<Int64>(shared_data->allocatedBytes());
+    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+
+    /// Two `ColumnConst` wrappers - as `cloneResized` produces - both referencing the identical backing `data`.
+    ColumnPtr first_constant = ColumnConst::create(shared_data, first_rows);
+    ColumnPtr second_constant = ColumnConst::create(shared_data, second_rows);
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns first_columns{makeDistinctKeyColumn(first_rows), first_constant};
+    Columns second_columns{makeDistinctKeyColumn(second_rows), second_constant};
+    const Int64 buffered = twoScattersSharingBudgetResidentBytes(
+        header, std::move(first_columns), std::move(second_columns), num_shards, ColumnNumbers{0});
+
+    /// Charged once across BOTH scatters: at least one payload (not dropped), and below two payloads (the
+    /// regression this guards: a per-scatter table would charge it once per scatter that holds it).
     EXPECT_GE(buffered, payload_bytes);
     EXPECT_LT(buffered, 2 * payload_bytes);
 }

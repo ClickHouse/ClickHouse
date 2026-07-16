@@ -575,8 +575,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// buffering small in practice because all shard merges advance through the global key order
             /// roughly in lockstep. The demand-driven read-ahead is still unbounded in the worst case (long
             /// runs of a single key park everything on one shard while another lane starves), so all scatters
-            /// share a byte budget; exceeding it fails the query instead of buffering without limit.
-            auto total_buffered_bytes = std::make_shared<std::atomic<Int64>>(0);
+            /// share a byte budget; exceeding it fails the query instead of buffering without limit. The shared
+            /// `budget` also carries the stage-wide de-duplication table, so a physical buffer several scatters
+            /// hold at once (e.g. a constant aggregate argument every stream buffers) is charged only once.
+            auto budget = std::make_shared<BufferedShardByHashBudget>();
             const size_t max_buffered_bytes = settings.aggregation_in_order_shuffle_max_buffered_bytes;
             pipeline.transform([&](OutputPortRawPtrs ports)
             {
@@ -590,7 +592,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 {
                     auto scatter_transform = std::make_shared<BufferedShardByHashTransform>(
                         stream_header, num_shards, key_columns, /*max_queue_length=*/ 0,
-                        max_buffered_bytes, total_buffered_bytes);
+                        max_buffered_bytes, budget);
                     connect(*ports[stream], scatter_transform->getInputs().front());
                     for (auto & output : scatter_transform->getOutputs())
                         scatter_outputs.push_back(&output);

@@ -22,13 +22,13 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     ColumnNumbers key_columns_,
     size_t max_queue_length_,
     size_t max_buffered_bytes_,
-    std::shared_ptr<std::atomic<Int64>> total_buffered_bytes_)
+    std::shared_ptr<BufferedShardByHashBudget> budget_)
     : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
     , max_queue_length(max_queue_length_)
     , max_buffered_bytes(max_buffered_bytes_)
-    , total_buffered_bytes(total_buffered_bytes_ ? std::move(total_buffered_bytes_) : std::make_shared<std::atomic<Int64>>(0))
+    , budget(budget_ ? std::move(budget_) : std::make_shared<BufferedShardByHashBudget>())
     , output_queues(num_shards)
     , port_resident_block(num_shards)
     , shard_columns(num_shards)
@@ -77,7 +77,7 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
     const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes)
 {
     touched.push_back(&column);
-    auto [it, is_new] = shared_object_refcounts.try_emplace(&column);
+    auto [it, is_new] = budget->shared_object_refcounts.try_emplace(&column);
     ++it->second.refcount;
     if (!is_new)
         return; /// Already referenced by this or an earlier still-buffered charge; its subtree was already
@@ -114,14 +114,15 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
 
 void BufferedShardByHashTransform::releaseTouchedObjects(const std::vector<const void *> & touched)
 {
+    std::lock_guard lock(budget->mutex);
     for (const void * ptr : touched)
     {
-        auto it = shared_object_refcounts.find(ptr);
-        chassert(it != shared_object_refcounts.end());
+        auto it = budget->shared_object_refcounts.find(ptr);
+        chassert(it != budget->shared_object_refcounts.end());
         if (--it->second.refcount == 0)
         {
-            total_buffered_bytes->fetch_sub(it->second.bytes, std::memory_order_relaxed);
-            shared_object_refcounts.erase(it);
+            budget->total_buffered_bytes.fetch_sub(it->second.bytes, std::memory_order_relaxed);
+            budget->shared_object_refcounts.erase(it);
         }
     }
 }
@@ -152,31 +153,26 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
     }
 }
 
-void BufferedShardByHashTransform::chargePendingInput(Int64 already_reserved)
+void BufferedShardByHashTransform::chargePendingInput()
 {
     /// Charge the chunk's measured size the moment it is pulled, before it is split, so the shared counter
     /// accounts for the in-flight read-ahead of every scatter and the admission decision in prepare() runs on
-    /// measured bytes. `chargeColumnAndDescendants` is ownership-aware, and not only within this one chunk: a
-    /// source chunk can reference the same physical buffer more than once (e.g. one `ColumnConst` literal
-    /// projected into two columns of the block), and the very same buffer can also already be registered by an
-    /// earlier still-buffered block or chunk (e.g. a `LowCardinality` dictionary, or a `ColumnConst` payload
-    /// `cloneResized` keeps by pointer, shared across successive pulls); either way it is charged exactly once
-    /// for as long as anything still buffered references it, rather than once per reference. The pre-split size
-    /// is only an estimate of the post-split resident bytes - `scatter` can grow per-shard buffers beyond the
-    /// source (e.g. `ColumnString` regrows each shard's `chars`) - so once the split is done `generateOutputChunks`
-    /// reconciles this charge to the exact bytes actually buffered.
-    ///
-    /// `already_reserved` bytes were added to the counter before the pull as a provisional reservation (see
-    /// the admission path in prepare()), so add only the difference to reconcile the reservation to the chunk's
-    /// exact size rather than double-charging it. Record that size as the estimate to reserve before the next
-    /// pull.
+    /// measured bytes. `chargeColumnAndDescendants` is ownership-aware across the whole stage, not only within
+    /// this one chunk: a source chunk can reference the same physical buffer more than once (e.g. one
+    /// `ColumnConst` literal projected into two columns of the block), and the very same buffer can also already
+    /// be registered by an earlier still-buffered block, or by a sibling scatter (e.g. a `LowCardinality`
+    /// dictionary, or a `ColumnConst` payload `cloneResized` keeps by pointer, that every stream evaluates and
+    /// buffers); either way it is charged exactly once for as long as anything still buffered references it,
+    /// rather than once per reference. The pre-split size is only an estimate of the post-split resident bytes -
+    /// `scatter` can grow per-shard buffers beyond the source (e.g. `ColumnString` regrows each shard's `chars`)
+    /// - so once the split is done `generateOutputChunks` reconciles this charge to the exact bytes buffered.
     Int64 measured_bytes = 0;
     pending_input_touched.clear();
+
+    std::lock_guard lock(budget->mutex);
     for (const auto & column : pending_input_chunk.getColumns())
         chargeColumnAndDescendants(*column, pending_input_touched, measured_bytes);
-
-    total_buffered_bytes->fetch_add(measured_bytes - already_reserved, std::memory_order_relaxed);
-    reservation_estimate = measured_bytes;
+    budget->total_buffered_bytes.fetch_add(measured_bytes, std::memory_order_relaxed);
 }
 
 void BufferedShardByHashTransform::dischargePendingInput()
@@ -319,9 +315,12 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     {
         const bool budget_enabled = max_queue_length == 0 && max_buffered_bytes != 0;
 
-        /// Short-circuit: if the shared budget is already exhausted (e.g. a sibling scatter charged a chunk
-        /// that crossed the cap) do not pull anything more - throw straight away.
-        if (budget_enabled && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+        /// Short-circuit: if bytes actually buffered elsewhere in the stage already exceed the cap (a sibling
+        /// scatter has charged more than `max_buffered_bytes`), do not pull anything more - that sibling will
+        /// throw, so fail here too instead of reading further ahead. This reads the shared counter, which holds
+        /// only measured resident bytes (there are no provisional reservations), so it never rejects on an
+        /// estimate: the counter can only exceed the cap once some scatter has actually buffered over it.
+        if (budget_enabled && budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
         {
             budget_exceeded = true;
             return Status::Ready;
@@ -330,36 +329,21 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         input.setNeeded();
         if (input.hasData())
         {
-            Int64 reserved = 0;
-            if (budget_enabled)
-            {
-                /// Publish a provisional reservation for this pull - this scatter's last pulled size (chunks
-                /// from one input stream are ~uniform) - to the shared counter BEFORE pulling, so concurrent
-                /// scatters (each prepare() runs under its own node mutex, not a stage-wide lock) observe each
-                /// other's in-flight pulls and cannot all conclude at the same time that there is room for one
-                /// more chunk each. The reservation is a soft gate: being only an estimate, it must never
-                /// reject a chunk by itself - a wide block followed by a narrow one would fail the query even
-                /// though the actual buffered bytes stay under the cap. The rejection decision is taken on
-                /// measured sizes only: chargePendingInput reconciles the reservation to the pulled chunk's
-                /// exact size right after the pull, and the check below rejects the chunk if the actual total
-                /// crosses the cap.
-                reserved = reservation_estimate;
-                total_buffered_bytes->fetch_add(reserved, std::memory_order_relaxed);
-            }
-
             pending_input_chunk = input.pull();
             has_pending_input_chunk = true;
-            /// Reconcile the reservation to the pulled chunk's exact size, before it is split in work().
-            chargePendingInput(reserved);
+            /// Charge the chunk's measured size before it is split in work().
+            chargePendingInput();
 
-            /// Check the budget *after* charging, when the counter reflects the chunk's exact measured size
-            /// plus any in-flight charges from concurrent scatters. This is the admission decision, taken on
-            /// measured bytes only: it rejects the chunk that itself crosses the cap. Without it the very chunk
-            /// that overshoots would still be split, and if it were the last chunk (input then reaches EOF,
-            /// budget never re-checked) or several scatters admitted concurrently, the stage could exceed
-            /// `max_buffered_bytes` and finish without ever throwing. work() throws before splitting the chunk,
-            /// so no over-budget data buffers.
-            if (budget_enabled && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+            /// Admission decision, taken on measured bytes only: reject the chunk once the shared counter -
+            /// this chunk's exact measured size plus any concurrent siblings' measured chunks - crosses the
+            /// cap. Rejecting only after the chunk is read (never on an estimate) means each concurrent scatter
+            /// can admit one already-pulled chunk before the counter reveals the cap is crossed; that bounded
+            /// per-scatter overshoot is the documented enforcement granularity (see the constructor comment).
+            /// Without the check the very chunk that overshoots would still be split, and if it were the last
+            /// chunk (input then reaches EOF, budget never re-checked) the stage could exceed `max_buffered_bytes`
+            /// and finish without ever throwing. work() throws before splitting the chunk, so no over-budget
+            /// data buffers.
+            if (budget_enabled && budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
                 budget_exceeded = true;
 
             return Status::Ready;
@@ -411,16 +395,15 @@ void BufferedShardByHashTransform::work()
         /// otherwise complete having buffered more than `max_buffered_bytes`. The carve-out matches the
         /// pre-split path: once every output is finished the buffered data is needed by nobody.
         ///
-        /// This check running only after the split is the enforcement granularity of the budget (see the
-        /// constructor comment): the split of one already-admitted block can transiently exceed the cap before
-        /// the throw. A pre-split bound on `scatter` amplification would have to be an estimate, and rejecting
-        /// on an estimate fails queries whose actual footprint fits (the same false-positive class the soft
-        /// admission gate avoids). The budget is a guardrail against unbounded read-ahead with an actionable
-        /// error, not a byte-exact cap; the query memory tracker (`max_memory_usage`) accounts these
-        /// allocations as they are made and remains the hard memory limit.
+        /// This check running only after the split is part of the enforcement granularity of the budget (see
+        /// the constructor comment): the split of one already-admitted block can transiently exceed the cap
+        /// before the throw. A pre-split bound on `scatter` amplification would have to be an estimate, and
+        /// rejecting on an estimate fails queries whose actual footprint fits. The budget is a guardrail against
+        /// unbounded read-ahead with an actionable error, not a byte-exact cap; the query memory tracker
+        /// (`max_memory_usage`) accounts these allocations as they are made and remains the hard memory limit.
         const bool budget_enabled = max_queue_length == 0 && max_buffered_bytes != 0;
         if (budget_enabled
-            && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes)
+            && budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes)
             && !allOutputsFinished())
             throwBufferBudgetExceeded();
     }
@@ -489,39 +472,46 @@ void BufferedShardByHashTransform::generateOutputChunks()
     /// `chars`, so each shard regrows its own `chars` buffer by doubling); the pre-split provisional estimate
     /// would under-count that. `chargeColumnAndDescendants` charges every distinct buffer exactly once for as
     /// long as anything buffered still references it - a buffer `scatter` shares across the shards of this
-    /// block (a `LowCardinality` dictionary, a `ColumnConst` payload), and one shared with another still-live
-    /// block (e.g. the same dictionary read again from the same part). Registering these post-split objects
-    /// before releasing the pre-split charge below (rather than reconciling by a byte delta) means such a
-    /// buffer's refcount never drops to zero in between the two.
+    /// block (a `LowCardinality` dictionary, a `ColumnConst` payload), one shared with another still-live block
+    /// (e.g. the same dictionary read again from the same part), and one shared with a sibling scatter (the same
+    /// stage-wide `budget` de-duplicates all three). Registering these post-split objects before releasing the
+    /// pre-split charge below (rather than reconciling by a byte delta) means such a buffer's refcount never
+    /// drops to zero in between the two.
+    ///
+    /// The charging loop and the counter update run under `budget->mutex` (the de-dup table and counter are
+    /// shared across all scatters); `enqueue` touches only this transform's own queues/bookkeeping.
     const size_t block_id = next_block_id++;
     Int64 block_bytes = 0;
     std::vector<const void *> block_touched;
     size_t enqueued_chunks = 0;
-    auto output_it = outputs.begin();
-    for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
-        if (output_it->isFinished())
-            continue;
+        std::lock_guard lock(budget->mutex);
+        auto output_it = outputs.begin();
+        for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+        {
+            if (output_it->isFinished())
+                continue;
 
-        const size_t shard_rows = shard_columns[shard][0]->size();
-        if (shard_rows == 0)
-            continue;
+            const size_t shard_rows = shard_columns[shard][0]->size();
+            if (shard_rows == 0)
+                continue;
 
-        for (const auto & column : shard_columns[shard])
-            chargeColumnAndDescendants(*column, block_touched, block_bytes);
+            for (const auto & column : shard_columns[shard])
+                chargeColumnAndDescendants(*column, block_touched, block_bytes);
 
-        enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
-        ++enqueued_chunks;
-    }
+            enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
+            ++enqueued_chunks;
+        }
 
-    if (enqueued_chunks > 0)
-    {
         /// The block keeps its buffers (including any shared dictionaries) alive as long as any of its shard
         /// chunks is buffered, so the bytes are part of the block's charge and released with it (when its last
         /// shard chunk drains).
-        total_buffered_bytes->fetch_add(block_bytes, std::memory_order_relaxed);
-        block_budgets[block_id].touched_objects = std::move(block_touched);
+        if (enqueued_chunks > 0)
+            budget->total_buffered_bytes.fetch_add(block_bytes, std::memory_order_relaxed);
     }
+
+    if (enqueued_chunks > 0)
+        block_budgets[block_id].touched_objects = std::move(block_touched);
     /// Otherwise no shard chunk was buffered (every row went to an already-finished output): nothing above was
     /// registered, so there is nothing to release for this block.
 
