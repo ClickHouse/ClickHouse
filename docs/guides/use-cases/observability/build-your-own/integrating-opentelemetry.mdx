@@ -3,7 +3,6 @@ title: 'Integrating OpenTelemetry for data collection'
 description: 'Integrating OpenTelemetry and ClickHouse for observability'
 slug: /observability/integrating-opentelemetry
 keywords: ['Observability', 'OpenTelemetry']
-show_related_blogs: true
 doc_type: 'guide'
 ---
 

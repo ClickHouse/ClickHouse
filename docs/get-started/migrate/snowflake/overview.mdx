@@ -4,7 +4,6 @@ slug: /migrations/snowflake-overview
 description: 'Migrating from Snowflake to ClickHouse'
 keywords: ['Snowflake']
 title: 'Snowflake to ClickHouse migration'
-show_related_blogs: true
 doc_type: 'guide'
 ---
 

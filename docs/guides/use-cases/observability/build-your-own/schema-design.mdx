@@ -3,7 +3,6 @@ title: 'Designing a schema for observability'
 description: 'Designing a schema design for observability'
 keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
 slug: /use-cases/observability/schema-design
-show_related_blogs: true
 doc_type: 'guide'
 ---
 

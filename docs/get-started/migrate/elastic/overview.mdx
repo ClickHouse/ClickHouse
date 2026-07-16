@@ -4,7 +4,6 @@ slug: /migrations/elastic-overview
 description: 'Migrating from Elasticsearch to ClickHouse'
 keywords: ['Elasticsearch']
 title: 'Migrate from Elasticsearch to ClickHouse'
-show_related_blogs: true
 doc_type: 'landing-page'
 ---
 
