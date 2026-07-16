@@ -1,6 +1,7 @@
 -- The DOM path (JSONExtract, typed JSON) must parse a fractional Unix timestamp for DateTime64
--- from its decimal text, preserving sub-second precision exactly like the row input serializer,
--- CAST and toDateTime64, instead of converting through Float64 arithmetic.
+-- from its decimal text, preserving sub-second precision like the row input serializer,
+-- CAST and toDateTime64, instead of converting through Float64 arithmetic. The parity is limited
+-- to Float64 precision, because the JSON DOM stores every fractional number as a Float64.
 -- https://github.com/ClickHouse/ClickHouse/pull/108091
 
 SET session_timezone = 'UTC';
@@ -43,3 +44,12 @@ SELECT JSONExtract('{"t":0.58}', 't', 'DateTime64(2)') SETTINGS input_format_rea
 SELECT JSONExtract('{"t":1703363853035}', 't', 'DateTime64(3)') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
 SELECT JSONExtract('{"t":9223372036854775808}', 't', 'DateTime64(3)') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
 SELECT CAST('{"t":9223372036854775808}', 'JSON(t DateTime64(3))') SETTINGS input_format_read_datetime_number_as_raw_value = 1; -- { serverError INCORRECT_DATA }
+
+-- Parity with the row input path holds only up to Float64 precision: the DOM parser has already
+-- rounded the literal to the nearest Float64, so 1703363853.9999999 reaches the conversion as
+-- 1703363854.0 and truncates to the next second, while the row input path truncates the original
+-- text to 1703363853 (and .999 at scale 3).
+SELECT JSONExtract('{"t":1703363853.9999999}', 't', 'DateTime');
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853.9999999}');
+SELECT JSONExtract('{"t":1703363853.9999999}', 't', 'DateTime64(3)');
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853.9999999}');

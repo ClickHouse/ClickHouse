@@ -741,9 +741,13 @@ public:
         }
         else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
         {
-            /// An unquoted fractional number is a Unix timestamp truncated to whole seconds, consistent with the
-            /// row input serializer, `CAST` and `toDateTime`. With `read_datetime_number_as_raw_value` (i.e. the
-            /// pre-26.7 behavior) a fractional `DateTime` number is rejected, as the row serializer's legacy path did.
+            /// An unquoted fractional number is a Unix timestamp truncated to whole seconds, like the row input
+            /// serializer, `CAST` and `toDateTime`. The parity with the row input path holds only up to `Float64`
+            /// precision: the DOM parser has already rounded the literal to the nearest `Float64`, so a value it
+            /// cannot represent exactly can cross the second boundary before the truncation (`1703363853.9999999`
+            /// reaches this branch as `1703363854.0` and gives the next second, while the row input path truncates
+            /// the original text to `1703363853`). With `read_datetime_number_as_raw_value` (i.e. the pre-26.7
+            /// behavior) a fractional `DateTime` number is rejected, as the row serializer's legacy path did.
             double number = element.getDouble();
             if (number < 0)
             {
@@ -960,7 +964,10 @@ public:
                     /// Convert through decimal text rather than `Float64` arithmetic so that sub-second precision
                     /// is preserved: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
                     /// while parsing the shortest round-trip text `0.58` at the column scale gives the exact 58,
-                    /// the same value as the row input serializer, `CAST` and `toDateTime64` produce.
+                    /// the same value as the row input serializer, `CAST` and `toDateTime64` produce. The parity
+                    /// holds only up to `Float64` precision: the DOM parser has already rounded the literal to the
+                    /// nearest `Float64`, so a value it cannot represent exactly (e.g. `1703363853.9999999`, which
+                    /// arrives here as `1703363854.0`) can differ from the row input path in the last preserved digit.
                     String str_value = jsonElementToString<JSONParser>(element, format_settings);
                     ReadBufferFromMemory buf(str_value);
                     if (!tryReadDateTime64AsNumber(value, scale, buf) || !buf.eof())
