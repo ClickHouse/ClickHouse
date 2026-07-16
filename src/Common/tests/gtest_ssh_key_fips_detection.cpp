@@ -274,4 +274,27 @@ TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsTruncatedWire)
     EXPECT_THROW(SSHKeyFactory::validatePublicKeyFormat("AAA=", "ssh-ed25519"), DB::Exception);
 }
 
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsTypeOnlyEd25519)
+{
+    /// base64("\0\0\0\x0bssh-ed25519"): only the length-prefixed type string, no 32-byte public-key body.
+    /// makePublicKeyFromBase64 rejects this on non-FIPS nodes, so the format-only check must reject it too
+    /// (otherwise a definition's validity would depend on the node's FIPS mode).
+    EXPECT_THROW(SSHKeyFactory::validatePublicKeyFormat("AAAAC3NzaC1lZDI1NTE5", "ssh-ed25519"), DB::Exception);
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsEd25519WrongKeyLength)
+{
+    /// Type string followed by a body that is not exactly 32 bytes (here 3 bytes: "abc").
+    EXPECT_THROW(SSHKeyFactory::validatePublicKeyFormat("AAAAC3NzaC1lZDI1NTE5AAAAA2FiYw==", "ssh-ed25519"), DB::Exception);
+}
+
+TEST(SSHKeyFIPSDetection, ValidatePublicKeyFormatRejectsEd25519TrailingBytes)
+{
+    /// A well-formed ed25519 key with an extra length-prefixed field appended must be rejected.
+    EXPECT_THROW(
+        SSHKeyFactory::validatePublicKeyFormat(
+            "AAAAC3NzaC1lZDI1NTE5AAAAIM3xD3f0wUQKH+bskX/oCu2CFytFOkxoTl/dTurq8RCeAAAAAA==", "ssh-ed25519"),
+        DB::Exception);
+}
+
 #endif

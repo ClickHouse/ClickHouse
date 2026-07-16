@@ -12,6 +12,7 @@
 
 #    include <array>
 #    include <string_view>
+#    include <vector>
 
 #    include <openssl/bio.h>
 #    include <openssl/objects.h>
@@ -328,6 +329,52 @@ void SSHKeyFactory::validatePublicKeyFormat(const String & base64_key, const Str
     if (std::string_view(type_name) != embedded_type)
         throw Exception(ErrorCodes::LIBSSH_ERROR,
             "SSH public key type mismatch: declared '{}' but the key encodes '{}'", type_name, String(embedded_type));
+
+    /// Validate the full wire structure for the declared type, not only the leading type string. Otherwise a
+    /// blob that carries just the length-prefixed type name (e.g. base64("\0\0\0\x0bssh-ed25519")) with no key
+    /// body would pass here while makePublicKeyFromBase64 rejects it on a non-FIPS node, making validity depend
+    /// on FIPS mode. An SSH public key is the type string followed by a fixed sequence of length-prefixed fields
+    /// (RFC 4253/4716, RFC 5656, OpenSSH PROTOCOL.u2f); parse them all and require no trailing bytes.
+    std::vector<size_t> field_sizes;
+    while (!data.empty())
+    {
+        std::string_view field;
+        if (!readSSHWireString(data, field))
+            throw Exception(ErrorCodes::LIBSSH_ERROR,
+                "Bad SSH public key of type {}: malformed or truncated wire format", type_name);
+        field_sizes.push_back(field.size());
+    }
+
+    auto require = [&](bool ok)
+    {
+        if (!ok)
+            throw Exception(ErrorCodes::LIBSSH_ERROR, "Bad SSH public key of type {}: invalid wire format", type_name);
+    };
+
+    std::string_view t(type_name);
+    /// Ed25519 (and its security-key variant) is the only family that reaches this validator on the
+    /// FIPS-preserve/skip paths, but validate every common type so the check is complete and type-agnostic.
+    if (t == "ssh-ed25519")
+        /// string type, string A (32-byte public key).
+        require(field_sizes.size() == 1 && field_sizes[0] == 32);
+    else if (t == "sk-ssh-ed25519@openssh.com")
+        /// string type, string A (32-byte public key), string application.
+        require(field_sizes.size() == 2 && field_sizes[0] == 32);
+    else if (t == "ssh-rsa")
+        /// string type, mpint e, mpint n.
+        require(field_sizes.size() == 2 && field_sizes[0] > 0 && field_sizes[1] > 0);
+    else if (t == "ssh-dss")
+        /// string type, mpint p, q, g, y.
+        require(field_sizes.size() == 4);
+    else if (t == "ecdsa-sha2-nistp256" || t == "ecdsa-sha2-nistp384" || t == "ecdsa-sha2-nistp521")
+        /// string type, string curve identifier, string Q (EC point).
+        require(field_sizes.size() == 2 && field_sizes[0] > 0 && field_sizes[1] > 0);
+    else if (t == "sk-ecdsa-sha2-nistp256@openssh.com")
+        /// string type, string curve identifier, string Q, string application.
+        require(field_sizes.size() == 3 && field_sizes[0] > 0 && field_sizes[1] > 0);
+    else
+        /// Unknown/other type: require at least one non-empty field beyond the type string.
+        require(!field_sizes.empty() && field_sizes[0] > 0);
 }
 
 bool SSHKeyFactory::isPrivateKeyFileUsableInFIPSBuilds(const String & filename, const String & passphrase)
