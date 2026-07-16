@@ -18,7 +18,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PARSE_ERROR_NAMES="'CANNOT_PARSE_INPUT_ASSERTION_FAILED', 'CANNOT_PARSE_QUOTED_STRING', 'CANNOT_PARSE_NUMBER',
     'CANNOT_PARSE_DATE', 'CANNOT_PARSE_DATETIME', 'CANNOT_PARSE_BOOL', 'CANNOT_PARSE_UUID',
     'CANNOT_READ_ARRAY_FROM_TEXT', 'CANNOT_READ_MAP_FROM_TEXT', 'CANNOT_READ_ALL_DATA',
-    'ARGUMENT_OUT_OF_BOUND', 'INCORRECT_DATA', 'UNEXPECTED_DATA_AFTER_PARSED_VALUE'"
+    'TOO_LARGE_STRING_SIZE', 'ARGUMENT_OUT_OF_BOUND', 'INCORRECT_DATA',
+    'CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING', 'CANNOT_PARSE_IPV4', 'CANNOT_PARSE_IPV6',
+    'UNKNOWN_ELEMENT_OF_ENUM', 'CANNOT_PARSE_ESCAPE_SEQUENCE', 'UNEXPECTED_DATA_AFTER_PARSED_VALUE'"
 
 function get_parse_error_counters()
 {
@@ -32,8 +34,13 @@ $CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "CREATE TABLE t_values
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_nested_decimal (a Array(Decimal32(2)), m Map(String, Decimal32(2))) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_variant_decimal (v Variant(Decimal32(2), String)) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_variant_array_decimal (v Variant(Array(Decimal32(2)), String)) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_array_variant_decimal (v Array(Variant(Decimal32(2), String))) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_mixed_variant_decimal (v Tuple(Decimal32(2), Variant(Decimal32(2), String))) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal_string (v Tuple(Decimal32(2), String)) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal_map_key (m Map(Decimal64(2), UInt8)) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_json (j JSON) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_aggregate (x AggregateFunction(sum, UInt64)) ENGINE = Memory"
+$CLICKHOUSE_CLIENT --allow_experimental_qbit_type=1 -q "CREATE TABLE t_values_qbit (q QBit(Float32, 1)) ENGINE = Memory"
 
 counters_before=$(get_parse_error_counters)
 
@@ -69,10 +76,22 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_variant_decimal VALUES (toDecimal32(1.23, 2))"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_variant_array_decimal VALUES ([1.20 + 0.03])"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_array_variant_decimal VALUES ([(1.20 + 0.03)])"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_mixed_variant_decimal VALUES ((1.23, (1.20 + 0.03)))"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_decimal_string VALUES ((1.23, 123))"
 
 # Serializations without a native non-throwing probe must not see obvious SQL function expressions.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_json VALUES (CAST('{\"a\":1}', 'JSON')), ((CAST('{\"b\":2}', 'JSON'))), (NULL)"
+
+# Parenthesized AggregateFunction and QBit expressions used to reach exception-backed probes.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_aggregate VALUES ((initializeAggregation('sumState', 1::UInt64)))"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_qbit_type=1" --data-binary \
+    "INSERT INTO t_values_qbit VALUES ([1.0 + 1.0])"
 
 counters_after=$(get_parse_error_counters)
 
@@ -100,9 +119,16 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM t_values_nested_decimal ORDER BY a"
 echo '--- variant decimal data ---'
 $CLICKHOUSE_CLIENT -q "SELECT v, variantType(v) FROM t_values_variant_decimal"
 $CLICKHOUSE_CLIENT -q "SELECT v, variantType(v) FROM t_values_variant_array_decimal"
+$CLICKHOUSE_CLIENT -q "SELECT v, arrayMap(variantType, v) FROM t_values_array_variant_decimal"
+$CLICKHOUSE_CLIENT -q "SELECT v.1, v.2, variantType(v.2) FROM t_values_mixed_variant_decimal"
+$CLICKHOUSE_CLIENT -q "SELECT v.1, v.2 FROM t_values_decimal_string"
 
 echo '--- JSON data ---'
 $CLICKHOUSE_CLIENT -q "SELECT j FROM t_values_json ORDER BY toString(j)"
+
+echo '--- aggregate and QBit data ---'
+$CLICKHOUSE_CLIENT -q "SELECT finalizeAggregation(x) FROM t_values_aggregate"
+$CLICKHOUSE_CLIENT --allow_experimental_qbit_type=1 -q "SELECT CAST(q AS Array(Float32)) FROM t_values_qbit"
 
 # Decimal columns keep the old behavior: an overflowing decimal literal must fail the query
 # instead of being read as a Float64 expression that would silently lose precision.
@@ -115,6 +141,10 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_n
 echo '--- decimal map key overflow still fails ---'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_decimal_map_key VALUES ({10000000000000000.00:1})" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
+
+echo '--- decimal outside Variant overflow still fails ---'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_mixed_variant_decimal VALUES ((12345678.91, 'x'))" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
 
 echo '--- decimal data ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t_values_decimal ORDER BY d"

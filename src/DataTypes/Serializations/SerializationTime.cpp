@@ -115,7 +115,7 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
-bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
+bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '123808'
@@ -125,7 +125,10 @@ bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        bool parsed = settings.values.deserialize_text_state
+            ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+            : tryReadIntText(x, istr);
+        if (!parsed)
             return false;
     }
 
@@ -157,7 +160,7 @@ void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
-bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const
+bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
     if (checkChar('"', istr))
@@ -167,7 +170,10 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        bool parsed = settings.values.deserialize_text_state
+            ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+            : tryReadIntText(x, istr);
+        if (!parsed)
             return false;
     }
 

@@ -92,6 +92,7 @@ private:
     const RowInputFormatParams params;
 
     ContextPtr context;   /// pimpl
+    FormatSettings::ValuesDeserializeTextState deserialize_text_state;
     const FormatSettings format_settings;
 
     const size_t num_columns;
@@ -108,10 +109,6 @@ private:
 
     const DataTypes types;
     Serializations serializations;
-
-    /// Whether the column type is a Decimal or contains a nested Decimal. This identifies
-    /// serializations that may need a throwing retry to distinguish overflow from a parse failure.
-    std::vector<UInt8> column_nests_decimal;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;

@@ -194,7 +194,10 @@ bool SerializationTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        bool parsed = settings.values.deserialize_text_state
+            ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+            : tryReadIntText(x, istr);
+        if (!parsed)
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x); /// It's important to do this at the end - for exception safety.
@@ -234,7 +237,10 @@ bool SerializationTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        bool parsed = settings.values.deserialize_text_state
+            ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+            : tryReadIntText(x, istr);
+        if (!parsed)
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);

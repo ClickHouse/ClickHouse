@@ -21,15 +21,23 @@ no new parse errors
 --- variant decimal data ---
 1.23	Decimal(9, 2)
 [1.23]	Array(Decimal(9, 2))
+[1.23]	['Decimal(9, 2)']
+1.23	1.23	Decimal(9, 2)
+1.23	123
 --- JSON data ---
 {"a":1}
 {"b":2}
 {}
+--- aggregate and QBit data ---
+1
+[2]
 --- decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
 --- nested decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
 --- decimal map key overflow still fails ---
+ARGUMENT_OUT_OF_BOUND
+--- decimal outside Variant overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
 --- decimal data ---
 1.23

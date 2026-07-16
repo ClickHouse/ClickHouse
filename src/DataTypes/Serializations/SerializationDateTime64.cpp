@@ -181,7 +181,10 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     }
     else /// Just 1504193808 or 01504193808
     {
-        if (!tryReadIntText(x, istr))
+        bool parsed = settings.values.deserialize_text_state
+            ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+            : tryReadIntText(x, istr);
+        if (!parsed)
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -220,7 +223,10 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        bool parsed = settings.values.deserialize_text_state
+            ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+            : tryReadIntText(x, istr);
+        if (!parsed)
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);

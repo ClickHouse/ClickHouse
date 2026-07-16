@@ -90,10 +90,40 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid)); /// It's important to do this at the end - for exception safety.
 }
 
-bool SerializationUUID::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+bool SerializationUUID::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     UUID uuid;
-    if (!checkChar('\'', istr) || !tryReadText(uuid, istr) || !checkChar('\'', istr))
+    if (!settings.values.deserialize_text_state)
+    {
+        if (!checkChar('\'', istr) || !tryReadText(uuid, istr) || !checkChar('\'', istr))
+            return false;
+
+        assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid));
+        return true;
+    }
+
+    if (istr.available() >= 38 && *istr.position() == '\'')
+    {
+        char * next_pos = find_first_symbols<'\\', '\''>(istr.position() + 1, istr.buffer().end());
+        const size_t len = next_pos - istr.position() - 1;
+        if (next_pos != istr.buffer().end() && (len == 32 || len == 36) && *next_pos == '\'')
+        {
+            ReadBufferFromMemory uuid_buffer(istr.position() + 1, len);
+            if (!tryReadText(uuid, uuid_buffer) || !uuid_buffer.eof())
+                return false;
+
+            istr.position() = next_pos + 1;
+            assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid));
+            return true;
+        }
+    }
+
+    String quoted_chars;
+    if (!tryReadQuotedStringInto<false>(quoted_chars, istr))
+        return false;
+
+    ReadBufferFromString parsed_quoted_buffer(quoted_chars);
+    if (!tryReadText(uuid, parsed_quoted_buffer))
         return false;
 
     assert_cast<ColumnUUID &>(column).getData().push_back(std::move(uuid));

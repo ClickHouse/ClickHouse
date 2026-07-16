@@ -119,7 +119,20 @@ bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & i
 {
     T x{};
 
-    if (!tryDeserializeNumberText(x, istr, settings) || (whole && !istr.eof()))
+    bool parsed;
+    if constexpr (is_integer<T> && is_arithmetic_v<T>)
+    {
+        if (!settings.values.deserialize_text_state)
+            parsed = tryDeserializeNumberText(x, istr, settings);
+        else if (settings.allow_number_leading_zeros)
+            parsed = tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr);
+        else
+            parsed = readIntTextUnsafe<T, bool>(x, istr);
+    }
+    else
+        parsed = tryDeserializeNumberText(x, istr, settings);
+
+    if (!parsed || (whole && !istr.eof()))
         return false;
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);

@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/ParseError.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -326,6 +327,25 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
     String s;
     readQuotedStringWithSQLStyle(s, istr);
     deserializeBasedOnInput(column, settings, s);
+}
+
+
+bool SerializationAggregateFunction::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String s;
+    if (!tryReadQuotedStringWithSQLStyle(s, istr))
+        return false;
+
+    try
+    {
+        deserializeBasedOnInput(column, settings, s);
+        return true;
+    }
+    catch (...) // Ok: tryDeserializeTextQuoted is a try-pattern
+    {
+        rethrowIfNotParseError();
+        return false;
+    }
 }
 
 

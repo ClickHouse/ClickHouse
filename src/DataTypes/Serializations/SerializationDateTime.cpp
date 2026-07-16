@@ -86,9 +86,12 @@ inline bool tryReadText(
     return res;
 }
 
-inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
+inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr, bool preserve_legacy_values_behavior)
 {
-    if (!tryReadIntText(x, istr))
+    bool parsed = preserve_legacy_values_behavior
+        ? tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(x, istr)
+        : tryReadIntText(x, istr);
+    if (!parsed)
         return false;
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return true;
@@ -202,7 +205,7 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     }
     else /// Just 1504193808 or 01504193808
     {
-        if (!tryReadAsIntText(x, istr))
+        if (!tryReadAsIntText(x, istr, settings.values.deserialize_text_state))
             return false;
     }
 
@@ -245,7 +248,7 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadAsIntText(x, istr))
+        if (!tryReadAsIntText(x, istr, settings.values.deserialize_text_state))
             return false;
     }
 

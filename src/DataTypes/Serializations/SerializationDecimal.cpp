@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
+bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv, bool whole)
 {
     UInt32 unread_scale = scale;
     if (csv)
@@ -28,7 +28,10 @@ bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 preci
     }
     else
     {
-        if (!tryReadDecimalText(istr, x, precision, unread_scale))
+        bool parsed = whole
+            ? tryReadDecimalText(istr, x, precision, unread_scale)
+            : readDecimalText<T, bool>(istr, x, precision, unread_scale, false);
+        if (!parsed)
             return false;
     }
 
@@ -72,10 +75,17 @@ void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & ist
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
+bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x{};
-    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+    if (!tryReadText(x, istr, false, whole))
+    {
+        if (settings.values.deserialize_text_state)
+            settings.values.deserialize_text_state->decimal_parse_failed = true;
+        return false;
+    }
+
+    if (whole && !istr.eof())
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
     return true;

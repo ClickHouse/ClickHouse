@@ -1121,6 +1121,7 @@ bool SerializationVariant::tryDeserializeVariantFromField(
     auto & column_variant = assert_cast<ColumnVariant &>(column);
     FormatSettings modified_settings = settings;
     modified_settings.allow_special_bool_values = settings.allow_special_bool_values_inside_variant;
+    modified_settings.values.deserialize_text_state = nullptr;
     for (size_t global_discr : deserialize_text_order)
     {
         ReadBufferFromString variant_buf(field);

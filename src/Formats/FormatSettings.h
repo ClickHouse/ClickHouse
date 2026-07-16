@@ -511,6 +511,12 @@ struct FormatSettings
         bool crlf_end_of_line_input = false;
     } tsv{};
 
+    /// Internal state passed through serializations while `Values` probes a literal.
+    struct ValuesDeserializeTextState
+    {
+        bool decimal_parse_failed = false;
+    };
+
     struct
     {
         bool interpret_expressions = true;
@@ -518,6 +524,7 @@ struct FormatSettings
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
         bool escape_quote_with_quote = false;
+        ValuesDeserializeTextState * deserialize_text_state = nullptr;
     } values{};
 
     enum class ORCCompression : uint8_t

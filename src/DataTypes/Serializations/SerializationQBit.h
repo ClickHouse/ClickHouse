@@ -74,6 +74,7 @@ public:
 
     /// Deserializes the string argument passed to QBit(...) and inserts the values in a column
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
+    bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
 
     /// Delegated to SerializationTuple
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;

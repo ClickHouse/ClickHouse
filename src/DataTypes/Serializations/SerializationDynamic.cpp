@@ -1017,6 +1017,9 @@ void SerializationDynamic::serializeTextQuoted(const IColumn & column, size_t ro
 
 void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    FormatSettings modified_settings = settings;
+    modified_settings.values.deserialize_text_state = nullptr;
+
     auto read_field = [](ReadBuffer & buf)
     {
         String field;
@@ -1024,9 +1027,9 @@ void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & 
         return field;
     };
 
-    auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+    auto try_deserialize_variant = [&modified_settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
-        return serialization.tryDeserializeTextQuoted(col, buf, settings);
+        return serialization.tryDeserializeTextQuoted(col, buf, modified_settings);
     };
 
     auto deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
@@ -1043,9 +1046,12 @@ bool SerializationDynamic::tryDeserializeTextQuoted(DB::IColumn & column, DB::Re
     if (!tryReadQuotedField(field, istr))
         return false;
 
-    auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+    FormatSettings modified_settings = settings;
+    modified_settings.values.deserialize_text_state = nullptr;
+
+    auto try_deserialize_variant = [&modified_settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
-        return serialization.tryDeserializeTextQuoted(col, buf, settings);
+        return serialization.tryDeserializeTextQuoted(col, buf, modified_settings);
     };
 
     auto deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)

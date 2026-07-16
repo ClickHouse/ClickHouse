@@ -56,15 +56,10 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
 namespace
 {
 
-/// Whether the type is a Decimal or contains a nested Decimal.
-bool typeNestsDecimal(const IDataType & type)
+FormatSettings getValuesFormatSettings(FormatSettings settings, FormatSettings::ValuesDeserializeTextState & deserialize_text_state)
 {
-    if (WhichDataType(type).isDecimal())
-        return true;
-
-    bool nests_decimal = false;
-    type.forEachChild([&](const IDataType & child) { nests_decimal |= WhichDataType(child).isDecimal(); });
-    return nests_decimal;
+    settings.values.deserialize_text_state = &deserialize_text_state;
+    return settings;
 }
 
 }
@@ -75,15 +70,12 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
-        params(params_), format_settings(format_settings_), num_columns(header_->columns()),
+        params(params_), format_settings(getValuesFormatSettings(format_settings_, deserialize_text_state)), num_columns(header_->columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
         rows_parsed_using_template(num_columns), templates(num_columns), types(header_->getDataTypes()), serializations(header_->getSerializations())
     , block_missing_values(getPort().getHeader().columns())
 {
-    column_nests_decimal.resize(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        column_nests_decimal[i] = typeNestsDecimal(*types[i]);
 }
 
 /// Can be used in fileSegmentationEngine for parallel parsing of Values
@@ -378,6 +370,7 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(
     IColumn & column, size_t column_idx, bool use_null_as_default, bool & retry_with_exceptions)
 {
     retry_with_exceptions = false;
+    deserialize_text_state.decimal_parse_failed = false;
     bool read = true;
     bool parsed = true;
 
@@ -417,8 +410,7 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(
         /// of an expression like `1 + 1`. Remove the read value and let the SQL parser handle it.
         column.popBack(1);
     }
-    else if (column_nests_decimal[column_idx]
-        && !WhichDataType(removeNullable(removeLowCardinality(types[column_idx]))).isVariant())
+    else if (deserialize_text_state.decimal_parse_failed)
     {
         /// A failed Decimal parse at a digit or literal delimiter can be an overflow. Retry it with
         /// exceptions so a raw overflowing literal still reports ARGUMENT_OUT_OF_BOUND. Other

@@ -418,6 +418,48 @@ void SerializationQBit::deserializeText(IColumn & column, ReadBuffer & istr, con
     addElementSafe<void>(element_size * getNumStrides(), column, deserialize);
 }
 
+bool SerializationQBit::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
+{
+    bool parsed = true;
+    auto try_read_with_comma = [&]<typename FloatType>(FloatType & value, size_t i)
+    {
+        value = {};
+        if (!parsed)
+            return;
+
+        if (i != 0)
+        {
+            skipWhitespaceIfAny(istr);
+            parsed = checkChar(',', istr);
+            skipWhitespaceIfAny(istr);
+        }
+
+        if (parsed)
+        {
+            if constexpr (is_integer<FloatType>)
+                parsed = tryReadIntText<ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>(value, istr);
+            else
+                parsed = tryReadText(value, istr);
+        }
+    };
+
+    auto deserialize = [&]()
+    {
+        if (!checkChar('[', istr))
+            return false;
+
+        skipWhitespaceIfAny(istr);
+        dispatchByElementSize([&]<typename FloatType>() { deserializeFloatsToQBit<FloatType>(column, try_read_with_comma); });
+        if (!parsed)
+            return false;
+
+        skipWhitespaceIfAny(istr);
+        return checkChar(']', istr) && (!whole || istr.eof());
+    };
+
+    return addElementSafe<bool>(element_size * getNumStrides(), column, deserialize);
+}
+
 void SerializationQBit::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {

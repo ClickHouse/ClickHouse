@@ -29,10 +29,13 @@ public:
     bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, this->precision, this->scale, csv); }
-    bool tryReadText(T & x, ReadBuffer & istr, bool csv = false) const { return tryReadText(x, istr, this->precision, this->scale, csv); }
+    bool tryReadText(T & x, ReadBuffer & istr, bool csv = false, bool whole = true) const
+    {
+        return tryReadText(x, istr, this->precision, this->scale, csv, whole);
+    }
 
     static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
-    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false, bool whole = true);
 };
 
 }
