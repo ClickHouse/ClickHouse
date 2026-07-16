@@ -72,10 +72,7 @@ private:
 
     struct TargetManifest
     {
-        IcebergPathFromMetadata manifest_path;
-        ManifestFileContentType manifest_content_type = ManifestFileContentType::DATA;
-        std::vector<ProcessedManifestFileEntryPtr> entries_to_keep;     // re-emitted as EXISTING
-        std::vector<ProcessedManifestFileEntryPtr> entries_to_remove;   // dropped
+        ManifestFileCacheKey manifest_key;
     };
 
     struct TargetManifests
@@ -90,8 +87,6 @@ private:
     {
         TargetManifests target_manifests;
         Iceberg::SnapshotSummaryUpdateDelete snapshot_summary_update;
-
-        explicit DropPlan(TargetManifests && target_manifests_);
     };
 
     struct TargetFilePaths
@@ -116,24 +111,11 @@ private:
     std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> fetchLatestState() const;
 
     TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
-    TargetManifests findTargetManifests(const SnapshotState & state, const TargetFilePaths & targets) const;
-
-    /// Throws `CONCURRENT_ACCESS_NOT_SUPPORTED` if any path locked in at discovery is no longer
-    /// present in `target_manifests` - a concurrent rewrite/compaction replaced it after discovery.
-    /// See `run` for why this must fail rather than silently drop a subset (or nothing).
-    void checkIfTargetsStillPresent(const TargetManifests & target_manifests, const TargetFilePaths & targets) const;
-
-    static void matchEntries(
-        const std::vector<ProcessedManifestFileEntryPtr> & entries,
-        const std::unordered_set<String> & target_paths,
-        const IcebergPathResolver & path_resolver,
-        TargetManifest & out);
-
-    bool tryCommit(SnapshotState & state, DropPlan plan);
+    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, bool require_all_targets) const;
+    bool tryCommit(SnapshotState & state, const TargetFilePaths & targets, DropPlan plan);
 
     std::vector<ReplacementManifestWrite> writeReplacementManifests(
-        const SnapshotState & state,
-        const DropPlan & plan,
+        const SnapshotState & state, const TargetFilePaths & targets, const DropPlan & plan,
         FileNamesGenerator & filename_generator,
         std::vector<String> & files_for_cleanup);
 

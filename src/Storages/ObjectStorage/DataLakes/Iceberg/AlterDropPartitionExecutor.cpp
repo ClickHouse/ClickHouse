@@ -64,6 +64,7 @@ extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 
 namespace DataLakeStorageSetting
 {
+extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
@@ -449,92 +450,13 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
     return targets;
 }
 
-AlterDropPartitionExecutor::TargetManifests
-AlterDropPartitionExecutor::findTargetManifests(const SnapshotState & state, const TargetFilePaths & targets) const
+AlterDropPartitionExecutor::DropPlan AlterDropPartitionExecutor::buildDropPlan(
+    const SnapshotState & state, const TargetFilePaths & targets, bool require_all_targets) const
 {
-    auto match_entries = [&](const auto & entries, const std::unordered_set<String> & target_paths, TargetManifest & out)
-    {
-        for (const auto & entry : entries)
-        {
-            const auto & parsed = entry->parsed_entry;
-
-            if (!parsed)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
-
-            const String storage_path = components.path_resolver.resolve(parsed->file_path_key);
-            if (target_paths.contains(storage_path))
-                out.entries_to_remove.emplace_back(entry);
-            else
-                out.entries_to_keep.emplace_back(entry);
-        }
-    };
-
-    TargetManifests result;
-
-    for (const auto & manifest_key : state.snapshot->manifest_list_entries)
-    {
-        TargetManifest target_manifest;
-        target_manifest.manifest_path = manifest_key.manifest_file_path;
-        target_manifest.manifest_content_type = manifest_key.content_type;
-
-        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
-        match_entries(handle.getFilesWithoutDeleted(FileContentType::DATA), targets.data, target_manifest);
-        match_entries(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE), targets.position_delete, target_manifest);
-
-        if (target_manifest.entries_to_remove.empty())
-            continue;
-
-        /// A touched manifest may also contain equality-delete entries, which the rewrite path does
-        /// not classify or carry over. Removing or rewriting the manifest would silently drop them and
-        /// resurrect the rows they suppress. Fail close until equality deletes are preserved across a
-        /// partial rewrite. Manifests with only equality deletes are never touched (handled above).
-        if (!handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DROP PARTITION is not supported on Iceberg tables where an affected manifest '{}' contains equality deletes",
-                manifest_key.manifest_file_path);
-
-        if (target_manifest.entries_to_keep.empty())
-            result.fully_matched.emplace_back(std::move(target_manifest));
-        else
-            result.partially_matched.emplace_back(std::move(target_manifest));
-    }
-
-    return result;
-}
-
-void AlterDropPartitionExecutor::checkIfTargetsStillPresent(
-    const TargetManifests & target_manifests, const TargetFilePaths & targets) const
-{
-    std::unordered_set<String> accounted;
-    auto collect_accounted = [&](const std::vector<TargetManifest> & manifests)
-    {
-        for (const auto & target_manifest : manifests)
-            for (const auto & entry : target_manifest.entries_to_remove)
-                accounted.emplace(components.path_resolver.resolve(entry->parsed_entry->file_path_key));
-    };
-    collect_accounted(target_manifests.fully_matched);
-    collect_accounted(target_manifests.partially_matched);
-
-    auto all_present = [&](const std::unordered_set<String> & locked_paths)
-    {
-        for (const auto & path : locked_paths)
-            if (!accounted.contains(path))
-                return false;
-        return true;
-    };
-
-    if (!all_present(targets.data) || !all_present(targets.position_delete))
-        throw Exception(
-            ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
-            "DROP PARTITION lost a race with a concurrent operation that replaced files in the "
-            "target partition; please retry");
-}
-
-AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifests_)
-    : target_manifests(std::move(target_manifests_))
-{
+    DropPlan result;
     std::set<Row> changed_partitions;
+    std::unordered_set<String> unmatched_data = targets.data;
+    std::unordered_set<String> unmatched_position_delete = targets.position_delete;
 
     UInt64 removed_data_files = 0;
     UInt64 removed_records = 0;
@@ -542,13 +464,28 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
     UInt64 removed_position_deletes = 0;
     UInt64 removed_position_delete_files = 0;
 
-    auto update_statistic = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries)
+    auto process_entries = [&](
+        const std::vector<ProcessedManifestFileEntryPtr> & entries,
+        const std::unordered_set<String> & target_paths,
+        std::unordered_set<String> & unmatched_paths,
+        size_t & entries_to_keep,
+        size_t & entries_to_remove)
     {
         for (const auto & entry : entries)
         {
             if (!entry->parsed_entry)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
+
             const auto & parsed_entry = *entry->parsed_entry;
+            const String storage_path = components.path_resolver.resolve(parsed_entry.file_path_key);
+            if (!target_paths.contains(storage_path))
+            {
+                ++entries_to_keep;
+                continue;
+            }
+
+            ++entries_to_remove;
+            unmatched_paths.erase(storage_path);
             switch (parsed_entry.content_type)
             {
                 case FileContentType::DATA:
@@ -562,7 +499,6 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
                     removed_files_size += parsed_entry.file_size_in_bytes;
                     break;
                 case FileContentType::EQUALITY_DELETE:
-                    /// Reject invalid input rather than silently miscounting an equality-delete entry.
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION encountered an equality-delete entry, which is not supported");
             }
@@ -570,49 +506,111 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
         }
     };
 
-    for (const auto & tm : target_manifests.fully_matched)
-        update_statistic(tm.entries_to_remove);
-    for (const auto & tm : target_manifests.partially_matched)
-        update_statistic(tm.entries_to_remove);
+    for (const auto & manifest_key : state.snapshot->manifest_list_entries)
+    {
+        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
+        size_t entries_to_keep = 0;
+        size_t entries_to_remove = 0;
+        process_entries(
+            handle.getFilesWithoutDeleted(FileContentType::DATA),
+            targets.data,
+            unmatched_data,
+            entries_to_keep,
+            entries_to_remove);
+        process_entries(
+            handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE),
+            targets.position_delete,
+            unmatched_position_delete,
+            entries_to_keep,
+            entries_to_remove);
 
-    snapshot_summary_update = Iceberg::SnapshotSummaryUpdateDelete{
+        if (entries_to_remove == 0)
+            continue;
+
+        /// A touched manifest may also contain equality-delete entries, which the rewrite path does
+        /// not carry over. Removing or rewriting the manifest would silently drop them and resurrect
+        /// the rows they suppress.
+        if (!handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION is not supported on Iceberg tables where an affected manifest '{}' contains equality deletes",
+                manifest_key.manifest_file_path);
+
+        TargetManifest target_manifest{.manifest_key = manifest_key};
+        if (entries_to_keep == 0)
+            result.target_manifests.fully_matched.emplace_back(std::move(target_manifest));
+        else
+            result.target_manifests.partially_matched.emplace_back(std::move(target_manifest));
+    }
+
+    if (require_all_targets && (!unmatched_data.empty() || !unmatched_position_delete.empty()))
+        throw Exception(
+            ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+            "DROP PARTITION lost a race with a concurrent operation that replaced files in the "
+            "target partition; please retry");
+
+    result.snapshot_summary_update = Iceberg::SnapshotSummaryUpdateDelete{
         .deleted_data_files = removed_data_files,
         .removed_records = removed_records,
         .removed_files_size = removed_files_size,
         .removed_position_delete_files = removed_position_delete_files,
         .removed_position_deletes = removed_position_deletes,
         .num_partitions = static_cast<UInt64>(changed_partitions.size())};
+    return result;
 }
 
 std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropPartitionExecutor::writeReplacementManifests(
-    const SnapshotState & state, const DropPlan & plan, FileNamesGenerator & filename_generator, std::vector<String> & files_for_cleanup)
+    const SnapshotState & state,
+    const TargetFilePaths & targets,
+    const DropPlan & plan,
+    FileNamesGenerator & filename_generator,
+    std::vector<String> & files_for_cleanup)
 {
     std::vector<ReplacementManifestWrite> result;
     result.reserve(plan.target_manifests.partially_matched.size());
 
     for (const auto & target_manifest : plan.target_manifests.partially_matched)
     {
-        FileContentType replacement_content_type = target_manifest.entries_to_keep.front()->parsed_entry->content_type;
-        for (const auto & s : target_manifest.entries_to_keep)
+        auto handle = getManifestFileEntriesHandle(
+            object_storage, components, context, log, target_manifest.manifest_key, state.schema_id);
+
+        std::vector<ProcessedManifestFileEntryPtr> entries_to_keep;
+        auto collect_survivors = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries, const auto & target_paths)
         {
-            if (s->parsed_entry->content_type != replacement_content_type)
+            for (const auto & entry : entries)
+            {
+                if (!entry->parsed_entry)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
+
+                const String storage_path = components.path_resolver.resolve(entry->parsed_entry->file_path_key);
+                if (!target_paths.contains(storage_path))
+                    entries_to_keep.emplace_back(entry);
+            }
+        };
+        collect_survivors(handle.getFilesWithoutDeleted(FileContentType::DATA), targets.data);
+        collect_survivors(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE), targets.position_delete);
+        chassert(!entries_to_keep.empty());
+
+        FileContentType replacement_content_type = entries_to_keep.front()->parsed_entry->content_type;
+        for (const auto & entry : entries_to_keep)
+        {
+            if (entry->parsed_entry->content_type != replacement_content_type)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Manifest {} mixes content types; rewriting it is not supported",
-                    target_manifest.manifest_path.serialize());
+                    target_manifest.manifest_key.manifest_file_path.serialize());
 
             /// The rewrite carries every per-entry data_file field over verbatim, but it stamps the
-            /// manifest with the table's current schema-id (a manifest has a single schema-id, so a
-            /// survivor written under a different schema cannot be preserved here). Refuse rather than
-            /// silently re-stamp it.
-            if (s->resolved_schema_id != state.schema_id)
+            /// manifest with the table's current schema ID. Refuse to silently re-stamp a survivor
+            /// written under another schema.
+            if (entry->resolved_schema_id != state.schema_id)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "DROP PARTITION would rewrite manifest {}, keeping a file written under schema {} while "
                     "the table is now on schema {}; preserving the original schema-id of survivors is not "
                     "implemented",
-                    target_manifest.manifest_path.serialize(),
-                    s->resolved_schema_id,
+                    target_manifest.manifest_key.manifest_file_path.serialize(),
+                    entry->resolved_schema_id,
                     state.schema_id);
         }
 
@@ -620,7 +618,6 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
         const String new_storage_path = components.path_resolver.resolve(new_manifest_path);
         files_for_cleanup.push_back(new_storage_path);
 
-        /// TODO: concurrent writing
         auto buf = object_storage->writeObject(
             StoredObject(new_storage_path),
             WriteMode::Rewrite,
@@ -634,7 +631,7 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
             state.partition_spec_id,
             state.partition_columns,
             state.partition_types,
-            target_manifest.entries_to_keep,
+            entries_to_keep,
             *buf);
         buf->finalize();
 
@@ -644,23 +641,22 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
 
         Int64 min_entry_seq = std::numeric_limits<Int64>::max();
         Int64 row_total = 0;
-        for (const auto & s : target_manifest.entries_to_keep)
+        for (const auto & entry : entries_to_keep)
         {
-            row_total += s->parsed_entry->record_count;
-            Int64 seq = s->parsed_entry->parsed_sequence_number.value_or(s->sequence_number);
+            row_total += entry->parsed_entry->record_count;
+            Int64 seq = entry->parsed_entry->parsed_sequence_number.value_or(entry->sequence_number);
             min_entry_seq = std::min(min_entry_seq, seq);
         }
         if (min_entry_seq == std::numeric_limits<Int64>::max())
             min_entry_seq = 0;
 
-        ReplacementManifestWrite write;
-        write.path = std::move(new_manifest_path);
-        write.length = length;
-        write.min_sequence_number = min_entry_seq;
-        write.existing_rows_count = row_total;
-        write.existing_files_count = target_manifest.entries_to_keep.size();
-        write.content_type = replacement_content_type;
-        result.push_back(std::move(write));
+        result.push_back(ReplacementManifestWrite{
+            .path = std::move(new_manifest_path),
+            .length = length,
+            .min_sequence_number = min_entry_seq,
+            .existing_rows_count = row_total,
+            .existing_files_count = static_cast<Int64>(entries_to_keep.size()),
+            .content_type = replacement_content_type});
     }
     return result;
 }
@@ -749,9 +745,9 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
 
     std::unordered_set<String> skip_manifest_paths;
     for (const auto & tm : plan.target_manifests.fully_matched)
-        skip_manifest_paths.insert(tm.manifest_path.serialize());
+        skip_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
     for (const auto & tm : plan.target_manifests.partially_matched)
-        skip_manifest_paths.insert(tm.manifest_path.serialize());
+        skip_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
 
     LOG_TRACE(log, "ALTER DROP PARTITION writing new manifest list {}", storage_manifest_list_path);
 
@@ -876,7 +872,7 @@ void AlterDropPartitionExecutor::cleanupNotCommited(std::vector<std::string> fil
     }
 }
 
-bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
+bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const TargetFilePaths & targets, DropPlan plan)
 {
     /// Match the table's current metadata compression instead of the table-init default: a long-lived
     /// table can move from uncompressed to e.g. `vN.gz.metadata.json` (external writer or changed
@@ -897,7 +893,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
 
     std::vector<ReplacementManifestWrite> replacements;
     if (!plan.target_manifests.partially_matched.empty())
-        replacements = writeReplacementManifests(state, plan, filename_generator, files_for_cleanup);
+        replacements = writeReplacementManifests(state, targets, plan, filename_generator, files_for_cleanup);
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, replacements, filename_generator, files_for_cleanup);
 
@@ -945,16 +941,8 @@ void AlterDropPartitionExecutor::run()
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_drop_partition_pause_after_discovery);
         }
 
-        auto target_manifests = findTargetManifests(state, targets);
-
-        /// Attempt 0 discovered against this same snapshot; only retries can have lost files to a
-        /// concurrent rewrite/compaction.
-        if (attempt > 0)
-            checkIfTargetsStillPresent(target_manifests, targets);
-
-        DropPlan plan{std::move(target_manifests)};
-
-        if (tryCommit(state, std::move(plan)))
+        auto plan = buildDropPlan(state, targets, /*require_all_targets=*/attempt > 0);
+        if (tryCommit(state, targets, std::move(plan)))
             return;
     }
 
