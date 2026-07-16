@@ -1706,8 +1706,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
+                    /// `row_level_filter` is only consumed by `storage->read()`, which is skipped when building a
+                    /// logical plan (a storage-agnostic `ReadFromTableStep` placeholder is used instead, see below);
+                    /// materialization later calls `storage->read()` afresh with a bare `SelectQueryInfo` that never
+                    /// carries it over, so the policy would be silently dropped. Route it through the WHERE-filter
+                    /// path instead (like `prewhere_actions` already does above), which becomes an explicit
+                    /// `FilterStep` that survives materialization unchanged.
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (storage->supportsPrewhere())
+                    if (storage->supportsPrewhere() && !select_query_options.build_logical_plan)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
