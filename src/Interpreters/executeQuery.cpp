@@ -719,7 +719,7 @@ static void logQueryFinishImpl(
             double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
-                "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                "Read {} rows, {} in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
@@ -1021,7 +1021,7 @@ void logExceptionBeforeStart(
     }
 }
 
-static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;

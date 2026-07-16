@@ -332,33 +332,48 @@ bool exists(const std::string & path)
     return faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;
 }
 
-bool canRead(const std::string & path)
+bool canRead(const std::string & path, bool allow_throw)
 {
     int err = faccessat(AT_FDCWD, path.c_str(), R_OK, AT_EACCESS);
     if (err == 0)
         return true;
+
     if (errno == EACCES)
         return false;
+
+    if (!allow_throw)
+        return false;
+
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check read access to file: {}", path);
 }
 
-bool canWrite(const std::string & path)
+bool canWrite(const std::string & path, bool allow_throw)
 {
     int err = faccessat(AT_FDCWD, path.c_str(), W_OK, AT_EACCESS);
     if (err == 0)
         return true;
+
     if (errno == EACCES)
         return false;
+
+    if (!allow_throw)
+        return false;
+
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check write access to file: {}", path);
 }
 
-bool canExecute(const std::string & path)
+bool canExecute(const std::string & path, bool allow_throw)
 {
     int err = faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS);
     if (err == 0)
         return true;
+
     if (errno == EACCES)
         return false;
+
+    if (!allow_throw)
+        return false;
+
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check execute access to file: {}", path);
 }
 

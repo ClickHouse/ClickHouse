@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 72
+    version: int = 73
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -602,6 +602,7 @@ brew install \
     gh \
     jq \
     pigz \
+    pv \
     ripgrep \
     zstd \
     wget \
@@ -624,7 +625,8 @@ brew install \
     pyjwt \
     numpy==2.3.2 \
     pandas==2.3.3 \
-    scipy==1.16.1
+    scipy==1.16.1 \
+    Jinja2==3.1.6
 
 # GitHub Actions runner: wipe and re-extract so the next iteration of the
 # runner loop registers with a fresh `config.sh`.
