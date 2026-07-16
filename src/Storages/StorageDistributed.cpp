@@ -2242,6 +2242,130 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     }
 }
 
+namespace
+{
+
+/// Rewrites the leading `[database, ] table` arguments of a table function to carry the database
+/// explicitly. In the short form (`args.size() == short_form_num_args`) the first argument is a table
+/// name - an identifier `[db.]table` or a constant string - whose omitted database is resolved against
+/// the current database at query time, so a persisted target has to bake the current database in at
+/// CREATE time; the long form already carries an explicit database in the first argument.
+/// `table_name_can_be_identifier` mirrors whether the function's own `parseArguments` accepts a bare
+/// identifier as the table name (`timeSeriesMetrics(t)`); when it does not (`merge`), an identifier is
+/// left as is for the function itself to reject. Every other malformed argument is also left as is: the
+/// table function is instantiated right after this rewrite (for `canBeUsedToCreateTable`) and rejects it.
+void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t short_form_num_args, bool table_name_can_be_identifier, const ContextPtr & local_context)
+{
+    ASTs & args = table_function_ast.arguments->children;
+    if (args.size() != short_form_num_args)
+        return;
+
+    ASTPtr & table_name_arg = args.at(0);
+    if (const auto * identifier = table_name_arg->as<ASTIdentifier>())
+    {
+        if (!table_name_can_be_identifier)
+            return;
+        auto table_identifier = identifier->createTable();
+        if (!table_identifier)
+            return;
+        if (!table_identifier->getDatabaseName().empty())
+            return;
+        table_name_arg = make_intrusive<ASTLiteral>(table_identifier->shortName());
+    }
+    else
+    {
+        ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(table_name_arg, local_context);
+        const auto * literal = evaluated->as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return;
+        /// In the short form the whole string is the table name (it is not split at a dot), so it is
+        /// qualified unconditionally.
+        table_name_arg = evaluated;
+    }
+
+    args.insert(args.begin(), make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
+}
+
+/// Binds a table function used as a persisted `Distributed` target to the current database.
+/// `AddDefaultDatabaseVisitor` qualifies table identifiers in nested SELECTs and the table name argument
+/// of `dictGet` / `joinGet`, but it does not rewrite the arguments of a table function itself: in general
+/// a table function keeps its own argument semantics. Here, however, the table function IS the target
+/// being frozen in the table metadata, so a database it would otherwise resolve against the current
+/// database of the querying session has to be bound to the current database of the CREATE as well.
+/// This covers every supported table function that resolves an omitted database at query time:
+/// `dictionary` (`TableFunctionDictionary::getActualTableStructure` resolves the name exactly like
+/// `dictGet` does), the `timeSeries*` / `prometheusQuery*` family and `loop` (their short forms resolve
+/// the table through `Context::resolveStorageID` / `Context::getCurrentDatabase`), and the
+/// single-argument `merge` (its table name regexp matches tables of the current database).
+void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function_ast, const ContextPtr & local_context)
+{
+    if (!table_function_ast.arguments)
+        return;
+    ASTs & args = table_function_ast.arguments->children;
+    const String & function_name = table_function_ast.name;
+
+    if (function_name == "dictionary")
+    {
+        /// dictionary('dict_name')
+        if (args.size() != 1)
+            return;
+        ASTPtr & dictionary_name_arg = args.at(0);
+        dictionary_name_arg = evaluateConstantExpressionOrIdentifierAsLiteral(dictionary_name_arg, local_context);
+        String dictionary_name = checkAndGetLiteralArgument<String>(dictionary_name_arg, "dictionary_name");
+        auto qualified_dictionary_name = local_context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, local_context);
+        dictionary_name_arg = make_intrusive<ASTLiteral>(qualified_dictionary_name.getFullName());
+    }
+    else if (function_name == "timeSeriesSamples" || function_name == "timeSeriesData"
+             || function_name == "timeSeriesTags" || function_name == "timeSeriesMetrics")
+    {
+        /// timeSeriesMetrics([db.]table) / timeSeriesMetrics('db', 'table')
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ true, local_context);
+    }
+    else if (function_name == "timeSeriesSelector")
+    {
+        /// timeSeriesSelector([db.]table, selector, min_time, max_time)
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 4, /* table_name_can_be_identifier= */ true, local_context);
+    }
+    else if (function_name == "prometheusQuery")
+    {
+        /// prometheusQuery([db.]table, promql_query, evaluation_time)
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 3, /* table_name_can_be_identifier= */ true, local_context);
+    }
+    else if (function_name == "prometheusQueryRange")
+    {
+        /// prometheusQueryRange([db.]table, promql_query, start_time, end_time, step)
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 5, /* table_name_can_be_identifier= */ true, local_context);
+    }
+    else if (function_name == "merge")
+    {
+        /// merge('table_name_regexp'): the regexp matches tables of the current database
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ false, local_context);
+    }
+    else if (function_name == "loop")
+    {
+        /// loop([db.]table); loop(inner_table_function(...)) runs the inner function in the same local
+        /// context, so it is bound recursively. The string form loop('table') is rejected by the
+        /// function itself, so an unqualified name can only be an identifier here.
+        if (args.size() != 1)
+            return;
+        if (const auto * inner_function = args.at(0)->as<ASTFunction>())
+        {
+            if (TableFunctionFactory::instance().isTableFunctionName(inner_function->name))
+                bindTableFunctionTargetToCurrentDatabase(*inner_function, local_context);
+        }
+        else if (const auto * identifier = args.at(0)->as<ASTIdentifier>())
+        {
+            auto table_identifier = identifier->createTable();
+            if (!table_identifier || !table_identifier->getDatabaseName().empty())
+                return;
+            args.at(0) = make_intrusive<ASTLiteral>(table_identifier->shortName());
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
+        }
+    }
+}
+
+}
+
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -2332,23 +2456,11 @@ void registerStorageDistributed(StorageFactory & factory)
                 add_default_database_visitor.visit(engine_args[1]);
                 add_default_database_visitor.visitDDL(engine_args[1]);
 
-                /// `AddDefaultDatabaseVisitor` above only qualifies a dictionary name that is the argument
-                /// of a `dictGet`-family function; it does not descend into the `dictionary` table function
-                /// itself, since in general a table function used as a query source keeps its own
-                /// argument semantics (e.g. the single-argument `merge('^regexp$')`). But here the table
-                /// function IS the target being frozen, and `dictionary(name)` resolves an unqualified
-                /// `name` against the current database exactly like `dictGet` does
-                /// (`TableFunctionDictionary::getActualTableStructure`), so qualify it the same way -
-                /// otherwise `Distributed(cluster, dictionary('d'))` would still depend on the current
-                /// database of whatever session queries the table later.
-                if (table_function_ast->name == "dictionary" && table_function_ast->arguments && table_function_ast->arguments->children.size() == 1)
-                {
-                    ASTPtr & dictionary_name_arg = table_function_ast->arguments->children.at(0);
-                    dictionary_name_arg = evaluateConstantExpressionOrIdentifierAsLiteral(dictionary_name_arg, local_context);
-                    String dictionary_name = checkAndGetLiteralArgument<String>(dictionary_name_arg, "dictionary_name");
-                    auto qualified_dictionary_name = local_context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, local_context);
-                    dictionary_name_arg = make_intrusive<ASTLiteral>(qualified_dictionary_name.getFullName());
-                }
+                /// `AddDefaultDatabaseVisitor` above does not rewrite the arguments of the table function
+                /// itself; bind a database argument the function would otherwise resolve against the
+                /// current database of the querying session (`dictionary('d')`, `timeSeriesMetrics('ts')`,
+                /// `loop(t)`, the single-argument `merge('^regexp$')`, ...) to the current database too.
+                bindTableFunctionTargetToCurrentDatabase(*table_function_ast, local_context);
 
                 auto table_function = TableFunctionFactory::instance().get(engine_args[1], local_context);
                 if (!table_function->canBeUsedToCreateTable())
@@ -2486,7 +2598,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
-The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and the qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`) is filled in with the current database. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
 
 :::note Read-only
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).

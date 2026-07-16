@@ -431,3 +431,58 @@ DROP TABLE dist_over_tf;
 DROP TABLE join_src;
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.join_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- The one-argument form of the `merge` table function matches its table name regexp against the tables of
+-- the current database at read time, so the database is bound at CREATE time like the other table-function
+-- targets above. Verified by querying from a different current database holding a decoy `bind_src` of the
+-- same name.
+CREATE TABLE bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO bind_src VALUES (1), (2), (3);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, merge('^bind_src$'));
+SHOW CREATE TABLE dist_over_tf;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.bind_src VALUES (100), (200), (300);
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
+USE {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE dist_over_tf;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP TABLE bind_src;
+
+-- The one-argument form of the `loop` table function resolves an unqualified table name against the current
+-- database at read time (`TableFunctionLoop` falls back to the current database), so the database is bound
+-- at CREATE time. `loop` reads its backing table in an endless cycle, so the read is capped with LIMIT.
+-- Verified by querying from a different current database holding a decoy `loop_src` of the same name.
+CREATE TABLE loop_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO loop_src VALUES (1), (2), (3);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, loop(loop_src));
+SHOW CREATE TABLE dist_over_tf;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.loop_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.loop_src VALUES (100), (200), (300);
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT sum(n) FROM (SELECT n FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf LIMIT 3);
+USE {CLICKHOUSE_DATABASE:Identifier};
+
+-- The table named by the persisted `loop` target is a referential dependency of the `Distributed` table:
+-- with `check_referential_table_dependencies = 1` it cannot be dropped or renamed away from under it.
+SET check_referential_table_dependencies = 1;
+DROP TABLE loop_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
+RENAME TABLE loop_src TO loop_src2; -- { serverError HAVE_DEPENDENT_OBJECTS }
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+
+-- No dependency is registered when the cluster has no local replicas: the target table function runs only
+-- on remote shards (mirrors the `dictGet` case above). The columns are explicit because inferring the
+-- structure needs an available shard.
+CREATE TABLE dist_over_tf (n UInt64) ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, loop(loop_src));
+SET check_referential_table_dependencies = 1;
+DROP TABLE loop_src;
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.loop_src;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

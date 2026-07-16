@@ -1,0 +1,5 @@
+CREATE TABLE default.dist_ts_metrics\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'default\', \'ts_src\'))
+CREATE TABLE default.dist_ts_tags\n(\n    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),\n    `metric_name` LowCardinality(String),\n    `tags` Map(LowCardinality(String), String),\n    `all_tags` Map(String, String),\n    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),\n    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesTags(\'default\', \'ts_src\'))
+CREATE TABLE default.dist_pq\n(\n    `tags` Array(Tuple(\n        String,\n        String)),\n    `timestamp` DateTime64(3),\n    `value` Float64\n)\nENGINE = Distributed(\'test_shard_localhost\', prometheusQuery(\'default\', \'ts_src\', \'up\', now()))
+0
+0

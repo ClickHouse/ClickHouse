@@ -358,6 +358,33 @@ namespace
                 /// dictionary(dict_name)
                 addQualifiedNameFromArgument(function, 0);
             }
+            else if (function.name == "timeSeriesSamples" || function.name == "timeSeriesData"
+                     || function.name == "timeSeriesTags" || function.name == "timeSeriesMetrics")
+            {
+                /// timeSeriesMetrics([db.]table) / timeSeriesMetrics('db', 'table')
+                addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 1);
+            }
+            else if (function.name == "timeSeriesSelector")
+            {
+                /// timeSeriesSelector([db.]table, selector, min_time, max_time)
+                addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 4);
+            }
+            else if (function.name == "prometheusQuery")
+            {
+                /// prometheusQuery([db.]table, promql_query, evaluation_time)
+                addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 3);
+            }
+            else if (function.name == "prometheusQueryRange")
+            {
+                /// prometheusQueryRange([db.]table, promql_query, start_time, end_time, step)
+                addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 5);
+            }
+            else if (function.name == "loop")
+            {
+                /// loop([db.]table) / loop('db', 'table'); for loop(inner_table_function(...)) no name is
+                /// extracted here and the generic walk descends into the inner function instead.
+                addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 1);
+            }
             else if (function.name == "remote" || function.name == "remoteSecure")
             {
                 visitRemoteFunction(function, /* is_cluster_function= */ false);
@@ -573,6 +600,22 @@ namespace
         {
             if (auto qualified_name = tryGetDatabaseAndTableNameFromArguments(function, database_arg_idx, table_arg_idx))
                 dependencies.emplace(std::move(qualified_name).value());
+        }
+
+        /// Adds a dependency from a table function whose leading arguments name a table as `[database, ] table`:
+        /// in the short form (`short_form_num_args` arguments) the first argument is a possibly qualified table
+        /// name whose omitted database means the current database, and the long form (one argument more) carries
+        /// the database and the table in the first two arguments.
+        void addDependencyFromLeadingTableNameArguments(const ASTFunction & function, size_t short_form_num_args)
+        {
+            if (!function.arguments)
+                return;
+
+            size_t num_args = function.arguments->children.size();
+            if (num_args == short_form_num_args)
+                addQualifiedNameFromArgument(function, 0);
+            else if (num_args == short_form_num_args + 1)
+                addDatabaseAndTableNameFromArguments(function, 0, 1);
         }
 
         std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const

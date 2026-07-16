@@ -50,3 +50,7 @@ CREATE TABLE default.dist_over_tf\n(\n    `key` UInt64,\n    `val` UInt64\n)\nEN
 1
 CREATE TABLE default.dist_over_tf\n(\n    `number` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(joinGet(\'default.join_src\', \'v\', toUInt64(0))))
 1
+CREATE TABLE default.dist_over_tf\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', merge(\'default\', \'^bind_src$\'))
+6
+CREATE TABLE default.dist_over_tf\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', loop(\'default\', \'loop_src\'))
+6
