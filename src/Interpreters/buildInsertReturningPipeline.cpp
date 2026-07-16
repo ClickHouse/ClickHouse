@@ -285,6 +285,11 @@ void setupPullingQueryPipeline(
     const ASTPtr & returning_select,
     const ASTPtr & source_select_settings_restore_ast)
 {
+    /// Delayed `INSERT ... RETURNING` replaces the original query pipeline with a fresh one.
+    /// Re-stamp it with the same normalized query hash so quota accounting by
+    /// `NORMALIZED_QUERY_HASH` remains attached to this query pattern.
+    pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
+
     pipeline.setProgressCallback(context->getProgressCallback());
     pipeline.setProcessListElement(context->getProcessListElement());
 
