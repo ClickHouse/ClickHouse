@@ -4244,6 +4244,39 @@ let image_preview_y = 0;
 /// finishes after the cursor has left, or after a different image link was entered,
 /// must not reveal the preview - the `load` handler checks this before showing.
 let image_preview_hovered_url = null;
+/// URL of the link currently under the cursor, tracked regardless of whether the
+/// preview is actually showing (i.e. regardless of `image_preview_modifier_held`),
+/// so pressing the modifier while already hovering a link starts the preview
+/// immediately instead of requiring the cursor to re-enter the link.
+let image_preview_candidate_url = null;
+/// The preview only loads and displays while Ctrl (Cmd on Mac) is held: merely
+/// moving the cursor over a table cell must not make the browser fetch a URL taken
+/// from untrusted query results, so an explicit modifier key is required.
+let image_preview_modifier_held = false;
+
+function setImagePreviewModifierHeld(held)
+{
+    if (held === image_preview_modifier_held) { return; }
+    image_preview_modifier_held = held;
+    if (held && image_preview_candidate_url !== null)
+    {
+        showImagePreview(image_preview_candidate_url);
+    }
+    else
+    {
+        hideImagePreview();
+    }
+}
+
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'Control' || event.key === 'Meta') { setImagePreviewModifierHeld(true); }
+});
+window.addEventListener('keyup', (event) => {
+    if (event.key === 'Control' || event.key === 'Meta') { setImagePreviewModifierHeld(false); }
+});
+/// A held modifier delivers no `keyup` if the window loses focus first (e.g. Alt-Tab
+/// or a devtools popup), so also release on `blur` to avoid a stuck "held" state.
+window.addEventListener('blur', () => { setImagePreviewModifierHeld(false); });
 
 /// Place the preview near the cursor, flipping to the opposite side/edge when it would
 /// otherwise overflow the viewport, so the whole image stays visible.
@@ -4265,47 +4298,58 @@ function positionImagePreview() {
     image_preview.style.top = top + 'px';
 }
 
-/// Show the image preview for `url` on hovering `link`, following the cursor while it
-/// moves, and hide it when the cursor leaves.
+/// Load and show the image preview for `url`, i.e. actually assign `src` and fetch it.
+/// Only called once the opt-in modifier is held (see `setImagePreviewModifierHeld`).
+function showImagePreview(url) {
+    image_preview_hovered_url = url;
+    if (!image_preview) {
+        image_preview = document.createElement('img');
+        image_preview.id = 'image-preview';
+        image_preview.alt = '';
+        document.body.appendChild(image_preview);
+    }
+    /// This exact image is already loaded (e.g. re-entering the same link): show it
+    /// immediately, since no `load` event will fire for an unchanged `src`.
+    if (image_preview.dataset.url === url && image_preview.complete && image_preview.naturalWidth)
+    {
+        image_preview.style.display = 'block';
+        positionImagePreview();
+        return;
+    }
+    /// A different image: keep the preview hidden until the new one finishes loading,
+    /// otherwise the previously shown image would stay visible during the load.
+    image_preview.dataset.url = url;
+    image_preview.style.display = 'none';
+    image_preview.onload = () => {
+        /// Ignore a load the cursor has already moved away from or superseded.
+        if (image_preview_hovered_url !== url) { return; }
+        image_preview.style.display = 'block';
+        positionImagePreview();
+    };
+    /// Keep it hidden if the image fails to load, so a broken image icon is not shown.
+    image_preview.onerror = () => { image_preview.style.display = 'none'; };
+    image_preview.src = url;
+}
+
+/// Show the image preview for `url` on hovering `link` while the modifier is held,
+/// following the cursor while it moves, and hide it when the cursor leaves.
 function attachImagePreview(link, url) {
+    link.title = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
     link.addEventListener('mouseenter', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
-        image_preview_hovered_url = url;
-        if (!image_preview) {
-            image_preview = document.createElement('img');
-            image_preview.id = 'image-preview';
-            image_preview.alt = '';
-            document.body.appendChild(image_preview);
-        }
-        /// This exact image is already loaded (e.g. re-entering the same link): show it
-        /// immediately, since no `load` event will fire for an unchanged `src`.
-        if (image_preview.dataset.url === url && image_preview.complete && image_preview.naturalWidth)
-        {
-            image_preview.style.display = 'block';
-            positionImagePreview();
-            return;
-        }
-        /// A different image: keep the preview hidden until the new one finishes loading,
-        /// otherwise the previously shown image would stay visible during the load.
-        image_preview.dataset.url = url;
-        image_preview.style.display = 'none';
-        image_preview.onload = () => {
-            /// Ignore a load the cursor has already moved away from or superseded.
-            if (image_preview_hovered_url !== url) { return; }
-            image_preview.style.display = 'block';
-            positionImagePreview();
-        };
-        /// Keep it hidden if the image fails to load, so a broken image icon is not shown.
-        image_preview.onerror = () => { image_preview.style.display = 'none'; };
-        image_preview.src = url;
+        image_preview_candidate_url = url;
+        if (image_preview_modifier_held) { showImagePreview(url); }
     });
     link.addEventListener('mousemove', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
         positionImagePreview();
     });
-    link.addEventListener('mouseleave', hideImagePreview);
+    link.addEventListener('mouseleave', () => {
+        image_preview_candidate_url = null;
+        hideImagePreview();
+    });
 }
 
 /// Hide the floating image preview, if any. Called on `mouseleave` and, like the table
