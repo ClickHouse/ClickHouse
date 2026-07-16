@@ -2495,6 +2495,8 @@ message SystemCommand {
         ExprSchemaTable pause_view = 106;
         bool pause_views = 107;
         string restart_disk = 108;
+        bool unload_dictionaries = 109;
+        ExprSchemaTable unload_dictionary = 110;
     }
 }
 

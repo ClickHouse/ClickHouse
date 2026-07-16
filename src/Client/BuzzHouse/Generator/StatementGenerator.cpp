@@ -2721,6 +2721,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         /// Dictionaries
         {1 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries)),
          [&] { cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_reload_dictionary()); }},
+        {1 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries)),
+         [&] { cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_unload_dictionary()); }},
+        {1, [&] { sc->set_unload_dictionaries(true); }},
         /// Distributed
         {3 * has_table, [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_flush_distributed()); }},
         /// Object storage queue

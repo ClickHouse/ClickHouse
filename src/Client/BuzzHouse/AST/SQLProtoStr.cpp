@@ -5264,6 +5264,11 @@ CONV_FN(SystemCommand, cmd)
             can_set_cluster = true;
             break;
         case CmdType::kReloadDictionary: SystemCommandOnCluster(ret, "RELOAD DICTIONARY", cmd, cmd.reload_dictionary()); break;
+        case CmdType::kUnloadDictionary: SystemCommandOnCluster(ret, "UNLOAD DICTIONARY", cmd, cmd.unload_dictionary()); break;
+        case CmdType::kUnloadDictionaries:
+            ret += "UNLOAD DICTIONARIES";
+            can_set_cluster = true;
+            break;
         case CmdType::kFlushDistributed: SystemCommandOnCluster(ret, "FLUSH DISTRIBUTED", cmd, cmd.flush_distributed()); break;
         case CmdType::kStopDistributedSends:
             SystemCommandOnCluster(ret, "STOP DISTRIBUTED SENDS", cmd, cmd.stop_distributed_sends());
@@ -5345,7 +5350,13 @@ CONV_FN(SystemCommand, cmd)
             appendSQLStringLiteral(ret, cmd.unfreeze());
             break;
         case CmdType::kDropReplica:
-            ret += "DROP REPLICA ";
+            ret += "DROP REPLICA";
+            /// The parser accepts ON CLUSTER only right after the keyword, before the replica literal.
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
             appendSQLStringLiteral(ret, cmd.drop_replica().replica());
             if (cmd.drop_replica().has_est())
             {
@@ -5359,7 +5370,13 @@ CONV_FN(SystemCommand, cmd)
             }
             break;
         case CmdType::kDropDatabaseReplica:
-            ret += "DROP DATABASE REPLICA ";
+            ret += "DROP DATABASE REPLICA";
+            /// The parser accepts ON CLUSTER only right after the keyword, before the replica literal.
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
             appendSQLStringLiteral(ret, cmd.drop_database_replica().replica());
             if (cmd.drop_database_replica().has_shard())
             {
@@ -5414,7 +5431,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DROP PARQUET METADATA CACHE";
             can_set_cluster = true;
             break;
-        case CmdType::kDropDistributedCache: ret += "DROP DISTRIBUTED CACHE"; break;
+        case CmdType::kDropDistributedCache:
+            ret += "DROP DISTRIBUTED CACHE";
+            can_set_cluster = true;
+            break;
         case CmdType::kFlushObjectStorageQueue: {
             const auto & foq = cmd.flush_object_storage_queue();
             SystemCommandOnCluster(ret, "FLUSH OBJECT STORAGE QUEUE", cmd, foq.table());
