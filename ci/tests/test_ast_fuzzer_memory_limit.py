@@ -11,7 +11,9 @@ failure"), even though run-fuzzer.sh's liveness loop already treats a 241 as
 "server alive, busy".
 
 The benign path is keyed off SERVER-ORIGIN evidence (SERVER_MLE_SIGNATURE) in
-the LOG TAIL, not any MEMORY_LIMIT_EXCEEDED text anywhere in fuzzer.log:
+the TERMINAL query block (the text after the last "Dump of fuzzed AST:" the
+client prints before executing a fuzz step), not any MEMORY_LIMIT_EXCEEDED text
+anywhere in fuzzer.log:
 - clickhouse-client itself can raise 241 under --max_memory_usage_in_client
   (see tests/queries/0_stateless/02003_memory_limit_in_client.sh) and
   mainEntryClickHouseClient returns that code verbatim. Such a client-side 241
@@ -19,10 +21,12 @@ the LOG TAIL, not any MEMORY_LIMIT_EXCEEDED text anywhere in fuzzer.log:
 - The AST fuzzer swallows query-side server MEMORY_LIMIT_EXCEEDED and keeps
   running (Client::processASTFuzzerStep, programs/client/FuzzLoop.cpp), so a
   30-minute run accumulates many recovered "Received from ... (MEMORY_LIMIT_
-  EXCEEDED)" lines that did NOT terminate it. Only a server MLE in the tail
-  (the fuzzer's last queries) can explain the exit code; a stale earlier one
-  must not swallow a terminal client/harness 241, or a real regression would
-  be masked.
+  EXCEEDED)" lines that did NOT terminate it, each in its own (non-terminal)
+  step block. A fixed line/byte tail can still hold such a swallowed limit
+  together with a later client-side 241 when only a few frames separate the two
+  steps, so the check anchors on the terminal block: only a server MLE after the
+  last dump marker explains the exit; a swallowed earlier one must not mask a
+  terminal client/harness 241, or a real regression would be missed.
 """
 
 import os
@@ -65,17 +69,20 @@ def _load(name):
     return ns[name]
 
 
-def _load_tail_helper():
-    # _fuzzer_log_tail_has_server_mle depends on _log_tail, re, and the two
-    # module constants; exec all of them into one namespace so the real
-    # function runs against a file on disk.
+def _load_terminal_block_helper():
+    # _fuzzer_log_terminal_block_has_server_mle depends on _terminal_query_block,
+    # re, and the module constants; exec all of them into one namespace so the
+    # real function runs against a file on disk.
     src = _job_src()
     ns = {"os": os, "re": re, "Path": __import__("pathlib").Path}
     exec(f"{SERVER_MLE_SIGNATURE_SRC}", ns)  # noqa: S102
-    exec(f"SERVER_MLE_TAIL_LINES = {_load('SERVER_MLE_TAIL_LINES')}", ns)  # noqa: S102
-    exec(_def_snippet(src, "_log_tail"), ns)  # noqa: S102
-    exec(_def_snippet(src, "_fuzzer_log_tail_has_server_mle"), ns)  # noqa: S102
-    return ns["_fuzzer_log_tail_has_server_mle"]
+    exec(f"DUMP_MARKER = {_load('DUMP_MARKER')!r}", ns)  # noqa: S102
+    exec(  # noqa: S102
+        f"TERMINAL_BLOCK_MAX_BYTES = {_load('TERMINAL_BLOCK_MAX_BYTES')}", ns
+    )
+    exec(_def_snippet(src, "_terminal_query_block"), ns)  # noqa: S102
+    exec(_def_snippet(src, "_fuzzer_log_terminal_block_has_server_mle"), ns)  # noqa: S102
+    return ns["_fuzzer_log_terminal_block_has_server_mle"]
 
 
 SERVER_MLE_SIGNATURE_SRC = "SERVER_MLE_SIGNATURE = " + repr(
@@ -92,8 +99,8 @@ def _server_mle_matches(log_text):
     return any(re.search(pattern, line) for line in log_text.splitlines())
 
 
-def _tail_has_server_mle(log_text):
-    helper = _load_tail_helper()
+def _terminal_block_has_server_mle(log_text):
+    helper = _load_terminal_block_helper()
     with tempfile.NamedTemporaryFile(
         "w", suffix=".log", delete=False, encoding="utf-8"
     ) as fh:
@@ -157,28 +164,57 @@ def test_other_client_failure_is_not_benign():
     assert _is_benign_memory_limit(False, 0, True) is False
 
 
-# --- tail scoping: only a server MLE from the fuzzer's LAST queries counts ---
+# --- terminal-block scoping: only a server MLE from the LAST fuzz step counts ---
+
+_DUMP = "Dump of fuzzed AST:\nSELECT 1"
+_FRAMES = "\n".join(f"  {i}. some_frame_symbol(...)" for i in range(15))
 
 
-def test_tail_matches_server_mle_at_end_of_log():
-    # A terminal server-transmitted 241 at the end of the log -> benign evidence.
-    log = "\n".join(["Dump of fuzzed AST: SELECT 1"] * 10 + [_SERVER_MLE_LINE])
-    assert _tail_has_server_mle(log) is True
+def test_terminal_block_matches_server_mle_after_last_dump():
+    # A terminal server-transmitted 241 in the last step block -> benign evidence.
+    log = "\n".join([_DUMP, _SERVER_MLE_LINE] * 3 + [_DUMP, _SERVER_MLE_LINE])
+    assert _terminal_block_has_server_mle(log) is True
 
 
-def test_tail_ignores_stale_server_mle_before_tail():
-    # The fuzzer swallows a query-side server MLE and keeps running for many
-    # more queries; the run then exits 241 for an unrelated (e.g. client) reason.
-    # The stale server MLE is far above the tail -> must NOT count as evidence.
-    log = "\n".join([_SERVER_MLE_LINE] + ["Query succeeded: SELECT 1"] * 200)
-    assert _tail_has_server_mle(log) is False
+def test_terminal_block_ignores_server_mle_from_earlier_step():
+    # The fuzzer swallows a query-side server MLE on one step and keeps running;
+    # a LATER step exits 241 for an unrelated (e.g. client) reason. The swallowed
+    # server MLE sits before the last dump marker -> must NOT count as evidence.
+    log = "\n".join(
+        [_DUMP, _SERVER_MLE_LINE]  # step N: swallowed server limit
+        + [_DUMP, "Query succeeded"]  # terminal step: no server MLE
+    )
+    assert _terminal_block_has_server_mle(log) is False
 
 
-def test_tail_ignores_client_side_241_at_end():
+def test_terminal_block_reproduction_from_review():
+    # Exact shape the reviewer reproduced: one swallowed server MLE, ~15 stack
+    # frames, then a later client-side 241. A fixed 50-line tail wrongly held
+    # both; anchoring on the last dump marker isolates the terminal client 241.
+    log = "\n".join(
+        [
+            _DUMP,
+            _SERVER_MLE_LINE,  # swallowed on step N, fuzzer kept going
+            _FRAMES,
+            _DUMP,  # terminal step N+1
+            _CLIENT_MLE_LINE,  # exit-241 was client-side here
+        ]
+    )
+    assert _terminal_block_has_server_mle(log) is False
+
+
+def test_terminal_block_ignores_client_side_241_at_end():
     # A terminal client-side 241 (no "Received from" prefix) -> not benign.
-    log = "\n".join(["Query succeeded: SELECT 1"] * 10 + [_CLIENT_MLE_LINE])
-    assert _tail_has_server_mle(log) is False
+    log = "\n".join([_DUMP, _CLIENT_MLE_LINE])
+    assert _terminal_block_has_server_mle(log) is False
 
 
-def test_tail_empty_or_missing_log():
-    assert _tail_has_server_mle("") is False
+def test_terminal_block_no_dump_marker_scans_read_tail():
+    # No fuzz step ran (e.g. a startup/handshake 241 before any dump): the whole
+    # read tail is the terminal region, so a server MLE there still counts.
+    log = "\n".join(["starting up"] + [_SERVER_MLE_LINE])
+    assert _terminal_block_has_server_mle(log) is True
+
+
+def test_terminal_block_empty_or_missing_log():
+    assert _terminal_block_has_server_mle("") is False
