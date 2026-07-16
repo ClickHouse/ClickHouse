@@ -80,6 +80,7 @@ INSERT INTO limit_shuffle_insert_sink
 SELECT number
 FROM numbers(10)
 LIMIT 1 SHUFFLE
+SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1
 FORMAT Null;
 
 EXPLAIN SYNTAX
