@@ -129,6 +129,80 @@ TYPED_TEST(CoordinationTest, BufferSerde)
     }
 }
 
+TYPED_TEST(CoordinationTest, ContainerCreateSerde)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = "/container";
+    request->is_container = true;
+    EXPECT_EQ(request->getOpNum(), Coordination::OpNum::CreateContainer);
+
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    request->write(wbuf, /*use_xid_64=*/true);
+    auto nuraft_buffer = wbuf.getBuffer();
+
+    DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
+    int32_t length = 0;
+    Coordination::read(length, rbuf);
+    int64_t xid = 0;
+    Coordination::read(xid, rbuf);
+    Coordination::OpNum opnum = {};
+    Coordination::read(opnum, rbuf);
+    EXPECT_EQ(opnum, Coordination::OpNum::CreateContainer);
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_read->readImpl(rbuf);
+    auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+    EXPECT_TRUE(create_read.is_container);
+    EXPECT_FALSE(create_read.is_sequential);
+    EXPECT_FALSE(create_read.is_ephemeral);
+    EXPECT_FALSE(create_read.include_ttl);
+}
+
+TYPED_TEST(CoordinationTest, ContainerCreateModeMismatchRejected)
+{
+    /// An opnum/create-mode mismatch must be rejected, not silently accepted as both a
+    /// container and a sequential node — that would diverge the Raft log across replicas.
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    Coordination::write(std::string{"/container"}, wbuf); /// path
+    Coordination::write(std::string{}, wbuf);             /// data
+    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
+    Coordination::write(static_cast<int32_t>(2), wbuf);   /// CreateMode::PERSISTENT_SEQUENTIAL
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::CreateContainer);
+    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
+TYPED_TEST(CoordinationTest, Create2WithContainerFlagRejected)
+{
+    /// A Create2 opnum carrying the CONTAINER flag must be rejected: getOpNum() prioritizes
+    /// include_stats over is_container, so this combination would otherwise validate and log
+    /// as Create2 (gated by CREATE_WITH_STATS) while still creating a container node (gated
+    /// separately by CREATE_CONTAINER) — bypassing the CreateContainer feature-flag gate.
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    Coordination::write(std::string{"/container"}, wbuf); /// path
+    Coordination::write(std::string{}, wbuf);             /// data
+    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
+    Coordination::write(static_cast<int32_t>(4), wbuf);   /// CreateMode::CONTAINER
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create2);
+    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
+TYPED_TEST(CoordinationTest, PlainCreateWithContainerFlagRejected)
+{
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    Coordination::write(std::string{"/container"}, wbuf); /// path
+    Coordination::write(std::string{}, wbuf);             /// data
+    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
+    Coordination::write(static_cast<int32_t>(4), wbuf);   /// CreateMode::CONTAINER
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
 template <typename StateMachine>
 struct SimpliestRaftServer
 {
