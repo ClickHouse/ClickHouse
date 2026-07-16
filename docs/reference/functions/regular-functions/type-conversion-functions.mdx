@@ -3145,7 +3145,7 @@ Introduced in: v20.9.0
 
 Converts an input value to type `DateTime`.
 Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `DateTime`, or numeric types (`(U)Int*`, `Float*`, `Decimal`).
-DateTime32 provides extended range compared to `DateTime`, supporting dates from `1900-01-01` to `2299-12-31`.
+`DateTime32` is an alias of `DateTime` (Unix time in seconds) with the supported range `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
     
 
 **Syntax**
@@ -3168,42 +3168,37 @@ Returns the converted input value. [`DateTime`](/reference/data-types/datetime)
 **The value is within the range**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(toDateTime32('2025-01-01 00:00:00'))─┐
+│ 2025-01-01 00:00:00 │ DateTime                                        │
+└─────────────────────┴─────────────────────────────────────────────────┘
 ```
 
-**As a decimal with precision**
+**From a Unix timestamp**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(toDateTime32(1735689600, 'UTC'))─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')                             │
+└─────────────────────┴─────────────────────────────────────────────┘
 ```
 
 **With a timezone**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul'))─┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul')                                        │
+└─────────────────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
 ## toDateTime64 {#toDateTime64}
