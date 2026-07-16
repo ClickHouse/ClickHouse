@@ -102,6 +102,15 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
                         rows_offset);
 
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
+
+    /// The column may be a clone that shares its states with a source column (`src` is set):
+    /// `IColumn::mutate` deep-clones a shared column during deserialization of Map/Array/Tuple
+    /// substreams, and the `ColumnAggregateFunction` copy constructor sets `src`. Such a column
+    /// does not destroy its states in the destructor (the source column owns them), so the states
+    /// appended below would be leaked. Take ownership first, like all other mutating methods
+    /// (`insertFrom`, `insertRangeFrom`, `insertData`) do.
+    real_column.ensureOwnership();
+
     ColumnAggregateFunction::Container & vec = real_column.getData();
 
     Arena & arena = real_column.createOrGetArena();
