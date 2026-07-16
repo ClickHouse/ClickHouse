@@ -146,6 +146,13 @@ protected:
     /// Override to write the deferred statistics section and close the document.
     /// Called in phase 2 after all progress from connection draining has been collected.
     virtual void writeDeferredStatisticsAndFinalize() {}
+
+    /// Copy the current values of the shared rows-before-* counters into the format state
+    /// (via setRowsBeforeLimit / setRowsBeforeAggregation). Called right before finalization,
+    /// and again before writing deferred statistics: the connection draining that runs between
+    /// the two phases (e.g. from parallel replicas after a LIMIT cancellation) can deliver late
+    /// ProfileInfo packets that update the counters after the first snapshot.
+    void snapshotRowsBeforeCounters();
     virtual void writePrefix() {}
     virtual void writeSuffix() {}
     virtual void resetFormatterImpl() {}

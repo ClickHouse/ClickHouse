@@ -25,7 +25,17 @@ public:
 
     bool isFinished() { return queue.isFinishedAndEmpty(); }
 
-    ProfileInfo & getProfileInfo() { return info; }
+    ProfileInfo & getProfileInfo()
+    {
+        /// Refresh rows-before-* from the shared counters: the connection draining that runs in
+        /// PipelineExecutor::finalizeExecution (e.g. from parallel replicas after a LIMIT
+        /// cancellation) can deliver late ProfileInfo packets that update the counters after
+        /// work() snapshotted them. The caller reads this after execution has finished, so the
+        /// values are final by now (see PullingAsyncPipelineExecutor::pull, which joins the
+        /// executor thread before reporting the end of the stream).
+        snapshotRowsBeforeCounters();
+        return info;
+    }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
     void setRowsBeforeAggregation(size_t rows_before_aggregation) override;

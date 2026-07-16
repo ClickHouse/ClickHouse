@@ -19,7 +19,12 @@ public:
     Chunk getTotals();
     Chunk getExtremes();
 
-    ProfileInfo & getProfileInfo() { return info; }
+    ProfileInfo & getProfileInfo()
+    {
+        /// Refresh rows-before-* from the shared counters; see LazyOutputFormat::getProfileInfo.
+        snapshotRowsBeforeCounters();
+        return info;
+    }
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
     void setRowsBeforeAggregation(size_t rows_before_aggregation) override;

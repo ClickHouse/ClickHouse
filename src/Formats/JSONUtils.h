@@ -112,6 +112,19 @@ namespace JSONUtils
         bool write_statistics,
         WriteBuffer & out);
 
+    /// The tail of writeAdditionalInfo after the "rows" field. Deferred-statistics formats
+    /// write it separately in phase 2, after connection draining has delivered all trailing
+    /// Progress and ProfileInfo packets.
+    void writeRowsBeforeAndStatistics(
+        size_t rows_before_limit,
+        bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
+        const Stopwatch & watch,
+        const Progress & progress,
+        bool write_statistics,
+        WriteBuffer & out);
+
     void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent = 0);
 
     void skipColon(ReadBuffer & in);

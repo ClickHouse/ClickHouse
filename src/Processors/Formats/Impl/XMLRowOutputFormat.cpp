@@ -186,19 +186,20 @@ void XMLRowOutputFormat::finalizeImpl()
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);
 
+    /// When statistics are deferred, the whole trailer after <rows> (rows_before_limit_at_least,
+    /// rows_before_aggregation, statistics) is written in phase 2, and the document is closed there:
+    /// the connection draining that runs between the phases can deliver late ProfileInfo packets
+    /// that update the rows-before-* counters, not only late Progress.
+    if (hasDeferredStatistics())
+        return;
 
     writeRowsBeforeLimitAtLeast();
     writeRowsBeforeAggregationAtLeast();
 
     if (!exception_message.empty())
         writeException();
-    else if (format_settings.write_statistics && !hasDeferredStatistics())
+    else if (format_settings.write_statistics)
         writeStatistics();
-
-    /// When statistics are deferred, skip closing the document here.
-    /// It will be done in writeDeferredStatisticsAndFinalize().
-    if (hasDeferredStatistics())
-        return;
 
     writeCString("</result>\n", *ostr);
     ostr->next();
@@ -211,6 +212,8 @@ bool XMLRowOutputFormat::hasDeferredStatistics() const
 
 void XMLRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
+    writeRowsBeforeLimitAtLeast();
+    writeRowsBeforeAggregationAtLeast();
     writeStatistics();
     writeCString("</result>\n", *ostr);
     ostr->next();

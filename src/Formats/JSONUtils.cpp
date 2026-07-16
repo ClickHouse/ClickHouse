@@ -515,6 +515,20 @@ namespace JSONUtils
         writeTitle("rows", out, 1, " ");
         writeIntText(rows, out);
 
+        writeRowsBeforeAndStatistics(
+            rows_before_limit, applied_limit, rows_before_aggregation, applied_aggregation, watch, progress, write_statistics, out);
+    }
+
+    void writeRowsBeforeAndStatistics(
+        size_t rows_before_limit,
+        bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
+        const Stopwatch & watch,
+        const Progress & progress,
+        bool write_statistics,
+        WriteBuffer & out)
+    {
         if (applied_limit)
         {
             writeFieldDelimiter(out, 2);

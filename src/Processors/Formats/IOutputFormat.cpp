@@ -88,10 +88,7 @@ void IOutputFormat::work()
 
     if (finished && !finalized)
     {
-        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
-            setRowsBeforeLimit(rows_before_limit_counter->get());
-        if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
-            setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+        snapshotRowsBeforeCounters();
 
         finalizeUnlocked();
         return;
@@ -201,6 +198,7 @@ void IOutputFormat::finalize()
     /// immediately write deferred statistics since there is no finalizeExecution() to do it later.
     if (statistics_deferred)
     {
+        snapshotRowsBeforeCounters();
         writeDeferredStatisticsAndFinalize();
         flushImpl();
         finalizeBuffers();
@@ -214,10 +212,24 @@ void IOutputFormat::completeDeferredStatistics()
     if (!statistics_deferred)
         return;
 
+    /// The rows-before-* counters were snapshotted in work() before phase 1, but the connection
+    /// draining that ran since then (in PipelineExecutor::finalizeExecution) can deliver late
+    /// ProfileInfo packets from parallel replicas that update the same counters. Re-read them so
+    /// the deferred trailer reports the post-drain values.
+    snapshotRowsBeforeCounters();
+
     writeDeferredStatisticsAndFinalize();
     flushImpl();
     finalizeBuffers();
     statistics_deferred = false;
+}
+
+void IOutputFormat::snapshotRowsBeforeCounters()
+{
+    if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
+        setRowsBeforeLimit(rows_before_limit_counter->get());
+    if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
+        setRowsBeforeAggregation(rows_before_aggregation_counter->get());
 }
 
 void IOutputFormat::setTotals(const Block & totals)

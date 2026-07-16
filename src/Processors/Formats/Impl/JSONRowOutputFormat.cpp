@@ -118,15 +118,21 @@ void JSONRowOutputFormat::finalizeImpl()
 {
     bool should_write_statistics = settings.write_statistics && exception_message.empty();
 
+    /// When deferring, the whole trailer after "rows" (rows_before_limit_at_least,
+    /// rows_before_aggregation, statistics) is written in phase 2: the connection draining
+    /// that runs between the phases can deliver late ProfileInfo packets that update the
+    /// rows-before-* counters, not only late Progress.
+    bool deferred = hasDeferredStatistics();
+
     JSONUtils::writeAdditionalInfo(
         row_count,
         statistics.rows_before_limit,
-        statistics.applied_limit,
+        statistics.applied_limit && !deferred,
         statistics.rows_before_aggregation,
-        statistics.applied_aggregation,
+        statistics.applied_aggregation && !deferred,
         statistics.watch,
         statistics.progress,
-        should_write_statistics && !hasDeferredStatistics(),
+        should_write_statistics && !deferred,
         *ostr);
 
     if (!exception_message.empty())
@@ -152,21 +158,17 @@ bool JSONRowOutputFormat::hasDeferredStatistics() const
 
 void JSONRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
-    JSONUtils::writeFieldDelimiter(*ostr, 2);
-    JSONUtils::writeObjectStart(*ostr, 1, "statistics");
-
-    writeCString("\t\t\"elapsed\": ", *ostr);
-    writeText(statistics.watch.elapsedSeconds(), *ostr);
-    JSONUtils::writeFieldDelimiter(*ostr);
-
-    writeCString("\t\t\"rows_read\": ", *ostr);
-    writeText(statistics.progress.read_rows.load(), *ostr);
-    JSONUtils::writeFieldDelimiter(*ostr);
-
-    writeCString("\t\t\"bytes_read\": ", *ostr);
-    writeText(statistics.progress.read_bytes.load(), *ostr);
-
-    JSONUtils::writeObjectEnd(*ostr, 1);
+    /// hasDeferredStatistics() implies settings.write_statistics and no exception,
+    /// so the statistics object is written unconditionally here.
+    JSONUtils::writeRowsBeforeAndStatistics(
+        statistics.rows_before_limit,
+        statistics.applied_limit,
+        statistics.rows_before_aggregation,
+        statistics.applied_aggregation,
+        statistics.watch,
+        statistics.progress,
+        /*write_statistics=*/ true,
+        *ostr);
 
     JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
