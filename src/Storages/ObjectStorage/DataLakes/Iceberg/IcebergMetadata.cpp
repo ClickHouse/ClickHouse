@@ -718,20 +718,24 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             {}, result.snapshot, {}, *buf, Iceberg::FileContentType::DATA, /*use_previous_snapshots=*/false);
         buf->finalize();
 
-        String metadata_content = dumpMetadataObjectToString(metadata_object);
-        auto hint_path = filename_generator.generateVersionHint();
-        if (!writeMetadataFileAndVersionHint(
-                persistent_components.path_resolver,
-                metadata_info,
-                metadata_content,
-                hint_path,
-                object_storage,
-                context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Failed to commit Iceberg truncate metadata: version conflict");
+        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+        if (!catalog_writes_metadata_file)
+        {
+            String metadata_content = dumpMetadataObjectToString(metadata_object);
+            auto hint_path = filename_generator.generateVersionHint();
+            if (!writeMetadataFileAndVersionHint(
+                    persistent_components.path_resolver,
+                    metadata_info,
+                    metadata_content,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Failed to commit Iceberg truncate metadata: version conflict");
 
-        metadata_written = true;
+            metadata_written = true;
+        }
 
         if (catalog)
         {
