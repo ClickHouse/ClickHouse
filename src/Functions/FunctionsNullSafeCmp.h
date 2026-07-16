@@ -9,6 +9,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 namespace DB
 {
 
@@ -236,8 +237,8 @@ public:
         // get common type for null-safe comparison;
         DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
         // handle string types compared with null
-        bool has_string_type = WhichDataType(removeNullable(arguments[0].type)).isStringOrFixedString()
-                        || WhichDataType(removeNullable(arguments[1].type)).isStringOrFixedString();
+        bool has_string_type = WhichDataType(removeLowCardinalityAndNullable(arguments[0].type)).isStringOrFixedString()
+                        || WhichDataType(removeLowCardinalityAndNullable(arguments[1].type)).isStringOrFixedString();
         if (common_type)
         {
             ColumnPtr c0_converted = castColumn(arguments[0], common_type);

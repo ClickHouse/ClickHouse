@@ -1488,9 +1488,7 @@ public:
                     auto element_comparison
                         = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name, is_null_safe_cmp_mode>>(params));
                     ColumnsWithTypeAndName element_args{{nullptr, left_nested_type, ""}, {nullptr, right_nested_type, ""}};
-                    /// Throws NO_COMMON_TYPE if the element types are not comparable.
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
-
 
                     /// Supported only when the element comparison produces a non-Nullable result
                     /// (covers the mixed signed/unsigned integer case). The same apply for String/FixedString types
