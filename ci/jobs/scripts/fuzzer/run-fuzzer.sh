@@ -64,6 +64,9 @@ function configure
     cp -av --dereference "$repo_dir"/programs/server/user* $CONFIG_DIR
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
+    # Named test clusters so the fuzzer's remote()/cluster()/Distributed queries resolve.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/clusters.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/test_cluster_with_incorrect_pw.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml $CONFIG_DIR/users.d

@@ -253,6 +253,9 @@ private:
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     void fuzzTableFunctionName(ASTPtr & table_function);
+    void fuzzClusterFunctionArguments(ASTFunction & fn);
+    String makeRemoteHostDescriptor();
+    void wrapTableAsDistributed(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);

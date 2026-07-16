@@ -135,6 +135,35 @@ extern const int TOO_DEEP_RECURSION;
 namespace
 {
 
+/// Named clusters defined in the standard stateless-test server config. Used to fuzz the
+/// connection argument of cluster()/clusterAllReplicas(), the Distributed engine, and
+/// self-referential remote/cluster wrapping. Includes multi-shard, replica and deliberately
+/// unavailable/misconfigured topologies to exercise failover and skip-unavailable-shard paths.
+const std::unordered_set<String> distributed_cluster_names = {
+    "test_shard_localhost",
+    "test_cluster_two_shards",
+    "test_cluster_two_shards_localhost",
+    "test_cluster_two_shards_internal_replication",
+    "test_cluster_one_shard_two_replicas",
+    "test_cluster_one_shard_three_replicas_localhost",
+    "test_cluster_two_shard_three_replicas_localhost",
+    "test_cluster_five_shards_localhost",
+    "parallel_replicas",
+    "test_unavailable_shard",
+    "test_cluster_1_shard_3_replicas_1_unavailable",
+    "test_cluster_multiple_nodes_all_unavailable",
+    "test_cluster_with_incorrect_pw",
+};
+
+/// Non-cryptographic hash functions (→ integer), shared with the swapFuncs group below. Used to fuzz
+/// Distributed sharding-key expressions. All accept an integer argument except the CRC* family, which
+/// take a String.
+const std::unordered_set<String> noncrypto_hash_functions = {
+    "cityHash64", "CRC32",       "CRC32IEEE",      "CRC64ECMA",      "farmHash64",     "halfMD5",        "intHash32",
+    "intHash64",  "metroHash64", "murmurHash2_32", "murmurHash2_64", "murmurHash3_32", "murmurHash3_64", "sipHash64",
+    "wyHash64",   "xxHash32",    "xxHash64",       "xxHash64Spark",  "xxh3",
+};
+
 /// Configures a regexp column matcher with a random column-name-like glob pattern, storing the
 /// regexp the parser would produce (ILIKE/case-insensitive prepends `(?i)`). With `as_like` it
 /// renders as `* LIKE/ILIKE '<glob>'`; otherwise as the plain `COLUMNS('<regexp>')` form. Shared
@@ -1325,6 +1354,52 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
     if (fuzz_rand() % 20 == 0 && small_engines.contains(engine_name))
     {
         engine_name = pickRandomly(fuzz_rand, small_engines);
+    }
+
+    /// Fuzz the Distributed engine: Distributed(cluster, db, table[, sharding_key[, policy_name]]).
+    if (engine_name == "Distributed" && storage.engine->arguments)
+    {
+        auto & args = storage.engine->arguments->children;
+
+        /// Swap the named cluster (first argument).
+        if (!args.empty() && fuzz_rand() % 5 == 0)
+            args[0] = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+
+        /// Add / replace / drop the optional sharding key (fourth argument).
+        if (fuzz_rand() % 5 == 0)
+        {
+            if (args.size() >= 4 && fuzz_rand() % 3 == 0)
+            {
+                args.resize(3); /// drop the sharding key (and any trailing policy_name)
+            }
+            else if (args.size() >= 3)
+            {
+                ASTPtr sharding_key;
+                switch (fuzz_rand() % 4)
+                {
+                    case 0: sharding_key = makeASTFunction("rand"); break;
+                    case 1: sharding_key = makeASTFunction("rand64"); break;
+                    case 2: sharding_key = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 16)); break; /// constant sharding
+                    default: {
+                        /// A non-cryptographic hash function (from swapFuncs) over an argument of the
+                        /// type it expects: CRC* take a String, the rest an integer.
+                        const String & hashfn = pickRandomly(fuzz_rand, noncrypto_hash_functions);
+                        ASTPtr arg;
+                        if (startsWith(hashfn, "CRC"))
+                            arg = make_intrusive<ASTLiteral>(String("shard_key"));
+                        else
+                            arg = make_intrusive<ASTLiteral>(UInt64(fuzz_rand()));
+                        sharding_key = makeASTFunction(hashfn, arg);
+                        break;
+                    }
+                }
+                if (args.size() >= 4)
+                    args[3] = sharding_key;
+                else
+                    args.emplace_back(std::move(sharding_key));
+            }
+        }
+        return;
     }
 
     /// For MergeTree family engines, inject hot table settings with low probability.
@@ -3152,7 +3227,7 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
 
 void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
 {
-    if (!table_function || fuzz_rand() % 20 != 0)
+    if (!table_function)
         return;
 
     auto * fn = typeid_cast<ASTFunction *>(table_function.get());
@@ -3202,14 +3277,146 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"view", "viewIfPermitted"},
     };
 
-    for (const auto & group : swapTableFuncs)
+    /// Swap the function name within an interchangeable (same-signature) group.
+    if (fuzz_rand() % 20 == 0)
     {
-        if (group.contains(fn->name))
+        for (const auto & group : swapTableFuncs)
         {
-            fn->name = pickRandomly(fuzz_rand, group);
-            return;
+            if (group.contains(fn->name))
+            {
+                fn->name = pickRandomly(fuzz_rand, group);
+                break;
+            }
         }
     }
+
+    /// Fuzz the connection argument of cluster/remote-family functions.
+    fuzzClusterFunctionArguments(*fn);
+}
+
+/// Fuzz the connection argument of cluster/remote-family table functions in place:
+/// cluster()/clusterAllReplicas() take a named cluster, remote()/remoteSecure() a host descriptor.
+void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
+{
+    static const std::unordered_set<String> cluster_funcs = {"cluster", "clusterAllReplicas"};
+    static const std::unordered_set<String> remote_funcs = {"remote", "remoteSecure"};
+
+    const bool is_cluster = cluster_funcs.contains(fn.name);
+    const bool is_remote = remote_funcs.contains(fn.name);
+    if ((!is_cluster && !is_remote) || !fn.arguments || fn.arguments->children.empty() || fuzz_rand() % 5 != 0)
+        return;
+
+    auto & first_arg = fn.arguments->children.front();
+    if (is_cluster)
+        first_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+    else
+        first_arg = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor());
+}
+
+/// Build a syntactically valid IPv4 or IPv6 host descriptor for remote()/remoteSecure(): the last
+/// group uses brace expansion of 1..4 hosts ({m..n} or {a,b,...}), with an optional port. IPv4
+/// expansions all resolve to loopback (127.0.0.0/8); IPv6 uses [::N] (only ::1 is loopback, the rest
+/// exercise connection-failover). Either way the host count stays bounded.
+String QueryFuzzer::makeRemoteHostDescriptor()
+{
+    const UInt64 count = fuzz_rand() % 4 + 1; /// number of hosts in the brace expansion (1..4)
+    const UInt64 start = fuzz_rand() % 4 + 1; /// starting last group (1..4)
+
+    String braces;
+    if (fuzz_rand() % 2 == 0)
+    {
+        /// Range form: {m..n}
+        braces = "{" + std::to_string(start) + ".." + std::to_string(start + count - 1) + "}";
+    }
+    else
+    {
+        /// Enumerated form: {a,b,...}
+        braces = "{";
+        for (UInt64 i = 0; i < count; ++i)
+        {
+            if (i)
+                braces += ",";
+            braces += std::to_string(start + i);
+        }
+        braces += "}";
+    }
+
+    /// IPv6 addresses are bracketed so the optional :port stays unambiguous.
+    String descriptor = fuzz_rand() % 2 == 0 ? "[::" + braces + "]" : "127.0.0." + braces;
+    if (fuzz_rand() % 2 == 0)
+        descriptor += ":9000";
+    return descriptor;
+}
+
+/// Rewrite a plain local table reference into a self-referential distributed read over loopback
+/// (remote/remoteSecure/cluster/clusterAllReplicas), exercising the whole Distributed pipeline
+/// against real data. A derived table (subquery) is distributed via view(<subquery>). FINAL cannot
+/// cross a remote read, so skip it; leave already-wrapped table functions alone.
+void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
+{
+    /// Wrap only plain tables and derived tables (subqueries).
+    /// and a table function is already a table expression.
+    if ((!table.database_and_table_name && !table.subquery) || table.table_function || fuzz_rand() % 40 != 0)
+        return;
+
+    /// Choose the wrapper and its connection argument (all share the "connection, table..." shape).
+    String fn_name;
+    ASTPtr connection;
+    switch (fuzz_rand() % 4)
+    {
+        case 0:
+            fn_name = "remote";
+            connection = make_intrusive<ASTLiteral>(String("127.0.0.1"));
+            break;
+        case 1:
+            fn_name = "remoteSecure";
+            connection = make_intrusive<ASTLiteral>(String("127.0.0.1:9440"));
+            break;
+        default:
+            /// cluster() and clusterAllReplicas() share the same signature.
+            fn_name = fuzz_rand() % 2 == 0 ? "cluster" : "clusterAllReplicas";
+            connection = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
+            break;
+    }
+
+    ASTPtr wrapped;
+    ASTPtr replaced;
+    if (table.database_and_table_name)
+    {
+        const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            return;
+        const auto table_id = identifier->getTableId();
+        if (table_id.getTableName().empty())
+            return;
+        ASTPtr db_arg;
+        if (table_id.database_name.empty())
+            db_arg = makeASTFunction("currentDatabase");
+        else
+            db_arg = make_intrusive<ASTLiteral>(table_id.database_name);
+        wrapped = makeASTFunction(fn_name, connection, db_arg, make_intrusive<ASTLiteral>(table_id.getTableName()));
+        replaced = table.database_and_table_name;
+    }
+    else
+    {
+        /// Derived table: distribute the subquery via view(<subquery>).
+        const auto * subquery = table.subquery->as<ASTSubquery>();
+        if (!subquery || subquery->children.empty())
+            return;
+        wrapped = makeASTFunction(fn_name, connection, makeASTFunction("view", subquery->children[0]->clone()));
+        replaced = table.subquery;
+    }
+
+    /// Preserve the table alias so references like `x.col` (e.g. in JOINs) keep resolving.
+    if (const String alias = replaced->tryGetAlias(); !alias.empty())
+        wrapped->setAlias(alias);
+
+    auto & ch = table.children;
+    ch.erase(std::remove(ch.begin(), ch.end(), replaced), ch.end());
+    table.database_and_table_name.reset();
+    table.subquery.reset();
+    table.table_function = wrapped;
+    ch.emplace_back(std::move(wrapped));
 }
 
 void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
@@ -4522,25 +4729,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Binary math functions (number, number → Float64)
         {"atan2", "hypot", "power"},
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
-        {"cityHash64",
-         "CRC32",
-         "CRC32IEEE",
-         "CRC64ECMA",
-         "farmHash64",
-         "halfMD5",
-         "intHash32",
-         "intHash64",
-         "metroHash64",
-         "murmurHash2_32",
-         "murmurHash2_64",
-         "murmurHash3_32",
-         "murmurHash3_64",
-         "sipHash64",
-         "wyHash64",
-         "xxHash32",
-         "xxHash64",
-         "xxHash64Spark",
-         "xxh3"},
+        noncrypto_hash_functions,
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
         {"sipHash128", "sipHash128Reference", "murmurHash3_128"},
         /// Cryptographic hashes (string → FixedString)
@@ -5111,6 +5300,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             table_expr->final = !table_expr->final;
         }
         fuzzTableName(*table_expr);
+        wrapTableAsDistributed(*table_expr);
         fuzzTableFunctionName(table_expr->table_function);
 
         /// Fuzz SAMPLE clause
