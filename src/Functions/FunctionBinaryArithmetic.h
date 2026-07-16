@@ -1480,8 +1480,8 @@ class FunctionBinaryArithmetic : public IFunction
                 else
                 {
                     /// regular DateTime - convert to DateTime64 with appropriate scale
-                    UInt32 datetime_value = static_cast<UInt32>(datetime_field.safeGet<UInt32>());
-                    datetime_const_val.value = static_cast<Int64>(datetime_value) * static_cast<Int64>(std::pow(10, scale));
+                    const Int64 datetime_value = datetime_field.safeGet<UInt32>();
+                    datetime_const_val.value = datetime_value * DecimalUtils::scaleMultiplier<Int64>(scale);
                     datetime_scale = scale;
                 }
             }
@@ -1531,8 +1531,8 @@ class FunctionBinaryArithmetic : public IFunction
                 else
                 {
                     /// regular Time - convert to Decimal64 with appropriate scale
-                    Int32 time_value = static_cast<Int32>(time_field.safeGet<Int32>());
-                    time_const_val.value = static_cast<Int64>(time_value) * static_cast<Int64>(std::pow(10, scale));
+                    const Int64 time_value = time_field.safeGet<Int32>();
+                    time_const_val.value = time_value * DecimalUtils::scaleMultiplier<Int64>(scale);
                     time_scale = scale;
                 }
             }
@@ -1557,11 +1557,8 @@ class FunctionBinaryArithmetic : public IFunction
             }
 
             /// calculate scale factors for adjustments
-            const Int64 datetime_scale_factor = (datetime_scale != scale) ?
-                static_cast<Int64>(std::pow(10, scale - datetime_scale)) : 1;
-
-            const Int64 time_scale_factor = (time_scale != scale) ?
-                static_cast<Int64>(std::pow(10, scale - time_scale)) : 1;
+            const Int64 datetime_scale_factor = DecimalUtils::scaleMultiplier<Int64>(scale - datetime_scale);
+            const Int64 time_scale_factor = DecimalUtils::scaleMultiplier<Int64>(scale - time_scale);
 
             if (datetime_is_const && time_is_const)
             {
