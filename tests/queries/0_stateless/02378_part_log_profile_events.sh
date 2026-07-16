@@ -31,8 +31,24 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE test FINAL;"
 
+# OPTIMIZE may return before the MergeParts entries are added to the system.part_log table.
+# Retry SYSTEM FLUSH LOGS until all entries are fully flushed.
+for _ in {1..10}; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
+    res=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM system.part_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
+            AND database == currentDatabase() AND table == 'test'
+            AND event_type == 'MergeParts';"
+    )
+    if [[ $res -gt 2 ]]; then
+        break
+    fi
+
+    sleep 2.0
+done
+
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS part_log;
     SELECT
         if(count() > 2, 'Ok', 'Error: ' || toString(count())),
         if(SUM(ProfileEvents['MergedRows']) >= 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergedRows'])))
