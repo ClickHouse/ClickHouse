@@ -1,0 +1,76 @@
+---
+alias: []
+description: 'Documentación del formato JSONColumnsWithMetadata'
+input_format: true
+keywords: ['JSONColumnsWithMetadata']
+output_format: true
+slug: /interfaces/formats/JSONColumnsWithMetadata
+title: 'JSONColumnsWithMetadata'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+Se diferencia del formato [`JSONColumns`](/es/reference/formats/JSON/JSONColumns) en que también incluye algunos metadatos y estadísticas (de forma similar al formato [`JSON`](/es/reference/formats/JSON/JSON)).
+
+<Note>
+  El formato `JSONColumnsWithMetadata` almacena todos los datos en memoria y luego los devuelve como un único bloque, por lo que puede provocar un alto consumo de memoria.
+</Note>
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Ejemplo:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+Para el formato de entrada `JSONColumnsWithMetadata`, si la configuración [`input_format_json_validate_types_from_metadata`](/es/reference/settings/formats#input_format_json_validate_types_from_metadata) se establece en `1`,
+los tipos de los metadatos de los datos de entrada se compararán con los tipos de las columnas correspondientes de la tabla.
+
+<div id="format-settings">
+  ## Configuración del formato
+</div>

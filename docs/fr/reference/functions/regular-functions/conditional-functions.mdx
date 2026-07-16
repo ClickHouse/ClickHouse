@@ -1,0 +1,581 @@
+---
+description: 'Documentation sur les fonctions conditionnelles'
+sidebarTitle: 'Conditionnelles'
+slug: /sql-reference/functions/conditional-functions
+title: 'Fonctions conditionnelles'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+<div id="using-conditional-results-directly">
+  ### Utiliser directement les résultats conditionnels
+</div>
+
+Les expressions conditionnelles renvoient toujours `0`, `1` ou `NULL`. Vous pouvez donc utiliser directement ces résultats, comme ceci :
+
+```sql
+SELECT left < right AS is_small
+FROM LEFT_RIGHT
+
+┌─is_small─┐
+│     ᴺᵁᴸᴸ │
+│        1 │
+│        0 │
+│        0 │
+│     ᴺᵁᴸᴸ │
+└──────────┘
+```
+
+<div id="null-values-in-conditionals">
+  ### Valeurs NULL dans les expressions conditionnelles
+</div>
+
+Lorsque des valeurs `NULL` entrent en jeu dans des expressions conditionnelles, le résultat est également `NULL`.
+
+```sql
+SELECT
+    NULL < 1,
+    2 < NULL,
+    NULL < NULL,
+    NULL = NULL
+
+┌─less(NULL, 1)─┬─less(2, NULL)─┬─less(NULL, NULL)─┬─equals(NULL, NULL)─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ               │
+└───────────────┴───────────────┴──────────────────┴────────────────────┘
+```
+
+Vous devez donc construire vos requêtes avec soin si les types sont `Nullable`.
+
+L’exemple suivant l’illustre en omettant d’ajouter une condition equals à `multiIf`.
+
+```sql
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'right is smaller', 'Both equal') AS faulty_result
+FROM LEFT_RIGHT
+
+┌─left─┬─right─┬─faulty_result────┐
+│ ᴺᵁᴸᴸ │     4 │ Both equal       │
+│    1 │     3 │ left is smaller  │
+│    2 │     2 │ Both equal       │
+│    3 │     1 │ right is smaller │
+│    4 │  ᴺᵁᴸᴸ │ Both equal       │
+└──────┴───────┴──────────────────┘
+```
+
+<div id="case-statement">
+  ### Instruction CASE
+</div>
+
+L&#39;expression CASE dans ClickHouse fournit une logique conditionnelle similaire à celle de l&#39;opérateur SQL CASE. Elle évalue les conditions et renvoie des valeurs en fonction de la première condition satisfaite.
+
+ClickHouse prend en charge deux formes de CASE :
+
+1. `CASE WHEN ... THEN ... ELSE ... END`
+   <br />
+   Cette forme offre une flexibilité totale et est implémentée en interne à l&#39;aide de la fonction [multiIf](/fr/reference/functions/regular-functions/conditional-functions#multiIf). Chaque condition est évaluée indépendamment, et les expressions peuvent inclure des valeurs non constantes.
+
+```sql
+SELECT
+    number,
+    CASE
+        WHEN number % 2 = 0 THEN number + 1
+        WHEN number % 2 = 1 THEN number * 10
+        ELSE number
+    END AS result
+FROM system.numbers
+WHERE number < 5;
+
+-- is translated to
+SELECT
+    number,
+    multiIf((number % 2) = 0, number + 1, (number % 2) = 1, number * 10, number) AS result
+FROM system.numbers
+WHERE number < 5
+
+┌─number─┬─result─┐
+│      0 │      1 │
+│      1 │     10 │
+│      2 │      3 │
+│      3 │     30 │
+│      4 │      5 │
+└────────┴────────┘
+
+5 rows in set. Elapsed: 0.002 sec.
+```
+
+2. `CASE <expr> WHEN <val1> THEN ... WHEN <val2> THEN ... ELSE ... END`
+   <br />
+   Cette forme plus compacte est optimisée pour la mise en correspondance de valeurs constantes et utilise en interne `caseWithExpression()`.
+
+Par exemple, l&#39;exemple suivant est valide :
+
+```sql
+SELECT
+    number,
+    CASE number
+        WHEN 0 THEN 100
+        WHEN 1 THEN 200
+        ELSE 0
+    END AS result
+FROM system.numbers
+WHERE number < 3;
+
+-- is translated to
+
+SELECT
+    number,
+    caseWithExpression(number, 0, 100, 1, 200, 0) AS result
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬─result─┐
+│      0 │    100 │
+│      1 │    200 │
+│      2 │      0 │
+└────────┴────────┘
+
+3 rows in set. Elapsed: 0.002 sec.
+```
+
+Cette forme n’exige pas non plus que les expressions de résultat soient des constantes.
+
+```sql
+SELECT
+    number,
+    CASE number
+        WHEN 0 THEN number + 1
+        WHEN 1 THEN number * 10
+        ELSE number
+    END
+FROM system.numbers
+WHERE number < 3;
+
+-- is translated to
+
+SELECT
+    number,
+    caseWithExpression(number, 0, number + 1, 1, number * 10, number)
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬─caseWithExpr⋯0), number)─┐
+│      0 │                        1 │
+│      1 │                       10 │
+│      2 │                        2 │
+└────────┴──────────────────────────┘
+
+3 rows in set. Elapsed: 0.001 sec.
+```
+
+<div id="caveats">
+  #### Mises en garde
+</div>
+
+ClickHouse détermine le type de résultat d’une expression CASE (ou de son équivalent interne, tel que `multiIf`) avant d’évaluer les conditions. C’est important lorsque les expressions renvoyées sont de types différents, par exemple avec des fuseaux horaires ou des types numériques distincts.
+
+* Le type de résultat est choisi en fonction du plus grand type compatible parmi toutes les branches.
+* Une fois ce type choisi, toutes les autres branches y sont converties implicitement, même si leur logique ne serait jamais exécutée au runtime.
+* Pour des types comme DateTime64, où le fuseau horaire fait partie de la signature du type, cela peut entraîner un comportement surprenant : le premier fuseau horaire rencontré peut être utilisé pour toutes les branches, même lorsque d’autres branches spécifient des fuseaux horaires différents.
+
+Par exemple, ci-dessous, toutes les lignes renvoient le timestamp dans le fuseau horaire de la première branche correspondante, c.-à-d. `Asia/Kolkata`
+
+```sql
+SELECT
+    number,
+    CASE
+        WHEN number = 0 THEN fromUnixTimestamp64Milli(0, 'Asia/Kolkata')
+        WHEN number = 1 THEN fromUnixTimestamp64Milli(0, 'America/Los_Angeles')
+        ELSE fromUnixTimestamp64Milli(0, 'UTC')
+    END AS tz
+FROM system.numbers
+WHERE number < 3;
+
+-- is translated to
+
+SELECT
+    number,
+    multiIf(number = 0, fromUnixTimestamp64Milli(0, 'Asia/Kolkata'), number = 1, fromUnixTimestamp64Milli(0, 'America/Los_Angeles'), fromUnixTimestamp64Milli(0, 'UTC')) AS tz
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬──────────────────────tz─┐
+│      0 │ 1970-01-01 05:30:00.000 │
+│      1 │ 1970-01-01 05:30:00.000 │
+│      2 │ 1970-01-01 05:30:00.000 │
+└────────┴─────────────────────────┘
+
+3 rows in set. Elapsed: 0.011 sec.
+```
+
+Ici, ClickHouse voit plusieurs types de retour `DateTime64(3, <timezone>)`. Il déduit que le type commun est `DateTime64(3, 'Asia/Kolkata'`, car c’est le premier qu’il rencontre, et convertit implicitement les autres branches vers ce type.
+
+On peut résoudre ce problème en convertissant en chaîne de caractères afin de préserver le formatage souhaité du fuseau horaire :
+
+```sql
+SELECT
+    number,
+    multiIf(
+        number = 0, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'Asia/Kolkata'),
+        number = 1, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'America/Los_Angeles'),
+        formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'UTC')
+    ) AS tz
+FROM system.numbers
+WHERE number < 3;
+
+-- is translated to
+
+SELECT
+    number,
+    multiIf(number = 0, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'Asia/Kolkata'), number = 1, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'America/Los_Angeles'), formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'UTC')) AS tz
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬─tz──────────────────┐
+│      0 │ 1970-01-01 05:30:00 │
+│      1 │ 1969-12-31 16:00:00 │
+│      2 │ 1970-01-01 00:00:00 │
+└────────┴─────────────────────┘
+
+3 rows in set. Elapsed: 0.002 sec.
+```
+
+{/* 
+  Le contenu des balises ci-dessous est remplacé, au moment du build du framework de documentation, par 
+  la documentation générée à partir de system.functions. Veuillez ne pas modifier ni supprimer ces balises.
+  Voir : https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="clamp">
+  ## clamp
+</div>
+
+Introduit dans : v24.5.0
+
+Contraint une valeur à rester dans les bornes minimale et maximale spécifiées.
+
+Si la valeur est inférieure au minimum, renvoie le minimum. Si la valeur est supérieure au maximum, renvoie le maximum. Sinon, renvoie la valeur elle-même.
+
+Tous les arguments doivent être de types comparables. Le type du résultat est le plus grand type compatible parmi tous les arguments.
+
+**Syntaxe**
+
+```sql
+clamp(value, min, max)
+```
+
+**Arguments**
+
+* `value` — La valeur à borner. - `min` — La borne minimale. - `max` — La borne maximale.
+
+**Valeur renvoyée**
+
+Renvoie la valeur, limitée à l’intervalle [min, max].
+
+**Exemples**
+
+**Utilisation de base**
+
+```sql title=Query
+SELECT clamp(5, 1, 10) AS result;
+```
+
+```response title=Response
+┌─result─┐
+│      5 │
+└────────┘
+```
+
+**Valeur en dessous du minimum**
+
+```sql title=Query
+SELECT clamp(-3, 0, 7) AS result;
+```
+
+```response title=Response
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+**Valeur au-dessus du maximum**
+
+```sql title=Query
+SELECT clamp(15, 0, 7) AS result;
+```
+
+```response title=Response
+┌─result─┐
+│      7 │
+└────────┘
+```
+
+<div id="greatest">
+  ## greatest
+</div>
+
+Introduit dans : v1.1.0
+
+Renvoie la plus grande valeur parmi les arguments.
+Les arguments `NULL` sont ignorés.
+
+* Pour les tableaux, renvoie le plus grand tableau au sens lexicographique.
+* Pour les types `DateTime`, le type de résultat est promu au type le plus large (par ex. `DateTime64` en combinaison avec `DateTime32`).
+
+<Info>
+  **Utilisez le paramètre `least_greatest_legacy_null_behavior` pour modifier le comportement de `NULL`**
+
+  La version [24.12](/fr/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) a introduit un changement non rétrocompatible : les valeurs `NULL` sont désormais ignorées, alors qu&#39;auparavant la fonction renvoyait `NULL` si l&#39;un des arguments était `NULL`.
+  Pour conserver le comportement précédent, définissez le paramètre `least_greatest_legacy_null_behavior` (par défaut : `false`) sur `true`.
+</Info>
+
+**Syntaxe**
+
+```sql
+greatest(x1[, x2, ...])
+```
+
+**Arguments**
+
+* `x1[, x2, ...]` — Une ou plusieurs valeurs à comparer. Tous les arguments doivent être de types comparables. [`Any`](/fr/reference/data-types/index)
+
+**Valeur renvoyée**
+
+Renvoie la plus grande valeur parmi les arguments, promue au plus grand type compatible. [`Any`](/fr/reference/data-types/index)
+
+**Exemples**
+
+**Types numériques**
+
+```sql title=Query
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─result─┬─type────┐
+│      3 │ Float64 │
+└────────┴─────────┘
+```
+
+**tableau**
+
+```sql title=Query
+SELECT greatest(['hello'], ['there'], ['world']);
+```
+
+```response title=Response
+┌─greatest(['hello'], ['there'], ['world'])─┐
+│ ['world']                                 │
+└───────────────────────────────────────────┘
+```
+
+**Types DateTime**
+
+```sql title=Query
+SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
+-- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─greatest(toD⋯(now(), 3))─┐
+│  2025-05-28 15:50:53.000 │
+└──────────────────────────┘
+```
+
+<div id="if">
+  ## if
+</div>
+
+Introduit dans : v1.1.0
+
+Effectue un branchement conditionnel.
+
+* Si la condition `cond` s&#39;évalue à une valeur non nulle, la fonction renvoie le résultat de l&#39;expression `then`.
+* Si `cond` s&#39;évalue à zéro ou à NULL, le résultat de l&#39;expression `else` est renvoyé.
+
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
+
+S&#39;il est activé, l&#39;expression `then` n&#39;est évaluée que sur les lignes où `cond` est true, et l&#39;expression `else` sur celles où `cond` est false.
+
+Par exemple, avec l&#39;évaluation en court-circuit, aucune exception de division par zéro n&#39;est levée lors de l&#39;exécution de la requête suivante :
+
+```sql
+SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)
+```
+
+`then` et `else` doivent être de type similaire.
+
+**Syntaxe**
+
+```sql
+if(cond, then, else)
+```
+
+**Arguments**
+
+* `cond` — La condition évaluée. [`UInt8`](/fr/reference/data-types/int-uint) ou [`Nullable(UInt8)`](/fr/reference/data-types/nullable) ou [`NULL`](/fr/reference/syntax#null)
+* `then` — L&#39;expression renvoyée si `cond` est `true`. - `else` — L&#39;expression renvoyée si `cond` est `false` ou `NULL`.
+
+**Valeur renvoyée**
+
+Le résultat de l&#39;expression `then` ou `else`, selon la condition `cond`.
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT if(1, 2 + 2, 2 + 6) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│   4 │
+└─────┘
+```
+
+<div id="least">
+  ## least
+</div>
+
+Introduit dans : v1.1.0
+
+Renvoie la plus petite valeur parmi les arguments.
+Les arguments `NULL` sont ignorés.
+
+* Pour les tableaux, renvoie le tableau le plus petit selon l’ordre lexicographique.
+* Pour les types DateTime, le type de résultat est promu au type le plus large (par ex. DateTime64 s’il est mélangé à DateTime32).
+
+<Info>
+  **Utilisez le paramètre `least_greatest_legacy_null_behavior` pour modifier le comportement de `NULL`**
+
+  La version [24.12](/fr/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) a introduit un changement rétro-incompatible : les valeurs `NULL` sont désormais ignorées, alors qu’auparavant la fonction renvoyait `NULL` si l’un des arguments était `NULL`.
+  Pour conserver le comportement précédent, définissez le paramètre `least_greatest_legacy_null_behavior` (par défaut : `false`) sur `true`.
+</Info>
+
+**Syntaxe**
+
+```sql
+least(x1[, x2, ...])
+```
+
+**Arguments**
+
+* `x1[, x2, ...]` — Une seule valeur ou plusieurs valeurs à comparer. Tous les arguments doivent être de types comparables. [`Any`](/fr/reference/data-types/index)
+
+**Valeur renvoyée**
+
+Renvoie la plus petite valeur parmi les arguments, promue au type compatible le plus large. [`Any`](/fr/reference/data-types/index)
+
+**Exemples**
+
+**Types numériques**
+
+```sql title=Query
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─result─┬─type────┐
+│      1 │ Float64 │
+└────────┴─────────┘
+```
+
+**Tableaux**
+
+```sql title=Query
+SELECT least(['hello'], ['there'], ['world']);
+```
+
+```response title=Response
+┌─least(['hell⋯ ['world'])─┐
+│ ['hello']                │
+└──────────────────────────┘
+```
+
+**Types DateTime**
+
+```sql title=Query
+SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
+-- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─least(toDate⋯(now(), 3))─┐
+│  2025-05-27 15:55:20.000 │
+└──────────────────────────┘
+```
+
+<div id="multiIf">
+  ## multiIf
+</div>
+
+Introduit dans : v1.1.0
+
+Permet d&#39;écrire l&#39;opérateur [`CASE`](/fr/reference/operators/index#conditional-expression) de manière plus compacte dans la requête.
+Évalue chaque condition dans l&#39;ordre. Pour la première condition qui est vraie (non égale à zéro et différente de `NULL`), renvoie la valeur correspondante.
+Si aucune des conditions n&#39;est vraie, renvoie la valeur `else`.
+
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) contrôle
+si l&#39;évaluation en court-circuit est utilisée. S&#39;il est activé, l&#39;expression `then_i` est évaluée uniquement sur les lignes où
+`((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` est vraie.
+
+Par exemple, avec l&#39;évaluation en court-circuit, aucune exception de division par zéro n&#39;est levée lors de l&#39;exécution de la requête suivante :
+
+```sql
+SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)
+```
+
+Toutes les expressions des branches et de `else` doivent avoir un supertype commun. Les conditions `NULL` sont considérées comme false.
+
+**Syntaxe**
+
+```sql
+multiIf(cond_1, then_1, cond_2, then_2, ..., else)
+```
+
+**Alias** : `caseWithoutExpression`, `caseWithoutExpr`
+
+**Arguments**
+
+* `cond_N` — La N-ième condition évaluée, qui détermine si `then_N` est renvoyé. [`UInt8`](/fr/reference/data-types/int-uint) ou [`Nullable(UInt8)`](/fr/reference/data-types/nullable) ou [`NULL`](/fr/reference/syntax#null)
+* `then_N` — Le résultat de la fonction lorsque `cond_N` est `true`. - `else` — Le résultat de la fonction si aucune des conditions n’est `true`.
+
+**Valeur renvoyée**
+
+Renvoie le résultat de `then_N` pour le `cond_N` correspondant, sinon renvoie la valeur `else`.
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+CREATE TABLE LEFT_RIGHT (left Nullable(UInt8), right Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO LEFT_RIGHT VALUES (NULL, 4), (1, 3), (2, 2), (3, 1), (4, NULL);
+
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'left is greater', left = right, 'Both equal', 'Null value') AS result
+FROM LEFT_RIGHT;
+```
+
+```response title=Response
+┌─left─┬─right─┬─result──────────┐
+│ ᴺᵁᴸᴸ │     4 │ Null value      │
+│    1 │     3 │ left is smaller │
+│    2 │     2 │ Both equal      │
+│    3 │     1 │ left is greater │
+│    4 │  ᴺᵁᴸᴸ │ Null value      │
+└──────┴───────┴─────────────────┘
+```
+
+{/*AUTOGENERATED_END*/}

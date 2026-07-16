@@ -15,6 +15,9 @@ bool SelectQueryInfo::isFinal() const
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
+    if (query_tree)
+        return false;
+
     const auto & select = query->as<ASTSelectQuery &>();
     return select.final();
 }
@@ -60,16 +63,17 @@ void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     prewhere_actions.serialize(ctx.out, ctx.registry);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
+    writeBinary(need_filter, ctx.out);
 }
 
 PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     PrewhereInfo prewhere_info;
 
-    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
-    prewhere_info.need_filter = true;
+    readBinary(prewhere_info.need_filter, ctx.in);
 
     return prewhere_info;
 }
@@ -85,7 +89,7 @@ FilterDAGInfo FilterDAGInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
     FilterDAGInfo filter_dag_info;
 
-    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     readStringBinary(filter_dag_info.column_name, ctx.in);
     readBinary(filter_dag_info.do_remove_column, ctx.in);
 

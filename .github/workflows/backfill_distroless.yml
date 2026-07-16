@@ -78,17 +78,22 @@ jobs:
               return 1
             }
 
+            # Read the canonical com.clickhouse.build.version label, falling
+            # back to the misspelled com.clickhoghuse.build.version that some
+            # historical floating-tag pushes used. Once this run overwrites
+            # those tags with correctly-keyed labels the fallback will go
+            # unused, but we need to accept it now to bootstrap past the
+            # transition.
             local label
             label=$(echo "$manifest_raw" | jq -r '
               (.image // {}) as $img |
-              if ($img | has("config")) then
-                $img.config.Labels["com.clickhouse.build.version"] // ""
-              else
-                ($img | to_entries[]? | .value.config.Labels["com.clickhouse.build.version"]) // ""
-              end' 2>/dev/null | grep -v '^$' | head -1)
+              (if ($img | has("config")) then $img.config.Labels
+               else ($img | to_entries[0]?.value.config.Labels) end) as $lbl |
+              ($lbl["com.clickhouse.build.version"] //
+               $lbl["com.clickhoghuse.build.version"] // "")' 2>/dev/null | grep -v '^$' | head -1)
 
             if [ -z "$label" ]; then
-              echo "ERROR: ${image}:${tag} has no com.clickhouse.build.version label" >&2
+              echo "ERROR: ${image}:${tag} has no com.clickhouse.build.version label (also tried com.clickhoghuse.build.version fallback)" >&2
               return 1
             fi
 
@@ -117,6 +122,7 @@ jobs:
 
           SEEN_MINOR=""
           SEEN_MAJOR=""
+          SEEN_LATEST=""
 
           for VERSION in $SORTED_VERSIONS; do
             echo "============================================"
@@ -129,7 +135,11 @@ jobs:
             # Decide which floating tags THIS version is allowed to write.
             # First time we see a given X.Y.Z or X.Y in this run, we let
             # this build update that floating ref. Subsequent (lower)
-            # versions in the same group skip it.
+            # versions in the same group skip it. The :latest-distroless
+            # ref is only ever a candidate for the very first (highest)
+            # version in the run; the cross-run version_ge check below
+            # then refuses to actually overwrite :latest if a newer
+            # version is already published there.
             FLOATING_TAGS=""
             case " $SEEN_MINOR " in
               *" $VERSION_MINOR "*)
@@ -145,6 +155,12 @@ jobs:
                 FLOATING_TAGS="$FLOATING_TAGS:${VERSION_MAJOR}"
                 SEEN_MAJOR="$SEEN_MAJOR $VERSION_MAJOR" ;;
             esac
+            if [ -z "$SEEN_LATEST" ]; then
+              FLOATING_TAGS="$FLOATING_TAGS:latest"
+              SEEN_LATEST=1
+            else
+              echo "skipping :latest-distroless — already considered for a higher patch in this run"
+            fi
 
             for image_config in \
               "clickhouse/clickhouse-server:docker/server/Dockerfile.distroless:docker/server" \
@@ -192,6 +208,7 @@ jobs:
                 --platform=linux/amd64,linux/arm64 \
                 --provenance=true \
                 --sbom=true \
+                --target=production \
                 ${PUSH_FLAG:-$OUTPUT_FLAG} \
                 --label="build-url=${GITHUB_RUN_URL}" \
                 --label="com.clickhouse.build.githash=${SHA}" \

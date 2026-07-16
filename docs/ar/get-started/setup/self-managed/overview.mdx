@@ -1,0 +1,57 @@
+---
+title: 'التثبيت المُدار ذاتيًا'
+sidebarTitle: 'نظرة عامة'
+description: 'ثبّت ClickHouse على بنيتك التحتية الخاصة.'
+doc_type: 'landing-page'
+keywords: ['تثبيت', 'مُدار ذاتيًا', 'Linux', 'MacOS', 'Windows', 'Docker']
+---
+
+ثبّت ClickHouse على المنصة التي تديرها.
+
+<div id="local-development">
+  ## التطوير المحلي
+</div>
+
+شغّل ClickHouse على جهازك لبناءه واختباره والتجربة عليه.
+
+<CardGroup cols={2}>
+  <Card title="تثبيت سريع" href="/ar/get-started/setup/self-managed/quick-install" icon="bolt">
+    برنامج نصي `curl` من سطر واحد ينزّل ملف ClickHouse التنفيذي.
+  </Card>
+
+  <Card title="clickhousectl (CLI)" href="/ar/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    ثبّت إصدارات وخوادم ClickHouse المحلية وأدِرها باستخدام ClickHouse CLI.
+  </Card>
+
+  <Card title="Docker" href="/ar/get-started/setup/self-managed/docker" icon="docker">
+    اسحب صورة Docker الرسمية وشغّل حاوية.
+  </Card>
+
+  <Card title="بناء من المصدر" href="/ar/get-started/setup/self-managed/advanced" icon="code">
+    أنشئه من المصدر وخيارات التثبيت المتقدمة الأخرى.
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## خادم الإنتاج
+</div>
+
+ثبّت خادم ClickHouse من الحزم أو الملفات التنفيذية للنشر طويل الأمد.
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/ar/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    ثبّت عبر مستودع APT الرسمي.
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/ar/get-started/setup/self-managed/redhat" icon="redhat">
+    ثبّت عبر مستودع YUM/DNF الرسمي.
+  </Card>
+
+  <Card title="NixOS" href="/ar/get-started/setup/self-managed/nixos" icon="snowflake">
+    ثبّت على NixOS عبر مدير الحزم.
+  </Card>
+
+  <Card title="أنظمة Linux الأخرى" href="/ar/get-started/setup/self-managed/other-linux" icon="linux">
+    تثبيت عام لتوزيعات Linux عبر tarball.
+  </Card>
+</CardGroup>

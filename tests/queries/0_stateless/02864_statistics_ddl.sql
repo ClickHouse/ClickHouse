@@ -150,6 +150,30 @@ CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(basic)) Engine = MergeTree(
 CREATE TABLE tab (col UUID STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
+--   uniq_v2 requires data_type.isValueRepresentedByNumber or data_type = (Fixed)String (same validator as uniq)
+--     These types work:
+CREATE TABLE tab (col UInt8 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UInt256 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Float32 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Decimal32(3) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date32 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime64 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Enum('hello', 'world') STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col IPv4 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UInt8) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col String STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col FixedString(1) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+--     These types don't work:
+CREATE TABLE tab (col Array(Float64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col UUID STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col IPv6 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+
 -- CREATE TABLE was easy, ALTER is more fun
 
 CREATE TABLE tab
@@ -243,6 +267,15 @@ ALTER TABLE tab MODIFY STATISTICS s TYPE basic; ALTER TABLE tab DROP STATISTICS 
 --     Doesn't work:
 ALTER TABLE tab ADD STATISTICS a TYPE basic; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY STATISTICS a TYPE basic; -- { serverError ILLEGAL_STATISTICS }
+--   uniq_v2
+--     Works:
+ALTER TABLE tab ADD STATISTICS f64 TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab MODIFY STATISTICS f64 TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab ADD STATISTICS s TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS s;
+ALTER TABLE tab MODIFY STATISTICS s TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS s;
+--     Doesn't work:
+ALTER TABLE tab ADD STATISTICS a TYPE uniq_v2; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab MODIFY STATISTICS a TYPE uniq_v2; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY COLUMN f64_tdigest UInt64;
 
 -- Finally, do a full-circle test of a good case. Print table definition after each step.

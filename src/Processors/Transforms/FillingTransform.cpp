@@ -198,13 +198,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         return false;
 
     if (!descr.fill_from.isNull())
-        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
+        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_to.isNull())
-        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
+        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_step.isNull())
-        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
+        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_staleness.isNull())
-        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type);
+        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
 
     descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
@@ -343,6 +343,21 @@ FillingTransform::FillingTransform(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "The same column in ORDER BY before WITH FILL (sorting prefix) and INTERPOLATE is not allowed. Column: {}",
                     (header_->begin() + sort_prefix_pos)->name);
+        }
+    }
+
+    /// A column that is both a fill column and an interpolate target gets two inserts per gap-fill
+    /// row (one from filling, one from interpolate), yielding a chunk with inconsistent row counts.
+    if (!interpolate_column_positions.empty())
+    {
+        std::unordered_set<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
+        for (auto interpolate_pos : interpolate_column_positions)
+        {
+            if (fill_positions.contains(interpolate_pos))
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "The same column in WITH FILL and INTERPOLATE is not allowed. Column: {}",
+                    (header_->begin() + interpolate_pos)->name);
         }
     }
 }
@@ -584,6 +599,33 @@ bool FillingTransform::generateSuffixIfNeeded(
     if (filling_row_changed)
         filling_row_inserted = false;
 
+    return true;
+}
+
+/// Whether the sorting-prefix columns are equal at two positions, using the ORDER BY
+/// collation (the stream is sorted by it). Mirrors LimitTransform::sortColumnsEqualAt.
+template <typename LhsColumns, typename RhsColumns>
+static bool sortPrefixEqualAt(
+    const LhsColumns & lhs_columns,
+    size_t lhs_row,
+    const RhsColumns & rhs_columns,
+    size_t rhs_row,
+    const SortDescription & sort_prefix)
+{
+    for (size_t i = 0, size = sort_prefix.size(); i < size; ++i)
+    {
+        const IColumn & lhs = *lhs_columns[i];
+        const IColumn & rhs = *rhs_columns[i];
+
+        int res = 0;
+        if (sort_prefix[i].collator && lhs.isCollationSupported())
+            res = lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction, *sort_prefix[i].collator);
+        else
+            res = lhs.compareAt(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction);
+
+        if (res != 0)
+            return false;
+    }
     return true;
 }
 
@@ -857,16 +899,7 @@ void FillingTransform::transform(Chunk & chunk)
         for (size_t pos : sort_prefix_positions)
             last_sort_prefix_columns.push_back(last_row[pos].get());
 
-        new_sort_prefix = false;
-        for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
-        {
-            const int res = input_sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-            if (res != 0)
-            {
-                new_sort_prefix = true;
-                break;
-            }
-        }
+        new_sort_prefix = !sortPrefixEqualAt(input_sort_prefix_columns, 0, last_sort_prefix_columns, 0, sort_prefix);
     }
 
     for (size_t row_ind = 0; row_ind < num_rows;)
@@ -877,14 +910,8 @@ void FillingTransform::transform(Chunk & chunk)
             num_rows,
             [&](size_t pos_with_current_sort_prefix, size_t row_pos)
             {
-                for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
-                {
-                    const int res = input_sort_prefix_columns[i]->compareAt(
-                        pos_with_current_sort_prefix, row_pos, *input_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-                    if (res != 0)
-                        return false;
-                }
-                return true;
+                return sortPrefixEqualAt(
+                    input_sort_prefix_columns, pos_with_current_sort_prefix, input_sort_prefix_columns, row_pos, sort_prefix);
             });
 
         /// generate suffix for the previous range

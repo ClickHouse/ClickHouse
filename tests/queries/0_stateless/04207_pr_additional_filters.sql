@@ -1,8 +1,12 @@
 -- Tags: no-parallel
 -- ^ failpoint
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS atf_p;
-CREATE TABLE atf_p (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;
+-- random index_granularity splits the 10 rows into >1 granule and breaks the reference.
+CREATE TABLE atf_p (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
 INSERT INTO atf_p SELECT number FROM numbers(10);
 
 -- The failpoint disables cancellation of unused replicas after all ranges

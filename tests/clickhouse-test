@@ -92,6 +92,14 @@ STOP_TESTING_EXIT_CODE = 2
 # `ci/jobs/scripts/functional_tests_results.py`.
 GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 
+# Exit code returned when the run stopped early because the `--max-failures` /
+# `--max-failures-chain` limit was reached. The server is alive and the failing
+# tests are real and already attributed - so this must NOT be conflated with
+# `STOP_TESTING_EXIT_CODE` (reported as "Server died", which also blanks out the
+# per-test attribution). Kept in sync with `MAX_FAILURES_EXIT_CODE` in
+# `ci/jobs/scripts/functional_tests_results.py`.
+MAX_FAILURES_EXIT_CODE = 4
+
 USE_JINJA = True
 try:
     import jinja2
@@ -112,6 +120,12 @@ MESSAGES_TO_RETRY = [
     # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds)
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Session expired",
+    # Server-global (total) memory tracker firing under heavy parallel co-scheduling
+    # on ASan shards: the OvercommitTracker kills queries across all co-scheduled
+    # tests once total RSS nears the shared server cap. Emitted only by the global
+    # tracker (programs/server/Server.cpp: setDescription("(total)")), never by a
+    # per-query/per-user limit, so retrying cannot mask a real per-query assertion.
+    "(total) memory limit exceeded",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
@@ -168,6 +182,13 @@ def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
         return ""
 
 class SharedEngineReplacer:
+    # Infix marker embedded into the transient per-PID test and reference copies this
+    # class creates next to the originals. It contains a dot-delimited token that no
+    # real test filename uses, so suite discovery (`is_transient_test_copy`) can
+    # recognize and skip these copies unambiguously, without constraining the names of
+    # genuine tests.
+    TEMP_FILE_MARKER = "shared_engine_replacer_tmp"
+
     SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
     ENGINES_NON_REPLICATED_REGEXP = (
         rf"(?i)ENGINE[ =]{{0,5}}(({SPECIALIZED_ENGINES}|)MergeTree\(?\)?)"
@@ -387,8 +408,10 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return
 
-        self.temp_file_path = "{0}.{2}{1}".format(
-            *os.path.splitext(file_name), os.getpid()
+        self.temp_file_path = "{0}.{2}.{3}{1}".format(
+            *os.path.splitext(file_name),
+            SharedEngineReplacer.TEMP_FILE_MARKER,
+            os.getpid(),
         )
         shutil.copy2(self.file_name, self.temp_file_path)
 
@@ -875,7 +898,7 @@ def get_processlist_with_stacktraces(args):
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces
+                ), '\n') AS stacktraces
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
@@ -901,7 +924,7 @@ def get_processlist_with_stacktraces(args):
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
-                )) AS stacktraces
+                ), '\n') AS stacktraces
             FROM system.processes p
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
@@ -923,7 +946,7 @@ def get_processlist_with_stacktraces(args):
             arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                 x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                 s.trace), '\n') AS stacktrace
-            )) AS stacktraces
+            ), '\n') AS stacktraces
         FROM system.processes p
         JOIN system.stack_trace s USING (query_id)
         WHERE query NOT LIKE '%system.processes%'
@@ -1277,7 +1300,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'basic']
+        all_statistic_types = ["minmax", "uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1317,6 +1340,9 @@ class SettingsRandomizer:
         "max_insert_threads": lambda: (
             12 if random.random() < 0.03 else random.randint(1, 3)
         ),
+        # Exercise both the legacy "client converts inline data to native blocks" path
+        # and the new "server parses inline data" path (added in PR #101034).
+        "send_table_structure_on_insert_with_inline_data": lambda: random.randint(0, 1),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -1343,6 +1369,7 @@ class SettingsRandomizer:
         "optimize_or_like_chain": lambda: random.randint(0, 1),
         "optimize_substitute_columns": lambda: random.randint(0, 1),
         "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
+        "use_lightweight_primary_key_index_analysis": lambda: random.random() > 0.40,
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
@@ -1497,6 +1524,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
@@ -1537,6 +1565,7 @@ class SettingsRandomizer:
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "materialize_statistics_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
@@ -1556,6 +1585,9 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
+        "use_streaming_marks_compression": lambda: random.randint(0, 1),
+        "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
+        "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
     }
 
     dependent_settings = {
@@ -1576,7 +1608,6 @@ class SettingsRandomizer:
     }
 
     stress_test_only_settings = {
-        "query_plan_optimize_join_order_randomize",
         "analyzer_compatibility_prefer_alias_over_subcolumn",
     }
 
@@ -1631,6 +1662,7 @@ class MergeTreeSettingsRandomizer:
         "ratio_of_defaults_for_sparse_serialization": threshold_generator(
             0.3, 0.5, 0.0, 1.0
         ),
+        "compute_exact_num_defaults_for_sparse_columns": lambda: random.randint(0, 1),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -1693,6 +1725,12 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas": lambda: random.randint(0, 1),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup": lambda: random.randint(0, 1),
+        "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
+        "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
+        "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
+        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),
@@ -1701,16 +1739,33 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "packed_skip_index_max_bytes": lambda: random.choice(
+            [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
+        ),
     }
 
     @staticmethod
     def get_random_settings(args):
         random_settings = {}
+        # Tiny granules multiply the number of marks per part (marks ~ rows /
+        # index_granularity), which is disproportionately expensive on slow
+        # builds and can turn a few-second test into minutes. Raise the lower
+        # bounds for index_granularity / index_granularity_bytes there.
+        slow_build = (
+            any(flag in args.build_flags for flag in BuildFlags.SANITIZERS)
+            or BuildFlags.DEBUG in args.build_flags
+            or BuildFlags.WITH_COVERAGE in args.build_flags
+        )
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting in args.changed_merge_tree_settings:
                 continue
 
-            value = generator()
+            if slow_build and setting == "index_granularity":
+                value = random.randint(100, 65536)
+            elif slow_build and setting == "index_granularity_bytes":
+                value = random.randint(100 * 1024, 30 * 1024 * 1024)
+            else:
+                value = generator()
             if type(value) == str and value == "":
                 continue
 
@@ -2078,6 +2133,20 @@ class TestCase:
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
+
+    def test_observes_create_query_text(self):
+        # True if the test would be perturbed by the client rewriting CREATE ... MergeTree
+        # queries (which the codec injection enables via --allow_merge_tree_settings):
+        # it inspects the stored/normalized query text, or its CREATE reparse is
+        # semantics-sensitive (AUTO_INCREMENT compatibility mode).
+        return not subprocess.call(
+            [
+                "grep",
+                "-iqE",
+                "show create|create_table_query|normalized_query|auto_increment",
+                self.case_file,
+            ]
+        )
 
     def add_effective_settings(self, client_options):
         new_options = ""
@@ -2542,6 +2611,24 @@ class TestCase:
         # - Otherwise, use randomized (if allowed), else empty.
         self.effective_settings = fixed_settings if fixed_settings else base_settings
         self.effective_merge_tree_settings = fixed_mt_settings if fixed_mt_settings else base_mt_settings
+
+        # The default compression codec is randomized at the server level (see the
+        # <compression> override in tests/config/install.sh). Tests that opt out of
+        # settings randomization expect the stable historical default, so pin the codec
+        # back to LZ4 for them, overriding the server default (ClientBase injects it
+        # into CREATE ... MergeTree queries, and only if not already set). LZ4 has no
+        # shell metacharacters, so it is safe in CLICKHOUSE_CLIENT_OPT for .sh tests.
+        # The injection relies on --allow_merge_tree_settings, which makes the client
+        # rewrite CREATE ... MergeTree queries; skip tests that would observe the
+        # rewrite (SHOW CREATE / system.query_log / system.tables.create_table_query)
+        # or whose CREATE reparse changes semantics (AUTO_INCREMENT compatibility) —
+        # those are not codec-sensitive and pass under the server default unchanged.
+        if (
+            (has_no_random_settings_tag or has_no_random_merge_tree_settings_tag)
+            and not self.test_observes_create_query_text()
+            and "default_compression_codec" not in self.effective_merge_tree_settings
+        ):
+            self.effective_merge_tree_settings["default_compression_codec"] = "LZ4"
 
         self.base_url_params = (
             os.environ["CLICKHOUSE_URL_PARAMS"]
@@ -4158,8 +4245,10 @@ class StopTesting(Exception):
     "Test run aborted:" so it stands out in the log, and exits with
     `exit_code` so the job side can distinguish the cause: the default
     `STOP_TESTING_EXIT_CODE` means the run was catastrophically interrupted
-    (reported as "Server died"), while `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
-    benign, expected stop after the time budget was reached.
+    (reported as "Server died"), `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
+    benign, expected stop after the time budget was reached, and
+    `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
+    still alive) so the run stopped early.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -4309,6 +4398,7 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.sharedctypes.Synchronized,
         int,
+        multiprocessing.sharedctypes.Synchronized,
     ],
 ):
     (
@@ -4325,6 +4415,7 @@ def run_tests_array(
         total_failures_shared,
         progress_counter,
         total_tests,
+        stop_exit_code,
     ) = all_tests_with_params
 
     os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
@@ -4397,6 +4488,14 @@ def run_tests_array(
             break
 
         if stop_testing.is_set():
+            if is_concurrent:
+                # Another worker (or the parent) requested the stop. Break
+                # quietly and let the parent orchestrate the shutdown and the
+                # exit code; do NOT call `stop_tests()` here - its `killpg`
+                # broadcasts SIGTERM to the whole group, including the parent,
+                # which would die with 143 (reported as "Server died") before it
+                # could re-raise with the real cause's exit code.
+                break
             stop_tests()
             raise StopTesting(
                 "another component requested stop (see earlier output for the cause)"
@@ -4521,10 +4620,18 @@ def run_tests_array(
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
-                            stop_tests()
+                            # Unlike the server-died case above, do NOT call
+                            # `stop_tests()` here: its `killpg` broadcasts SIGTERM
+                            # to the whole group, including the parent, which would
+                            # die with 143 (reported as "Server died") before it
+                            # could re-raise with `MAX_FAILURES_EXIT_CODE`. Just
+                            # signal the stop; the parent masks SIGTERM and then
+                            # terminates the workers in an orderly way.
+                            stop_exit_code.value = MAX_FAILURES_EXIT_CODE
                             stop_testing.set()
                             raise StopTesting(
-                                f"reached --max-failures limit ({args.max_failures})"
+                                f"reached --max-failures limit ({args.max_failures})",
+                                exit_code=MAX_FAILURES_EXIT_CODE,
                             )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
@@ -4535,10 +4642,14 @@ def run_tests_array(
             raise e
 
         if failures_chain >= args.max_failures_chain:
-            stop_tests()
+            # See the --max-failures branch above: skip `stop_tests()` so the
+            # worker's SIGTERM broadcast does not kill the parent before it can
+            # re-raise with `MAX_FAILURES_EXIT_CODE`.
+            stop_exit_code.value = MAX_FAILURES_EXIT_CODE
             stop_testing.set()
             raise StopTesting(
-                f"reached --max-failures-chain limit ({args.max_failures_chain})"
+                f"reached --max-failures-chain limit ({args.max_failures_chain})",
+                exit_code=MAX_FAILURES_EXIT_CODE,
             )
 
     if failures_total > 0:
@@ -4879,6 +4990,12 @@ def do_run_tests(
     )
     total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     progress_counter = multiprocessing.Value('i', 0)
+    # Exit code a worker wants the whole run to stop with. A worker raises
+    # `StopTesting` inside its own process, so that exception never reaches the
+    # parent; the parent only sees `stop_testing`. The worker records its exit
+    # code here (before setting `stop_testing`) so the parent can re-raise with
+    # the same code instead of defaulting to "Server died". 0 means unset.
+    stop_exit_code = multiprocessing.Value('i', 0)
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -4940,6 +5057,7 @@ def do_run_tests(
                         total_failures_shared,
                         progress_counter,
                         total_tests,
+                        stop_exit_code,
                     ),
                 ),
             )
@@ -5054,6 +5172,16 @@ def do_run_tests(
                         "global time limit reached",
                         exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
                     )
+                # A worker that hit `--max-failures` or `--max-failures-chain`
+                # recorded its exit code in `stop_exit_code` before setting
+                # `stop_testing`. The server is alive and the failing tests are
+                # real (and already attributed), so report this with the worker's
+                # code, not "Server died".
+                if stop_exit_code.value != 0:
+                    raise StopTesting(
+                        "reached the --max-failures / --max-failures-chain limit",
+                        exit_code=stop_exit_code.value,
+                    )
                 raise StopTesting(
                     "test run was stopped (see earlier output for the cause)"
                 )
@@ -5087,10 +5215,26 @@ def do_run_tests(
                 seq_total_failures,
                 progress_counter,
                 total_tests,
+                stop_exit_code,
             )
         )
 
     return total_tests
+
+
+def is_transient_test_copy(case):
+    # `SharedEngineReplacer` writes a transient per-PID copy of a test next to the
+    # original while the test runs (see `SharedEngineReplacer.temp_file_path`), and
+    # removes it afterwards. Concurrent `clickhouse-test` invocations share one
+    # queries directory, so another one's suite scan (`os.listdir` in
+    # `get_selected_tests`) can observe such a copy and would otherwise schedule it as
+    # a real test — which then fails either as `FileNotFoundError` once the copy is
+    # gone or as `NO_REFERENCE` for the bogus name. These copies carry a dedicated
+    # marker (`SharedEngineReplacer.TEMP_FILE_MARKER`) that no real test name uses, so
+    # we recognize and skip them at discovery unambiguously, without inferring
+    # "transient copy" from the basename shape and thus without constraining the names
+    # of genuine tests.
+    return f".{SharedEngineReplacer.TEMP_FILE_MARKER}." in case
 
 
 def is_test_from_dir(suite_dir, case):
@@ -5098,8 +5242,10 @@ def is_test_from_dir(suite_dir, case):
     # We could also test for executable files (os.access(case_file, os.X_OK),
     # but it interferes with 01610_client_spawn_editor.editor, which is invoked
     # as a query editor in the test, and must be marked as executable.
-    return os.path.isfile(case_file) and any(
-        case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS
+    return (
+        os.path.isfile(case_file)
+        and any(case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS)
+        and not is_transient_test_copy(case)
     )
 
 
@@ -6698,36 +6844,17 @@ if __name__ == "__main__":
     else:
         args.client_options_query_str = ""
 
-    if args.llvm_coverage:
-        # Pin the seeds of random-by-default mechanisms so the set of branches
-        # exercised inside the server is stable run-to-run. Without this the
-        # LLVM coverage report flickers on files reachable from these injection
-        # points (keeper fault injection, etc.).
-        # `--allow_repeated_settings` is already appended later by the per-test
-        # composition, so a test that explicitly sets one of these still wins.
-        coverage_pinned_settings = {
-            "backup_restore_keeper_fault_injection_seed": 1,
-            "insert_keeper_fault_injection_seed": 1,
-        }
-        coverage_pinned_cli = " ".join(
-            f"--{k}={v}" for k, v in coverage_pinned_settings.items()
-        )
-        coverage_pinned_url = "&".join(
-            f"{k}={v}" for k, v in coverage_pinned_settings.items()
-        )
-
-        existing_client_opt = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").rstrip()
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-            f"{existing_client_opt} {coverage_pinned_cli} ".lstrip()
-        )
-
-        existing_url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "").rstrip("&")
-        if existing_url_params:
-            os.environ["CLICKHOUSE_URL_PARAMS"] = (
-                f"{existing_url_params}&{coverage_pinned_url}"
-            )
-        else:
-            os.environ["CLICKHOUSE_URL_PARAMS"] = coverage_pinned_url
+    # NOTE: The seeds of random-by-default mechanisms (keeper fault injection,
+    # etc.) are pinned under LLVM coverage so the set of branches exercised
+    # inside the server is stable run-to-run. They are pinned server-side, in
+    # the `default` profile (see `tests/config/users.d/coverage_fault_injection_seeds.xml`,
+    # installed by `tests/config/install.sh --llvm-coverage`), rather than as
+    # per-query client/URL settings. Injecting them per query made every
+    # statement re-apply them, which broke tests that switch to readonly mode
+    # mid-session (e.g. `01187_set_profile_as_setting`, `00543_...`): the
+    # follow-up statement failed with "Cannot modify '...' setting in readonly
+    # mode" instead of the expected behaviour. As session defaults they are not
+    # re-applied per statement, so readonly tests are unaffected.
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()

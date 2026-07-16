@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -16,11 +17,6 @@
 #include <memory>
 
 #include <Coordination/CompactChildrenSet.h>
-
-#include "config.h"
-#if USE_ROCKSDB
-#include <Coordination/RocksDBContainer.h>
-#endif
 
 namespace DB
 {
@@ -45,6 +41,16 @@ struct NodeStats
 
     void copyStats(const Coordination::Stat & stat);
 
+    bool isContainer() const
+    {
+        return is_ephemeral_and_ctime.is_container;
+    }
+
+    void setContainer()
+    {
+        is_ephemeral_and_ctime.is_container = true;
+    }
+
     bool isEphemeral() const
     {
         return is_ephemeral_and_ctime.is_ephemeral;
@@ -53,7 +59,11 @@ struct NodeStats
     int64_t ephemeralOwner() const
     {
         if (isEphemeral())
-            return ephemeral_or_seq_num.ephemeral_owner;
+            return ephemeral_or_seq_num_or_ttl.ephemeral_owner;
+
+        /// ZooKeeper-compatible sentinel for container nodes (matches CONTAINER_EPHEMERAL_OWNER in ZK)
+        if (isContainer())
+            return std::numeric_limits<int64_t>::min();
 
         return 0;
     }
@@ -61,26 +71,49 @@ struct NodeStats
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
         is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_seq_num.ephemeral_owner = ephemeral_owner;
+        ephemeral_or_seq_num_or_ttl.ephemeral_owner = ephemeral_owner;
     }
 
     int64_t seqNum() const
     {
-        if (isEphemeral())
+        if (isEphemeral() || isTTL())
             return 0;
 
-        return ephemeral_or_seq_num.seq_num;
+        return ephemeral_or_seq_num_or_ttl.seq_num;
     }
 
     void setSeqNum(int64_t seq_num)
     {
-        ephemeral_or_seq_num.seq_num = seq_num;
+        ephemeral_or_seq_num_or_ttl.seq_num = seq_num;
     }
 
     void increaseSeqNum()
     {
-        chassert(!isEphemeral());
-        ++ephemeral_or_seq_num.seq_num;
+        chassert(!isEphemeral() && !isTTL());
+        ++ephemeral_or_seq_num_or_ttl.seq_num;
+    }
+
+    bool isTTL() const
+    {
+        return is_ephemeral_and_ctime.is_ttl;
+    }
+
+    int64_t ttl() const
+    {
+        chassert(isTTL());
+        return ephemeral_or_seq_num_or_ttl.ttl;
+    }
+
+    void setTTL(int64_t ttl_)
+    {
+        is_ephemeral_and_ctime.is_ttl = true;
+        ephemeral_or_seq_num_or_ttl.ttl = ttl_;
+    }
+
+    int64_t destroyTime() const
+    {
+        chassert(isTTL());
+        return mtime + ttl();
     }
 
     int64_t ctime() const
@@ -95,108 +128,27 @@ struct NodeStats
 
 private:
     /// as ctime can't be negative because it stores the timestamp when the
-    /// node was created, we can use the MSB for a bool
+    /// node was created, we can use the high bits for flags
     struct
     {
+        int64_t ctime : 61;
+        int64_t is_container : 1;
         int64_t is_ephemeral : 1;
-        int64_t ctime : 63;
-    } is_ephemeral_and_ctime{false, 0};
+        int64_t is_ttl : 1;
+    } is_ephemeral_and_ctime{0, false, false, false};
 
     /// ephemeral nodes cannot have children, so a node either stores
     /// ephemeral_owner (the owning session) OR seq_num (the counter
-    /// for generating sequential children names under this node)
+    /// for generating sequential children names under this node).
+    /// TTL nodes cannot have children either (in this implementation), so for
+    /// them this slot stores the ttl interval instead of seq_num. The active
+    /// member is selected by is_ephemeral / is_ttl.
     union
     {
         int64_t ephemeral_owner;
         int64_t seq_num;
-    } ephemeral_or_seq_num{0};
-};
-
-/// KeeperRocksNodeInfo is used in RocksDB keeper.
-/// It is serialized directly as POD to RocksDB.
-struct KeeperRocksNodeInfo
-{
-    NodeStats stats;
-    ACLId acl_id = 0; /// 0 -- no ACL by default
-    int32_t num_children = 0;
-
-    int32_t numChildren() const
-    {
-        if (stats.isEphemeral())
-            return 0;
-        return num_children;
-    }
-
-    void setNumChildren(int32_t value) { num_children = value; }
-    void increaseNumChildren() { ++num_children; }
-    void decreaseNumChildren() { --num_children; }
-
-    /// dummy interface for test
-    void addChild(std::string_view) {}
-    auto getChildren() const
-    {
-        return std::vector<int>(numChildren());
-    }
-
-    void copyStats(const Coordination::Stat & stat);
-};
-
-/// KeeperRocksNode is the memory structure used by RocksDB
-struct KeeperRocksNode : public KeeperRocksNodeInfo
-{
-#if USE_ROCKSDB
-    friend struct RocksDBContainer<KeeperRocksNode>;
-#endif
-    using Meta = KeeperRocksNodeInfo;
-
-    uint64_t size_bytes = 0; // only for compatible, should be deprecated
-
-    uint64_t sizeInBytes() const { return stats.data_size + sizeof(KeeperRocksNodeInfo); }
-
-    void setData(String new_data)
-    {
-        stats.data_size = static_cast<uint32_t>(new_data.size());
-        if (stats.data_size != 0)
-        {
-            data = std::unique_ptr<char[]>(new char[new_data.size()]);
-            memcpy(data.get(), new_data.data(), stats.data_size);
-        }
-    }
-
-    void shallowCopy(const KeeperRocksNode & other)
-    {
-        stats = other.stats;
-        acl_id = other.acl_id;
-        num_children = other.num_children;
-        if (stats.data_size != 0)
-        {
-            data = std::unique_ptr<char[]>(new char[stats.data_size]);
-            memcpy(data.get(), other.data.get(), stats.data_size);
-        }
-
-        /// cached_digest = other.cached_digest;
-    }
-    void invalidateDigestCache() const;
-    UInt64 getDigest(std::string_view path) const;
-    String getEncodedString();
-    void decodeFromString(const String & buffer_str);
-    void recalculateSize() {}
-    std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
-
-    void setResponseStat(Coordination::Stat & response_stat) const;
-
-    void reset()
-    {
-        serialized = false;
-    }
-    bool empty() const
-    {
-        return stats.data_size == 0 && stats.mzxid == 0;
-    }
-    std::unique_ptr<char[]> data{nullptr};
-    mutable UInt64 cached_digest = 0; /// we cached digest for this node.
-private:
-    bool serialized = false;
+        int64_t ttl;
+    } ephemeral_or_seq_num_or_ttl{0};
 };
 
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
@@ -293,9 +245,26 @@ struct KeeperStorageStats
     std::atomic<int64_t> last_zxid = 0;
 };
 
-class KeeperStorageBase
+/// Keeper state machine almost equal to the ZooKeeper's state machine.
+/// Implements all logic of operations, data changes, sessions allocation.
+/// In-memory and not thread safe.
+class KeeperStorage
 {
 public:
+    using Container = SnapshotableHashTable<KeeperMemNode>;
+    using Node = KeeperMemNode;
+
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+    static_assert(sizeof(CompactChildrenSet) == 16);
+    static_assert(sizeof(KeeperMemNode) == 104);
+    static_assert(
+        sizeof(ListNode<Node>) <= 128,
+        "std::list node containing ListNode<Node> is > 144 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        "memory consumption");
+    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
+    static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
+#endif
+
     static String generateDigest(const String & userdata);
 
     struct AuthID
@@ -355,7 +324,7 @@ public:
 
     struct Delta;
 
-    using DeltaIterator = std::list<KeeperStorageBase::Delta>::const_iterator;
+    using DeltaIterator = std::list<KeeperStorage::Delta>::const_iterator;
     struct DeltaRange
     {
         DeltaIterator begin_it;
@@ -364,7 +333,15 @@ public:
         DeltaIterator begin() const;
         DeltaIterator end() const;
         bool empty() const;
-        const KeeperStorageBase::Delta & front() const;
+        const KeeperStorage::Delta & front() const;
+    };
+
+    /// Element of RemoveRecursive's list of nodes to remove.
+    struct SubtreeNodeToRemove
+    {
+        std::string path;
+        ACLId acl_id = 0;
+        std::optional<int64_t> ephemeral_owner;
     };
 
     KeeperStorageStats stats;
@@ -461,20 +438,31 @@ public:
 
     bool removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
 protected:
-    KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
+    KeeperStorage(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
 
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
 
     struct TransactionInfo
     {
-        int64_t zxid{};
+        int64_t zxid{-1};
         KeeperDigest nodes_digest;
         /// index in storage of the log containing the transaction
         int64_t log_idx = 0;
     };
 
     std::list<TransactionInfo> uncommitted_transactions TSA_GUARDED_BY(transaction_mutex);
+
+public:
+    /// For the duration of a preprocessRequest call, these fields accumulate changes made by the
+    /// transaction that's being preprocessed.
+    /// These deltas are already applied to UncommittedState; if the transaction fails, they must be
+    /// rolled back.
+    int64_t staging_zxid = -1;
+    KeeperDigest staging_digest;
+    std::list<Delta> staging_deltas;
+
+protected:
 
     std::atomic<bool> finalized{false};
 
@@ -484,44 +472,36 @@ protected:
     int64_t getNextZXIDLocked() const TSA_REQUIRES(transaction_mutex);
 
     std::atomic<bool> initialized{false};
-};
 
-/// Keeper state machine almost equal to the ZooKeeper's state machine.
-/// Implements all logic of operations, data changes, sessions allocation.
-/// In-memory and not thread safe.
-template<typename TContainer>
-class KeeperStorage : public KeeperStorageBase
-{
 public:
-    using Container = TContainer;
-    using Node = Container::Node;
-
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-    static_assert(sizeof(CompactChildrenSet) == 16);
-    static_assert(sizeof(KeeperMemNode) == 104);
-    static_assert(
-        sizeof(ListNode<Node>) <= 128,
-        "std::list node containing ListNode<Node> is > 144 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
-        "memory consumption");
-    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
-    static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
-#endif
-
-
-#if USE_ROCKSDB
-    static constexpr bool use_rocksdb = std::is_same_v<Container, RocksDBContainer<KeeperRocksNode>>;
-#else
-    static constexpr bool use_rocksdb = false;
-#endif
-
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
     /// container.
     Container container;
 
+    /// Paths of nodes that may carry TTL
+    mutable std::unordered_set<
+        String,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>
+        ttl_paths TSA_GUARDED_BY(storage_mutex);
+
+    std::atomic<UInt64> committed_ttl_nodes{0};
+
+    /// Paths of all container nodes (auto-deleted when last child is removed)
+    mutable std::unordered_set<
+        String,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>
+        container_paths TSA_GUARDED_BY(storage_mutex);
+
+    std::atomic<UInt64> committed_container_nodes{0};
+
+    struct UncommittedNodeRef;
+
     struct UncommittedState
     {
-        explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
+        explicit UncommittedState(KeeperStorage & storage_);
 
         ~UncommittedState();
 
@@ -530,18 +510,14 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
+        UncommittedNodeRef getNode(std::string_view path, bool should_lock_storage = true) const;
 
-        Coordination::ACLs getACLs(std::string_view path, bool should_lock_storage = true) const;
-
-        void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
-        void applyDelta(const Delta & delta, uint64_t * digest);
         void rollbackDelta(const Delta & delta);
 
         /// Update digest with new nodes
         UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
 
-        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
+        bool hasACL(int64_t session_id, bool committed, std::function<bool(const AuthID &)> predicate) const;
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
@@ -552,12 +528,15 @@ public:
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
-            std::optional<Coordination::ACLs> acls{};
             /// Tracks which zxids have been applied to this uncommitted node.
             /// Typically 1-3 entries; vector is faster than unordered_set at this size.
             /// May contain duplicates when a Multi operation applies multiple deltas
             /// with the same zxid to the same node — this is harmless because erasure
             /// uses std::erase (removes all matches) and only emptiness is checked.
+            /// TODO: Store just the max zxid instead of the whole set. Clean up when commit zxid
+            ///       reaches that value. It may end up overestimated on rollback, but that's fine,
+            ///       it would just delay cleanup a little. But maybe this won't work because of the
+            ///       zxid_to_nodes[0] thing, research that first.
             std::vector<uint64_t> applied_zxids{};
 
             void materializeACL(const ACLMap & current_acl_map);
@@ -565,6 +544,8 @@ public:
 
         /// zxid_to_nodes stores iterators of nodes map
         /// so we should be careful when removing nodes from it
+        /// Note: we rely on unordered_map iterators staying valid even after rehash. The standard
+        ///       doesn't guarantee it, but apparently the libc++ we're using has this property.
         mutable std::unordered_map<
             std::string,
             UncommittedNode,
@@ -584,84 +565,80 @@ public:
         Ephemerals ephemerals;
 
         /// for each session, store list of uncommitted auths with their ZXID
+        /// TODO: If there are lots of uncommitted Close requests, this grows big, and request
+        ///       preprocessing becomes super slow (tens of seconds) because cleanup iterates over
+        ///       this whole map. Maybe do something about it.
         std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
 
-        /// mapping of uncommitted transaction to all it's modified nodes for a faster cleanup
+        /// Mapping of uncommitted transaction to all it's modified nodes for a faster cleanup.
+        /// zxid_to_nodes[0] contains nodes that were duplicated from committed container to
+        /// UncommittedState::nodes, but weren't necessarily updated.
         using ZxidToNodes = std::map<int64_t, std::unordered_set<NodesIterator, NodesIteratorHash>>;
         mutable ZxidToNodes zxid_to_nodes;
 
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
-        KeeperStorage<Container> & storage;
+        KeeperStorage & storage;
+    };
+
+    struct UncommittedNodeRef
+    {
+        std::optional<typename UncommittedState::NodesIterator> it{};
+
+        const Node * get() const { return it ? (*it)->second.node.get() : nullptr; }
+
+        /// Mutable access to the node. Should only be used from `prepare*` functions, together
+        /// with producing deltas matching the changes made to the Node.
+        Node * getMut() const
+        {
+            chassert(it.has_value());
+            chassert((*it)->second.node != nullptr);
+            return (*it)->second.node.get();
+        }
     };
 
     UncommittedState uncommitted_state{*this};
 
-    struct UncommittedStateForSnapshot
-    {
-        UncommittedStateForSnapshot();
-        ~UncommittedStateForSnapshot();
-        UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept;
-        UncommittedStateForSnapshot & operator=(UncommittedStateForSnapshot &&) noexcept;
-        UncommittedStateForSnapshot(const UncommittedStateForSnapshot &) = delete;
-        UncommittedStateForSnapshot & operator=(const UncommittedStateForSnapshot &) = delete;
+    /// 0 if no uncommitted requests.
+    uint64_t getLastUncommittedLogIdx() const;
 
-        struct Transaction
-        {
-            int64_t zxid = 0;
-            KeeperDigest nodes_digest;
-            int64_t log_idx = 0;
-        };
-
-        std::vector<Transaction> transactions;
-        std::list<Delta> deltas;
-
-        bool empty() const { return transactions.empty(); }
-    };
-
-    /// Collect uncommitted transactions and deltas with `log_idx > last_log_idx`.
-    UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
-
-    /// Like `copyUncommittedStateAfter`, but removes the returned transactions
-    /// and deltas from this storage instead of copying them.
-    UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
-    void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
-
-    // Compatibility wrapper for the non-low-memory snapshot apply path.
-    void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
-
-private:
-    void collectUncommittedTransactionsAfter(
-        int64_t last_log_idx,
-        UncommittedStateForSnapshot & result,
-        std::unordered_set<int64_t> & zxids_to_apply) const;
-    static void detachMatchingDeltasNoexcept(
-        std::list<Delta> & source,
-        std::list<Delta> & destination,
-        const std::unordered_set<int64_t> & zxids_to_apply) noexcept;
-
-public:
     Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
+    // createNode and removeNode mutate ttl_paths (guarded by storage_mutex). They are part of the
+    // commit path, which is reached through the dual-mode process/processImpl templates: the same
+    // instantiation serves local reads under a shared lock and writes under an exclusive lock, so a
+    // single TSA_REQUIRES/TSA_REQUIRES_SHARED contract cannot describe it. That is why the whole
+    // storage_mutex-protected core (including all container access) is left unanalyzed; we follow the
+    // same convention here. The lock is always held exclusively when these run (see commit callers).
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
+    createNode(
+        const std::string & path,
+        String data,
+        const Coordination::Stat & stat,
+        ACLId acl_id,
+        bool update_digest,
+        std::optional<int64_t> ttl,
+        bool is_container = false) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version, bool update_digest);
+    bool removeNode(const std::string & path, int32_t version, bool update_digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
+    /// Used internally by `preprocess` and `processLocal` implementations.
+    /// They usually have acl_id readily available, so we don't have to look up the node here.
+    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed) const;
+
+    /// Used externally. Locks storage mutex and looks up the node.
+    bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
-
-    UInt64 calculateNodesDigest(UInt64 current_digest, const std::list<Delta> & new_deltas) const;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
@@ -713,6 +690,15 @@ public:
 
     uint64_t getArenaDataSize() const;
 
+    std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
+
+    /// Container nodes eligible for GC: childless after having had children, or never
+    /// populated and empty past max_never_used_interval_ms.
+    std::vector<std::pair<std::string, Int32>> collectContainerCandidates(size_t batch_size, UInt64 max_never_used_interval_ms) const;
+
+    /// Used by tests.
+    bool containsTTLPath(const std::string & path) const;
+
     void updateStats();
 
     /// Register watches from a request/response pair.
@@ -726,6 +712,36 @@ public:
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
+
+public:
+    /// Functions that mutate UncommittedState, add corresponding deltas to staging_deltas, and
+    /// update staging_digest.
+    /// These are public because they're called from the free `preprocess` request handlers.
+    void prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, int32_t new_num_children);
+    void prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, std::string_view new_data);
+    void prepareUpdateNodeACL(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, ACLId new_acl_id);
+    void prepareCreateNode(
+        std::string_view parent_path, UncommittedNodeRef parent,
+        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+        std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
+        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt, bool is_container = false);
+    void prepareRemoveNode(
+        std::string_view parent_path, UncommittedNodeRef parent,
+        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+        std::string_view path, UncommittedNodeRef node);
+    /// (`nodes_to_remove` must be a node + the set of all its descendants, not arbitrary set of
+    ///  nodes. Because we don't update children stats on parents of removed nodes, expecting those
+    ///  parents to also be in the set to be removed, except for the outermost `parent`.)
+    void prepareRemoveRecursive(
+        std::string_view parent_path, UncommittedNodeRef parent,
+        const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+        std::deque<SubtreeNodeToRemove> nodes_to_remove);
+    void prepareRemoveEphemeralNodes(const std::unordered_set<std::string> & paths, int64_t session_id);
+    void prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id);
+
+    /// Helpers used by other `prepare*` implementations.
+    void prepareWriteCommon(std::string_view path, UncommittedNodeRef node);
+    void prepareRemoveNodeWithoutUpdatingParent(std::string_view path, UncommittedNodeRef node);
 };
 
 }

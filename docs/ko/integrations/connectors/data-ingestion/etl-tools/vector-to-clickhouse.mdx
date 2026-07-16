@@ -1,0 +1,236 @@
+---
+sidebarTitle: 'Vector'
+slug: /integrations/vector
+description: 'Vector를 사용해 로그 파일을 tail하여 ClickHouse로 전송하는 방법'
+title: 'Vector와 ClickHouse 통합'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://vector.dev/'
+keywords: ['vector', '로그 수집', '관측성', '데이터 수집', '파이프라인']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+로그를 실시간으로 분석할 수 있는 능력은 운영 환경의 애플리케이션에서 매우 중요합니다.
+ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://clickhouse.com/blog/log-compression-170x))과
+대규모 데이터를 빠르게 집계할 수 있는 성능 덕분에 로그 데이터를 저장하고 분석하는 데 탁월합니다.
+
+이 가이드에서는 널리 사용되는 데이터 파이프라인 [Vector](https://vector.dev/docs/about/what-is-vector/)을 사용해 Nginx 로그 파일을 tail하고 ClickHouse로 전송하는 방법을 설명합니다.
+아래 단계는 어떤 유형의 로그 파일을 tail할 때도 거의 동일합니다.
+
+**사전 요구사항:**
+
+* ClickHouse가 이미 실행 중입니다
+* Vector가 설치되어 있습니다
+
+<Steps>
+  <Step>
+    ## 데이터베이스 및 테이블 생성
+
+    로그 이벤트를 저장할 테이블을 정의합니다:
+
+    1. 먼저 `nginxdb`라는 이름의 새 데이터베이스를 생성합니다:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS nginxdb
+    ```
+
+    2. 전체 로그 이벤트를 하나의 문자열로 삽입합니다. 이는 로그 데이터 분석에 적합한 포맷은 아니지만, 이 부분은 아래에서 ***구체화된 뷰(Materialized Views)***를 사용해 해결하겠습니다.
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
+      message String
+    )
+    ENGINE = MergeTree()
+    ORDER BY tuple()
+    ```
+
+    <Note>
+      아직은 기본 키(primary key)가 필요하지 않으므로 **ORDER BY**는 **tuple()**(빈 튜플)로 설정됩니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Nginx 구성
+
+    이 단계에서는 Nginx 로깅을 구성하는 방법을 설명합니다.
+
+    1. 다음 `access_log` 속성은 로그를 **combined** 포맷으로 `/var/log/nginx/my_access.log`에 기록합니다.
+       이 값은 `nginx.conf` 파일의 `http` 섹션에 설정합니다.
+
+    ```bash
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+      access_log  /var/log/nginx/my_access.log combined;
+      sendfile        on;
+      keepalive_timeout  65;
+      include /etc/nginx/conf.d/*.conf;
+    }
+    ```
+
+    2. `nginx.conf`를 수정했다면 반드시 Nginx를 다시 시작하세요.
+
+    3. 웹 서버의 페이지에 접속해 액세스 로그에 몇 개의 로그 이벤트를 생성하세요.
+       **combined** 포맷의 로그는 다음과 같습니다.
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET /favicon.ico HTTP/1.1" 404 555 "http://localhost/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:49 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+  </Step>
+
+  <Step>
+    ## Vector 구성
+
+    Vector는 로그, 메트릭, 트레이스(이하 **소스**)를 수집, 변환, 라우팅하여 다양한 공급업체(이하 **싱크**)로 전달하며, ClickHouse와도 별도 설정 없이 바로 호환됩니다.
+    소스와 싱크는 **vector.toml**이라는 설정 파일에 정의됩니다.
+
+    1. 다음 **vector.toml** 파일은 **my&#95;access.log** 파일의 끝부분을 테일링하는 **file** 유형의 **소스**를 정의하고, 위에서 정의한 **access&#95;logs** 테이블을 **싱크**로도 정의합니다:
+
+    ```bash
+    [sources.nginx_logs]
+    type = "file"
+    include = [ "/var/log/nginx/my_access.log" ]
+    read_from = "end"
+
+    [sinks.clickhouse]
+    type = "clickhouse"
+    inputs = ["nginx_logs"]
+    endpoint = "http://clickhouse-server:8123"
+    database = "nginxdb"
+    table = "access_logs"
+    skip_unknown_fields = true
+    ```
+
+    2. 위 구성을 사용해 Vector를 시작합니다. source와 싱크를 정의하는 방법에 대한 자세한 내용은 Vector [documentation](https://vector.dev/docs/)을 참조하십시오.
+
+    3. 다음 쿼리를 실행하여 액세스 로그가 ClickHouse에 삽입되고 있는지 확인합니다. 테이블에 액세스 로그가 표시되어야 합니다:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="ClickHouse 로그를 테이블 형식으로 보기" />
+  </Step>
+
+  <Step>
+    ## 로그 파싱
+
+    로그를 ClickHouse에 저장하는 것은 좋지만, 각 이벤트를 단일 문자열로 저장하면 데이터 분석에 한계가 있습니다.
+    다음으로는 [materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)를 사용하여 로그 이벤트를 파싱하는 방법을 살펴보겠습니다.
+
+    **materialized view**는 SQL의 삽입 트리거(insert trigger)와 유사하게 동작합니다. 원본 테이블에 데이터 행이 삽입되면, materialized view는 해당 행을 변환한 후 그 결과를 대상 테이블에 삽입합니다.
+    materialized view를 구성하여 **access&#95;logs**의 로그 이벤트를 파싱된 형태로 표현할 수 있습니다.
+    해당 로그 이벤트의 예시는 다음과 같습니다:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+
+    ClickHouse에는 위 문자열을 파싱(parse)하는 다양한 함수가 있습니다. [`splitByWhitespace`](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByWhitespace) 함수는 공백을 기준으로 문자열을 분리하고 각 토큰(token)을 배열로 반환합니다.
+    다음 명령어를 실행하여 확인하십시오:
+
+    ```sql title="Query"
+    SELECT splitByWhitespace('192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    ```text title="Response"
+    ["192.168.208.1","-","-","[12/Oct/2021:15:32:43","+0000]","\"GET","/","HTTP/1.1\"","304","0","\"-\"","\"Mozilla/5.0","(Macintosh;","Intel","Mac","OS","X","10_15_7)","AppleWebKit/537.36","(KHTML,","like","Gecko)","Chrome/93.0.4577.63","Safari/537.36\""]
+    ```
+
+    일부 문자열에 불필요한 문자가 포함되어 있고, user agent(브라우저 세부 정보)는 파싱이 필요하지 않았지만,
+    결과 배열은 필요한 형태에 가깝습니다.
+
+    `splitByWhitespace`와 유사하게, [`splitByRegexp`](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) 함수는 정규식을 기반으로 문자열을 배열로 분할합니다.
+    다음 명령을 실행하면 두 개의 문자열이 반환됩니다.
+
+    ```sql
+    SELECT splitByRegexp('\S \d+ "([^"]*)"', '192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    반환된 두 번째 문자열이 로그에서 성공적으로 파싱된 user agent임을 확인하세요.
+
+    ```text
+    ["192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] \"GET / HTTP/1.1\" 30"," \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36\""]
+    ```
+
+    최종 `CREATE MATERIALIZED VIEW` 명령을 살펴보기 전에, 데이터를 정리하는 데 사용되는 함수를 몇 가지 더 확인하겠습니다.
+    예를 들어, `RequestMethod`의 값은 불필요한 큰따옴표가 포함된 `"GET`입니다.
+    [`trimBoth` (alias `trim`)](/ko/reference/functions/regular-functions/string-functions#trimBoth) 함수를 사용하면 큰따옴표를 제거할 수 있습니다:
+
+    ```sql
+    SELECT trim(LEADING '"' FROM '"GET')
+    ```
+
+    시간 문자열 앞에 `[`가 붙어 있고, ClickHouse가 날짜로 파싱할 수 있는 포맷도 아닙니다.
+    하지만 구분자를 콜론(**:**)에서 쉼표(**,**)로 변경하면 파싱이 정상적으로 동작합니다:
+
+    ```sql
+    SELECT parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM '[12/Oct/2021:15:32:43'), ':', ' '))
+    ```
+
+    이제 materialized view를 정의할 준비가 되었습니다.
+    아래 정의에는 `POPULATE`가 포함되어 있으며, 이는 **access&#95;logs**의 기존 행이 즉시 처리되어 삽입된다는 의미입니다.
+    다음 SQL 문을 실행하십시오:
+
+    ```sql
+    CREATE MATERIALIZED VIEW nginxdb.access_logs_view
+    (
+      RemoteAddr String,
+      Client String,
+      RemoteUser String,
+      TimeLocal DateTime,
+      RequestMethod String,
+      Request String,
+      HttpVersion String,
+      Status Int32,
+      BytesSent Int64,
+      UserAgent String
+    )
+    ENGINE = MergeTree()
+    ORDER BY RemoteAddr
+    POPULATE AS
+    WITH
+      splitByWhitespace(message) as split,
+      splitByRegexp('\S \d+ "([^"]*)"', message) as referer
+    SELECT
+      split[1] AS RemoteAddr,
+      split[2] AS Client,
+      split[3] AS RemoteUser,
+      parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM split[4]), ':', ' ')) AS TimeLocal,
+      trim(LEADING '"' FROM split[6]) AS RequestMethod,
+      split[7] AS Request,
+      trim(TRAILING '"' FROM split[8]) AS HttpVersion,
+      split[9] AS Status,
+      split[10] AS BytesSent,
+      trim(BOTH '"' from referer[2]) AS UserAgent
+    FROM
+      (SELECT message FROM nginxdb.access_logs)
+    ```
+
+    이제 정상적으로 작동했는지 확인하십시오.
+    액세스 로그가 컬럼별로 파싱되어 표시되는 것을 확인할 수 있습니다:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs_view
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="파싱된 ClickHouse 로그를 테이블 형식으로 보기" />
+
+    <Note>
+      위 예제에서는 데이터를 두 개의 테이블에 저장했지만, 초기 `nginxdb.access_logs` 테이블은 [`Null`](/ko/reference/engines/table-engines/special/null) 테이블 엔진으로 변경할 수 있습니다.
+      파싱된 데이터는 계속 `nginxdb.access_logs_view` 테이블에 저장되지만, 원시 데이터는 테이블에 저장되지 않습니다.
+    </Note>
+  </Step>
+</Steps>
+
+> 간단한 설치와 빠른 구성만으로 사용할 수 있는 Vector를 사용하면 Nginx 서버의 로그를 ClickHouse 테이블로 보낼 수 있습니다. materialized view를 사용하면 이러한 로그를 컬럼으로 파싱하여 더 쉽게 분석할 수 있습니다.

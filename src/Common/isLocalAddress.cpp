@@ -1,8 +1,10 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
+#include <algorithm>
 #include <cstring>
 #include <optional>
+#include <ranges>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
@@ -98,18 +100,16 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
             /// The address is located in memory in big endian form (network byte order).
             const unsigned char * digits = static_cast<const unsigned char *>(address.addr());
 
-            if (digits[0] == 127
+            /// Decide by value only (see above); don't fall through to the interface scan, so
+            /// 127.0.0.{2..255} stay non-local even when assigned to lo0 (e.g. macOS test aliases).
+            return digits[0] == 127
                 && digits[1] <= 1
                 && digits[2] <= 1
-                && digits[3] <= 1)
-            {
-                return true;
-            }
+                && digits[3] <= 1;
         }
-        else if (address.family() == Poco::Net::AddressFamily::IPv6)
-        {
-            return true;
-        }
+
+        /// ::1
+        return true;
     }
 
     static NetworkInterfaces network_interfaces;
@@ -134,6 +134,20 @@ size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::
 size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
     return levenshteinDistanceCaseInsensitive(local_hostname, host);
+}
+
+size_t getHostNameLongestCommonPrefix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    const auto [it, _] = std::ranges::mismatch(local_hostname, host);
+    return static_cast<size_t>(it - local_hostname.begin());
+}
+
+size_t getHostNameLongestCommonSuffix(const std::string & local_hostname, const std::string & host)
+{
+    /// Case-sensitive comparison, matching `getHostNamePrefixDistance` (`nearest_hostname`).
+    const auto [it, _] = std::ranges::mismatch(local_hostname | std::views::reverse, host | std::views::reverse);
+    return static_cast<size_t>(it - local_hostname.rbegin());
 }
 
 }

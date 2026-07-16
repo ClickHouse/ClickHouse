@@ -27,6 +27,10 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
+    bool unloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
+
+    void unloadAllDictionaries() const;
+
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
@@ -42,11 +46,17 @@ public:
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
 
+    std::optional<bool> isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
+
     static void resetAll();
 
 protected:
-    LoadableMutablePtr createObject(const std::string & name, const Poco::Util::AbstractConfiguration & config,
-                                    const std::string & key_in_config, const std::string & repository_name) const override;
+    LoadableMutablePtr createObject(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & key_in_config,
+        const std::string & repository_name,
+        const std::string & config_file_path) const override;
 
     bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
                                                  const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const override;

@@ -501,15 +501,16 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
 {
-    static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
+    static constexpr auto MIN_INDEX_FETCH_MULTIPLIER = 1.0f;
+    static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0f;
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0f || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
+        || index_fetch_multiplier < MIN_INDEX_FETCH_MULTIPLIER || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater or equal to {} and less or equal to {}", MIN_INDEX_FETCH_MULTIPLIER, MAX_INDEX_FETCH_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
@@ -590,12 +591,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 }
 
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
+    StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
-    : IMergeTreeIndex(index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
@@ -624,7 +626,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     UInt64 dimensions = args[2].safeGet<UInt64>();
@@ -647,10 +649,10 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(std::move(metadata_snapshot), index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const bool has_three_args = (args.size() == 3);
