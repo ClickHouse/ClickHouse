@@ -379,3 +379,33 @@ DROP TABLE dist_over_tf;
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE bind_src;
+
+-- The `dictionary` table function resolves an unqualified dictionary name against the current database at
+-- read time, exactly like `dictGet` does (`TableFunctionDictionary::getActualTableStructure`), and
+-- `AddDefaultDatabaseVisitor` above already freezes `dictGet`'s dictionary name argument for that reason - so
+-- the table function's own argument is qualified the same way when it is itself the target being bound,
+-- otherwise `Distributed(cluster, dictionary('d'))` would still depend on the current database of whatever
+-- session queries the table later. Verified by querying from a different current database holding a decoy
+-- dictionary of the same name.
+DROP DICTIONARY IF EXISTS dict_src;
+CREATE DICTIONARY dict_src (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 1 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, dictionary('dict_src'));
+SHOW CREATE TABLE dist_over_tf;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict_src (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 2 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT val FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
+USE {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE dist_over_tf;
+DROP DICTIONARY dict_src;
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict_src;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

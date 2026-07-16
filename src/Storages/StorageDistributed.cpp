@@ -77,6 +77,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
@@ -2329,6 +2330,24 @@ void registerStorageDistributed(StorageFactory & factory)
                 AddDefaultDatabaseVisitor add_default_database_visitor(local_context, local_context->getCurrentDatabase());
                 add_default_database_visitor.visit(engine_args[1]);
                 add_default_database_visitor.visitDDL(engine_args[1]);
+
+                /// `AddDefaultDatabaseVisitor` above only qualifies a dictionary name that is the argument
+                /// of a `dictGet`-family function; it does not descend into the `dictionary` table function
+                /// itself, since in general a table function used as a query source keeps its own
+                /// argument semantics (e.g. the single-argument `merge('^regexp$')`). But here the table
+                /// function IS the target being frozen, and `dictionary(name)` resolves an unqualified
+                /// `name` against the current database exactly like `dictGet` does
+                /// (`TableFunctionDictionary::getActualTableStructure`), so qualify it the same way -
+                /// otherwise `Distributed(cluster, dictionary('d'))` would still depend on the current
+                /// database of whatever session queries the table later.
+                if (table_function_ast->name == "dictionary" && table_function_ast->arguments && table_function_ast->arguments->children.size() == 1)
+                {
+                    ASTPtr & dictionary_name_arg = table_function_ast->arguments->children.at(0);
+                    dictionary_name_arg = evaluateConstantExpressionOrIdentifierAsLiteral(dictionary_name_arg, local_context);
+                    String dictionary_name = checkAndGetLiteralArgument<String>(dictionary_name_arg, "dictionary_name");
+                    auto qualified_dictionary_name = local_context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, local_context);
+                    dictionary_name_arg = make_intrusive<ASTLiteral>(qualified_dictionary_name.getFullName());
+                }
 
                 auto table_function = TableFunctionFactory::instance().get(engine_args[1], local_context);
                 if (!table_function->canBeUsedToCreateTable())
