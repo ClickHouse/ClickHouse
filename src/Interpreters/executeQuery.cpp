@@ -86,8 +86,13 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -197,6 +202,7 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
@@ -1591,6 +1597,7 @@ static BlockIO executeQueryImpl(
             }
         }
 
+        bool async_insert_select_via_input = false;
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
@@ -1600,6 +1607,10 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
+                    /// Mark that this is an INSERT...SELECT FROM input() with inlined data —
+                    /// eligible for async routing when async_insert=1.
+                    async_insert_select_via_input = true;
+
                     /// For input('auto'), make sure that Context::insertion_table_info is set.
                     if (insert_table && !context->hasInsertionTableColumnsDescription())
                         InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
@@ -1645,7 +1656,12 @@ static BlockIO executeQueryImpl(
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
-                reason = "insert query has select";
+            {
+                if (async_insert_select_via_input)
+                    async_insert = true;
+                else
+                    reason = "insert query has select";
+            }
             else if (insert_query->hasInlinedData())
                 async_insert = true;
 
@@ -1687,11 +1703,83 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
                 http_continue_callback();
 
-            auto result = queue->pushQueryWithInlinedData(out_ast, context);
-
-            if (result.status == AsynchronousInsertQueue::PushResult::OK)
+            if (async_insert_select_via_input)
             {
-                // Increment InsertQuery for async insert with inline data
+                /// INSERT...SELECT FROM input(): the StorageInput pipe is already wired.
+                /// Execute the SELECT pipeline eagerly, collect all blocks, and push them
+                /// as a single pre-parsed block to the async insert queue.
+
+                auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+                QueryPipelineBuilder select_pipeline;
+                if (settings[Setting::allow_experimental_analyzer])
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_select(insert_query->select, context, select_query_options);
+                    select_pipeline = interpreter_select.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select(insert_query->select, context, select_query_options);
+                    select_pipeline = interpreter_select.buildQueryPipeline();
+                }
+
+                /// Apply type conversion: SELECT output schema → table insert schema.
+                if (insert_table)
+                {
+                    auto metadata_snapshot = insert_table->getInMemoryMetadataPtr(context, false);
+                    auto query_sample_block = InterpreterInsertQuery::getSampleBlock(
+                        *insert_query, insert_table, metadata_snapshot, context);
+                    auto actions_dag = ActionsDAG::makeConvertingActions(
+                        select_pipeline.getHeader().getColumnsWithTypeAndName(),
+                        query_sample_block.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Position,
+                        context);
+                    auto actions = std::make_shared<ExpressionActions>(
+                        std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::yes));
+                    select_pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+                    {
+                        return std::make_shared<ExpressionTransform>(in_header, actions);
+                    });
+                }
+
+                auto exec_pipeline = QueryPipelineBuilder::getPipeline(std::move(select_pipeline));
+                PullingPipelineExecutor pulling_executor(exec_pipeline);
+
+                /// Collect all rows from SELECT into one block.
+                Block merged_block;
+                {
+                    auto mutable_cols = pulling_executor.getHeader().cloneEmptyColumns();
+                    Block pulled;
+                    while (pulling_executor.pull(pulled))
+                    {
+                        for (size_t col_idx = 0; col_idx < mutable_cols.size(); ++col_idx)
+                            mutable_cols[col_idx]->insertRangeFrom(
+                                *pulled.getByPosition(col_idx).column, 0, pulled.rows());
+                    }
+                    merged_block = pulling_executor.getHeader().cloneWithColumns(std::move(mutable_cols));
+                }
+
+                /// Clone the INSERT AST, strip the SELECT sub-tree, and set format to Native.
+                /// pushQueryWithBlock internally overwrites the format field; we still set it
+                /// here to make the cloned query self-consistent before the call.
+                auto async_query = out_ast->clone();
+                auto & async_insert_q = async_query->as<ASTInsertQuery &>();
+                if (async_insert_q.select)
+                {
+                    async_insert_q.children.erase(
+                        std::remove(
+                            async_insert_q.children.begin(),
+                            async_insert_q.children.end(),
+                            async_insert_q.select),
+                        async_insert_q.children.end());
+                    async_insert_q.select.reset();
+                }
+                async_insert_q.format = "Native";
+
+                /// pushQueryWithBlock always returns OK — there is no TOO_MUCH_DATA path
+                /// for pre-parsed blocks (unlike pushQueryWithInlinedData).
+                auto result = queue->pushQueryWithBlock(async_query, std::move(merged_block), context);
+
+                // Increment InsertQuery counter for async insert via input()
                 ProfileEvents::increment(ProfileEvents::InsertQuery);
 
                 if (settings[Setting::wait_for_async_insert])
@@ -1710,20 +1798,46 @@ static BlockIO executeQueryImpl(
                 if (!table_id.empty())
                     context->setInsertionTable(table_id);
             }
-            else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+            else
             {
-                async_insert = false;
+                auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
-                if (insert_query->data)
+                if (result.status == AsynchronousInsertQueue::PushResult::OK)
                 {
-                    /// Reset inlined data because it will be
-                    /// available from tail read buffer.
-                    insert_query->end = insert_query->data;
-                    insert_query->data = nullptr;
-                }
+                    // Increment InsertQuery for async insert with inline data
+                    ProfileEvents::increment(ProfileEvents::InsertQuery);
 
-                insert_query->tail = std::move(result.insert_data_buffer);
-                LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
+                    if (settings[Setting::wait_for_async_insert])
+                    {
+                        auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                        auto source = std::make_shared<WaitForAsyncInsertSource>(
+                            std::move(result.future),
+                            timeout,
+                            context->getProcessListElement(),
+                            context->getProgressCallback());
+                        res.pipeline = QueryPipeline(Pipe(std::move(source)));
+                        res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
+                    }
+
+                    const auto & table_id = insert_query->table_id;
+                    if (!table_id.empty())
+                        context->setInsertionTable(table_id);
+                }
+                else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+                {
+                    async_insert = false;
+
+                    if (insert_query->data)
+                    {
+                        /// Reset inlined data because it will be
+                        /// available from tail read buffer.
+                        insert_query->end = insert_query->data;
+                        insert_query->data = nullptr;
+                    }
+
+                    insert_query->tail = std::move(result.insert_data_buffer);
+                    LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
+                }
             }
         }
 
