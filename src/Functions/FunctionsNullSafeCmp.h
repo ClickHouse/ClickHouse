@@ -236,7 +236,8 @@ public:
         // get common type for null-safe comparison; may be null for types with no least common
         // supertype (e.g. `UInt64` vs `Int64`), which are still comparable element-wise.
         DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
-
+        bool has_string_type = WhichDataType(arguments[0].type).isStringOrFixedString()
+                        || WhichDataType(arguments[1].type).isStringOrFixedString();
         if (common_type)
         {
             ColumnPtr c0_converted = castColumn(arguments[0], common_type);
@@ -257,7 +258,7 @@ public:
                 return c_res;
             }
         }
-        else if (type_and_name_left_col.type->isNullable() || type_and_name_right_col.type->isNullable())
+        else if ((type_and_name_left_col.type->isNullable() || type_and_name_right_col.type->isNullable()) && !has_string_type)
         {
             // No common supertype and at least one side is Nullable (e.g. `Nullable(UInt64)` vs
             // `Nullable(Int64)`).
