@@ -49,6 +49,7 @@ def started_cluster_with_trino():
         logging.info("Starting cluster with Trino...")
         cluster.start()
         _wait_for_trino_ready(cluster, timeout_seconds=120)
+        _trino_exec(cluster, f'CREATE SCHEMA IF NOT EXISTS "{NAMESPACE}"')
 
         yield cluster
     finally:
