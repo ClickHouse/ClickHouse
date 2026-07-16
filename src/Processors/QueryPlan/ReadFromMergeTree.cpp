@@ -3617,12 +3617,25 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
-    /// `index_analysis_had_filter` is set in `applyFilters`, which `optimizePrimaryKeyConditionAndLimit`
-    /// runs before `materializeQueryPlanReferences` clones a subplan. Since the clone is built by the
-    /// constructor (default `false`) and `applyFilters` is not run again on it, propagate the flag here
-    /// so the PK-selectivity guard in `requestReadingInOrder` keeps working for a cloned step instead of
-    /// silently treating it as an unfiltered full scan.
+    /// `applyFilters` is run by `optimizePrimaryKeyConditionAndLimit` before `materializeQueryPlanReferences`
+    /// clones a subplan, and is not run again on the clone, so the state it derived must be propagated here
+    /// (the constructor leaves it at defaults):
+    /// - `indexes` and `skip_partition_pruning`: otherwise a later `selectRangesToRead` on the clone rebuilds
+    ///   index analysis from the raw `query_info.filter_actions_dag` with partition pruning re-enabled,
+    ///   letting filters that `deferFiltersAfterFinalIfNeeded` deliberately excluded participate in
+    ///   partition pruning and skip indexes, which could drop rows a `FINAL` still needs for deduplication;
+    /// - `deferred_row_level_filter` / `deferred_prewhere_info`: otherwise the clone applies a deferred row
+    ///   policy / PREWHERE during reading, before `FINAL`, changing which row wins deduplication;
+    /// - `index_analysis_had_filter`: otherwise the read-in-order PK-selectivity guard in
+    ///   `requestReadingInOrder` treats the cloned step as an unfiltered full scan;
+    /// - `filter_actions_dag`: keep the base-class DAG in sync with `query_info.filter_actions_dag`
+    ///   (both were set to the same DAG by `applyFilters`, and `query_info` is copied by the constructor).
+    cloned_step->indexes = indexes;
+    cloned_step->skip_partition_pruning = skip_partition_pruning;
+    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     cloned_step->index_analysis_had_filter = index_analysis_had_filter;
+    cloned_step->filter_actions_dag = filter_actions_dag;
     return cloned_step;
 }
 
