@@ -251,6 +251,10 @@ public:
     // Frame boundaries only move forward, so segments are immutable once built; the
     // single trailing level-0 segment accumulates rows as they arrive, and may be
     // queried because it covers exactly the rows up to the current frame end.
+    // For floating-point aggregates the per-segment regrouping can change the rounding
+    // compared to the reset-and-readd path (whose rounding already depends on the input
+    // block layout); as with parallel GROUP BY, no particular summation order is
+    // guaranteed, only determinism for identical inputs.
     class FrameAggregateTree
     {
     public:

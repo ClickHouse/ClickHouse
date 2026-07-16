@@ -414,4 +414,25 @@ FROM
     WINDOW w AS (ORDER BY k RANGE BETWEEN 12000 PRECEDING AND CURRENT ROW)
 );
 
+-- Floating-point sums over tree-sized frames merge per-segment partial sums, so the
+-- rounding may differ from the reset-and-readd path (whose rounding in turn already
+-- depends on the input block layout, on master too): float addition is not associative
+-- and no particular summation order is guaranteed, as with parallel GROUP BY. Pin what
+-- IS guaranteed: identical inputs give identical bits (two identical runs over values
+-- with catastrophic cancellation), and the frame multiset is exact (count survives).
+DROP TABLE IF EXISTS float_order_results;
+CREATE TABLE float_order_results (r UInt64, c UInt64) ENGINE = Memory;
+INSERT INTO float_order_results
+SELECT groupBitXor(reinterpretAsUInt64(s)), countIf(cnt != least(n, 2999) + 1)
+FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s FROM numbers(20000)
+      WINDOW w AS (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
+SETTINGS max_block_size = 123;
+INSERT INTO float_order_results
+SELECT groupBitXor(reinterpretAsUInt64(s)), countIf(cnt != least(n, 2999) + 1)
+FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s FROM numbers(20000)
+      WINDOW w AS (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
+SETTINGS max_block_size = 123;
+SELECT uniqExact(r), max(c) FROM float_order_results;
+DROP TABLE float_order_results;
+
 DROP TABLE moving_aggregate_test;
