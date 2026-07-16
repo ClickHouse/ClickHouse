@@ -128,17 +128,22 @@ def main():
                     name="Queries", results=query_results, stopwatch=stop_watch_
                 )
             )
+
+            # Tear down log replication while the local server is still up.
+            # `setup_log_cluster.sh --stop-log-replication` operates on the
+            # local server (it drops the `_sender`/`_watcher` replication
+            # tables there), and `ClickHouseService.__exit__` SIGTERMs that
+            # server on block exit, so this must run inside the `with`,
+            # symmetric with `start_log_exports` above.
+            Shell.check(
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+                verbose=True,
+            )
     except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
         results.append(
             Result(name="Job error", status=Result.Status.FAIL, info=str(e))
         )
-
-    # stop log replication
-    Shell.check(
-        "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
-        verbose=True,
-    )
 
     Result.create_from(
         results=results,
