@@ -818,7 +818,7 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -826,7 +826,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
 {
-    if (query.patterns.empty())
+    if (query.getPatterns().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -841,7 +841,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
+    if (query_builder.is_bypassed && !query.getPatterns().empty())
         return true;
 
     if (!current_range.has_value())
@@ -868,7 +868,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     return hasAllQueryTokensOrEmpty(query);
@@ -876,7 +876,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
@@ -886,7 +886,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
+    if (query_builder.is_bypassed && !query.getPatterns().empty())
         return true;
 
     if (!current_range.has_value())

@@ -221,6 +221,7 @@ static struct InitFiu
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
@@ -239,7 +240,8 @@ static struct InitFiu
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \
-    ONCE(zk_send_thread_operations_insert_throw)
+    ONCE(zk_send_thread_operations_insert_throw) \
+    REGULAR(replicated_database_status_finished_node_missing)
 
 namespace FailPoints
 {
