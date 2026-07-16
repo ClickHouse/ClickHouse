@@ -173,7 +173,7 @@ jobs:
           rm -rf {UNIQUE_WORK_DIRS}
           mkdir -p {UNIQUE_WORK_DIRS}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.
+          export PYTHONPATH=.:./ci
 {SETUP_ENVS}
           cat > {WORKFLOW_JOB_FILE} << 'EOF'
           ${{{{ toJson(job) }}}}
