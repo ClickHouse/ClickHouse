@@ -74,53 +74,61 @@ run_queries() {
     done
 }
 
+# NOTE: Keep the number of concurrent client processes low (at most ~8).
+# Each clickhouse-client is a full server-sized binary, and in sanitizer builds
+# a single client can take hundreds of megabytes of RSS. With ~20 concurrent
+# clients the OOM killer starts shooting processes on smaller CI runners
+# (observed as "Killed" messages in stderr, or as the server dying without
+# any fatal log). Concurrency on the server side is preserved by running
+# more sequential iterations per worker instead.
+
 # Scenario 1: Multiple readers of same data
 echo "Scenario 1: Multiple readers of same data..."
-for i in {1..10}; do
-    run_queries "SELECT sum(id), sum(value) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
+for i in {1..5}; do
+    run_queries "SELECT sum(id), sum(value) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 4 &
 done
 wait
 
 # Scenario 2: Readers of different columns
 echo "Scenario 2: Readers of different columns..."
-for i in {1..5}; do
-    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT sum(value) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT count(str) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
+for i in {1..2}; do
+    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 5 &
+    run_queries "SELECT sum(value) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 5 &
+    run_queries "SELECT count(str) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 5 &
 done
 wait
 
 # Scenario 3: String columns and subcolumns
 echo "Scenario 3: String columns and subcolumns..."
-for i in {1..5}; do
-    run_queries "SELECT sum(length(str)) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT any(str) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
+for i in {1..3}; do
+    run_queries "SELECT sum(length(str)) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 3 &
+    run_queries "SELECT any(str) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 3 &
 done
 wait
 
 # Scenario 4: Overlapping range reads
 echo "Scenario 4: Overlapping range reads..."
-for i in {1..5}; do
-    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 WHERE id < 5000 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 WHERE id >= 3000 AND id < 8000 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 WHERE id >= 5000 SETTINGS use_columns_cache = 1" 2 &
+for i in {1..2}; do
+    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 WHERE id < 5000 SETTINGS use_columns_cache = 1" 5 &
+    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 WHERE id >= 3000 AND id < 8000 SETTINGS use_columns_cache = 1" 5 &
+    run_queries "SELECT sum(id) FROM t_cache_concurrent_1 WHERE id >= 5000 SETTINGS use_columns_cache = 1" 5 &
 done
 wait
 
 # Scenario 5: Mix with aggregations
 echo "Scenario 5: Mix with aggregations..."
-for i in {1..5}; do
-    run_queries "SELECT category, sum(pk) FROM t_cache_concurrent_2 GROUP BY category LIMIT 10 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT count(DISTINCT category) FROM t_cache_concurrent_2 SETTINGS use_columns_cache = 1" 2 &
+for i in {1..3}; do
+    run_queries "SELECT category, sum(pk) FROM t_cache_concurrent_2 GROUP BY category LIMIT 10 SETTINGS use_columns_cache = 1" 3 &
+    run_queries "SELECT count(DISTINCT category) FROM t_cache_concurrent_2 SETTINGS use_columns_cache = 1" 3 &
 done
 wait
 
 # Scenario 6: Cache eviction under load
 echo "Scenario 6: Cache eviction under load..."
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
-for i in {1..10}; do
-    run_queries "SELECT sum(id), sum(value), count(str) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 3 &
-    run_queries "SELECT sum(pk), count(data) FROM t_cache_concurrent_2 SETTINGS use_columns_cache = 1" 3 &
+for i in {1..4}; do
+    run_queries "SELECT sum(id), sum(value), count(str) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 7 &
+    run_queries "SELECT sum(pk), count(data) FROM t_cache_concurrent_2 SETTINGS use_columns_cache = 1" 7 &
 done
 wait
 
@@ -135,9 +143,9 @@ wait
 
 # Scenario 8: Heavy concurrent load
 echo "Scenario 8: Heavy concurrent load..."
-for i in {1..10}; do
-    run_queries "SELECT sum(id), avg(value) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 1 &
-    run_queries "SELECT sum(pk), count(category) FROM t_cache_concurrent_2 SETTINGS use_columns_cache = 1" 1 &
+for i in {1..4}; do
+    run_queries "SELECT sum(id), avg(value) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 3 &
+    run_queries "SELECT sum(pk), count(category) FROM t_cache_concurrent_2 SETTINGS use_columns_cache = 1" 3 &
 done
 wait
 
@@ -162,9 +170,9 @@ fi
 echo "Testing String subcolumn concurrent access..."
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 
-for i in {1..10}; do
-    run_queries "SELECT sum(length(str)) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
-    run_queries "SELECT any(substr(str, 1, 5)) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 2 &
+for i in {1..4}; do
+    run_queries "SELECT sum(length(str)) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 5 &
+    run_queries "SELECT any(substr(str, 1, 5)) FROM t_cache_concurrent_1 SETTINGS use_columns_cache = 1" 5 &
 done
 wait
 
