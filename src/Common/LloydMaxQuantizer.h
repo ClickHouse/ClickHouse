@@ -5,19 +5,16 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
+#include <iterator>
 
-/** 256-level Gaussian Lloyd-Max scalar quantizer (the MSE-optimal scalar quantizer for a standard-normal source).
-  *
-  * This header is the single source of truth for the quantizer's tables and lookup tables. It is shared by:
-  *   - `quantizeBFloat16ToInt8` / `dequantizeInt8ToBFloat16` (the scalar codec functions), and
-  *   - the `...TransposedQuantized` distance functions, which dequantize `QBit(Int8)` codes on the fly.
-  *
-  * See `src/Functions/quantizeBFloat16ToInt8.cpp` for a description of the encoding contract (the code is stored as
-  * `index - 128`, so its raw byte equals `index XOR 0x80`, the sign bit matches the sign of the value, and the top
-  * `b` bits form a valid embedded `2^b`-level quantizer).
-  */
+/// 256-level Gaussian Lloyd-Max scalar quantizer (the MSE-optimal scalar quantizer for a standard-normal source).
+/// It is intended for values that are approximately N(0, 1) - e.g. a unit-norm embedding coordinate after a random
+/// orthogonal (randomized Hadamard) rotation, scaled by sqrt(dimensions) to reach unit variance.
+///
+/// The code is the index 0..255 of the Lloyd-Max cell, stored as Int8 (index - 128), so the sign bit equals the sign of
+/// the value (+0/-0 map to the positive/negative central cells) and the top `b` bits form a valid embedded 2^b-level
+/// quantizer: bit-truncation of the code yields coarser Int4/Int2/binary codes.
 namespace DB::LloydMax
 {
 
@@ -95,6 +92,27 @@ inline constexpr Float32 BOUNDARIES[255] = {
     2.40387496f, 2.52913769f, 2.67284063f, 2.84153407f, 3.04674351f, 3.31217014f, 3.70365827f,
 };
 // NOLINTEND(modernize-use-std-numbers)
+
+/// Quantize a value (expected to be ~N(0, 1)) to its Lloyd-Max cell index stored as Int8 (index - 128). The central
+/// decision boundary is exactly 0; the tie is broken by sign so the code's sign bit always matches the input's sign
+/// (+0 -> positive central cell, -0 -> negative). A NaN maps to the positive central cell.
+inline Int8 quantize(Float32 x)
+{
+    size_t index = 0;
+    if (std::isnan(x))
+        index = 128;
+    else if (x == 0.0f)
+        index = std::signbit(x) ? 127 : 128;
+    else
+        index = static_cast<size_t>(std::lower_bound(std::begin(BOUNDARIES), std::end(BOUNDARIES), x) - std::begin(BOUNDARIES));
+    return static_cast<Int8>(static_cast<Int16>(index) - 128);
+}
+
+/// Reconstruct the cell's reconstruction level from an Int8 code produced by `quantize`.
+inline Float32 dequantize(Int8 code)
+{
+    return LEVELS[static_cast<size_t>(static_cast<Int16>(code) + 128)];
+}
 
 /// Direct lookup table keyed by the raw BFloat16 bit pattern. BFloat16 has only 65536 possible
 /// values, so the whole quantizer is precomputed once: at runtime quantization is a single load
