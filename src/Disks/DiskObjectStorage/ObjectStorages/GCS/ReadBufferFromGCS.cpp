@@ -3,6 +3,8 @@
 #if USE_GOOGLE_CLOUD
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
+#include <Common/BlobStorageLogWriter.h>
+#include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 
@@ -18,6 +20,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    void logGCSReadFailure(
+        const BlobStorageLogWriterPtr & blob_storage_log,
+        const String & bucket,
+        const String & key,
+        size_t elapsed_microseconds,
+        const google::cloud::Status & status)
+    {
+        if (!blob_storage_log)
+            return;
+
+        try
+        {
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Read,
+                bucket, key, /* local_path */ {},
+                /* data_size */ 0,
+                elapsed_microseconds,
+                static_cast<Int32>(status.code()), status.message());
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ReadBufferFromGCS");
+        }
+    }
+}
+
 ReadBufferFromGCS::ReadBufferFromGCS(
     std::shared_ptr<gcs::Client> client_,
     const String & bucket_,
@@ -28,7 +58,8 @@ ReadBufferFromGCS::ReadBufferFromGCS(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_,
-    std::optional<Int64> expected_generation_)
+    std::optional<Int64> expected_generation_,
+    BlobStorageLogWriterPtr blob_storage_log_)
     : ReadBufferFromFileBase()
     , client(std::move(client_))
     , bucket(bucket_)
@@ -39,6 +70,7 @@ ReadBufferFromGCS::ReadBufferFromGCS(
     , offset(offset_)
     , read_until_position(read_until_position_)
     , expected_generation(expected_generation_)
+    , blob_storage_log(std::move(blob_storage_log_))
     , tmp_buffer_size(read_settings_.remote_fs_settings.buffer_size)
 {
     file_size = file_size_;
@@ -47,6 +79,31 @@ ReadBufferFromGCS::ReadBufferFromGCS(
         tmp_buffer.resize(tmp_buffer_size);
         data_ptr = tmp_buffer.data();
         data_capacity = tmp_buffer_size;
+    }
+}
+
+ReadBufferFromGCS::~ReadBufferFromGCS()
+{
+    /// A failure already logged its own event at the point of detection (see `initialize` /
+    /// `nextImpl`); only a fully successful lifetime is aggregated here. The destructor is
+    /// implicitly `noexcept`, so wrap the potentially-throwing `addEvent` (allocations inside
+    /// `SystemLogQueue::push`) in `try/catch` to avoid `std::terminate` if it throws during
+    /// stack unwinding.
+    if (blob_storage_log && read_attempted && !read_failed)
+    {
+        try
+        {
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Read,
+                bucket, key, /* local_path */ {},
+                total_bytes_read,
+                total_read_microseconds,
+                /* error_code */ 0, /* error_message */ {});
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ReadBufferFromGCS");
+        }
     }
 }
 
@@ -60,6 +117,7 @@ void ReadBufferFromGCS::initialize()
     if (expected_generation)
         generation_match = gcs::IfGenerationMatch(*expected_generation);
 
+    Stopwatch watch;
     /// GCS ReadRange is right-open [begin, end), which matches read_until_position (exclusive).
     if (read_until_position)
     {
@@ -75,15 +133,21 @@ void ReadBufferFromGCS::initialize()
         read_stream = std::make_unique<gcs::ObjectReadStream>(
             client->ReadObject(bucket, key, gcs::ReadFromOffset(offset), generation_match));
     }
+    const size_t elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (!read_stream->status().ok())
+    {
+        read_failed = true;
+        logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
         throwFromGCSStatus(read_stream->status(),
             fmt::format("while opening a read stream for '{}' in bucket '{}' at offset {}{}", key, bucket, offset,
                 expected_generation
                     ? fmt::format(" (pinned to generation {}; a precondition failure means the object was overwritten during the read)",
                         *expected_generation)
                     : ""));
+    }
 
+    total_read_microseconds += elapsed_microseconds;
     initialized = true;
 }
 
@@ -99,6 +163,8 @@ bool ReadBufferFromGCS::nextImpl()
                 "Attempt to read beyond the right offset ({} > {})", offset, read_until_position - 1);
     }
 
+    read_attempted = true;
+
     if (!initialized)
         initialize();
 
@@ -112,20 +178,28 @@ bool ReadBufferFromGCS::nextImpl()
     if (read_until_position)
         to_read = std::min(to_read, static_cast<size_t>(read_until_position - offset));
 
+    Stopwatch watch;
     read_stream->read(data_ptr, static_cast<std::streamsize>(to_read));
+    const size_t elapsed_microseconds = watch.elapsedMicroseconds();
     const size_t bytes_read = static_cast<size_t>(read_stream->gcount());
 
     if (bytes_read == 0)
     {
         /// The read produced no bytes: either clean EOF (status stays ok) or a transport error.
         if (!read_stream->status().ok())
+        {
+            read_failed = true;
+            logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
             throwFromGCSStatus(read_stream->status(),
                 fmt::format("while reading '{}' in bucket '{}' at offset {}", key, bucket, offset));
+        }
         return false;
     }
 
     BufferBase::set(data_ptr, bytes_read, 0);
     offset += bytes_read;
+    total_bytes_read += bytes_read;
+    total_read_microseconds += elapsed_microseconds;
 
     if (read_settings.remote_throttler)
         read_settings.remote_throttler->throttle(bytes_read);

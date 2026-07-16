@@ -82,6 +82,14 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
         expected_generation = generation;
     }
 
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromGCS>(
         getClient(),
         bucket,
@@ -92,7 +100,8 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
         /* read_until_position */ 0,
         restrict_seek,
         file_size,
-        expected_generation);
+        expected_generation,
+        std::move(blob_storage_log));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLINT

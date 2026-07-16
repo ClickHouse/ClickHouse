@@ -15,6 +15,9 @@
 namespace DB
 {
 
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
 /// Reads a GCS object through the native google-cloud-cpp storage client.
 ///
 /// Backed by a `google::cloud::storage::ObjectReadStream` (a std::istream). Ranged reads are used
@@ -24,6 +27,12 @@ namespace DB
 /// When `expected_generation` is set, every `ReadObject` request carries an `IfGenerationMatch`
 /// precondition, so a concurrent in-place overwrite fails the read instead of splicing bytes from
 /// two object generations (the native counterpart of `s3_validate_etag_on_read`).
+///
+/// Unlike S3/Azure, where one `initialize()` call is one discrete network request with a known
+/// content length, a GCS `ObjectReadStream` streams bytes across many `nextImpl` calls with no
+/// natural per-request boundary. So a successful read is logged to `system.blob_storage_log` (if
+/// enabled) as a single aggregate event in the destructor (mirroring ReadBufferFromHDFS), while an
+/// open or mid-stream failure is logged immediately, at the point it is detected.
 class ReadBufferFromGCS : public ReadBufferFromFileBase
 {
 public:
@@ -37,9 +46,10 @@ public:
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
         std::optional<size_t> file_size_ = std::nullopt,
-        std::optional<Int64> expected_generation_ = std::nullopt);
+        std::optional<Int64> expected_generation_ = std::nullopt,
+        BlobStorageLogWriterPtr blob_storage_log_ = {});
 
-    ~ReadBufferFromGCS() override = default;
+    ~ReadBufferFromGCS() override;
 
     bool nextImpl() override;
 
@@ -76,6 +86,12 @@ private:
 
     /// If set, pin every read request to this object generation (see the class comment).
     std::optional<Int64> expected_generation;
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    size_t total_bytes_read = 0;
+    size_t total_read_microseconds = 0;
+    bool read_attempted = false;
+    bool read_failed = false;
 
     bool initialized = false;
     std::unique_ptr<google::cloud::storage::ObjectReadStream> read_stream;
