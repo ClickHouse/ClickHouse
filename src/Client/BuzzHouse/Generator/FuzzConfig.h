@@ -467,6 +467,8 @@ public:
 
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
+    String tableGetRandomPartitionValue(uint64_t rand_val, const String & database, const String & table);
+
     uint32_t tableCountIndexes(const String & database, const String & table);
 
     String tableGetRandomIndex(uint64_t rand_val, const String & database, const String & table);
