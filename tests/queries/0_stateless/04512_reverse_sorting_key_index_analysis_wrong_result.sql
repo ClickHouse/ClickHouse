@@ -132,3 +132,48 @@ SELECT count() FROM t_04512_nullable WHERE n IS NULL SETTINGS use_lightweight_pr
 SELECT count() FROM t_04512_nullable WHERE n IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 1;
 
 DROP TABLE t_04512_nullable;
+
+-- Nullable reverse key, values then a trailing NULL across a mark boundary. NULL maps to +Inf and sorts
+-- first for a descending column, so storage order is NULL, 4, 3 and no interior mark can have a value at
+-- its begin and NULL at its end. A mark boundary on NULL must not build an empty value-space range and
+-- prune the (4, 3) granule.
+DROP TABLE IF EXISTS t_04512_nullable2;
+
+CREATE TABLE t_04512_nullable2 (ts Nullable(Int32))
+ENGINE = MergeTree
+ORDER BY ts DESC
+SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+
+INSERT INTO t_04512_nullable2 VALUES (4), (3), (NULL);
+
+SELECT count() FROM t_04512_nullable2 WHERE ts = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable2 WHERE ts = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nullable2 WHERE ts = 4 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable2 WHERE ts = 4 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nullable2 WHERE ts IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable2 WHERE ts IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nullable2 WHERE ts = 5 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable2 WHERE ts = 5 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+
+DROP TABLE t_04512_nullable2;
+
+-- Composite key with a trailing descending Nullable column, mark boundary landing on NULL within a
+-- leading-column group. Equality on the descending Nullable value must not prune its granule.
+DROP TABLE IF EXISTS t_04512_nullable3;
+
+CREATE TABLE t_04512_nullable3 (a Int32, n Nullable(Int32))
+ENGINE = MergeTree
+ORDER BY (a, n DESC)
+SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+
+-- Storage order within a=2 is NULL, 7, 4 (NULL sorts first for descending).
+INSERT INTO t_04512_nullable3 VALUES (1, 5), (1, 3), (2, NULL), (2, 7), (2, 4), (3, 9);
+
+SELECT count() FROM t_04512_nullable3 WHERE a = 2 AND n = 4 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable3 WHERE a = 2 AND n = 4 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nullable3 WHERE a = 2 AND n = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable3 WHERE a = 2 AND n = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_04512_nullable3 WHERE a = 2 AND n IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_04512_nullable3 WHERE a = 2 AND n IS NULL SETTINGS use_lightweight_primary_key_index_analysis = 1;
+
+DROP TABLE t_04512_nullable3;
