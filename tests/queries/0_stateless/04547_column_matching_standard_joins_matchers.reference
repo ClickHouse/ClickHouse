@@ -59,6 +59,14 @@ UNKNOWN_IDENTIFIER
 1
 2
 3
+--- standard: quoted CTE names pin qualifier and table-expression lookups
+UNKNOWN_IDENTIFIER
+UNKNOWN_IDENTIFIER
+1	1
+1	1
+--- standard: quoted recursive CTE name pins the self-reference qualifier
+UNKNOWN_IDENTIFIER
+3
 --- standard: INTERPOLATE targets fold to the canonical column, quoted targets pin
 1	10
 2	11

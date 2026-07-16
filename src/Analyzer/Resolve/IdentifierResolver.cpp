@@ -753,10 +753,10 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode))
+        if (parts_size == 1 && lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode, table_expression_data.table_name_pinned))
             return true;
         if (parts_size == 2 && lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
-            && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
+            && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode, table_expression_data.table_name_pinned))
             return true;
         return false;
     }
@@ -773,7 +773,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 1)
         return false;
 
-    if (lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode)
+    if (lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode, table_expression_data.table_name_pinned)
         || lookupMatchesTableExpressionAlias(identifier_lookup, table_expression_node, name_match_mode))
         return true;
 
@@ -781,7 +781,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return false;
 
     if (lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
-        && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
+        && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode, table_expression_data.table_name_pinned))
         return true;
 
     return false;
@@ -1029,10 +1029,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const auto & table_name = table_expression_data.table_name;
         const auto & database_name = table_expression_data.database_name;
 
-        if (parts_size == 1 && lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode))
+        if (parts_size == 1 && lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode, table_expression_data.table_name_pinned))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else if (parts_size == 2 && lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
-            && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
+            && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode, table_expression_data.table_name_pinned))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else
             return {};
@@ -1099,7 +1099,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & table_name = table_expression_data.table_name;
-    if (lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode)
+    if (lookupPartMatchesName(identifier_lookup, 0, table_name, name_match_mode, table_expression_data.table_name_pinned)
         || lookupMatchesTableExpressionAlias(identifier_lookup, table_expression_node, name_match_mode))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
@@ -1116,7 +1116,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     const auto & database_name = table_expression_data.database_name;
     if (lookupPartMatchesName(identifier_lookup, 0, database_name, name_match_mode)
-        && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode))
+        && lookupPartMatchesName(identifier_lookup, 1, table_name, name_match_mode, table_expression_data.table_name_pinned))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};

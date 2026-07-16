@@ -40,6 +40,9 @@ struct AnalysisTableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
+    /// Whether `table_name` comes from a double-quoted definition (CTE name, recursive CTE
+    /// temporary table name): pinned to exact-spelling matching under `standard` matching.
+    bool table_name_pinned = false;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;

@@ -360,7 +360,9 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
+        (options.ignore_cte
+            || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && cte_name_quote == rhs_typed.cte_name_quote
+                && is_materialized == rhs_typed.is_materialized)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -372,6 +374,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
+        projection_aliases_to_override == rhs_typed.projection_aliases_to_override &&
         pinned_projection_column_names == rhs_typed.pinned_projection_column_names &&
         settings_changes == rhs_typed.settings_changes;
 }
@@ -385,12 +388,16 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(false);
         state.update(size_t(0));
         state.update(std::string());
+        state.update(static_cast<UInt8>(IdentifierPartQuote::Unquoted));
+        state.update(false);
     }
     else
     {
         state.update(is_cte);
         state.update(cte_name.size());
         state.update(cte_name);
+        state.update(static_cast<UInt8>(cte_name_quote));
+        state.update(is_materialized);
     }
 
     state.update(projection_columns.size());
@@ -415,7 +422,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(pinned_name);
     }
 
-    state.update(is_materialized);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);

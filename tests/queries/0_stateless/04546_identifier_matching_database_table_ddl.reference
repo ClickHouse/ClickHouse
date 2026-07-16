@@ -46,3 +46,8 @@ differs only in character case
 0
 differs only in character case
 2
+--- standard: RENAME DATABASE folds the old name, lookups follow the new name
+0
+UNKNOWN_DATABASE
+--- standard: RENAME DATABASE to a case sibling of an existing database is allowed
+2

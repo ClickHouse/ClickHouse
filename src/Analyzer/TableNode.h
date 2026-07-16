@@ -101,10 +101,17 @@ public:
         return temporary_table_name;
     }
 
-    /// Set temporary table name
-    void setTemporaryTableName(std::string temporary_table_name_value)
+    /// Quoting of the definition the temporary table name came from (e.g. a recursive CTE name).
+    IdentifierPartQuote getTemporaryTableNameQuote() const
+    {
+        return temporary_table_name_quote;
+    }
+
+    /// Set temporary table name together with its definition quote
+    void setTemporaryTableName(std::string temporary_table_name_value, IdentifierPartQuote temporary_table_name_quote_value = IdentifierPartQuote::Unquoted)
     {
         temporary_table_name = std::move(temporary_table_name_value);
+        temporary_table_name_quote = temporary_table_name_quote_value;
     }
 
     /// Sorted column names pinned to exact-spelling matching under `standard` name matching.
@@ -190,6 +197,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
+    IdentifierPartQuote temporary_table_name_quote = IdentifierPartQuote::Unquoted;
     Names pinned_column_names;
     MaterializedCTEPtr materialized_cte;
 

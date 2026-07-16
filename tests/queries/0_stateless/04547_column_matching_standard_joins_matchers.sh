@@ -59,6 +59,16 @@ ${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL S
 ${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
 ${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte; WITH RECURSIVE cte AS (SELECT 1 AS MyCol UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte'
 
+echo '--- standard: quoted CTE names pin qualifier and table-expression lookups'
+${CLIENT_STANDARD} --query 'WITH "MyCte" AS (SELECT 1 AS x) SELECT mycte.* FROM "MyCte"' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'WITH "MyCte" AS (SELECT 1 AS x) SELECT mycte.x FROM "MyCte"' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'WITH "MyCte" AS (SELECT 1 AS x) SELECT "MyCte".x, "MyCte".* FROM "MyCte"'
+${CLIENT_STANDARD} --query 'WITH MyCte AS (SELECT 1 AS x) SELECT mycte.x, MYCTE.* FROM myCTE'
+
+echo '--- standard: quoted recursive CTE name pins the self-reference qualifier'
+${CLIENT_STANDARD} --query 'WITH RECURSIVE "MyCte" AS (SELECT 1 AS n UNION ALL SELECT mycte.n + 1 FROM "MyCte" WHERE mycte.n < 3) SELECT max(n) FROM "MyCte"' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'WITH RECURSIVE "MyCte" AS (SELECT 1 AS n UNION ALL SELECT "MyCte".n + 1 FROM "MyCte" WHERE "MyCte".n < 3) SELECT max(n) FROM "MyCte"'
+
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_interp (x UInt64, Val UInt64) ENGINE = Memory; INSERT INTO t_col_interp VALUES (1, 10), (3, 10)"
 
 echo '--- standard: INTERPOLATE targets fold to the canonical column, quoted targets pin'

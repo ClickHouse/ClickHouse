@@ -12,7 +12,7 @@ DB_ONE_FOLDED=$(echo "$DB_ONE" | tr '[:upper:]' '[:lower:]')
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB_ONE}; DROP DATABASE IF EXISTS ${DB_TWO}"
+    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB_ONE}; DROP DATABASE IF EXISTS ${DB_TWO}; DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_RenDb; DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_RenNew; DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_RenSib; DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_RENSIB"
 }
 trap cleanup EXIT
 cleanup
@@ -96,3 +96,20 @@ ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.\"CASETAB\" (y Int32) ENGINE = Memory; SELECT count() FROM ${DB_ONE}.\"CASETAB\""
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE DATABASE ${DB_ONE_FOLDED}" 2>&1 | grep -oF "differs only in character case" | uniq
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.SENS1 (x Int32) ENGINE = Memory; CREATE TABLE ${DB_ONE}.sens1 (x Int32) ENGINE = Memory; SELECT count() FROM system.tables WHERE database = '${DB_ONE}' AND lower(name) = 'sens1'"
+
+echo '--- standard: RENAME DATABASE folds the old name, lookups follow the new name'
+DB_REN="${CLICKHOUSE_DATABASE}_RenDb"
+DB_REN_NEW="${CLICKHOUSE_DATABASE}_RenNew"
+DB_REN_FOLDED=$(echo "$DB_REN" | tr '[:upper:]' '[:lower:]')
+DB_REN_NEW_FOLDED=$(echo "$DB_REN_NEW" | tr '[:upper:]' '[:lower:]')
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_REN}; CREATE TABLE ${DB_REN}.RenTab (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "RENAME DATABASE ${DB_REN_FOLDED} TO ${DB_REN_NEW}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SELECT count() FROM ${DB_REN_NEW_FOLDED}.rentab"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SELECT count() FROM ${DB_REN_FOLDED}.rentab" 2>&1 | grep -oF 'UNKNOWN_DATABASE' | uniq
+
+# The rename path checks only exact-name existence of the target, so a case-sibling rename is allowed.
+echo '--- standard: RENAME DATABASE to a case sibling of an existing database is allowed'
+DB_REN_SIB="${CLICKHOUSE_DATABASE}_RenSib"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_REN_SIB}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "RENAME DATABASE ${DB_REN_NEW_FOLDED} TO ${CLICKHOUSE_DATABASE}_RENSIB"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE lower(name) = lower('${DB_REN_SIB}')"

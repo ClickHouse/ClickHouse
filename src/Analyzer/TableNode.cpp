@@ -162,6 +162,7 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if (storage_id != rhs_typed.storage_id
         || table_expression_modifiers != rhs_typed.table_expression_modifiers
         || temporary_table_name != rhs_typed.temporary_table_name
+        || temporary_table_name_quote != rhs_typed.temporary_table_name_quote
         || pinned_column_names != rhs_typed.pinned_column_names)
         return false;
 
@@ -186,6 +187,7 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     {
         state.update(temporary_table_name.size());
         state.update(temporary_table_name);
+        state.update(static_cast<UInt8>(temporary_table_name_quote));
     }
     else
     {
@@ -217,6 +219,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
+    result_table_node->temporary_table_name_quote = temporary_table_name_quote;
     result_table_node->pinned_column_names = pinned_column_names;
 
     result_table_node->materialized_cte = materialized_cte;

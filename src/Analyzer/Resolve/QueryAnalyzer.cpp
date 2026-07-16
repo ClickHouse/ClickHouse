@@ -4696,6 +4696,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         if (!table_node->getTemporaryTableName().empty())
         {
             table_expression_data.table_name = table_node->getTemporaryTableName();
+            table_expression_data.table_name_pinned = table_node->getTemporaryTableNameQuote() == IdentifierPartQuote::DoubleQuoted;
             table_expression_data.table_expression_name = table_node->getTemporaryTableName();
         }
         else
@@ -4711,6 +4712,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     else if (query_node || union_node)
     {
         table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
+        table_expression_data.table_name_pinned
+            = (query_node ? query_node->getCTENameQuote() : union_node->getCTENameQuote()) == IdentifierPartQuote::DoubleQuoted;
         table_expression_data.table_expression_description = "subquery";
     }
     else if (table_function_node)
@@ -7183,7 +7186,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             auto temporary_table_storage = temporary_table_holder->getTable();
 
             recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
-            recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+            recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName(), union_node_typed.getCTENameQuote());
             recursive_cte_table_node->setPinnedColumnNames(temporary_table_pinned_columns);
 
             for (size_t i = 1; i < queries_nodes.size(); ++i)
