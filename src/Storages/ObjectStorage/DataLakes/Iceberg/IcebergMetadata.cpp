@@ -684,7 +684,6 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             persistent_components.table_uuid);
 
         // Use -1 as the Iceberg spec sentinel for "no parent snapshot"
-        // (distinct from snapshot ID 0 which is a valid snapshot).
         Int64 parent_snapshot_id = -1;
         if (metadata_object->has(Iceberg::f_current_snapshot_id) && !metadata_object->isNull(Iceberg::f_current_snapshot_id))
         {
@@ -794,6 +793,10 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
             throw;
         }
 
+        // Invalidate the metadata cache so that subsequent operations on this table see the
+        // schema and empty snapshot we just wrote.
+        // See `PersistentTableComponents::invalidateMetadataCache` for the rationale.
+        persistent_components.invalidateMetadataCache();
         // Commit succeeded.
         return;
     }
