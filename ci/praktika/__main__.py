@@ -380,9 +380,9 @@ def main(argv=None):
             Utils.exit_with_error(
                 f"More than one job [{args.job}]: {[(wf.name, job.name) for job, wf in job_workflow_pairs]}"
             )
-            else:
-                job, workflow = job_workflow_pairs[0][0], job_workflow_pairs[0][1]
-                print(f"Going to run job [{job.name}], workflow [{workflow.name}]")
+        else:
+            job, workflow = job_workflow_pairs[0][0], job_workflow_pairs[0][1]
+            print(f"Going to run job [{job.name}], workflow [{workflow.name}]")
             Runner().run(
                 workflow=workflow,
                 job=job,
