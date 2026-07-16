@@ -1033,10 +1033,11 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
         /// `page_type` nor its `encoding` - is relevant to eligibility. Skip it before validating those
         /// Thrift enums, otherwise a garbage enum value on an advisory empty entry would turn a file
         /// that reads fine (with a full scan) into a hard `INCORRECT_DATA` failure under the default-on
-        /// dictionary filter. A negative count is genuine corruption, not an empty page, so it is
-        /// rejected; `count` is a plain integer, so reading it needs no enum validation.
+        /// dictionary filter. A negative count is corrupted metadata, but `encoding_stats` is only
+        /// advisory input to this eligibility check, so it must not fail the whole read either: like
+        /// the unrecognized enum values below, it just makes the chunk ineligible for the optimization.
         if (s.count < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative page count in Parquet metadata");
+            return false;
         if (s.count == 0)
             continue;
         /// The remaining fields come from Thrift metadata, so a malformed file can carry out-of-range
