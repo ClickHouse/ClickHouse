@@ -362,8 +362,14 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    /// The function accepts an argument of any type and measures the compression ratio of the column's real wire
+    /// layout, so a `Variant` argument must be kept genuine rather than collapsed to the adapter's
+    /// `Nullable(supertype)` re-encoding. (`is_window_function` already exempts it from adaptation -- it is set so
+    /// the function handles NULLs itself -- but the native support is declared explicitly here, not implied by it.)
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, documentation, {.is_order_dependent = true, .is_window_function = true}});
+        {createAggregateFunctionEstimateCompressionRatio,
+         documentation,
+         {.is_order_dependent = true, .is_window_function = true, .support_variant_argument = true}});
 }
 }

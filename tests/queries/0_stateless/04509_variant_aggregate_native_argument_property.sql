@@ -48,4 +48,19 @@ SELECT 'groupFormatMerge keeps Variant schema',
        groupFormatMerge('JSONCompactEachRowWithNamesAndTypes')(s) LIKE '%Variant(%'
 FROM (SELECT groupFormatState('JSONCompactEachRowWithNamesAndTypes')(CAST(1 AS Variant(UInt8, UInt64))) AS s);
 
+-- estimateCompressionRatio accepts an argument of any type and measures the compression ratio of the column's
+-- real wire layout, so it keeps the genuine Variant argument instead of measuring the adapter's
+-- Nullable(supertype) re-encoding. The state type shows which argument type the function was resolved with, and
+-- a Variant with no common supertype (which the adapter could not handle at all) still resolves natively.
+SELECT 'estimateCompressionRatio keeps Variant', toTypeName(estimateCompressionRatioState(v)) FROM t_variant_native_prop;
+SELECT 'estimateCompressionRatio no-supertype Variant', estimateCompressionRatio(CAST(number AS Variant(String, UInt64))) > 0 FROM numbers(1000);
+
+-- singleValueOrNull is deliberately NOT declared Variant-native: its result type is Nullable(argument) and a
+-- Variant cannot be wrapped in Nullable, so native resolution of a Variant argument has always thrown. The
+-- adapter now handles a Variant with a Nullable-wrappable supertype (previously an error), and a Variant
+-- without one keeps failing with the function's own error.
+SELECT 'singleValueOrNull adapted', toTypeName(singleValueOrNull(v)), singleValueOrNull(v) FROM t_variant_native_prop;
+SELECT 'singleValueOrNull adapted single value', singleValueOrNull(CAST(1 AS Variant(UInt8, UInt64)));
+SELECT singleValueOrNull(CAST('x' AS Variant(String, UInt64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 DROP TABLE t_variant_native_prop;

@@ -14,3 +14,7 @@ anyIf native	Variant(Float64, UInt8)
 sumIf adapted	Nullable(Float64)
 groupFormat keeps Variant schema	1
 groupFormatMerge keeps Variant schema	1
+estimateCompressionRatio keeps Variant	AggregateFunction(estimateCompressionRatio, Variant(Float64, UInt8))
+estimateCompressionRatio no-supertype Variant	1
+singleValueOrNull adapted	Nullable(Float64)	\N
+singleValueOrNull adapted single value	1
