@@ -58,3 +58,21 @@ INSERT INTO test_geom VALUES
 SELECT id, flipCoordinates(geom) FROM test_geom ORDER BY id;
 
 DROP TABLE test_geom;
+
+-- Issue #110680: flipCoordinates over a Geometry argument must keep the custom `Geometry` type name
+-- so the result can be passed directly to functions that require a geometry type.
+WITH readWKT('POLYGON((0 0,4 0,4 3,0 3,0 0))') AS g
+SELECT toTypeName(g), toTypeName(flipCoordinates(g));
+
+WITH readWKT('POLYGON((0 0,4 0,4 3,0 3,0 0))') AS g
+SELECT areaCartesian(flipCoordinates(g));
+
+-- Mixed-type Geometry column: every row keeps the Geometry type.
+DROP TABLE IF EXISTS test_geom2;
+CREATE TABLE test_geom2 (id UInt32, geom Geometry) ENGINE = Memory;
+INSERT INTO test_geom2 VALUES
+    (1, readWkt('POINT(10 20)')),
+    (2, readWkt('LINESTRING(1 2, 3 4)')),
+    (3, readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));
+SELECT id, toTypeName(flipCoordinates(geom)) FROM test_geom2 ORDER BY id;
+DROP TABLE test_geom2;

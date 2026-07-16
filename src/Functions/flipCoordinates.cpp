@@ -1,10 +1,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -30,6 +32,10 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    /// Handle the Geometry Variant ourselves so the custom `Geometry` type name is preserved.
+    /// The generic FunctionBaseVariantAdaptor rebuilds a bare Variant, dropping the custom name.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -60,7 +66,11 @@ public:
 
         ColumnPtr result;
 
-        if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
+        if (const auto * variant_type = checkAndGetDataType<DataTypeVariant>(arg.type.get()))
+        {
+            result = executeForVariant(column, variant_type);
+        }
+        else if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
             result = executeForPoint(column);
         }
@@ -84,6 +94,58 @@ public:
     }
 
 private:
+    /// Flip each sub-column of a Variant (e.g. the Geometry type) in place, keeping the same
+    /// discriminators and offsets. flipCoordinates preserves the geometry structure (Point stays a
+    /// Point, Polygon stays a Polygon, ...), so no rows move between variants and the discriminator
+    /// layout is unchanged. Reassembling with the original local_to_global mapping keeps the result
+    /// column compatible with the input Variant type, so getReturnTypeImpl's `arguments[0]` (the
+    /// custom-named `Geometry` type) is the correct result type.
+    ColumnPtr executeForVariant(const ColumnPtr & column, const DataTypeVariant * variant_type) const
+    {
+        const auto * column_variant = checkAndGetColumn<ColumnVariant>(column.get());
+        if (!column_variant)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", column->getName(), getName());
+
+        const auto & variant_types = variant_type->getVariants();
+        const auto local_to_global = column_variant->getLocalToGlobalDiscriminatorsMapping();
+        const size_t num_variants = column_variant->getNumVariants();
+
+        Columns new_variants;
+        new_variants.reserve(num_variants);
+
+        for (size_t local_discr = 0; local_discr < num_variants; ++local_discr)
+        {
+            const ColumnPtr & sub_column = column_variant->getVariantPtrByLocalDiscriminator(local_discr);
+            const DataTypePtr & sub_type = variant_types[local_to_global[local_discr]];
+
+            ColumnPtr flipped;
+            if (checkAndGetDataType<DataTypeTuple>(sub_type.get()))
+            {
+                flipped = executeForPoint(sub_column);
+            }
+            else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(sub_type.get()))
+            {
+                flipped = executeForArray(sub_column, array_type);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal variant type {} of argument of function {}",
+                    sub_type->getName(),
+                    getName());
+            }
+
+            new_variants.push_back(std::move(flipped));
+        }
+
+        return ColumnVariant::create(
+            column_variant->getLocalDiscriminatorsPtr(),
+            column_variant->getOffsetsPtr(),
+            new_variants,
+            local_to_global);
+    }
+
     ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
