@@ -859,6 +859,63 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
+def test_optimize_manifest_with_catalog(started_cluster):
+    # OPTIMIZE TABLE ... MANIFEST on a catalog-managed table must consolidate the per-insert manifests
+    # and commit the new snapshot back through the catalog, without changing the data.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_optimize_manifest_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    # Unpartitioned table, so every per-insert data manifest can consolidate into a single one.
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # Several separate inserts -> several snapshots, each adding its own data manifest.
+    num_inserts = 5
+    for i in range(num_inserts):
+        node.query(
+            f"INSERT INTO {table_ref} VALUES (NULL, 'sym{i}', {100 + i}, {200 + i}, tuple('bot'));",
+            settings=write_settings,
+        )
+
+    def current_snapshot_id():
+        # Read the current snapshot from the catalog's metadata.json (avoids parsing the manifest-list
+        # Avro, which pyiceberg rejects because ClickHouse omits field-ids there).
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        assert table.current_snapshot() is not None, "expected a current snapshot after inserts"
+        return table.metadata.current_snapshot_id
+
+    snapshot_id_before = current_snapshot_id()
+    rows_before = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+
+    node.query(
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # The compaction must commit a new (replace) snapshot back through the catalog.
+    assert current_snapshot_id() != snapshot_id_before, (
+        "OPTIMIZE TABLE ... MANIFEST did not commit a new snapshot through the catalog"
+    )
+
+    # The metadata-only rewrite must not change the data.
+    rows_after = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+    assert rows_after == rows_before
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [

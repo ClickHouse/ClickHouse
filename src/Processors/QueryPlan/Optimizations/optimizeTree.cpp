@@ -509,7 +509,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeVectorSearchSecondPass(root, stack, nodes, extra_settings))
+                if (optimizeVectorSearchWithVectorIndexSecondPass(root, stack, nodes, extra_settings))
                     break;
             }
 
@@ -525,6 +525,38 @@ void optimizeTreeSecondPass(
             stack.pop_back();
         }
         while (!stack.empty()) /// Vector search only for 1 substree with ORDER BY..LIMIT
+            stack.pop_back();
+    }
+
+    /// Quantized-codes brute-force vector search: for tables without a vector similarity index but with a vector column
+    /// carrying a `Quantize(...)` codec (which stores a quantized companion subcolumn), rewrite ORDER BY distance LIMIT
+    /// into a two-stage shortlist-then-rescore. It must run before lazy materialization so that the latter defers the
+    /// heavy vector column on the inner shortlist.
+    if (optimization_settings.try_use_vector_search)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                if (optimizeVectorSearchWithQuantizedCodes(root, stack, nodes, extra_settings, optimization_settings.max_limit_for_lazy_materialization))
+                    break;
+            }
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+        while (!stack.empty())
             stack.pop_back();
     }
 

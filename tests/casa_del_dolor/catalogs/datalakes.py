@@ -660,6 +660,16 @@ logger.jetty.level = warn
                         "spark.hadoop.fs.s3a.aws.credentials.provider",
                         "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
                     )
+                    # iceberg-aws-bundle 1.10 ships an unrelocated AWS SDK >= 2.30 that
+                    # shadows hadoop-aws' older bundle, so S3A's bulk DeleteObjects now
+                    # sends CRC32 checksums instead of Content-MD5. The integration-test
+                    # MinIO (RELEASE.2024-09-13) rejects that with "Missing required
+                    # header ... Content-Md5" (e.g. the "Remove S3 Dir Markers" cleanup
+                    # after df.write). Single-object deletes need no payload checksum,
+                    # so fall back to them.
+                    builder.config(
+                        "spark.hadoop.fs.s3a.multiobjectdelete.enable", "false"
+                    )
 
                 if catalog == LakeCatalogs.NoCatalog:
                     builder.config(
