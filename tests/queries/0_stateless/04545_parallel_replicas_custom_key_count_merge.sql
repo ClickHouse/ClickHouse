@@ -31,6 +31,16 @@ SELECT 'count subquery';
 SELECT * FROM (SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545))
 SETTINGS parallel_replicas_custom_key = 'sipHash64(number)';
 
+-- sum() forces a materialization (different aggregate path than count()); custom key is NOT a
+-- GROUP BY key -> per-replica partials must be merged on the initiator -> single total row.
+SELECT 'sum analyzer=1';
+SELECT sum(number) FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 1;
+
+SELECT 'sum analyzer=0';
+SELECT sum(number) FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+SETTINGS parallel_replicas_custom_key = 'sipHash64(number)', enable_analyzer = 0;
+
 -- GROUP BY on a key that does NOT cover the custom key -> must be merged.
 SELECT 'group by not covering custom key';
 SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)

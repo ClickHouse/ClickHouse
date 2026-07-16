@@ -4,6 +4,10 @@ count analyzer=0
 100000
 count subquery
 100000
+sum analyzer=1
+4999950000
+sum analyzer=0
+4999950000
 group by not covering custom key
 0	33334
 1	33333
