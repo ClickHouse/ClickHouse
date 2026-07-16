@@ -182,9 +182,14 @@ void MergeTreeDeduplicationLog::rotate()
     auto new_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 
     /// The new writer is ready; now finalize the previous one and switch over.
+    /// `current_writer` can already be canceled here - e.g. `addPart` rolling back
+    /// a failed insert calls `rotate` after a failed `writeRecord` left it canceled.
+    /// `finalize` disallows calling it on a canceled buffer (it throws a logical
+    /// error, which aborts the process in debug and sanitizer builds), so skip it
+    /// in that case: a canceled buffer has nothing left to flush or sync anyway.
     try
     {
-        if (current_writer)
+        if (current_writer && !current_writer->isCanceled())
         {
             current_writer->finalize();
             current_writer->sync();
@@ -434,19 +439,31 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
-        /// If an error has occurred during finalize, we'd like to have the exception set for reset.
-        /// Otherwise, we'll be in a situation when a finalization didn't happen, and we didn't get
-        /// any error, causing logical error (see ~MemoryBuffer()).
-        try
+        /// `current_writer` can already be canceled here - e.g. after a failed
+        /// insert whose rollback could not reopen a fresh writer. `finalize`
+        /// disallows calling it on a canceled buffer (it throws a logical error,
+        /// which aborts the process in debug and sanitizer builds), so just drop
+        /// it in that case: a canceled buffer has nothing left to flush.
+        if (current_writer->isCanceled())
         {
-            current_writer->finalize();
             current_writer.reset();
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            current_writer->cancel();
-            current_writer.reset();
+            /// If an error has occurred during finalize, we'd like to have the exception set for reset.
+            /// Otherwise, we'll be in a situation when a finalization didn't happen, and we didn't get
+            /// any error, causing logical error (see ~MemoryBuffer()).
+            try
+            {
+                current_writer->finalize();
+                current_writer.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                current_writer->cancel();
+                current_writer.reset();
+            }
         }
     }
 }
