@@ -482,16 +482,16 @@ void ReaderExecutor::initDecryption()
 
     /// The headers sit at the front of the first object; identify it (its `remote_path` is the
     /// stable cache key for disk files).
-    size_t object_start_offset = 0;
-    const StoredObject * object = offset_map.findObjectAt(0, &object_start_offset);
-    if (!object)
+    const auto * segment = offset_map.findObjectAt(0);
+    if (!segment)
         return;
+    const StoredObject & object = segment->object;
 
     /// Cache hit: parse the cached header bytes and skip the source read. The size check guards
     /// against a stale entry from a differently-layered file at the same path.
     if (encryption_header_cache)
     {
-        if (auto cached = encryption_header_cache->read(object->remote_path);
+        if (auto cached = encryption_header_cache->read(object.remote_path);
             cached && cached->size() == data_start_offset)
         {
             auto cached_block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
@@ -507,7 +507,7 @@ void ReaderExecutor::initDecryption()
 
     /// Miss: read the headers from the source (one-shot; no long connection).
     auto block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
-    const size_t got = readOneShot(*object, /*object_offset=*/0, data_start_offset, block->data());
+    const size_t got = readOneShot(object, /*object_offset=*/0, data_start_offset, block->data());
 
     /// Under size-unknown sources a short read means EOF rather than an error, so 0 bytes is an
     /// empty object (same as the size-known empty branch above) and a partial read is corruption.
@@ -526,7 +526,7 @@ void ReaderExecutor::initDecryption()
     decryptor.parseHeaders(header_chain);
 
     if (encryption_header_cache)
-        encryption_header_cache->write(object->remote_path, String(block->data(), got));
+        encryption_header_cache->write(object.remote_path, String(block->data(), got));
 #endif
 }
 
@@ -552,15 +552,15 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// `position + data_start_offset` (the encryption headers sit at the file front, and
     /// `data_start_offset` is 0 without encryption).
     const size_t position_physical = position + data_start_offset;
-    size_t object_physical_start_offset = 0;
-    const StoredObject * object = offset_map.findObjectAt(position_physical, &object_physical_start_offset);
-    if (!object)
+    const auto * segment = offset_map.findObjectAt(position_physical);
+    if (!segment)
     {
         reached_eof = true;
         return {};
     }
 
-    const size_t object_offset = position_physical - object_physical_start_offset;
+    const StoredObject & object = segment->object;
+    const size_t object_offset = position_physical - segment->logical_offset;
 
     /// Clamp the block to the object boundary so a window never straddles two
     /// objects; the next call continues in the next object. Unknown total size
@@ -568,7 +568,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     size_t want = block_size;
     if (!offset_map.hasUnknownSize())
     {
-        const size_t remaining_in_object = object->bytes_size - object_offset;
+        const size_t remaining_in_object = object.bytes_size - object_offset;
         want = std::min(block_size, remaining_in_object);
         if (want == 0)
         {
@@ -586,9 +586,9 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     size_t got = 0;
     if (!cache_chain.empty())
-        got = serveThroughCaches(*object, object_physical_start_offset, object_offset, want, block->data());
+        got = serveThroughCaches(object, segment->logical_offset, object_offset, want, block->data());
     else
-        got = readSource(*object, object_offset, want, block->data());
+        got = readSource(object, object_offset, want, block->data());
 
     stats.add(Stats::RequestedBytes, got);
 
@@ -607,7 +607,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         /// The object is shorter than its declared size — truncated or corrupt.
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "ReaderExecutor: read {} of {} bytes at offset {} from {} (declared size {})",
-            got, want, position, object->remote_path, object->bytes_size);
+            got, want, position, object.remote_path, object.bytes_size);
     }
 
     continuity_tracker.recordReadRange(position, got);

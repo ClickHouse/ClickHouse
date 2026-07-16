@@ -43,18 +43,12 @@ void OffsetMap::build(const StoredObjects & objects)
     }
 }
 
-const StoredObject * OffsetMap::findObjectAt(size_t logical_offset, size_t * object_logical_start_offset) const
+const OffsetMap::Segment * OffsetMap::findObjectAt(size_t logical_offset) const
 {
     /// Linear scan: the segment count equals the file's object count, a handful at most.
     for (const auto & seg : segments)
-    {
         if (seg.logical_offset <= logical_offset && logical_offset < seg.logical_offset + seg.size)
-        {
-            if (object_logical_start_offset)
-                *object_logical_start_offset = seg.logical_offset;
-            return &seg.object;
-        }
-    }
+            return &seg;
     return nullptr;
 }
 
