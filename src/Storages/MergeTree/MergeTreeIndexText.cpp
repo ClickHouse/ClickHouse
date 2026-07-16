@@ -5,6 +5,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
@@ -14,6 +16,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -21,6 +24,7 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/MapKeyValueToken.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -824,7 +828,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
 {
-    if (query.getPatterns().empty())
+    if (query.getPatterns().empty() && query.getValueMatchers().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -839,7 +843,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
+    if (query_builder.is_bypassed && (!query.getPatterns().empty() || !query.getValueMatchers().empty()))
         return true;
 
     if (!current_range.has_value())
@@ -884,7 +888,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
+    if (query_builder.is_bypassed && (!query.getPatterns().empty() || !query.getValueMatchers().empty()))
         return true;
 
     if (!current_range.has_value())
@@ -1767,6 +1771,26 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
     }
+    else if (isMap(index_column.type))
+    {
+        const auto & column_map = assert_cast<const ColumnMap &>(*preprocessed_column);
+        const auto & offsets = column_map.getNestedColumn().getOffsets();
+        const auto & tuple = column_map.getNestedData();
+        const auto & keys = tuple.getColumn(0);
+        const auto & values = tuple.getColumn(1);
+
+        for (size_t i = offset; i < offset + rows_read; ++i)
+        {
+            for (size_t j = offsets[i - 1]; j < offsets[i]; ++j)
+            {
+                std::string_view key = keys.getDataAt(j);
+                std::string_view value = values.getDataAt(j);
+                String token = encodeMapKeyValueToken(key, value);
+                granule_builder.addDocument(token);
+            }
+            granule_builder.incrementCurrentRow();
+        }
+    }
     else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
@@ -1995,6 +2019,33 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+/// The `keyValuePairs` tokenizer is built on a `Map` with String / LowCardinality(String) keys
+/// and values; every other tokenizer expects a String / FixedString column (possibly wrapped in
+/// Array / Nullable / LowCardinality).
+void validateTextIndexColumnType(const ITokenizer & tokenizer, const DataTypePtr & index_data_type)
+{
+    if (tokenizer.getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
+        if (!map_type
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isStringOrFixedString()
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getValueType())).isStringOrFixedString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `keyValuePairs` tokenizer must be created on a `Map` column with String or "
+                "LowCardinality(String) keys and values, got: {}",
+                index_data_type->getName());
+        return;
+    }
+
+    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+    if (!which_data_type.isString() && !which_data_type.isFixedString())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
+            index_data_type->getName());
+}
+
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
@@ -2044,7 +2095,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
@@ -2084,16 +2135,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    DataTypePtr index_data_type = index.data_types[0];
-    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
-
-    if (!which_data_type.isString() && !which_data_type.isFixedString())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
-            index_data_type->getName());
-    }
+    validateTextIndexColumnType(*tokenizer, index.data_types[0]);
 
     /// Create the preprocessor for validation.
     /// For very strict validation of the expression we fully parse it here.

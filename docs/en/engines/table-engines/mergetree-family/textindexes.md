@@ -160,6 +160,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
+- `keyValuePairs` indexes a `Map(String, String)` column by storing each `(key, value)` pair as a single token, enabling exact map lookups such as `WHERE m['key'] = 'value'` to be answered from the index without reading the map column (see [The `keyValuePairs` tokenizer for maps](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 
@@ -551,6 +552,43 @@ SHOW CREATE TABLE table;
 
 The huge index granularity ensures that the text index is created for the entire part.
 An explicitly specified index granularity is ignored.
+
+## The `keyValuePairs` tokenizer for maps {#tokenizer-key-value-pairs}
+
+The `keyValuePairs` tokenizer is created directly on a `Map` column with `String` or
+`LowCardinality(String)` keys and values.
+For every map entry it stores a single token encoding both the key and the value, so that an
+exact equality lookup like `WHERE m['key'] = 'value'` is answered from the index alone,
+without reading the map column.
+
+Unlike concatenating a key and a value with a separator (for example `key=value`), the
+encoding is unambiguous: a key or value that itself contains the separator character cannot
+produce a false match. The key length is stored in a trailer, which keeps the dictionary
+sorted by key and then by value.
+
+```sql
+CREATE TABLE logs
+(
+    timestamp DateTime,
+    attributes Map(String, String),
+    INDEX idx attributes TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY timestamp;
+
+SELECT count() FROM logs WHERE attributes['level'] = 'error';
+```
+
+The index accelerates several map searches:
+
+- Exact equality on a map element (`attributes['level'] = 'error'`), answered by an exact
+  token lookup with direct read.
+- Value prefix/suffix on a map element (`attributes['level'] LIKE 'err%'`, `startsWith`,
+  `endsWith`).
+- Value-only search across all keys (`mapContainsValue(attributes, 'error')`,
+  `mapContainsValueLike(attributes, '%rror%')`, including arbitrary substrings), answered by
+  scanning the index dictionary of distinct pairs rather than reading the map column.
+- Key existence and key pattern search (`mapContainsKey(attributes, 'level')`,
+  `mapContainsKeyLike(attributes, 'lev%')`), also answered by the dictionary scan.
 
 ## Using a Text Index {#using-a-text-index}
 

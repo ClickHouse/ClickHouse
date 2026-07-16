@@ -219,6 +219,14 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(ArrayTokenizer::getName(), ITokenizer::Type::Array, array_creator);
 
+    auto key_value_pairs_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, KeyValuePairsTokenizer::getExternalName());
+        return std::make_unique<KeyValuePairsTokenizer>();
+    };
+
+    factory.registerTokenizer(KeyValuePairsTokenizer::getName(), ITokenizer::Type::KeyValuePairs, key_value_pairs_creator);
+
     auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
         const auto * tokenizer_name = SparseGramsTokenizer::getExternalName();

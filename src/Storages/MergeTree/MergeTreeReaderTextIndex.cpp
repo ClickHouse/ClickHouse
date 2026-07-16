@@ -168,6 +168,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             continue;
 
         bool needs_fallback = !search_query->getPatterns().empty()
+            || !search_query->getValueMatchers().empty()
             || (search_query->getSearchMode() == TextSearchMode::Phrase && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact);
         if (!needs_fallback)
             continue;
@@ -278,7 +279,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
         const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
-        if (search_query->getTokens().empty() && search_query->getPatterns().empty())
+        if (search_query->getTokens().empty() && search_query->getPatterns().empty() && search_query->getValueMatchers().empty())
         {
             /// Token and phrase searches with no search tokens never match (row-level returns 0, e.g. when a
             /// postprocessor maps every needle token to empty). Encode this as an explicit no-match so direct
@@ -609,7 +610,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
             continue;
 
         auto search_query = condition_text.getSearchQueryForVirtualColumn(columns_to_read[i].name);
-        if (search_query->getTokens().empty() && search_query->getPatterns().empty())
+        if (search_query->getTokens().empty() && search_query->getPatterns().empty() && search_query->getValueMatchers().empty())
             continue;
 
         /// Phrase queries are resolved from positional data (.pos) in applyPostingsPhrase,
@@ -755,7 +756,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
-    chassert(search_query->getPatterns().empty());
+    chassert(search_query->getPatterns().empty() && search_query->getValueMatchers().empty());
 
     if (search_query->getTokens().empty())
     {

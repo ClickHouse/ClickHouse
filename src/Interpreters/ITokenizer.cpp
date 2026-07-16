@@ -324,6 +324,33 @@ void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTra
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
 
+bool KeyValuePairsTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    if (pos == 0)
+    {
+        pos = length;
+        token_start = 0;
+        token_length = length;
+        return true;
+    }
+    return false;
+}
+
+bool KeyValuePairsTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::nextInStringLike is not implemented");
+}
+
+void KeyValuePairsTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToBloomFilter is not implemented");
+}
+
+void KeyValuePairsTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToTokens is not implemented");
+}
+
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
     : ITokenizerHelper(Type::SparseGrams)
     , min_gram_length(min_length)

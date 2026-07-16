@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/MapKeyValueToken.h>
 #include <algorithm>
 #include <cmath>
 
@@ -172,6 +173,9 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
 
         for (const auto & pattern : query->getPatterns())
             queries_by_pattern[&pattern].insert(hash);
+
+        if (!query->getValueMatchers().empty())
+            queries_with_value_matchers.insert(hash);
     }
 }
 
@@ -286,6 +290,25 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
         }
     }
 
+    if (!queries_with_value_matchers.empty())
+    {
+        auto [token_key, token_value] = decodeMapKeyValueToken(token);
+        for (const auto & query_hash : queries_with_value_matchers)
+        {
+            const auto & query = *query_builders[query_hash].query;
+            const bool matched = std::ranges::any_of(query.getValueMatchers(), [&](const auto & matcher)
+            {
+                return matcher.match(token_key, token_value);
+            });
+
+            if (matched)
+            {
+                added = true;
+                queries_by_token[token].emplace(query_hash);
+            }
+        }
+    }
+
     return added;
 }
 
@@ -308,6 +331,9 @@ void TextIndexAnalyzer::bypassPatternQueries()
         for (const auto & query_hash : query_hashes)
             all_pattern_queries.insert(query_hash);
     }
+
+    for (const auto & query_hash : queries_with_value_matchers)
+        all_pattern_queries.insert(query_hash);
 
     for (const auto & query_hash : all_pattern_queries)
     {
@@ -493,6 +519,9 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
     result += estimateAbslFlatContainerBytes(queries_by_pattern);
     for (const auto & [_, hashes] : queries_by_pattern)
         result += estimateAbslFlatContainerBytes(hashes);
+
+    /// queries_with_value_matchers: set<UInt128>.
+    result += estimateAbslFlatContainerBytes(queries_with_value_matchers);
 
     /// all_token_infos: map<String, TokenPostingsInfoPtr>.
     result += estimateAbslFlatContainerBytes(all_token_infos);

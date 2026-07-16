@@ -74,10 +74,12 @@ public:
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
     void setReadableRows(std::vector<RowsRange> readable_ranges);
-    /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
-    /// Returns true if any pattern matched.
+    /// Attaches a scan-discovered `token` to every pattern query whose regex matches it and
+    /// to every value-matcher query (keyValuePairs value search) whose matcher accepts it.
+    /// Returns true if any query matched.
     bool addTokenToPatterns(std::string_view token);
-    /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
+    /// Marks all scan-resolved queries (pattern and value-matcher) as bypassed
+    /// (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
@@ -105,6 +107,8 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
+    /// Queries carrying decode-aware value matchers (keyValuePairs value search); static for the analyzer's lifetime.
+    QueryHashes queries_with_value_matchers;
 
     /* Fields updated dynamically during text index analysis. */
 

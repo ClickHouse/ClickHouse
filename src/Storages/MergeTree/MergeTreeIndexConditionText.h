@@ -40,6 +40,27 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
+/// Matches a `keyValuePairs` token by decoding it into (key, value) rather than by a
+/// regex over the raw token. Used to answer map value searches (e.g. `mapContainsValue`)
+/// and key-scoped value searches by scanning the index dictionary.
+struct TokenValueMatcher
+{
+    /// If set, the decoded key must equal this exactly (nullopt = any key).
+    std::optional<String> key;
+    /// If set, the decoded key must match this pattern (for mapContainsKeyLike).
+    std::shared_ptr<OptimizedRegularExpression> key_pattern;
+    /// If set, the decoded value must equal this exactly.
+    std::optional<String> value;
+    /// If set, the decoded value must start with this (for startsWith).
+    std::optional<String> value_prefix;
+    /// If set, the decoded value must end with this (for endsWith).
+    std::optional<String> value_suffix;
+    /// If set, the decoded value must match this pattern (for LIKE-style search).
+    std::shared_ptr<OptimizedRegularExpression> value_pattern;
+
+    bool match(std::string_view token_key, std::string_view token_value) const;
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -49,7 +70,8 @@ struct TextSearchQuery
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
         std::vector<OptimizedRegularExpression> patterns_ = {},
-        VectorWithMemoryTracking<String> phrase_tokens_ = {});
+        VectorWithMemoryTracking<String> phrase_tokens_ = {},
+        std::vector<TokenValueMatcher> value_matchers_ = {});
 
     const String & getFunctionName() const { return function_name; }
     TextSearchMode getSearchMode() const { return search_mode; }
@@ -57,6 +79,7 @@ struct TextSearchQuery
     const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
     const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    const std::vector<TokenValueMatcher> & getValueMatchers() const { return value_matchers; }
     UInt128 getHash() const { return hash; }
 
 private:
@@ -71,6 +94,9 @@ private:
     std::vector<OptimizedRegularExpression> patterns;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
+    /// Decode-aware matchers for `keyValuePairs` value searches. A query with non-empty
+    /// value matchers is resolved by a dictionary scan, like a pattern query.
+    std::vector<TokenValueMatcher> value_matchers;
     /// Precomputed in the constructor because getHash is called on hot paths.
     UInt128 hash{};
 };
@@ -176,6 +202,10 @@ private:
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
+
+    /// If `node` is `arrayElement(m, 'key')` where `m` is this index's `keyValuePairs`
+    /// Map column, returns the constant key; otherwise std::nullopt.
+    std::optional<String> tryGetMapElementKeyForKeyValueIndex(const RPNBuilderTreeNode & node) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;

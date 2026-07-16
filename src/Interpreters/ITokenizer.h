@@ -32,6 +32,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        KeyValuePairs,
     };
 
     ITokenizer() = delete;
@@ -336,6 +337,25 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
+/// Emits its whole input as a single token. The map (key, value) encoding is applied
+/// upstream in the text index aggregator (see encodeMapKeyValueToken); this tokenizer only
+/// needs to treat each pre-encoded document as one token, exactly like `array`.
+struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
+{
+    KeyValuePairsTokenizer() : ITokenizerHelper(Type::KeyValuePairs) {}
+
+    static const char * getName() { return "keyValuePairs"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+};
+
 /// Parser extracting sparse grams (the same as function sparseGrams).
 /// See sparseGramsImpl.h for more details.
 struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer>
@@ -486,6 +506,11 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             return;
         }
         case ITokenizer::Type::Array:
+        {
+            callback(data, length);
+            return;
+        }
+        case ITokenizer::Type::KeyValuePairs:
         {
             callback(data, length);
             return;

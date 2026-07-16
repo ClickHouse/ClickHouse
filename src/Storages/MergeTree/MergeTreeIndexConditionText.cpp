@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/MapKeyValueToken.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
@@ -54,19 +55,38 @@ namespace Setting
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
+bool TokenValueMatcher::match(std::string_view token_key, std::string_view token_value) const
+{
+    if (key && *key != token_key)
+        return false;
+    if (key_pattern && !key_pattern->match(token_key.data(), token_key.size()))
+        return false;
+    if (value && *value != token_value)
+        return false;
+    if (value_prefix && !token_value.starts_with(*value_prefix))
+        return false;
+    if (value_suffix && !token_value.ends_with(*value_suffix))
+        return false;
+    if (value_pattern && !value_pattern->match(token_value.data(), token_value.size()))
+        return false;
+    return true;
+}
+
 TextSearchQuery::TextSearchQuery(
     String function_name_,
     TextSearchMode search_mode_,
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
     std::vector<OptimizedRegularExpression> patterns_,
-    VectorWithMemoryTracking<String> phrase_tokens_)
+    VectorWithMemoryTracking<String> phrase_tokens_,
+    std::vector<TokenValueMatcher> value_matchers_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
     , patterns(std::move(patterns_))
     , phrase_tokens(std::move(phrase_tokens_))
+    , value_matchers(std::move(value_matchers_))
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
@@ -86,25 +106,57 @@ void TextSearchQuery::initializeHash()
         hash_state.update(token);
     }
 
+    /// A trivial regex (LIKE without wildcards, e.g. 'error') has no RE2, so hashing the RE2
+    /// pattern would alias all such regexes to each other. Fall back to the analyze result so
+    /// trivial patterns stay distinct.
+    auto hash_regex = [&hash_state](const OptimizedRegularExpression & regex)
+    {
+        if (const auto & re2 = regex.getRE2())
+        {
+            hash_state.update(re2->pattern());
+        }
+        else
+        {
+            std::string required_substring;
+            bool is_trivial = false;
+            bool required_substring_is_prefix = false;
+            regex.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            hash_state.update(required_substring);
+            hash_state.update(is_trivial);
+            hash_state.update(required_substring_is_prefix);
+        }
+    };
+
     if (!patterns.empty())
     {
         hash_state.update(patterns.size());
         for (const auto & pattern : patterns)
+            hash_regex(pattern);
+    }
+
+    if (!value_matchers.empty())
+    {
+        hash_state.update(value_matchers.size());
+        for (const auto & matcher : value_matchers)
         {
-            if (const auto & re2 = pattern.getRE2())
-            {
-                hash_state.update(re2->pattern());
-            }
-            else
-            {
-                std::string required_substring;
-                bool is_trivial = false;
-                bool required_substring_is_prefix = false;
-                pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-                hash_state.update(required_substring);
-                hash_state.update(is_trivial);
-                hash_state.update(required_substring_is_prefix);
-            }
+            hash_state.update(matcher.key.has_value());
+            if (matcher.key)
+                hash_state.update(*matcher.key);
+            hash_state.update(matcher.key_pattern != nullptr);
+            if (matcher.key_pattern)
+                hash_regex(*matcher.key_pattern);
+            hash_state.update(matcher.value.has_value());
+            if (matcher.value)
+                hash_state.update(*matcher.value);
+            hash_state.update(matcher.value_prefix.has_value());
+            if (matcher.value_prefix)
+                hash_state.update(*matcher.value_prefix);
+            hash_state.update(matcher.value_suffix.has_value());
+            if (matcher.value_suffix)
+                hash_state.update(*matcher.value_suffix);
+            hash_state.update(matcher.value_pattern != nullptr);
+            if (matcher.value_pattern)
+                hash_regex(*matcher.value_pattern);
         }
     }
 
@@ -267,6 +319,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return TextIndexDirectReadMode::Exact;
     }
 
+    /// The keyValuePairs tokenizer stores each map pair as one whole token, so an exact
+    /// `m['k'] = 'v'` lookup identifies the matching rows precisely — exact direct read.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return function_name == "equals" ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
     if (function_name == "hasPhrase")
         return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
@@ -321,7 +378,8 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
+    if (query.getTokens().empty() && query.getPatterns().empty() && query.getValueMatchers().empty()
+        && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
@@ -496,7 +554,10 @@ std::string MergeTreeIndexConditionText::getDescription() const
 
 bool MergeTreeIndexConditionText::hasSearchPatterns() const
 {
-    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->getPatterns().empty(); });
+    return std::ranges::any_of(all_search_queries, [](const auto & query)
+    {
+        return !query.second->getPatterns().empty() || !query.second->getValueMatchers().empty();
+    });
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -793,6 +854,138 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 {
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
+
+    if (typeid_cast<const KeyValuePairsTokenizer *>(tokenizer) && WhichDataType(value_type).isStringOrFixedString())
+    {
+        /// `m['key'] = 'value'`: exact lookup of the combined key-value token. Correct precisely
+        /// because the token encodes the pair unambiguously, so its posting list contains exactly
+        /// the matching rows — hence exact direct read.
+        if (function_name == "equals")
+        {
+            if (auto key = tryGetMapElementKeyForKeyValueIndex(index_column_node))
+            {
+                /// `m['key']` yields the map's default value ('') for an absent key, so `m['key'] = ''`
+                /// is true for rows lacking the key — which have no token. Bail to a full scan then.
+                if (value_field.safeGet<String>().empty())
+                    return false;
+
+                VectorWithMemoryTracking<String> tokens;
+                tokens.push_back(encodeMapKeyValueToken(*key, value_field.safeGet<String>()));
+
+                out.function = RPNElement::FUNCTION_EQUALS;
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::move(tokens)));
+                return true;
+            }
+        }
+        /// `mapContainsValue(m, 'value')`: value-only search. The dictionary is scanned and each
+        /// token decoded; those whose value matches contribute their postings (union). The match is
+        /// exact, so the predicate is dropped (exact direct read); a truncated scan falls back to a
+        /// recompute.
+        else if (function_name == "mapContainsValue" && header.has(index_column_node.getColumnName()))
+        {
+            std::vector<TokenValueMatcher> value_matchers;
+            value_matchers.push_back(TokenValueMatcher{.key = std::nullopt, .value = value_field.safeGet<String>(), .value_pattern = nullptr});
+
+            out.function = RPNElement::FUNCTION_LIKE;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                VectorWithMemoryTracking<String>{}, std::vector<OptimizedRegularExpression>{}, VectorWithMemoryTracking<String>{}, std::move(value_matchers)));
+            return true;
+        }
+        /// `mapContainsValueLike(m, pattern)`: value-only LIKE search over decoded token values.
+        else if (function_name == "mapContainsValueLike" && header.has(index_column_node.getColumnName()))
+        {
+            auto value_pattern = std::make_shared<OptimizedRegularExpression>(
+                Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(value_field.safeGet<String>()));
+
+            std::vector<TokenValueMatcher> value_matchers;
+            value_matchers.push_back(TokenValueMatcher{.key = std::nullopt, .value = std::nullopt, .value_pattern = std::move(value_pattern)});
+
+            out.function = RPNElement::FUNCTION_LIKE;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                VectorWithMemoryTracking<String>{}, std::vector<OptimizedRegularExpression>{}, VectorWithMemoryTracking<String>{}, std::move(value_matchers)));
+            return true;
+        }
+        /// `m['key'] LIKE pattern`: key-scoped value LIKE search.
+        else if (function_name == "like")
+        {
+            if (auto key = tryGetMapElementKeyForKeyValueIndex(index_column_node))
+            {
+                auto value_pattern = std::make_shared<OptimizedRegularExpression>(
+                    Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(value_field.safeGet<String>()));
+
+                /// If the pattern matches the empty string (e.g. `LIKE '%'`), it is true for rows
+                /// lacking the key (default value ''), which have no token. Bail to a full scan.
+                if (value_pattern->match("", 0))
+                    return false;
+
+                std::vector<TokenValueMatcher> value_matchers;
+                value_matchers.push_back(TokenValueMatcher{.key = std::move(*key), .value = std::nullopt, .value_pattern = std::move(value_pattern)});
+
+                out.function = RPNElement::FUNCTION_LIKE;
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                    VectorWithMemoryTracking<String>{}, std::vector<OptimizedRegularExpression>{}, VectorWithMemoryTracking<String>{}, std::move(value_matchers)));
+                return true;
+            }
+        }
+        /// `startsWith(m['key'], prefix)` / `endsWith(m['key'], suffix)`: key-scoped value
+        /// prefix/suffix search. `m['key'] LIKE 'p%'` is rewritten to `startsWith` by the optimizer.
+        else if (function_name == "startsWith" || function_name == "endsWith")
+        {
+            if (auto key = tryGetMapElementKeyForKeyValueIndex(index_column_node))
+            {
+                /// An empty prefix/suffix is satisfied by the default value '' of an absent key,
+                /// whose row has no token. Bail to a full scan then.
+                if (value_field.safeGet<String>().empty())
+                    return false;
+
+                TokenValueMatcher matcher{.key = std::move(*key)};
+                if (function_name == "startsWith")
+                    matcher.value_prefix = value_field.safeGet<String>();
+                else
+                    matcher.value_suffix = value_field.safeGet<String>();
+
+                std::vector<TokenValueMatcher> value_matchers;
+                value_matchers.push_back(std::move(matcher));
+
+                out.function = RPNElement::FUNCTION_LIKE;
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                    VectorWithMemoryTracking<String>{}, std::vector<OptimizedRegularExpression>{}, VectorWithMemoryTracking<String>{}, std::move(value_matchers)));
+                return true;
+            }
+        }
+        /// `mapContainsKey(m, 'key')`: key existence — any token with that decoded key matches.
+        else if (function_name == "mapContainsKey" && header.has(index_column_node.getColumnName()))
+        {
+            std::vector<TokenValueMatcher> value_matchers;
+            value_matchers.push_back(TokenValueMatcher{.key = value_field.safeGet<String>()});
+
+            out.function = RPNElement::FUNCTION_LIKE;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                VectorWithMemoryTracking<String>{}, std::vector<OptimizedRegularExpression>{}, VectorWithMemoryTracking<String>{}, std::move(value_matchers)));
+            return true;
+        }
+        /// `mapContainsKeyLike(m, pattern)`: key LIKE search over decoded token keys.
+        else if (function_name == "mapContainsKeyLike" && header.has(index_column_node.getColumnName()))
+        {
+            auto key_pattern = std::make_shared<OptimizedRegularExpression>(
+                Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(value_field.safeGet<String>()));
+
+            std::vector<TokenValueMatcher> value_matchers;
+            value_matchers.push_back(TokenValueMatcher{.key_pattern = std::move(key_pattern)});
+
+            out.function = RPNElement::FUNCTION_LIKE;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                VectorWithMemoryTracking<String>{}, std::vector<OptimizedRegularExpression>{}, VectorWithMemoryTracking<String>{}, std::move(value_matchers)));
+            return true;
+        }
+    }
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = header.has(index_column_name);
@@ -1446,6 +1639,37 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
     return header.has(fmt::format("mapValues({})", map_column_name));
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForKeyValueIndex(const RPNBuilderTreeNode & node) const
+{
+    /// `arrayElement(m, 'key')` form (i.e. `m['key']` before subcolumn rewriting).
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
+        {
+            const auto column_name = function.getArgumentAt(0).getColumnName();
+            if (header.has(column_name))
+            {
+                Field key_field;
+                DataTypePtr key_type;
+                if (function.getArgumentAt(1).tryGetConstant(key_field, key_type) && key_field.getType() == Field::Types::String)
+                    return key_field.safeGet<String>();
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// `m.key_<key>` map subcolumn form, which is how `m['key']` usually reaches the index.
+    if (auto parsed = tryParseMapSubcolumnName(node.getColumnName()))
+    {
+        auto & [map_column_name, serialized_key] = *parsed;
+        if (header.has(map_column_name))
+            return serialized_key;
+    }
+
+    return std::nullopt;
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
