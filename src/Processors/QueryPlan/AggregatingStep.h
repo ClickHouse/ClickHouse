@@ -19,15 +19,6 @@ class AggregatingProjectionStep;
 class AggregatingStep : public ITransformingStep
 {
 public:
-
-    enum class AggregatingStage : size_t
-    {
-        PartialAggregation = 0,
-        FinalAggregation = 1,
-        Scatter = 2,
-        AggregatingSharded = 3,
-    };
-
     AggregatingStep(
         const SharedHeader & input_header_,
         Aggregator::Params params_,
@@ -51,9 +42,6 @@ public:
     String getName() const override { return "Aggregating"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
@@ -163,7 +151,6 @@ private:
     Processors aggregating_sorted;
     Processors finalizing;
 
-    Processors scatter;
     Processors aggregating;
 };
 
@@ -180,11 +167,6 @@ public:
 
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
-
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
-
-    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;

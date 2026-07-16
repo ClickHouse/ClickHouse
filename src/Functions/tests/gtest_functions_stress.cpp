@@ -122,6 +122,7 @@ enum Problem
     P_FIELD_COMPARISON_INCONSISTENCY,
     P_VALIDATION_INFRASTRUCTURE,
     P_TIMEOUT_NOT_HONORED,
+    P_SCALE_DIVERGENT_RESULT,
     P_UNEXPECTED_ERROR,
 
     P_COUNT,
@@ -159,6 +160,13 @@ std::pair<String, String> problemInfo(Problem p)
             "iteration ran longer than the configured iteration-too-slow threshold before stopping; "
             "the function is slow and either does not check CurrentThread::isQueryCanceled often enough, "
             "should be made faster, or should reject the offending input shape inside the function itself"};
+        case P_SCALE_DIVERGENT_RESULT: return {"scale_divergent_result",
+            "function returned a Decimal/DateTime64/Time64 column whose scale differs from its declared "
+            "result type. getDataType() is scale-blind so this passes the top-level type check, but the "
+            "column object is structurally inconsistent with its type. Such a column is not stashed for "
+            "reuse (it would surface as a misattributed writeSlice LOGICAL_ERROR in an innocent consumer "
+            "like arrayPushBack, see issue #108517); the producing function should build the result column "
+            "at the declared scale"};
 
         case P_COUNT: std::abort();
     }
@@ -209,7 +217,8 @@ struct Options
     VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input", "data_dependent_const",
         "exception_in_prepare", "bulk_success_but_row_error", "bulk_error_but_row_success",
         "broken_determinism", "broken_injectivity", "broken_monotonicity",
-        "field_comparison_inconsistency", "validation_infrastructure", "timeout_not_honored"}};
+        "field_comparison_inconsistency", "validation_infrastructure", "timeout_not_honored",
+        "scale_divergent_result"}};
     VectorOfStrings functions;
     VectorOfStrings skip_functions;
 
@@ -1185,6 +1194,11 @@ struct FunctionsStressTestThread
     ColumnsWithTypeAndName valid_args; // rows of `args` on which the function didn't throw
     ColumnPtr result;
 
+    /// Set by checkAndFixupColumn (stress-test path) if any executed column - the bulk result or
+    /// any per-row result before it is merged - had a Decimal/DateTime64/Time64 scale diverging
+    /// from its declared type. Read at the stash site to skip stashing such a producer's result.
+    bool result_scale_divergent = false;
+
     /// Protects `operation`.
     /// Locked by watchdog thread when reading other threads' `operation` values (without mutating them).
     /// Correspondingly, must be locked by this thread when mutating `operation`, but not necessarily
@@ -1436,6 +1450,7 @@ struct FunctionsStressTestThread
             resolver.reset();
             valid_args.clear();
             result.reset();
+            result_scale_divergent = false;
 
             {
                 auto lock = lockMutex();
@@ -1669,6 +1684,22 @@ struct FunctionsStressTestThread
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned unexpected number of rows: {} instead of {}", column->size(), expected_rows);
         if (!columnMatchesType(*column, *data_type))
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", column->getName(), data_type->getName());
+
+        /// On the stress-test path (stats != nullptr), also detect a Decimal/DateTime64/Time64
+        /// scale that diverges from the declared type. getDataType() is scale-blind, so such a
+        /// column passes the check above; reusing it as another function's argument surfaces as a
+        /// misattributed LOGICAL_ERROR in an innocent consumer (arrayPushBack -> writeSlice, #108517).
+        /// This runs on both the bulk result and every per-row result before it is merged, so a
+        /// per-row divergence (row0 scale 3, row1 scale 7) is caught before insertRangeFrom (a raw
+        /// memcpy that does not rescale) hides it inside a merged column that matches the declared
+        /// scale. Attribute to the producing function and remember so the stash site skips it.
+        if (stats && !columnMatchesType(*column, *data_type, /*strict_decimal_scale=*/ true))
+        {
+            result_scale_divergent = true;
+            stats->reportProblem(P_SCALE_DIVERGENT_RESULT, fmt::format(
+                "function returned {} with a scale that diverges from its declared type; {}",
+                column->getName(), operation.describe()));
+        }
 
         auto apply = [&](IColumn & col)
         {
@@ -2056,8 +2087,19 @@ struct FunctionsStressTestThread
         }
         FunctionStats & stats = function_stats[operation.function_idx];
 
+        /// A Decimal/DateTime64/Time64 column whose scale diverges from its declared type is
+        /// structurally inconsistent (getDataType() is scale-blind, so it passes checkAndFixupColumn's
+        /// type check). Reusing it as another function's argument surfaces as a misattributed
+        /// LOGICAL_ERROR in an innocent consumer such as arrayPushBack -> writeSlice (issue #108517).
+        /// result_scale_divergent was set by checkAndFixupColumn on the bulk result and on every
+        /// per-row result before merging, so a per-row divergence is caught even though the merged
+        /// column may end up matching the declared scale. Never stash such a producer's result. This
+        /// is the complete cut of the propagation path: generated random arguments are always
+        /// scale-consistent (built via type->createColumn()), so additional_random_values is the only
+        /// place a divergent column can enter as an argument.
+        ///
         /// Maybe add result to additional_random_values.
-        if (thread_local_rng() % 8 == 0 && result->byteSize() < (16ul << 10))
+        if (!result_scale_divergent && thread_local_rng() % 8 == 0 && result->byteSize() < (16ul << 10))
         {
             ColumnPtr column = result;
             if (column->size() != options.rows_per_batch)
