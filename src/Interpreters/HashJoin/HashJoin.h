@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -513,6 +514,22 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
 
+    /// The decompressed-blocks cache is per logical join: `ConcurrentHashJoin` shares one instance
+    /// across its internal per-slot `HashJoin`s so that `join_decompressed_columns_cache_bytes`
+    /// bounds the logical join rather than each slot separately. Sharing is safe because the cache
+    /// is keyed by stored-block address (globally unique across slots) and `CacheBase` is
+    /// thread-safe. Must only be called right after construction, before any blocks are stored.
+    std::shared_ptr<DecompressedColumnsCache> getDecompressedColumnsCache() const { return decompressed_columns_cache; }
+    void setDecompressedColumnsCache(std::shared_ptr<DecompressedColumnsCache> cache_) { decompressed_columns_cache = std::move(cache_); }
+
+    /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
+    /// concurrent join's global byte counter, so that the `max_bytes_in_join` half-threshold in
+    /// `shrinkStoredBlocksToFit` fires on the logical join's total instead of the slot-local count.
+    /// The size limit itself is enforced on the global total, so with balanced keys every slot
+    /// would otherwise stay under its own half-threshold while the global total already exceeds
+    /// the limit, and the query would throw before anything compresses.
+    void setLogicalJoinTotalBytesCounter(const std::atomic<size_t> * counter) { logical_join_total_bytes = counter; }
+
     /// Streams the stored right-side blocks out of the join, one block per `next` call.
     /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
     /// columns) and materializes a single block, destroying its stored source before returning,
@@ -632,8 +649,13 @@ private:
     bool have_compressed = false;
 
     /// Cache of decompressed right-side blocks for the probe phase. Thread-safe (CacheBase has its own lock),
-    /// so it can be shared across the threads probing a single (e.g. parallel_hash slot) HashJoin instance.
-    mutable DecompressedColumnsCache decompressed_columns_cache;
+    /// so it can be shared across the threads probing a single HashJoin instance, and across the per-slot
+    /// instances of one `ConcurrentHashJoin` (see setDecompressedColumnsCache).
+    mutable std::shared_ptr<DecompressedColumnsCache> decompressed_columns_cache;
+
+    /// See setLogicalJoinTotalBytesCounter. Null unless this instance is a `ConcurrentHashJoin` slot
+    /// with `enable_join_in_memory_compression` on.
+    const std::atomic<size_t> * logical_join_total_bytes = nullptr;
 
     std::vector<Sizes> key_sizes;
 

@@ -211,10 +211,10 @@ HashJoin::HashJoin(
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , decompressed_columns_cache(
+    , decompressed_columns_cache(std::make_shared<DecompressedColumnsCache>(
           CurrentMetrics::HashJoinDecompressedColumnsCacheBytes,
           CurrentMetrics::HashJoinDecompressedColumnsCacheCells,
-          table_join->joinDecompressedColumnsCacheBytes())
+          table_join->joinDecompressedColumnsCacheBytes()))
     , tmp_data(table_join_->getTempDataOnDisk())
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
@@ -1034,7 +1034,7 @@ size_t DecompressedColumnsWeightFunction::operator()(const StoredBlock & info) c
 
 DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * compressed) const
 {
-    auto [res, _] = decompressed_columns_cache.getOrSet(
+    auto [res, _] = decompressed_columns_cache->getOrSet(
         compressed,
         [&]
         {
@@ -1091,7 +1091,16 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         * is bigger than half of all memory available for query,
         * then shrink stored blocks to fit.
         */
-        shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2)
+
+        /// For a `parallel_hash` slot with `enable_join_in_memory_compression`, compare the logical
+        /// join's total (the sum over all slots, which is what `max_bytes_in_join` is enforced on)
+        /// against the half-threshold, not this slot's local count. The global counter is only
+        /// updated after each slot insert completes, so it can lag the local count; take the max.
+        size_t observed_bytes_in_join = total_bytes_in_join;
+        if (logical_join_total_bytes)
+            observed_bytes_in_join = std::max(observed_bytes_in_join, logical_join_total_bytes->load(std::memory_order_relaxed));
+
+        shrink_blocks = (max_total_bytes_in_join && observed_bytes_in_join > max_total_bytes_in_join / 2)
             || (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
         if (!shrink_blocks)
             return;

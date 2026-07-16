@@ -222,6 +222,14 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    /// `max_bytes_in_join` is enforced on the global total, so the compression
+                    /// trigger in each slot must fire on the global total as well: with balanced
+                    /// keys, every slot stays under its own half-threshold while the global total
+                    /// already exceeds the limit, and the query would throw before any slot
+                    /// compresses. Only wired when compression is enabled, so the plain shrinking
+                    /// behavior with the setting off is unchanged.
+                    if (table_join_->enableJoinInMemoryCompression())
+                        inner_hash_join->data->setLogicalJoinTotalBytesCounter(&global_total_bytes);
                     inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
                     global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
@@ -235,6 +243,13 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         auto shared_index = getData(hash_joins[0])->stored_columns_index;
         for (size_t i = 1; i < slots; ++i)
             getData(hash_joins[i])->stored_columns_index = shared_index;
+
+        /// Share one decompressed-blocks cache across all slots, so that
+        /// `join_decompressed_columns_cache_bytes` bounds the logical join rather than each slot
+        /// separately, and a block stored by one slot is decompressed at most once for all slots.
+        auto shared_decompressed_cache = hash_joins[0]->data->getDecompressedColumnsCache();
+        for (size_t i = 1; i < slots; ++i)
+            hash_joins[i]->data->setDecompressedColumnsCache(shared_decompressed_cache);
     }
     catch (...)
     {
