@@ -288,6 +288,44 @@ def test_materialized_postgresql_database_ssl(started_cluster):
     node.query("DROP DATABASE mpg_ssl")
 
 
+def test_materialized_postgresql_table_engine_ssl(started_cluster):
+    # The standalone MaterializedPostgreSQL table engine goes through its own
+    # registration and replication-handler startup path (separate from the database
+    # engine), so prove it independently: initial snapshot plus a post-create insert
+    # both replicated over a verify-full connection.
+    seed_table("tbl_engine_table", 25)
+    node.query("DROP TABLE IF EXISTS mpg_tbl_ssl SYNC")
+    node.query(
+        f"""
+        CREATE TABLE mpg_tbl_ssl (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'tbl_engine_table', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}'
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_tbl_ssl").strip() == "25",
+        120,
+        "MaterializedPostgreSQL table engine initial sync over SSL",
+    )
+    assert node.query("SELECT sum(value) FROM mpg_tbl_ssl").strip() == str(sum(i * 10 for i in range(25)))
+
+    conn = pg_connect(sslmode="require")
+    conn.cursor().execute("INSERT INTO tbl_engine_table VALUES (25, 250)")
+    conn.close()
+
+    wait_for(
+        lambda: node.query("SELECT value FROM mpg_tbl_ssl WHERE key = 25").strip() == "250",
+        120,
+        "MaterializedPostgreSQL table engine to replicate a post-create insert over SSL",
+    )
+    node.query("DROP TABLE mpg_tbl_ssl SYNC")
+
+
 def test_relative_certificate_path_is_resolved_against_user_files(started_cluster):
     # A relative sslrootcert is resolved against the `user_files` directory (libpq
     # itself would resolve it against the server's working directory).
