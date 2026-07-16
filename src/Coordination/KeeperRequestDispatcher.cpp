@@ -93,6 +93,7 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::Create2
+        || request->getOpNum() == Coordination::OpNum::CreateContainer
         || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
@@ -115,6 +116,7 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
             {
                 case Coordination::OpNum::Create:
                 case Coordination::OpNum::Create2:
+                case Coordination::OpNum::CreateContainer:
                 case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req

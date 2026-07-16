@@ -265,6 +265,20 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
     return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
 }
 
+bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
+{
+    if (isCorrelatedQueryOrUnionNode(node))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && containsCorrelatedSubquery(child))
+            return true;
+    }
+
+    return false;
+}
+
 bool checkCorrelatedColumn(
     const IdentifierResolveScope * scope_to_check,
     const QueryTreeNodePtr & column
