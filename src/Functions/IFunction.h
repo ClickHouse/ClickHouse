@@ -503,6 +503,13 @@ protected:
       */
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
+    /** Controls the default Variant adaptor for a Variant argument that carries a custom type name
+      * (e.g. Geometry, which is a custom-named Variant). Defaults to useDefaultImplementationForVariant().
+      * A function returns false here to handle such a custom-named Variant itself and keep the custom
+      * name, while ordinary (unnamed) Variant inputs still go through the default adaptor.
+      */
+    virtual bool useDefaultImplementationForVariantWithCustomName() const { return useDefaultImplementationForVariant(); }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -588,6 +595,7 @@ public:
     }
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+    virtual bool useDefaultImplementationForVariantWithCustomName() const { return useDefaultImplementationForVariant(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 

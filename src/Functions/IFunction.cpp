@@ -795,7 +795,9 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     }
 
     /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
-    if (!base && useDefaultImplementationForVariant())
+    /// A custom-named Variant (e.g. Geometry) is gated by useDefaultImplementationForVariantWithCustomName() instead, so a
+    /// function can handle it directly (to keep the custom name) while ordinary Variant inputs still go through the adaptor.
+    if (!base && (useDefaultImplementationForVariant() || useDefaultImplementationForVariantWithCustomName()))
     {
         checkNumberOfArguments(arguments.size());
 
@@ -803,6 +805,12 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
         {
             if (isVariant(arg.type))
             {
+                const bool use_adaptor = arg.type->hasCustomName()
+                    ? useDefaultImplementationForVariantWithCustomName()
+                    : useDefaultImplementationForVariant();
+                if (!use_adaptor)
+                    break;
+
                 ColumnsWithTypeAndName args_copy = arguments;
                 base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
                 break;
