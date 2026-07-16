@@ -7,7 +7,6 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -133,7 +132,6 @@ extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
@@ -1228,12 +1226,12 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
     return true;
 }
 
-void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
+void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
 {
-    if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
-        /// data reader and the deletes reader.
-        format_settings.parquet.preserve_order = true;
+    /// Iceberg position delete transforms require increasing row numbers from the data reader.
+    /// The bitmap transform also streams deletion vectors by row number instead of probing a fully
+    /// materialized excluded-rows bitmap.
+    format_settings.parquet.preserve_order = true;
 }
 
 void IcebergMetadata::addDeleteTransformers(

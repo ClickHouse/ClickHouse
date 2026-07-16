@@ -9,6 +9,8 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
+#include <roaring/roaring64map.hh>
+
 namespace DB::Iceberg
 {
 class IcebergPositionDeleteTransform : public ISimpleTransform
@@ -70,8 +72,6 @@ protected:
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
 {
 public:
-    using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
-
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
@@ -90,7 +90,31 @@ public:
 
 private:
     void initialize();
-    ExcludedRows bitmap;
+    struct PositionDeleteFileIndexes
+    {
+        size_t filename_index;
+        size_t position_index;
+    };
+
+    struct DeletionVectorState
+    {
+        explicit DeletionVectorState(std::unique_ptr<roaring::Roaring64Map> bitmap_);
+
+        std::unique_ptr<roaring::Roaring64Map> bitmap;
+        roaring::Roaring64Map::const_iterator iterator;
+        roaring::Roaring64Map::const_iterator end;
+    };
+
+    void fetchNewChunkFromSource(size_t delete_source_index);
+    void advanceDeletePositionSource(size_t source_index);
+
+    std::vector<PositionDeleteFileIndexes> delete_source_column_indices;
+    std::vector<Chunk> latest_chunks;
+    std::vector<size_t> iterator_at_latest_chunks;
+    std::vector<DeletionVectorState> deletion_vectors;
+    std::set<std::pair<size_t, size_t>> latest_positions;
+
+    std::optional<size_t> previous_chunk_end_offset;
 };
 
 

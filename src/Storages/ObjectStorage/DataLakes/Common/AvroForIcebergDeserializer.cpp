@@ -252,6 +252,30 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
     const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
+    std::optional<Iceberg::IcebergPathFromMetadata> referenced_data_file_path;
+    if (hasPath(c_data_file_referenced_data_file))
+    {
+        Field referenced_data_file_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
+        if (!referenced_data_file_field.isNull())
+            referenced_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(referenced_data_file_field.safeGet<String>()));
+    }
+
+    std::optional<Int64> content_offset;
+    if (hasPath(c_data_file_content_offset))
+    {
+        Field content_offset_field = getValueFromRowByName(row_index, c_data_file_content_offset);
+        if (!content_offset_field.isNull())
+            content_offset = content_offset_field.safeGet<Int64>();
+    }
+
+    std::optional<Int64> content_size_in_bytes;
+    if (hasPath(c_data_file_content_size_in_bytes))
+    {
+        Field content_size_field = getValueFromRowByName(row_index, c_data_file_content_size_in_bytes);
+        if (!content_size_field.isNull())
+            content_size_in_bytes = content_size_field.safeGet<Int64>();
+    }
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -269,6 +293,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
+                /*referenced_data_file_path_ = */ std::nullopt,
+                /*content_offset_ = */ std::nullopt,
+                /*content_size_in_bytes_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
                 record_count,
@@ -279,17 +306,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             std::optional<Iceberg::IcebergPathFromMetadata> lower_reference_data_file_path;
             std::optional<Iceberg::IcebergPathFromMetadata> upper_reference_data_file_path;
             bool bounds_set_by_referenced_data_file = false;
-            if (hasPath(c_data_file_referenced_data_file))
+            if (referenced_data_file_path.has_value())
             {
-                Field reference_file_path_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
-                if (!reference_file_path_field.isNull())
-                {
-                    lower_reference_data_file_path.emplace(
-                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
-                    upper_reference_data_file_path.emplace(
-                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
-                    bounds_set_by_referenced_data_file = true;
-                }
+                lower_reference_data_file_path = referenced_data_file_path;
+                upper_reference_data_file_path = referenced_data_file_path;
+                bounds_set_by_referenced_data_file = true;
             }
             if (!bounds_set_by_referenced_data_file)
             {
@@ -317,6 +338,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 lower_reference_data_file_path,
                 upper_reference_data_file_path,
+                referenced_data_file_path,
+                content_offset,
+                content_size_in_bytes,
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
@@ -349,6 +373,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
+                /*referenced_data_file_path_ = */ std::nullopt,
+                /*content_offset_ = */ std::nullopt,
+                /*content_size_in_bytes_ = */ std::nullopt,
                 equality_ids,
                 /*sort_order_id = */ std::nullopt,
                 record_count,

@@ -552,6 +552,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
+            {"allow_experimental_iceberg_deletion_vectors", false, false, "New setting"},
+            {"iceberg_deletion_vector_max_content_size_in_bytes", 0, 0, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"promql_database", "", "", "New experimental setting"},

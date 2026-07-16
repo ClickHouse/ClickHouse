@@ -71,7 +71,14 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     info.schema_id_relevant_to_iterator = 7;
     info.sequence_number = 123456;
     info.file_format = "PARQUET";
-    info.position_deletes_objects = {{"s3://bucket/deletes/pos1.parquet", "PARQUET", "s3://bucket/path/to/file.parquet"}};
+    info.position_deletes_objects = {{
+        "s3://bucket/deletes/pos1.parquet",
+        "PARQUET",
+        "s3://bucket/path/to/file.parquet",
+        0,
+        Iceberg::PositionDeleteObjectKind::DeleteFile,
+        std::nullopt,
+        std::nullopt}};
     info.equality_deletes_objects = {{"s3://bucket/deletes/eq1.parquet", "PARQUET", std::vector<Int32>{1, 2, 3}, 42}};
     info.record_count = 100500;
     info.file_size_in_bytes = 999888777;
