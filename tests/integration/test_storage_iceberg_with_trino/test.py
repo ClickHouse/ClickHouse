@@ -607,3 +607,55 @@ def test_drop_partition(iceberg_db):
         f'SELECT count(*), sum(record_count) FROM "{NAMESPACE}"."{table_name}$files"',
     )
     assert files.strip() == "2\t2"
+
+
+def test_drop_partition_with_evolved_spec_is_rejected(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"drop_partition_evolved_spec_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, region String, value Int64)
+        {_engine_clause(table_name)}
+        PARTITION BY identity(region)
+        SETTINGS iceberg_format_version = 2
+        """,
+        settings=WRITE_SETTINGS,
+    )
+    node.query(
+        f"INSERT INTO {full} VALUES (1, 'us', 10), (2, 'eu', 20)",
+        settings=WRITE_SETTINGS,
+    )
+
+    _trino_exec(
+        cluster,
+        f"""
+        ALTER TABLE "{NAMESPACE}"."{table_name}"
+        SET PROPERTIES partitioning = ARRAY['region', 'bucket(id, 4)']
+        """,
+    )
+    _trino_exec(
+        cluster,
+        f'INSERT INTO "{NAMESPACE}"."{table_name}" VALUES (3, \'asia\', 30)',
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {full} DROP PARTITION 'us'",
+        settings=WRITE_SETTINGS,
+    )
+    assert "NOT_IMPLEMENTED" in error, error
+    assert "evolved partition specs" in error, error
+
+    clickhouse_rows = node.query(
+        f"SELECT id, region, value FROM {full} ORDER BY id"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT id, region, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    expected = "1\tus\t10\n2\teu\t20\n3\tasia\t30\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
