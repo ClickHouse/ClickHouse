@@ -1,4 +1,5 @@
 #include <Access/UsersConfigParser.h>
+#include <Access/AccessEntityIO.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
@@ -62,6 +63,8 @@ namespace
         if (!ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse grant query. Error: {}", error_message);
 
+        checkAccessEntityHasNoQueryParameters(ast);
+
         auto & query = ast->as<ASTGrantQuery &>();
 
         if (query.roles && query.is_revoke)
@@ -85,10 +88,11 @@ namespace
 
         if (query.roles)
         {
+            const auto role_names = query.roles->names ? query.roles->names->toStrings() : Strings{};
             std::vector<UUID> roles_to_grant;
-            roles_to_grant.reserve(query.roles->size());
+            roles_to_grant.reserve(role_names.size());
 
-            for (const auto & role_name : query.roles->names)
+            for (const auto & role_name : role_names)
             {
                 auto role_id = UsersConfigParser::generateID(AccessEntityType::ROLE, role_name);
                 if (!role_ids_from_users_config.contains(role_id))

@@ -461,20 +461,24 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
         auto default_roles_ast = default_roles.toASTWithNames(access_control);
         column_default_roles_all.push_back(default_roles_ast->all);
-        for (const auto & role_name : default_roles_ast->names)
-            column_default_roles_list.insertData(role_name.data(), role_name.length());
+        if (default_roles_ast->names)
+            for (const auto & role_name : default_roles_ast->names->toStrings())
+                column_default_roles_list.insertData(role_name.data(), role_name.length());
         column_default_roles_list_offsets.push_back(column_default_roles_list.size());
-        for (const auto & except_name : default_roles_ast->except_names)
-            column_default_roles_except.insertData(except_name.data(), except_name.length());
+        if (default_roles_ast->except_names)
+            for (const auto & except_name : default_roles_ast->except_names->toStrings())
+                column_default_roles_except.insertData(except_name.data(), except_name.length());
         column_default_roles_except_offsets.push_back(column_default_roles_except.size());
 
         auto grantees_ast = grantees.toASTWithNames(access_control);
         column_grantees_any.push_back(grantees_ast->all);
-        for (const auto & grantee_name : grantees_ast->names)
-            column_grantees_list.insertData(grantee_name.data(), grantee_name.length());
+        if (grantees_ast->names)
+            for (const auto & grantee_name : grantees_ast->names->toStrings())
+                column_grantees_list.insertData(grantee_name.data(), grantee_name.length());
         column_grantees_list_offsets.push_back(column_grantees_list.size());
-        for (const auto & except_name : grantees_ast->except_names)
-            column_grantees_except.insertData(except_name.data(), except_name.length());
+        if (grantees_ast->except_names)
+            for (const auto & except_name : grantees_ast->except_names->toStrings())
+                column_grantees_except.insertData(except_name.data(), except_name.length());
         column_grantees_except_offsets.push_back(column_grantees_except.size());
 
         column_default_database.insertData(default_database.data(), default_database.length());

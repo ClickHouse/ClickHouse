@@ -1,0 +1,22 @@
+1
+1
+1
+0
+2
+0
+1
+0
+3
+0
+1
+1
+0
+2
+1
+0
+1
+0
+REVOKE SELECT ON *.* FROM ALL
+GRANT SELECT ON *.* TO {g:Identifier}
+DROP ROLE IF EXISTS r1, `r2@%.myhost.com`
+ALTER ROLE r1 RENAME TO \'r2@%.myhost.com\'
