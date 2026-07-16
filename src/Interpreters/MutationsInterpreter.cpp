@@ -721,6 +721,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
+    /// Each MATERIALIZED column's own required source columns. Used to walk chains of
+    /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a mutation of a
+    /// base column recalculates every MATERIALIZED column transitively derived from it.
+    std::unordered_map<String, NameSet> materialized_column_dependencies;
     if (!updated_columns.empty())
     {
         /// Collect ephemeral columns and include them in the analysis set so
@@ -764,8 +768,37 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 for (const auto & dependency : required_columns)
+                {
+                    materialized_column_dependencies[column.name].insert(dependency);
                     if (updated_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
+                }
+            }
+        }
+
+        /// Extend to chains of MATERIALIZED columns. If updated column `u` affects m1 and
+        /// another MATERIALIZED column m2 reads m1 (m2 MATERIALIZED m1 MATERIALIZED u), then
+        /// m2 must be recalculated too. Compute, for each updated column, the transitive
+        /// closure of MATERIALIZED columns derived from it and record them all under that
+        /// updated column so the recompute stage and TTL dependency analysis pick them up.
+        for (auto & [updated_column, affected_list] : column_to_affected_materialized)
+        {
+            NameSet in_list(affected_list.begin(), affected_list.end());
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (const auto & [mat_column, deps] : materialized_column_dependencies)
+                {
+                    if (in_list.contains(mat_column))
+                        continue;
+                    if (std::ranges::any_of(deps, [&](const auto & d) { return in_list.contains(d); }))
+                    {
+                        affected_list.push_back(mat_column);
+                        in_list.insert(mat_column);
+                        changed = true;
+                    }
+                }
             }
         }
 
@@ -1009,27 +1042,57 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (!affected_materialized.empty())
             {
-                stages.emplace_back(context);
-                for (const auto & column : columns_desc)
+                /// A MATERIALIZED column may read another affected MATERIALIZED column
+                /// (e.g. m2 MATERIALIZED m1, where m1 is itself recomputed). Recomputing
+                /// them all in a single stage would evaluate m2 against the pre-mutation m1.
+                /// Assign each affected column a dependency level (0 = depends only on
+                /// non-affected columns) and recompute one level per stage in ascending
+                /// order, so a column always reads the freshly written value of any affected
+                /// column it depends on.
+                std::unordered_map<String, size_t> level_of;
+                auto level_of_column = [&](const String & name, auto && self) -> size_t
                 {
-                    if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                        && affected_materialized.contains(column.name)
-                        && column.default_desc.expression)
+                    if (auto it = level_of.find(name); it != level_of.end())
+                        return it->second;
+                    size_t lvl = 0;
+                    if (auto deps_it = materialized_column_dependencies.find(name);
+                        deps_it != materialized_column_dependencies.end())
+                        for (const auto & dep : deps_it->second)
+                            if (dep != name && affected_materialized.contains(dep))
+                                lvl = std::max(lvl, self(dep, self) + 1);
+                    level_of.emplace(name, lvl);
+                    return lvl;
+                };
+
+                size_t max_level = 0;
+                for (const auto & name : affected_materialized)
+                    max_level = std::max(max_level, level_of_column(name, level_of_column));
+
+                for (size_t current_level = 0; current_level <= max_level; ++current_level)
+                {
+                    stages.emplace_back(context);
+                    for (const auto & column : columns_desc)
                     {
-                        auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
+                        if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                            && affected_materialized.contains(column.name)
+                            && level_of_column(column.name, level_of_column) == current_level
+                            && column.default_desc.expression)
+                        {
+                            auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
-                        ASTPtr materialized_column = makeASTFunction("_CAST",
-                            column.default_desc.expression->clone(),
-                            type_literal);
+                            ASTPtr materialized_column = makeASTFunction("_CAST",
+                                column.default_desc.expression->clone(),
+                                type_literal);
 
-                        /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
-                        /// because otherwise subcolumns are extracted before the source column is updated and we get
-                        /// old subcolumns values.
-                        replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
+                            /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                            /// because otherwise subcolumns are extracted before the source column is updated and we get
+                            /// old subcolumns values.
+                            replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
-                        stages.back().column_to_updated.emplace(
-                            column.name,
-                            materialized_column);
+                            stages.back().column_to_updated.emplace(
+                                column.name,
+                                materialized_column);
+                        }
                     }
                 }
             }

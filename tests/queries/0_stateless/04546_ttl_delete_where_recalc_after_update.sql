@@ -55,3 +55,33 @@ OPTIMIZE TABLE ttl_delete_where_materialized FINAL;
 SELECT count() FROM ttl_delete_where_materialized;
 
 DROP TABLE ttl_delete_where_materialized;
+
+-- The DELETE WHERE column may be reached only through a chain of MATERIALIZED columns
+-- (m3 MATERIALIZED m2 MATERIALIZED m1 MATERIALIZED src). Updating the base column must
+-- recompute the whole chain and, transitively, the DELETE WHERE TTL info.
+DROP TABLE IF EXISTS ttl_delete_where_materialized_chain;
+
+CREATE TABLE ttl_delete_where_materialized_chain
+(
+    d DateTime,
+    src UInt8,
+    m1 UInt8 MATERIALIZED src,
+    m2 UInt8 MATERIALIZED m1,
+    m3 UInt8 MATERIALIZED m2,
+    id UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+TTL d + INTERVAL 1 SECOND DELETE WHERE m3 = 1
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_delete_where_materialized_chain (d, src, id) VALUES ('2000-01-01 00:00:00', 0, 1);
+
+SELECT count() FROM ttl_delete_where_materialized_chain;
+
+-- Updating src must recompute m1 -> m2 -> m3, each reading the freshly recomputed predecessor.
+ALTER TABLE ttl_delete_where_materialized_chain UPDATE src = 1 WHERE id = 1 SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE ttl_delete_where_materialized_chain FINAL;
+SELECT count() FROM ttl_delete_where_materialized_chain;
+
+DROP TABLE ttl_delete_where_materialized_chain;
