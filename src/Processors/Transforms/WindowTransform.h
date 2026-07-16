@@ -248,7 +248,9 @@ public:
     // so re-aggregating a frame of N rows takes O(fanout * log N) merge calls instead of
     // N add calls. Only sound for functions with mergeIsEquivalentToAddingRows; the
     // rest keep the full-recompute path.
-    // Rows are identified by their index counted from the frame start at activation.
+    // Rows are identified by their index counted from the frame start at activation
+    // (the tree is deactivated and rebuilt from scratch if the frame shrinks below the
+    // activation threshold and grows past it again).
     // Frame boundaries only move forward, so segments are immutable once built; the
     // single trailing level-0 segment accumulates rows as they arrive, and may be
     // queried because it covers exactly the rows up to the current frame end.

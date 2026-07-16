@@ -78,10 +78,10 @@ namespace ErrorCodes
 
 namespace
 {
-    // Below this frame size the plain reset-and-readd path stays in use. Measured
-    // crossover: ~2000 rows for vectorized primitives (sum/min/avg over numbers), much
-    // lower for functions with expensive adds (e.g. uniqExact); the conservative value
-    // guarantees the tree is never slower than the recompute path.
+    // Below this frame size the plain reset-and-readd path is used (the tree is
+    // activated and deactivated as the observed frame size crosses the threshold).
+    // Measured crossover: ~2000 rows for vectorized primitives (sum/min/avg over
+    // numbers), much lower for functions with expensive adds (e.g. uniqExact).
     constexpr UInt64 min_frame_rows_for_aggregate_tree = 2048;
 }
 
@@ -1426,20 +1426,29 @@ void WindowTransform::updateAggregationState()
     chassert(frame_end <= partition_end);
 
     // The frame boundaries are shared by all workspaces, so the per-row facts are too:
-    // all trees activate together and evict the same rows.
+    // all trees activate, evict, and deactivate together.
     const bool frame_start_moved = frame_start != prev_frame_start;
     bool activate_trees = false;
+    bool deactivate_trees = false;
     UInt64 evicted_rows = 0;
-    if (frame_start_moved)
+    if (frame_start_moved && any_workspace_supports_frame_tree)
     {
-        if (frame_trees_active)
-            evicted_rows = countRowsBetween(prev_frame_start, frame_start);
-        else if (any_workspace_supports_frame_tree
-            && countRowsBetween(frame_start, frame_end, min_frame_rows_for_aggregate_tree)
-                >= min_frame_rows_for_aggregate_tree)
+        const bool frame_is_large = countRowsBetween(frame_start, frame_end, min_frame_rows_for_aggregate_tree)
+            >= min_frame_rows_for_aggregate_tree;
+        if (frame_is_large == frame_trees_active)
+        {
+            if (frame_trees_active)
+                evicted_rows = countRowsBetween(prev_frame_start, frame_start);
+        }
+        else if (frame_is_large)
         {
             activate_trees = true;
             frame_trees_active = true;
+        }
+        else
+        {
+            deactivate_trees = true;
+            frame_trees_active = false;
         }
     }
 
@@ -1462,7 +1471,12 @@ void WindowTransform::updateAggregationState()
             continue;
         }
 
-        if (activate_trees && workspace_frame_trees[wi].merge_equivalent)
+        if (deactivate_trees && workspace_frame_trees[wi].tree.isActive())
+        {
+            workspace_frame_trees[wi].tree.reset();
+            workspace_frame_trees[wi].appended_end = {};
+        }
+        else if (activate_trees && workspace_frame_trees[wi].merge_equivalent)
             frameTreeActivate(wi);
 
         auto & tree = workspace_frame_trees[wi].tree;
