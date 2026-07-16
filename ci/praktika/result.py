@@ -924,6 +924,7 @@ class Result(MetaClasses.Serializable):
         command_kwargs=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        env=None,
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
@@ -939,6 +940,8 @@ class Result(MetaClasses.Serializable):
         :param command_kwargs: Keyword arguments for the callable command.
         :param retries: The number of times to retry the command if it fails.
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
+        :param env: Optional environment dict for shell commands (e.g. the job
+            python env so PYTHONPATH carries the checkout root for `ci.*` imports).
         :return: Result object with status and optional log file.
         """
 
@@ -1008,6 +1011,7 @@ class Result(MetaClasses.Serializable):
                         log_file=log_file,
                         retries=retries,
                         retry_errors=retry_errors,
+                        env=env,
                     )
                     if with_info or (with_info_on_failure and exit_code != 0):
                         log_output = Shell.get_output(f"cat {log_file}")

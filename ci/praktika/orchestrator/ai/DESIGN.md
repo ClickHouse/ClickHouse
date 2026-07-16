@@ -116,6 +116,27 @@ runtime that predates a provider just disables the advisor for that run rather
 than failing CI — publish a runtime that registers the provider before relying
 on it.
 
+## Bedrock operational notes
+
+The `bedrock` provider uses the EC2 instance role of the workflow orchestrator
+pool and calls Bedrock Runtime directly. In steady state the role only needs
+`bedrock:InvokeModel`.
+
+There is one important first-use caveat for Anthropic models on Bedrock:
+
+- Bedrock may require a one-time model-access / Marketplace agreement per AWS
+  account, region, and model family or inference profile.
+- If that agreement has not been accepted yet, an invocation can fail with an
+  access-denied error mentioning `aws-marketplace:ViewSubscriptions` or
+  `aws-marketplace:Subscribe`.
+- We do **not** grant those Marketplace actions to the orchestrator role by
+  default. Instead, enable the model once in the target account manually, then
+  leave the runtime role limited to `bedrock:InvokeModel`.
+
+If AI orchestration is being enabled in a fresh account or for a newly adopted
+Bedrock model, verify the agreement has been accepted before expecting the
+orchestrator to use it.
+
 ## Tracing & cost
 
 - **Per turn:** a one-liner to stdout (live in `journalctl -fu

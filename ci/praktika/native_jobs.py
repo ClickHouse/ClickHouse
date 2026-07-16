@@ -525,6 +525,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
+        # Reload the environment because workflow filter hooks may have written
+        # report messages through a separate Info instance.
+        env = _Environment.get()
 
     if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
         print("Filter not affected jobs")

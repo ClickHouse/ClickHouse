@@ -68,7 +68,7 @@ def _normalize_job_name_for_s3(name):
     return name.replace(" ", "_").replace("/", "_")
 
 
-def _build_check_output(result, rc, instance_id="", report_url=""):
+def _build_check_output(result, rc, instance_id="", runner_pool="", report_url=""):
     """Render a job's Result as the ``output`` dict for a check-run
     completion. ``result`` is a ``praktika.Result`` reconstructed from the
     completion payload (the runner ships it in ``final.json``). Returns
@@ -98,6 +98,11 @@ def _build_check_output(result, rc, instance_id="", report_url=""):
             summary += f" — runner `{instance_id}`"
             text = f"**Runner instance:** `{instance_id}`" + (
                 f"\n\n{text}" if text else ""
+            )
+        if runner_pool:
+            summary += f" in pool `{runner_pool}`"
+            text = f"{text}\n\n**Runner pool:** `{runner_pool}`" if text else (
+                f"**Runner pool:** `{runner_pool}`"
             )
         return {"title": displayed_status, "summary": summary, "text": text}
     except Exception as e:
@@ -832,6 +837,7 @@ class WorkflowState:
                         result,
                         rc,
                         instance_id=js.runner_instance_id or "",
+                        runner_pool=", ".join(js.job.runs_on) if js.job.runs_on else "",
                         report_url=details_url or "",
                     )
                 except Exception as e:
@@ -861,6 +867,7 @@ class WorkflowState:
         now = now if now is not None else time.time()
         for js in running:
             runs_on = ", ".join(js.job.runs_on) if js.job.runs_on else "default"
+            runner_pool = runs_on
             key = self._heartbeat_s3_key(js.name)
             heartbeat_missing = False
             try:
@@ -869,6 +876,7 @@ class WorkflowState:
                 hb = json.loads(body)
                 ts = float(hb.get("ts", 0))
                 if ts > 0:
+                    prev_phase = js.last_heartbeat_phase
                     js.last_heartbeat_ts = ts
                     phase = str(hb.get("phase") or "").strip()
                     if phase:
@@ -883,10 +891,53 @@ class WorkflowState:
                             "summary": "RUNNING: runner picked up the job.",
                         }
                         if js.runner_instance_id:
-                            output["summary"] = f"RUNNING on runner `{instance_id}`."
+                            output["summary"] = (
+                                f"RUNNING on runner `{instance_id}` in pool "
+                                f"`{runner_pool}`."
+                            )
                         if phase:
                             output["summary"] += f" Phase: `{phase}`."
+                        output["text"] = (
+                            f"**Runner instance:** `{instance_id}`"
+                            if js.runner_instance_id
+                            else ""
+                        )
+                        if runner_pool:
+                            output["text"] += (
+                                f"\n\n**Runner pool:** `{runner_pool}`"
+                                if output["text"]
+                                else f"**Runner pool:** `{runner_pool}`"
+                            )
                         js._update_check(lambda c: c.set_in_progress(output=output))
+                    elif (
+                        phase
+                        and phase != prev_phase
+                        and js.check is not None
+                    ):
+                        output = {
+                            "title": "RUNNING",
+                            "summary": "RUNNING: runner picked up the job.",
+                        }
+                        if js.runner_instance_id:
+                            output["summary"] = (
+                                f"RUNNING on runner `{js.runner_instance_id}` in pool "
+                                f"`{runner_pool}`."
+                            )
+                        output["summary"] += f" Phase: `{phase}`."
+                        output["text"] = (
+                            f"**Runner instance:** `{js.runner_instance_id}`"
+                            if js.runner_instance_id
+                            else ""
+                        )
+                        if runner_pool:
+                            output["text"] += (
+                                f"\n\n**Runner pool:** `{runner_pool}`"
+                                if output["text"]
+                                else f"**Runner pool:** `{runner_pool}`"
+                            )
+                        js._update_check(
+                            lambda c: c.update(status="in_progress", output=output)
+                        )
                         duration = now - (js.started_at or now)
                         print(f"[PICK ] {js.name:70s} ({duration:.1f}s)")
             except Exception as e:

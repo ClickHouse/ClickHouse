@@ -1294,7 +1294,15 @@ class Runner:
                     name = check.__name__
                 else:
                     name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
+                # Run hooks with the job python env so PYTHONPATH carries the
+                # checkout root ("."), letting hooks import the repo's `ci.*`
+                # modules (they otherwise inherit an env without it and fail
+                # with ModuleNotFoundError: No module named 'ci').
+                results_.append(
+                    Result.from_commands_run(
+                        name=name, command=check, env=_job_python_env()
+                    )
+                )
             prehook_result = Result.create_from(
                 name="Pre Hooks",
                 results=results_,
@@ -1358,7 +1366,15 @@ class Runner:
                         name = check.__name__
                     else:
                         name = str(check)
-                    results_.append(Result.from_commands_run(name=name, command=check))
+                    # Run hooks with the job python env so PYTHONPATH carries the
+                # checkout root ("."), letting hooks import the repo's `ci.*`
+                # modules (they otherwise inherit an env without it and fail
+                # with ModuleNotFoundError: No module named 'ci').
+                results_.append(
+                    Result.from_commands_run(
+                        name=name, command=check, env=_job_python_env()
+                    )
+                )
                 result.results.append(
                     Result.create_from(
                         name="Post Hooks",

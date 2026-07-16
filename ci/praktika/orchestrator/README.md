@@ -4,6 +4,9 @@ Standalone CI engine that replaces GitHub Actions scheduling with direct
 webhook-driven workflow orchestration + SQS-based job dispatch to pools of
 long-lived EC2 runners.
 
+AI advisor design and Bedrock operational notes live in
+`praktika/orchestrator/ai/DESIGN.md`.
+
 ## Architecture
 
 ```
