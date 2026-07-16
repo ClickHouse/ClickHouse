@@ -175,7 +175,11 @@ void WriteBufferFromFileDescriptor::nextImpl()
         if (responsive_writes && -1 == res && (errno == EAGAIN || errno == EWOULDBLOCK))
             continue;
 
-        if ((-1 == res || 0 == res) && errno != EINTR)
+        /// A write()/send() returning 0 for the non-empty request here is always an error - unlike
+        /// -1, it is not how an interruption is reported, so it does not need an errno check (which
+        /// would read errno without it having been set by the call, since these calls only set it
+        /// on the -1 return path).
+        if ((-1 == res && errno != EINTR) || 0 == res)
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteFailed);
 

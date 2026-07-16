@@ -2497,7 +2497,7 @@ void ClientBase::printCancellationMessage(std::string_view message)
     /// through the best-effort bounded path instead: on a live terminal it appears immediately, on
     /// a stuck one it is dropped after a short wait - nothing is reading that terminal anyway. In
     /// the embedded client output_stream is not the process stdout, so it prints normally there.
-    if (std_out && &output_stream == &std::cout)
+    if (std_out && isStandardOutput(output_stream))
     {
         /// Every interactive print to output_stream ends with std::endl, so this flush is normally
         /// a no-op; it keeps the output ordered if anything is still buffered there.
