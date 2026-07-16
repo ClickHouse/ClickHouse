@@ -1,14 +1,13 @@
-#include <algorithm>
+#include <cctype>
 #include <iterator>
-#include <set>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
-#include <vector>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepStatsAnalyzer.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -66,6 +65,14 @@ String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed
     return {};
 }
 
+/// Group labels are defined lowercase at their source; the printer capitalizes the first letter in
+/// place so the output reads e.g. `Left:`, `Right:`, `Hash table:`, `Spill:`. Labels are ASCII.
+void capitalizeLabel(std::string & label)
+{
+    if (!label.empty())
+        label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
+}
+
 void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const std::string & prefix)
 {
     if (metric_group.metrics.empty())
@@ -81,7 +88,10 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
         if (!first)
             out << " · ";
         first = false;
-        out << metric.name << " " << formatStepMetricValue(metric, 0);
+        if (metric.name.empty())
+            out << formatStepMetricValue(metric, 0);
+        else
+            out << metric.name << " " << formatStepMetricValue(metric, 0);
     }
     out << "\n";
 }
@@ -133,21 +143,37 @@ void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::st
     out << "\n";
 }
 
-void enrichJoinSides(StepAnalysisReport & report, UInt64 step_output_rows)
+void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & out, const std::string & prefix, bool processors_info)
 {
-    for (auto & metric_group : report)
+    out << prefix << "  ";
+    if (label_stages)
     {
-        if (metric_group.label != "left" && metric_group.label != "right")
-            continue;
+        out << "Stage";
+        if (!stage.name.empty())
+            out << " (" << stage.name << ")";
+        out << ": ";
+    }
+    out << "time " << formatReadableTime(static_cast<double>(stage.wall_clock_time_ns))
+        << fmt::format(" ({:.1f}%)", stage.share_of_query_time) << " · parallelism "
+        << (stage.wall_clock_time_ns ? fmt::format("{:.2f}/{}", stage.parallelism, stage.max_parallelism) : "Unknown");
 
-        const UInt64 rows = findQuantity(metric_group, "rows");
-        const UInt64 matched = findQuantity(metric_group, "matched");
+    for (const auto & metric : stage.inline_metrics)
+        out << " · " << metric.name << " " << formatStepMetricValue(metric, stage.sum_elapsed_ns);
 
-        double selectivity_percent = rows ? 100.0 * static_cast<double>(matched) / static_cast<double>(rows) : 0.0;
-        metric_group.metrics.emplace_back("selectivity", selectivity_percent, StepMetric::Format::Percent);
+    out << "\n";
 
-        const double fanout = rows ? static_cast<double>(step_output_rows) / static_cast<double>(matched) : 0.0;
-        metric_group.metrics.emplace_back("fanout", fanout, StepMetric::Format::Ratio);
+    if (processors_info)
+    {
+        out << prefix << "    Time per processor (" << stage.total_num_processors << "): ";
+        bool first = true;
+        for (const auto & metric : stage.processor_distribution)
+        {
+            if (!first)
+                out << " · ";
+            first = false;
+            out << metric.name << " " << formatStepMetricValue(metric, 0);
+        }
+        out << "\n";
     }
 }
 
@@ -265,103 +291,63 @@ void AnalyzeStepsStats::computeDistribution(const ElapsedTimesPerStepGroup & ela
     }
 }
 
+StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) const
+{
+    StepStatsContext context;
+    context.step = step;
+    context.execution_query_time_ns = execution_query_time_ns;
+    context.max_num_threads_per_query = max_num_threads_per_query;
+
+    if (const auto step_stats_it = stats_by_step.find(step); step_stats_it != stats_by_step.end())
+        context.io = step_stats_it->second;
+
+    for (size_t group : step->getStepGroups())
+        if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step, group)); group_stats_it != stats_by_step_group.end())
+            context.group_stats[group] = group_stats_it->second;
+
+    return context;
+}
+
+AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
+{
+    ProcessorsByGroup processors_by_group;
+    for (size_t group : step->getStepGroups())
+        if (const auto group_processors_it = processors_by_step_group.find(std::make_pair(step, group)); group_processors_it != processors_by_step_group.end())
+            processors_by_group[group] = group_processors_it->second;
+
+    StepAnalysisReport raw_report = step->getAnalysisReport(processors_by_group);
+
+    auto context_for_step = makeContext(step);
+    auto step_name = step->getName();
+    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step_name);
+
+    /// Use the service of a generator, which takes the context (e.g. i/o, total time)
+    /// some internal raw metrics, which are specific for each step,  that
+    /// with the knowledge of the step will pre-process the metrics before printing
+    return step_stats_generator(context_for_step, std::move(raw_report));
+}
+
+void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer & out, const std::string & prefix, bool processors_info) const
+{
+    for (const auto & group : report.groups)
+    {
+        MetricGroup display = group;
+        capitalizeLabel(display.label);
+        printMetricGroup(display, out, prefix);
+    }
+
+    printIOGroup(makeIOGroup(report.io), out, prefix);
+
+    for (const auto & stage : report.stages)
+        printStage(stage, report.label_stages, out, prefix, processors_info);
+}
+
 void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix, bool processors_info) const
 {
     if (!step)
-        return ;
+        return;
 
-    StepStats step_stats;
-    if (const auto step_it = stats_by_step.find(step); step_it != stats_by_step.end())
-        step_stats = step_it->second;
-
-    ProcessorsByGroup processors_by_group;
-    for (size_t group : step->getStepGroups())
-    {
-        const auto group_it = processors_by_step_group.find(std::make_pair(step, group));
-        if (group_it != processors_by_step_group.end())
-            processors_by_group[group] = group_it->second;
-    }
-
-    StepAnalysisReport report = step->getAnalysisReport(processors_by_group);
-
-    if (step->getName() == "Join")
-        enrichJoinSides(report, step_stats.output_rows);
-
-    /// Groups labelled by an execution stage name are phase-scoped: they are merged into that
-    /// Stage line below. Everything else renders as a standalone line here.
-    std::set<std::string> stage_names;
-    for (size_t group : step->getStepGroups())
-    {
-        const std::string group_name = step->getStepGroupName(group);
-        if (!group_name.empty())
-            stage_names.insert(group_name);
-    }
-
-    std::unordered_map<std::string, MetricList> phase_metrics;
-
-    for (auto & metric_group : report)
-    {
-        if (stage_names.contains(metric_group.label))
-            phase_metrics.emplace(metric_group.label, std::move(metric_group.metrics));
-        else
-            printMetricGroup(metric_group, out, prefix);
-    }
-
-    /// Collect the stages (step groups) that actually have timing stats.
-    std::vector<std::pair<size_t, const StepGroupStats *>> stages;
-    for (size_t group : step->getStepGroups())
-    {
-        const auto group_it = stats_by_step_group.find(std::make_pair(step, group));
-        if (group_it != stats_by_step_group.end())
-            stages.emplace_back(group, &group_it->second);
-    }
-
-    printIOGroup(makeIOGroup(step_stats), out, prefix);
-
-    /// A step that splits into several stages labels each one ("Stage (<name>): ..."); a single
-    /// stage is also labeled when it carries a non-empty group name (e.g. a join's "probe").
-    const bool label_stages
-        = stages.size() > 1 || (!stages.empty() && !step->getStepGroupName(stages.front().first).empty());
-
-    for (const auto & [group, group_stats_ptr] : stages)
-    {
-        const auto & group_stats = *group_stats_ptr;
-
-        const double share_of_query_time = execution_query_time_ns != 0
-            ? 100.0 * static_cast<double>(group_stats.wall_clock_time_ns) / static_cast<double>(execution_query_time_ns)
-            : 0.0;
-        const double parallelism = group_stats.wall_clock_time_ns
-            ? static_cast<double>(group_stats.sum_elapsed_ns) / static_cast<double>(group_stats.wall_clock_time_ns)
-            : 0.0;
-        const UInt64 max_parallelism = std::min(max_num_threads_per_query, group_stats.total_num_processors);
-
-        const std::string group_name = step->getStepGroupName(group);
-
-        out << prefix << "  ";
-        if (label_stages)
-        {
-            out << "Stage";
-            if (!group_name.empty())
-                out << " (" << group_name << ")";
-            out << ": ";
-        }
-        out << "time " << formatReadableTime(static_cast<double>(group_stats.wall_clock_time_ns))
-            << fmt::format(" ({:.1f}%)", share_of_query_time) << " · parallelism "
-            << (group_stats.wall_clock_time_ns ? fmt::format("{:.2f}/{}", parallelism, max_parallelism) : "Unknown");
-
-        if (const auto phase_it = phase_metrics.find(group_name); phase_it != phase_metrics.end())
-            for (const auto & metric : phase_it->second)
-                out << " · " << metric.name << " " << formatStepMetricValue(metric, group_stats.sum_elapsed_ns);
-
-        out << "\n";
-
-        if (processors_info)
-            out << prefix << "    Time per processor (" << group_stats.total_num_processors << "): "
-                << "min " << formatReadableTime(static_cast<double>(group_stats.min_elapsed_ns))
-                << " · median " << formatReadableTime(static_cast<double>(group_stats.median_elapsed_ns))
-                << " · max " << formatReadableTime(static_cast<double>(group_stats.max_elapsed_ns))
-                << " · sum " << formatReadableTime(static_cast<double>(group_stats.sum_elapsed_ns)) << "\n";
-    }
+    renderStep(analyzeStep(step), out, prefix, processors_info);
 }
 
 };
