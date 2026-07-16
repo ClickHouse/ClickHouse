@@ -5,6 +5,7 @@
 
 #include <Server/ArrowFlight/CallsData.h>
 
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -20,6 +21,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SESSION_TIMEOUT;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
 }
 
 void AuthMiddleware::SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers)
@@ -193,7 +199,7 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 {
     const auto & headers = context.incoming_headers();
 
-    std::string username("default");
+    std::string username;
     std::string password;
     std::string token;
     auto session = std::make_shared<Session>(server.context(), ClientInfo::Interface::ARROW_FLIGHT);
@@ -216,6 +222,23 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 
             std::tie(username, password) = *credentials;
         }
+
+        /// An empty user name (no `authorization` header, or Basic credentials with an empty
+        /// user name) means the default session user (the `default_session_user` server setting).
+        /// A Bearer token cannot carry an empty user name: tokens are issued below after
+        /// authentication, when the user name has already been resolved.
+        if (username.empty())
+        {
+            username = server.context()->getServerSettings()[ServerSetting::default_session_user];
+
+            /// The default session user can be explicitly configured to be empty to prohibit
+            /// connections without a user name.
+            if (username.empty())
+                return arrow::flight::MakeFlightError(
+                    arrow::flight::FlightStatusCode::Unauthenticated,
+                    "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
+        }
+
         session->authenticate(username, password, getClientAddress(context));
     }
     catch (DB::Exception & e)
