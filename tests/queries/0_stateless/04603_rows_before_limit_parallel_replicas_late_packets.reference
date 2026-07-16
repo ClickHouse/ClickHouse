@@ -1,0 +1,11 @@
+parallel replicas JSON HTTP rows_read OK
+parallel replicas JSON TCP rows_read OK
+parallel replicas XML HTTP rows_read OK
+remote JSON HTTP rows_read OK
+remote JSON HTTP rows_before_limit_at_least OK
+remote JSON TCP rows_read OK
+remote JSON TCP rows_before_limit_at_least OK
+remote JSONColumnsWithMetadata HTTP rows_read OK
+remote JSONColumnsWithMetadata HTTP rows_before_limit_at_least OK
+remote XML HTTP rows_read OK
+remote XML HTTP rows_before_limit_at_least OK

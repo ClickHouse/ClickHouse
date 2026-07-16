@@ -83,6 +83,7 @@
 
 
 #include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -137,6 +138,7 @@ namespace FailPoints
 {
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_sleep_before_secondary_query_trailing_packets[];
 }
 }
 
@@ -1585,6 +1587,16 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
           *  and there could be ongoing calculations in other threads at the same time.
           */
 
+        /// Test-only: make the race between the initiator's post-LIMIT cancellation and the
+        /// trailing packets of a remote (secondary) query deterministic. All data blocks have
+        /// been sent above; delaying the trailing Totals/Extremes/ProfileInfo/Progress (and the
+        /// EndOfStream that follows) guarantees they arrive while the initiator is already
+        /// draining the connection in RemoteQueryExecutor::finish.
+        fiu_do_on(FailPoints::tcp_handler_sleep_before_secondary_query_trailing_packets,
+        {
+            if (state.query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                sleepForMilliseconds(1000);
+        });
 
         std::lock_guard lock(*callback_mutex);
 
