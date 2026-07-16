@@ -39,21 +39,35 @@ public:
     static FunctionPtr create(ContextPtr ctx [[maybe_unused]])
     {
 #if USE_SSL
-        return std::make_shared<FunctionShowCertificate>(ctx->getQueryContext()->getClientInfo().certificate);
+        return std::make_shared<FunctionShowCertificate>(ctx->getQueryContext()->getClientInfo().certificate, ctx->isDistributed());
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
 #endif
     }
 
     std::string certificate;
+    bool is_distributed = false;
 
 #if USE_SSL
-    explicit FunctionShowCertificate(const std::string & certificate_ = "") : certificate(certificate_) {}
+    explicit FunctionShowCertificate(const std::string & certificate_ = "", bool is_distributed_ = false)
+        : certificate(certificate_), is_distributed(is_distributed_) {}
 #endif
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool isDeterministic() const override { return false; }
+
+    /// The value is server-local: the initiator sees the client certificate of its connection,
+    /// while each shard falls back to its own server certificate. `isServerConstant` keeps the
+    /// planner from removing `GROUP BY showCertificate()` as a constant key and excludes the
+    /// function from the analyzer function cache; the folding gate below is defensive - the
+    /// result is currently a full column, which is never folded, but that must not silently
+    /// change if the implementation is ever optimized to return a constant.
+    bool isServerConstant() const override { return true; }
+
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
