@@ -119,6 +119,18 @@ void WriteBufferFromFileDescriptor::nextImpl()
     if (!offset())
         return;
 
+    /// While a best-effort flush budget is set (e.g. clearing the progress indication on Ctrl+C,
+    /// when the terminal may be exactly what is stuck), flush with the same bounded discipline as
+    /// writeBestEffort: attempt the write within the budget and drop whatever the sink did not
+    /// accept, without throwing. This takes precedence over the cancellation hook below - such
+    /// writes are wanted precisely while the query is already being cancelled, just not at the
+    /// price of blocking on a stuck sink.
+    if (best_effort_flush_budget_ms)
+    {
+        writeBestEffort(std::string_view(working_buffer.begin(), offset()), *best_effort_flush_budget_ms);
+        return;
+    }
+
     /// The operation was cancelled (e.g. the user pressed Ctrl+C in the client) - discard the
     /// buffered data instead of writing it, so the output stops promptly.
     if (cancellation_hook && cancellation_hook())

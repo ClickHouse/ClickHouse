@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string_view>
 
 #include <IO/WriteBufferFromFileBase.h>
@@ -67,6 +68,18 @@ public:
     /// output.
     void writeBestEffort(std::string_view data, UInt64 timeout_ms);
 
+    /// While a budget is set, every flush of the internal buffer is written with the same bounded,
+    /// never-throwing discipline as writeBestEffort: whatever the sink does not accept within the
+    /// budget is dropped. It takes precedence over the cancellation hook, which would discard the
+    /// data outright once cancellation is requested. Used for writes that are still wanted while
+    /// cancellation may be fighting a stuck sink - e.g. clearing the progress indication on
+    /// Ctrl+C, when the terminal may be exactly what is stuck. Passing std::nullopt removes the
+    /// budget.
+    void setBestEffortFlushBudget(std::optional<UInt64> timeout_ms)
+    {
+        best_effort_flush_budget_ms = timeout_ms;
+    }
+
 protected:
     void nextImpl() override;
 
@@ -104,6 +117,9 @@ protected:
     /// terminal, or the re-open failed) - the responsive path then falls back to poll() + a
     /// blocking write capped at PIPE_BUF.
     int nonblocking_write_fd = -1;
+
+    /// See setBestEffortFlushBudget.
+    std::optional<UInt64> best_effort_flush_budget_ms;
 
     void finalizeImpl() override;
 };

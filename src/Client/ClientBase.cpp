@@ -1465,6 +1465,18 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             std_out->setCancellationHook(
                 [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
 
+            /// The progress indication renders to the terminal through `tty_buf`, so those writes
+            /// must stay responsive to cancellation as well: on a terminal that stopped draining,
+            /// the first Ctrl+C would otherwise hang in a progress-bar write, or in the progress
+            /// clear that precedes every output flush (see initOutputFormat), instead of
+            /// cancelling the query. Once cancellation is requested, further progress rendering is
+            /// discarded - it is decorative and nothing is reading the stuck terminal anyway. The
+            /// hook shares std_out's lifetime discipline: re-pointed and finally cleared in
+            /// resetOutput().
+            if (tty_buf)
+                tty_buf->setCancellationHook(
+                    [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
             /// for local connections this callback checks the signal handler flag.
@@ -1908,6 +1920,12 @@ void ClientBase::resetOutput()
     { return interrupt_handler_armed ? query_interrupt_handler.cancelled() : cancelled.load(); };
     if (std_out)
         std_out->setCancellationHook(teardown_cancellation_hook);
+    /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
+    /// flushes below still clear the progress indication through it (std_out_wrapper->finalize()
+    /// triggers the progress-clearing flush callback installed in initOutputFormat), so re-point
+    /// it the same way.
+    if (tty_buf)
+        tty_buf->setCancellationHook(teardown_cancellation_hook);
     /// The per-query pager and `INTO OUTFILE ... AND STDOUT` stdout buffers carry the same
     /// handler-based hook (installed in initOutputFormat), and are finalized by the teardown
     /// flushes below (std_out_wrapper->finalize() and out_file_buf->finalize() respectively).
@@ -1921,6 +1939,8 @@ void ClientBase::resetOutput()
     SCOPE_EXIT({
         if (std_out)
             std_out->setCancellationHook({});
+        if (tty_buf)
+            tty_buf->setCancellationHook({});
         select_into_file_and_stdout_buf.reset();
     });
 
@@ -2076,6 +2096,12 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
+
+    /// Progress for an INSERT (e.g. reading an INFILE) is rendered through `tty_buf` as well -
+    /// keep it responsive to cancellation, for the same reason as in processOrdinaryQuery.
+    if (tty_buf)
+        tty_buf->setCancellationHook(
+            [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
 
     connection->sendQuery(
         connection_parameters.timeouts,
@@ -2516,15 +2542,21 @@ void ClientBase::cancelQuery()
 
     stopKeystrokeInterceptorIfExists();
 
-    if (need_render_progress && tty_buf)
+    /// Clear the progress indication with bounded writes: the terminal may be exactly what is
+    /// stuck (see printCancellationMessage), and these clears run after cancellation has been
+    /// requested, so tty_buf's cancellation hook would discard them outright. A bounded
+    /// best-effort write still erases the progress bar/table on a live terminal - so the
+    /// "Cancelling query." diagnostic below lands on a clean line - and is dropped after a short
+    /// wait on a stuck one.
+    if ((need_render_progress || need_render_progress_table) && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
-        progress_indication.clearProgressOutput(*tty_buf, lock);
-    }
-    if (need_render_progress_table && tty_buf)
-    {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
+        tty_buf->setBestEffortFlushBudget(1000);
+        SCOPE_EXIT({ tty_buf->setBestEffortFlushBudget(std::nullopt); });
+        if (need_render_progress)
+            progress_indication.clearProgressOutput(*tty_buf, lock);
+        if (need_render_progress_table)
+            progress_table.clearTableOutput(*tty_buf, lock);
     }
 
     if (is_interactive)
