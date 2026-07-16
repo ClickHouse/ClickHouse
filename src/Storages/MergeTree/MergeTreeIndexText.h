@@ -290,10 +290,26 @@ struct TextIndexHeader
     {
         Initial = 0,
         WithCodec = 1,
-        /// Positions: has_positions and positions-codec bytes in the header. Redefined in place
-        /// while phrase search is experimental; parts written by earlier experimental builds must be rebuilt.
+        /// Positions: has_positions and positions-codec bytes in the header, segmented .pos layout (see TextIndexPositionCodec).
         WithPositions = 2,
     };
+
+    /// Capabilities of an on-disk format version; readers branch on these flags, so a new version only extends traits().
+    struct FormatTraits
+    {
+        /// The header stores the posting-list codec type; compressed postings carry the per-block index section.
+        bool has_postings_codec = false;
+        /// The header stores the has_positions and positions-codec bytes; .pos blobs use the segmented layout.
+        bool has_positions = false;
+    };
+
+    static FormatTraits traits(MergeTreeIndexVersion version)
+    {
+        FormatTraits t;
+        t.has_postings_codec = version >= static_cast<MergeTreeIndexVersion>(Version::WithCodec);
+        t.has_positions = version >= static_cast<MergeTreeIndexVersion>(Version::WithPositions);
+        return t;
+    }
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;

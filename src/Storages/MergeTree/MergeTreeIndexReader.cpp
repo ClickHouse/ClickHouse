@@ -205,6 +205,13 @@ MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSetti
         settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
     }
 
+    /// Positions are read one segment at a time; the default 1 MiB buffer would over-read after every skip.
+    if (substream == TextIndexPositions)
+    {
+        settings.read_settings.local_fs_settings.buffer_size = 128 * 1024;
+        settings.read_settings.remote_fs_settings.buffer_size = 128 * 1024;
+    }
+
     return settings;
 }
 

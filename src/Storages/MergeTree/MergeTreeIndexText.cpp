@@ -275,9 +275,7 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
                 "Posting list header marks compressed data but no codec is configured");
         }
 
-        static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-
-        if (serialization_version < required_version)
+        if (!TextIndexHeader::traits(serialization_version).has_postings_codec)
         {
             /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
             /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
@@ -1180,11 +1178,12 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
 void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr)
 {
     UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
+    const auto traits = TextIndexHeader::traits(version);
 
     writeVarUInt(static_cast<UInt64>(version), ostr);
     writeVarUInt(codec_type, ostr);
 
-    if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositions))
+    if (traits.has_positions)
     {
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
         writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
@@ -1214,8 +1213,9 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
 
     TextIndexHeader header;
     header.version = static_cast<MergeTreeIndexVersion>(version);
+    const auto traits = TextIndexHeader::traits(header.version);
 
-    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
+    if (traits.has_postings_codec)
     {
         UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
@@ -1226,7 +1226,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
     }
 
-    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
+    if (traits.has_positions)
     {
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);

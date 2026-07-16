@@ -524,7 +524,7 @@ bool MergeTextIndexesTask::executeStep()
                 const size_t pos_available = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
 
                 PODArray<RoaringishEntry> position_entries;
-                TextIndexPositionCodec::decode(
+                TextIndexPositionCodec::decodeAllSegments(
                     *pos_data_buffer, position_entries,
                     source_positions_codecs[current->order],
                     token_info.position_cardinality,

@@ -6,22 +6,20 @@
 #include <IO/WriteBuffer.h>
 
 #include <span>
+#include <vector>
 
 namespace DB
 {
 
-/// Codec for encoding/decoding Roaringish 96-bit position lists, selected by the text
-/// index `positions_codec` parameter:
+/// Codec for per-token position lists in the .pos stream: Raw ('none') stores 12-byte little-endian (doc_id, group, bitmap) entries; Pfor ('pfor') bit-packs the three UInt32 lanes (doc lane delta-encoded).
 ///
-///   Raw  (positions_codec='none', default):
-///     [VarUInt: count][count x 12 bytes: (doc_id:u32, group:u32, bitmap:u32) little-endian]
-///     No compression; minimal decode latency.
+/// Blob layout:
+///     [VarUInt: count]
+///     [VarUInt: num_segments]
+///     num_segments x [VarUInt: first_doc delta][VarUInt: last_doc - first_doc][VarUInt: count][VarUInt: bytes]
+///     num_segments x payload, back to back, each independently decodable
 ///
-///   Pfor (positions_codec='pfor'):
-///     [VarUInt: count][VarUInt: payload_bytes][doc lane][group lane][bitmap lane]
-///     The three UInt32 lanes are bit-packed with the PFor codec (clean-room PForDelta, Compression/PFor.h):
-///     doc with integrated delta (non-decreasing across sorted entries), group and bitmap
-///     plain. Smaller .pos files at the cost of a decode pass.
+/// Segments are cut at doc_id boundaries (target SEGMENT_TARGET_ENTRIES), so phrase search decodes one segment at a time and skips segments by doc range without reading them.
 class TextIndexPositionCodec
 {
 public:
@@ -31,39 +29,46 @@ public:
         Pfor = 1,
     };
 
-    /// Reusable scratch for the Pfor decode path, owned by the caller and reused across
-    /// decode() calls so the hot path does no per-call heap allocation (ClickHouse idiom;
-    /// cf. MergeTreeReaderTextIndex::indices_buffer). PaddedPODArray also gives the SIMD
-    /// pfor kernels safe trailing padding and skips value-initialization on resize.
-    /// Unused by the Raw encoding.
+    /// Unit of decode memory and I/O skipping; only a single doc_id with more entries can exceed it.
+    static constexpr size_t SEGMENT_TARGET_ENTRIES = 16 * 1024;
+
+    /// One directory record; `offset` is absolute in the .pos stream.
+    struct SegmentMeta
+    {
+        UInt32 first_doc = 0;
+        UInt32 last_doc = 0;
+        UInt32 count = 0;
+        UInt64 offset = 0;
+        UInt64 bytes = 0;
+    };
+
+    struct SegmentDirectory
+    {
+        UInt64 total_count = 0;
+        std::vector<SegmentMeta> segments;
+    };
+
+    /// Caller-owned scratch reused across decodeAllSegments() calls (no per-token allocation).
     struct DecodeScratch
     {
         PaddedPODArray<char> payload;
-        PaddedPODArray<UInt32> doc;
-        PaddedPODArray<UInt32> group;
-        PaddedPODArray<UInt32> bitmap;
+        PositionList lanes;
     };
 
-    /// Maps the `positions_codec` argument value ("none"/"pfor") to an Encoding.
-    /// Throws BAD_ARGUMENTS on an unknown value.
+    /// Maps "none"/"pfor" to an Encoding; throws BAD_ARGUMENTS on an unknown value.
     static Encoding parseEncoding(const String & name);
 
-    /// Writes a sorted array of RoaringishEntry values using the given encoding.
+    /// Writes a sorted array of RoaringishEntry values in the segmented layout.
     static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out, Encoding encoding);
 
-    /// Reads into a memory-tracked array of RoaringishEntry values (the merge path).
-    /// `position_cardinality` is the entry count recorded in the index header; the stored
-    /// count must match it, so a corrupt stream is rejected before any allocation.
-    /// `available_bytes` (file size minus the token's offset) caps the declared size before any resize.
-    static void decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, DecodeScratch & scratch);
+    /// Reads the per-token directory fail-closed; the stream must be at `blob_offset` (the token's `position_offset`).
+    static SegmentDirectory readSegmentDirectory(ReadBuffer & in, UInt64 blob_offset, UInt64 position_cardinality, size_t available_bytes);
 
-    /// Reads into struct-of-arrays form (the query/phrase-search path). For Pfor this
-    /// decodes the three columnar lanes straight into pl.doc/group/bitmap with no temp
-    /// lane buffers and no SoA<->AoS interleave (just the compressed payload is staged in
-    /// `payload_scratch`, reused across calls). For Raw it de-interleaves the stored
-    /// entries into the three arrays. See the other overload for `position_cardinality` and
-    /// `available_bytes`.
-    static void decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, PaddedPODArray<char> & payload_scratch);
+    /// Decodes one segment payload into `pl`; the stream must be at `meta.offset`.
+    static void decodeSegment(ReadBuffer & in, const SegmentMeta & meta, Encoding encoding, PositionList & pl, PaddedPODArray<char> & payload_scratch);
+
+    /// Whole-list sequential decode (the merge path).
+    static void decodeAllSegments(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, DecodeScratch & scratch);
 };
 
 }

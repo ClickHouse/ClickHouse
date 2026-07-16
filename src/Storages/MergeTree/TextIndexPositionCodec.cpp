@@ -29,29 +29,7 @@ namespace
     transformEndianness<std::endian::little>(e.bitmap);
 }
 
-/// ---- Raw: count + the entries' little-endian bytes ----
-
-void encodeRaw(std::span<const RoaringishEntry> entries, WriteBuffer & out)
-{
-    static_assert(sizeof(RoaringishEntry) == 12);
-
-    UInt64 count = entries.size();
-    writeVarUInt(count, out);
-    if (count == 0)
-        return;
-
-    if constexpr (std::endian::native == std::endian::little)
-        out.write(reinterpret_cast<const char *>(entries.data()), count * sizeof(RoaringishEntry));
-    else
-        for (RoaringishEntry e : entries)
-        {
-            transformEntryEndianness(e);
-            out.write(reinterpret_cast<const char *>(&e), sizeof(e));
-        }
-}
-
-/// The stored entry count must equal the cardinality recorded in the index header; a mismatch is
-/// corruption, and checking it before any resize(count) rejects a bogus on-disk count up front.
+/// Checked before any resize(count) so a bogus on-disk count is rejected up front.
 void checkPositionCount(UInt64 count, UInt64 expected_count)
 {
     if (count != expected_count)
@@ -68,85 +46,15 @@ void checkFitsAvailable(UInt64 needed_bytes, size_t available_bytes)
             needed_bytes, available_bytes);
 }
 
-void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count, size_t available_bytes)
+/// At least 1 byte per block per lane, at most three full lanes.
+void checkPforPayloadBounds(UInt64 payload_bytes, UInt64 count)
 {
-    static_assert(sizeof(RoaringishEntry) == 12);
-
-    UInt64 count = 0;
-    readVarUInt(count, in);
-    checkPositionCount(count, expected_count);
-    if (count == 0)
-        return;
-
-    checkFitsAvailable(count * sizeof(RoaringishEntry), available_bytes);
-    entries.resize(count);
-    /// readBigStrict reads the bulk payload straight into the destination, skipping the buffer copy.
-    in.readBigStrict(reinterpret_cast<char *>(entries.data()), count * sizeof(RoaringishEntry));
-    if constexpr (std::endian::native != std::endian::little)
-        for (auto & e : entries)
-            transformEntryEndianness(e);
-}
-
-void decodeRawSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, size_t available_bytes, PaddedPODArray<char> & scratch)
-{
-    static_assert(sizeof(RoaringishEntry) == 12);
-
-    UInt64 count = 0;
-    readVarUInt(count, in);
-    checkPositionCount(count, expected_count);
-    if (count == 0)
-        return;
-
-    checkFitsAvailable(count * sizeof(RoaringishEntry), available_bytes);
-    pl.resize(count);
-    /// Bulk-read the AoS payload in one pass, then de-interleave into the lanes.
-    const size_t bytes = count * sizeof(RoaringishEntry);
-    scratch.resize(bytes);
-    in.readBigStrict(scratch.data(), bytes);
-
-    const char * base = scratch.data();
-    for (size_t i = 0; i < count; ++i)
-    {
-        RoaringishEntry entry{};
-        memcpy(&entry, base + i * sizeof(RoaringishEntry), sizeof(RoaringishEntry));
-        if constexpr (std::endian::native != std::endian::little)
-            transformEntryEndianness(entry);
-        pl.doc[i] = entry.doc_id;
-        pl.group[i] = entry.group;
-        pl.bitmap[i] = entry.bitmap;
-    }
-}
-
-/// ---- Pfor: the three UInt32 lanes bit-packed with the PFor codec (Compression/PFor.h) ----
-
-/// doc_id delta-packed (d0, non-decreasing), group/bitmap plain; the three lane blobs are concatenated into one length-prefixed payload.
-void encodePfor(std::span<const RoaringishEntry> entries, WriteBuffer & out)
-{
-    const UInt64 count = entries.size();
-    writeVarUInt(count, out);
-
-    if (count == 0)
-        return;
-
-    std::vector<UInt32> doc(count);
-    std::vector<UInt32> grp(count);
-    std::vector<UInt32> bm(count);
-    for (size_t i = 0; i < count; ++i)
-    {
-        doc[i] = entries[i].doc_id;
-        grp[i] = entries[i].group;
-        bm[i] = entries[i].bitmap;
-    }
-
-    /// PFor works on uint8_t buffers (ClickHouse UInt8 is char8_t), so the byte buffer must be uint8_t.
-    std::vector<uint8_t> payload(3 * PFor::maxCompressedBytes<UInt32>(count));
-    size_t off = 0;
-    off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(doc), PFor::Delta::d0, payload.data() + off);
-    off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(grp), PFor::Delta::none, payload.data() + off);
-    off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(bm), PFor::Delta::none, payload.data() + off);
-
-    writeVarUInt(static_cast<UInt64>(off), out);
-    out.write(reinterpret_cast<const char *>(payload.data()), off);
+    const size_t min_payload = 3 * ((count + PFor::BLOCK - 1) / PFor::BLOCK);
+    const size_t max_payload = 3 * PFor::maxCompressedBytes<UInt32>(count);
+    if (payload_bytes < min_payload || payload_bytes > max_payload)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
+            payload_bytes, min_payload, max_payload, count);
 }
 
 /// Decode one PFor lane fail-closed: throw CORRUPTED_DATA if truncated or malformed (decodeBlocks returns 0); returns the position past the lane.
@@ -158,85 +66,99 @@ const uint8_t * decodePforLane(const uint8_t * p, const uint8_t * end, UInt64 co
     return p + consumed;
 }
 
-void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count, size_t available_bytes, TextIndexPositionCodec::DecodeScratch & scratch)
+/// Cuts at the first doc_id change at/after the target size, so segments never split a doc_id.
+std::vector<std::pair<size_t, size_t>> computeSegmentBounds(std::span<const RoaringishEntry> entries)
 {
-    UInt64 count = 0;
-    readVarUInt(count, in);
-    checkPositionCount(count, expected_count);
+    std::vector<std::pair<size_t, size_t>> bounds;
+    const size_t count = entries.size();
+    bounds.reserve(count / TextIndexPositionCodec::SEGMENT_TARGET_ENTRIES + 1);
 
-    if (count == 0)
-        return;
+    size_t begin = 0;
+    for (size_t i = 1; i < count; ++i)
+    {
+        if (i - begin >= TextIndexPositionCodec::SEGMENT_TARGET_ENTRIES && entries[i].doc_id != entries[i - 1].doc_id)
+        {
+            bounds.emplace_back(begin, i);
+            begin = i;
+        }
+    }
 
-    UInt64 payload_bytes = 0;
-    readVarUInt(payload_bytes, in);
-    /// Bound the payload against the (validated) count before any resize: at least 1 byte per block per lane, at most three full lanes. Otherwise a corrupt length forces a huge resize(count) before decode reports corruption.
-    const size_t min_payload = 3 * ((count + PFor::BLOCK - 1) / PFor::BLOCK);
-    const size_t max_payload = 3 * PFor::maxCompressedBytes<UInt32>(count);
-    if (payload_bytes < min_payload || payload_bytes > max_payload)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
-            payload_bytes, min_payload, max_payload, count);
-
-    checkFitsAvailable(payload_bytes, available_bytes);
-    /// Reused buffers; PaddedPODArray::resize skips value-init and keeps trailing SIMD padding.
-    scratch.payload.resize(payload_bytes);
-    if (payload_bytes > 0)
-        in.readStrict(scratch.payload.data(), payload_bytes);
-
-    scratch.doc.resize(count);
-    scratch.group.resize(count);
-    scratch.bitmap.resize(count);
-    const uint8_t * const start = reinterpret_cast<const uint8_t *>(scratch.payload.data());
-    const uint8_t * const end = start + payload_bytes;
-    const uint8_t * p = start;
-    p = decodePforLane(p, end, count, PFor::Delta::d0, scratch.doc.data());
-    p = decodePforLane(p, end, count, PFor::Delta::none, scratch.group.data());
-    p = decodePforLane(p, end, count, PFor::Delta::none, scratch.bitmap.data());
-    if (p != end)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (pfor): payload not fully consumed ({} of {} bytes)",
-            static_cast<size_t>(p - start), payload_bytes);
-
-    entries.resize(count);
-    for (size_t i = 0; i < count; ++i)
-        entries[i] = RoaringishEntry{scratch.doc[i], scratch.group[i], scratch.bitmap[i]};
+    bounds.emplace_back(begin, count);
+    return bounds;
 }
 
-void decodePforSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, size_t available_bytes, PaddedPODArray<char> & payload)
+/// The doc lane restarts its d0 delta base per segment, making segments independently decodable.
+size_t encodePforSegment(std::span<const RoaringishEntry> entries, std::vector<UInt32> & doc, std::vector<UInt32> & grp, std::vector<UInt32> & bm, uint8_t * out)
 {
-    UInt64 count = 0;
-    readVarUInt(count, in);
-    checkPositionCount(count, expected_count);
-    if (count == 0)
-        return;
+    const size_t count = entries.size();
+    doc.resize(count);
+    grp.resize(count);
+    bm.resize(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        doc[i] = entries[i].doc_id;
+        grp[i] = entries[i].group;
+        bm[i] = entries[i].bitmap;
+    }
 
-    UInt64 payload_bytes = 0;
-    readVarUInt(payload_bytes, in);
-    /// Bound the payload against the (validated) count before any resize: at least 1 byte per block per lane, at most three full lanes. Otherwise a corrupt length forces a huge resize(count) before decode reports corruption.
-    const size_t min_payload = 3 * ((count + PFor::BLOCK - 1) / PFor::BLOCK);
-    const size_t max_payload = 3 * PFor::maxCompressedBytes<UInt32>(count);
-    if (payload_bytes < min_payload || payload_bytes > max_payload)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
-            payload_bytes, min_payload, max_payload, count);
+    size_t off = 0;
+    off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(doc), PFor::Delta::d0, out + off);
+    off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(grp), PFor::Delta::none, out + off);
+    off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(bm), PFor::Delta::none, out + off);
+    return off;
+}
 
-    checkFitsAvailable(payload_bytes, available_bytes);
-    payload.resize(payload_bytes);
-    if (payload_bytes > 0)
-        in.readStrict(payload.data(), payload_bytes);
+void writeRawSegment(std::span<const RoaringishEntry> entries, WriteBuffer & out)
+{
+    static_assert(sizeof(RoaringishEntry) == 12);
 
-    /// Decode the three columnar lanes straight into the SoA arrays (fail-closed on corrupt input).
-    pl.resize(count);
-    const uint8_t * const start = reinterpret_cast<const uint8_t *>(payload.data());
-    const uint8_t * const end = start + payload_bytes;
+    if constexpr (std::endian::native == std::endian::little)
+        out.write(reinterpret_cast<const char *>(entries.data()), entries.size() * sizeof(RoaringishEntry));
+    else
+        for (RoaringishEntry e : entries)
+        {
+            transformEntryEndianness(e);
+            out.write(reinterpret_cast<const char *>(&e), sizeof(e));
+        }
+}
+
+void decodeRawSegment(ReadBuffer & in, const TextIndexPositionCodec::SegmentMeta & meta, PositionList & pl, PaddedPODArray<char> & scratch)
+{
+    static_assert(sizeof(RoaringishEntry) == 12);
+
+    pl.resize(meta.count);
+    scratch.resize(meta.bytes);
+    in.readBigStrict(scratch.data(), meta.bytes);
+
+    const char * base = scratch.data();
+    for (size_t i = 0; i < meta.count; ++i)
+    {
+        RoaringishEntry entry{};
+        memcpy(&entry, base + i * sizeof(RoaringishEntry), sizeof(RoaringishEntry));
+        if constexpr (std::endian::native != std::endian::little)
+            transformEntryEndianness(entry);
+        pl.doc[i] = entry.doc_id;
+        pl.group[i] = entry.group;
+        pl.bitmap[i] = entry.bitmap;
+    }
+}
+
+void decodePforSegment(ReadBuffer & in, const TextIndexPositionCodec::SegmentMeta & meta, PositionList & pl, PaddedPODArray<char> & scratch)
+{
+    scratch.resize(meta.bytes);
+    in.readStrict(scratch.data(), meta.bytes);
+
+    pl.resize(meta.count);
+    const uint8_t * const start = reinterpret_cast<const uint8_t *>(scratch.data());
+    const uint8_t * const end = start + meta.bytes;
     const uint8_t * p = start;
-    p = decodePforLane(p, end, count, PFor::Delta::d0, pl.doc.data());
-    p = decodePforLane(p, end, count, PFor::Delta::none, pl.group.data());
-    p = decodePforLane(p, end, count, PFor::Delta::none, pl.bitmap.data());
+    p = decodePforLane(p, end, meta.count, PFor::Delta::d0, pl.doc.data());
+    p = decodePforLane(p, end, meta.count, PFor::Delta::none, pl.group.data());
+    p = decodePforLane(p, end, meta.count, PFor::Delta::none, pl.bitmap.data());
     if (p != end)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (pfor): payload not fully consumed ({} of {} bytes)",
-            static_cast<size_t>(p - start), payload_bytes);
+            "Corrupt text index positions (pfor): segment payload not fully consumed ({} of {} bytes)",
+            static_cast<size_t>(p - start), static_cast<size_t>(meta.bytes));
 }
 
 }
@@ -252,26 +174,179 @@ TextIndexPositionCodec::Encoding TextIndexPositionCodec::parseEncoding(const Str
 
 void TextIndexPositionCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out, Encoding encoding)
 {
+    const UInt64 count = entries.size();
+    writeVarUInt(count, out);
+    if (count == 0)
+        return;
+
+    const auto bounds = computeSegmentBounds(entries);
+    writeVarUInt(static_cast<UInt64>(bounds.size()), out);
+
+    /// The directory precedes the payloads, so pfor segments are staged in memory to learn their sizes.
+    std::vector<uint8_t> pfor_payload;
+    std::vector<size_t> segment_bytes(bounds.size());
+
     if (encoding == Encoding::Pfor)
-        encodePfor(entries, out);
+    {
+        std::vector<UInt32> doc;
+        std::vector<UInt32> grp;
+        std::vector<UInt32> bm;
+        size_t reserve_bytes = 0;
+        for (const auto & [begin, end] : bounds)
+            reserve_bytes += 3 * PFor::maxCompressedBytes<UInt32>(end - begin);
+        pfor_payload.resize(reserve_bytes);
+
+        size_t off = 0;
+        for (size_t s = 0; s < bounds.size(); ++s)
+        {
+            const auto [begin, end] = bounds[s];
+            segment_bytes[s] = encodePforSegment(entries.subspan(begin, end - begin), doc, grp, bm, pfor_payload.data() + off);
+            off += segment_bytes[s];
+        }
+        pfor_payload.resize(off);
+    }
     else
-        encodeRaw(entries, out);
+    {
+        for (size_t s = 0; s < bounds.size(); ++s)
+            segment_bytes[s] = (bounds[s].second - bounds[s].first) * sizeof(RoaringishEntry);
+    }
+
+    UInt32 prev_first_doc = 0;
+    for (size_t s = 0; s < bounds.size(); ++s)
+    {
+        const auto [begin, end] = bounds[s];
+        const UInt32 first_doc = entries[begin].doc_id;
+        const UInt32 last_doc = entries[end - 1].doc_id;
+
+        writeVarUInt(first_doc - prev_first_doc, out);
+        writeVarUInt(last_doc - first_doc, out);
+        writeVarUInt(static_cast<UInt64>(end - begin), out);
+        writeVarUInt(static_cast<UInt64>(segment_bytes[s]), out);
+        prev_first_doc = first_doc;
+    }
+
+    if (encoding == Encoding::Pfor)
+    {
+        out.write(reinterpret_cast<const char *>(pfor_payload.data()), pfor_payload.size());
+    }
+    else
+    {
+        for (const auto & [begin, end] : bounds)
+            writeRawSegment(entries.subspan(begin, end - begin), out);
+    }
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, DecodeScratch & scratch)
+TextIndexPositionCodec::SegmentDirectory TextIndexPositionCodec::readSegmentDirectory(ReadBuffer & in, UInt64 blob_offset, UInt64 position_cardinality, size_t available_bytes)
 {
-    if (encoding == Encoding::Pfor)
-        decodePfor(in, entries, position_cardinality, available_bytes, scratch);
-    else
-        decodeRaw(in, entries, position_cardinality, available_bytes);
+    const size_t count_before = in.count();
+
+    SegmentDirectory dir;
+    readVarUInt(dir.total_count, in);
+    checkPositionCount(dir.total_count, position_cardinality);
+    if (dir.total_count == 0)
+        return dir;
+
+    UInt64 num_segments = 0;
+    readVarUInt(num_segments, in);
+    /// Every segment holds >= 1 entry and its directory record takes >= 4 bytes.
+    if (num_segments == 0 || num_segments > dir.total_count || num_segments * 4 > available_bytes)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: segment count {} is invalid for {} entries in {} available bytes",
+            num_segments, dir.total_count, available_bytes);
+
+    dir.segments.resize(num_segments);
+
+    UInt64 sum_count = 0;
+    UInt64 sum_bytes = 0;
+    UInt32 prev_first_doc = 0;
+    UInt32 prev_last_doc = 0;
+
+    for (size_t s = 0; s < num_segments; ++s)
+    {
+        UInt64 first_doc_delta = 0;
+        UInt64 last_doc_span = 0;
+        UInt64 seg_count = 0;
+        UInt64 seg_bytes = 0;
+        readVarUInt(first_doc_delta, in);
+        readVarUInt(last_doc_span, in);
+        readVarUInt(seg_count, in);
+        readVarUInt(seg_bytes, in);
+
+        auto & meta = dir.segments[s];
+        const UInt64 first_doc = prev_first_doc + first_doc_delta;
+        const UInt64 last_doc = first_doc + last_doc_span;
+        if (last_doc > std::numeric_limits<UInt32>::max() || seg_count == 0 || seg_count > dir.total_count)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: invalid segment directory record");
+        /// Segments never split a doc_id, so ranges must be disjoint and increasing.
+        if (s > 0 && first_doc <= prev_last_doc)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: segment doc ranges overlap ({} <= {})", first_doc, prev_last_doc);
+
+        meta.first_doc = static_cast<UInt32>(first_doc);
+        meta.last_doc = static_cast<UInt32>(last_doc);
+        meta.count = static_cast<UInt32>(seg_count);
+        meta.bytes = seg_bytes;
+
+        if (seg_bytes == 0 || seg_bytes > available_bytes)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: segment payload size {} exceeds {} available bytes", seg_bytes, available_bytes);
+
+        sum_count += seg_count;
+        sum_bytes += seg_bytes;
+        prev_first_doc = meta.first_doc;
+        prev_last_doc = meta.last_doc;
+    }
+
+    if (sum_count != dir.total_count)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: segment counts add up to {} instead of {}", sum_count, dir.total_count);
+
+    /// Resolve absolute payload offsets: they follow the directory back to back.
+    const size_t directory_bytes = in.count() - count_before;
+    checkFitsAvailable(directory_bytes + sum_bytes, available_bytes);
+
+    UInt64 offset = blob_offset + directory_bytes;
+    for (auto & meta : dir.segments)
+    {
+        meta.offset = offset;
+        offset += meta.bytes;
+    }
+
+    return dir;
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, PaddedPODArray<char> & payload_scratch)
+void TextIndexPositionCodec::decodeSegment(ReadBuffer & in, const SegmentMeta & meta, Encoding encoding, PositionList & pl, PaddedPODArray<char> & payload_scratch)
 {
     if (encoding == Encoding::Pfor)
-        decodePforSoA(in, pl, position_cardinality, available_bytes, payload_scratch);
+    {
+        checkPforPayloadBounds(meta.bytes, meta.count);
+        decodePforSegment(in, meta, pl, payload_scratch);
+    }
     else
-        decodeRawSoA(in, pl, position_cardinality, available_bytes, payload_scratch);
+    {
+        if (meta.bytes != meta.count * sizeof(RoaringishEntry))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: raw segment of {} entries has {} payload bytes", meta.count, meta.bytes);
+        decodeRawSegment(in, meta, pl, payload_scratch);
+    }
+}
+
+void TextIndexPositionCodec::decodeAllSegments(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, size_t available_bytes, DecodeScratch & scratch)
+{
+    /// Sequential read; blob_offset is only needed for seekable absolute offsets.
+    auto dir = readSegmentDirectory(in, /*blob_offset=*/ 0, position_cardinality, available_bytes);
+
+    entries.resize(dir.total_count);
+    size_t written = 0;
+
+    for (const auto & meta : dir.segments)
+    {
+        decodeSegment(in, meta, encoding, scratch.lanes, scratch.payload);
+        for (size_t i = 0; i < scratch.lanes.size(); ++i)
+            entries[written++] = RoaringishEntry{scratch.lanes.doc[i], scratch.lanes.group[i], scratch.lanes.bitmap[i]};
+    }
+
+    chassert(written == dir.total_count);
 }
 
 }

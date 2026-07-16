@@ -122,6 +122,8 @@ private:
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
+    /// Descriptor of the positions substream, used to open per-token streams for phrase search.
+    std::optional<MergeTreeIndexSubstream> positions_substream;
     /// Per-reader memo of phrase results (shared via the postings cache) so repeated readRows calls skip the cache lookup.
     absl::flat_hash_map<UInt128, FlatPostingsPtr> phrase_search_doc_ids;
 
@@ -129,7 +131,6 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
-    PaddedPODArray<char> position_payload_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.

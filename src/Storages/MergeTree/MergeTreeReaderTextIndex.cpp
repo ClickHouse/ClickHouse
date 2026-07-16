@@ -113,12 +113,11 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
 
     /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
     /// pure-token queries — pattern predicates take the eager materialize path.
-    auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
 
     use_lazy_mode = lazy_mode_requested
         && postings_codec->getType() != IPostingListCodec::Type::None
-        && granule->getSerializationVersion() >= required_version
+        && TextIndexHeader::traits(granule->getSerializationVersion()).has_postings_codec
         && !condition_text.hasSearchPatterns();
 
     postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion());
@@ -387,18 +386,20 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
     if (index_format.version != 2)
         return;
 
-    const auto positions_substream = std::ranges::find_if(
+    const auto positions_substream_it = std::ranges::find_if(
         index_format.substreams,
         [](const auto & substream) { return substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions; });
 
-    if (positions_substream == index_format.substreams.end())
+    if (positions_substream_it == index_format.substreams.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index.index->index.name);
+
+    positions_substream = *positions_substream_it;
 
     positions_stream = makeTextIndexInputStream(
         data_part->getDataPartStoragePtr(),
-        index.index->getFileName() + positions_substream->suffix,
-        positions_substream->extension,
-        MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
+        index.index->getFileName() + positions_substream_it->suffix,
+        positions_substream_it->extension,
+        MergeTreeIndexReader::patchSettings(settings, positions_substream_it->type));
 
     positions_stream->seekToStart();
 }
@@ -850,6 +851,49 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->getSearchMode());
 }
 
+namespace
+{
+
+/// Lazily decodes one token's segments from its own .pos stream; one instance per phrase term.
+class StreamPositionSegmentSource : public IPositionSegmentSource
+{
+public:
+    StreamPositionSegmentSource(
+        std::unique_ptr<MergeTreeReaderStream> stream_,
+        TextIndexPositionCodec::Encoding encoding_,
+        UInt64 blob_offset,
+        UInt64 position_cardinality,
+        size_t pos_file_size)
+        : stream(std::move(stream_))
+        , encoding(encoding_)
+    {
+        stream->seekToMark({blob_offset, 0});
+        const size_t available = pos_file_size > blob_offset ? pos_file_size - blob_offset : 0;
+        directory = TextIndexPositionCodec::readSegmentDirectory(*stream->getDataBuffer(), blob_offset, position_cardinality, available);
+    }
+
+    const std::vector<TextIndexPositionCodec::SegmentMeta> & segments() const override { return directory.segments; }
+
+    const PositionList & readSegment(size_t idx) override
+    {
+        ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
+
+        const auto & meta = directory.segments[idx];
+        stream->seekToMark({meta.offset, 0});
+        TextIndexPositionCodec::decodeSegment(*stream->getDataBuffer(), meta, encoding, decoded, payload_scratch);
+        return decoded;
+    }
+
+private:
+    std::unique_ptr<MergeTreeReaderStream> stream;
+    TextIndexPositionCodec::Encoding encoding;
+    TextIndexPositionCodec::SegmentDirectory directory;
+    PositionList decoded;
+    PaddedPODArray<char> payload_scratch;
+};
+
+}
+
 void MergeTreeReaderTextIndex::applyPostingsPhrase(
     IColumn & column,
     const TextSearchQueryPtr & search_query,
@@ -899,29 +943,31 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
             PaddedPODArray<UInt32> matching;
             if (!position_offsets.empty())
             {
-                std::vector<PositionList> position_lists;
-                position_lists.reserve(position_offsets.size());
-
                 /// Decode with the codec persisted in this part's header, not current metadata.
                 auto positions_codec = static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec());
 
-                auto * data_buffer = positions_stream->getDataBuffer();
+                /// One lazily decoding source per phrase term; skipped segments are never read.
+                const size_t pos_file_size = positions_stream->getFileSize();
+                std::vector<std::unique_ptr<StreamPositionSegmentSource>> sources;
+                std::vector<IPositionSegmentSource *> source_ptrs;
+                sources.reserve(position_offsets.size());
+                source_ptrs.reserve(position_offsets.size());
+
+                for (size_t i = 0; i < position_offsets.size(); ++i)
                 {
                     ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
-                    const size_t pos_file_size = positions_stream->getFileSize();
-                    for (size_t i = 0; i < position_offsets.size(); ++i)
-                    {
-                        positions_stream->seekToMark({position_offsets[i], 0});
-                        auto & positions = position_lists.emplace_back();
-                        /// Bytes left for this token; decode rejects a larger declared size.
-                        const size_t available = pos_file_size > position_offsets[i] ? pos_file_size - position_offsets[i] : 0;
-                        TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_cardinalities[i], available, position_payload_scratch);
-                    }
+                    sources.push_back(std::make_unique<StreamPositionSegmentSource>(
+                        makeTextIndexStream(*positions_substream),
+                        positions_codec,
+                        position_offsets[i],
+                        position_cardinalities[i],
+                        pos_file_size));
+                    source_ptrs.push_back(sources.back().get());
                 }
 
                 {
                     ProfileEventTimeIncrement<Microseconds> match_watch(ProfileEvents::TextIndexPhraseMatchMicroseconds);
-                    matching = TextIndexPhraseSearch::phraseSearch(position_lists);
+                    matching = TextIndexPhraseSearch::phraseSearchStreaming(source_ptrs);
                 }
             }
 
