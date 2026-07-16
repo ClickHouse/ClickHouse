@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-object-storage
+# Tags: no-fasttest, no-shared-merge-tree, no-object-storage, no-random-detach
+# no-random-detach: the test corrupts part files on disk directly; a random DETACH/ATTACH reloads
+# the broken part and fails at load time instead of at the CHECK TABLE queries under test.
 
 # A projection part that fails to load before its columns are set (here: corrupted
 # serialization.json) has an empty column list. CHECK TABLE used to compare the projection's
