@@ -10,6 +10,7 @@
 #include <ClickStackResources.generated.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 
@@ -210,7 +211,7 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     handle(request, response, html, http_response_headers_override);
 }
 
-std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
+std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
 {
     std::string_view path = uri;
     if (path.starts_with("/clickstack"))
@@ -232,25 +233,39 @@ std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri)
     if (!path.empty() && path.back() == '/')
         path.remove_suffix(1);
 
+    /// `Poco::URI::decode` throws `Poco::URISyntaxException` on malformed
+    /// percent-encoding (e.g. lone `%`, `%X`, `%ZZ`). Without this catch the
+    /// exception would unwind into the server error handler and produce a 500
+    /// for any client that sends a malformed URI; returning std::nullopt lets
+    /// the request handler answer with a deterministic 400.
+    std::string decoded;
+    try
+    {
+        Poco::URI::decode(std::string(path), decoded);
+    }
+    catch (const Poco::URISyntaxException &)
+    {
+        return std::nullopt;
+    }
+
     // Handle clean URLs - map page routes to .html files
     // If path is empty or just "/", serve index.html
-    if (path.empty())
-        return "index.html";
+    if (decoded.empty())
+        return std::string("index.html");
 
-    std::string path_str(path);
-    if (path_str.find('.') != std::string::npos)
-        return path_str;
+    if (decoded.find('.') != std::string::npos)
+        return decoded;
 
     // assuming a path with no "." is an html page
-    return path_str + ".html";
+    return decoded + ".html";
 }
 
-void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+namespace
 {
-    // Get the resource path from URI
-    std::string resource_path = getResourcePath(request.getURI());
 
-    // Binary search in the sorted embedded_resources array
+/// Look up `path` in the sorted embedded_resources array. Returns null if missing.
+const ClickStack::EmbeddedResource * findEmbeddedResource(const std::string & resource_path)
+{
     auto it = std::lower_bound(
         ClickStack::embedded_resources.begin(),
         ClickStack::embedded_resources.end(),
@@ -260,21 +275,83 @@ void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTP
             return resource.path < path;
         });
 
-    // Check if resource was found
     if (it == ClickStack::embedded_resources.end() || it->path != resource_path)
+        return nullptr;
+    return &*it;
+}
+
+/// Resolve a page request against Next.js-style dynamic routes.
+/// Example: /trace/abc -> /trace/[traceId].html
+const ClickStack::EmbeddedResource * resolveDynamicRoute(const std::string & resource_path)
+{
+    static constexpr std::string_view html_suffix = ".html";
+    static constexpr std::string_view dynamic_tail_suffix = "].html";
+
+    if (!std::string_view{resource_path}.ends_with(html_suffix))
+        return nullptr;
+
+    size_t last_slash = resource_path.rfind('/');
+    std::string_view prefix = last_slash == std::string::npos
+        ? std::string_view{}
+        : std::string_view{resource_path}.substr(0, last_slash + 1);
+
+    for (const auto & candidate : ClickStack::embedded_resources)
+    {
+        std::string_view candidate_path{candidate.path};
+        if (!candidate_path.starts_with(prefix))
+            continue;
+
+        std::string_view tail = candidate_path.substr(prefix.size());
+        if (tail.empty() || tail.front() != '[')
+            continue;
+        if (!tail.ends_with(dynamic_tail_suffix))
+            continue;
+        if (tail.find('/') != std::string_view::npos)
+            continue;
+
+        return &candidate;
+    }
+
+    return nullptr;
+}
+
+}
+
+void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    auto resource_path_opt = getResourcePath(request.getURI());
+    if (!resource_path_opt)
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+        *response.send() << "Malformed URL.\n";
+        return;
+    }
+    const std::string & resource_path = *resource_path_opt;
+
+    const ClickStack::EmbeddedResource * resource = findEmbeddedResource(resource_path);
+
+    /// If the literal lookup missed and the request is for a page, try to
+    /// resolve it against a Next.js dynamic-route export (`foo/[id].html`).
+    /// This is what makes URLs like `/clickstack/trace/<trace-id>` serve the
+    /// `trace/[traceId].html` redirect page instead of 404ing.
+    if (!resource)
+        resource = resolveDynamicRoute(resource_path);
+
+    // Check if resource was found
+    if (!resource)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
         *response.send() << "Not found.\n";
         return;
     }
 
-    response.setContentType(std::string(it->mime_type));
+    response.setContentType(std::string(resource->mime_type));
 
     // Add Content-Encoding header since all clickstack resources are pre-gzipped
     auto headers_with_encoding = http_response_headers_override;
     headers_with_encoding["Content-Encoding"] = "gzip";
 
-    handle(request, response, {reinterpret_cast<const char *>(it->data), it->size}, headers_with_encoding);
+    handle(request, response, {reinterpret_cast<const char *>(resource->data), resource->size}, headers_with_encoding);
 }
 
 }

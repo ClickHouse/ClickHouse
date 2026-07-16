@@ -54,7 +54,7 @@ workflow = Workflow.Config(
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
         *JobConfigs.performance_comparison_with_release_base_jobs,
-        *JobConfigs.clickbench_master_jobs,
+        *JobConfigs.clickbench_jobs,
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
