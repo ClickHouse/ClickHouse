@@ -230,6 +230,8 @@ The clause is supported only for authentication methods whose credentials are ve
 
 When the same effective credential is accepted by more than one authentication method, the login is limited fail-close by all of them: the session gets the intersection of the `GRANTS` of all matching methods and expires at the earliest of their `VALID UNTIL`. The earliest `VALID UNTIL` wins even when it has already passed — the login is rejected, exactly as if the single matched method had expired, so the expiry of a token never silently hands the shared credential the rights or lifetime of a broader method.
 
+This combination is only checked among authentication methods verified locally by the server, for the same reason the clause itself is rejected on an externally verified method above: re-checking the credential there would require an unsafe extra probe of the external system. So if the same credential also happens to be accepted by an externally verified method (`ldap`, `kerberos`, `http`, `jwt`) on the same user, that method's own `VALID UNTIL` is not part of the combination, and an earlier expiry configured on it does not shorten the session obtained through the locally verified method.
+
 ## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:

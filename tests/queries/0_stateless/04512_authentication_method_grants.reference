@@ -76,3 +76,5 @@ AUTHENTICATION_FAILED
 1
 -- An expired token method expires the shared credential instead of widening it to the unrestricted method
 AUTHENTICATION_FAILED
+-- An externally verified method sharing the credential does not shorten the session (documented limitation)
+1
