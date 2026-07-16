@@ -1372,7 +1372,7 @@ class FunctionBinaryArithmetic : public IFunction
 
             if (datetime_is_const)
             {
-                datetime_const_val = datetime_arg.column->getUInt(0);
+                datetime_const_val = static_cast<UInt32>(datetime_arg.column->getUInt(0));
             }
             else
             {
@@ -1390,7 +1390,7 @@ class FunctionBinaryArithmetic : public IFunction
 
             if (time_is_const)
             {
-                time_const_val = time_arg.column->getInt(0);
+                time_const_val = static_cast<Int32>(time_arg.column->getInt(0));
             }
             else
             {
@@ -1450,7 +1450,7 @@ class FunctionBinaryArithmetic : public IFunction
         {
             /// handle high precision DateTime64 and/or Time64
             const auto * result_type_ptr = checkAndGetDataType<DataTypeDateTime64>(result_type.get());
-            UInt8 scale = result_type_ptr ? result_type_ptr->getScale() : 0;
+            UInt32 scale = result_type_ptr ? result_type_ptr->getScale() : 0;
 
             auto result_column = ColumnDecimal<DateTime64>::create(input_row_count, scale);
             auto & result_data = result_column->getData();
@@ -1480,7 +1480,7 @@ class FunctionBinaryArithmetic : public IFunction
                 else
                 {
                     /// regular DateTime - convert to DateTime64 with appropriate scale
-                    UInt32 datetime_value = datetime_field.safeGet<UInt32>();
+                    UInt32 datetime_value = static_cast<UInt32>(datetime_field.safeGet<UInt32>());
                     datetime_const_val.value = static_cast<Int64>(datetime_value) * static_cast<Int64>(std::pow(10, scale));
                     datetime_scale = scale;
                 }
@@ -1531,7 +1531,7 @@ class FunctionBinaryArithmetic : public IFunction
                 else
                 {
                     /// regular Time - convert to Decimal64 with appropriate scale
-                    Int32 time_value = time_field.safeGet<Int32>();
+                    Int32 time_value = static_cast<Int32>(time_field.safeGet<Int32>());
                     time_const_val.value = static_cast<Int64>(time_value) * static_cast<Int64>(std::pow(10, scale));
                     time_scale = scale;
                 }
