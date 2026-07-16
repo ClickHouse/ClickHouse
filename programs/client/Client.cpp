@@ -483,20 +483,30 @@ catch (...)
 void Client::login()
 {
     std::string host = hosts_and_ports.front().host;
-    std::string auth_url = getClientConfiguration().getString("oauth-url", "");
-    std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
-    std::string audience = getClientConfiguration().getString("oauth-audience", "");
+    JWTProviderOptions options;
+    options.auth_url = getClientConfiguration().getString("oauth-url", "");
+    options.client_id = getClientConfiguration().getString("oauth-client-id", "");
+    options.audience = getClientConfiguration().getString("oauth-audience", "");
+    options.scope = getClientConfiguration().getString("oauth-scope", "");
+    options.device_authorization_endpoint = getClientConfiguration().getString("oauth-device-uri", "");
+    options.token_endpoint = getClientConfiguration().getString("oauth-token-uri", "");
 
-    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
+    const bool has_explicit_endpoints
+        = !options.device_authorization_endpoint.empty() && !options.token_endpoint.empty();
+    const bool has_issuer_config = !options.auth_url.empty() && !options.client_id.empty();
+
+    if (!isCloudEndpoint(host) && !has_issuer_config && !(has_explicit_endpoints && !options.client_id.empty()))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Could not retrieve authentication endpoints for host '{}'. Please specify --oauth-url and --oauth-client-id if you are "
-            "not using ClickHouse Cloud.",
+            "Could not retrieve authentication endpoints for host '{}'. "
+            "Specify --oauth-url and --oauth-client-id (OIDC discovery), "
+            "or --oauth-client-id with both --oauth-device-uri and --oauth-token-uri, "
+            "if you are not using ClickHouse Cloud.",
             host);
     }
 
-    jwt_provider = createJwtProvider(auth_url, client_id, audience, host, output_stream, error_stream);
+    jwt_provider = createJwtProvider(std::move(options), host, output_stream, error_stream);
     if (jwt_provider)
     {
         std::string jwt = jwt_provider->getJWT();
@@ -807,10 +817,13 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
-        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
+        ("login", po::bool_switch(), "Use OAuth 2.0 device authorization grant to login")
+        ("oauth-url", po::value<std::string>(), "OAuth / OIDC issuer base URL (used for endpoint discovery)")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
-        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
+        ("oauth-audience", po::value<std::string>(), "Optional audience parameter for the device authorization request (Auth0-style)")
+        ("oauth-scope", po::value<std::string>(), "OAuth scope for the device authorization request")
+        ("oauth-device-uri", po::value<std::string>(), "Explicit device authorization endpoint (skips discovery when set with --oauth-token-uri)")
+        ("oauth-token-uri", po::value<std::string>(), "Explicit token endpoint (skips discovery when set with --oauth-device-uri)")
 #endif
         ("max_client_network_bandwidth",
             po::value<int>(),
@@ -994,6 +1007,12 @@ void Client::processOptions(
         config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
     if (options.contains("oauth-audience"))
         config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+    if (options.contains("oauth-scope"))
+        config().setString("oauth-scope", options["oauth-scope"].as<std::string>());
+    if (options.contains("oauth-device-uri"))
+        config().setString("oauth-device-uri", options["oauth-device-uri"].as<std::string>());
+    if (options.contains("oauth-token-uri"))
+        config().setString("oauth-token-uri", options["oauth-token-uri"].as<std::string>());
 #endif
     if (options.contains("accept-invalid-certificate"))
     {
