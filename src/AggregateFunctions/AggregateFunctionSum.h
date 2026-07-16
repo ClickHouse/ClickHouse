@@ -261,6 +261,11 @@ struct AggregateFunctionSumData
         return addManyConditionalInternal<Value, false>(ptr, cond_map, start, end);
     }
 
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE subtract(T value)
+    {
+        Impl::add(sum, static_cast<AccumulateResult>(-toAccumulateResult(value)));
+    }
+
     void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumData & rhs)
     {
         Impl::add(sum, rhs.sum);
@@ -478,6 +483,26 @@ public:
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
+    }
+
+    /// Kahan summation is excluded because its compensation term is not invertible.
+    /// Floating point is excluded because a transient Inf/NaN in the frame would poison
+    /// the accumulator even after the offending row leaves the frame (Inf - Inf = NaN),
+    /// whereas the recompute path recovers.
+    static constexpr bool supports_window_frame_subtraction =
+        std::is_same_v<Data, AggregateFunctionSumData<TResult>> && !is_floating_point<TResult>;
+
+    bool supportsWindowFrameSubtraction() const override { return supports_window_frame_subtraction; }
+
+    void subtract(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        if constexpr (supports_window_frame_subtraction)
+        {
+            const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+            this->data(place).subtract(static_cast<TResult>(column.getData()[row_num]));
+        }
+        else
+            IAggregateFunction::subtract(place, columns, row_num, arena);
     }
 
     void addBatchSinglePlace(

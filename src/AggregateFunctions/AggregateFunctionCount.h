@@ -44,6 +44,13 @@ public:
         ++data(place).count;
     }
 
+    bool supportsWindowFrameSubtraction() const override { return true; }
+
+    void subtract(AggregateDataPtr __restrict place, const IColumn **, size_t, Arena *) const override
+    {
+        --data(place).count;
+    }
+
     void addManyDefaults(
         AggregateDataPtr __restrict place,
         const IColumn ** /*columns*/,

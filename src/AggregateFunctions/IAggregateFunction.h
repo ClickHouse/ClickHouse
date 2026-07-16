@@ -70,6 +70,16 @@ inline const char * toString(AggregateFunctionStateVariant variant)
     UNREACHABLE();
 }
 
+/// Declares that the function's result is the extremum of its inputs under the argument
+/// column's comparison order, which lets WindowTransform maintain it incrementally over a
+/// sliding frame (min/max cannot use IAggregateFunction::subtract).
+enum class MonotonicWindowFrameKind : UInt8
+{
+    None,
+    Min,
+    Max,
+};
+
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
   *  but contain only metadata (description) of the aggregate function,
@@ -199,6 +209,22 @@ public:
     /// Adds several default values of arguments into aggregation data on which place points to.
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
+
+    /// Enables the sliding window frame moving-aggregate optimization in WindowTransform:
+    /// removing an add()-ed value from the state instead of resetting and re-adding the
+    /// whole frame. Not all functions support this (e.g. min/max, see getMonotonicWindowFrameKind()).
+    /// Combinator wrappers (-If, Nullable, -State, ...) do not forward this and fall back
+    /// to the full-recompute path, like the other cross-cutting optimization virtuals.
+    virtual bool supportsWindowFrameSubtraction() const { return false; }
+
+    /// Group inverse of add(): a row may transiently be subtracted before it is added
+    /// (WindowTransform does this when consecutive frames are disjoint), as long as every
+    /// subtracted row is eventually added exactly once. Only called when
+    /// supportsWindowFrameSubtraction() returns true.
+    virtual void subtract(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const;
+
+    /// See MonotonicWindowFrameKind.
+    virtual MonotonicWindowFrameKind getMonotonicWindowFrameKind() const { return MonotonicWindowFrameKind::None; }
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 

@@ -330,6 +330,22 @@ public:
         ++this->data(place).denominator;
     }
 
+    /// Floating point is excluded for the same reason as in AggregateFunctionSum.
+    static constexpr bool supports_window_frame_subtraction = !is_floating_point<Numerator>;
+
+    bool supportsWindowFrameSubtraction() const override { return supports_window_frame_subtraction; }
+
+    void NO_SANITIZE_UNDEFINED subtract(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const final
+    {
+        if constexpr (supports_window_frame_subtraction)
+        {
+            increment(place, -Numerator(static_cast<const ColVecType &>(*columns[0]).getData()[row_num]));
+            --this->data(place).denominator;
+        }
+        else
+            IAggregateFunction::subtract(place, columns, row_num, arena);
+    }
+
     void addManyDefaults(
         AggregateDataPtr __restrict place,
         const IColumn ** /*columns*/,

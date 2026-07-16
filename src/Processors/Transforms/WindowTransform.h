@@ -7,6 +7,7 @@
 #include <Processors/Port.h>
 
 #include <deque>
+#include <optional>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -101,6 +102,8 @@ public:
     void advanceFrameEndRangeOffset();
 
     void updateAggregationState();
+    void applyRangeToAggregation(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, bool add);
+    void updateMonotonicWindowFrame(size_t workspace_index);
     void writeOutCurrentRow();
 
     Columns & inputAt(const RowNumber & x);
@@ -233,6 +236,17 @@ public:
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
+
+    // Moving min/max state for MonotonicWindowFrameKind workspaces, indexed in parallel
+    // with `workspaces` (see updateMonotonicWindowFrame()).
+    struct MonotonicFrameState
+    {
+        std::deque<RowNumber> candidates;
+        // The row currently accumulated into the aggregation state; the state is rebuilt
+        // only when the best candidate changes.
+        std::optional<RowNumber> materialized_row;
+    };
+    std::vector<MonotonicFrameState> workspace_monotonic_frames;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).

@@ -72,6 +72,36 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
+namespace
+{
+    // Below this frame size the deque bookkeeping costs more than a full reset-and-readd
+    // saves (benchmarked crossover ~2000 rows).
+    constexpr Int64 min_rows_for_monotonic_window_frame = 2048;
+
+    bool shouldUseMonotonicWindowFrame(const WindowFrame & frame)
+    {
+        // Only for ROWS frames is the size statically known to be over the crossover.
+        // With an unbounded frame start the plain "add the tail rows" path is already
+        // O(1) per row and the deque would be pure overhead.
+        if (frame.type != WindowFrame::FrameType::ROWS || frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+            return false;
+
+        if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
+            return true;
+
+        auto boundary_position = [](WindowFrame::BoundaryType type, const Field & offset, bool preceding) -> Int128
+        {
+            if (type == WindowFrame::BoundaryType::Current)
+                return 0;
+            const Int128 value = offset.safeGet<UInt64>();
+            return preceding ? -value : value;
+        };
+        const auto frame_rows = boundary_position(frame.end_type, frame.end_offset, frame.end_preceding)
+            - boundary_position(frame.begin_type, frame.begin_offset, frame.begin_preceding) + 1;
+        return frame_rows >= min_rows_for_monotonic_window_frame;
+    }
+}
+
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
 // [compared] with [reference] +/- offset. Return value is -1/0/+1, like in
 // sorting predicates -- -1 means [compared] is less than [reference] +/- offset.
@@ -334,6 +364,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
 
         workspaces.push_back(std::move(workspace));
     }
+    workspace_monotonic_frames.resize(workspaces.size());
 
     partition_by_indices.reserve(window_description.partition_by.size());
     for (const auto & column : window_description.partition_by)
@@ -409,7 +440,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         }
     }
 
-    for (const auto & workspace : workspaces)
+    for (auto & workspace : workspaces)
     {
         if (workspace.window_function_impl)
         {
@@ -418,8 +449,14 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'",
                     workspace.aggregate_function->getName());
             }
+            continue;
         }
 
+        workspace.supports_window_frame_subtraction = workspace.aggregate_function->supportsWindowFrameSubtraction();
+        if (shouldUseMonotonicWindowFrame(window_description.frame))
+            workspace.monotonic_window_frame_kind = workspace.aggregate_function->getMonotonicWindowFrameKind();
+        chassert(workspace.monotonic_window_frame_kind == MonotonicWindowFrameKind::None
+            || workspace.argument_column_indices.size() == 1);
     }
 }
 
@@ -1044,6 +1081,103 @@ void WindowTransform::advanceFrameEnd()
     }
 }
 
+// Adds (add=true) or subtracts (add=false) rows [rows_begin, rows_end) to/from ws's state.
+void WindowTransform::applyRangeToAggregation(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, bool add)
+{
+    if (rows_begin == rows_end)
+        return;
+
+    const auto * a = ws.aggregate_function.get();
+    auto * buf = ws.aggregate_function_state.data();
+
+    // To achieve better performance, we will have to loop over blocks and
+    // rows manually, instead of using advanceRowNumber().
+    // For this purpose, the past-the-end block can be different than the
+    // block of the past-the-end row (it's usually the next block).
+    const auto past_the_end_block = rows_end.row == 0
+        ? rows_end.block
+        : rows_end.block + 1;
+
+    for (auto block_number = rows_begin.block;
+         block_number < past_the_end_block;
+         ++block_number)
+    {
+        auto & block = blockAt(block_number);
+
+        if (ws.cached_block_number != block_number)
+        {
+            for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
+            {
+                ws.argument_columns[i] = block.input_columns[
+                    ws.argument_column_indices[i]].get();
+            }
+            ws.cached_block_number = block_number;
+        }
+
+        // First and last blocks may be processed partially, and other blocks
+        // are processed in full.
+        const auto first_row = block_number == rows_begin.block
+            ? rows_begin.row : 0;
+        const auto past_the_end_row = block_number == rows_end.block
+            ? rows_end.row : block.rows;
+
+        // We should add an addBatch analog that can accept a starting offset.
+        // For now, add the values one by one.
+        auto * columns = ws.argument_columns.data();
+        // Removing arena.get() from the loop makes it faster somehow...
+        auto * arena_ptr = arena.get();
+        if (add)
+        {
+            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+        }
+        else
+        {
+            for (size_t i = first_row; i < past_the_end_row; ++i)
+                a->subtract(buf, columns, i, arena_ptr);
+        }
+    }
+}
+
+// Maintains a monotonic deque of candidate rows for a moving min/max, so each row is
+// pushed and popped at most once (amortized O(1) per row) instead of rescanning the frame.
+void WindowTransform::updateMonotonicWindowFrame(size_t workspace_index)
+{
+    auto & ws = workspaces[workspace_index];
+    auto & state = workspace_monotonic_frames[workspace_index];
+    auto & candidates = state.candidates;
+    const auto kind = ws.monotonic_window_frame_kind;
+    const size_t argument_column_index = ws.argument_column_indices[0];
+
+    for (RowNumber row = prev_frame_end; row < frame_end; advanceRowNumber(row))
+    {
+        const auto & new_column = *inputAt(row)[argument_column_index];
+        while (!candidates.empty())
+        {
+            const RowNumber back = candidates.back();
+            const int cmp = new_column.compareAt(row.row, back.row, *inputAt(back)[argument_column_index], /*nan_direction_hint=*/ 1);
+            if (kind == MonotonicWindowFrameKind::Min ? cmp > 0 : cmp < 0)
+                break;
+            candidates.pop_back();
+        }
+        candidates.push_back(row);
+    }
+
+    while (!candidates.empty() && candidates.front() < frame_start)
+        candidates.pop_front();
+
+    const auto front = candidates.empty() ? std::optional<RowNumber>{} : std::optional(candidates.front());
+    if (front == state.materialized_row)
+        return;
+
+    const auto * a = ws.aggregate_function.get();
+    auto * buf = ws.aggregate_function_state.data();
+    a->destroy(buf);
+    a->create(buf);
+    if (front)
+        applyRangeToAggregation(ws, *front, nextRowNumber(*front), /*add=*/ true);
+    state.materialized_row = front;
+}
+
 // Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
@@ -1058,83 +1192,40 @@ void WindowTransform::updateAggregationState()
     chassert(partition_start <= frame_start);
     chassert(frame_end <= partition_end);
 
-    // We might have to reset aggregation state and/or add some rows to it.
-    // Figure out what to do.
-    bool reset_aggregation = false;
-    RowNumber rows_to_add_start;
-    RowNumber rows_to_add_end;
-    if (frame_start == prev_frame_start)
+    for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
-        // The frame start didn't change, add the tail rows.
-        reset_aggregation = false;
-        rows_to_add_start = prev_frame_end;
-        rows_to_add_end = frame_end;
-    }
-    else
-    {
-        // The frame start changed, reset the state and aggregate over the
-        // entire frame. This can be made per-function after we learn to
-        // subtract rows from some types of aggregation states, but for now we
-        // always have to reset when the frame start changes.
-        reset_aggregation = true;
-        rows_to_add_start = frame_start;
-        rows_to_add_end = frame_end;
-    }
-
-    for (auto & ws : workspaces)
-    {
+        auto & ws = workspaces[wi];
         if (ws.window_function_impl)
         {
             // No need to do anything for true window functions.
             continue;
         }
 
-        const auto * a = ws.aggregate_function.get();
-        auto * buf = ws.aggregate_function_state.data();
-
-        if (reset_aggregation)
+        if (ws.monotonic_window_frame_kind != MonotonicWindowFrameKind::None)
         {
-            a->destroy(buf);
-            a->create(buf);
+            updateMonotonicWindowFrame(wi);
+            continue;
         }
 
-        // To achieve better performance, we will have to loop over blocks and
-        // rows manually, instead of using advanceRowNumber().
-        // For this purpose, the past-the-end block can be different than the
-        // block of the past-the-end row (it's usually the next block).
-        const auto past_the_end_block = rows_to_add_end.row == 0
-            ? rows_to_add_end.block
-            : rows_to_add_end.block + 1;
-
-        for (auto block_number = rows_to_add_start.block;
-             block_number < past_the_end_block;
-             ++block_number)
+        if (frame_start == prev_frame_start)
         {
-            auto & block = blockAt(block_number);
-
-            if (ws.cached_block_number != block_number)
-            {
-                for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
-                {
-                    ws.argument_columns[i] = block.input_columns[
-                        ws.argument_column_indices[i]].get();
-                }
-                ws.cached_block_number = block_number;
-            }
-
-            // First and last blocks may be processed partially, and other blocks
-            // are processed in full.
-            const auto first_row = block_number == rows_to_add_start.block
-                ? rows_to_add_start.row : 0;
-            const auto past_the_end_row = block_number == rows_to_add_end.block
-                ? rows_to_add_end.row : block.rows;
-
-            // We should add an addBatch analog that can accept a starting offset.
-            // For now, add the values one by one.
-            auto * columns = ws.argument_columns.data();
-            // Removing arena.get() from the loop makes it faster somehow...
-            auto * arena_ptr = arena.get();
-            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+            // The frame start didn't change, add the tail rows.
+            applyRangeToAggregation(ws, prev_frame_end, frame_end, /*add=*/ true);
+        }
+        else if (ws.supports_window_frame_subtraction)
+        {
+            // Subtract the rows that left the frame instead of resetting and
+            // re-aggregating the whole frame.
+            applyRangeToAggregation(ws, prev_frame_start, frame_start, /*add=*/ false);
+            applyRangeToAggregation(ws, prev_frame_end, frame_end, /*add=*/ true);
+        }
+        else
+        {
+            const auto * a = ws.aggregate_function.get();
+            auto * buf = ws.aggregate_function_state.data();
+            a->destroy(buf);
+            a->create(buf);
+            applyRangeToAggregation(ws, frame_start, frame_end, /*add=*/ true);
         }
     }
 }
@@ -1439,6 +1530,9 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
             a->destroy(buf);
         }
+
+        for (auto & state : workspace_monotonic_frames)
+            state = {};
 
         // Release the arena we use for aggregate function states, so that it
         // doesn't grow without limit. Not sure if it's actually correct, maybe
