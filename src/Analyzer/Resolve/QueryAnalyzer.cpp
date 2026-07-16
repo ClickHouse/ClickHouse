@@ -3103,7 +3103,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     bool allow_lambda_expression,
     bool allow_table_expression,
     bool ignore_alias,
-    bool allow_niladic_functions)
+    bool allow_niladic_functions,
+    bool is_top_level_projection)
 {
     checkStackSize();
 
@@ -3168,6 +3169,23 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto projection_name_it = node_to_projection_name.find(resolved_identifier_node);
                 if (projection_name_it != node_to_projection_name.end())
                     result_projection_names.push_back(projection_name_it->second);
+            }
+
+            /// Old-analyzer parity: under multiple JOINs a top-level unaliased public identifier
+            /// resolved into a plain column keeps its projection name exactly as written (`a.x` -> `a.x`).
+            if (is_top_level_projection
+                && resolved_identifier_node
+                && node_alias.empty()
+                && resolve_identifier_expression_result.isResolvedFromJoinTree()
+                && resolved_identifier_node->as<ColumnNode>())
+            {
+                const auto * nearest_query_scope = scope.getNearestQueryScope();
+                if (nearest_query_scope && nearest_query_scope->joins_count >= 2
+                    && scope.context->getSettingsRef()[Setting::analyzer_compatibility_multiple_joins_qualify_column_names])
+                {
+                    result_projection_names.clear();
+                    result_projection_names.push_back(unresolved_identifier.getFullName());
+                }
             }
 
             if (!resolved_identifier_node && allow_lambda_expression)
@@ -3659,7 +3677,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     IdentifierResolveScope & scope,
     bool allow_lambda_expression,
     bool allow_table_expression,
-    bool allow_niladic_functions
+    bool allow_niladic_functions,
+    bool is_top_level_projection
 )
 {
     auto & node_list_typed = node_list->as<ListNode &>();
@@ -3673,7 +3692,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     for (auto & node : node_list_typed.getNodes())
     {
         auto node_to_resolve = node;
-        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions);
+        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection);
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
@@ -4102,7 +4121,7 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
-    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
