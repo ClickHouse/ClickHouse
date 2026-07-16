@@ -134,3 +134,98 @@ def test_on_cluster_unique_replication_consumer(started_cluster):
         time.sleep(1)
     assert 0 == count_replication_slots()
     assert 0 == count_publications()
+
+
+def test_upgrade_adopts_presalt_identity(started_cluster):
+    # Before the `ON CLUSTER` fix, `materialized_postgresql_use_unique_replication_consumer_identifier`
+    # derived the replication slot name from the bare ClickHouse object UUID, and the publication name
+    # ignored the setting entirely (`<db>_ch_publication` for the database engine). After the fix, both
+    # names are salted with the per-server `ServerUUID`. On attach (e.g. a server restart after an
+    # upgrade), a deployment created with the pre-salt names must adopt them instead of looking for the
+    # salted ones only: otherwise the attach would miss the existing slot, run an initial sync, and
+    # reload the snapshot into the already-populated nested tables, duplicating data and leaving the old
+    # slot and publication orphaned.
+    table = "test_migration_table"
+    pg_manager.create_postgres_table(table)
+    node1.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 50)"
+    )
+
+    node1.query(
+        f"""
+        CREATE DATABASE migration_database
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_tables_list = '{table}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """
+    )
+    check_tables_are_synchronized(
+        node1, table, materialized_database="migration_database"
+    )
+
+    # The pre-salt replication slot name is the bare ClickHouse database UUID (lower-case, `-` -> `_`),
+    # and the pre-salt publication name ignores the unique-identifier setting.
+    uuid = node1.query(
+        "SELECT uuid FROM system.databases WHERE name = 'migration_database'"
+    ).strip()
+    presalt_slot = uuid.lower().replace("-", "_")
+    presalt_publication = "postgres_database_ch_publication"
+
+    conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+        database_name="postgres_database",
+        auto_commit=True,
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT slot_name FROM pg_replication_slots")
+    salted_slots = [row[0] for row in cursor.fetchall()]
+    assert salted_slots != [presalt_slot]
+    cursor.execute("SELECT pubname FROM pg_publication")
+    salted_publications = [row[0] for row in cursor.fetchall()]
+    assert salted_publications != [presalt_publication]
+
+    # Reconstruct the PostgreSQL-side state of a deployment created before the salting: while the server
+    # is down, replace the salted slot and publication with pre-salt-named ones, and add more rows so
+    # that the adopted slot has something to stream after the restart.
+    node1.stop_clickhouse()
+    for slot in salted_slots:
+        cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    for publication in salted_publications:
+        cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "{table}"'
+    )
+    cursor.execute(
+        f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 99) AS i"
+    )
+    node1.start_clickhouse()
+
+    # The attach must adopt the pre-salt identity: no re-snapshot (the exact row set matches the source,
+    # so nothing was duplicated), the streamed rows arrive, and no salted-name objects reappear.
+    check_tables_are_synchronized(
+        node1, table, materialized_database="migration_database"
+    )
+    assert 100 == int(node1.query(f"SELECT count() FROM migration_database.{table}"))
+
+    cursor.execute("SELECT slot_name FROM pg_replication_slots")
+    assert [presalt_slot] == [row[0] for row in cursor.fetchall()]
+    cursor.execute("SELECT pubname FROM pg_publication")
+    assert [presalt_publication] == [row[0] for row in cursor.fetchall()]
+
+    # Dropping the database removes the adopted objects.
+    node1.query("DROP DATABASE migration_database SYNC")
+    for _ in range(30):
+        if count_replication_slots() == 0 and count_publications() == 0:
+            break
+        time.sleep(1)
+    assert 0 == count_replication_slots()
+    assert 0 == count_publications()

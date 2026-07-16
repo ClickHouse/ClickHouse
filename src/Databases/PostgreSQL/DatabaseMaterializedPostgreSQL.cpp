@@ -868,6 +868,8 @@ If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing 
 
 This is also what makes a `MaterializedPostgreSQL` database work when it is created `ON CLUSTER`: an `ON CLUSTER` query assigns the same ClickHouse UUID to the database on every replica, so the replication slot and publication names are made unique per server (by mixing in the per-server identity) instead of per database. Without this setting all replicas would derive the same names and fight over a single `PostgreSQL` replication slot and publication.
 
+Deployments that already used this setting before it became unique per server keep working after an upgrade: on attach, when the replication slot and publication exist under the previously generated names, they are adopted instead of creating new ones, so replication continues from the same position without reloading the initial snapshot.
+
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
