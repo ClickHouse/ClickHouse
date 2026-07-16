@@ -45,6 +45,7 @@ struct AggregationEntry
             || sum_of_hash_table_sizes < new_entry.sum_of_hash_table_sizes
             || new_entry.median_hash_table_size < median_hash_table_size / 2
             || median_hash_table_size < new_entry.median_hash_table_size
+            || new_entry.merged_hash_tables != merged_hash_tables
             || new_entry.merged_result_rows != merged_result_rows
             || new_entry.distinct_key_value_pairs != distinct_key_value_pairs;
     }
