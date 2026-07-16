@@ -49,10 +49,10 @@ SELECT [NULL]::Array(Nullable(UInt64)) IS DISTINCT FROM [1]::Array(Nullable(Int6
 SELECT materialize([1]::Array(Nullable(UInt64))) IS DISTINCT FROM materialize([-1]::Array(Nullable(Int64)));
 
 -- Nullable wrapped string vs nullable number (no least common supertype, const-string path)
-SELECT CAST('1', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)');
-SELECT CAST('1', 'Nullable(String)') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)');
-SELECT CAST('2', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)');
-SELECT CAST('1', 'Nullable(FixedString(1))') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)');
+SELECT CAST('1', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST('1', 'Nullable(String)') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST('2', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST('1', 'Nullable(FixedString(1))') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Consistency with the regular operators (null-safe result matches != / = for non-NULL values)
 SELECT (CAST('1', 'UInt64') IS DISTINCT FROM CAST('-1', 'Int64')) = (CAST('1', 'UInt64') != CAST('-1', 'Int64'));
