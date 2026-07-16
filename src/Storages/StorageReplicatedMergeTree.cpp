@@ -6110,7 +6110,16 @@ void StorageReplicatedMergeTree::shutdown(bool)
         restarting_thread.shutdown(/* part_of_full_shutdown */ true);
         stopBeingLeader();
         session_expired_callback_handler.reset();
-        partialShutdown();
+
+        /// Needed only if a second startup's restarting thread actually re-activated the replica —
+        /// that is the only path that resets `partial_shutdown_called` (and it does so before arming
+        /// the queue tasks, so the flag still set means nothing is armed). The restarting thread is
+        /// already stopped above, so the flag is stable here. The check also keeps the
+        /// `ReplicaPartialShutdown` profile event meaningful for the common destructor call after a
+        /// complete first shutdown.
+        if (!partial_shutdown_called)
+            partialShutdown();
+
         part_moves_between_shards_orchestrator.shutdown();
         background_moves_assignee.finish();
 
