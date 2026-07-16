@@ -348,6 +348,13 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         workspaces.push_back(std::move(workspace));
     }
     workspace_frame_trees.resize(workspaces.size());
+    for (size_t i = 0; i < workspaces.size(); ++i)
+    {
+        if (workspaces[i].window_function_impl)
+            continue;
+        workspace_frame_trees[i].merge_equivalent = workspaces[i].aggregate_function->mergeIsEquivalentToAddingRows();
+        any_workspace_supports_frame_tree |= workspace_frame_trees[i].merge_equivalent;
+    }
 
     partition_by_indices.reserve(window_description.partition_by.size());
     for (const auto & column : window_description.partition_by)
@@ -1352,23 +1359,23 @@ void WindowTransform::FrameAggregateTree::reset()
 
 void WindowTransform::frameTreeActivate(size_t workspace_index)
 {
-    auto & [tree, appended_end] = workspace_frame_trees[workspace_index];
-    tree.activate(*workspaces[workspace_index].aggregate_function);
-    appended_end = frame_start;
+    auto & workspace_tree = workspace_frame_trees[workspace_index];
+    workspace_tree.tree.activate(*workspaces[workspace_index].aggregate_function);
+    workspace_tree.appended_end = frame_start;
 }
 
 // Appends rows [appended_end, frame_end) to the tree. The pending rows are still in
 // memory: appended_end is never behind prev_frame_start, which bounds block retention.
 void WindowTransform::frameTreeAppend(size_t workspace_index)
 {
-    auto & [tree, appended_end] = workspace_frame_trees[workspace_index];
+    auto & workspace_tree = workspace_frame_trees[workspace_index];
     auto * arena_ptr = arena.get();
-    forEachRowsRangeInBlocks(workspaces[workspace_index], appended_end, frame_end,
+    forEachRowsRangeInBlocks(workspaces[workspace_index], workspace_tree.appended_end, frame_end,
         [&](const IColumn ** columns, size_t first_row, size_t past_the_end_row)
         {
-            tree.append(columns, first_row, past_the_end_row, arena_ptr);
+            workspace_tree.tree.append(columns, first_row, past_the_end_row, arena_ptr);
         });
-    appended_end = frame_end;
+    workspace_tree.appended_end = frame_end;
 }
 
 // Rebuilds ws's aggregation state as the combination of rows [frame_start, frame_end).
@@ -1424,8 +1431,9 @@ void WindowTransform::updateAggregationState()
     {
         if (frame_trees_active)
             evicted_rows = countRowsBetween(prev_frame_start, frame_start);
-        else if (countRowsBetween(frame_start, frame_end, min_frame_rows_for_aggregate_tree)
-            >= min_frame_rows_for_aggregate_tree)
+        else if (any_workspace_supports_frame_tree
+            && countRowsBetween(frame_start, frame_end, min_frame_rows_for_aggregate_tree)
+                >= min_frame_rows_for_aggregate_tree)
         {
             activate_trees = true;
             frame_trees_active = true;
@@ -1451,11 +1459,11 @@ void WindowTransform::updateAggregationState()
             continue;
         }
 
-        if (activate_trees)
+        if (activate_trees && workspace_frame_trees[wi].merge_equivalent)
             frameTreeActivate(wi);
 
         auto & tree = workspace_frame_trees[wi].tree;
-        chassert(tree.isActive() == frame_trees_active);
+        chassert(tree.isActive() == (frame_trees_active && workspace_frame_trees[wi].merge_equivalent));
         if (tree.isActive())
         {
             frameTreeAppend(wi);

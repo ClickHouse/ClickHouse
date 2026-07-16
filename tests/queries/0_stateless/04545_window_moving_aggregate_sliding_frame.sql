@@ -414,6 +414,23 @@ FROM
     WINDOW w AS (ORDER BY k RANGE BETWEEN 12000 PRECEDING AND CURRENT ROW)
 );
 
+-- Functions whose merge is not equivalent to appending rows (randomized reservoirs,
+-- lossy sketches; see mergeIsEquivalentToAddingRows) must keep the recompute path:
+-- their result over a tree-sized frame must match a sequential re-aggregation of the
+-- frame rows (arrayReduce builds one state and adds row by row), also through
+-- combinators.
+SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))))) AS mismatches
+FROM
+(
+    SELECT
+        groupArraySample(2, 1)(value) OVER w AS gs, arrayReduce('groupArraySample(2, 1)', groupArray(value) OVER w) AS gs2,
+        quantile(0.5)(value) OVER w AS q, arrayReduce('quantile(0.5)', groupArray(value) OVER w) AS q2,
+        topK(3)(value) OVER w AS tk, arrayReduce('topK(3)', groupArray(value) OVER w) AS tk2,
+        quantileIf(0.5)(value, value % 2 = 0) OVER w AS qi, arrayReduce('quantileIf(0.5)', groupArray(value) OVER w, groupArray(value % 2 = 0) OVER w) AS qi2
+    FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW)
+);
+
 -- Floating-point sums over tree-sized frames merge per-segment partial sums, so the
 -- rounding may differ from the reset-and-readd path (whose rounding in turn already
 -- depends on the input block layout, on master too): float addition is not associative

@@ -146,6 +146,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(result_type->getTypeId()); }
 
+    bool mergeIsEquivalentToAddingRows() const override { return false; }
+
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         data(place).insertResultInto(to, result_type);

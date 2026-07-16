@@ -356,6 +356,11 @@ public:
         return true;
     }
 
+    bool mergeIsEquivalentToAddingRows() const override
+    {
+        return nested_func->mergeIsEquivalentToAddingRows();
+    }
+
     bool isState() const override
     {
         return nested_func->isState();

@@ -246,7 +246,9 @@ public:
     // frame (cf. Tangwongsan et al., "General Incremental Sliding-Window Aggregation",
     // PVLDB 2015). A segment at level L holds the state of fanout^(L+1) consecutive rows,
     // so re-aggregating a frame of N rows takes O(fanout * log N) merge calls instead of
-    // N add calls, and only relies on merge, so every aggregate function is supported.
+    // N add calls. This is sound only for functions whose merge is equivalent to adding
+    // the rows (see IAggregateFunction::mergeIsEquivalentToAddingRows); the rest, e.g.
+    // groupArraySample, keep the full-recompute path.
     // Rows are identified by their index counted from the frame start at activation.
     // Frame boundaries only move forward, so segments are immutable once built; the
     // single trailing level-0 segment accumulates rows as they arrive, and may be
@@ -321,11 +323,14 @@ public:
         // The first row not yet appended; appends lag behind frame_end while the frame
         // start is not moving (the tree is not queried then).
         RowNumber appended_end;
+        // Cached mergeIsEquivalentToAddingRows of the workspace's aggregate function.
+        bool merge_equivalent = false;
     };
     std::vector<WorkspaceFrameTree> workspace_frame_trees;
-    // All trees are activated together, so this is per-transform (see
+    // All eligible trees are activated together, so this is per-transform (see
     // updateAggregationState()).
     bool frame_trees_active = false;
+    bool any_workspace_supports_frame_tree = false;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).
