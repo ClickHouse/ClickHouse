@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
@@ -16,6 +17,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+static bool hasNullableArrayElements(const DataTypePtr & type)
+{
+    const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+    if (!array_type)
+        return false;
+
+    const auto & nested_type = array_type->getNestedType();
+    return nested_type->isNullable() || hasNullableArrayElements(nested_type);
 }
 
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
@@ -38,10 +49,17 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties &,
+        const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
         const Array & params) const override
     {
+        if (properties.rejects_nullable_arguments_with_if
+            && std::any_of(arguments.begin(), arguments.end(), hasNullableArrayElements))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} does not support Nullable arguments with the If combinator",
+                nested_function->getName());
+
         return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };

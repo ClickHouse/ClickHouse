@@ -36,7 +36,7 @@ The parameter form is selected by the second parameter: if it is a `Float64` val
 
 ## Supported combinators {#supported-combinators}
 
-`groupBloomFilter` supports the `-State` and `-MergeState` combinators. The `-State` combinator can be combined with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`. Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be `Nullable`.
+`groupBloomFilter` supports the `-State` and `-MergeState` combinators. The `-State` combinator can be combined with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`. Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including array elements and the condition, must not be `Nullable`.
 
 To aggregate a nullable value conditionally, exclude `NULL` values explicitly and unwrap the value:
 

@@ -434,8 +434,8 @@ it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num
 
 `groupBloomFilter` supports the `-State` and `-MergeState` combinators. The `-State` combinator can be combined
 with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`.
-Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be
-`Nullable`.
+Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including array elements and the condition,
+must not be `Nullable`.
 An untyped `NULL` argument is rejected because its element type cannot be inferred. Cast it to an explicit
 `Nullable(T)` type to create an empty typed state.
 The `-Distinct` combinator is not supported because duplicate values do not change a Bloom filter and its

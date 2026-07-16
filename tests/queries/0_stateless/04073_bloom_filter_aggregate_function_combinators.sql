@@ -71,6 +71,9 @@ FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 SELECT groupBloomFilterArrayIfState([number], CAST(1, 'Nullable(UInt8)'))
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 
+SELECT groupBloomFilterArrayIfState(materialize(CAST([number, NULL], 'Array(Nullable(UInt64))')), toUInt8(1))
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
 -- `-OrNull` and `-OrDefault` require a meaningful finalized result, even in state-only chains.
 SELECT groupBloomFilterOrNullState(1000)(number)
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
