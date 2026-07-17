@@ -15,10 +15,13 @@ Most `ALTER TABLE` queries modify table settings or data:
 | [DELETE](/reference/statements/alter/delete)                         |
 | [UPDATE](/reference/statements/alter/update)                         |
 | [ORDER BY](/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/reference/statements/alter/sample-by)                   |
 | [INDEX](/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/reference/statements/alter/constraint)                 |
 | [TTL](/reference/statements/alter/ttl)                               |
 | [STATISTICS](/reference/statements/alter/statistics)                 |
+| [SETTING](/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/reference/statements/alter/apply-patches)           |
 
@@ -40,11 +43,13 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ROLE](/reference/statements/alter/role)                         |
 | [QUOTA](/reference/statements/alter/quota)                       |
 | [ROW POLICY](/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/reference/statements/alter/settings-profile) |
 
 | Statement                                                                             | Description                                                                               |
 |---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
 | [ALTER TABLE ... MODIFY COMMENT](/reference/statements/alter/comment)  | Adds, modifies, or removes comments to the table, regardless if it was set before or not. |
+| [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 
 ## Mutations {#mutations}

@@ -66,8 +66,8 @@ GCC et les autres compilateurs ne sont pas pris en charge.
 </div>
 
 <Note>
-  Rust est une dépendance facultative de ClickHouse.
-  Si Rust n&#39;est pas installé, certaines fonctionnalités de ClickHouse ne seront pas compilées.
+Rust est une dépendance facultative de ClickHouse.
+Si Rust n&#39;est pas installé, certaines fonctionnalités de ClickHouse ne seront pas compilées.
 </Note>
 
 Commencez par suivre les étapes de la [documentation officielle de Rust](https://www.rust-lang.org/tools/install) pour installer `rustup`.
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-  ## Compiler ClickHouse
+## Compiler ClickHouse
 </div>
 
 Nous vous recommandons de créer un répertoire distinct `build` dans `ClickHouse` pour y stocker tous les artefacts de compilation :
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-  Si vous souhaitez utiliser un débogueur comme gdb, ajoutez `-D DEBUG_O_LEVEL="0"` à la commande ci-dessus afin de supprimer toutes les optimisations du compilateur, qui peuvent empêcher gdb de voir ou d’accéder aux variables.
+Si vous souhaitez utiliser un débogueur comme gdb, ajoutez `-D DEBUG_O_LEVEL="0"` à la commande ci-dessus afin de supprimer toutes les optimisations du compilateur, qui peuvent empêcher gdb de voir ou d’accéder aux variables.
 </Note>
 
 Exécutez ninja pour générer la build :
@@ -133,16 +133,17 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-  `clickhouse-server`, `clickhouse-client` et d’autres binaires similaires sont des liens symboliques dans le répertoire `programs/` qui pointent vers l’exécutable `clickhouse` une fois la compilation terminée.
-
-  :::tip
-  CMake fournit des raccourcis pour les commandes ci-dessus :
-
-  ```sh
-  cmake -S . -B build  # configurer la compilation, à exécuter depuis le répertoire racine du dépôt
-  cmake --build build  # compiler
-  ```
+`clickhouse-server`, `clickhouse-client` et d’autres binaires similaires sont des liens symboliques dans le répertoire `programs/` qui pointent vers l’exécutable `clickhouse` une fois la compilation terminée.
 </Note>
+
+<Tip>
+CMake fournit des raccourcis pour les commandes ci-dessus :
+
+```sh
+cmake -S . -B build  # configurer la compilation, à exécuter depuis le répertoire racine du dépôt
+cmake --build build  # compiler
+```
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## Exécution de l’exécutable ClickHouse

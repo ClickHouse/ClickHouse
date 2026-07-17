@@ -1593,9 +1593,11 @@ class FunctionBinaryArithmetic : public IFunction
             const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
             result_scale = res_type.getScale();
             Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
-            /// The min side (1900-01-01) fits in Int64 for all supported scales (0-9).
-            /// The max side (2299-12-31) overflows Int64 at scale 9; clamp to Int64 max in that case.
-            result_min = MIN_DATETIME64_TIMESTAMP * result_scale_mul;
+            /// Both ends of the representable window (0000-01-01 .. 9999-12-31) overflow Int64 once scaled at
+            /// the highest precisions, so clamp to the Int64 limits in that case instead of multiplying blindly.
+            result_min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / result_scale_mul)
+                ? MIN_DATETIME64_TIMESTAMP * result_scale_mul
+                : std::numeric_limits<Int64>::min();
             result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
                 ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
                 : std::numeric_limits<Int64>::max();

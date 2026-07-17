@@ -117,6 +117,231 @@ body[data-scroll-locked] {
     margin-right: 0 !important;
 }
 
+/* Agent-assisted setup callout, ported from the Docusaurus AgentPrompt
+   component. The `ch-` prefix keeps these rules isolated from Mintlify. */
+.ch-agent-prompt-wrapper {
+    --agent-accent: #FBFF46;
+    --agent-accent-bg: #FFFFE8;
+    --agent-text: #161517;
+    --agent-text-muted: #696E79;
+    --agent-prompt-bg: #FFFFFF;
+    --agent-prompt-border: #FCFF74;
+    --agent-button-bg: #FBFF46;
+    --agent-button-bg-hover: #EEF400;
+    --agent-button-text: #161517;
+
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 1.25rem 0 1.75rem;
+    padding: 14px 16px;
+    border: 1px solid var(--agent-accent);
+    border-radius: 8px;
+    background: var(--agent-accent-bg);
+}
+
+.ch-agent-prompt-main-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+}
+
+.ch-agent-prompt-left,
+.ch-agent-prompt-copy-button {
+    flex-shrink: 0;
+}
+
+.ch-agent-prompt-title {
+    color: var(--agent-text);
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ch-agent-prompt-prompt-area {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 6px 10px;
+    border: 1px solid var(--agent-prompt-border);
+    border-radius: 6px;
+    background: var(--agent-prompt-bg);
+    scrollbar-width: thin;
+}
+
+.ch-agent-prompt-prompt-area::-webkit-scrollbar {
+    height: 6px;
+}
+
+.ch-agent-prompt-prompt-area::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: #FCFF74;
+}
+
+.prose .ch-agent-prompt-prompt-text,
+.ch-agent-prompt-prompt-text {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--agent-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.ch-agent-prompt-copy-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border: 1px solid var(--agent-accent);
+    border-radius: 6px;
+    background: var(--agent-button-bg);
+    color: var(--agent-button-text);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    transition: background-color 120ms ease, transform 80ms ease;
+}
+
+.ch-agent-prompt-copy-button:hover {
+    background: var(--agent-button-bg-hover);
+}
+
+.ch-agent-prompt-copy-button:active {
+    transform: translateY(1px);
+}
+
+.ch-agent-prompt-copy-button:focus-visible,
+.ch-agent-prompt-outline-summary:focus-visible {
+    outline: 2px solid #135BE6;
+    outline-offset: 2px;
+}
+
+.ch-agent-prompt-sub-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-left: 2px;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+.ch-agent-prompt-description {
+    color: var(--agent-text-muted);
+}
+
+.prose a.ch-agent-prompt-repository-link,
+.ch-agent-prompt-repository-link {
+    color: #135BE6 !important;
+    font-weight: 600;
+}
+
+.ch-agent-prompt-outline {
+    margin-top: 2px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--agent-prompt-border);
+}
+
+.ch-agent-prompt-outline-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    border-radius: 3px;
+    color: var(--agent-text);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    list-style: none;
+    user-select: none;
+}
+
+.ch-agent-prompt-outline-summary::-webkit-details-marker {
+    display: none;
+}
+
+.ch-agent-prompt-outline-summary:hover {
+    opacity: 0.85;
+}
+
+.ch-agent-prompt-outline-chevron {
+    flex-shrink: 0;
+    transition: transform 150ms ease;
+}
+
+.ch-agent-prompt-outline[open] > .ch-agent-prompt-outline-summary > .ch-agent-prompt-outline-chevron {
+    transform: rotate(90deg);
+}
+
+.prose .ch-agent-prompt-outline-list,
+.ch-agent-prompt-outline-list {
+    margin: 8px 0 2px;
+    padding-left: 1.4rem;
+    color: var(--agent-text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+.prose .ch-agent-prompt-outline-list li,
+.ch-agent-prompt-outline-list li {
+    margin: 2px 0;
+    padding-left: 2px;
+}
+
+.ch-agent-prompt-outline-list li::marker {
+    color: var(--agent-text);
+    font-weight: 600;
+}
+
+html.dark .ch-agent-prompt-wrapper,
+:is(.dark) .ch-agent-prompt-wrapper {
+    --agent-accent: #FCFF74;
+    --agent-accent-bg: rgba(251, 255, 70, 0.06);
+    --agent-text: #FFFFFF;
+    --agent-text-muted: #DFDFDF;
+    --agent-prompt-bg: #1D1D1D;
+    --agent-prompt-border: rgba(251, 255, 70, 0.35);
+    --agent-button-bg: #FCFF74;
+    --agent-button-bg-hover: #FBFF46;
+    --agent-button-text: #151515;
+}
+
+html.dark .prose a.ch-agent-prompt-repository-link,
+:is(.dark) .prose a.ch-agent-prompt-repository-link {
+    color: #FCFF74 !important;
+}
+
+@media (max-width: 768px) {
+    .ch-agent-prompt-main-row {
+        flex-wrap: wrap;
+    }
+
+    .ch-agent-prompt-prompt-area {
+        order: 3;
+        width: 100%;
+        flex-basis: 100%;
+    }
+
+    .ch-agent-prompt-copy-button {
+        margin-left: auto;
+    }
+
+    .ch-agent-prompt-prompt-text {
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .ch-agent-prompt-sub-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+}
+
 /* The secondary navbar (`#navbar-transition-maple`) and the fixed sidebar
    (`#sidebar`) both reserve 40px above themselves for the announcement
    banner (Tailwind `lg:mt-10` / `top-10`). The banner is `position: fixed`
@@ -374,6 +599,13 @@ html:not(.dark) .pagination-prev:hover {
     border-color: #535353;
 }
 
+/* Mintlify gives the pagination card's inner flex wrapper its own page-level
+   background. Keep it transparent so the complete button uses the parent
+   card color in both its resting and hover states. */
+#pagination > a > div {
+    background: transparent !important;
+}
+
 /* Previous card: keep chevron + label together on the left (maple's
    justify-between would otherwise spread them across the card) */
 #pagination > a:has(svg.lucide-chevron-left) {
@@ -613,13 +845,48 @@ html:not(.dark) .pagination-prev:hover {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
-       scroll container's scrollbar track spans its whole padding box, so
-       padding-top would leave the scrollbar flush against — visually touching —
-       the search/Ask AI buttons. A margin pushes the scroll box itself (and
-       therefore the top of its scrollbar) down below that row, so the scrollbar
-       no longer exceeds the first nav item. */
-    margin-top: 0.5rem;
+    /* Mintlify inserts an empty `mt-8` list before the first real menu item.
+       Move that spacing outside the scrolling box so the scrollbar track starts
+       level with the first item instead of directly below search and Ask AI. */
+    margin-top: 2.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+#navigation-items > ul.list-none.mt-8:first-child:empty {
+    margin-top: 0 !important;
+}
+
+#navigation-items::-webkit-scrollbar {
+    width: 5px;
+}
+
+#navigation-items::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#navigation-items::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #d1d5db;
+}
+
+#navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+.dark #navigation-items,
+:is(.dark) #navigation-items {
+    scrollbar-color: #52525b transparent;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb {
+    background: #52525b;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb:hover,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #71717a;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -1027,6 +1294,14 @@ html.dark .dark\:hover\:text-primary-light:hover {
 }
 html.dark .dark\:hover\:bg-primary-light\/10:hover {
     background-color: rgba(253, 255, 117, 0.1) !important;
+}
+
+/* Card CTAs use a group-hover dark variant. Keep that CTA readable when the
+   card body is hovered instead of allowing the dark theme token to resolve
+   to a near-black color. */
+html.dark .card:hover [data-component-part="card-cta"] button,
+:is(.dark) .card:hover [data-component-part="card-cta"] button {
+    color: #FDFF75 !important;
 }
 
 /* ============================================
@@ -2035,6 +2310,15 @@ h5#sidebar-title {
     /* 768px */
 }
 
+/* Custom explorers should use the full available width while the sidebar is
+   hidden at intermediate tablet sizes; otherwise the 768px prose cap leaves a
+   large unused area on the right. */
+@media (min-width: 768px) and (max-width: 1023px) {
+    html[data-page-mode="custom"] #content-area {
+        max-width: none !important;
+    }
+}
+
 /* Reduce outer container padding */
 #content-container {
     border-radius: 15px;
@@ -2492,17 +2776,18 @@ html:not(.dark) [data-callout-type] [data-component-part="callout-content"] code
     color: lch(82.069 27.695 22.026 / 0.75);
 }
 
-/* Keep icons dark on hover in light mode */
-html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Keep leading brand/mask icons dark on hover in light mode. The trailing SVG
+   on external links is an unboxed arrow and must not receive this background. */
+html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #1a1a1a !important;
 }
 
-/* Make icons yellow on hover in dark mode */
-.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Make leading brand/mask icons yellow on hover in dark mode */
+.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #FAFF69 !important;
 }
 
@@ -2701,6 +2986,50 @@ html:not(.dark) .card a {
 
 .goal-card-link:hover .ch-external-arrow {
     transform: rotate(-45deg);
+}
+
+/* Langfuse opens outside the docs site. Replace Mintlify's high-emphasis tile
+   with one small, unboxed external-link glyph. */
+a.nav-dropdown-item[href^="https://langfuse.com/docs"],
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: #9ca3af !important;
+    opacity: 0.6 !important;
+    transition: color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #2563eb !important;
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    color: #71717a !important;
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #fdff75 !important;
 }
 
 /* ============================================
@@ -2914,4 +3243,98 @@ a[role="menuitem"][href$="/products/clickhouse-private"] {
 a.mobile-nav-tabs-item[href$="/products/clickhouse-private"],
 a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
     display: none !important;
+}
+
+/* ============================================
+   Sidebar maturity badges before the entry text
+   ============================================ */
+
+/* API reference sidebar entries carry maturity pills — `tag` frontmatter
+   (Beta / Private preview, rendered as .nav-tag-pill) and `deprecated`
+   frontmatter (a plain pill div). Both are div wrappers that follow the
+   title <span> inside the entry's flex-wrap container; the title is the
+   only non-div child there, so ordering div children first moves every
+   pill in front of the text without touching the METHOD pill (which
+   lives outside this container, as a direct child of the <a>). */
+#sidebar a .flex-wrap > div {
+    order: -1;
+}
+
+/* Cross out the sidebar entry text of deprecated endpoints (matching the
+   Swagger convention). The deprecated pill rendered from `deprecated: true`
+   frontmatter carries no semantic class or data attribute — the only stable
+   hook is Mintlify's hard-coded pill background utility (light `bg-[#FDEAD8]`,
+   always present in the class list even in dark mode). The title is the
+   .break-words span; the METHOD pill spans carry no .break-words. */
+#sidebar a:has(div[class*="bg-[#FDEAD8]"]) span.break-words {
+    text-decoration: line-through;
+}
+
+/* ============================================
+   Endpoint maturity pill next to the page title
+   ============================================ */
+
+/* Generated Cloud API reference pages carry their maturity badge as body
+   content (`[data-endpoint-badge]`, written by
+   `ci/jobs/scripts/docs/generate_cloud_api_reference.py`). Mintlify shows
+   the `deprecated` pill next to the page title but has nothing equivalent
+   for `tag` badges, so a pseudo-element paints the pill in that slot from
+   pure CSS — present at first paint, no hydration shift (a custom-JS clone
+   was tried and popped in visibly). The in-body badge is hidden here; it
+   stays in the MDX for contexts without this stylesheet (markdown exports). */
+#content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    color: #2563EB;
+    background-color: rgba(37, 99, 235, 0.1);
+}
+.dark #content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after,
+:is(.dark) #content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after {
+    color: #60A5FA;
+    background-color: rgba(96, 165, 250, 0.14);
+}
+#content-area:has(.mdx-content [data-endpoint-badge="Beta"]) #page-title::after {
+    content: "Beta";
+}
+#content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after {
+    content: "Private preview";
+    color: #9333EA;
+    background-color: rgba(147, 51, 234, 0.1);
+}
+.dark #content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after,
+:is(.dark) #content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after {
+    color: #C084FC;
+    background-color: rgba(192, 132, 252, 0.14);
+}
+.mdx-content [data-endpoint-badge] {
+    display: none;
+}
+
+/* ============================================
+   Compact integration table logos
+   ============================================ */
+
+.integration-table-logo {
+    display: inline-block;
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+    max-width: 1.5rem !important;
+    margin: 0 0.5rem 0 0 !important;
+    padding: 0.2rem;
+    vertical-align: middle;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.375rem;
+    box-sizing: border-box;
+}
+
+td:has(> .integration-table-logo) {
+    white-space: nowrap;
 }
