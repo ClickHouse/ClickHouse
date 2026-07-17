@@ -62,6 +62,46 @@ LIMIT 1;
 -- unpatched server reported in written_rows was double-counting, not real rows.
 SELECT count() FROM local_04500;
 
+-- The PR touches TWO local-write paths in DistributedSink: the synchronous runWritingJob
+-- (distributed_foreground_insert = 1, exercised above) and the writeToLocal branch used by
+-- the async writeAsyncImpl (distributed_foreground_insert = 0). Cover writeToLocal too, so
+-- the fix is proven for both. With prefer_localhost_replica = 1 the local-shard writes still
+-- happen synchronously inside the INSERT (writeToLocal is called directly, not deferred to
+-- disk spooling), so the accounting is deterministic without waiting on background flush.
+INSERT INTO dist_04500 SELECT number FROM numbers(1000)
+    SETTINGS log_comment = '04500_dist_insert_async', log_profile_events = 1,
+             distributed_foreground_insert = 0;
+
+SYSTEM FLUSH DISTRIBUTED dist_04500;
+SYSTEM FLUSH LOGS query_log;
+
+-- Same expectation as the foreground path: written_rows = 1000 / written_bytes = 8000 (not
+-- doubled), and ProfileEvent_InsertedRows / _InsertedBytes = 1000 / 8000 (not doubled).
+SELECT written_rows, written_bytes
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query
+  AND query_kind = 'Insert'
+  AND current_database = currentDatabase()
+  AND log_comment = '04500_dist_insert_async'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+SELECT ProfileEvents['InsertedRows'], ProfileEvents['InsertedBytes']
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query
+  AND query_kind = 'Insert'
+  AND current_database = currentDatabase()
+  AND log_comment = '04500_dist_insert_async'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- 2000 physical rows now (the first foreground INSERT wrote 1000, this async one wrote 1000
+-- more into the same local shard table) -- confirming the async written_rows = 1000 was the
+-- logical count for this INSERT, not a doubled per-shard count.
+SELECT count() FROM local_04500;
+
 -- Refreshable MV appending into a Distributed target: system.view_refreshes.written_rows
 -- must report the logical row count, not the doubled per-shard count.
 DROP TABLE local_04500;
