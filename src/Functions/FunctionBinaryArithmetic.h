@@ -1353,286 +1353,158 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeTimeAndDateTimeOperation(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
-        size_t input_row_count,
-        bool should_subtract = false) const
+        size_t input_rows_count,
+        bool should_subtract) const
     {
+        /// The addition is commutative - figure out which argument is the time and which is the datetime.
+        /// For subtraction, type resolution guarantees that the datetime is on the left.
         bool left_is_time = WhichDataType(arguments[0].type).isTimeOrTime64();
         const ColumnWithTypeAndName & time_arg = left_is_time ? arguments[0] : arguments[1];
         const ColumnWithTypeAndName & datetime_arg = left_is_time ? arguments[1] : arguments[0];
 
-        /// handle DateTime and Time
-        if ((!isTime64(time_arg.type) && !isDateTime64(datetime_arg.type)))
+        bool is_datetime64 = isDateTime64(datetime_arg.type);
+        bool is_time64 = isTime64(time_arg.type);
+
+        /// DateTime with Time -> DateTime (UInt32 seconds). All other combinations -> DateTime64
+        /// because Time64 requires sub-second precision.
+        bool result_is_datetime64 = is_datetime64 || is_time64;
+
+        auto overflow_behavior = getDateTimeOverflowBehavior(context);
+
+        /// The valid range for the result, expressed in the result's own units
+        /// (same logic as in executeDateAndTimeAddition).
+        Int64 result_min = 0;
+        Int64 result_max = static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
+        UInt32 result_scale = 0;
+
+        /// Multipliers converting each argument's units to the result's units.
+        Int64 datetime_scale_factor = 1;
+        Int64 time_scale_factor = 1;
+
+        if (result_is_datetime64)
         {
-            auto result_column = ColumnUInt32::create(input_row_count);
-            auto & result_data = result_column->getData();
+            const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
+            result_scale = res_type.getScale();
+            Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
+            /// Both ends of the representable window overflow Int64 once scaled at the highest
+            /// precisions, so clamp to the Int64 limits in that case instead of multiplying blindly.
+            result_min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / result_scale_mul)
+                ? MIN_DATETIME64_TIMESTAMP * result_scale_mul
+                : std::numeric_limits<Int64>::min();
+            result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
+                ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
+                : std::numeric_limits<Int64>::max();
 
-            bool datetime_is_const = isColumnConst(*datetime_arg.column);
-            const IColumn * datetime_col_ptr = nullptr;
-            UInt32 datetime_const_val = 0;
+            UInt32 datetime_scale = is_datetime64 ? assert_cast<const DataTypeDateTime64 &>(*datetime_arg.type).getScale() : 0;
+            UInt32 time_scale = is_time64 ? assert_cast<const DataTypeTime64 &>(*time_arg.type).getScale() : 0;
+            datetime_scale_factor = DecimalUtils::scaleMultiplier<Int64>(result_scale - datetime_scale);
+            time_scale_factor = DecimalUtils::scaleMultiplier<Int64>(result_scale - time_scale);
+        }
 
+        /// Check whether the computed result fits in the valid range, following date_time_overflow_behavior.
+        /// The result comes in as Int128 (which cannot overflow), and is narrowed to Int64 here.
+        auto check_and_clamp = [&](Int128 wide_result) -> Int64
+        {
+            if (wide_result >= result_min && wide_result <= result_max) [[likely]]
+                return static_cast<Int64>(wide_result);
+
+            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                if (result_is_datetime64)
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "The result of {} between DateTime and Time is out of bounds of type DateTime64({})",
+                        should_subtract ? "minus" : "plus",
+                        result_scale);
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Value {} is out of bounds of type DateTime",
+                        static_cast<Int64>(wide_result));
+            }
+            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            {
+                return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
+            }
+            /// Ignore: truncate to Int64. The result is undefined per ClickHouse docs.
+            return static_cast<Int64>(wide_result);
+        };
+
+        /// Resolve column data to typed raw pointers once, so the per-row loop
+        /// only does pointer indexing - no dynamic_cast or type checks per row.
+        const auto * datetime_col = datetime_arg.column.get();
+        const auto * time_col = time_arg.column.get();
+        bool datetime_is_const = isColumnConst(*datetime_col);
+        bool time_is_const = isColumnConst(*time_col);
+
+        Int64 datetime_const_value = 0;
+        const DateTime64 * datetime64_ptr = nullptr;
+        const UInt32 * datetime32_ptr = nullptr;
+        if (datetime_is_const)
+            datetime_const_value = is_datetime64
+                ? checkAndGetColumnConst<ColumnDecimal<DateTime64>>(datetime_col)->template getValue<DateTime64>().value
+                : static_cast<Int64>(checkAndGetColumnConst<ColumnVector<UInt32>>(datetime_col)->template getValue<UInt32>());
+        else if (is_datetime64)
+            datetime64_ptr = checkAndGetColumn<ColumnDecimal<DateTime64>>(datetime_col)->getData().data();
+        else
+            datetime32_ptr = checkAndGetColumn<ColumnVector<UInt32>>(datetime_col)->getData().data();
+
+        Int64 time_const_value = 0;
+        const Time64 * time64_ptr = nullptr;
+        const Int32 * time32_ptr = nullptr;
+        if (time_is_const)
+            time_const_value = is_time64 ? checkAndGetColumnConst<ColumnDecimal<Time64>>(time_col)->template getValue<Time64>().value
+                                         : checkAndGetColumnConst<ColumnVector<Int32>>(time_col)->template getValue<Int32>();
+        else if (is_time64)
+            time64_ptr = checkAndGetColumn<ColumnDecimal<Time64>>(time_col)->getData().data();
+        else
+            time32_ptr = checkAndGetColumn<ColumnVector<Int32>>(time_col)->getData().data();
+
+        auto get_datetime = [&](size_t i) -> Int64
+        {
             if (datetime_is_const)
-            {
-                datetime_const_val = static_cast<UInt32>(datetime_arg.column->getUInt(0));
-            }
-            else
-            {
-                datetime_col_ptr = datetime_arg.column.get();
-                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(datetime_col_ptr))
-                    datetime_col_ptr = &nullable->getNestedColumn();
-                datetime_col_ptr = checkAndGetColumn<ColumnUInt32>(datetime_col_ptr);
-                if (!datetime_col_ptr)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for DateTime argument");
-            }
-
-            bool time_is_const = isColumnConst(*time_arg.column);
-            const IColumn * time_col_ptr = nullptr;
-            Int32 time_const_val = 0;
-
+                return datetime_const_value;
+            return is_datetime64 ? datetime64_ptr[i].value : static_cast<Int64>(datetime32_ptr[i]);
+        };
+        auto get_time = [&](size_t i) -> Int64
+        {
             if (time_is_const)
-            {
-                time_const_val = static_cast<Int32>(time_arg.column->getInt(0));
-            }
-            else
-            {
-                time_col_ptr = time_arg.column.get();
-                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(time_col_ptr))
-                    time_col_ptr = &nullable->getNestedColumn();
-                time_col_ptr = checkAndGetColumn<ColumnInt32>(time_col_ptr);
-                if (!time_col_ptr)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for Time argument");
-            }
+                return time_const_value;
+            return is_time64 ? time64_ptr[i].value : static_cast<Int64>(time32_ptr[i]);
+        };
 
-            if (datetime_is_const && time_is_const)
-            {
-                /// both arguments are constants
-                UInt32 result = should_subtract ?
-                    datetime_const_val - time_const_val :
-                    datetime_const_val + time_const_val;
+        /// Bring both operands to the result scale in Int128 (no intermediate overflow), combine, range-check.
+        auto compute = [&](size_t i) -> Int64
+        {
+            Int128 datetime_scaled = Int128(get_datetime(i)) * datetime_scale_factor;
+            Int128 time_scaled = Int128(get_time(i)) * time_scale_factor;
+            return check_and_clamp(should_subtract ? datetime_scaled - time_scaled : datetime_scaled + time_scaled);
+        };
 
-                for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = result;
-            }
-            else if (datetime_is_const)
-            {
-                /// DateTime is constant, Time is a column
-                const auto & time_data = static_cast<const ColumnInt32 *>(time_col_ptr)->getData();
+        /// Both columns constant - compute once, return a single-value column.
+        if (datetime_is_const && time_is_const)
+        {
+            Int64 const_result = compute(0);
+            if (result_is_datetime64)
+                return result_type->createColumnConst(input_rows_count, DecimalField<DateTime64>(DateTime64(const_result), result_scale));
+            return result_type->createColumnConst(input_rows_count, static_cast<UInt64>(static_cast<UInt32>(const_result)));
+        }
 
-                for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = should_subtract ?
-                        datetime_const_val - time_data[i] :
-                        datetime_const_val + time_data[i];
-            }
-            else if (time_is_const)
-            {
-                /// Time is constant, DateTime is a column
-                const auto & datetime_data = static_cast<const ColumnUInt32 *>(datetime_col_ptr)->getData();
-
-                for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = should_subtract ?
-                        datetime_data[i] - time_const_val :
-                        datetime_data[i] + time_const_val;
-            }
-            else
-            {
-                /// both are columns
-                const auto & datetime_data = static_cast<const ColumnUInt32 *>(datetime_col_ptr)->getData();
-                const auto & time_data = static_cast<const ColumnInt32 *>(time_col_ptr)->getData();
-
-                for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = should_subtract ?
-                        datetime_data[i] - time_data[i] :
-                        datetime_data[i] + time_data[i];
-            }
-
-            return result_column;
+        if (result_is_datetime64)
+        {
+            auto col_res = ColumnDecimal<DateTime64>::create(input_rows_count, result_scale);
+            auto & result_data = col_res->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_data[i] = DateTime64(compute(i));
+            return col_res;
         }
         else
         {
-            /// handle high precision DateTime64 and/or Time64
-            const auto * result_type_ptr = checkAndGetDataType<DataTypeDateTime64>(result_type.get());
-            UInt32 scale = result_type_ptr ? result_type_ptr->getScale() : 0;
-
-            auto result_column = ColumnDecimal<DateTime64>::create(input_row_count, scale);
-            auto & result_data = result_column->getData();
-
-            bool datetime_is_const = isColumnConst(*datetime_arg.column);
-            const IColumn * datetime_col_ptr = nullptr;
-            ColumnPtr datetime_col_holder;
-            Decimal64 datetime_const_val{0};
-            UInt32 datetime_scale = 0;
-
-            if (datetime_is_const)
-            {
-                const auto & datetime_field = (*datetime_arg.column)[0];
-
-                if (isDateTime64(datetime_arg.type))
-                {
-                    /// extract scale and value for DateTime64
-                    const auto * datetime64_type = checkAndGetDataType<DataTypeDateTime64>(datetime_arg.type.get());
-                    datetime_scale = datetime64_type->getScale();
-
-                    DecimalField<Decimal64> decimal_field;
-                    if (datetime_field.tryGet(decimal_field))
-                        datetime_const_val = decimal_field.getValue();
-                    else
-                        datetime_const_val.value = static_cast<Int64>(datetime_field.safeGet<UInt64>());
-                }
-                else
-                {
-                    /// regular DateTime - convert to DateTime64 with appropriate scale
-                    const Int64 datetime_value = datetime_field.safeGet<UInt32>();
-                    datetime_const_val.value = datetime_value * DecimalUtils::scaleMultiplier<Int64>(scale);
-                    datetime_scale = scale;
-                }
-            }
-            else
-            {
-                datetime_col_ptr = datetime_arg.column.get();
-
-                if (isDateTime64(datetime_arg.type))
-                {
-                    /// get scale for DateTime64
-                    const auto * datetime64_type = checkAndGetDataType<DataTypeDateTime64>(datetime_arg.type.get());
-                    datetime_scale = datetime64_type->getScale();
-                }
-                else
-                {
-                    /// regular DateTime - convert to DateTime64 with result scale
-                    auto target_type = std::make_shared<DataTypeDateTime64>(scale);
-                    datetime_col_holder = castColumn(datetime_arg, target_type);
-                    datetime_col_ptr = datetime_col_holder.get();
-                    datetime_scale = scale;
-                }
-            }
-
-            /// process Time column
-            bool time_is_const = isColumnConst(*time_arg.column);
-            const IColumn * time_col_ptr = nullptr;
-            ColumnPtr time_col_holder;
-            Decimal64 time_const_val{0};
-            UInt32 time_scale = 0;
-
-            if (time_is_const)
-            {
-                const auto & time_field = (*time_arg.column)[0];
-
-                if (isTime64(time_arg.type))
-                {
-                    /// extract scale and value for Time64
-                    const auto * time64_type = checkAndGetDataType<DataTypeTime64>(time_arg.type.get());
-                    time_scale = time64_type->getScale();
-
-                    DecimalField<Decimal64> decimal_field;
-                    if (time_field.tryGet(decimal_field))
-                        time_const_val = decimal_field.getValue();
-                    else
-                        time_const_val.value = static_cast<Int64>(time_field.safeGet<UInt64>());
-                }
-                else
-                {
-                    /// regular Time - convert to Decimal64 with appropriate scale
-                    const Int64 time_value = time_field.safeGet<Int32>();
-                    time_const_val.value = time_value * DecimalUtils::scaleMultiplier<Int64>(scale);
-                    time_scale = scale;
-                }
-            }
-            else
-            {
-                time_col_ptr = time_arg.column.get();
-
-                if (isTime64(time_arg.type))
-                {
-                    /// get scale for Time64
-                    const auto * time64_type = checkAndGetDataType<DataTypeTime64>(time_arg.type.get());
-                    time_scale = time64_type->getScale();
-                }
-                else
-                {
-                    /// regular Time - convert to Time64 with result scale
-                    auto target_type = std::make_shared<DataTypeTime64>(scale);
-                    time_col_holder = castColumn(time_arg, target_type);
-                    time_col_ptr = time_col_holder.get();
-                    time_scale = scale;
-                }
-            }
-
-            /// calculate scale factors for adjustments
-            const Int64 datetime_scale_factor = DecimalUtils::scaleMultiplier<Int64>(scale - datetime_scale);
-            const Int64 time_scale_factor = DecimalUtils::scaleMultiplier<Int64>(scale - time_scale);
-
-            if (datetime_is_const && time_is_const)
-            {
-                Decimal64 scaled_datetime = datetime_const_val;
-                Decimal64 scaled_time = time_const_val;
-
-                scaled_datetime.value *= datetime_scale_factor;
-                scaled_time.value *= time_scale_factor;
-
-                Decimal64 result;
-                result.value = should_subtract ?
-                    scaled_datetime.value - scaled_time.value :
-                    scaled_datetime.value + scaled_time.value;
-
-                for (size_t i = 0; i < input_row_count; ++i)
-                    result_data[i] = result;
-            }
-            else if (datetime_is_const)
-            {
-                /// DateTime is constant, Time is a column
-                const auto & time_data = static_cast<const ColumnDecimal<Decimal64> *>(time_col_ptr)->getData();
-
-                Decimal64 scaled_datetime = datetime_const_val;
-                scaled_datetime.value *= datetime_scale_factor;
-
-                for (size_t i = 0; i < input_row_count; ++i)
-                {
-                    Decimal64 scaled_time = time_data[i];
-                    scaled_time.value *= time_scale_factor;
-
-                    result_data[i].value = should_subtract ?
-                        scaled_datetime.value - scaled_time.value :
-                        scaled_datetime.value + scaled_time.value;
-                }
-            }
-            else if (time_is_const)
-            {
-                /// Time is constant, DateTime is a column
-                const auto & datetime_data = static_cast<const ColumnDecimal<DateTime64> *>(datetime_col_ptr)->getData();
-
-                Decimal64 scaled_time = time_const_val;
-                scaled_time.value *= time_scale_factor;
-
-                for (size_t i = 0; i < input_row_count; ++i)
-                {
-                    Decimal64 scaled_datetime = datetime_data[i];
-                    scaled_datetime.value *= datetime_scale_factor;
-
-                    result_data[i].value = should_subtract ?
-                        scaled_datetime.value - scaled_time.value :
-                        scaled_datetime.value + scaled_time.value;
-                }
-            }
-            else
-            {
-                /// both are columns
-                const auto & datetime_data = static_cast<const ColumnDecimal<DateTime64> *>(datetime_col_ptr)->getData();
-                const auto & time_data = static_cast<const ColumnDecimal<Decimal64> *>(time_col_ptr)->getData();
-
-                for (size_t i = 0; i < input_row_count; ++i)
-                {
-                    Decimal64 scaled_datetime = datetime_data[i];
-                    Decimal64 scaled_time = time_data[i];
-
-                    scaled_datetime.value *= datetime_scale_factor;
-                    scaled_time.value *= time_scale_factor;
-
-                    result_data[i].value = should_subtract ?
-                        scaled_datetime.value - scaled_time.value :
-                        scaled_datetime.value + scaled_time.value;
-                }
-            }
-
-            return result_column;
+            auto col_res = ColumnVector<UInt32>::create(input_rows_count);
+            auto & result_data = col_res->getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_data[i] = static_cast<UInt32>(compute(i));
+            return col_res;
         }
     }
 
@@ -2522,6 +2394,11 @@ public:
                 const DataTypePtr & time_type = left_is_time ? arguments[0] : arguments[1];
                 const DataTypePtr & datetime_type = left_is_time ? arguments[1] : arguments[0];
 
+                /// Preserve the explicit timezone of the DateTime/DateTime64 argument, if any
+                String timezone;
+                if (const auto * tz_mixin = dynamic_cast<const TimezoneMixin *>(datetime_type.get()); tz_mixin && tz_mixin->hasExplicitTimeZone())
+                    timezone = tz_mixin->getTimeZone().getTimeZone();
+
                 /// Return DateTime or DateTime64 based on input types
                 if (isDateTime64(datetime_type) || isTime64(time_type))
                 {
@@ -2540,12 +2417,12 @@ public:
                         scale = std::max(scale, t64->getScale());
                     }
 
-                    return std::make_shared<DataTypeDateTime64>(scale);
+                    return std::make_shared<DataTypeDateTime64>(scale, timezone);
                 }
                 else
                 {
                     /// Return regular DateTime for standard precision
-                    return std::make_shared<DataTypeDateTime>();
+                    return std::make_shared<DataTypeDateTime>(timezone);
                 }
             }
         }

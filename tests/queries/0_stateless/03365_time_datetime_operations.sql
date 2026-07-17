@@ -75,3 +75,28 @@ SELECT toDateTime64(NULL, 3) + toTime64('00:02:02.456', 3);
 SELECT toDateTime('2020-01-01 12:10:10', 'UTC') + toTime('00:02:02') AS dt_tz_plus_t;
 
 SELECT toTime('00:02:02') - toDateTime('2020-01-01 12:10:10') AS t_minus_dt; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- The explicit timezone of the DateTime argument is preserved
+SELECT toTypeName(toDateTime('2020-01-01 12:10:10', 'Europe/Moscow') + toTime('00:02:02'));
+SELECT toTypeName(toDateTime64('2020-01-01 12:10:10.123', 3, 'Europe/Moscow') + toTime('00:02:02'));
+
+-- Overflow with throw (the default): out-of-range results must not wrap
+SELECT toDateTime('2106-02-07 06:28:15') + toTime('00:00:01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime('1970-01-01 00:00:00') - toTime('00:00:01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- One tick past the last representable DateTime64(9) value
+SELECT toDateTime64('2262-04-11 23:47:16.854775807', 9) + toTime64('00:00:00.000000001', 9); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+-- Vector path: one row valid, one row overflows
+DROP TABLE IF EXISTS test_dt_time_overflow_vec;
+CREATE TABLE test_dt_time_overflow_vec (dt DateTime, t Time) ENGINE = Memory;
+INSERT INTO test_dt_time_overflow_vec VALUES ('2020-01-01 00:00:00', '00:00:01'), ('2106-02-07 06:28:15', '00:00:01');
+SELECT dt + t FROM test_dt_time_overflow_vec ORDER BY dt; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+DROP TABLE test_dt_time_overflow_vec;
+
+-- Large negative Time64 brings an intermediate overflow back into range
+SELECT toDateTime64('2299-12-31 23:59:59', 0) + CAST(toDecimal128('-1200000000.000000000', 9), 'Time64(9)');
+
+-- Overflow with saturate
+SET date_time_overflow_behavior = 'saturate';
+SELECT toDateTime('2106-02-07 06:28:15') + toTime('00:00:01');
+SELECT toDateTime('1970-01-01 00:00:00') - toTime('00:00:01');
