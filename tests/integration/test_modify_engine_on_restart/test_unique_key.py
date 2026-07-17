@@ -60,13 +60,7 @@ def test_convert_to_replicated_rejected_for_unique_key(started_cluster):
     # Crucially, the metadata was NOT rewritten: after removing the flag the table loads with its
     # original MergeTree engine and its data intact (this is the load path that was broken before
     # the fix, where the metadata had been corrupted to ReplicatedMergeTree + UNIQUE KEY).
-    ch1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"rm {table_data_path}convert_to_replicated",
-        ]
-    )
+    ch1.exec_in_container(["rm", f"{table_data_path}convert_to_replicated"])
     ch1.start_clickhouse()
 
     assert (
