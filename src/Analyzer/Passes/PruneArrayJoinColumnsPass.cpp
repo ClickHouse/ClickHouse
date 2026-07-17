@@ -6,6 +6,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -15,7 +16,10 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
+
+#include <Storages/StorageSnapshot.h>
 
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -26,6 +30,7 @@ namespace Setting
 {
 
 extern const SettingsBool enable_unaligned_array_join;
+extern const SettingsBool optimize_functions_to_subcolumns;
 
 }
 
@@ -246,6 +251,68 @@ void pruneNestedFunctionArguments(
     column_node.setColumnType(std::move(new_column_type));
 }
 
+/// When an ARRAY JOIN column's element VALUE is never referenced (e.g. `SELECT count() FROM t ARRAY JOIN arr`),
+/// only the array's length matters: ARRAY JOIN produces one row per element regardless of the values.
+/// Reading the whole `arr` just to multiply rows is wasteful. Replace the join expression `arr` with
+/// `arrayWithConstant(length(arr), 0)`, which has identical per-row lengths (so the row multiplication,
+/// and hence count(), is unchanged, including LEFT ARRAY JOIN over empty arrays). The subsequent
+/// FunctionToSubcolumnsPass then rewrites `length(arr)` to the lightweight `arr.size0` subcolumn, so only
+/// the offsets are read from storage instead of the full array data.
+///
+/// arrayWithConstant is used rather than range() because range() enforces
+/// function_range_max_elements_in_block, which would turn a previously-working query into an error.
+bool tryReplaceUnusedArrayJoinColumnWithSizes(ColumnNode & array_join_column_node, const ContextPtr & context)
+{
+    /// The ARRAY JOIN expression is an outer alias ColumnNode whose EXPRESSION child holds the actual
+    /// joined-over expression. We only rewrite when that inner expression is a plain physical Array/Map
+    /// column of a table (a computed expression already materializes something; leave those untouched).
+    if (!array_join_column_node.hasExpression())
+        return false;
+
+    auto * inner_column_node = array_join_column_node.getExpression()->as<ColumnNode>();
+    if (!inner_column_node || inner_column_node->hasExpression())
+        return false;
+
+    /// The rewrite reads arr.size0 as a subcolumn, so it is only useful when that subcolumn actually
+    /// exists in storage. Require the source to be a table whose storage has the .size0 subcolumn.
+    auto source = inner_column_node->getColumnSourceOrNull();
+    auto * table_node = source ? source->as<TableNode>() : nullptr;
+    if (!table_node)
+        return false;
+
+    /// Must be an Array (or Map, whose nested type is Array). Only these have a .size0 subcolumn.
+    if (!getArrayJoinDataType(inner_column_node->getColumnType()))
+        return false;
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    const String size_subcolumn_name = inner_column_node->getColumnName() + ".size0";
+    /// If a real column shadows the subcolumn name, or the subcolumn is absent, do not rewrite.
+    if (storage_snapshot->tryGetColumn(GetColumnsOptions::All, size_subcolumn_name).has_value())
+        return false;
+    if (!storage_snapshot->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), size_subcolumn_name).has_value())
+        return false;
+
+    /// Build length(arr).
+    auto length_function = std::make_shared<FunctionNode>("length");
+    length_function->getArguments().getNodes().push_back(array_join_column_node.getExpression());
+    resolveOrdinaryFunctionNodeByName(*length_function, "length", context);
+
+    /// Build arrayWithConstant(length(arr), 0).
+    auto array_with_constant_function = std::make_shared<FunctionNode>("arrayWithConstant");
+    auto & awc_arguments = array_with_constant_function->getArguments().getNodes();
+    awc_arguments.push_back(std::move(length_function));
+    awc_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
+    resolveOrdinaryFunctionNodeByName(*array_with_constant_function, "arrayWithConstant", context);
+
+    /// Replace the alias ColumnNode's expression; its element result type becomes UInt8 (the constant),
+    /// which is never referenced. Keep the alias name so downstream identifiers stay valid.
+    auto new_element_type = assert_cast<const DataTypeArray &>(*array_with_constant_function->getResultType()).getNestedType();
+    array_join_column_node.setColumnType(new_element_type);
+    array_join_column_node.setExpression(std::move(array_with_constant_function));
+    return true;
+}
+
 /// Visitor that updates reference ColumnNode types, rewrites stale numeric tupleElement
 /// indices, and re-resolves tupleElement functions after nested() arguments have been pruned.
 class UpdateArrayJoinReferenceTypesVisitor : public InDepthQueryTreeVisitorWithContext<UpdateArrayJoinReferenceTypesVisitor>
@@ -343,6 +410,8 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     if (settings[Setting::enable_unaligned_array_join])
         return;
 
+    const bool optimize_to_subcolumns = settings[Setting::optimize_functions_to_subcolumns];
+
     /// Step 1: Find all ARRAY JOIN nodes and build the usage map.
     ArrayJoinUsageMap usage_map;
     ArrayJoinNodeSet tracked_nodes;
@@ -438,6 +507,25 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
                 kept.push_back(std::move(join_expressions[0]));
 
             join_expressions = std::move(kept);
+        }
+
+        /// 3a-bis: For a surviving ARRAY JOIN column whose element value is never referenced
+        /// (kept only to preserve row multiplication, e.g. `SELECT count() FROM t ARRAY JOIN arr`),
+        /// replace `arr` with `arrayWithConstant(length(arr), 0)` so only `arr.size0` is read.
+        if (optimize_to_subcolumns)
+        {
+            for (auto & join_expr : join_expressions)
+            {
+                auto * column_node = join_expr->as<ColumnNode>();
+                if (!column_node)
+                    continue;
+
+                auto expr_it = expressions_usage.find(column_node->getColumnName());
+                if (expr_it != expressions_usage.end() && expr_it->second.isUsed())
+                    continue;
+
+                tryReplaceUnusedArrayJoinColumnWithSizes(*column_node, context);
+            }
         }
 
         /// 3b: Prune unused nested() subcolumn arguments.
