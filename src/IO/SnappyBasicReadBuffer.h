@@ -10,16 +10,23 @@
 
 namespace DB
 {
-class SnappyReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
+
+/// Decompresses a raw snappy block: the whole input is a single buffer produced
+/// by one `snappy::Compress` call (`varint(uncompressed_size) || compressed_payload`).
+/// This is the protocol-specific format used e.g. by the Prometheus remote protocol,
+/// as opposed to the standard snappy framing format handled by `SnappyFramedReadBuffer`.
+///
+/// This is the inverse of `SnappyBasicWriteBuffer`.
+class SnappyBasicReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
-    explicit SnappyReadBuffer(
+    explicit SnappyBasicReadBuffer(
         std::unique_ptr<ReadBuffer> in_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    ~SnappyReadBuffer() override;
+    ~SnappyBasicReadBuffer() override;
 
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
