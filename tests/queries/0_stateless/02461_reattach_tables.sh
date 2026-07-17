@@ -62,6 +62,15 @@ check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reatt
 check_if_detached "EXISTS TABLE t_reattach_1" "t_reattach_1"
 check_if_detached "SHOW CREATE TABLE t_reattach_1" "t_reattach_1"
 
+# `BACKUP`/`RESTORE` cover only explicit `TABLE` elements. `BACKUP TABLE t` names the local table it reads,
+# so the reattach hook detaches it. `BACKUP DATABASE` (and `BACKUP`/`RESTORE ALL`, and the `RESTORE`
+# equivalents) name no explicit table and expand into per-table work only during execution, so they are
+# deliberately out of scope and must NOT detach any table. Use a unique per-run destination so parallel
+# runs and flaky-check reruns never collide on an existing backup path.
+BACKUP_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$RANDOM"
+check_if_detached "BACKUP TABLE t_reattach_1 TO Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
+check_if_not_detached "BACKUP DATABASE ${CLICKHOUSE_DATABASE} TO Disk('backups', '${BACKUP_SUFFIX}_db')" "t_reattach_1"
+
 # A `... TEMPORARY TABLE t` statement targets a session-local temporary table, not the persistent table of
 # the same (unqualified) name. With no temporary `t_reattach_1` in the session, these queries do not touch
 # the persistent `t_reattach_1`, so the reattach hook must NOT detach it. `EXISTS TEMPORARY TABLE` returns 0

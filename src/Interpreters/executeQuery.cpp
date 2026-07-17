@@ -1197,13 +1197,15 @@ struct CollectTablesData
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
 ///
 /// Scope — this defines the contract of `reattach_tables_before_query_execution`: tables are extracted
-/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, `BACKUP`/`RESTORE`, and the
-/// `ASTQueryWithTableAndOutput` family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`,
-/// `ALTER`, ...). Query classes that keep table references in other AST shapes — `SHOW COLUMNS`,
-/// `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE` — are deliberately not covered: `RENAME` and `EXCHANGE`
-/// manipulate the tables' catalog registration themselves, and broadening the randomized `DETACH`/`ATTACH`
-/// to pure-metadata queries would add churn to the test suite without exercising the data-integrity paths
-/// this testing hook targets.
+/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, `BACKUP TABLE`/`RESTORE TABLE`
+/// (only explicit `TABLE` elements — see the `ASTBackupQuery` branch), and the `ASTQueryWithTableAndOutput`
+/// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...). Query classes that
+/// keep table references in other AST shapes — `SHOW COLUMNS`, `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE`,
+/// and the whole-database/whole-server `BACKUP`/`RESTORE DATABASE` and `BACKUP`/`RESTORE ALL` forms — are
+/// deliberately not covered: `RENAME` and `EXCHANGE` manipulate the tables' catalog registration themselves,
+/// the database/server-wide backup forms name no explicit table and expand into per-table work only during
+/// execution, and broadening the randomized `DETACH`/`ATTACH` to those queries would add churn to the test
+/// suite without exercising the data-integrity paths this testing hook targets.
 ///
 /// Only the `WITH name AS (subquery)` form (`ASTWithElement`) shadows a table identifier in FROM. A scalar
 /// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
@@ -1324,7 +1326,17 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     }
     else if (const auto * backup = ast->as<ASTBackupQuery>())
     {
-        /// For `BACKUP`, `database_name`/`table_name` is the local table being read.
+        /// Only the explicit `TABLE` elements are covered. `DATABASE` and `ALL` elements name no explicit
+        /// table here (`table_name`/`new_table_name` are empty) — the backup/restore executors expand them
+        /// into per-table work only later during execution (`BackupEntriesCollector::gatherDatabasesMetadata`,
+        /// `RestorerFromBackup::findDatabasesAndTablesInBackup`). Enumerating a whole database or the whole
+        /// server here just to `DETACH`/`ATTACH` every table would add churn far beyond what this testing hook
+        /// aims to exercise, and for `RESTORE DATABASE`/`RESTORE ALL` the destination tables usually do not
+        /// exist yet. So the whole-database and whole-server forms are deliberately out of scope, matching the
+        /// documented contract of `reattach_tables_before_query_execution`; `addTableIfNotEmpty` skips them
+        /// naturally because their name is empty.
+        ///
+        /// For `BACKUP TABLE`, `database_name`/`table_name` is the local table being read.
         /// For `RESTORE TABLE old AS new`, `database_name`/`table_name` is the object name inside the backup,
         /// while the local table the query touches is the destination `new_database_name`/`new_table_name`.
         /// (When the restore creates a new table, the destination does not exist yet and `addTableIfNotEmpty`
