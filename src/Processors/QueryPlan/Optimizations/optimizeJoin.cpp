@@ -1029,8 +1029,30 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+/// Largest base-relation row count within a set of relations, ignoring relations
+/// whose row count is unknown. Used by the star-schema swap guard below.
+static std::optional<UInt64> getMaxBaseRelationRows(const BitSet & relations, const std::vector<RelationStats> & relation_stats)
+{
+    std::optional<UInt64> result;
+    for (size_t relation_id = 0; relation_id < relation_stats.size(); ++relation_id)
+    {
+        if (!relations.test(relation_id))
+            continue;
+
+        const auto & rows = relation_stats[relation_id].estimated_rows;
+        if (!rows)
+            continue;
+
+        if (!result || rows.value() > result.value())
+            result = rows;
+    }
+    return result;
+}
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
+    auto base_relation_stats = query_graph_builder.relation_stats;
+
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
@@ -1173,6 +1195,33 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 ? optimization_settings.join_swap_table.value()
                 : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
                     && lhs_estimation.value() < rhs_estimation.value();
+
+            /// Star-schema guard. When a composite subtree (a fact table already
+            /// joined with a dimension) is joined with another single dimension,
+            /// and column statistics are unavailable, the intermediate cardinality
+            /// is underestimated: NDV falls back to `estimated_rows`, which for the
+            /// fact table's join key is far too high, driving selectivity — and
+            /// thus the estimated composite size — down to roughly the dimension's
+            /// row count. The swap logic then sees the composite as smaller than
+            /// the next dimension and moves it (and the large fact table with it)
+            /// to the hash-join build side.
+            ///
+            /// Guard against this by not swapping when all of the following hold:
+            ///  - the left side is composite (multi-table) with no column stats,
+            ///  - the right side is a single table (a dimension),
+            ///  - the composite contains a base table larger than the right side.
+            /// This is deliberately narrow so it only fires when a statistics-less
+            /// composite is joined against a single smaller table. It only gates
+            /// the physical build/probe-side choice and never changes cardinality
+            /// estimates, so the enumerated join order is unaffected.
+            if (swap_on_sizes && !optimization_settings.join_swap_table.has_value()
+                && left_rels.count() > 1 && right_rels.count() == 1
+                && entry->left->column_stats.empty())
+            {
+                auto lhs_max_base_rows = getMaxBaseRelationRows(left_rels, base_relation_stats);
+                if (lhs_max_base_rows && rhs_estimation && lhs_max_base_rows.value() > rhs_estimation.value())
+                    swap_on_sizes = false;
+            }
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 

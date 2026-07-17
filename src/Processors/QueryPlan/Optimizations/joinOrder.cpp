@@ -342,8 +342,6 @@ private:
     std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
-    bool hasColumnStats(const BitSet & rels, const String & column_name) const;
-    std::optional<UInt64> getEstimatedRows(const BitSet & rels) const;
 
     /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
     /// They operate on `UInt32` relation masks and the data precomputed by `initDPsubScratch`,
@@ -511,30 +509,6 @@ size_t JoinOrderOptimizer::getColumnStats(const BitSet & rels, const String & co
     return relation_stat.estimated_rows.value_or(0);
 }
 
-bool JoinOrderOptimizer::hasColumnStats(const BitSet & rels, const String & column_name) const
-{
-    auto rel_id = rels.getSingleBit();
-    if (!rel_id.has_value())
-    {
-        if (auto it = dp_table.find(rels); it != dp_table.end())
-            return it->second->column_stats.contains(column_name);
-        return false;
-    }
-    return query_graph.relation_stats.at(*rel_id).column_stats.contains(column_name);
-}
-
-std::optional<UInt64> JoinOrderOptimizer::getEstimatedRows(const BitSet & rels) const
-{
-    auto rel_id = rels.getSingleBit();
-    if (!rel_id.has_value())
-    {
-        if (auto it = dp_table.find(rels); it != dp_table.end())
-            return it->second->estimated_rows;
-        return {};
-    }
-    return query_graph.relation_stats.at(*rel_id).estimated_rows;
-}
-
 double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
 {
     auto [it, inserted] = expression_selectivity.try_emplace(edge, 1.0);
@@ -547,28 +521,8 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
         return 1.0;
 
-    auto lhs_rels = lhs.getSourceRelations();
-    auto rhs_rels = rhs.getSourceRelations();
-    UInt64 lhs_ndv = getColumnStats(lhs_rels, lhs.getColumnName());
-    UInt64 rhs_ndv = getColumnStats(rhs_rels, rhs.getColumnName());
-
-    /// When column statistics are missing for both sides, NDV falls back to
-    /// estimated_rows. For a large table this produces an excessively high NDV,
-    /// causing severe join cardinality underestimation (e.g., star schema where
-    /// a 100K-row fact table has only 50 distinct key values). Cap each NDV at
-    /// the other side's row count: a join key can match at most as many distinct
-    /// values as the other table has rows.
-    if (!hasColumnStats(lhs_rels, lhs.getColumnName()) && !hasColumnStats(rhs_rels, rhs.getColumnName()))
-    {
-        auto lhs_rows = getEstimatedRows(lhs_rels);
-        auto rhs_rows = getEstimatedRows(rhs_rels);
-        if (lhs_rows && rhs_rows)
-        {
-            lhs_ndv = std::min(lhs_ndv, *rhs_rows);
-            rhs_ndv = std::min(rhs_ndv, *lhs_rows);
-        }
-    }
-
+    UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
+    UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
     UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
     if (max_ndv > 0)
         selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));

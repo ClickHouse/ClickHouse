@@ -1,20 +1,19 @@
 -- Regression test: join reorder must not place a large fact table on the build
 -- side when joining with small dimension tables. Without per-column NDV stats
--- the selectivity formula `1/max(NDV_l, NDV_r)` can underestimate the join
--- cardinality when `estimated_rows` is used as NDV proxy, causing the optimizer
--- to think the intermediate result is tiny and swap the wrong way.
+-- the selectivity formula `1/max(NDV_l, NDV_r)` underestimates the intermediate
+-- join cardinality: NDV falls back to `estimated_rows`, which is far too high
+-- for the fact table's join key, so `(fact JOIN dim_a)` is estimated as ~50 rows.
 --
--- The fix: when column statistics are missing for both sides of an equi-join,
--- cap each side's NDV at the other side's row count. A join key can match at
--- most as many distinct values as the other table has rows, so this prevents
--- the excessively high NDV (from the large fact table's estimated_rows) from
--- driving selectivity to near-zero.
+-- The fix: a narrow swap guard. When a statistics-less composite subtree is
+-- joined with a single smaller dimension table, and the composite contains a
+-- base table larger than that dimension, do not swap the composite to the hash
+-- join build side. This only gates the physical swap and does not change any
+-- cardinality estimate, so join order is unaffected.
 --
--- Without the fix, the intermediate result of `(fact JOIN dim_a)` is estimated
--- as ~50 rows, so the swap logic sees `50 < 100` (`dim_b`) and flips the join,
--- placing the fact-side on the build (right). With the fix, the cardinality is
--- estimated as ~100000, so the swap is not triggered and the fact table stays
--- on the probe (left) side.
+-- Without the fix, the swap logic sees the composite (~50) as smaller than
+-- `dim_b` (100) and flips the join, placing the fact-side on the build (right).
+-- With the fix the swap is suppressed and the fact table stays on the probe
+-- (left) side.
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_analyzer = 1;

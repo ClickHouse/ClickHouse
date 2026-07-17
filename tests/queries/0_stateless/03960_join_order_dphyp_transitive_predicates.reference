@@ -21,36 +21,36 @@ case 2: 4-table chain - dphyp plan
         Clauses: [(__table1.key) = (__table2.key)]
               ReadFromMergeTree (default.tp_dim_a)
               Type: INNER
-              Clauses: [(__table3.key) = (__table2.key)]
-                    ReadFromMergeTree (default.tp_dim_b)
+              Clauses: [(__table2.key) = (__table3.key)]
                     Type: INNER
                     Clauses: [(__table2.key) = (__table4.key)]
                           ReadFromMergeTree (default.tp_fact)
                           ReadFromMergeTree (default.tp_dim_c)
+                    ReadFromMergeTree (default.tp_dim_b)
 case 2: 4-table chain - dpsize plan (for comparison)
         Type: INNER
-        Clauses: [(__table3.key) = (__table2.key)]
-              ReadFromMergeTree (default.tp_dim_b)
+        Clauses: [(__table2.key) = (__table3.key)]
               Type: INNER
-              Clauses: [(__table1.key) = (__table2.key)]
-                    ReadFromMergeTree (default.tp_dim_a)
+              Clauses: [(__table2.key) = (__table1.key)]
                     Type: INNER
                     Clauses: [(__table2.key) = (__table4.key)]
                           ReadFromMergeTree (default.tp_fact)
                           ReadFromMergeTree (default.tp_dim_c)
+                    ReadFromMergeTree (default.tp_dim_a)
+              ReadFromMergeTree (default.tp_dim_b)
 case 2: 4-table chain - result check
 5000
 case 3: star - dphyp plan
         Type: INNER
-        Clauses: [(__table3.key) = (__table1.key)]
-              ReadFromMergeTree (default.tp_dim_b)
+        Clauses: [(__table1.key) = (__table3.key)]
               Type: INNER
-              Clauses: [(__table2.key) = (__table1.key)]
-                    ReadFromMergeTree (default.tp_dim_a)
+              Clauses: [(__table1.key) = (__table2.key)]
                     Type: INNER
                     Clauses: [(__table1.key) = (__table4.key)]
                           ReadFromMergeTree (default.tp_fact)
                           ReadFromMergeTree (default.tp_dim_c)
+                    ReadFromMergeTree (default.tp_dim_a)
+              ReadFromMergeTree (default.tp_dim_b)
 case 3: star - result check
 5000
 case 4: diamond - dphyp plan
