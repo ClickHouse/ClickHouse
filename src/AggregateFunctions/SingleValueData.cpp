@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
@@ -1384,8 +1385,12 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
             /// from CANNOT_READ_ALL_DATA to MEMORY_LIMIT_EXCEEDED. So accumulate the value in
             /// chunks, each sized exactly to the bytes already sitting in the read buffer, and
             /// copy them into the arena in a single allocation only after the whole value has
-            /// been read.
-            VectorWithMemoryTracking<String> chunks;
+            /// been read. The staged bytes use a throwing allocator (StringWithMemoryTracking,
+            /// backed by AllocatorWithMemoryTracking) so that a large actual value is refused with
+            /// MEMORY_LIMIT_EXCEEDED as it is accumulated, exactly like the old single-arena path -
+            /// a plain std::string would only be counted (via the non-throwing new/delete tracking),
+            /// not refused, and could stage past max_memory_usage before failing at EOF.
+            VectorWithMemoryTracking<StringWithMemoryTracking> chunks;
             UInt32 bytes_read = 0;
             while (bytes_read < bytes_to_read)
             {
