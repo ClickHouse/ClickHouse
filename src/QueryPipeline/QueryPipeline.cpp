@@ -256,6 +256,17 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             has_limit = true;
 
+            /// A result cap (the `limit`/`offset` settings applied above the query's own limiting
+            /// operations) owns the counter only when no other limiting operation exists below it;
+            /// otherwise that operation reports the row count, matching the queries where the settings
+            /// are folded into the query limit instead of being a separate step.
+            auto * downstream_limit = typeid_cast<LimitTransform *>(limit_being_counted);
+            if (downstream_limit && downstream_limit->isResultCap())
+            {
+                counted_inputs_by_limit.erase(limit_being_counted);
+                limit_being_counted = nullptr;
+            }
+
             /// A limit from the query changes the rows seen by an outer limit. Do not count through it.
             if (limit_being_counted)
                 continue;
