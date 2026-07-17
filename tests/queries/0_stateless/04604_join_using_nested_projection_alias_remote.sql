@@ -3,6 +3,9 @@
 
 SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
+-- R3/R5 rely on the `sum` rewrite that drops the aliased body from the projection;
+-- this setting is randomized in CI, so pin it to keep those cases deterministic.
+SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 
 CREATE TABLE events
 (
