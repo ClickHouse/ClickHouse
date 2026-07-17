@@ -61,6 +61,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo &) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
