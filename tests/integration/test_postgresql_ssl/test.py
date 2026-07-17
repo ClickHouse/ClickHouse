@@ -302,6 +302,13 @@ def test_materialized_postgresql_database_ssl(started_cluster):
         "MaterializedPostgreSQL to replicate a post-create insert over SSL",
     )
     assert node.query("SELECT count() FROM mpg_ssl.mat_table").strip() == "51"
+
+    # The SSL settings are part of the connection parameters, which are fixed at
+    # CREATE DATABASE time: the replication connection keeps using the original
+    # parameters, so changing them on an existing database must be rejected.
+    error = node.query_and_get_error("ALTER DATABASE mpg_ssl MODIFY SETTING materialized_postgresql_ssl_mode = 'require'")
+    assert "cannot be changed" in error
+
     node.query("DROP DATABASE mpg_ssl")
 
 

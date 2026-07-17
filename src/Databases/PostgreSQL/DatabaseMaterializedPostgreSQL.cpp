@@ -226,6 +226,13 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
                             "by type inference, and cannot be changed for an existing database: the already created "
                             "nested tables keep their fixed column types. Recreate the database to change it.", change.name);
         }
+        else if (change.name.starts_with("materialized_postgresql_ssl_"))
+        {
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                            "Setting `{}` is part of the PostgreSQL connection parameters, which are fixed when the "
+                            "database is created, and cannot be changed for an existing database: the replication "
+                            "connection keeps using the original parameters. Recreate the database to change it.", change.name);
+        }
         else if ((change.name != "materialized_postgresql_allow_automatic_update") && (change.name != "materialized_postgresql_max_block_size"))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");

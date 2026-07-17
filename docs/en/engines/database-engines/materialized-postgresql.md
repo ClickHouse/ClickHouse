@@ -249,6 +249,8 @@ Path to the client private key file (`libpq` `sslkey`) matching `materialized_po
 
 The certificate and key files must be located inside the directory configured by the server's [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path); relative paths are resolved against it.
 
+The TLS/SSL settings are part of the PostgreSQL connection parameters, which are fixed when the database is created: they must be specified at `CREATE DATABASE` time and cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (such a change is rejected, because the replication connection keeps using the original parameters); recreate the database to change them.
+
 Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
 
 ```sql
