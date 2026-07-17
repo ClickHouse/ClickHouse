@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/stripRedundantParentheses.h>
 
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
@@ -106,14 +107,18 @@ IndexDescription IndexDescription::getIndexFromAST(
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
+    stripRedundantParentheses(*result.definition_ast);
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
-    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    /// Use the normalized definition so that everything derived from the expression
+    /// (the expression list, column names) is canonical as well.
+    const auto * normalized_definition = result.definition_ast->as<ASTIndexDeclaration>();
+    checkExpressionDoesntContainSubqueries(*normalized_definition->getExpression());
+    result.initExpressionInfo(normalized_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
     {

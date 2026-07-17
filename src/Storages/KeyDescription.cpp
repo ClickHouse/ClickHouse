@@ -9,6 +9,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/stripRedundantParentheses.h>
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -160,9 +161,15 @@ KeyDescription KeyDescription::getKeyFromAST(
     const NamesAndTypesList & additional_columns)
 {
     KeyDescription result;
-    result.definition_ast = definition_ast;
+    if (definition_ast)
+    {
+        /// Clone: the key definition is normalized without affecting the AST of the query it
+        /// came from (e.g. the `CREATE` query, whose formatting must round-trip as written).
+        result.definition_ast = definition_ast->clone();
+        stripRedundantParentheses(*result.definition_ast);
+    }
     result.additional_columns = additional_columns;
-    auto key_expression_list = extractKeyExpressionList(definition_ast);
+    auto key_expression_list = extractKeyExpressionList(result.definition_ast);
     checkExpressionDoesntContainSubqueries(*key_expression_list);
 
     std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);

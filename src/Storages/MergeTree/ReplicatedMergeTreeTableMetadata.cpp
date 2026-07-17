@@ -5,6 +5,7 @@
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Storages/stripRedundantParentheses.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -33,24 +34,16 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
-/// syntactically meaningless in stored metadata. Strip them so the canonical form matches
-/// what `KeyDescription::parse` produces when reading metadata back from ZooKeeper.
-static void stripArtificialParens(IAST & ast)
-{
-    ast.setParenthesized(false);
-    if (auto * list = ast.as<ASTExpressionList>())
-        for (auto & child : list->children)
-            if (child)
-                child->setParenthesized(false);
-}
-
+/// User-written parentheses (e.g. `PRIMARY KEY (col)`) are syntactically meaningless in stored
+/// metadata. The descriptions are already normalized when the AST is read into them (see
+/// `stripRedundantParentheses`), strip here as well so the canonical form is guaranteed for any
+/// AST regardless of where it came from.
 static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
     auto cloned = ast->clone();
-    stripArtificialParens(*cloned);
+    stripRedundantParentheses(*cloned);
     return cloned->formatWithSecretsOneLine();
 }
 
@@ -60,7 +53,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    stripArtificialParens(*ast_normalized);
+    stripRedundantParentheses(*ast_normalized);
     return ast_normalized->formatWithSecretsOneLine();
 }
 

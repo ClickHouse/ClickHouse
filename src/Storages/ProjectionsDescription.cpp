@@ -36,6 +36,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/stripRedundantParentheses.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -257,6 +258,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
+    stripRedundantParentheses(*result.definition_ast);
     result.name = projection_definition->name;
 
     if (projection_definition->index)

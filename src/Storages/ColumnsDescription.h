@@ -120,6 +120,12 @@ struct ColumnDescription
 
     void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
+
+    /// Strips redundant parentheses from the expressions (default, TTL), so that the stored
+    /// column metadata is canonical: it is serialized and compared as formatted strings (e.g.
+    /// the `columns` node in ZooKeeper), and `DEFAULT (a + 1)` must not differ from
+    /// `DEFAULT a + 1`. See `stripRedundantParentheses`.
+    void normalizeRedundantParentheses();
 };
 
 
@@ -210,6 +216,8 @@ public:
         removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
+
+        columns.get<1>().modify(it, [](ColumnDescription & column) { column.normalizeRedundantParentheses(); });
 
         addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);

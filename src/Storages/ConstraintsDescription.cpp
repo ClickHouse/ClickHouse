@@ -1,4 +1,5 @@
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/stripRedundantParentheses.h>
 
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
@@ -303,8 +304,15 @@ std::vector<Analyzer::CNFAtomicFormula> ConstraintsDescription::QueryTreeData::g
 }
 
 ConstraintsDescription::ConstraintsDescription(const ASTs & constraints_)
-    : constraints(constraints_)
 {
+    /// Clone: the constraint definitions are normalized without affecting the ASTs of the query
+    /// they came from (e.g. the `CREATE` query, whose formatting must round-trip as written).
+    constraints.reserve(constraints_.size());
+    for (const auto & constraint : constraints_)
+    {
+        constraints.emplace_back(constraint->clone());
+        stripRedundantParentheses(*constraints.back());
+    }
     update();
 }
 

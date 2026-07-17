@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/stripRedundantParentheses.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/ColumnsDescription.h>
@@ -229,6 +230,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     else /// It's columns TTL without any additions, just copy it
         result.expression_ast = definition_ast->clone();
 
+    stripRedundantParentheses(*result.expression_ast);
     checkExpressionDoesntContainSubqueries(*result.expression_ast);
 
     auto ttl_ast = result.expression_ast->clone();
@@ -256,6 +258,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
                 result.where_expression_ast = where_expr_ast->clone();
+                stripRedundantParentheses(*result.where_expression_ast);
 
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
@@ -377,6 +380,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         return result;
 
     result.definition_ast = definition_ast->clone();
+    stripRedundantParentheses(*result.definition_ast);
 
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)

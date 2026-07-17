@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/stripRedundantParentheses.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -870,8 +871,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (!endsWith(create.storage->engine->name, "MergeTree"))
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
 
-                /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
-                auto query_to_string = [](const IAST * ast) { return ast ? ast->formatWithSecretsOneLine() : ""; };
+                /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key.
+                /// The keys of `create.storage` come straight from the parsed query and may carry redundant
+                /// parentheses (`PARTITION BY (a)`), while the keys of `as_storage_metadata` are normalized;
+                /// strip the parentheses from both sides to compare canonical forms.
+                auto query_to_string = [](const IAST * ast)
+                {
+                    if (!ast)
+                        return String{};
+                    auto cloned = ast->clone();
+                    stripRedundantParentheses(*cloned);
+                    return cloned->formatWithSecretsOneLine();
+                };
 
                 const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
                 const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());

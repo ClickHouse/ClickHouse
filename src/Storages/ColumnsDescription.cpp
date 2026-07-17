@@ -44,6 +44,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/stripRedundantParentheses.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
@@ -260,6 +261,22 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
+void ColumnDescription::normalizeRedundantParentheses()
+{
+    /// Clone: the ASTs may be shared with the query the column declaration came from, whose
+    /// formatting must round-trip as written.
+    if (default_desc.expression)
+    {
+        default_desc.expression = default_desc.expression->clone();
+        stripRedundantParentheses(*default_desc.expression);
+    }
+    if (ttl)
+    {
+        ttl = ttl->clone();
+        stripRedundantParentheses(*ttl);
+    }
+}
+
 ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
 {
     if (this != &other)
@@ -418,6 +435,8 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         FunctionNameNormalizer::visit(column.default_desc.expression.get());
     if (column.ttl)
         FunctionNameNormalizer::visit(column.ttl.get());
+
+    column.normalizeRedundantParentheses();
 
     auto insert_it = columns.cend();
 
