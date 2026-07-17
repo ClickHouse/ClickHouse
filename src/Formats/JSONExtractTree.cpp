@@ -46,6 +46,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/Serializations/SerializationDateTime.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -742,19 +743,29 @@ public:
         else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
         {
             /// An unquoted fractional number is a Unix timestamp truncated to whole seconds, like the row input
-            /// serializer, `CAST` and `toDateTime`. The parity with the row input path holds only up to `Float64`
-            /// precision: the DOM parser has already rounded the literal to the nearest `Float64`, so a value it
-            /// cannot represent exactly can cross the second boundary before the truncation (`1703363853.9999999`
-            /// reaches this branch as `1703363854.0` and gives the next second, while the row input path truncates
-            /// the original text to `1703363853`). With `read_datetime_number_as_raw_value` (i.e. the pre-26.7
-            /// behavior) a fractional `DateTime` number is rejected, as the row serializer's legacy path did.
+            /// serializer, `CAST` and `toDateTime`. Parse the shortest round-trip text of the double with the same
+            /// decimal reader and range check as the row input serializer (`tryReadDateTimeAsNumber`), so a number
+            /// that does not fit the reader's precision (e.g. `1e39`) is rejected rather than silently clamped to
+            /// the `DateTime` maximum, matching the row input path and the adjacent `DateTime64` DOM case. The
+            /// parity with the row input path holds only up to `Float64` precision: the DOM parser has already
+            /// rounded the literal to the nearest `Float64`, so a value it cannot represent exactly can cross the
+            /// second boundary before the truncation (`1703363853.9999999` reaches this branch as `1703363854.0`
+            /// and gives the next second, while the row input path truncates the original text to `1703363853`).
+            /// With `read_datetime_number_as_raw_value` (i.e. the pre-26.7 behavior) a fractional `DateTime` number
+            /// is rejected, as the row serializer's legacy path did.
             double number = element.getDouble();
             if (number < 0)
             {
                 error = fmt::format("cannot convert negative value {} to DateTime", number);
                 return false;
             }
-            value = static_cast<time_t>(std::min(number, static_cast<double>(0xFFFFFFFF)));
+            String str_value = jsonElementToString<JSONParser>(element, format_settings);
+            ReadBufferFromMemory buf(str_value);
+            if (!tryReadDateTimeAsNumber(value, buf) || !buf.eof())
+            {
+                error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
+                return false;
+            }
         }
         else
         {

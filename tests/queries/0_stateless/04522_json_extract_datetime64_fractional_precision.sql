@@ -53,3 +53,17 @@ SELECT JSONExtract('{"t":1703363853.9999999}', 't', 'DateTime');
 SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853.9999999}');
 SELECT JSONExtract('{"t":1703363853.9999999}', 't', 'DateTime64(3)');
 SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853.9999999}');
+
+-- A scientific-notation number that does not fit the decimal reader's precision (1e39 expands to 40
+-- digits, beyond the reader's 38-digit precision) is rejected on the DOM path, exactly as the row input
+-- serializer rejects it, rather than being silently clamped to the DateTime maximum. JSONExtract yields
+-- the default value, the typed JSON path reports a clean INCORRECT_DATA error, and the row input path
+-- fails to parse the number.
+SELECT JSONExtract('{"t":1e39}', 't', 'DateTime');
+SELECT CAST('{"t":1e39}', 'JSON(t DateTime)'); -- { serverError INCORRECT_DATA }
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1e39}'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- A large but in-precision number is clamped to the DateTime range on both the DOM and the row input
+-- path, so the two agree.
+SELECT JSONExtract('{"t":1e30}', 't', 'DateTime');
+SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1e30}');

@@ -161,6 +161,23 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
 
 }
 
+/// The number-parsing conversion for the seconds-based path, shared with the `JSONExtract` / typed-`JSON`
+/// DOM serializer (see `DateTimeNode` in `JSONExtractTree.cpp`). It is the non-raw branch of
+/// `tryReadAsIntText` above: the same `readDecimalText` reader and `timestampNumberToSeconds` range check,
+/// so the DOM path rejects a number that does not fit the reader's precision (e.g. `1e39`) instead of
+/// silently clamping it to the `DateTime` maximum, exactly as the row input serializer does.
+bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & istr)
+{
+    Decimal128 tmp;
+    UInt32 unread_scale = 0;
+    bool has_digits = false;
+    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false, &has_digits)
+        || !has_digits)
+        return false;
+    x = timestampNumberToSeconds(tmp.value, unread_scale);
+    return true;
+}
+
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
 {
