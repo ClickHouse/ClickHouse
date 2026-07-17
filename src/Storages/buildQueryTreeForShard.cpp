@@ -1,5 +1,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -7,6 +8,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Core/Block.h>
@@ -614,6 +616,127 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     return subquery_node;
 }
 
+/** Re-attach the name of every `JOIN USING` key that was resolved from a SELECT-list alias.
+  *
+  * `resolveQuery` erases expression aliases from the resolved tree, and `QueryNode::toAST` re-emits only
+  * top-level projection aliases (from projection names). A `JOIN USING` key taken from a *nested* alias
+  * (`analyzer_compatibility_join_using_top_level_identifier`, e.g. `uniqExact(lower(...) AS id)`) is therefore
+  * lost in the shipped SQL, so the shard sees `USING (id)` with nothing named `id` and fails with
+  * `UNKNOWN_IDENTIFIER`. This visitor runs only on the cloned shipping tree: for each such key it re-attaches the
+  * key's name to the matching projection subexpression, so the shipped SQL again reads `... AS id ... USING (id)`.
+  * A plain-column USING key carries no marker expression and is left untouched.
+  */
+class RestoreJoinUsingProjectionAliasVisitor : public InDepthQueryTreeVisitor<RestoreJoinUsingProjectionAliasVisitor>
+{
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * query_node = node->as<QueryNode>();
+        if (!query_node)
+            return;
+
+        /// Only this query's own join tree; nested subquery/union table expressions are visited as their own
+        /// `QueryNode`s and repaired against their own projection.
+        walkJoinTree(query_node->getJoinTree(), *query_node);
+    }
+
+private:
+    static void walkJoinTree(const QueryTreeNodePtr & node, QueryNode & query_node)
+    {
+        if (!node)
+            return;
+
+        if (auto * join_node = node->as<JoinNode>())
+        {
+            if (join_node->isUsingJoinExpression())
+                restoreAliasesForJoin(*join_node, query_node);
+
+            walkJoinTree(join_node->getLeftTableExpression(), query_node);
+            walkJoinTree(join_node->getRightTableExpression(), query_node);
+        }
+        else if (auto * cross_join_node = node->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                walkJoinTree(table_expression, query_node);
+        }
+        else if (auto * array_join_node = node->as<ArrayJoinNode>())
+        {
+            walkJoinTree(array_join_node->getTableExpression(), query_node);
+        }
+        /// TABLE/TABLE_FUNCTION/QUERY/UNION table expressions terminate the walk: subqueries are their own scopes.
+    }
+
+    static void restoreAliasesForJoin(const JoinNode & join_node, QueryNode & query_node)
+    {
+        const auto & using_list = join_node.getJoinExpression()->as<ListNode &>();
+        for (const auto & using_node : using_list.getNodes())
+        {
+            /// USING key `N`: a `ColumnNode` whose expression is a `ListNode{left_element, right_element}`
+            /// (see `QueryAnalyzer::resolveJoin`).
+            const auto * using_column = using_node->as<ColumnNode>();
+            if (!using_column || !using_column->hasExpression())
+                continue;
+
+            const auto & using_elements = using_column->getExpression()->as<ListNode &>().getNodes();
+            if (using_elements.empty())
+                continue;
+
+            /// Marker: `left_element` carries the resolved alias body `E`. A plain-column USING key has no such
+            /// expression, and this also (harmlessly) fires for table `ALIAS` columns used in USING — attaching
+            /// `AS N` to an equal projection subexpression keeps replica semantics identical either way.
+            const auto * left_element = using_elements.front()->as<ColumnNode>();
+            if (!left_element || !left_element->hasExpression())
+                continue;
+
+            const auto & name = using_column->getColumnName();
+            const auto & expression = left_element->getExpression();
+
+            bool alias_present = false;
+            QueryTreeNodePtr match;
+            for (const auto & projection_node : query_node.getProjection().getNodes())
+                scanProjection(projection_node, name, *expression, alias_present, match);
+
+            /// Bail out if the name already exists in the projection (it re-resolves, or a second `N` would only
+            /// make things worse); if nothing matches, leave the tree as is (today's behavior). Never overwrite an
+            /// existing alias.
+            if (alias_present || !match || match->hasAlias())
+                continue;
+
+            /// Use the USING column's name `N`, not `left_element`'s own (possibly `_`-prefixed) name.
+            match->setAlias(name);
+        }
+    }
+
+    /// Search a projection subtree for the name and for the first node equal to `expression`. Skip rules mirror
+    /// `QueryExpressionsAliasVisitor`: examine each node but do not descend into `LambdaNode` or `QueryNode`/
+    /// `UnionNode` subtrees.
+    static void scanProjection(
+        const QueryTreeNodePtr & node,
+        const String & name,
+        const IQueryTreeNode & expression,
+        bool & alias_present,
+        QueryTreeNodePtr & match)
+    {
+        if (!node)
+            return;
+
+        if (node->hasAlias() && node->getAlias() == name)
+            alias_present = true;
+
+        if (!match && node->isEqual(expression, {.compare_aliases = false, .ignore_cte = false}))
+            match = node;
+
+        auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::LAMBDA
+            || node_type == QueryTreeNodeType::QUERY
+            || node_type == QueryTreeNodeType::UNION)
+            return;
+
+        for (const auto & child : node->getChildren())
+            scanProjection(child, name, expression, alias_present, match);
+    }
+};
+
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
@@ -733,6 +856,11 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
+
+    /// Re-attach names lost when a `JOIN USING` key was resolved from a nested SELECT-list alias, so the
+    /// shipped SQL still resolves `USING (N)` on the shard. See `RestoreJoinUsingProjectionAliasVisitor`.
+    RestoreJoinUsingProjectionAliasVisitor restore_join_using_projection_alias_visitor;
+    restore_join_using_projection_alias_visitor.visit(query_tree_to_modify);
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings
