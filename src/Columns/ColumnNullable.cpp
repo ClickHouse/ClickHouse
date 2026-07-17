@@ -1064,16 +1064,36 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+namespace
+{
+    /// Encode one Nullable row: a leading NULL flag plus the nested encoding for
+    /// non-NULL values. `\x00` (non-NULL) sorts before `\x01` (NULL), so NULLs
+    /// compare greater, matching compareAt with null_direction_hint = 1.
+    /// Assumes the nested type has already been validated by the caller.
+    void serializeNullableRow(const IColumn & nested_column, const NullMap & null_map_data, size_t n, String & out)
+    {
+        if (null_map_data[n])
+        {
+            out.push_back('\x01');
+            return;
+        }
+        out.push_back('\x00');
+        nested_column.serializeAsComparable(n, out);
+    }
+}
+
 void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 {
     const auto & null_map_data = getNullMapData();
+    /// A NULL row would otherwise skip the nested column entirely, silently accepting
+    /// unsupported nested types (e.g. LowCardinality, Array). Probe the nested column
+    /// on NULL rows so they reject the same types a non-NULL row would.
     if (null_map_data[n])
     {
-        out.push_back('\x01');
-        return;
+        String probe;
+        nested_column->serializeAsComparable(0, probe);
     }
-    out.push_back('\x00');
-    nested_column->serializeAsComparable(n, out);
+    serializeNullableRow(*nested_column, null_map_data, n, out);
 }
 
 void ColumnNullable::batchSerializeAsComparable(
@@ -1084,19 +1104,16 @@ void ColumnNullable::batchSerializeAsComparable(
     if (num_rows == 0)
         return;
 
-    /// Eagerly validate that the nested type supports comparable serialization.
-    /// Without this, an all-NULL block would skip nested_column->serializeAsComparable
-    /// entirely, silently accepting unsupported nested types (e.g. LowCardinality, Array).
-    /// rejects unsupported key types.
-    {
-        String probe;
-        nested_column->serializeAsComparable(0, probe);
-    }
+    /// Validate the nested type once here rather than per row, so an all-NULL block
+    /// still rejects unsupported nested types without repeating the probe.
+    String probe;
+    nested_column->serializeAsComparable(0, probe);
 
+    const auto & null_map_data = getNullMapData();
     for (size_t r = 0; r < num_rows; ++r)
     {
         const size_t src = permutation ? (*permutation)[r] : r;
-        serializeAsComparable(src, out[r]);
+        serializeNullableRow(*nested_column, null_map_data, src, out[r]);
     }
 }
 

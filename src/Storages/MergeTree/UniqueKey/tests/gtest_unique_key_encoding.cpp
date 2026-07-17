@@ -1126,11 +1126,11 @@ TEST(UniqueKeyEncoding, LowCardinalityThrowsNotImplemented)
 }
 
 /// ---------------------------------------------------------------------------
-/// Nullable wrapping unsupported types with all-NULL rows. Before the eager
-/// probe in ColumnNullable::appendUniqueKeyEncodedValue, an all-NULL block
-/// would skip the nested column's serializeAsComparable entirely, silently
-/// accepting unsupported nested types. These regressions pin that the probe
-/// catches them.
+/// Nullable wrapping unsupported types with all-NULL rows. Without eager
+/// validation in ColumnNullable::serializeAsComparable, a NULL row would skip
+/// the nested column's serializeAsComparable entirely, silently accepting
+/// unsupported nested types. These regressions pin that the validation catches
+/// them via the batch/encodeBlock path.
 /// ---------------------------------------------------------------------------
 TEST(UniqueKeyEncoding, NullableLowCardinalityAllNullThrowsNotImplemented)
 {
@@ -1158,4 +1158,34 @@ TEST(UniqueKeyEncoding, NullableArrayAllNullThrowsNotImplemented)
     Columns cols;
     cols.push_back(std::move(col));
     expectEncodeRowThrowsNotImplemented(cols, "Nullable(Array(UInt64)) all-NULL");
+}
+
+/// ---------------------------------------------------------------------------
+/// Direct single-row serializeAsComparable on a NULL row of an unsupported
+/// nullable column. The NULL branch must still validate the nested type, so an
+/// unsupported nullable schema is rejected on every row, not only once a
+/// non-NULL value is hit. One nested type suffices: LowCardinality and Array
+/// go through the same NULL-branch probe.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, NullableUnsupportedNullRowDirectSerializeThrowsNotImplemented)
+{
+    auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto nested = type_lc->createColumn();
+    nested->insertDefault();
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(1)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+
+    try
+    {
+        String out;
+        col->serializeAsComparable(0, out);
+        FAIL() << "serializeAsComparable on NULL row of Nullable(LowCardinality(String)) did not throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED)
+            << "should throw NOT_IMPLEMENTED, got " << e.code() << ": " << e.message();
+    }
 }
