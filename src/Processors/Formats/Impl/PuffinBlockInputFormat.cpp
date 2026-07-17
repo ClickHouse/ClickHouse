@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -47,9 +48,21 @@ constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
+/// Cap Array(UInt64) materialization vs on-disk deletion-vector blob size (same threat class as footer LZ4).
+constexpr size_t PUFFIN_DV_MAX_EXPAND_RATIO = 255;
+constexpr UInt64 PUFFIN_DV_MAX_POSITIONS = 100'000'000;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
+
+UInt64 maxPositionsForDeletionVectorBlob(size_t blob_length)
+{
+    size_t max_bytes = 0;
+    if (common::mulOverflow(blob_length, PUFFIN_DV_MAX_EXPAND_RATIO, max_bytes))
+        return PUFFIN_DV_MAX_POSITIONS;
+
+    return std::min<UInt64>(max_bytes / sizeof(UInt64), PUFFIN_DV_MAX_POSITIONS);
+}
 
 UInt32 readBigEndianUInt32(const UInt8 * data)
 {
@@ -476,10 +489,18 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
     }
 }
 
-std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality)
+std::vector<UInt64> deserializeRoaringPositionBitmap(
+    std::string_view bytes, UInt64 expected_cardinality, UInt64 max_positions)
 {
     if (bytes.size() < sizeof(Int64))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
+
+    if (expected_cardinality > max_positions)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {}",
+            expected_cardinality,
+            max_positions);
 
     const char * ptr = bytes.data();
     size_t remaining = bytes.size();
@@ -531,6 +552,13 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, UIn
                 "Deletion vector cardinality {} exceeds declared cardinality {}",
                 new_running_cardinality,
                 expected_cardinality);
+
+        if (new_running_cardinality > max_positions)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Deletion vector cardinality {} exceeds materialization limit {}",
+                new_running_cardinality,
+                max_positions);
 
         running_cardinality = new_running_cardinality;
 
@@ -591,12 +619,21 @@ std::string_view extractDeletionVectorPayload(std::string_view blob)
 
 std::vector<UInt64> deserializeDeletionVectorV1(ReadBuffer & buf, size_t size, UInt64 expected_cardinality)
 {
+    const UInt64 max_positions = maxPositionsForDeletionVectorBlob(size);
+    if (expected_cardinality > max_positions)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {} for blob length {}",
+            expected_cardinality,
+            max_positions,
+            size);
+
     String blob_data(size, '\0');
     buf.readStrict(blob_data.data(), size);
 
     const std::string_view blob_view(blob_data);
     const std::string_view vector_bytes = extractDeletionVectorPayload(blob_view);
-    return deserializeRoaringPositionBitmap(vector_bytes, expected_cardinality);
+    return deserializeRoaringPositionBitmap(vector_bytes, expected_cardinality, max_positions);
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -773,6 +810,16 @@ Chunk PuffinInputFormat::read()
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
+        const UInt64 max_positions = maxPositionsForDeletionVectorBlob(static_cast<size_t>(blob.length));
+        if (expected_cardinality > max_positions)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin blob {}: deletion-vector-v1 cardinality {} exceeds materialization limit {} for blob length {}",
+                current_blob_index,
+                expected_cardinality,
+                max_positions,
+                blob.length);
+
         auto blob_buf = readBlobBytes(blob, *in, footer.data);
         auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length), expected_cardinality);
 
@@ -904,6 +951,8 @@ If a puffin file contains multiple `deletion-vector-v1` blobs, the format output
 Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
+
+Deletion vectors whose declared `cardinality` would expand beyond a bounded multiple of the on-disk blob size (or an absolute position ceiling) are rejected.
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 

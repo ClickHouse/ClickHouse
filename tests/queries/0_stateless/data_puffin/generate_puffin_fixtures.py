@@ -412,6 +412,22 @@ def generate_cardinality_mismatch_large_bitmap() -> None:
     )
 
 
+def generate_dense_cardinality_expansion_bomb() -> None:
+    """RLE-dense roaring: tiny blob, huge cardinality — must be rejected before materialization."""
+    bitmap = pyroaring.BitMap()
+    bitmap.add_range(0, 100_000)
+    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
+    blob = wrap_deletion_vector_blob(vector)
+    properties = {
+        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+        "cardinality": str(len(bitmap)),
+    }
+    write_fixture(
+        "dense_cardinality_expansion_bomb.puffin",
+        build_puffin_file(blob, footer_json_for_blob(blob, properties)),
+    )
+
+
 def generate_invalid_cardinality_strings() -> None:
     """cardinality must parse as UInt64; invalid strings must fail with BAD_ARGUMENTS."""
     bitmap = pyroaring.BitMap([2, 5])
@@ -602,6 +618,7 @@ def main() -> None:
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()
+    generate_dense_cardinality_expansion_bomb()
     generate_invalid_cardinality_strings()
     generate_invalid_dv_snapshot_sequence()
     generate_sparse_large_key()

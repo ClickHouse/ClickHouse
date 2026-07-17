@@ -13,6 +13,9 @@ BAD_ARGUMENTS
 Invalid deletion vector bitmap key
 --- cardinality_mismatch_large_bitmap.puffin ---
 exceeds declared cardinality
+--- dense_cardinality_expansion_bomb.puffin ---
+exceeds materialization limit
+BAD_ARGUMENTS
 --- invalid_cardinality_non_numeric.puffin ---
 property 'cardinality' must be an unsigned integer
 --- invalid_cardinality_negative.puffin ---

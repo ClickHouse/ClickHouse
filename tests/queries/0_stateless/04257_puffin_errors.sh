@@ -37,6 +37,7 @@ done
 expect_puffin "$DATA/invalid_roaring_bitmap.puffin" 'Failed to deserialize deletion vector roaring bitmap' 'BAD_ARGUMENTS'
 expect_puffin "$DATA/invalid_bitmap_key.puffin" 'Invalid deletion vector bitmap key'
 expect_puffin "$DATA/cardinality_mismatch_large_bitmap.puffin" 'exceeds declared cardinality'
+expect_puffin "$DATA/dense_cardinality_expansion_bomb.puffin" 'exceeds materialization limit' 'BAD_ARGUMENTS'
 
 for f in invalid_cardinality_non_numeric invalid_cardinality_negative
 do

@@ -17,6 +17,8 @@ Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
+Deletion vectors whose declared `cardinality` would expand beyond a bounded multiple of the on-disk blob size (or an absolute position ceiling) are rejected.
+
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 
 ## Example usage {#example-usage}
