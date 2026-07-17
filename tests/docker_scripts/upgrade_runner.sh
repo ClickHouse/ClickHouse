@@ -357,6 +357,13 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
 #       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
 #       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
+# `Unknown setting 'allow_experimental_text_index_positions'` appears because #109900 renamed the experimental
+#       text-index MergeTree setting `allow_experimental_text_index_positions` to
+#       `allow_experimental_text_index_phrase_search` (and the text-index argument `positions` to
+#       `support_phrase_search`) without a compatibility alias. Both were experimental (subject to change at any
+#       time, no production usage expected), so the feature owner declined an engine-side alias. Tables written by
+#       an older server that reference the removed setting fail on attach after the upgrade. Narrowed to the exact
+#       legacy setting name so genuinely unknown settings are not masked.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
@@ -515,6 +522,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
            -e "Unknown tokenizer: 'unicode_word'" \
+           -e "Unknown setting 'allow_experimental_text_index_positions'" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
