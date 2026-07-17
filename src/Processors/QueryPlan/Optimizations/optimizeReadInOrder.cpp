@@ -1837,8 +1837,18 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto * possible_read_from_merge_tree_node = sorting_node->children.front();
 
-    if (typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`) or a row-changing action (e.g. `arrayJoin`) in the
+    /// expression below the window (the old-analyzer `before_window` expression) must observe every source block, so
+    /// the outer LIMIT must not be pushed into the storage read - that would stop it early and feed the stateful
+    /// function a truncated stream (returning e.g. a default `neighbor` value instead of the next row). This mirrors
+    /// the guard in `buildSortingDAG` / `buildInputOrderInfo` for the main read-in-order path.
+    bool expression_below_forbids_limit_pushdown = false;
+    if (auto * expression_step = typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
     {
+        const auto & actions = expression_step->getExpression();
+        if (actions.hasArrayJoin() || actions.hasStatefulFunctions())
+            expression_below_forbids_limit_pushdown = true;
+
         if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
 
@@ -1889,7 +1899,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
             query_info.syntax_analyzer_result);
 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy() || expression_below_forbids_limit_pushdown)
+        ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
 
     auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
 
