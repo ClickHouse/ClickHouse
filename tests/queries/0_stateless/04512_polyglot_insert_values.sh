@@ -30,13 +30,15 @@ $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO b VALUES (true), (false)"
 echo "--- boolean transpile (expect: 1 2) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 
-# system.query_log stores the query as the user submitted it (for `query`/`normalized_query_hash`),
-# not the ClickHouse SQL produced by the transpiler.
+# The inline INSERT data must never reach system.query_log/processlist: the "INSERT logs omit
+# inserted data" contract applies to the polyglot dialect too. The logged query is the INSERT
+# header (target and, if any, column list) without the row values. 123 is a sentinel that only
+# appears in the data section, so it must be absent from the logged query.
 query_id="${CLICKHOUSE_DATABASE}_04512_log"
-$CLICKHOUSE_CLIENT $POLY --query_id="$query_id" -q "INSERT INTO b VALUES (true)"
+$CLICKHOUSE_CLIENT $POLY --query_id="$query_id" -q "INSERT INTO b VALUES (123)"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-echo "--- query_log keeps the original, untranspiled query text (expect: INSERT INTO b VALUES (true)) ---"
-$CLICKHOUSE_CLIENT -q "SELECT query FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()"
+echo "--- query_log omits the inline INSERT data (expect: 1) ---"
+$CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%123%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()"
 
 # Multi-statement input is still rejected in polyglot dialect.
 $CLICKHOUSE_CLIENT $POLY -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 "SYNTAX_ERROR"

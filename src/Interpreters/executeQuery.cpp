@@ -1436,16 +1436,38 @@ static BlockIO executeQueryImpl(
 #endif
         }
 
+        const char * query_begin = begin;
         const char * query_end = end;
 
         if (out_ast)
         {
-            /// `insert_query->data` may point into a transpiled buffer owned by the query
-            /// context (e.g. for the polyglot dialect) rather than into `[begin, end)`; only
-            /// use it to cut the logged query short when it actually falls within that range.
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>();
-                insert_query && insert_query->data && insert_query->data >= begin && insert_query->data <= end)
-                query_end = insert_query->data;
+            /// Cut the inline INSERT data out of the query text used for logging/processlist,
+            /// so that inserted row values are never written to `system.query_log` and friends.
+            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            {
+                const String & transpiled = context->getTranspiledQuery();
+                if (transpiled.empty())
+                {
+                    /// The usual case: `data` points into `[begin, end)` (the query buffer).
+                    query_end = insert_query->data;
+                }
+                else
+                {
+                    /// Polyglot dialect: `[begin, end)` is the original foreign-dialect query, but
+                    /// the parsed AST (and thus `data`) points into the transpiled buffer owned by
+                    /// the context. The inline-data boundary cannot be mapped back onto the original
+                    /// text (transpilation rewrites the query), so log the transpiled header up to
+                    /// the data instead — it carries the INSERT target and column list but no row
+                    /// values, and reflects what was actually executed.
+                    const char * transpiled_begin = transpiled.data();
+                    const char * transpiled_end = transpiled.data() + transpiled.size();
+                    if (insert_query->data >= transpiled_begin && insert_query->data <= transpiled_end)
+                    {
+                        query_begin = transpiled_begin;
+                        query_end = insert_query->data;
+                    }
+                }
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -1461,12 +1483,12 @@ static BlockIO executeQueryImpl(
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();
             else
-                query.assign(begin, query_end);
+                query.assign(query_begin, query_end);
         }
         else
         {
             /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-            query.assign(begin, query_end);
+            query.assign(query_begin, query_end);
         }
 
         /// Wipe any sensitive information (e.g. passwords) from the query.
