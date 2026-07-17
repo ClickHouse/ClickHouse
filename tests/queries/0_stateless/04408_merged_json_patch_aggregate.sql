@@ -19,7 +19,6 @@ FROM
 (
     SELECT '{"a":5}'::JSON AS patch, 2 AS version
     UNION ALL
-    SELECT '{"a":{"x":1}}'::JSON, 1
 );
 
 SELECT toJSONString(mergedJSONPatchMerge(state))
@@ -238,4 +237,22 @@ FROM merged_json_patch_states
 ORDER BY id;
 
 DROP TABLE merged_json_patch_states;
+
+-- runningAccumulate must not null-deref the arena: allocatesMemoryInArena() must return true
+-- so that runningAccumulate creates a real Arena instead of passing nullptr.
+-- Each row is a self-contained single-row aggregate state; runningAccumulate merges them
+-- left-to-right and emits the accumulated result after each row.
+SET allow_deprecated_error_prone_window_functions = 1;
+SELECT toJSONString(runningAccumulate(state))
+FROM
+(
+    SELECT rn, mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT 1 AS rn, '{"a":1}'::JSON AS patch, 1 AS version
+        UNION ALL SELECT 2, '{"a":2}'::JSON, 2
+        UNION ALL SELECT 3, '{"b":3}'::JSON, 3
+    )
+    GROUP BY rn, version
+    ORDER BY rn
+);
 

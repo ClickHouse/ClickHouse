@@ -620,7 +620,11 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return false;
+        /// The data helpers (add / merge / deserialize) accept Arena & by reference.
+        /// Returning false would let callers such as runningAccumulate pass nullptr,
+        /// which would form a reference to a null pointer (UB) even though the arena
+        /// is never actually allocated from.
+        return true;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
