@@ -236,6 +236,20 @@ void checkColumnMatchesSchema(const NameAndTypePair & column, const BigQueryFiel
             column.name, column.type->getName(), field->data_type->getName());
 }
 
+/// A column that maps to a BigQuery RANGE is read-only: `tabledata.insertAll` expects a `RANGE<T>`
+/// value as a `{start, end}` object, but the schema maps RANGE to an opaque String and discards the
+/// element subtype, so the request shape BigQuery expects cannot be reconstructed. Reject such
+/// columns on writes (recursively, so a RANGE nested inside a RECORD is caught too).
+void checkFieldIsWritable(const BigQueryField & field)
+{
+    if (field.type == BigQueryField::Type::Range)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Writing to a BigQuery RANGE column ('{}') is not supported; RANGE columns are read-only", field.name);
+    for (const auto & child : field.children)
+        checkFieldIsWritable(child);
+}
+
 /// When the column list is inferred (no explicit `CREATE TABLE` structure), the types never
 /// pass through the SQL-parser gate that `CREATE TABLE (col Nullable(Tuple(...)))` would go
 /// through, so it must be checked explicitly here - otherwise, e.g., a `NULLABLE RECORD` field
@@ -392,7 +406,9 @@ SinkToStoragePtr StorageBigQuery::write(
     for (const auto & column : sample_block)
     {
         checkColumnMatchesSchema(NameAndTypePair{column.name, column.type}, all_fields);
-        sink_fields.push_back(*findBigQueryField(all_fields, column.name));
+        const auto & field = *findBigQueryField(all_fields, column.name);
+        checkFieldIsWritable(field);
+        sink_fields.push_back(field);
     }
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);

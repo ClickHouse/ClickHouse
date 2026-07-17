@@ -401,6 +401,50 @@ def test_insert_partial_commit_dedup():
     )
 
 
+def test_insert_large_integer():
+    # INT64 values are sent to insertAll as decimal strings: BigQuery parses JSON numbers as
+    # IEEE-754 doubles, so a value outside [-2^53 + 1, 2^53 - 1] sent as a number would be
+    # corrupted. Assert the wire value is a JSON string (not a number), including a nested RECORD
+    # field that reuses the same Integer serialization, and that large values round-trip exactly.
+    mock_reset()
+    big = 9223372036854775807  # 2^63 - 1, far above 2^53 - 1
+    small = -9223372036854775807  # -(2^63 - 1)
+    node.query(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name, meta) VALUES "
+        f"({big}, 'a', tuple({big})), ({small}, 'b', tuple({small}))"
+    )
+
+    raw = [r for req in mock_stats()["insert_requests"] for r in req["raw_rows"]]
+    assert len(raw) == 2
+    for r in raw:
+        assert isinstance(r["id"], str), r
+        assert isinstance(r["meta"]["a"], str), r
+    assert {r["id"] for r in raw} == {str(big), str(small)}
+
+    assert (
+        node.query(f"SELECT id, meta FROM {bq('writable')} ORDER BY id FORMAT TSV")
+        == f"{small}\t({small})\n{big}\t({big})\n"
+    )
+
+
+def test_range_read_and_write():
+    # RANGE is exposed as a read-only String. Reading returns the formatted range text; an INSERT
+    # into a RANGE column is rejected, because insertAll needs a structured {start, end} payload
+    # that cannot be reconstructed from the String mapping.
+    mock_reset()
+    assert (
+        node.query(f"SELECT i, r FROM {bq('test_range')} ORDER BY i FORMAT TSV")
+        == "1\t[2020-01-01, 2020-12-31)\n2\t[2021-01-01, UNBOUNDED)\n"
+    )
+
+    error = node.query_and_get_error(
+        f"INSERT INTO FUNCTION {bq('test_range')} (i, r) VALUES (3, '[2022-01-01, 2022-12-31)')"
+    )
+    assert "RANGE" in error and "not supported" in error
+    # The write is rejected before any row is streamed to insertAll.
+    assert mock_stats()["insert_requests"] == []
+
+
 def test_service_account_auth():
     key = service_account_key()
     assert (

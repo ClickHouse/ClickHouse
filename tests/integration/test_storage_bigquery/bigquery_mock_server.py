@@ -185,6 +185,17 @@ ARR_NULLS_ROWS = [
     row("1", [v("1"), v(None), v("2")], [v("a"), v(None)]),
 ]
 
+# A RANGE column is exposed as a read-only String; tabledata.list serves it as the formatted range text.
+RANGE_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("r", "RANGE"),
+]
+
+RANGE_ROWS = [
+    row("1", "[2020-01-01, 2020-12-31)"),
+    row("2", "[2021-01-01, UNBOUNDED)"),
+]
+
 TABLES = {}
 
 
@@ -212,6 +223,11 @@ def reset_tables():
             "type": "TABLE",
             "schema": ARR_NULLS_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in ARR_NULLS_ROWS],
+        },
+        "test_range": {
+            "type": "TABLE",
+            "schema": RANGE_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in RANGE_ROWS],
         },
     }
 
@@ -502,6 +518,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "path": parsed.path,
                     "rows": len(rows),
                     "insert_ids": [entry.get("insertId") for entry in rows],
+                    # The raw "json" bodies as received on the wire, so tests can assert the JSON
+                    # type of a value (e.g. that an INT64 is sent as a string, not a number).
+                    "raw_rows": [entry.get("json", {}) for entry in rows],
                 }
             )
 

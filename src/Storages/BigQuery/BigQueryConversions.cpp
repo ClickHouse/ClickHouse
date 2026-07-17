@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -240,9 +241,18 @@ Poco::Dynamic::Var leafJSONValue(const BigQueryField & field, const DataTypePtr 
         case BigQueryField::Type::Geography:
         case BigQueryField::Type::JSON:
         case BigQueryField::Type::Interval:
-        case BigQueryField::Type::Range:
         {
             return Poco::Dynamic::Var(String(assert_cast<const ColumnString &>(column).getDataAt(row)));
+        }
+        case BigQueryField::Type::Range:
+        {
+            /// RANGE columns are read-only: `tabledata.insertAll` expects a structured
+            /// `{start, end}` object, which cannot be reconstructed from the opaque String
+            /// mapping. Writes are rejected earlier in `StorageBigQuery::write`; this is a
+            /// defensive guard in case a value ever reaches this point.
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Writing to a BigQuery RANGE column ('{}') is not supported; RANGE columns are read-only", field.name);
         }
         case BigQueryField::Type::Bytes:
         {
@@ -250,7 +260,10 @@ Poco::Dynamic::Var leafJSONValue(const BigQueryField & field, const DataTypePtr 
         }
         case BigQueryField::Type::Integer:
         {
-            return Poco::Dynamic::Var(assert_cast<const ColumnInt64 &>(column).getElement(row));
+            /// `tabledata.insertAll` parses JSON numbers as IEEE-754 doubles, which lose precision for
+            /// INT64 values outside [-2^53 + 1, 2^53 - 1]. Serialize the value as decimal text (BigQuery
+            /// accepts INT64 as a string) so that a large `Int64` is stored exactly rather than corrupted.
+            return Poco::Dynamic::Var(std::to_string(assert_cast<const ColumnInt64 &>(column).getElement(row)));
         }
         case BigQueryField::Type::Float:
         {
