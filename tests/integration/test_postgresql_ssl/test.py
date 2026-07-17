@@ -381,6 +381,23 @@ def test_certificate_path_outside_user_files_is_rejected(started_cluster):
     )
     assert "PATH_ACCESS_DENIED" in error
 
+    # ... including the standalone MaterializedPostgreSQL table engine, which merges
+    # the same settings on its own registration path (the validation fires at CREATE
+    # time, before any connection is attempted)...
+    node.query("DROP TABLE IF EXISTS mpg_tbl_bad_path SYNC")
+    error = node.query_and_get_error(
+        f"""
+        CREATE TABLE mpg_tbl_bad_path (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'test_table', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{outside_path}'
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "PATH_ACCESS_DENIED" in error
+
     # ... and dictionaries created through DDL. Depending on `dictionaries_lazy_load`
     # the source is instantiated either at CREATE or on first use, so accept the
     # error from either step.
