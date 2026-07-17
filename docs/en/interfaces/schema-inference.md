@@ -1822,8 +1822,10 @@ In Parquet format ClickHouse reads its schema from the data and converts it to C
 | `FLOAT`                      | [Float32](../sql-reference/data-types/float.md)         |
 | `DOUBLE`                     | [Float64](../sql-reference/data-types/float.md)         |
 | `DATE`                       | [Date32](../sql-reference/data-types/date32.md)         |
-| `TIME (ms)`                  | [DateTime](../sql-reference/data-types/datetime.md)     |
-| `TIMESTAMP`, `TIME (us, ns)` | [DateTime64](../sql-reference/data-types/datetime64.md) |
+| `TIME (ms)`                  | [Time64(3)](../sql-reference/data-types/time64.md)      |
+| `TIME (us)`                  | [Time64(6)](../sql-reference/data-types/time64.md)      |
+| `TIME (ns)`                  | [Time64(9)](../sql-reference/data-types/time64.md)      |
+| `TIMESTAMP`                  | [DateTime64](../sql-reference/data-types/datetime64.md) |
 | `STRING`, `BINARY`           | [String](../sql-reference/data-types/string.md)         |
 | `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)       |
 | `LIST`                       | [Array](../sql-reference/data-types/array.md)           |
