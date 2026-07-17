@@ -121,7 +121,7 @@ public:
     /// max_type_complexity guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
     /// (TCPHandler::receiveQueryPlan) pass the effective input_format_binary_max_type_complexity; trusted
     /// server-to-server plans pass 0.
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
 
     /// Local-only serialization for the query plan cache. It may use a newer private
     /// format than the distributed query plan protocol.
@@ -215,6 +215,11 @@ public:
     QueryPlan extractSubplan(Node * subplan_root);
     void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
+
+    /// Clone the subtree rooted at `subplan_root` (which may belong to another plan) into a new,
+    /// standalone plan. Unlike building a plan with `addStep`, this preserves branching subtrees
+    /// (multiple sources / multi-input steps).
+    static QueryPlan cloneSubtree(Node * subplan_root);
 
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
