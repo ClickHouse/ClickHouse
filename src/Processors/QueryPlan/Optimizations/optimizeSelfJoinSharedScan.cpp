@@ -202,7 +202,11 @@ void tryOptimizeSelfJoinSharedScan(
     else
         node.children[0] = &ref_node;
 
-    join_step->setOptimized();
+    /// `optimizeJoinLogical` has already marked this join optimized earlier in the same traversal,
+    /// filling `result_rows_estimation` / `result_column_stats` that `estimateReadRowsCount` reads for
+    /// enclosing joins. Do not call `setOptimized` again here: with no arguments it would reset those
+    /// cached estimates to empty and make a parent join treat this self-join subtree as unknown
+    /// cardinality.
 }
 
 }
