@@ -13,6 +13,9 @@ namespace DB
 {
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+
+struct AsynchronousMetricValue;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 }
 
 namespace Coordination::Storage
@@ -83,6 +86,11 @@ struct StorageState
     /// its max_zxid gets committed. This vector usually has two elements.
     std::vector<UncommittedMemtable> uncommitted;
 
+    /// Sum of Memtable::total_bytes across `uncommitted`. Duplicates information that's already
+    /// in `uncommitted`, as an atomic, so that fillAsynchronousMetrics can read it without
+    /// holding the mutex that protects uncommitted state.
+    std::atomic<size_t> uncommitted_bytes{};
+
     std::unique_ptr<BackgroundWork> background;
 
     /// How long to sleep before each write, in microseconds.
@@ -119,9 +127,11 @@ struct StorageState
     ///  NodeRefCache lookup, but it's unclear whether this is worth the trouble.)
     void listCommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
-    /// Very minimal stats.
-    /// TODO: Make AsynchronousMetrics call into StorageState to directly populate the metrics map with lots of stats like number and size of memtables and runs and files, compressed and uncompressed sizes, number of blocks, number of entries and nodes in memtables and files.
+    /// Very minimal stats. Caller must hold storage_mutex.
     void getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t & out_data_size) const;
+
+    /// Various metrics. Caller must hold storage_mutex.
+    void fillAsynchronousMetrics(DB::AsynchronousMetricValues & new_values) const;
 
     /// ========== Operations on uncommitted state. ==========
 

@@ -36,8 +36,10 @@ struct SortedRun
     uint32_t min_file_seqno = 0;
     uint32_t max_file_seqno = 0;
 
+    /// Sums across `files`. (No live merge shenanigans like in node_count_delta.)
     size_t total_block_size = 0;
     size_t total_file_size = 0;
+    size_t total_entries = 0;
 
     /// How many nodes (+1) and tombstones (-1) this run "contributes" to the total.
     /// For files not involved in a merge, this is just the sum of node_count_delta in `files`.

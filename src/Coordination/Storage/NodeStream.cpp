@@ -68,6 +68,7 @@ void SortedRunNodeStream::dropConsumedFiles(std::vector<SortedFilePtr> & dropped
         SortedFilePtr file = std::move(sorted_run->files[i]);
         sorted_run->total_block_size -= file->total_block_size;
         sorted_run->total_file_size -= file->file_size;
+        sorted_run->total_entries -= file->num_entries;
         dropped.push_back(std::move(file));
     }
     sorted_run->files.erase(sorted_run->files.begin(), sorted_run->files.begin() + file_idx);

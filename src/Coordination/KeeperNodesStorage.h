@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -19,6 +20,9 @@ namespace DB
 
 class KeeperStorage;
 struct KeeperSnapshotReader;
+
+struct AsynchronousMetricValue;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
 /// Iterator over nodes in KeeperStorage, frozen at the moment in time when
 /// KeeperNodeStreamForSnapshot was created. Creation locks storage_mutex but is relatively fast,
@@ -78,6 +82,9 @@ struct KeeperNodesStorage
     /// Assigns just the fields relevant to node storage. Other fields are set by KeeperStorage.
     /// Caller must hold storage_mutex (shared_lock is sufficient).
     virtual void getNodeStorageStats(KeeperStorageStats & out) = 0;
+
+    /// Populate implementation-specific asynchronous metrics. Locks storage_mutex itself.
+    virtual void fillAsynchronousMetrics(AsynchronousMetricValues & /*new_values*/) {}
 
     /// (A little slower than getCommittedNode/getUncommittedNode, so most request processing should
     ///  be a template and use getCommittedNode instead.)

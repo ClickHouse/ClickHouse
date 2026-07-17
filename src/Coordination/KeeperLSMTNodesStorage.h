@@ -33,6 +33,8 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
 
     void getNodeStorageStats(KeeperStorageStats & out) override;
 
+    void fillAsynchronousMetrics(AsynchronousMetricValues & new_values) override;
+
     void commitDelta(Delta & delta, uint64_t * digest) override;
     void cleanupUncommittedState(int64_t commit_zxid) override;
     void rollbackUncommittedDelta(const Delta & delta) override;

@@ -23,6 +23,9 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 struct KeeperStorageStats;
 class KeeperLogStore;
 
+struct AsynchronousMetricValue;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
+
 struct ISnapshotLoader;
 
 struct KeeperSnapshotStatus
@@ -138,6 +141,10 @@ public:
     int64_t getLastProcessedZxid() const;
 
     KeeperStorageStats getStorageStats() const;
+
+    /// Like getStorageStats, but also populates `new_values` with node-storage-specific metrics
+    /// (see KeeperNodesStorage::fillAsynchronousMetrics).
+    KeeperStorageStats getStorageStatsAndAsynchronousMetrics(AsynchronousMetricValues & new_values) const;
 
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;

@@ -1928,6 +1928,16 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
     return storage->getStorageStats();
 }
 
+KeeperStorageStats KeeperStateMachine::getStorageStatsAndAsynchronousMetrics(AsynchronousMetricValues & new_values) const
+{
+    /// (Unprofiled because we don't care how long the monitoring threads wait for locks.)
+    std::shared_lock storage_lock(state_machine_storage_mutex);
+    std::lock_guard response_lock(process_and_responses_lock);
+    auto stats = storage->getStorageStats();
+    storage->nodes_storage->fillAsynchronousMetrics(new_values);
+    return stats;
+}
+
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);

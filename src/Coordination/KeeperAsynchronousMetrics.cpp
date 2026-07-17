@@ -18,18 +18,10 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t is_follower = 0;
     size_t is_observer = 0;
     size_t is_standalone = 0;
-    size_t znode_count = 0;
-    size_t watch_count = 0;
-    size_t ephemerals_count = 0;
-    size_t approximate_data_size = 0;
-    size_t key_arena_size = 0;
     size_t open_file_descriptor_count = 0;
     std::optional<size_t> max_file_descriptor_count = 0;
     size_t followers = 0;
     size_t synced_followers = 0;
-    size_t zxid = 0;
-    size_t session_with_watches = 0;
-    size_t paths_watched = 0;
     size_t is_exceeding_mem_soft_limit = 0;
 
     if (keeper_dispatcher.isServerActive())
@@ -40,17 +32,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_observer = static_cast<size_t>(keeper_info.is_observer);
         is_follower = static_cast<size_t>(keeper_info.is_follower);
         is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
-
-        const auto & state_machine = keeper_dispatcher.getStateMachine();
-        const auto storage_stats = state_machine.getStorageStats();
-        zxid = storage_stats.last_committed_zxid;
-        znode_count = storage_stats.nodes_count;
-        watch_count = storage_stats.total_watches_count;
-        ephemerals_count = storage_stats.total_emphemeral_nodes_count;
-        approximate_data_size = storage_stats.approximate_data_size;
-        key_arena_size = 0;
-        session_with_watches = storage_stats.sessions_with_watches_count;
-        paths_watched = storage_stats.watched_paths_count;
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -64,18 +45,20 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         }
     }
 
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
+    const auto storage_stats = state_machine.getStorageStatsAndAsynchronousMetrics(new_values);
+
     new_values["KeeperIsLeader"] = { is_leader, "1 if ClickHouse Keeper is a leader, 0 otherwise." };
     new_values["KeeperIsFollower"] = { is_follower, "1 if ClickHouse Keeper is a follower, 0 otherwise." };
     new_values["KeeperIsObserver"] = { is_observer, "1 if ClickHouse Keeper is an observer, 0 otherwise." };
     new_values["KeeperIsStandalone"] = { is_standalone, "1 if ClickHouse Keeper is in a standalone mode, 0 otherwise." };
     new_values["KeeperIsExceedingMemorySoftLimitHit"] = { is_exceeding_mem_soft_limit, "1 if ClickHouse Keeper is exceeding the memory soft limit, 0 otherwise." };
 
-    new_values["KeeperZnodeCount"] = { znode_count, "The number of nodes (data entries) in ClickHouse Keeper." };
-    new_values["KeeperWatchCount"] = { watch_count, "The number of watches in ClickHouse Keeper." };
-    new_values["KeeperEphemeralsCount"] = { ephemerals_count, "The number of ephemeral nodes in ClickHouse Keeper." };
+    new_values["KeeperZnodeCount"] = { storage_stats.nodes_count, "The number of nodes (data entries) in ClickHouse Keeper." };
+    new_values["KeeperWatchCount"] = { storage_stats.total_watches_count, "The number of watches in ClickHouse Keeper." };
+    new_values["KeeperEphemeralsCount"] = { storage_stats.total_emphemeral_nodes_count, "The number of ephemeral nodes in ClickHouse Keeper." };
 
-    new_values["KeeperApproximateDataSize"] = { approximate_data_size, "The approximate data size of ClickHouse Keeper, in bytes." };
-    new_values["KeeperKeyArenaSize"] = { key_arena_size, "The size in bytes of the memory arena for keys in ClickHouse Keeper." };
+    new_values["KeeperApproximateDataSize"] = { storage_stats.approximate_data_size, "The approximate data size of ClickHouse Keeper, in bytes." };
     /// TODO: value was incorrectly set to 0 previously for local snapshots
     /// it needs to be fixed and it needs to be atomic to avoid deadlock
     ///new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
@@ -88,9 +71,9 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 
     new_values["KeeperFollowers"] = { followers, "The number of followers of ClickHouse Keeper." };
     new_values["KeeperSyncedFollowers"] = { synced_followers, "The number of followers of ClickHouse Keeper who are also in-sync." };
-    new_values["KeeperZxid"] = { zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
-    new_values["KeeperSessionWithWatches"] = { session_with_watches, "The number of client sessions of ClickHouse Keeper having watches." };
-    new_values["KeeperPathsWatched"] = { paths_watched, "The number of different paths watched by the clients of ClickHouse Keeper." };
+    new_values["KeeperZxid"] = { storage_stats.last_committed_zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
+    new_values["KeeperSessionWithWatches"] = { storage_stats.sessions_with_watches_count, "The number of client sessions of ClickHouse Keeper having watches." };
+    new_values["KeeperPathsWatched"] = { storage_stats.watched_paths_count, "The number of different paths watched by the clients of ClickHouse Keeper." };
 
     auto keeper_log_info = keeper_dispatcher.getKeeperLogInfo();
 

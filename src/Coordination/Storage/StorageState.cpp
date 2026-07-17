@@ -4,6 +4,7 @@
 #include <Coordination/Storage/Node.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
+#include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -341,6 +342,47 @@ void StorageState::getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t &
     out_node_count = static_cast<uint64_t>(node_count);
 }
 
+void StorageState::fillAsynchronousMetrics(DB::AsynchronousMetricValues & new_values) const
+{
+    new_values["KeeperLSMTUncommittedMemtablesSize"] = { uncommitted_bytes.load(std::memory_order_relaxed), "Bytes in memtables storing uncommitted state." };
+
+    size_t immutable_memtable_bytes = 0;
+    size_t total_entries = 0;
+    for (const auto & m : immutable_memtables)
+    {
+        immutable_memtable_bytes += m->total_bytes;
+        total_entries += m->num_entries;
+    }
+    if (mutable_memtable)
+        total_entries += mutable_memtable->num_entries;
+
+    new_values["KeeperLSMTImmutableMemtablesCount"] = { immutable_memtables.size(), "Number of memtables waiting for flush." };
+    new_values["KeeperLSMTImmutableMemtablesSize"] = { immutable_memtable_bytes, "Bytes in memtables waiting for flush." };
+    new_values["KeeperLSMTMutableMemtableSize"] = { mutable_memtable ? mutable_memtable->total_bytes : 0, "Bytes in current memtable." };
+
+    new_values["KeeperLSMTNodeCacheEntries"] = { node_cache.map.size(), "Number of znodes in node cache." };
+    new_values["KeeperLSMTThrottling"] = { write_throttling_us.load(), "Microseconds of delay added to each write because background flushes or merges fell behind. 0 if background work is keeping up." };
+    new_values["KeeperLSMTMergesInProgress"] = { background ? background->merges_running.load() : 0, "Number of background merges running." };
+
+    size_t total_files = 0;
+    size_t files_compressed_bytes = 0;
+    size_t files_uncompressed_bytes = 0;
+    for (const auto & r : sorted_runs)
+    {
+        total_files += r->files.size();
+        total_entries += r->total_entries;
+        files_compressed_bytes += r->total_file_size;
+        files_uncompressed_bytes += r->total_block_size;
+    }
+
+    new_values["KeeperLSMTSortedRuns"] = { sorted_runs.size(), "Number of sorted runs." };
+    new_values["KeeperLSMTFilesCount"] = { total_files, "Number of files in all sorted runs." };
+    new_values["KeeperLSMTFilesCompressedSize"] = { files_compressed_bytes, "Total size of files in all sorted runs." };
+    new_values["KeeperLSMTFilesUncompressedSize"] = { files_uncompressed_bytes, "Total size of uncompressed blocks in all sorted runs." };
+
+    new_values["KeeperLSMTTotalEntries"] = { total_entries, "Number of entries (nodes and tombstones) in all committed memtables and files." };
+}
+
 NodeRef StorageState::appendUncommittedNode(FullNode & node, int64_t zxid)
 {
     const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
@@ -359,8 +401,10 @@ NodeRef StorageState::appendUncommittedNode(FullNode & node, int64_t zxid)
 
     UncommittedMemtable & u = uncommitted.back();
     u.max_zxid = std::max(u.max_zxid, zxid);
+    const size_t bytes_before = u.memtable->total_bytes;
     /// strict=false: see the comment at Memtable::appendNode.
     NodeRef ref = u.memtable->appendNode(node, /*strict=*/ false);
+    uncommitted_bytes.fetch_add(u.memtable->total_bytes - bytes_before, std::memory_order_relaxed);
     /// Loose model: the last record for a path wins, including Remove tombstones.
     u.nodes[node.getOrCalculatePathHash()] = ref;
     return ref;
@@ -372,6 +416,7 @@ void StorageState::cleanupUncommittedState(int64_t committed_zxid)
     {
         LOG_DEBUG(log, "Removing obsolete uncommitted memtable with max_zxid = {} (committed_zxid = {})", uncommitted.front().max_zxid, committed_zxid);
 
+        uncommitted_bytes.fetch_sub(uncommitted.front().memtable->total_bytes, std::memory_order_relaxed);
         uncommitted.erase(uncommitted.begin());
     }
 }

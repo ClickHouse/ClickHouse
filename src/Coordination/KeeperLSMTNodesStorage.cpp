@@ -3,6 +3,8 @@
 #include <Coordination/Storage/NodeStream.h>
 #include <Coordination/KeeperSnapshotManager.h>
 
+#include <shared_mutex>
+
 using namespace Coordination::Storage;
 
 namespace DB
@@ -236,6 +238,12 @@ void KeeperLSMTNodesStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStr
 void KeeperLSMTNodesStorage::getNodeStorageStats(KeeperStorageStats & out)
 {
     state.getNodeCountAndDataSize(out.nodes_count, out.approximate_data_size);
+}
+
+void KeeperLSMTNodesStorage::fillAsynchronousMetrics(AsynchronousMetricValues & new_values)
+{
+    std::shared_lock lock(*storage_mutex);
+    state.fillAsynchronousMetrics(new_values);
 }
 
 void KeeperLSMTNodesStorage::commitDelta(Delta & delta, uint64_t * digest)

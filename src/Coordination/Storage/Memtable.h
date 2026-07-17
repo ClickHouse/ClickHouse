@@ -196,6 +196,7 @@ struct Memtable
     ///          point to these blocks, and we rely on these weak ptrs not expiring.
     std::vector<BlockPtr> blocks;
     size_t total_bytes = 0; // sum of capacities of `blocks`
+    size_t num_entries = 0; // number of nodes/tombstones in all blocks
 
     /// Number of Create-d nodes minus number of Remove-d nodes.
     int64_t node_count_delta = 0;

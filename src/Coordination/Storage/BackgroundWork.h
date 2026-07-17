@@ -40,6 +40,10 @@ struct BackgroundWork
     std::set<uint32_t> flushes_in_progress;
     std::set<uint32_t> merges_in_progress;
 
+    /// Number of merges currently running. Atomic so that fillAsynchronousMetrics can read it
+    /// without locking `mutex` (which can't be locked while holding storage_mutex).
+    std::atomic<size_t> merges_running{0};
+
     /// If concurrent memtable flushes finish out of order, we hold the results in this reorder
     /// buffer to publish to StorageState in file_seqno order.
     std::map<uint32_t, SortedRunPtr> flushed_files;
