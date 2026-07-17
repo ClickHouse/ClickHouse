@@ -1294,8 +1294,9 @@ SELECT
     /// inference recovers the exact type. For an array column the modifier applies to the element type, as in
     /// PostgreSQL. `Decimal` uses its own precision/scale; the wide integer types use a scale of 0 and a
     /// precision that spans their whole value range. Everything else uses -1 ("no modifier").
-    multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256') AND cols.numeric_precision IS NOT NULL,
-                toInt32(assumeNotNull(cols.numeric_precision) * 65536 + assumeNotNull(cols.numeric_scale) + 4),
+    multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256')
+                AND cols.decimal_precision IS NOT NULL AND cols.decimal_scale IS NOT NULL,
+                toInt32(assumeNotNull(cols.decimal_precision) * 65536 + assumeNotNull(cols.decimal_scale) + 4),
             cols.base = 'UInt64', toInt32(20 * 65536 + 4),
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
@@ -1305,7 +1306,16 @@ SELECT
     '' AS attgenerated
 FROM (
     SELECT
-        database, table, name, position, type, numeric_precision, numeric_scale,
+        database, table, name, position, type,
+        /// `system.columns.numeric_precision` / `numeric_scale` are only populated for top-level numeric
+        /// columns; for a `Decimal` element wrapped in `Array(...)` (or `Nullable(...)`) they are NULL, so
+        /// fall back to parsing the precision and scale out of the type name. Only the leading wrappers
+        /// are skipped - the same prefix as in `base` below - so a `Decimal` buried in a `Map`/`Tuple`
+        /// argument list is not picked up (such columns never reach the `Decimal` branch anyway).
+        coalesce(numeric_precision,
+                 toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*Decimal\(([0-9]+), [0-9]+\)'))) AS decimal_precision,
+        coalesce(numeric_scale,
+                 toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*Decimal\([0-9]+, ([0-9]+)\)'))) AS decimal_scale,
         extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*([A-Za-z0-9]+)') AS base,
         /// Count only the leading `Array(` wrappers. An `Array(` nested inside a `Map`/`Tuple` argument
         /// list must not make the column look like a top-level array: such columns are exposed as text.
