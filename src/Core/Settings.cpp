@@ -7961,6 +7961,7 @@ This is the number of vectors that are scored by the fast asymmetric hashing sta
 Value 0 means automatic. ClickHouse uses a balanced recall/latency default based on
 `20 * floor(LIMIT^0.65 * sqrt(2.0)) * 2.5`, adjusted for very large or high-dimensional granules.
 Higher values increase recall at the cost of query latency.
+)", 0) \
     DECLARE(Bool, vector_search_use_quantized_codes, false, R"(
 Enables a two-stage approximate vector search without index (brute force scan) over a `Quantized`-compressed column. When enabled, `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` against a column encoded with a `Quantized(...)` codec will
 1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and
