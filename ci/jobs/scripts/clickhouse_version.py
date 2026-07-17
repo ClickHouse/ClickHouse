@@ -29,7 +29,8 @@ class VersionType:
     TESTING = "testing"
     STABLE = "stable"
     LTS = "lts"
-    VALID = {NEW, TESTING, STABLE, LTS}
+    CLOUD = "cloud"
+    VALID = {NEW, TESTING, STABLE, LTS, CLOUD}
 
 
 def _read_versions() -> dict:
@@ -235,6 +236,10 @@ class CHVersion:
         if version_type not in VersionType.VALID:
             raise ValueError(f"version type {version_type!r} not in {VersionType.VALID}")
         self.version_type = version_type
+        return self._refresh()
+
+    def with_tweak(self, tweak: int) -> "CHVersion":
+        self.tweak = int(tweak)
         return self._refresh()
 
     def get_stable_release_type(self) -> str:

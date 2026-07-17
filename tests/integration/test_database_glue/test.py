@@ -735,6 +735,59 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_gzip_metadata(started_cluster):
+    # Regression for issue #109801: a catalog-backed CREATE TABLE from ClickHouse
+    # with gzip metadata compression exercises IcebergMetadata::createInitial and
+    # the catalog->createTable registration. The first revision of the fix wrote
+    # v1.gz.metadata.json on disk but registered a hardcoded v1.metadata.json as
+    # the catalog metadata_location, so a reopen through the catalog failed.
+    #
+    # Glue is the concrete broken path: GlueCatalog::createTable persists the
+    # supplied new_metadata_path verbatim as parameters["metadata_location"]
+    # (unlike RestCatalog, which ignores new_metadata_path). We therefore read
+    # the registered metadata_location straight from Glue immediately after
+    # CREATE TABLE, before any INSERT, so the assertion validates createInitial's
+    # registration itself rather than a later updateMetadata pointer advance.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_gzip_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(
+        started_cluster,
+        node,
+        root_namespace,
+        table_name,
+        "(x String)",
+        additional_settings={"iceberg_metadata_compression_method": "gzip"},
+    )
+
+    # Validate the catalog registration produced by createInitial, before INSERT.
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert metadata_location.endswith(".gz.metadata.json"), metadata_location
+    assert not metadata_location.endswith(".gzip.metadata.json"), metadata_location
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    # Reopen through the catalog (fresh database) and confirm read still works.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
 def test_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]
 

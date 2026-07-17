@@ -88,6 +88,7 @@ static struct InitFiu
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(cache_filesystem_failure_non_errno) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
