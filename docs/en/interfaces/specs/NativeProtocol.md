@@ -712,7 +712,7 @@ The 8 columns, in this exact order:
 | 3 | host_name               | String   | Server hostname emitting the log |
 | 4 | query_id                | String   | Query ID the log belongs to |
 | 5 | thread_id               | UInt64   | OS thread ID |
-| 6 | priority                | Int8     | Log level (Poco priority: 1 = Fatal, … 8 = Trace) |
+| 6 | priority                | Int8     | Log level (Poco priority: 1 = Fatal, … 8 = Trace, 9 = Test) |
 | 7 | source                  | String   | Logger name |
 | 8 | text                    | String   | Log message text |
 
