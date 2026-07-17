@@ -2957,6 +2957,47 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
         return wrapper;
 }
 
+namespace
+{
+
+/// IDataType::equals() is tolerant of aggregate-state types that share the same state representation
+/// but differ by function name (e.g. quantileExactTuple vs quantilesExactTuple(0.9)); it compares
+/// them via haveSameStateRepresentation(). If such a difference is nested inside a composite type
+/// (Tuple/Array/Map/...), the top-level types still compare equal(), so an identity CAST wrapper
+/// would pass the source column through unchanged - it keeps emitting the source aggregate function
+/// while the target type advertises another. The column's name (getName()) embeds the actual
+/// function, so the strict per-stream block-structure check later aborts. Detect this so we skip the
+/// identity wrapper and fall through to the real recursive wrapper, which rebuilds each aggregate
+/// column with the target function. Returns true only when the two (already equals()-equal) types
+/// contain an aggregate-function subtype that is not strictly equal.
+bool hasNonStrictlyEqualAggregateSubtype(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto * from_agg = typeid_cast<const DataTypeAggregateFunction *>(from_type.get());
+    const auto * to_agg = typeid_cast<const DataTypeAggregateFunction *>(to_type.get());
+    if (from_agg && to_agg)
+        return !DataTypeAggregateFunction::strictEquals(from_type, to_type);
+
+    /// The two types are equal() (same structure), so their children line up positionally.
+    std::vector<DataTypePtr> from_children;
+    std::vector<DataTypePtr> to_children;
+    from_type->forEachChild([&](const IDataType & child) { from_children.push_back(child.getPtr()); });
+    to_type->forEachChild([&](const IDataType & child) { to_children.push_back(child.getPtr()); });
+
+    if (from_children.size() != to_children.size())
+        return false;
+
+    for (size_t i = 0; i < from_children.size(); ++i)
+    {
+        const auto * from_child_agg = typeid_cast<const DataTypeAggregateFunction *>(from_children[i].get());
+        const auto * to_child_agg = typeid_cast<const DataTypeAggregateFunction *>(to_children[i].get());
+        if (from_child_agg && to_child_agg && !DataTypeAggregateFunction::strictEquals(from_children[i], to_children[i]))
+            return true;
+    }
+    return false;
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
     if (isUInt8(from_type) && isBool(to_type))
@@ -2978,7 +3019,11 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
                 return createIdentityWrapper(from_type);
         }
-        else
+        /// The same must hold for aggregate-state types nested inside a composite type: an identity
+        /// wrapper would pass the source column through with its original aggregate function, leaving
+        /// the physical column name diverging from the target type name (see
+        /// hasNonStrictlyEqualAggregateSubtype). Fall through to the real recursive wrapper in that case.
+        else if (!hasNonStrictlyEqualAggregateSubtype(from_type, to_type))
             return createIdentityWrapper(from_type);
     }
     else if (WhichDataType(from_type).isNothing())

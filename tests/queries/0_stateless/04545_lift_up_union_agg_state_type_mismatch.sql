@@ -24,6 +24,23 @@ SELECT count() FROM
 )
 SETTINGS query_plan_enable_optimizations = 0;
 
+-- Base planner variant where the divergent aggregate state is nested INSIDE the union branch
+-- column itself (the -StateTuple combinator returns Tuple(AggregateFunction(...))). The union
+-- column type is then Tuple(agg); the branch-conversion CAST used to take an identity wrapper
+-- because the two Tuple(agg) types compare equal() while their aggregate functions differ, so the
+-- source column passed through unchanged and the UnionStep-stream block-structure check aborted at
+-- plan build. The CAST must rebuild the nested aggregate column with the target function.
+SELECT count() IGNORE NULLS FROM
+(
+    SELECT tuple(s) AS ts FROM
+    (
+        SELECT quantileExactTupleStateTuple(tuple((toUInt32(number), toFloat64(number)))) AS s FROM numbers(100, 1)
+        UNION ALL
+        SELECT quantilesExactTupleStateTuple(0.9)(tuple((toUInt32(number), toFloat64(number)))) AS s FROM numbers(101, 257)
+    )
+)
+SETTINGS query_plan_enable_optimizations = 0;
+
 -- The exact AST-fuzzer-reduced query (DISTINCT + tuple() + WHERE above a divergent UNION ALL).
 SELECT count() FROM
 (
