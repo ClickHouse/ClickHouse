@@ -27,7 +27,10 @@ as the fuzzer's was.
 The script fails closed: it aborts before starting the memory-destructive workload unless every cgroup
 setup step is proven (the memory controller is enabled, the hard limits read back as written, and the
 server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside ch_merge_oom
-and OOM the whole host.
+and OOM the whole host. It also refuses to run when the scratch data directory is on a memory-backed
+filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be charged to the cgroup,
+so an OOM would prove the filesystem choice rather than the merge-memory mechanism. The scratch root
+defaults to the repo `tmp` directory (disk-backed) and can be overridden with BASE_DIR.
 """
 
 import os
@@ -42,6 +45,13 @@ import time
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 BIN = os.environ.get("CLICKHOUSE_BINARY", os.path.join(REPO, "build", "programs", "clickhouse"))
+# Scratch root for the server's data and config. Defaults to the repo `tmp` directory (disk-backed)
+# rather than the system temp dir, which is frequently `tmpfs` on developer machines: a memory-backed
+# data path would charge the part bytes written by the `INSERT`/`OPTIMIZE` churn to the cgroup's
+# `memory.current` and could trip `memory.max` on scratch I/O alone - a false-positive "merge OOM"
+# caused by the filesystem choice rather than by the merge-memory retention gap this script demonstrates.
+# Override with BASE_DIR (which must also be disk-backed; the check below enforces it).
+BASE_DIR = os.environ.get("BASE_DIR", os.path.join(REPO, "tmp"))
 RUN_USER = os.environ.get("SUDO_USER") or pwd.getpwuid(os.getuid()).pw_name
 CG = "/sys/fs/cgroup/ch_merge_oom"
 PORT = int(os.environ.get("PORT", "19001"))
@@ -174,11 +184,25 @@ def main():
     ).stdout.strip() != "cgroup2fs":
         die("requires cgroup v2", 2)
 
-    base = tempfile.mkdtemp(prefix="ch_oom_repro.")
+    os.makedirs(BASE_DIR, exist_ok=True)
+    base = tempfile.mkdtemp(prefix="ch_oom_repro.", dir=BASE_DIR)
     try:
         cleanup(base)  # remove a stale cgroup from a previous run before re-creating it
         os.makedirs(os.path.join(base, "data"))
         os.makedirs(os.path.join(base, "cfg"))
+        # Fail closed if the scratch data path turns out to be memory-backed anyway (BASE_DIR pointed at
+        # a `tmpfs`/`ramfs`, or the whole repo lives on one). On such a filesystem the part bytes the
+        # churn writes are charged to the cgroup, so an OOM would prove the filesystem choice, not the
+        # merge-memory mechanism; refuse to run rather than report a false-positive repro.
+        data_dir = os.path.join(base, "data")
+        fstype = subprocess.run(
+            ["stat", "-fc", "%T", data_dir], capture_output=True, text=True
+        ).stdout.strip()
+        if fstype in ("tmpfs", "ramfs"):
+            die(
+                f"scratch data dir {data_dir} is on a memory-backed filesystem ({fstype}); "
+                "set BASE_DIR to a disk-backed path so an OOM proves the merge-memory mechanism"
+            )
         write_file(os.path.join(base, "cfg", "config.xml"), CONFIG_XML.format(base=base, port=PORT))
         write_file(os.path.join(base, "cfg", "users.xml"), USERS_XML)
         subprocess.run(["chown", "-R", RUN_USER, base], check=True)
