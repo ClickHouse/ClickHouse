@@ -1788,7 +1788,11 @@ In Avro format ClickHouse reads its schema from the data and converts it to Clic
 | `boolean`                          | [Bool](../sql-reference/data-types/boolean.md)                                 |
 | `int`                              | [Int32](../sql-reference/data-types/int-uint.md)                               |
 | `int (date)` \*                    | [Date32](../sql-reference/data-types/date32.md)                                |
+| `int (time-millis)` \*             | [Time64(3)](../sql-reference/data-types/time64.md)                             |
 | `long`                             | [Int64](../sql-reference/data-types/int-uint.md)                               |
+| `long (timestamp-millis)` \*       | [DateTime64(3)](../sql-reference/data-types/datetime64.md)                     |
+| `long (timestamp-micros)` \*       | [DateTime64(6)](../sql-reference/data-types/datetime64.md)                     |
+| `long (time-micros)` \*            | [Time64(6)](../sql-reference/data-types/time64.md)                             |
 | `float`                            | [Float32](../sql-reference/data-types/float.md)                                |
 | `double`                           | [Float64](../sql-reference/data-types/float.md)                                |
 | `bytes`, `string`                  | [String](../sql-reference/data-types/string.md)                                |
@@ -1853,7 +1857,8 @@ In Arrow format ClickHouse reads its schema from the data and converts it to Cli
 | `DOUBLE`                        | [Float64](../sql-reference/data-types/float.md)         |
 | `DATE32`                        | [Date32](../sql-reference/data-types/date32.md)         |
 | `DATE64`                        | [DateTime](../sql-reference/data-types/datetime.md)     |
-| `TIMESTAMP`, `TIME32`, `TIME64` | [DateTime64](../sql-reference/data-types/datetime64.md) |
+| `TIMESTAMP`                     | [DateTime64](../sql-reference/data-types/datetime64.md) |
+| `TIME32`, `TIME64`              | [Time64](../sql-reference/data-types/time64.md)         |
 | `STRING`, `BINARY`              | [String](../sql-reference/data-types/string.md)         |
 | `DECIMAL128`, `DECIMAL256`      | [Decimal](../sql-reference/data-types/decimal.md)       |
 | `LIST`                          | [Array](../sql-reference/data-types/array.md)           |
