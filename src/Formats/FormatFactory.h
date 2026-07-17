@@ -144,10 +144,13 @@ private:
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
-    /// Some formats may produce raw (non-UTF-8) bytes depending on settings, for example
-    /// `CustomSeparated` with `format_custom_escaping_rule = 'Raw'`. The checker should return true
-    /// when the current settings make the output format write bytes verbatim (see `may_produce_raw_bytes`).
-    using MayProduceRawBytesChecker = std::function<bool(const FormatSettings & settings)>;
+    /// Some formats may produce raw (non-UTF-8) bytes depending on settings or on the header, for
+    /// example `CustomSeparated` with `format_custom_escaping_rule = 'Raw'`, or `SQLInsert` with a
+    /// column name that is not valid UTF-8 (column names are written verbatim). The checker should
+    /// return true when the current settings and header make the output format write bytes verbatim
+    /// (see `may_produce_raw_bytes`). The header carries the column names, which some formats emit
+    /// verbatim independently of the row data.
+    using MayProduceRawBytesChecker = std::function<bool(const FormatSettings & settings, const Block & header)>;
 
     /// Some text output formats may emit raw carriage-return (`\r`) bytes depending on settings, for
     /// example `TSV` with `output_format_tsv_crlf_end_of_line` or `CustomSeparated` with a `CSV`
@@ -386,7 +389,7 @@ public:
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
-    bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings) const;
+    bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
     bool checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;

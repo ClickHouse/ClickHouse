@@ -147,3 +147,10 @@ is not compatible with the output format SQLInsert
 --- EventStream base64-encodes SQLInsert with a non-UTF-8 table name
 text/event-stream; charset=UTF-8; payload=base64
 SQLInsert payload with a non-UTF-8 table name round-trips
+--- JSONEachPacketString is rejected for SQLInsert with a non-UTF-8 column name
+is not compatible with the output format SQLInsert
+--- EventStream base64-encodes SQLInsert with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+SQLInsert payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString accepts SQLInsert with a valid UTF-8 (multi-byte) column name
+SQLInsert (valid UTF-8 column name) accepted: OK
