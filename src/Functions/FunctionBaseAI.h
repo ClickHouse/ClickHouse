@@ -141,8 +141,6 @@ protected:
     ContextPtr context;
     ContextPtr getContext() const { return context; }
 
-    virtual String functionName() const = 0;
-
     /// Function-specific parameters accepted in the trailing `Map(String, String)` argument, on top
     /// of `commonParams`. Each entry carries its own default (or is required). Default: none.
     virtual AIParamSpecs functionParams() const { return {}; }
