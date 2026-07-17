@@ -89,6 +89,7 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
+part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
 rows:                    3285726 -- 3.29 million
