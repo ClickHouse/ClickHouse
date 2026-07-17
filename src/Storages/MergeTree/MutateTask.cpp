@@ -103,6 +103,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mt_mutate_task_pause_in_execution[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
@@ -1801,6 +1802,13 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     do
     {
         Block cur_block;
+
+        /// Test-only: park the mutation inside its execution phase (the new part is already created,
+        /// so `checkOperationIsNotCanceled` takes the `new_data_part != nullptr` branch). This lets a
+        /// regression test issue `KILL MUTATION` and then release the failpoint, so the very next
+        /// `checkOperationIsNotCanceled` below must observe the cancellation. Pauses once, then the test
+        /// disables it. See `04516_cancel_mutation_during_execution`.
+        FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_execution);
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {

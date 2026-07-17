@@ -1,66 +1,75 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-shared-merge-tree, no-replicated-database
+# - no-parallel: the mutation-execution pause failpoint is process-global; while enabled it would
+#   stall any concurrent mutation in other tests until this test disables it.
+# - no-shared-merge-tree, no-replicated-database: this targets the plain MergeTree mutation path and
+#   `StorageMergeTree::killMutation`; the Shared/Replicated engines cancel mutations differently.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Regression test: `KILL MUTATION` must stop a mutation that is already in its execution phase
-# (rows are flowing through the mutating pipeline and the new part is being written).
-# Previously, an operator precedence bug in `MutationContext::checkOperationIsNotCanceled` made
-# the `is_cancelled` flag (set by `KILL MUTATION`) be ignored once the new part had been created,
-# so a running mutation could not be killed and ran to completion.
+# Regression test: `KILL MUTATION` must stop a mutation that is already in its execution phase (the
+# new part is being written). Previously an operator precedence bug in
+# `MutationContext::checkOperationIsNotCanceled` made the `is_cancelled` flag set by `KILL MUTATION`
+# be ignored once the new part had been created, so a running mutation could not be killed and ran
+# to completion.
+#
+# The mutation is parked deterministically inside its execution phase with the
+# `mt_mutate_task_pause_in_execution` failpoint (which sits in the mutating write loop, after the new
+# part is created), instead of driving a huge slow mutation and racing the kill -- that timing-based
+# form was slow and flaky, and timed out (> 180s) on the debug flaky-check lane.
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_kill_mutation_execution"
+FP=mt_mutate_task_pause_in_execution
+
+on_exit() {
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_kill_mutation_execution" 2>/dev/null
+}
+trap on_exit EXIT
+
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_kill_mutation_execution (key UInt64, value UInt64)
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0"
 
-# A single part with 6 million rows.
-$CLICKHOUSE_CLIENT -q "
-    INSERT INTO t_kill_mutation_execution SELECT number, number FROM numbers(6000000)
-    SETTINGS max_block_size = 6000000, min_insert_block_size_rows = 6000000, min_insert_block_size_bytes = 1000000000"
+# A tiny part is enough: the failpoint, not the data size, holds the mutation in the execution phase.
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_kill_mutation_execution SELECT number, number FROM numbers(1000)"
 
-# The mutation is slow in the execution phase: the updated column `value` contains `sleepEachRow`,
-# so the sleeps happen while rows flow through the mutating pipeline (~120 seconds in total:
-# 6 million rows * 20 microseconds). The `WHERE` condition is cheap, so the preliminary
-# `isStorageTouchedByMutations` check pays no sleeps. The sleep per block stays well below the
-# 3 second limit of `function_sleep_max_microseconds_per_block` (65536 rows * 20 microseconds = 1.3 seconds).
+# Park the mutation in its execution phase, then submit it (mutations_sync=0 returns immediately).
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
 $CLICKHOUSE_CLIENT --mutations_sync=0 -q "
-    ALTER TABLE t_kill_mutation_execution
-    UPDATE value = value + toUInt64(sleepEachRow(0.00002)) WHERE key >= 0"
+    ALTER TABLE t_kill_mutation_execution UPDATE value = value + 1000000 WHERE 1"
 
-# Wait until the mutation is in the execution phase: it is listed in `system.merges` and some
-# rows have already been written to the new part. `rows_written` is updated only by the mutating
-# pipeline of `PartMergerWriter` (unlike `rows_read`, which could in principle also reflect the
-# preliminary affected-rows scan during prepare, before the new part is created).
-i=0
-while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation_execution' AND rows_written > 0")" -eq 0 ]; do
-    sleep 0.5
-    i=$((i + 1))
-    if [ $i -gt 120 ]; then
-        echo "Mutation did not reach the execution phase in 60 seconds"
-        exit 1
-    fi
-done
+# Block until the mutation thread is parked inside the execution phase (the new part already exists,
+# so `checkOperationIsNotCanceled` takes the `new_data_part != nullptr` branch).
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE"
+echo "reached execution phase"
 
-$CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation_execution'" > /dev/null
+# `KILL MUTATION` sets the `is_cancelled` flag and returns immediately (it does not wait for the
+# paused mutation thread, so there is no deadlock).
+$CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = currentDatabase() AND table = 't_kill_mutation_execution'" > /dev/null
 echo "killed"
 
-# The executing mutation must disappear from `system.merges` quickly.
-# Without the fix it kept running for the remaining ~2 minutes.
+# Release the mutation: the next `checkOperationIsNotCanceled` must observe the kill and abort.
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
+
+# The mutation must leave system.merges. With the fix it aborts at once; without the fix it ignores
+# the kill and runs the UPDATE to completion.
 i=0
-while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation_execution'")" -ne 0 ]; do
-    sleep 0.5
+while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_kill_mutation_execution' AND is_mutation")" -ne 0 ]; do
+    sleep 0.2
     i=$((i + 1))
-    if [ $i -gt 60 ]; then
+    if [ $i -gt 150 ]; then
         echo "Mutation is still executing 30 seconds after KILL MUTATION"
         exit 1
     fi
 done
 
-# The data must be intact.
-$CLICKHOUSE_CLIENT -q "SELECT count(), sum(key), sum(value) FROM t_kill_mutation_execution"
+# The killed mutation must not have been applied: `value` keeps its original sum (0+1+...+999).
+# Without the fix the mutation completes and every value grows by 1000000.
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(value) FROM t_kill_mutation_execution"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_kill_mutation_execution"
