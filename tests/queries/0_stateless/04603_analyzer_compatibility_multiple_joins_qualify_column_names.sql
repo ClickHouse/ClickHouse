@@ -1,5 +1,5 @@
 -- Compatibility setting `analyzer_compatibility_multiple_joins_qualify_column_names`
--- makes the new analyzer mimic the old analyzer's multiple-joins column-naming
+-- makes the analyzer mimic the old analyzer's multiple-joins column-naming
 -- rewrite (when the `FROM` clause has two or more `JOIN`s), so that outer queries
 -- referencing hidden inner aliases (e.g. `SELECT ll.Date FROM (SELECT * FROM t AS ll
 -- LEFT JOIN x ... LEFT JOIN y ...)`) resolve again.
@@ -89,7 +89,7 @@ DESCRIBE (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) LEFT JOIN (SELECT 1 AS k2) 
 SET joined_subquery_requires_alias = 1;
 
 -- ============================================================
--- Setting OFF (default) -- byte-identical to today's new-analyzer behavior
+-- Setting OFF (default) -- byte-identical to today's default analyzer behavior
 -- ============================================================
 
 SET analyzer_compatibility_multiple_joins_qualify_column_names = 0;
@@ -118,7 +118,7 @@ SELECT ll.Date FROM (SELECT * FROM (SELECT * FROM (SELECT 1 AS k, 'D' AS Date) A
 
 -- ============================================================
 -- ARRAY JOIN mixed with 2 joins (setting ON). The old analyzer throws
--- (`Multiple JOIN does not support mix with ARRAY JOINs`); the new analyzer already
+-- (`Multiple JOIN does not support mix with ARRAY JOINs`); the analyzer already
 -- supports this combination today. The exact qualified name for the ARRAY JOIN result
 -- column `arr` is uncertain until the analyzer hooks land -- see report if it differs.
 -- ============================================================
