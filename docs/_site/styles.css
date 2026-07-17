@@ -47,6 +47,35 @@ html:not(.dark) .ch-usecase-arrow {
 .ch-overlay-shadow {
     box-shadow: 0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18);
 }
+
+/* Preserve the sm/md/lg image hierarchy from the previous docs site.
+   Mintlify's content column is narrower, so 480px keeps md visibly distinct
+   from a full-width lg image. */
+.ch-image-sm,
+.ch-image-md,
+.ch-image-lg {
+    width: 100%;
+    margin-inline: auto;
+}
+
+.ch-image-sm {
+    max-width: 300px;
+}
+
+.ch-image-md {
+    max-width: 480px;
+}
+
+.ch-image-lg {
+    max-width: 100%;
+}
+
+.ch-image-sm img,
+.ch-image-md img,
+.ch-image-lg img {
+    width: 100%;
+    height: auto;
+}
 /* MCP icon — mask-size/repeat extracted from inline style; URL stays inline */
 .ch-mcp-icon {
     -webkit-mask-size: contain;
