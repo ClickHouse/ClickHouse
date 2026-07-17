@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserProjectionSelectQuery.h>
 
 
@@ -63,6 +64,10 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if (!ParserList(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma))
                  .parse(pos, group_expression_list, expected))
             return false;
+
+        /// The same canonical form as for the key clauses in the storage definition.
+        for (const auto & key : group_expression_list->children)
+            ParserStorage::stripKeyClauseParentheses(key);
     }
 
     // ORDER BY needs to be an ASTFunction so that we can use it as a sorting key
@@ -84,6 +89,9 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             function_node->children.push_back(expr_list);
             order_expression = function_node;
         }
+
+        /// The same canonical form as for the key clauses in the storage definition.
+        ParserStorage::stripKeyClauseParentheses(order_expression);
     }
 
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));

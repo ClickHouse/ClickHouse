@@ -12,6 +12,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -162,6 +163,10 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!expression_p.parse(pos, expr, expected))
         return false;
 
+    /// Parentheses around the whole index expression are redundant; drop them to keep the
+    /// canonical form (`INDEX ix a TYPE minmax`) that stored table metadata relies on.
+    stripParenthesesUnlessAliased(expr);
+
     if (!s_type.ignore(pos, expected))
         return false;
 
@@ -249,6 +254,10 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     if (!expression_p.parse(pos, expr, expected))
         return false;
+
+    /// Parentheses around the whole constraint expression are redundant; drop them to keep the
+    /// canonical form (`CHECK a > 0`) that stored table metadata relies on.
+    stripParenthesesUnlessAliased(expr);
 
     auto constraint = make_intrusive<ASTConstraintDeclaration>();
     constraint->name = name->as<ASTIdentifier &>().name();
@@ -419,6 +428,9 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     {
         if (!primary_key_p.parse(pos, new_node, expected))
             return false;
+
+        /// The same canonical form as for the storage-level `PRIMARY KEY` clause.
+        ParserStorage::stripKeyClauseParentheses(new_node);
     }
     else if (s_foreign_key.ignore(pos, expected))
     {
@@ -590,6 +602,28 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
+void ParserStorage::stripKeyClauseParentheses(const ASTPtr & clause)
+{
+    if (!clause)
+        return;
+
+    auto strip_element = [](const ASTPtr & element)
+    {
+        stripParenthesesUnlessAliased(element);
+        /// `ORDER BY (x) DESC` keeps the expression inside `ASTStorageOrderByElement`.
+        if (const auto * order_element = element->as<ASTStorageOrderByElement>(); order_element && !order_element->children.empty())
+            stripParenthesesUnlessAliased(order_element->children.front());
+    };
+
+    strip_element(clause);
+
+    /// A parenthesized key list is a `tuple` function whose arguments become the elements of the
+    /// key expression list, so parentheses around individual elements are redundant as well.
+    if (const auto * function = clause->as<ASTFunction>(); function && function->name == "tuple" && function->arguments)
+        for (const auto & argument : function->arguments->children)
+            strip_element(argument);
+}
+
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_engine(Keyword::ENGINE);
@@ -708,6 +742,13 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     // If any part of storage definition is found create storage node
     if (!storage_like)
         return false;
+
+    /// Parentheses around a whole key clause expression carry no meaning (`PARTITION BY (a)` is
+    /// the same as `PARTITION BY a`, and a parenthesized list is already a `tuple` function).
+    /// Drop them to keep the canonical form that stored table metadata relies on.
+    /// TTL expressions are canonicalized the same way in `ParserTTLElement`.
+    for (const auto & key_clause : {partition_by, primary_key, order_by, sample_by, unique_key})
+        stripKeyClauseParentheses(key_clause);
 
     if (engine)
     {

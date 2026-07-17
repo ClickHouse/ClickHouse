@@ -1,0 +1,16 @@
+CREATE TABLE t (`a` Int, `b` Int) ENGINE = MergeTree PARTITION BY a PRIMARY KEY a ORDER BY a SAMPLE BY a
+CREATE TABLE t (`a` Int, `b` Int) ENGINE = MergeTree PARTITION BY (a, b) ORDER BY (a, b)
+CREATE TABLE t (`a` Int, `b` Int) ENGINE = MergeTree ORDER BY (a, b)
+CREATE TABLE t (`a` Int, `b` Int) ENGINE = MergeTree ORDER BY a DESC
+CREATE TABLE t (`a` Int, `b` Int) ENGINE = MergeTree PRIMARY KEY a ORDER BY a
+CREATE TABLE t (`a` Int, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1) WHERE a > 0
+CREATE TABLE t (`a` Int, `d` DateTime, `i` Int DEFAULT a + 1, `m` Int MATERIALIZED a * 2, `c` Int TTL d + toIntervalDay(1)) ENGINE = MergeTree ORDER BY a
+CREATE TABLE t (`a` Int, INDEX ix a TYPE minmax GRANULARITY 1, CONSTRAINT cc CHECK a > 0) ENGINE = MergeTree ORDER BY a
+CREATE TABLE t (`a` Int, `b` Int, PROJECTION p (SELECT a, b GROUP BY a), PROJECTION p2 (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY a
+ALTER TABLE t (MODIFY ORDER BY a)
+ALTER TABLE t (MODIFY SAMPLE BY a)
+ALTER TABLE t (MODIFY TTL d + toIntervalDay(1))
+CREATE TABLE t (`c0` Int64) ENGINE = MergeTree PARTITION BY (c0 AS p) PRIMARY KEY (c0 AS k) ORDER BY c0 SAMPLE BY (c0 AS s)
+CREATE TABLE t (`a` Int, `b` Int) ENGINE = MergeTree PARTITION BY a PRIMARY KEY a ORDER BY a SAMPLE BY a
+CREATE TABLE t (`c0` Int64) ENGINE = MergeTree PARTITION BY (c0 AS p) PRIMARY KEY (c0 AS k) ORDER BY c0 SAMPLE BY (c0 AS s)
+CREATE TABLE default.t_04603\n(\n    `a` Int32,\n    `d` DateTime,\n    `i` Int32 DEFAULT a + 1,\n    INDEX ix a TYPE minmax GRANULARITY 1,\n    CONSTRAINT cc CHECK a > 0\n)\nENGINE = MergeTree\nPARTITION BY a\nPRIMARY KEY a\nORDER BY a\nTTL d + toIntervalDay(1)\nSETTINGS index_granularity = 8192

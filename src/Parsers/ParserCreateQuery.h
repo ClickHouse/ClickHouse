@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -400,6 +401,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             pos = old_pos;
     }
 
+    /// Parentheses around the whole `DEFAULT`/`MATERIALIZED`/`ALIAS`/`EPHEMERAL`/`TTL` expression
+    /// are redundant; drop them to keep the canonical form (`DEFAULT a + 1`) that stored table
+    /// metadata relies on.
+    stripParenthesesUnlessAliased(default_expression);
+    stripParenthesesUnlessAliased(ttl_expression);
+
     node = column_declaration;
 
     if (type)
@@ -562,6 +569,12 @@ public:
     };
 
     explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+
+    /// Drops redundant top-level parentheses from a key clause expression (`PARTITION BY (a)`,
+    /// `ORDER BY (a)`, ...) and from the elements of a key list (`ORDER BY ((a), b)`), so the
+    /// clause keeps the canonical form (`PARTITION BY a`) that stored table metadata and its
+    /// comparisons rely on. See `stripParenthesesUnlessAliased`.
+    static void stripKeyClauseParentheses(const ASTPtr & clause);
 
 protected:
     const char * getName() const override { return "storage definition"; }

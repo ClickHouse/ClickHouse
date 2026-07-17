@@ -24,6 +24,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -2615,6 +2616,10 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
+    /// Parentheses around the whole TTL expression are redundant; drop them to keep the canonical
+    /// form (`TTL d + 1`) that stored table metadata relies on.
+    stripParenthesesUnlessAliased(ttl_expr);
+
     TTLMode mode = {};
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
@@ -2679,6 +2684,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!parser_exp.parse(pos, where_expr, expected))
             return false;
+
+        stripParenthesesUnlessAliased(where_expr);
     }
     else if (mode == TTLMode::RECOMPRESS)
     {
