@@ -243,6 +243,20 @@ def test_local_scalar_file_function():
     assert result.strip() == "fallback"
 
 
+def test_local_scalar_file_missing_reports_file_doesnt_exist():
+    """A single-argument `file(path)` for an in-bounds path that simply does not exist must
+    surface the natural missing-file error (`FILE_DOESNT_EXIST`), not `DATABASE_ACCESS_DENIED`.
+
+    Regression for the `user_files_policy` branch of `FunctionFile`: it used to probe the disks
+    with `existsFile` to pick which disk owns the request. Once `setUserFilesPolicy` began to
+    require a single-disk volume that probe no longer routed anything, but it turned every missing
+    in-bounds file into a misleading access-denied error. The disk is now selected directly after
+    the containment check so `readFile` reports the real backend error."""
+    err = node_local.query_and_get_error("SELECT file('definitely_missing_scalar.txt')")
+    assert "FILE_DOESNT_EXIST" in err or "does not exist" in err, err
+    assert "DATABASE_ACCESS_DENIED" not in err, err
+
+
 def test_local_insert_into_file():
     """Test that writing files uses the first disk by default."""
     node_local.query(

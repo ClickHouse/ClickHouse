@@ -221,17 +221,21 @@ public:
                     else
                     {
                         relative_path = normalize_relative(file_path_str);
-                        for (const auto & disk : disks)
+                        /// A `user_files_policy` volume always contains exactly one disk
+                        /// (enforced by `Context::setUserFilesPolicy`), so there is no routing
+                        /// decision to make here: validate the disk-root containment and select
+                        /// that disk directly. Probing with `existsFile` first would turn every
+                        /// in-bounds but missing file into a misleading `DATABASE_ACCESS_DENIED`;
+                        /// instead let `readFile` below surface the natural error
+                        /// (`FILE_DOESNT_EXIST` and friends) for a path that does not exist.
+                        if (!disks.empty())
                         {
-                            /// Skip disks where the path would escape via an in-root symlink;
-                            /// other disks may still serve the same relative path safely.
+                            const auto & disk = disks.front();
                             if (!path_is_inside_disk_root(disk, relative_path))
-                                continue;
-                            if (disk->existsFile(relative_path))
-                            {
-                                found_disk = disk;
-                                break;
-                            }
+                                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                    "Path `{}` resolves outside user files disk root after symlink resolution",
+                                    String(filename));
+                            found_disk = disk;
                         }
                     }
 
