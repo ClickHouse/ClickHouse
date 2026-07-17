@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
+#include <unordered_map>
 
 #include <boost/noncopyable.hpp>
 
@@ -26,6 +27,7 @@ public:
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
     using LastProcessedFileInfo = ObjectStorageQueueIFileMetadata::LastProcessedFileInfo;
+    using LastProcessedPathByPartition = std::unordered_map<std::string, std::string>;
 
     explicit ObjectStorageQueueOrderedFileMetadata(
         const std::filesystem::path & zk_path_,
@@ -70,6 +72,12 @@ public:
         const std::filesystem::path & zk_path,
         size_t buckets_num,
         ObjectStorageQueuePartitioningMode partitioning_mode,
+        const std::string & zookeeper_name,
+        LoggerPtr log);
+
+    static LastProcessedPathByPartition getLastProcessedPathsByPartition(
+        const std::filesystem::path & zk_path,
+        size_t buckets_num,
         const std::string & zookeeper_name,
         LoggerPtr log);
 

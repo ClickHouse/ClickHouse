@@ -201,6 +201,38 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessed
     return result;
 }
 
+ObjectStorageQueueOrderedFileMetadata::LastProcessedPathByPartition
+ObjectStorageQueueOrderedFileMetadata::getLastProcessedPathsByPartition(
+    const std::filesystem::path & zk_path_,
+    size_t buckets_num_,
+    const std::string & zookeeper_name_,
+    LoggerPtr log_)
+{
+    const bool use_buckets_for_processing = DB::useBucketsForProcessing(buckets_num_);
+    buckets_num_ = std::max<size_t>(buckets_num_, 1);
+
+    LastProcessedPathByPartition result;
+    for (size_t bucket = 0; bucket < buckets_num_; ++bucket)
+    {
+        const auto processed_node_path = use_buckets_for_processing
+            ? getProcessedPathWithBucket(zk_path_, bucket)
+            : getProcessedPathWithoutBucket(zk_path_);
+
+        LastProcessedPathByPartition bucket_result;
+        if (!getMaxProcessedFilesByPartition(bucket_result, processed_node_path, log_, zookeeper_name_))
+            continue;
+
+        for (auto & [partition, last_processed_path] : bucket_result)
+        {
+            auto [it, inserted] = result.emplace(partition, last_processed_path);
+            if (!inserted && last_processed_path < it->second)
+                it->second = std::move(last_processed_path);
+        }
+    }
+
+    return result;
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,
@@ -590,6 +622,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_);
+
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the request.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.

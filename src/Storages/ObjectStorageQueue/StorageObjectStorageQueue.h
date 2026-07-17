@@ -144,6 +144,9 @@ private:
     UInt64 polling_backoff_ms TSA_GUARDED_BY(mutex);
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
+    String ordered_partition_prefix_suffix TSA_GUARDED_BY(mutex);
+    UInt64 ordered_partition_discovery_interval_ms TSA_GUARDED_BY(mutex);
+    std::optional<std::chrono::steady_clock::time_point> last_ordered_partition_discovery TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
     /// The after_processing action itself is handled the old way for compatibility:
     /// it needs to be available in Keeper metadata for older server versions.

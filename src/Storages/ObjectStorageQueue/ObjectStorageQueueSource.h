@@ -55,6 +55,8 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
+            std::string ordered_partition_prefix_suffix_,
+            bool run_ordered_partition_discovery_,
             std::atomic<bool> & shutdown_called_);
 
         bool isFinished();
@@ -90,8 +92,10 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
+        const std::string ordered_partition_prefix_suffix;
+        const bool run_ordered_partition_discovery;
 
-        ObjectStorageIteratorPtr object_storage_iterator;
+        std::deque<ObjectStorageIteratorPtr> object_storage_iterators;
         std::unique_ptr<re2::RE2> matcher;
         ExpressionActionsPtr filter_expr;
         bool recursive{false};

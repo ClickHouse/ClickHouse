@@ -117,8 +117,12 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketingMode bucketing_mode;
+    extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
+    extern const ObjectStorageQueueSettingsString ordered_partition_prefix_suffix;
+    extern const ObjectStorageQueueSettingsUInt64 ordered_partition_discovery_interval_ms;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
@@ -179,6 +183,23 @@ namespace
                 "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        if (!queue_settings[ObjectStorageQueueSetting::ordered_partition_prefix_suffix].toString().empty())
+        {
+            if (queue_settings[ObjectStorageQueueSetting::mode] != ObjectStorageQueueMode::ORDERED)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `ordered_partition_prefix_suffix` can be used only with `mode='ordered'`");
+
+            if (queue_settings[ObjectStorageQueueSetting::partitioning_mode] != ObjectStorageQueuePartitioningMode::REGEX)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `ordered_partition_prefix_suffix` requires `partitioning_mode='regex'`");
+
+            if (queue_settings[ObjectStorageQueueSetting::bucketing_mode] != ObjectStorageQueueBucketingMode::PARTITION)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `ordered_partition_prefix_suffix` requires `bucketing_mode='partition'`");
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -280,6 +301,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
     , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
     , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
+    , ordered_partition_prefix_suffix((*queue_settings_)[ObjectStorageQueueSetting::ordered_partition_prefix_suffix])
+    , ordered_partition_discovery_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::ordered_partition_discovery_interval_ms])
     , commit_settings(CommitSettings{
         .max_processed_files_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_files_before_commit],
         .max_processed_rows_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_rows_before_commit],
@@ -1255,6 +1278,8 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processing_time_sec_before_commit",
     "buckets",
     "list_objects_batch_size",
+    "ordered_partition_prefix_suffix",
+    "ordered_partition_discovery_interval_ms",
     "min_insert_block_size_rows_for_materialized_views",
     "min_insert_block_size_bytes_for_materialized_views",
     "cleanup_interval_max_ms",
@@ -1304,7 +1329,7 @@ bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, Ob
 static bool requiresDetachedMV(const std::string & name)
 {
     checkNormalizedSetting(name);
-    return name == "buckets";
+    return name == "buckets" || name == "ordered_partition_prefix_suffix";
 }
 
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
@@ -1570,6 +1595,13 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
+            else if (change.name == "ordered_partition_prefix_suffix")
+            {
+                ordered_partition_prefix_suffix = change.value.safeGet<String>();
+                last_ordered_partition_discovery.reset();
+            }
+            else if (change.name == "ordered_partition_discovery_interval_ms")
+                ordered_partition_discovery_interval_ms = change.value.safeGet<UInt64>();
             else if (change.name == "after_processing_retries")
                 after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
             else if (change.name == "after_processing_move_uri")
@@ -1629,10 +1661,27 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
 
     size_t list_objects_batch_size_copy = 0;
     bool enable_hash_ring_filtering_copy = false;
+    String ordered_partition_prefix_suffix_copy;
+    bool run_ordered_partition_discovery = false;
     {
         std::lock_guard lock(mutex);
         list_objects_batch_size_copy = list_objects_batch_size;
         enable_hash_ring_filtering_copy = enable_hash_ring_filtering;
+        ordered_partition_prefix_suffix_copy = ordered_partition_prefix_suffix;
+        if (!ordered_partition_prefix_suffix_copy.empty())
+        {
+            const auto now = std::chrono::steady_clock::now();
+            const bool first_discovery = !last_ordered_partition_discovery.has_value();
+            const bool periodic_discovery = ordered_partition_discovery_interval_ms
+                && last_ordered_partition_discovery.has_value()
+                && now - *last_ordered_partition_discovery >= std::chrono::milliseconds(ordered_partition_discovery_interval_ms);
+
+            if (first_discovery || periodic_discovery)
+            {
+                run_ordered_partition_discovery = true;
+                last_ordered_partition_discovery = now;
+            }
+        }
     }
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
@@ -1649,6 +1698,8 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         log,
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
+        ordered_partition_prefix_suffix_copy,
+        run_ordered_partition_discovery,
         shutdown_called);
 }
 
@@ -1708,6 +1759,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_tag_value] = after_processing_settings.after_processing_tag_value;
         settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
+        settings[ObjectStorageQueueSetting::ordered_partition_prefix_suffix] = ordered_partition_prefix_suffix;
+        settings[ObjectStorageQueueSetting::ordered_partition_discovery_interval_ms] = ordered_partition_discovery_interval_ms;
         settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
         settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
         settings[ObjectStorageQueueSetting::commit_on_select] = commit_on_select;

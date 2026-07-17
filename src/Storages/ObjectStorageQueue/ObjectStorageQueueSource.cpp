@@ -26,6 +26,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+#include <map>
+
 
 namespace ProfileEvents
 {
@@ -99,6 +101,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
+    std::string ordered_partition_prefix_suffix_,
+    bool run_ordered_partition_discovery_,
     std::atomic<bool> & shutdown_called_)
     : WithContext(context_)
     , metadata(metadata_)
@@ -112,6 +116,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
+    , ordered_partition_prefix_suffix(std::move(ordered_partition_prefix_suffix_))
+    , run_ordered_partition_discovery(run_ordered_partition_discovery_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -129,12 +135,64 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    const auto start_after = metadata->getStartAfterForListing();
-    object_storage_iterator = object_storage->iterate(
-        reading_path.cutGlobs(configuration->supportsPartialPathPrefix()),
-        list_objects_batch_size_,
-        /*with_tags=*/ false,
-        start_after);
+    const auto list_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
+
+    auto add_object_storage_iterator = [&](const std::string & path_prefix, const std::optional<std::string> & start_after)
+    {
+        object_storage_iterators.push_back(object_storage->iterate(
+            path_prefix,
+            list_objects_batch_size_,
+            /*with_tags=*/ false,
+            start_after));
+    };
+
+    if (!ordered_partition_prefix_suffix.empty())
+    {
+        if (mode != ObjectStorageQueueMode::ORDERED
+            || metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::REGEX
+            || metadata->getBucketingMode() != ObjectStorageQueueBucketingMode::PARTITION)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`ordered_partition_prefix_suffix` can be used only with `mode='ordered'`, "
+                "`partitioning_mode='regex'`, and `bucketing_mode='partition'`");
+        }
+
+        std::map<std::string, std::string> last_processed_by_partition;
+        for (const auto & [partition, last_processed_path] : metadata->getLastProcessedPathsByPartition())
+            last_processed_by_partition.emplace(partition, last_processed_path);
+
+        for (const auto & [partition, last_processed_path] : last_processed_by_partition)
+        {
+            const auto partition_prefix = list_prefix + partition + ordered_partition_prefix_suffix;
+            if (!last_processed_path.starts_with(partition_prefix))
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`ordered_partition_prefix_suffix` is not compatible with partition `{}`: "
+                    "last processed path `{}` does not start with derived prefix `{}`",
+                    partition,
+                    last_processed_path,
+                    partition_prefix);
+            }
+
+            add_object_storage_iterator(partition_prefix, last_processed_path);
+        }
+
+        if (last_processed_by_partition.empty() || run_ordered_partition_discovery)
+        {
+            LOG_TRACE(
+                log,
+                "Adding full-prefix discovery listing for ordered regex partitions "
+                "(known partitions: {}, discovery requested: {})",
+                last_processed_by_partition.size(),
+                run_ordered_partition_discovery);
+            add_object_storage_iterator(list_prefix, std::nullopt);
+        }
+    }
+
+    if (object_storage_iterators.empty())
+        add_object_storage_iterator(list_prefix, metadata->getStartAfterForListing());
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -175,7 +233,7 @@ size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
 {
     std::lock_guard lock(next_mutex);
     /// Copied from StorageObjectStorageSource::estimateKeysCount().
-    if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
+    if (object_infos.empty() && !is_finished && !object_storage_iterators.empty())
         return std::numeric_limits<size_t>::max();
     else
         return object_infos.size();
@@ -203,11 +261,17 @@ ObjectStorageQueueSource::FileIterator::next()
 
         while (new_batch.empty())
         {
-            auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
-            if (!result.has_value())
+            if (object_storage_iterators.empty())
             {
                 is_finished = true;
                 return {};
+            }
+
+            auto result = object_storage_iterators.front()->getCurrentBatchAndScheduleNext();
+            if (!result.has_value())
+            {
+                object_storage_iterators.pop_front();
+                continue;
             }
 
             LOG_TEST(log, "Received batch of size: {}", result->size());

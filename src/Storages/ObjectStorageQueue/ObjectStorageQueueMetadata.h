@@ -70,6 +70,7 @@ public:
         ObjectStorageQueueMetadataCacheWeightFunction>;
     using Bucket = size_t;
     using Processor = std::string;
+    using LastProcessedPathByPartition = ObjectStorageQueueOrderedFileMetadata::LastProcessedPathByPartition;
 
     ObjectStorageQueueMetadata(
         ObjectStorageType storage_type_,
@@ -188,6 +189,7 @@ public:
 
     /// Compute StartAfter for ordered S3 listing when it is safe.
     std::optional<std::string> getStartAfterForListing() const;
+    LastProcessedPathByPartition getLastProcessedPathsByPartition() const;
 
     void updateSettings(const SettingsChanges & changes);
 

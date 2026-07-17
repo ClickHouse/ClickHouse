@@ -624,6 +624,95 @@ def test_ordered_mode_with_regex_partitioning_large_num_files(started_cluster, e
     assert sorted(processed_nodes) == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {sorted(processed_nodes)}"
 
 
+def test_ordered_regex_partition_prefix_listing(started_cluster):
+    """
+    With regex partitioning and partition bucketing, ordered mode can list each
+    known partition by object prefix and use that partition's processed
+    watermark as `StartAfter`. This keeps existing filenames like
+    `{hostname}_{timestamp}_{sequence}.csv` while avoiding repeated full-prefix
+    listings when `after_processing='keep'`.
+    """
+    instance = started_cluster.instances["instance"]
+
+    table_name = f"test_regex_prefix_listing_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    partition_regex = r'(?P<hostname>server-\d+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
+
+    for host_id in range(1, 3):
+        for sequence in range(1, 4):
+            put_file_content(
+                started_cluster,
+                "S3Queue",
+                f"{files_path}/server-{host_id}_20251217T100000.000000Z_{sequence:04d}.csv",
+                f"{host_id * 100 + sequence},{host_id},{sequence}\n".encode(),
+            )
+
+    create_table(
+        started_cluster,
+        instance,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_loading_retries": 3,
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 100,
+            "processing_threads_num": 4,
+            "buckets": 4,
+            "bucketing_mode": "partition",
+            "ordered_partition_prefix_suffix": "_",
+            "ordered_partition_discovery_interval_ms": 3600000,
+            "list_objects_batch_size": 1000,
+        },
+        engine_name="S3Queue",
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component="hostname",
+    )
+    create_mv(instance, table_name, dst_table_name)
+
+    wait_condition(
+        lambda: int(instance.query(f"SELECT count() FROM {dst_table_name}")),
+        lambda count: count == 6,
+        max_attempts=60,
+        delay=0.5,
+    )
+
+    listed_before = int(instance.query(
+        "SELECT value FROM system.events WHERE event = 'ObjectStorageQueueListedFiles' "
+        "SETTINGS system_events_show_zero_values=1"
+    ))
+
+    put_file_content(
+        started_cluster,
+        "S3Queue",
+        f"{files_path}/server-1_20251217T100000.000000Z_0004.csv",
+        b"104,1,4\n",
+    )
+
+    wait_condition(
+        lambda: int(instance.query(f"SELECT count() FROM {dst_table_name}")),
+        lambda count: count == 7,
+        max_attempts=60,
+        delay=0.5,
+    )
+
+    listed_after = int(instance.query(
+        "SELECT value FROM system.events WHERE event = 'ObjectStorageQueueListedFiles' "
+        "SETTINGS system_events_show_zero_values=1"
+    ))
+
+    assert listed_after - listed_before <= 2
+
+    data = instance.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1 FORMAT CSV")
+    assert "104,1,4" in data
+
+
 @pytest.mark.parametrize("bucketing_mode", ["path", "partition"])
 @pytest.mark.parametrize("engine_name", ["S3Queue"])
 def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bucketing_mode):

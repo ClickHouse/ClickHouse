@@ -322,6 +322,20 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
     return min_path;
 }
 
+ObjectStorageQueueMetadata::LastProcessedPathByPartition
+ObjectStorageQueueMetadata::getLastProcessedPathsByPartition() const
+{
+    if (mode != ObjectStorageQueueMode::ORDERED
+        || partitioning_mode == ObjectStorageQueuePartitioningMode::NONE)
+        return {};
+
+    return ObjectStorageQueueOrderedFileMetadata::getLastProcessedPathsByPartition(
+        zookeeper_path,
+        std::max<size_t>(getBucketsNum(), 1),
+        zookeeper_name,
+        log);
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 {
@@ -707,6 +721,7 @@ namespace
             return info;
         }
     };
+
 }
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
