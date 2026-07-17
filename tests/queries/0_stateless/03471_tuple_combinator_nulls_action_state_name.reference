@@ -1,0 +1,4 @@
+1
+AggregateFunction(anyLast_respect_nullsTuple, Tuple(UInt64))
+AggregateFunction(anyLastTuple, Tuple(UInt64))
+((0),(0))

@@ -40,6 +40,29 @@ DataTypePtr AggregateFunctionTuple::deriveResultType(
     return std::make_shared<DataTypeTuple>(result_types);
 }
 
+/// Derive the base function name (the part before the `Tuple` suffix) from the resolved nested
+/// functions rather than the pre-resolution name string passed by the factory. The factory resolves
+/// each nested function honoring the query's `NullsAction`, so `anyLast(x) RESPECT NULLS` yields a
+/// nested `anyLast_respect_nulls` while the plain form yields `anyLast`. These two have different
+/// state representations, so the composed `-Tuple` name must differ too; otherwise both tuple states
+/// serialize to the same `DataTypeAggregateFunction` type name, and reconstructing a function from
+/// that name (over the distributed wire, on disk, or when merging totals) resolves the wrong variant
+/// and reinterprets the state bytes. Every single-nested combinator (`-Array`, `-If`, `-OrNull`)
+/// already composes its name from `nested_func->getName()` for the same reason. Only-null elements
+/// collapse to a `nothing*` placeholder with an empty state and no variant, so they carry no naming
+/// information: skip them and fall back to the pre-resolution name when every element is a placeholder.
+static String deriveNestedFuncName(
+    const String & nested_name, const VectorWithMemoryTracking<AggregateFunctionPtr> & nested_functions)
+{
+    for (const auto & nested_function : nested_functions)
+    {
+        const String & resolved_name = nested_function->getName();
+        if (resolved_name != "nothing" && resolved_name != "nothingNull" && resolved_name != "nothingUInt64")
+            return resolved_name;
+    }
+    return nested_name;
+}
+
 AggregateFunctionTuple::AggregateFunctionTuple(
     const String & nested_name,
     VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions_,
@@ -47,7 +70,7 @@ AggregateFunctionTuple::AggregateFunctionTuple(
     const Array & params)
     : IAggregateFunctionHelper<AggregateFunctionTuple>(arguments, params, deriveResultType(nested_functions_, arguments))
     , nested_functions(std::move(nested_functions_))
-    , nested_func_name(nested_name)
+    , nested_func_name(deriveNestedFuncName(nested_name, nested_functions))
 {
     state_offsets.resize(nested_functions.size());
 
