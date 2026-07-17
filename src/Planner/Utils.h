@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/SortDescription.h>
+
+#include <Storages/IStorage_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/SelectUnionMode.h>
@@ -123,5 +126,13 @@ bool optimizePlanForExists(QueryPlan & query_plan);
 QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
+
+/// Choose the single cheapest column to read from a storage for a trivial query such as
+/// `SELECT count()` / `SELECT 1 FROM t`, which needs to read at least one column to count the rows.
+/// The choice is restricted to `column_names_allowed_to_select` when it is not empty (so the column
+/// read is one the user is allowed to read). Exposed so the `EXPLAIN QUERY TREE` / `EXPLAIN SYNTAX`
+/// access check can reproduce the planner's trivial-read column choice for views.
+NameAndTypePair chooseSmallestColumnToReadFromStorage(
+    const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select);
 
 }

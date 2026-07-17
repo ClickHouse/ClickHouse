@@ -170,83 +170,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-/// Check if current user has privileges to SELECT columns from table
-/// Throws an exception if access to any column from `column_names` is not granted
-/// If `column_names` is empty, check access to any columns and return names of accessible columns
-NameSet checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
-{
-    /// StorageDummy is created on preliminary stage, ignore access check for it.
-    if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-        return {};
-
-    const auto & storage_id = table_node.getStorageID();
-    const auto & storage_snapshot = table_node.getStorageSnapshot();
-
-    if (column_names.empty())
-    {
-        NameSet accessible_columns;
-        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
-          * one table column is accessible.
-          */
-        auto access = query_context->getAccess();
-        for (const auto & column : storage_snapshot->metadata->getColumns())
-        {
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
-                accessible_columns.insert(column.name);
-        }
-
-        if (accessible_columns.empty())
-        {
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-                query_context->getUserName(),
-                storage_id.getFullTableName());
-        }
-        return accessible_columns;
-    }
-
-    // In case of cross-replication we don't know what database is used for the table.
-    // `storage_id.hasDatabase()` can return false only on the initiator node.
-    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
-
-    return {};
-}
-
-/// Check access rights for all tables referenced in a subquery
-void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
-{
-    auto table_nodes = extractAllTableReferences(subquery_node);
-    for (const auto & table_node_ptr : table_nodes)
-    {
-        const auto & table_node = table_node_ptr->as<TableNode &>();
-        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-            continue;
-
-        const auto & storage_id = table_node.getStorageID();
-        if (storage_id.hasDatabase())
-            query_context->checkAccess(AccessType::SELECT, storage_id);
-    }
-}
-
-bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
-{
-    const auto & storage_id = table_node.getStorageID();
-    if (!storage_id.hasDatabase())
-        return false;
-    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-    {
-        static const boost::container::flat_set<std::string_view> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (tables_ignoring_quota.contains(storage_id.table_name))
-            return true;
-    }
-    return false;
-}
-
+/// Declared in `Planner/Utils.h` so the `EXPLAIN QUERY TREE` / `EXPLAIN SYNTAX` access check
+/// (`InterpreterExplainQuery`) can reproduce the planner's trivial-read column choice for views.
+/// Kept out of the unnamed namespace below for that reason.
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
@@ -329,6 +255,83 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
 
     return result;
+}
+
+namespace
+{
+
+/// Check if current user has privileges to SELECT columns from table
+/// Throws an exception if access to any column from `column_names` is not granted
+/// If `column_names` is empty, check access to any columns and return names of accessible columns
+NameSet checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
+{
+    /// StorageDummy is created on preliminary stage, ignore access check for it.
+    if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
+        return {};
+
+    const auto & storage_id = table_node.getStorageID();
+    const auto & storage_snapshot = table_node.getStorageSnapshot();
+
+    if (column_names.empty())
+    {
+        NameSet accessible_columns;
+        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
+          * one table column is accessible.
+          */
+        auto access = query_context->getAccess();
+        for (const auto & column : storage_snapshot->metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+                accessible_columns.insert(column.name);
+        }
+
+        if (accessible_columns.empty())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                query_context->getUserName(),
+                storage_id.getFullTableName());
+        }
+        return accessible_columns;
+    }
+
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    if (storage_id.hasDatabase())
+        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    return {};
+}
+
+/// Check access rights for all tables referenced in a subquery
+void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
+{
+    auto table_nodes = extractAllTableReferences(subquery_node);
+    for (const auto & table_node_ptr : table_nodes)
+    {
+        const auto & table_node = table_node_ptr->as<TableNode &>();
+        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
+            continue;
+
+        const auto & storage_id = table_node.getStorageID();
+        if (storage_id.hasDatabase())
+            query_context->checkAccess(AccessType::SELECT, storage_id);
+    }
+}
+
+bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
+{
+    const auto & storage_id = table_node.getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<std::string_view> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.contains(storage_id.table_name))
+            return true;
+    }
+    return false;
 }
 
 /// True if the table expression carries modifiers that prevent answering a

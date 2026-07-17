@@ -66,6 +66,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
+#include <Planner/Utils.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Storages/StorageDummy.h>
@@ -106,16 +107,20 @@ namespace ErrorCodes
 /// Forward declaration: reproduces the base-table access check `StorageView::readImpl` performs when
 /// actually reading through a regular (non-parameterized) view, by resolving the view's inner query under
 /// its own security context and running the same per-table check recursively (covering nested views too).
-/// `column_names` are the columns requested from the view itself (empty when unknown, e.g. the
-/// trivial-count fallback), matching the `column_names` real execution passes into
-/// `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery` for the view's inner query - so a
-/// user who can read only some of the view's output columns is not also required to have access to base
-/// columns the view happens to select but this particular read never asked for. `checkAccessRightsForQueryTree`
+/// `column_names` are the columns requested from the view itself, matching the `column_names` real
+/// execution passes into `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery` for the
+/// view's inner query - so a user who can read only some of the view's output columns is not also required
+/// to have access to base columns the view happens to select but this particular read never asked for.
+/// When `column_names` is empty (a trivial read such as `SELECT count() FROM v` that asks for no specific
+/// view column), the same single cheapest readable view column the planner would pick
+/// (`chooseSmallestColumnToReadFromStorage`) is used, mirroring `prepareBuildQueryPlanForTableExpression`.
+/// `view_storage` / `view_snapshot` are the view's storage and snapshot. `checkAccessRightsForQueryTree`
 /// further down uses it for the analyzer path; `ExplainAnalyzedSyntaxMatcher` below uses it for the legacy
 /// AST-based path, so both are consistent. Declared `static` (rather than in one of this file's unnamed
 /// namespaces) so this one declaration and its later definition - which needs symbols from the second
 /// unnamed namespace below - refer to the same internal-linkage entity throughout.
-static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names);
+static void checkViewBaseTableAccess(
+    const StoragePtr & view_storage, const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names);
 
 namespace
 {
@@ -296,7 +301,7 @@ namespace
                 return;
 
             auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-            checkViewBaseTableAccess(storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
+            checkViewBaseTableAccess(storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
         }
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
@@ -795,7 +800,7 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         /// in `StorageView::readImpl`. Inlined views already expose their base tables as `TableNode`s handled
         /// by the loop above, so they are not double-checked here.
         if (typeid_cast<const StorageView *>(table_node->getStorage().get()))
-            checkViewBaseTableAccess(table_node->getStorageSnapshot(), scope_context, column_names);
+            checkViewBaseTableAccess(table_node->getStorage(), table_node->getStorageSnapshot(), scope_context, column_names);
     }
 }
 
@@ -803,8 +808,10 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
 /// that cannot be resolved (an invalid or fuzzed query, or a table function whose arguments the
 /// analyzer intentionally does not evaluate for `EXPLAIN SYNTAX`) has no resolved metadata to protect
 /// and a real query would fail with the same resolution error before the planner's access check, so
-/// the check is skipped rather than turning a formatting request into a resolution error. An
-/// `ACCESS_DENIED` raised during resolution is still propagated.
+/// the check is skipped rather than turning a formatting request into a resolution error. This also
+/// covers a remote table function (e.g. `paimonAzure`, `url`) that throws a non-`DB::Exception` while
+/// connecting during resolution: `EXPLAIN QUERY TREE run_passes = 0` dumps the unresolved tree and must
+/// not turn into a connection error. An `ACCESS_DENIED` raised during resolution is still propagated.
 void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context)
 {
     bool resolved = false;
@@ -817,6 +824,12 @@ void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
     {
         if (e.code() == ErrorCodes::ACCESS_DENIED)
             throw;
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// A non-ClickHouse exception (e.g. a remote table function that fails to connect while being
+        /// resolved) is not an access denial. As above there is no resolved metadata to protect, so the
+        /// check is skipped rather than turning a formatting request into an error.
     }
 
     if (resolved)
@@ -947,19 +960,40 @@ bool explainQueryTree(
 
 /// See the forward declaration above `ExpandParameterizedViewsMatcher` for why this is `static` at file
 /// scope rather than inside one of this file's unnamed namespaces.
-static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names)
+static void checkViewBaseTableAccess(
+    const StoragePtr & view_storage, const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names)
 {
     auto view_context = StorageView::getViewSubqueryContext(scope_context, view_snapshot);
     ASTPtr inner_query = view_snapshot->metadata->getSelectQuery().inner_query->clone();
 
-    if (!column_names.empty())
+    /// The columns to request from the view. For a normal read they are the columns the outer query
+    /// selects from the view. For a trivial read (e.g. `SELECT count() FROM v`) that asks for no specific
+    /// view column, real execution does not resolve the whole view body: the planner picks one cheapest
+    /// readable view column in `prepareBuildQueryPlanForTableExpression` (via
+    /// `chooseSmallestColumnToReadFromStorage`, restricted to the columns the user may read) and
+    /// `StorageView::readImpl` passes only that column into the inner query. Reproduce the same choice here
+    /// so a user with `SELECT` on the view and only column-level access to the base table is not over-denied.
+    Names columns_to_read = column_names;
+    if (columns_to_read.empty())
     {
-        /// Wrap the inner query so only `column_names` are selected from it, exactly as
-        /// `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery` do for a real read through the
-        /// view (see `StorageView::readImpl`). Resolving the wrapped query still runs the usual query tree
-        /// passes, including the one that prunes subquery output columns the outer projection does not use, so
-        /// base-table columns the view happens to select but this particular read never asked for are not
-        /// resolved - and therefore not checked - matching what real execution actually reads.
+        const auto & storage_id = view_snapshot->storage.getStorageID();
+        auto access = scope_context->getAccess();
+        NameSet columns_allowed_to_select;
+        for (const auto & column : view_snapshot->metadata->getColumns())
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+                columns_allowed_to_select.insert(column.name);
+
+        columns_to_read.push_back(
+            chooseSmallestColumnToReadFromStorage(view_storage, view_snapshot, columns_allowed_to_select).name);
+    }
+
+    /// Wrap the inner query so only `columns_to_read` are selected from it, exactly as
+    /// `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery` do for a real read through the
+    /// view (see `StorageView::readImpl`). Resolving the wrapped query still runs the usual query tree
+    /// passes, including the one that prunes subquery output columns the outer projection does not use, so
+    /// base-table columns the view happens to select but this particular read never asked for are not
+    /// resolved - and therefore not checked - matching what real execution actually reads.
+    {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         auto table_expression_ast = make_intrusive<ASTTableExpression>();
@@ -975,8 +1009,8 @@ static void checkViewBaseTableAccess(const StorageSnapshotPtr & view_snapshot, c
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
         auto projection_expression_list_ast = make_intrusive<ASTExpressionList>();
-        projection_expression_list_ast->children.reserve(column_names.size());
-        for (const auto & column_name : column_names)
+        projection_expression_list_ast->children.reserve(columns_to_read.size());
+        for (const auto & column_name : columns_to_read)
             projection_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(column_name));
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
 

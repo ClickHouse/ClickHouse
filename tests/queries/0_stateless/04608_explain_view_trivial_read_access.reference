@@ -1,0 +1,15 @@
+-- Trivial read 'SELECT count()': allowed, matching a plain SELECT (reads only the cheapest column 'y')
+SELECT count(): OK
+EXPLAIN QUERY TREE count(): OK
+EXPLAIN SYNTAX count(): OK
+EXPLAIN SYNTAX count() (legacy): OK
+-- Trivial read 'SELECT 1': allowed, matching a plain SELECT
+SELECT 1: OK
+EXPLAIN QUERY TREE 1: OK
+EXPLAIN SYNTAX 1: OK
+-- With inlining the base table is exposed directly; a trivial read still needs only one accessible column
+SELECT count() (inline): OK
+EXPLAIN QUERY TREE count() (inline): OK
+-- Sanity: explicitly selecting the non-granted column 'z' is still denied, matching a plain SELECT
+SELECT z: ACCESS_DENIED
+EXPLAIN QUERY TREE z: ACCESS_DENIED
