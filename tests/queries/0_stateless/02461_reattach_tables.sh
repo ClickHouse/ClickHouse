@@ -157,3 +157,69 @@ fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_engine_grant"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${REATTACH_USER}"
+
+# The outer query's own access checks run only when its interpreter is constructed — after the reattach
+# hook. The hook therefore preflights the access the query is going to check on the collected tables and
+# skips the DETACH/ATTACH entirely when any of it is missing, so that a query rejected with ACCESS_DENIED
+# stays side-effect free. A user with the DETACH/ATTACH grants (DROP TABLE, CREATE TABLE, TABLE ENGINE)
+# but without SELECT on the table must get ACCESS_DENIED without any DETACH being logged.
+ACC_USER="user_reattach_acc_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ACC_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${ACC_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${ACC_USER}"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_acc_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_acc_2"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_acc_1 (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_acc_2 (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "GRANT DROP TABLE, CREATE TABLE ON ${CLICKHOUSE_DATABASE}.t_reattach_acc_1 TO ${ACC_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT, DROP TABLE, CREATE TABLE ON ${CLICKHOUSE_DATABASE}.t_reattach_acc_2 TO ${ACC_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT * FROM t_reattach_acc_1" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_acc_1"; then
+    echo "FAIL (table was detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+# The missing access may concern a table other than the one that would be detached: here the user may
+# SELECT (and detach) t_reattach_acc_2 but lacks SELECT on t_reattach_acc_1, so the whole query fails
+# with ACCESS_DENIED and neither table may be detached.
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT * FROM t_reattach_acc_2 JOIN t_reattach_acc_1 USING a" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_acc"; then
+    echo "FAIL (a table was detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+# With SELECT granted on the table, the same user passes the preflight and the DETACH/ATTACH fires.
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_reattach_acc_1 TO ${ACC_USER}"
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT * FROM t_reattach_acc_1" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_acc_1"; then
+    echo "OK"
+else
+    echo "FAIL (table was not detached although all access is granted)"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_acc_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_acc_2"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ACC_USER}"

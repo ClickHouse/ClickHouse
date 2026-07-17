@@ -38,6 +38,13 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ASTWatchQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -51,6 +58,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -96,6 +104,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
+#include <unordered_map>
 #include <unordered_set>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1162,12 +1171,21 @@ namespace
 
 struct CollectTablesData
 {
+    struct CollectedTable
+    {
+        StorageID id;
+        /// The access the outer query is going to check on this table when its interpreter runs
+        /// (recorded by the collector from the AST shape that referenced the table). Used by the
+        /// preflight in `reattachTablesUsedInQuery` to keep access-rejected queries side-effect free.
+        AccessFlags required_access;
+    };
+
     explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
 
     const ContextPtr context;
-    std::vector<StorageID> tables;
+    std::vector<CollectedTable> tables;
 
-    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes)
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, const AccessFlags & required_access)
     {
         if (table.empty())
             return;
@@ -1188,9 +1206,38 @@ struct CollectTablesData
         if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
             return;
 
-        tables.emplace_back(std::move(resolved));
+        tables.emplace_back(CollectedTable{std::move(resolved), required_access});
     }
 };
+
+/// The access the outer query will require on the table referenced by `ast` (one of the
+/// `ASTQueryWithTableAndOutput` family), mirroring the checks the corresponding interpreters perform.
+/// Where the exact requirement depends on execution-time details (or the query class is not enumerated
+/// here), returns all table-level flags: over-requiring only makes the preflight skip randomization,
+/// never lets a query that would fail its access check produce `DETACH`/`ATTACH` side effects.
+AccessFlags requiredAccessForTableQuery(const IAST & ast)
+{
+    if (ast.as<ASTShowCreateTableQuery>() || ast.as<ASTShowCreateViewQuery>())
+        return AccessType::SHOW_COLUMNS;
+    if (ast.as<ASTShowCreateDictionaryQuery>() || ast.as<ASTExistsDictionaryQuery>())
+        return AccessType::SHOW_DICTIONARIES;
+    if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>())
+        return AccessType::SHOW_TABLES;
+    if (ast.as<ASTCheckTableQuery>())
+        return AccessType::CHECK;
+    if (ast.as<ASTOptimizeQuery>())
+        return AccessType::OPTIMIZE;
+    /// The `ALTER` group covers every per-command flag `InterpreterAlterQuery::getRequiredAccess` may check.
+    if (ast.as<ASTAlterQuery>())
+        return AccessType::ALTER;
+    if (ast.as<ASTUpdateQuery>())
+        return AccessType::ALTER_UPDATE;
+    if (ast.as<ASTDeleteQuery>())
+        return AccessType::ALTER_DELETE;
+    if (ast.as<ASTWatchQuery>())
+        return AccessType::SELECT;
+    return AccessFlags::allFlagsGrantableOnTableLevel();
+}
 
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
 /// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
@@ -1307,7 +1354,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             if (!table_expression || !table_expression->database_and_table_name)
                 continue;
             if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
-                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes);
+                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes, AccessType::SELECT);
         }
 
         /// Recurse into the remaining children with the CTE names active. The WITH subtree was already
@@ -1322,7 +1369,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     }
     else if (const auto * insert = ast->as<ASTInsertQuery>())
     {
-        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes);
+        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes, AccessType::INSERT);
     }
     else if (const auto * backup = ast->as<ASTBackupQuery>())
     {
@@ -1348,10 +1395,14 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// same name that the query never touches, so skip temporary-table elements.
             if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
                 continue;
+            /// The access `RESTORE` requires on an existing destination depends on execution-time details
+            /// (`RestorerFromBackup` checks `CREATE_*`/`INSERT` or `SHOW_*` flags depending on the restored
+            /// object kind and mode), so require all table-level flags — over-requiring only skips
+            /// randomization. `BACKUP TABLE` checks `BACKUP` on the source table.
             if (backup->kind == ASTBackupQuery::RESTORE)
-                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes);
+                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
             else
-                data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes);
+                data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes, AccessType::BACKUP);
         }
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
@@ -1361,7 +1412,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
         /// table of the same name that the query never touches, so skip temporary-table references.
         if (!query_with_output->isTemporary())
-            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes);
+            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast));
     }
 
     for (const auto & child : ast->children)
@@ -1375,22 +1426,54 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     CollectTablesData data(context);
     collectTablesInQuery(query, data, /* active_ctes */ {});
 
-    /// Deduplicate: the same table can appear multiple times (e.g. self-joins).
+    /// Deduplicate: the same table can appear multiple times (e.g. self-joins), possibly in contexts
+    /// requiring different access (e.g. `INSERT INTO t SELECT ... FROM t`) — merge the required access.
     {
-        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
-        std::erase_if(data.tables, [&](const StorageID & id) { return !seen.insert(id).second; });
+        std::unordered_map<StorageID, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> index_in_deduped;
+        std::vector<CollectTablesData::CollectedTable> deduped;
+        deduped.reserve(data.tables.size());
+        for (auto & table : data.tables)
+        {
+            auto [it, inserted] = index_in_deduped.emplace(table.id, deduped.size());
+            if (inserted)
+                deduped.push_back(std::move(table));
+            else
+                deduped[it->second].required_access |= table.required_access;
+        }
+        data.tables = std::move(deduped);
     }
 
-    for (const auto & table_id : data.tables)
+    /// Access preflight — keep access-rejected queries side-effect free. The outer query's own access
+    /// checks run only later, when its interpreter is constructed, so without this check a user who may
+    /// `DETACH`/`ATTACH` a table but lacks the access the query itself needs on it (e.g. `SELECT`) would
+    /// still trigger a real `DETACH`/`ATTACH` cycle and only then get `ACCESS_DENIED`. Require, for every
+    /// collected table, the access recorded at collection time; if any check fails, skip the hook for the
+    /// whole query — the missing access may concern a different table than the one to be detached.
+    /// The preflight is scoped to what the AST-based collector sees: access enforced against objects that
+    /// materialize only during execution (e.g. inner tables of views) cannot be validated here, and the
+    /// table-level check is conservative with column-level grants (a user granted `SELECT` on a subset of
+    /// columns fails it) — in all those cases the preflight errs toward skipping randomization, never
+    /// toward producing side effects for a failing query.
+    auto access = context->getAccess();
+    for (const auto & table : data.tables)
+        if (!access->isGranted(table.required_access, table.id.getDatabaseName(), table.id.getTableName()))
+            return;
+
+    for (const auto & collected : data.tables)
     {
+        const auto & table_id = collected.id;
         if (table_id.getDatabaseName() == "system")
             continue;
 
         const auto & catalog = DatabaseCatalog::instance();
 
         /// If table doesn't store data on disk, the data will be lost after detach.
-        /// If table has lock for any action, it will be removed after detach.
-        /// Since it will affect future queries do not detach in those cases.
+        /// An action lock (e.g. from `SYSTEM STOP MERGES`) is held against the current storage object and
+        /// is discarded by a `DETACH`/`ATTACH` cycle — exactly as by a manual `DETACH TABLE` + `ATTACH TABLE`.
+        /// `hasAny` is a best-effort, point-in-time check that skips the common case (a test stopped some
+        /// action before running queries); it is deliberately not atomic with the detach, so a lock installed
+        /// concurrently after this check can still be lost. That matches manual `DETACH` semantics and is
+        /// acceptable for this testing-only hook.
         auto [database, table] = catalog.tryGetDatabaseAndTable(table_id, context);
         if (!database
             || !database->supportsDetachingTables()
@@ -1440,7 +1523,6 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// (e.g. with `ACCESS_DENIED` on the engine grant), leaving the table detached and failing later
         /// statements with `UNKNOWN_TABLE`. Skip the table if the user lacks any of them.
         /// `isGranted(TABLE_ENGINE, ...)` already accounts for the `table_engines_require_grant` setting.
-        auto access = context->getAccess();
         if (!access->isGranted(AccessType::DROP_TABLE, table_id.getDatabaseName(), table_id.getTableName())
             || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName())
             || !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))

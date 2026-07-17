@@ -3039,6 +3039,8 @@ Another use case of `prefer_global_in_and_join` is accessing tables created by 
 For testing purposes only. Detach and attach back the tables used in a query before its execution.
 
 Covers `SELECT` (including subqueries and CTEs), `INSERT`, `BACKUP TABLE`/`RESTORE TABLE`, and queries addressing a single table by name, such as `SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE TABLE`, or `ALTER TABLE`. Other query classes — e.g. `SHOW COLUMNS`, `SHOW INDEXES`, `DESCRIBE`, `RENAME`, `EXCHANGE TABLES`, and the whole-database or whole-server forms `BACKUP`/`RESTORE DATABASE` and `BACKUP`/`RESTORE ALL` (which name no explicit table and expand into per-table work only during execution) — are deliberately out of scope and never trigger the `DETACH`/`ATTACH`.
+
+The `DETACH`/`ATTACH` happens only when the current user has both the grants the internal `DETACH`/`ATTACH` requires (`DROP TABLE`, `CREATE TABLE`, and `TABLE ENGINE` where applicable) and the access the query itself is going to check on the collected tables (e.g. `SELECT` from all of the tables used in a `SELECT` query), so a query that would be rejected with `ACCESS_DENIED` does not produce `DETACH`/`ATTACH` side effects. Otherwise, the query is executed without the randomization.
 )", EXPERIMENTAL) \
     DECLARE(Float, reattach_tables_before_query_execution_probability, 0., R"(
 For testing purposes only. The probability of enabling `reattach_tables_before_query_execution` if it's disabled.
