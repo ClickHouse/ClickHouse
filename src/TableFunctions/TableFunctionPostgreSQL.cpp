@@ -4,10 +4,11 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -15,13 +16,13 @@
 
 namespace DB
 {
-namespace Setting
+namespace PostgreSQLSetting
 {
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
+    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
 namespace ErrorCodes
@@ -98,15 +99,41 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     if (!func_args.arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'PostgreSQL' must have arguments.");
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
-    const auto & settings = context->getSettingsRef();
+    /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
+    /// (preserving the historical behaviour); a named collection may override them, and a trailing
+    /// `SETTINGS ...` clause takes the final precedence, like on the table engine.
+    PostgreSQLSettings postgresql_settings;
+    postgresql_settings.loadFromQueryContext(*context);
+
+    auto & args = func_args.arguments->children;
+    ASTPtr settings_ast;
+    for (auto it = args.begin(); it != args.end(); ++it)
+    {
+        if ((*it)->as<ASTSetQuery>())
+        {
+            settings_ast = *it;
+            args.erase(it);
+            break;
+        }
+    }
+
+    configuration.emplace(StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings));
+
+    /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
+    /// stored in a named collection.
+    if (settings_ast)
+        postgresql_settings.loadFromQuery(settings_ast->as<ASTSetQuery &>());
+
+    if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         *configuration,
-        settings[Setting::postgresql_connection_pool_size],
-        settings[Setting::postgresql_connection_pool_wait_timeout],
-        settings[Setting::postgresql_connection_pool_retries],
-        settings[Setting::postgresql_connection_pool_auto_close_connection],
-        settings[Setting::postgresql_connection_attempt_timeout]);
+        postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
+        postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
+        postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
+        postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
+        postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
 }
 
 }

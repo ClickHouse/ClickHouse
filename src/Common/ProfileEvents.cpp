@@ -840,9 +840,11 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
+    M(CachedReadBufferCacheWriteStopped, "Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache", ValueType::Number) \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time", ValueType::Microseconds) \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
+    M(CachedWriteBufferCacheWriteStopped, "Number of times write-through caching was stopped (space reservation or the cache write failed, or a covering segment was being evicted), after which the write continues without populating the cache", ValueType::Number) \
     \
     M(ReaderExecutorBytesFromPageCache, "Physical bytes ReaderExecutor issued from the page cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
     M(ReaderExecutorBytesFromFilesystemCache, "Physical bytes ReaderExecutor issued from the filesystem cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
@@ -1210,6 +1212,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheWriteBytes, "Distributed Cache write buffer event. Number of bytes written to distributed cache", ValueType::Bytes) \
     M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
     M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
+    M(DistrCacheBackgroundWrites, "Distributed Cache write buffer event. Number of cache writes that ran on a background thread (a background write slot was acquired)", ValueType::Number) \
+    M(DistrCacheInlineWrites, "Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (no background write slot was free, or the write was for temporary data)", ValueType::Number) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheConnectErrors, "Distributed Cache client event. Number of failures to connect to a distributed cache server before making a request (counted once per request, after all connect attempts are exhausted, unlike per-attempt DistrCacheUnsuccessfulConnectAttempts). A timeout while waiting for a free pooled connection is counted here as well. Failures to reconnect during request creation are counted in DistrCacheMakeRequestErrors instead", ValueType::Number) \
@@ -1227,6 +1231,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheSentDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets sent to distributed cache", ValueType::Bytes) \
     M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
     M(DistrCacheUnusedDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
+    M(DistrCacheUnusedDataPacketsBytesUnknownRequest, "Distributed Cache client event. The number of bytes in ignored Data packets (part of DistrCacheUnusedDataPacketsBytes) that arrived for a request the client no longer tracks (e.g. reading was stopped via EndRequest after the server had already sent more data)", ValueType::Bytes) \
+    M(DistrCacheUnusedDataPacketsBytesReadRangeIdChanged, "Distributed Cache client event. The number of bytes in ignored Data packets (part of DistrCacheUnusedDataPacketsBytes) that arrived for the tracked request but for an older read range id (a newer read range was requested on the same request)", ValueType::Bytes) \
     M(DistrCacheUnusedPacketsBufferAllocations, "Distributed Cache client event. The number of extra buffer allocations in case we could not reuse existing buffer", ValueType::Number) \
     \
     M(DistrCacheLockRegistryMicroseconds, "Distributed Cache registry event. Time spent to take DistributedCacheRegistry lock", ValueType::Microseconds) \
@@ -1545,6 +1551,19 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
     M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
     M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
+    M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
+    M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
+    M(StatelessWorkerProvisioningMicroseconds, "Total time queries spent waiting for stateless workers to be provisioned.", ValueType::Microseconds) \
+    M(StatelessWorkerProvisioningWaits, "Number of times a query had to wait for the stateless worker discovery service to provide workers.", ValueType::Number) \
+    M(StatelessWorkerCreateLeaseRequests, "Number of create_lease requests sent to the stateless worker discovery service to acquire workers.", ValueType::Number) \
+    M(StatelessWorkerCreateLeaseMicroseconds, "Total time spent in create_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
+    M(StatelessWorkerCreateLeaseErrors, "Number of failed create_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
+    M(StatelessWorkerGetLeaseRequests, "Number of get_lease requests sent to the stateless worker discovery service to refresh the list of leased workers.", ValueType::Number) \
+    M(StatelessWorkerGetLeaseMicroseconds, "Total time spent in get_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
+    M(StatelessWorkerGetLeaseErrors, "Number of failed get_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
+    M(StatelessWorkerUpdateLeaseRequests, "Number of update_lease requests sent to the stateless worker discovery service to renew worker leases.", ValueType::Number) \
+    M(StatelessWorkerUpdateLeaseMicroseconds, "Total time spent in update_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
+    M(StatelessWorkerUpdateLeaseErrors, "Number of failed update_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

@@ -266,6 +266,7 @@ try
         auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
         file->write(payload.data(), payload.size());
         file->finalize();
+        file->sync();
     }
 
     /// read
