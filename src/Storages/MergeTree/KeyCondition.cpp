@@ -3092,13 +3092,18 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
 
+                    /// Monotonicity is asked over the function's argument type, which is the output
+                    /// type of the node's single non-constant child (the descent loop above has
+                    /// already established that exactly one such child exists).
+                    const auto * input_child = func->children.front()->column ? func->children.back() : func->children.front();
+
                     /// If its cumulative monotonicity direction is negative, applying it to the constant
                     /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
                     /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
                     ///
                     /// Directions compose by parity: each non-increasing function reverses the current
                     /// direction, so two non-increasing functions preserve the original comparison.
-                    auto monotonicity = func_base->getMonotonicityForRange(*func->result_type, Field(), Field());
+                    auto monotonicity = func_base->getMonotonicityForRange(*input_child->result_type, Field(), Field());
                     if (!monotonicity.is_positive)
                         chain_is_positive = !chain_is_positive;
 

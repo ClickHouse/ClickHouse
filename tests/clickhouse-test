@@ -1396,9 +1396,6 @@ class SettingsRandomizer:
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
             0, 1
         ),
-        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
-            0, 1
-        ),
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
             0, 1
         ),
