@@ -22,7 +22,10 @@
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DDLTask.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <shared_mutex>
+#include <unordered_set>
 #include <Core/ServerUUID.h>
 
 
@@ -707,6 +710,71 @@ namespace
             return info;
         }
     };
+
+    struct ProcessingNodeOwner
+    {
+        String hostname;
+        String server_uuid;
+        Int64 keeper_session_id = 0;
+    };
+
+    struct ActiveRegistryOwners
+    {
+        std::unordered_set<String> hostnames;
+        std::unordered_set<String> hostname_and_uuid;
+        std::unordered_set<Int64> keeper_session_ids;
+    };
+
+    String getHostnameAndUUIDKey(const String & hostname, const String & server_uuid)
+    {
+        return hostname + "\n" + server_uuid;
+    }
+
+    std::optional<ProcessingNodeOwner> tryParseProcessingNodeOwner(
+        const String & node_data,
+        const String & node_path,
+        LoggerPtr log)
+    {
+        try
+        {
+            Poco::JSON::Parser parser;
+            const auto json = parser.parse(node_data).extract<Poco::JSON::Object::Ptr>();
+            if (!json->has("hostname"))
+            {
+                LOG_TEST(log, "Processing node {} does not contain owner hostname", node_path);
+                return std::nullopt;
+            }
+
+            ProcessingNodeOwner owner;
+            owner.hostname = json->getValue<String>("hostname");
+
+            if (json->has("server_uuid"))
+                owner.server_uuid = json->getValue<String>("server_uuid");
+
+            if (json->has("keeper_session_id"))
+                owner.keeper_session_id = json->getValue<Int64>("keeper_session_id");
+
+            return owner;
+        }
+        catch (...)
+        {
+            LOG_TEST(log, "Failed to parse owner of processing node {}: {}", node_path, getCurrentExceptionMessage(false));
+            return std::nullopt;
+        }
+    }
+
+    bool isProcessingNodeOwnerActive(
+        const ProcessingNodeOwner & owner,
+        const ActiveRegistryOwners & active_owners)
+    {
+        if (owner.keeper_session_id && active_owners.keeper_session_ids.contains(owner.keeper_session_id))
+            return true;
+
+        if (!owner.server_uuid.empty())
+            return active_owners.hostname_and_uuid.contains(getHostnameAndUUIDKey(owner.hostname, owner.server_uuid));
+
+        return active_owners.hostnames.contains(owner.hostname);
+    }
 }
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
@@ -1514,6 +1582,109 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         }
     }
 
+    const std::unordered_set<String> bucket_lock_path_set(bucket_lock_paths.begin(), bucket_lock_paths.end());
+
+    auto get_active_registry_owners = [&]() -> std::optional<ActiveRegistryOwners>
+    {
+        const auto registry_path = zookeeper_path / "registry";
+
+        Strings active_registry_nodes;
+        Coordination::Error registry_code = {};
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            registry_code = getZooKeeper()->tryGetChildren(registry_path, active_registry_nodes);
+        });
+
+        if (registry_code != Coordination::Error::ZOK)
+        {
+            if (registry_code == Coordination::Error::ZNONODE)
+                LOG_TEST(log, "Active registry {} does not exist, will skip owner-based bucket lock cleanup", registry_path.string());
+            else
+                LOG_TEST(
+                    log,
+                    "Cannot read active registry {} (code: {}), will skip owner-based bucket lock cleanup",
+                    registry_path.string(),
+                    registry_code);
+            return std::nullopt;
+        }
+
+        ActiveRegistryOwners active_owners;
+        Strings registry_node_paths;
+        auto get_registry_nodes = [&]() -> bool
+        {
+            zkutil::ZooKeeper::MultiTryGetResponse response;
+            zk_retries.resetFailures();
+            zk_retries.retryLoop([&]
+            {
+                response = getZooKeeper()->tryGet(registry_node_paths);
+            });
+
+            for (size_t i = 0; i < response.size(); ++i)
+            {
+                if (response[i].error == Coordination::Error::ZNONODE)
+                {
+                    LOG_TEST(log, "Active registry node {} disappeared while reading it", registry_node_paths[i]);
+                    continue;
+                }
+
+                if (response[i].error != Coordination::Error::ZOK)
+                {
+                    LOG_TEST(
+                        log,
+                        "Cannot read active registry node {} (code: {}), will skip owner-based bucket lock cleanup",
+                        registry_node_paths[i],
+                        response[i].error);
+                    return false;
+                }
+
+                try
+                {
+                    const auto info = Info::deserialize(response[i].data);
+                    active_owners.hostnames.insert(info.hostname);
+                    if (!info.server_uuid.empty())
+                        active_owners.hostname_and_uuid.insert(getHostnameAndUUIDKey(info.hostname, info.server_uuid));
+                    if (response[i].stat.ephemeralOwner)
+                        active_owners.keeper_session_ids.insert(response[i].stat.ephemeralOwner);
+                }
+                catch (...)
+                {
+                    LOG_TEST(
+                        log,
+                        "Cannot parse active registry node {}: {}, will skip owner-based bucket lock cleanup",
+                        registry_node_paths[i],
+                        getCurrentExceptionMessage(false));
+                    return false;
+                }
+            }
+
+            registry_node_paths.clear();
+            return true;
+        };
+
+        for (const auto & node : active_registry_nodes)
+        {
+            registry_node_paths.push_back(registry_path / node);
+            if (registry_node_paths.size() == keeper_multiread_batch_size && !get_registry_nodes())
+                return std::nullopt;
+        }
+
+        if (!registry_node_paths.empty() && !get_registry_nodes())
+            return std::nullopt;
+
+        if (active_owners.hostnames.empty() && active_owners.keeper_session_ids.empty())
+        {
+            LOG_TEST(log, "Active registry {} is empty, will skip owner-based bucket lock cleanup", registry_path.string());
+            return std::nullopt;
+        }
+
+        return active_owners;
+    };
+
+    std::optional<ActiveRegistryOwners> active_registry_owners;
+    if (!bucket_lock_paths.empty())
+        active_registry_owners = get_active_registry_owners();
+
     auto current_time = getCurrentTime();
     std::vector<std::pair<String, int32_t>> nodes_to_remove;
     Strings get_batch;
@@ -1539,7 +1710,27 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
 
             if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
+            {
                 nodes_to_remove.emplace_back(get_batch[i], response[i].stat.version);
+                continue;
+            }
+
+            if (active_registry_owners && bucket_lock_path_set.contains(get_batch[i]))
+            {
+                const auto owner = tryParseProcessingNodeOwner(response[i].data, get_batch[i], log);
+                if (owner && !isProcessingNodeOwnerActive(*owner, *active_registry_owners))
+                {
+                    LOG_DEBUG(
+                        log,
+                        "Removing persistent bucket lock {} owned by inactive processor "
+                        "(hostname: {}, server_uuid: {}, keeper_session_id: {})",
+                        get_batch[i],
+                        owner->hostname,
+                        owner->server_uuid.empty() ? "none" : owner->server_uuid,
+                        owner->keeper_session_id);
+                    nodes_to_remove.emplace_back(get_batch[i], response[i].stat.version);
+                }
+            }
         }
         get_batch.clear();
     };

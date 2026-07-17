@@ -1353,6 +1353,7 @@ def test_create_or_replace_table(started_cluster):
 def test_persistent_processing_nodes_cleanup(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"max_persistent_processing_nodes_cleanup_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
@@ -1370,19 +1371,45 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
             "persistent_processing_node_ttl_seconds": 10,
             "cleanup_interval_min_ms": 0,
             "cleanup_interval_max_ms": 0,
+            "processing_threads_num": 2,
+            "buckets": 2,
         },
     )
+    create_mv(node, table_name, dst_table_name)
 
     zk = started_cluster.get_kazoo_client("zoo1")
+    registry_path = f"{keeper_path}/registry"
+    for _ in range(50):
+        if zk.exists(registry_path) and len(zk.get_children(registry_path)) > 0:
+            break
+        time.sleep(0.1)
+    assert len(zk.get_children(registry_path)) > 0
+
     zk.create(f"{keeper_path}/processing/test", b"somedata")
     assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
 
     bucket_lock_path = f"{keeper_path}/buckets/0/lock"
     zk.create(bucket_lock_path, b"somedata")
 
-    time.sleep(5)
+    inactive_owner_bucket_lock_path = f"{keeper_path}/buckets/1/lock"
+    zk.create(
+        inactive_owner_bucket_lock_path,
+        b'{"hostname":"inactive-host","processor_id":"test","server_uuid":"00000000-0000-0000-0000-000000000000","keeper_session_id":9223372036854775807}',
+    )
+
+    for _ in range(50):
+        if not zk.exists(inactive_owner_bucket_lock_path):
+            break
+        time.sleep(0.1)
+
     assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
     assert b"somedata" == zk.get(bucket_lock_path)[0]
+    try:
+        zk.get(inactive_owner_bucket_lock_path)
+        assert False
+    except NoNodeError:
+        pass
+
     time.sleep(10)
     try:
         zk.get(f"{keeper_path}/processing/test")[0]

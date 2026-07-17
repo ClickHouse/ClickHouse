@@ -583,13 +583,17 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 #endif
 
     const auto bucket_lock_path = bucket_path / "lock";
-    const auto processor_info = getProcessorInfo(generateProcessingID());
+    const auto processing_id = generateProcessingID();
+    std::string processor_info;
 
     Coordination::Error code = {};
     zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_);
+        if (processor_info.empty())
+            processor_info = getProcessorInfo(processing_id, zk_client->getKeeper()->getClientID());
+
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the request.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.

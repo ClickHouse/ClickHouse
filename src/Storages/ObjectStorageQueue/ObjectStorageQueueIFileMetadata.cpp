@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Core/Field.h>
+#include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/JSON.h>
@@ -254,12 +255,15 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::c
     return metadata;
 }
 
-std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
+std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string & processor_id, Int64 keeper_session_id)
 {
     /// Add information which will be useful for debugging just in case.
     Poco::JSON::Object json;
     json.set("hostname", DNSResolver::instance().getHostName());
     json.set("processor_id", processor_id);
+    json.set("server_uuid", toString(ServerUUID::get()));
+    if (keeper_session_id)
+        json.set("keeper_session_id", keeper_session_id);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);

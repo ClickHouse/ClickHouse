@@ -253,7 +253,7 @@ protected:
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
 
-    static std::string getProcessorInfo(const std::string & processor_id);
+    static std::string getProcessorInfo(const std::string & processor_id, Int64 keeper_session_id = 0);
 };
 
 }
