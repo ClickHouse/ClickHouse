@@ -12,6 +12,21 @@ import { Image } from "/snippets/components/Image.jsx";
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
 
+<Update label="July 13, 2026">
+
+This week's updates include sticky replica routing over plain HTTPS, custom billing period start dates, and new initial-load controls for object storage ClickPipes.
+
+### Sticky replica routing over HTTPS (private preview)
+You can now pin queries to a specific replica over standard HTTPS by adding a `?session_id=` parameter to your normal service URL, with no special hostnames or DNS changes required. This keeps session-scoped objects such as temporary tables available across queries, and helps repeated queries hit warm replica-local caches. It's rolling out in private preview to all Enterprise customers, and to Scale customers on request. The existing subdomain-based routing keeps working but will eventually migrate to this approach. See the [replica-aware routing](/manage/replica-aware-routing) docs.
+
+### Custom billing period start dates
+You can now request a change to your organization's billing date, the day of the month each billing period starts, for example to align invoices with the calendar month. Open a support ticket with your requested date. Billing dates apply in UTC, and each invoice covers usage from the billing date up to (but not including) the same date the following month.
+
+### Skip initial load for object storage ClickPipes
+Object storage [ClickPipes](/integrations/clickpipes) (S3, GCS, and Azure Blob Storage) now offer two ways to control the initial load when you create a pipe: **Start after**, which skips files up to and including a given object key, and **Skip initial load**, which skips pre-existing files entirely and processes only new object notifications. Previously a new pipe always backfilled every file in the path. The two options are mutually exclusive and permanent for a given pipe: a skipped backfill can't be triggered later. Available in the UI, the Cloud API, and Terraform v3.18.0 and later.
+
+</Update>
+
 <Update label="June 30, 2026">
 
 This week's updates include new observability features for Postgres and ClickHouse internals, expanded ClickPipes controls including Kafka exactly-once delivery, and several platform additions: Azure Marketplace BYOC, the official Airflow provider, and ClickHouse Agents updates.
