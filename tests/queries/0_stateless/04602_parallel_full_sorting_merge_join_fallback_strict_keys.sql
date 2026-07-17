@@ -13,7 +13,7 @@
 --      (plain `hash` keeps the left table's type).
 --   2. Special-storage joins (`Join` engine right table with the narrower key type) throw
 --      `Can't change type for right table` because the right side cannot be converted.
--- The new analyzer resolves `USING` supertypes independently of the strict-key gate, so all three
+-- The analyzer resolves `USING` supertypes independently of the strict-key gate, so all three
 -- configurations must behave identically there.
 
 SET join_use_nulls = 0;
@@ -61,7 +61,7 @@ SELECT 'legacy storage_join hash', k, lv, rv FROM pfsmj_fb_left_nullable INNER J
 SELECT k FROM pfsmj_fb_left_nullable INNER JOIN pfsmj_fb_join USING (k) SETTINGS join_algorithm = 'hash,full_sorting_merge'; -- { serverError TYPE_MISMATCH }
 SELECT k FROM pfsmj_fb_left_nullable INNER JOIN pfsmj_fb_join USING (k) SETTINGS join_algorithm = 'hash,parallel_full_sorting_merge'; -- { serverError TYPE_MISMATCH }
 
--- New analyzer: `USING` supertype resolution does not depend on the strict-key gate, so all three
+-- Analyzer: `USING` supertype resolution does not depend on the strict-key gate, so all three
 -- configurations behave identically.
 SET enable_analyzer = 1;
 
