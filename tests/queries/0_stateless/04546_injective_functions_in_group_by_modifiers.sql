@@ -117,3 +117,19 @@ FROM numbers(3)
 GROUP BY v, number
 ORDER BY number
 SETTINGS enable_analyzer = 0, optimize_injective_functions_in_group_by = 1, optimize_group_by_function_keys = 1;
+
+-- optimize_aggregators_of_group_by_keys on the legacy path: min/max/any of a GROUP BY key is
+-- eliminated to the bare key. Under GROUPING SETS the eliminated aggregate must not be dropped for
+-- sets that do not contain the key, otherwise the non-member rows compute it from the key's default
+-- instead of the real aggregate (#110715). max(b) on the (a) set must stay 50 / 100, not 0.
+SELECT a, max(b) AS mb
+FROM values('a UInt64, b UInt64', (1, 10), (1, 50), (2, 60), (2, 100))
+GROUP BY GROUPING SETS ((a, b), (a))
+ORDER BY a, mb, GROUPING(b)
+SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 0;
+
+SELECT a, max(b) AS mb
+FROM values('a UInt64, b UInt64', (1, 10), (1, 50), (2, 60), (2, 100))
+GROUP BY GROUPING SETS ((a, b), (a))
+ORDER BY a, mb, GROUPING(b)
+SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 1;

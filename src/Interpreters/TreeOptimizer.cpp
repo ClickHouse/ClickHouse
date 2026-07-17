@@ -709,7 +709,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
-        && !select_query->group_by_with_cube)
+        && !select_query->group_by_with_cube
+        && !select_query->group_by_with_grouping_sets)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
