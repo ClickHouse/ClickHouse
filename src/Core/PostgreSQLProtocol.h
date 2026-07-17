@@ -158,8 +158,11 @@ class ColumnTypeSpec
 public:
     ColumnType type;
     Int16 len;
+    /// PostgreSQL type modifier (`atttypmod`), sent verbatim in `RowDescription`. -1 means "no modifier";
+    /// for `numeric` it carries the precision and scale (see `convertDataTypeToPostgresColumnTypeSpec`).
+    Int32 type_modifier;
 
-    ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
+    ColumnTypeSpec(ColumnType type_, Int16 len_, Int32 type_modifier_ = -1) : type(type_), len(len_), type_modifier(type_modifier_) {}
 };
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
@@ -986,7 +989,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(0), out);
         writeBinaryBigEndian(static_cast<Int32>(type_spec.type), out);
         writeBinaryBigEndian(type_spec.len, out);
-        writeBinaryBigEndian(static_cast<Int32>(-1), out);
+        writeBinaryBigEndian(type_spec.type_modifier, out);
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
