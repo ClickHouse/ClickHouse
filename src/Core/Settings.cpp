@@ -1947,10 +1947,10 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size, plus the size of the block being inserted, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
 )", 0) \
     DECLARE(UInt64, materialize_statistics_on_insert_max_table_size, 26843545600, R"(
-Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size (in bytes) does not exceed this value. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
+Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size (in bytes), plus the size of the block being inserted, does not exceed this value. Counting the inserted block bounds the very first bulk load into an otherwise empty table. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
