@@ -200,7 +200,13 @@ void IOutputFormat::finalize()
     {
         snapshotRowsBeforeCounters();
         writeDeferredStatisticsAndFinalize();
-        flushImpl();
+        /// Honor `auto_flush` just like the non-deferred path above: when it is not set (e.g. the
+        /// `formatRow` function, which reuses the output buffer and then trims a trailing newline),
+        /// calling `out.next()` here would advance the underlying buffer to a fresh working range,
+        /// leaving `out.position()` at the buffer start so the caller can no longer inspect or unwrite
+        /// the last byte.
+        if (auto_flush)
+            flushImpl();
         finalizeBuffers();
         statistics_deferred = false;
     }
@@ -219,7 +225,8 @@ void IOutputFormat::completeDeferredStatistics()
     snapshotRowsBeforeCounters();
 
     writeDeferredStatisticsAndFinalize();
-    flushImpl();
+    if (auto_flush)
+        flushImpl();
     finalizeBuffers();
     statistics_deferred = false;
 }
