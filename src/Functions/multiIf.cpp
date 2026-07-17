@@ -80,7 +80,8 @@ public:
         return true;
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Can throw during short ciruited execution.
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }

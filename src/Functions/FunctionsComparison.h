@@ -1273,7 +1273,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Comparing Dynamic/Variant can throw because of incomparable value types.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return isDynamic(arguments[0].type) || isDynamic(arguments[1].type)
+            || isVariant(arguments[0].type) || isVariant(arguments[1].type);
+    }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
