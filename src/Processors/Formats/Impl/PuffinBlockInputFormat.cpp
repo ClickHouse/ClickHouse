@@ -441,7 +441,9 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf);
     auto file_size_opt = tryGetFileSizeFromReadBuffer(buf);
 
-    if (seekable && file_size_opt)
+    /// Pipes/FIFOs are SeekableReadBuffer subclasses but fstat reports size 0; require a real
+    /// regular file before trusting seek+size (same pattern as ORC/Arrow).
+    if (seekable && seekable->checkIfActuallySeekable() && file_size_opt)
     {
         result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
     }
@@ -466,15 +468,27 @@ using BlobBufPtr = std::unique_ptr<SeekableReadBuffer, void(*)(SeekableReadBuffe
 BlobBufPtr readBlobBytes(
     const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data)
 {
-    if (auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf))
+    /// When the footer path buffered the whole file, serve blobs from that copy — the original
+    /// buffer may still look Seekable (e.g. a consumed pipe) but must not be seeked.
+    if (!data.empty())
+    {
+        if (static_cast<UInt64>(blob.offset) + static_cast<UInt64>(blob.length) > data.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob offset/length out of bounds of buffered data");
+
+        return {
+            new ReadBufferFromMemory(data.data() + blob.offset, static_cast<size_t>(blob.length)),
+            [](SeekableReadBuffer * p){ delete p; }
+        };
+    }
+
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf);
+    if (seekable && seekable->checkIfActuallySeekable())
     {
         seekable->seek(blob.offset, SEEK_SET);
         return {seekable, [](SeekableReadBuffer*){}};
     }
-    return {
-        new ReadBufferFromMemory(data.data() + blob.offset, static_cast<size_t>(blob.length)),
-        [](SeekableReadBuffer * p){ delete p; }
-    };
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read Puffin blob: input is not seekable and was not buffered");
 }
 
 roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
