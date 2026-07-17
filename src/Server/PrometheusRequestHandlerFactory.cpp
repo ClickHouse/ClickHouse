@@ -86,6 +86,7 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::Write;
         parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
+        parseUserFromConfig(config, config_prefix, res);
         return res;
     }
 
