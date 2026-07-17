@@ -6,6 +6,7 @@
 #include <Coordination/KeeperContext.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -41,6 +42,28 @@ namespace DB::CoordinationSetting
     extern const CoordinationSettingsUInt64 write_throttling_min_delay_us;
     extern const CoordinationSettingsUInt64 write_throttling_max_delay_us;
     extern const CoordinationSettingsFloat write_throttling_factor;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperLSMTUncommittedCreates;
+    extern const Event KeeperLSMTUncommittedCreateBytes;
+    extern const Event KeeperLSMTUncommittedUpdates;
+    extern const Event KeeperLSMTUncommittedUpdateBytes;
+    extern const Event KeeperLSMTUncommittedRemoves;
+    extern const Event KeeperLSMTUncommittedRemoveBytes;
+    extern const Event KeeperLSMTCommittedEntryBytes;
+    extern const Event KeeperLSMTThrottledWrites;
+    extern const Event KeeperLSMTCommittedMemtablesCreated;
+    extern const Event KeeperLSMTUncommittedMemtablesCreated;
+    extern const Event KeeperLSMTGetUncommittedNodeHits;
+    extern const Event KeeperLSMTGetUncommittedNodeMisses;
+    extern const Event KeeperLSMTGetCommittedNodeFromMemory;
+    extern const Event KeeperLSMTGetCommittedNodeNonexistent;
+    extern const Event KeeperLSMTGetCommittedNodeLoadedBlock;
+    extern const Event KeeperLSMTNodeCacheEntriesUpdated;
+    extern const Event KeeperLSMTListNamesFromMemtables;
+    extern const Event KeeperLSMTListNamesFromFiles;
 }
 
 namespace Coordination::Storage
@@ -127,11 +150,17 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
     const NodeRefCache::Entry * info = nullptr;
     NodeRef node_ref;
     if (node_cache.tryGet(path.hash, node_ref, &info))
+    {
         /// Normal fast path: the node is already in memory
         /// (in memtable, or in block cache, or pinned by SortedFile in memory-only mode).
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTGetCommittedNodeFromMemory);
         return node_ref;
+    }
     if (!info)
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTGetCommittedNodeNonexistent);
         return NodeRef{}; // the node is not in NodeCache's map and therefore doesn't exist
+    }
 
     /// The block was evicted from the block cache. Memtables keep their blocks alive, so the
     /// node's latest update must be in a file (sorted run).
@@ -166,6 +195,7 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
     /// under its spinlock.
     NodeRef ref{.action = NodeAction::Create, .offset = 0, .block = block};
     std::string path_buf;
+    size_t entries_updated = 0;
     for (uint32_t offset = block->entries_start; offset < block->size;)
     {
         ref.offset = offset;
@@ -184,11 +214,15 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
                 std::lock_guard guard(node_info.block);
                 node_info.block.set(block);
                 node_info.node_offset = offset;
+                entries_updated += 1;
             }
         }
 
         offset += serialized_size;
     }
+
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTGetCommittedNodeLoadedBlock);
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTNodeCacheEntriesUpdated, entries_updated);
 
     /// `info` is still valid: the loop above only updated existing `node_cache` entries.
     std::lock_guard guard(info->block);
@@ -205,8 +239,15 @@ NodeRef StorageState::getUncommittedNode(const NodePathWithHash & path)
     /// Search uncommitted memtables, newest first. The found NodeRef may be a tombstone
     /// (action == Remove) with a non-null block.
     for (auto it = uncommitted.rbegin(); it != uncommitted.rend(); ++it)
+    {
         if (const auto * lookup = it->nodes.find(path.hash))
+        {
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTGetUncommittedNodeHits);
             return lookup->getMapped();
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTGetUncommittedNodeMisses);
 
     std::shared_lock lock(*storage_mutex);
     return getCommittedNode(path);
@@ -233,6 +274,7 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
         mutable_memtable->target_block_size = settings[DB::CoordinationSetting::memtable_block_size];
         mutable_memtable->file_seqno = next_file_seqno++;
 
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTCommittedMemtablesCreated);
         LOG_DEBUG(log, "Creating new memtable {}", mutable_memtable->file_seqno);
     }
 
@@ -257,6 +299,8 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
     }
 
     const NodeRef ref = mutable_memtable->appendNode(node, /*strict=*/ true);
+    /// (The entry we just appended is the last thing in its block.)
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTCommittedEntryBytes, ref.block->size - ref.offset);
 
     /// Update `node_cache`. (We hold storage_mutex exclusively, so no concurrent readers;
     /// no need for the per-entry spinlocks.)
@@ -294,10 +338,15 @@ void StorageState::listCommittedChildrenNames(
     /// memtable removed a child, its listChildrenNames will insert an action=Remove into `out`,
     /// then listChildrenNames in older memtables and files won't insert this child into `out`.
 
+    const size_t names_before_memtables = out.set.size();
+
     if (mutable_memtable)
         mutable_memtable->listChildrenNames(path, out, arena);
     for (auto it = immutable_memtables.rbegin(); it != immutable_memtables.rend(); ++it)
         (*it)->listChildrenNames(path, out, arena);
+
+    const size_t names_before_files = out.set.size();
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTListNamesFromMemtables, names_before_files - names_before_memtables);
 
     if (!sorted_runs.empty())
     {
@@ -318,6 +367,8 @@ void StorageState::listCommittedChildrenNames(
         for (auto it = sorted_runs.rbegin(); it != sorted_runs.rend(); ++it)
             (*it)->listChildrenNames(range_start, range_end, path.hash, out, arena, block_cache.get());
     }
+
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTListNamesFromFiles, out.set.size() - names_before_files);
 }
 
 void StorageState::getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t & out_data_size) const
@@ -367,18 +418,23 @@ void StorageState::fillAsynchronousMetrics(DB::AsynchronousMetricValues & new_va
     size_t total_files = 0;
     size_t files_compressed_bytes = 0;
     size_t files_uncompressed_bytes = 0;
+    size_t parent_paths_filter_bytes = 0;
     for (const auto & r : sorted_runs)
     {
         total_files += r->files.size();
         total_entries += r->total_entries;
         files_compressed_bytes += r->total_file_size;
         files_uncompressed_bytes += r->total_block_size;
+        for (const auto & f : r->files)
+            if (f->parent_paths_filter)
+                parent_paths_filter_bytes += f->parent_paths_filter->getFilterSizeBytes();
     }
 
     new_values["KeeperLSMTSortedRuns"] = { sorted_runs.size(), "Number of sorted runs." };
     new_values["KeeperLSMTFilesCount"] = { total_files, "Number of files in all sorted runs." };
     new_values["KeeperLSMTFilesCompressedSize"] = { files_compressed_bytes, "Total size of files in all sorted runs." };
     new_values["KeeperLSMTFilesUncompressedSize"] = { files_uncompressed_bytes, "Total size of uncompressed blocks in all sorted runs." };
+    new_values["KeeperLSMTParentPathsFilterSize"] = { parent_paths_filter_bytes, "Total size of bloom filters of nodes with children, across all files." };
 
     new_values["KeeperLSMTTotalEntries"] = { total_entries, "Number of entries (nodes and tombstones) in all committed memtables and files." };
 }
@@ -397,6 +453,8 @@ NodeRef StorageState::appendUncommittedNode(FullNode & node, int64_t zxid)
         u.memtable = std::make_shared<Memtable>();
         u.memtable->target_block_size = settings[DB::CoordinationSetting::memtable_block_size];
         uncommitted.push_back(std::move(u));
+
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedMemtablesCreated);
     }
 
     UncommittedMemtable & u = uncommitted.back();
@@ -405,6 +463,24 @@ NodeRef StorageState::appendUncommittedNode(FullNode & node, int64_t zxid)
     /// strict=false: see the comment at Memtable::appendNode.
     NodeRef ref = u.memtable->appendNode(node, /*strict=*/ false);
     uncommitted_bytes.fetch_add(u.memtable->total_bytes - bytes_before, std::memory_order_relaxed);
+
+    /// (The entry we just appended is the last thing in its block.)
+    const size_t entry_bytes = ref.block->size - ref.offset;
+    switch (node.action)
+    {
+        case NodeAction::Create:
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedCreates);
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedCreateBytes, entry_bytes);
+            break;
+        case NodeAction::Update:
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedUpdates);
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedUpdateBytes, entry_bytes);
+            break;
+        case NodeAction::Remove:
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedRemoves);
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTUncommittedRemoveBytes, entry_bytes);
+            break;
+    }
     /// Loose model: the last record for a path wins, including Remove tombstones.
     u.nodes[node.getOrCalculatePathHash()] = ref;
     return ref;
@@ -437,7 +513,10 @@ void StorageState::throttleWrite() const
 {
     int64_t delay_us = write_throttling_us.load(std::memory_order_relaxed);
     if (delay_us != 0)
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTThrottledWrites);
         std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
+    }
 }
 
 std::string StorageState::makeSortedFilePath(uint32_t min_file_seqno, uint32_t max_file_seqno, size_t file_idx_in_run) const

@@ -5,6 +5,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
@@ -15,6 +16,22 @@
 namespace DB::ErrorCodes
 {
     extern const int ABORTED;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperLSMTFlushes;
+    extern const Event KeeperLSMTMerges;
+    extern const Event KeeperLSMTFlushExceptions;
+    extern const Event KeeperLSMTMergeExceptions;
+    extern const Event KeeperLSMTFileDeletionExceptions;
+    extern const Event KeeperLSMTFlushWrittenCompressedBytes;
+    extern const Event KeeperLSMTFlushWrittenUncompressedBytes;
+    extern const Event KeeperLSMTMergeWrittenFiles;
+    extern const Event KeeperLSMTMergeWrittenCompressedBytes;
+    extern const Event KeeperLSMTMergeWrittenUncompressedBytes;
+    extern const Event KeeperLSMTMergeConsumedFiles;
+    extern const Event KeeperLSMTMergeConsumedUncompressedBytes;
 }
 
 namespace DB::CoordinationSetting
@@ -113,6 +130,7 @@ bool BackgroundWork::deleteQueuedFiles() const
         }
         catch (...)
         {
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTFileDeletionExceptions);
             DB::tryLogCurrentException(storage->log, fmt::format("Failed to delete file {}, will retry", path));
 
             /// Put it back; the caller will back off and retry.
@@ -216,6 +234,7 @@ void BackgroundWork::flushThread()
         }
         catch (...)
         {
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTFlushExceptions);
             DB::tryLogCurrentException(storage->log, "Memtable flush failed");
 
             /// Don't retry immediately.
@@ -225,6 +244,10 @@ void BackgroundWork::flushThread()
             flushes_in_progress.erase(memtable->file_seqno);
             continue;
         }
+
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTFlushes);
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTFlushWrittenCompressedBytes, new_run->total_file_size);
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTFlushWrittenUncompressedBytes, new_run->total_block_size);
 
         const double duration = stopwatch.elapsedSeconds();
         LOG_DEBUG(storage->log,
@@ -348,6 +371,10 @@ void BackgroundWork::mergeThread()
                 r->node_count_delta = 0;
             }
 
+            /// A resumed merge's output files were already counted in ProfileEvents by the
+            /// interrupted merge (files get published, and counted, one at a time).
+            size_t counted_output_files = output_run->files.size();
+
             SortedRunWriter writer(output_run, storage);
 
             std::vector<SortedRunNodeStream> input_streams;
@@ -449,8 +476,11 @@ void BackgroundWork::mergeThread()
                 }
 
                 /// Evict newly obsolete files from block cache and mark them for deletion from disk.
+                size_t consumed_bytes = 0;
                 for (SortedFilePtr & f : removed_files)
                 {
+                    consumed_bytes += f->total_block_size;
+
                     f->removeFromBlockCache(storage->block_cache.get());
 
                     /// The file is no longer visible to new readers; delete it from disk when the
@@ -459,6 +489,21 @@ void BackgroundWork::mergeThread()
 
                     f.reset();
                 }
+
+                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeConsumedFiles, removed_files.size());
+                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeConsumedUncompressedBytes, consumed_bytes);
+
+                size_t written_compressed_bytes = 0;
+                size_t written_uncompressed_bytes = 0;
+                for (; counted_output_files < output_run->files.size(); ++counted_output_files)
+                {
+                    const SortedFile & f = *output_run->files[counted_output_files];
+                    written_compressed_bytes += f.file_size;
+                    written_uncompressed_bytes += f.total_block_size;
+                    ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenFiles);
+                }
+                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenCompressedBytes, written_compressed_bytes);
+                ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeWrittenUncompressedBytes, written_uncompressed_bytes);
             };
 
             while (true)
@@ -493,11 +538,13 @@ void BackgroundWork::mergeThread()
                 duration);
 
             publish_results(/*is_final=*/ true);
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTMerges);
             unlock_files();
             maybeStartMerge();
         }
         catch (...)
         {
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTMergeExceptions);
             DB::tryLogCurrentException(storage->log, "Merge failed");
 
             /// Don't retry immediately.

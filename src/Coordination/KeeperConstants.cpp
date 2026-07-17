@@ -296,6 +296,47 @@
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \
 \
+    M(KeeperLSMTFlushes) \
+    M(KeeperLSMTMerges) \
+    M(KeeperLSMTFlushExceptions) \
+    M(KeeperLSMTMergeExceptions) \
+    M(KeeperLSMTFileDeletionExceptions) \
+    M(KeeperLSMTFlushWrittenCompressedBytes) \
+    M(KeeperLSMTFlushWrittenUncompressedBytes) \
+    M(KeeperLSMTMergeWrittenFiles) \
+    M(KeeperLSMTMergeWrittenCompressedBytes) \
+    M(KeeperLSMTMergeWrittenUncompressedBytes) \
+    M(KeeperLSMTMergeConsumedFiles) \
+    M(KeeperLSMTMergeConsumedUncompressedBytes) \
+    M(KeeperLSMTUncommittedCreates) \
+    M(KeeperLSMTUncommittedCreateBytes) \
+    M(KeeperLSMTUncommittedUpdates) \
+    M(KeeperLSMTUncommittedUpdateBytes) \
+    M(KeeperLSMTUncommittedRemoves) \
+    M(KeeperLSMTUncommittedRemoveBytes) \
+    M(KeeperLSMTCommittedEntryBytes) \
+    M(KeeperLSMTThrottledWrites) \
+    M(KeeperLSMTCommittedMemtablesCreated) \
+    M(KeeperLSMTUncommittedMemtablesCreated) \
+    M(KeeperLSMTGetUncommittedNodeHits) \
+    M(KeeperLSMTGetUncommittedNodeMisses) \
+    M(KeeperLSMTGetCommittedNodeFromMemory) \
+    M(KeeperLSMTGetCommittedNodeNonexistent) \
+    M(KeeperLSMTGetCommittedNodeLoadedBlock) \
+    M(KeeperLSMTNodeCacheEntriesUpdated) \
+    M(KeeperLSMTListNamesFromMemtables) \
+    M(KeeperLSMTListNamesFromFiles) \
+    M(KeeperLSMTListScannedBlocks) \
+    M(KeeperLSMTListScannedEntries) \
+    M(KeeperLSMTListFilterSkipped) \
+    M(KeeperLSMTListFilterFalsePositives) \
+    M(KeeperLSMTListFilterTruePositives) \
+    M(KeeperLSMTGetBlockFromWeakPtr) \
+    M(KeeperLSMTGetBlockFromCache) \
+    M(KeeperLSMTGetBlockLoadedGroup) \
+    M(KeeperLSMTLoadedBlocks) \
+    M(KeeperLSMTLoadedUncompressedBytes) \
+\
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
     M(IOUringSQEsResubmitsSync) \

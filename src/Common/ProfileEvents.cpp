@@ -1359,6 +1359,47 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
     M(KeeperSnapshotFileSyncMicroseconds, "Time spent in fsync for Keeper snapshot files", ValueType::Microseconds) \
     \
+    M(KeeperLSMTFlushes, "Number of Keeper LSMT memtable flushes finished successfully", ValueType::Number) \
+    M(KeeperLSMTMerges, "Number of Keeper LSMT merges finished successfully", ValueType::Number) \
+    M(KeeperLSMTFlushExceptions, "Number of exceptions in Keeper LSMT memtable flushes", ValueType::Number) \
+    M(KeeperLSMTMergeExceptions, "Number of exceptions in Keeper LSMT merges", ValueType::Number) \
+    M(KeeperLSMTFileDeletionExceptions, "Number of exceptions in Keeper LSMT file deletions", ValueType::Number) \
+    M(KeeperLSMTFlushWrittenCompressedBytes, "Compressed bytes written to files by Keeper LSMT memtable flushes", ValueType::Bytes) \
+    M(KeeperLSMTFlushWrittenUncompressedBytes, "Uncompressed bytes written to files by Keeper LSMT memtable flushes", ValueType::Bytes) \
+    M(KeeperLSMTMergeWrittenFiles, "Number of output files published by Keeper LSMT merges", ValueType::Number) \
+    M(KeeperLSMTMergeWrittenCompressedBytes, "Compressed bytes in output files published by Keeper LSMT merges", ValueType::Bytes) \
+    M(KeeperLSMTMergeWrittenUncompressedBytes, "Uncompressed bytes in output files published by Keeper LSMT merges", ValueType::Bytes) \
+    M(KeeperLSMTMergeConsumedFiles, "Number of input files fully consumed and dropped by Keeper LSMT merges", ValueType::Number) \
+    M(KeeperLSMTMergeConsumedUncompressedBytes, "Uncompressed bytes in input files fully consumed and dropped by Keeper LSMT merges", ValueType::Bytes) \
+    M(KeeperLSMTUncommittedCreates, "Number of Create entries appended to Keeper LSMT uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTUncommittedCreateBytes, "Serialized bytes of Create entries appended to Keeper LSMT uncommitted memtables", ValueType::Bytes) \
+    M(KeeperLSMTUncommittedUpdates, "Number of Update entries appended to Keeper LSMT uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTUncommittedUpdateBytes, "Serialized bytes of Update entries appended to Keeper LSMT uncommitted memtables", ValueType::Bytes) \
+    M(KeeperLSMTUncommittedRemoves, "Number of Remove entries appended to Keeper LSMT uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTUncommittedRemoveBytes, "Serialized bytes of Remove entries appended to Keeper LSMT uncommitted memtables", ValueType::Bytes) \
+    M(KeeperLSMTCommittedEntryBytes, "Serialized bytes of entries appended to the Keeper LSMT committed memtable", ValueType::Bytes) \
+    M(KeeperLSMTThrottledWrites, "Number of writes delayed because Keeper LSMT background flushes or merges fell behind", ValueType::Number) \
+    M(KeeperLSMTCommittedMemtablesCreated, "Number of committed memtables created by Keeper LSMT", ValueType::Number) \
+    M(KeeperLSMTUncommittedMemtablesCreated, "Number of uncommitted memtables created by Keeper LSMT", ValueType::Number) \
+    M(KeeperLSMTGetUncommittedNodeHits, "Number of Keeper LSMT node lookups that found the node in uncommitted memtables", ValueType::Number) \
+    M(KeeperLSMTGetUncommittedNodeMisses, "Number of Keeper LSMT node lookups that didn't find the node in uncommitted memtables and fell through to committed state", ValueType::Number) \
+    M(KeeperLSMTGetCommittedNodeFromMemory, "Number of Keeper LSMT committed node lookups that found the node's block already in memory", ValueType::Number) \
+    M(KeeperLSMTGetCommittedNodeNonexistent, "Number of Keeper LSMT committed node lookups for nodes that don't exist", ValueType::Number) \
+    M(KeeperLSMTGetCommittedNodeLoadedBlock, "Number of Keeper LSMT committed node lookups that had to load the node's block", ValueType::Number) \
+    M(KeeperLSMTNodeCacheEntriesUpdated, "Number of Keeper LSMT node cache entries re-pointed at a freshly loaded block", ValueType::Number) \
+    M(KeeperLSMTListNamesFromMemtables, "Child names (including tombstones) obtained from memtables by Keeper LSMT list operations", ValueType::Number) \
+    M(KeeperLSMTListNamesFromFiles, "Child names (including tombstones) obtained from files by Keeper LSMT list operations", ValueType::Number) \
+    M(KeeperLSMTListScannedBlocks, "Blocks scanned by Keeper LSMT list operations in files", ValueType::Number) \
+    M(KeeperLSMTListScannedEntries, "Entries scanned by Keeper LSMT list operations in files", ValueType::Number) \
+    M(KeeperLSMTListFilterSkipped, "Number of file scans skipped by Keeper LSMT list operations because the parent paths filter ruled out any children", ValueType::Number) \
+    M(KeeperLSMTListFilterFalsePositives, "Number of file scans not skipped by the Keeper LSMT parent paths filter that found no children", ValueType::Number) \
+    M(KeeperLSMTListFilterTruePositives, "Number of file scans not skipped by the Keeper LSMT parent paths filter that found children", ValueType::Number) \
+    M(KeeperLSMTGetBlockFromWeakPtr, "Number of Keeper LSMT block accesses served by the weak pointer in the file's block info", ValueType::Number) \
+    M(KeeperLSMTGetBlockFromCache, "Number of Keeper LSMT block accesses served by the block cache", ValueType::Number) \
+    M(KeeperLSMTGetBlockLoadedGroup, "Number of Keeper LSMT block accesses that had to load a block group from disk", ValueType::Number) \
+    M(KeeperLSMTLoadedBlocks, "Number of blocks loaded from disk by Keeper LSMT", ValueType::Number) \
+    M(KeeperLSMTLoadedUncompressedBytes, "Uncompressed bytes of blocks loaded from disk by Keeper LSMT", ValueType::Bytes) \
+    \
     M(StorageConnectionsCreated, "Number of created connections for storages", ValueType::Number) \
     M(StorageConnectionsReused, "Number of reused connections for storages", ValueType::Number) \
     M(StorageConnectionsReset, "Number of reset connections for storages", ValueType::Number) \
