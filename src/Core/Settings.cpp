@@ -3559,10 +3559,12 @@ Default value: `THROW`.
 - [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
-Changes the behaviour of join operations with `ANY` strictness.
+Changes the behaviour of join operations with `ANY` strictness when the right table has more than one matching row for a key.
 
 :::note
-This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+This setting applies to [`Join`](../../engines/table-engines/special/join.md) engine tables and hash-based join algorithms.
+
+If a join is built in parallel, the order of rows can be non-deterministic. This means that `join_any_take_last_row = 1` can return a non-deterministic row for `ANY JOIN` queries.
 :::
 
 Possible values:
@@ -5330,12 +5332,13 @@ Possible values:
 - 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
 - 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
 )", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
-Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", R"(
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32`, `date2String` or `geometry`. All modern mappings (`decimal`, `datetime64`, `date2Date32`, `geometry`) are enabled by default.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `MULTIPOINT` or `GEOMETRYCOLLECTION` map to `String`.
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
