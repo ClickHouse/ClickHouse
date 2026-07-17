@@ -1068,6 +1068,27 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                     subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
                     paths_data_granule.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                /// The local `cache_for_subcolumns` and `deserialize_states_cache` (and the per-subcolumn
+                /// deserialize states) are dropped when this block ends, before the outer
+                /// `SubstreamsCachePathsDataElement` that later covers these subcolumns is created. Verify
+                /// here that the reference counts of the just-produced path subcolumns account for those
+                /// holders too, so a broken copy-on-write reference count on a shared child (e.g. array
+                /// offsets or a LowCardinality dictionary) is not freed at this earlier destruction point
+                /// while it is still referenced from a produced subcolumn (issue #105626).
+                ColumnsOwnershipValidator ownership_validator;
+                ownership_validator.add(cache_for_subcolumns);
+                ownership_validator.add(deserialize_states_cache);
+                for (const auto & data : subcolumns_substream_data)
+                    ownership_validator.add(data.deserialize_state);
+                Columns produced_subcolumns;
+                const auto & subcolumns_of_path = paths_data_granule.paths_subcolumns_data[requested_path];
+                produced_subcolumns.reserve(subcolumns_of_path.size());
+                for (const auto & [_, column] : subcolumns_of_path)
+                    produced_subcolumns.push_back(column);
+                ownership_validator.validate(produced_subcolumns);
+#endif
             }
             /// Otherwise read the whole path data.
             else
