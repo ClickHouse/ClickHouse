@@ -89,6 +89,8 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/Squashing.h>
 #include <Core/DeduplicateInsert.h>
+#include <Access/Common/AccessType.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1616,10 +1618,13 @@ static BlockIO executeQueryImpl(
                     /// eligible for async routing when async_insert=1.
                     async_insert_select_via_input = true;
 
-                    /// Resolve the destination (catalog table or table function). The sync
-                    /// path does this in InterpreterInsertQuery::execute() via getTable().
+                    /// Resolve the destination (catalog table or table function) via getTable,
+                    /// exactly as InterpreterInsertQuery::execute() does, *before* input() is
+                    /// resolved. This makes a missing catalog table throw UNKNOWN_TABLE here
+                    /// (matching the sync path) instead of letting input('auto') later throw a
+                    /// confusing CANNOT_EXTRACT_TABLE_STRUCTURE.
                     async_insert_destination_table = insert_table;
-                    if (!async_insert_destination_table && insert_query->table_function)
+                    if (!async_insert_destination_table)
                     {
                         InterpreterInsertQuery destination_interpreter(
                             out_ast, context,
@@ -1688,6 +1693,15 @@ static BlockIO executeQueryImpl(
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
+        /// Initialize the per-query metadata cache before either the async or the sync path
+        /// builds a SELECT, so enable_shared_storage_snapshot_in_query keeps one storage
+        /// snapshot for the whole query. It is owned by query_metadata_cache (Context holds
+        /// only a weak ref) and moved into res.query_metadata_cache below for both paths.
+        if (settings[Setting::enable_shared_storage_snapshot_in_query])
+        {
+            query_metadata_cache = std::make_shared<QueryMetadataCache>();
+            context->setQueryMetadataCache(query_metadata_cache);
+        }
 
         bool quota_checked = false;
 
@@ -1723,8 +1737,9 @@ static BlockIO executeQueryImpl(
                 http_continue_callback();
 
             /// Report a queued async insert: increment the counter, optionally wait for the
-            /// flush, and record the insertion table.
-            auto finish_async_insert_push = [&](AsynchronousInsertQueue::PushResult && push_result)
+            /// flush, and record the insertion table. report_read_progress=false suppresses the
+            /// source's synthetic read progress for paths that already ran a real SELECT.
+            auto finish_async_insert_push = [&](AsynchronousInsertQueue::PushResult && push_result, bool report_read_progress = true)
             {
                 ProfileEvents::increment(ProfileEvents::InsertQuery);
                 if (settings[Setting::wait_for_async_insert])
@@ -1734,7 +1749,8 @@ static BlockIO executeQueryImpl(
                         std::move(push_result.future),
                         timeout,
                         context->getProcessListElement(),
-                        context->getProgressCallback());
+                        context->getProgressCallback(),
+                        report_read_progress);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -1747,6 +1763,21 @@ static BlockIO executeQueryImpl(
             {
                 /// StorageInput pipe is already wired. Execute SELECT eagerly and push
                 /// the result as a preprocessed block to the async insert queue.
+
+                /// Fail fast on an access-denied catalog destination, before the request body
+                /// is parsed and the SELECT runs — matching the synchronous INSERT path. The
+                /// destination itself was already resolved (and a missing one already threw
+                /// UNKNOWN_TABLE) while wiring the input() pipe above. Table functions check
+                /// access during execution, consistent with InterpreterInsertQuery::execute.
+                if (!insert_query->table_function)
+                {
+                    auto validate_metadata = async_insert_destination_table->getInMemoryMetadataPtr(context, false);
+                    auto validate_block = InterpreterInsertQuery::getSampleBlock(
+                        *insert_query, async_insert_destination_table, validate_metadata, context,
+                        /* no_destination */ false,
+                        settings[Setting::insert_allow_materialized_columns]);
+                    context->checkAccess(AccessType::INSERT, insert_query->table_id, validate_block.getNames());
+                }
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
                 QueryPipelineBuilder select_pipeline;
@@ -1889,7 +1920,10 @@ static BlockIO executeQueryImpl(
                     auto async_query = out_ast->clone();
 
                     auto result = queue->pushQueryWithBlock(async_query, std::move(merged_block), insert_context);
-                    finish_async_insert_push(std::move(result));
+                    /// The SELECT already reported real read_rows/read_bytes on this process-list
+                    /// entry, so suppress the source's synthetic read progress to avoid double
+                    /// counting (write progress is still reported).
+                    finish_async_insert_push(std::move(result), /* report_read_progress */ false);
                 } // else — within-limit async path (sync_exec not set)
             }
             else
@@ -2001,12 +2035,6 @@ static BlockIO executeQueryImpl(
                         e.addMessage("while starting a transaction with 'implicit_transaction'");
                         throw;
                     }
-                }
-
-                if (settings[Setting::enable_shared_storage_snapshot_in_query])
-                {
-                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                    context->setQueryMetadataCache(query_metadata_cache);
                 }
 
                 if (out_ast)

@@ -19,16 +19,21 @@ namespace ErrorCodes
 class WaitForAsyncInsertSource final : public ISource
 {
 public:
+    /// report_read_progress: when false, only write progress is reported. Used by callers that
+    /// already accounted the read side (e.g. INSERT ... SELECT FROM input() that ran the SELECT
+    /// eagerly on the same process-list entry) to avoid double-counting read_rows/read_bytes.
     WaitForAsyncInsertSource(
         std::future<AsyncInsertProgress> insert_future_,
         size_t timeout_ms_,
         QueryStatusPtr process_list_elem_,
-        ProgressCallback progress_callback_)
+        ProgressCallback progress_callback_,
+        bool report_read_progress_ = true)
         : ISource(std::make_shared<const Block>())
         , insert_future(std::move(insert_future_))
         , timeout_ms(timeout_ms_)
         , process_list_elem(std::move(process_list_elem_))
         , progress_callback(std::move(progress_callback_))
+        , report_read_progress(report_read_progress_)
     {
         chassert(insert_future.valid());
     }
@@ -52,7 +57,8 @@ protected:
         if (process_list_elem)
         {
             process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
-            process_list_elem->updateProgressIn(Progress(DB::ReadProgress(progress_result.rows, progress_result.bytes)));
+            if (report_read_progress)
+                process_list_elem->updateProgressIn(Progress(DB::ReadProgress(progress_result.rows, progress_result.bytes)));
         }
 
         if (progress_callback)
@@ -60,8 +66,11 @@ protected:
             Progress p;
             p.written_rows = progress_result.rows;
             p.written_bytes = progress_result.bytes;
-            p.read_rows = progress_result.rows;
-            p.read_bytes = progress_result.bytes;
+            if (report_read_progress)
+            {
+                p.read_rows = progress_result.rows;
+                p.read_bytes = progress_result.bytes;
+            }
             /// Do not set p.result_rows/result_bytes here: flushQueryProgress
             /// in executeQuery.cpp will derive them from progress_out.written_rows,
             /// so setting them here would cause double-counting in X-ClickHouse-Summary.
@@ -76,6 +85,7 @@ private:
     size_t timeout_ms;
     QueryStatusPtr process_list_elem;
     ProgressCallback progress_callback;
+    bool report_read_progress;
 };
 
 }
