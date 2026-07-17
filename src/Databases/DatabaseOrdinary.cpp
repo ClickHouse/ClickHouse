@@ -122,7 +122,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
+void DatabaseOrdinary::checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
 {
     Macros::MacroExpansionInfo info;
     StorageID table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);

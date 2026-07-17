@@ -2913,6 +2913,14 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     /// restart (ASYNC_LOAD_WAIT_FAILED). Shared with the restart-time converter. See issue #110854.
     DatabaseOrdinary::validateEngineSupportsReplicatedConversion(create, to_replicated);
 
+    /// When converting to replicated, reject a pre-existing target replica path in Keeper BEFORE any
+    /// side effect. Otherwise the metadata is rewritten to `Replicated*` and the collision surfaces
+    /// only from the StorageReplicatedMergeTree constructor ("There already is an active replica with
+    /// this replica path"), leaving unloadable `Replicated*` metadata persisted on disk. Mirrors the
+    /// restart-time converter DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded.
+    if (to_replicated)
+        DatabaseOrdinary::checkReplicaPathExists(create, getContext());
+
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold
     /// in-memory version metadata referencing those files, and the debug

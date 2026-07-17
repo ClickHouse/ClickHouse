@@ -96,6 +96,12 @@ public:
     /// `ATTACH ... AS REPLICATED` entrypoint and the restart-time converter. See issue #110854.
     static void validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated);
 
+    /// Reject the conversion to replicated when the target replica path already exists in Keeper,
+    /// BEFORE any side effect (metadata rewrite). Otherwise the metadata is rewritten to `Replicated*`
+    /// and the collision surfaces only from the storage constructor, leaving unloadable metadata on
+    /// disk. Shared by both the `ATTACH ... AS REPLICATED` entrypoint and the restart-time converter.
+    static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context);
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
