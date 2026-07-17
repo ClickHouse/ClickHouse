@@ -159,7 +159,13 @@ void FunctionSecretArgumentsFinder::maskS3UrlArgument(const std::vector<size_t> 
         return;
     String url;
     if (!tryGetStringFromArgument(positional[url_slot], &url, /* allow_identifier= */ false))
+    {
+        /// The parsers evaluate a constant-expression url before signature parsing, so a url built
+        /// from an expression can embed credentials in its pieces; we cannot evaluate it here, so
+        /// fail closed and hide it whole.
+        markSecretArgument(positional[url_slot]);
         return;
+    }
     if (maskS3URICredentials(url))
         result.replaced_arguments[positional[url_slot]] = "'" + url + "'";
 }

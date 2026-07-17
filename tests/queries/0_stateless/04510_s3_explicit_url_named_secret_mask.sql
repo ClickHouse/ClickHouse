@@ -81,9 +81,11 @@ SELECT * FROM s3('url_dup', 'ak', 'sk',
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- A nested map with a malformed child (not `key = value`) must fail closed in formatting.
+-- The new analyzer rejects `extra_credentials` as an unknown function; the old analyzer reaches
+-- the S3 URI validation first.
 SELECT * FROM s3('url_badmap', 'ak', 'SEKRIT_SAK',
                  extra_credentials('SEKRIT_RAWCRED'),
-                 format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION }
+                 format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION, BAD_ARGUMENTS }
 
 -- The parser rejects a positional after the first key = value argument, but the query is logged
 -- first and the intended slot is unknowable, so the positional must be masked.
@@ -100,6 +102,11 @@ SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
 -- masked while the host, path and non-credential parameters stay visible. The one-character bucket
 -- makes S3 URI validation reject the query before any network access.
 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG&partNumber=7',
+                 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
+-- A url built from a constant expression is evaluated by the parser and can embed credentials in
+-- its pieces; the masker cannot evaluate it, so the whole url argument is hidden (fail closed).
+SELECT * FROM s3(concat('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=', 'SEKRIT_SIG'),
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- Same for BACKUP and the Backup database reconstructor.
