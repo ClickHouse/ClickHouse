@@ -66,6 +66,15 @@ void ReplicatedMergeTreeAttachThread::shutdown()
     /// Deactivate unconditionally, not only on the first call: a racing `start()` can re-activate
     /// the task after the first `shutdown()` already deactivated it. Deactivation is idempotent.
     task->deactivate();
+
+    /// After `deactivate()` returns, the task is guaranteed to be neither running nor scheduled, so the
+    /// first try will never run again. If `start()` had scheduled the first attempt but a racing
+    /// `shutdown()` cancelled it before the pool ever executed `run()`, `first_try_done` would still be
+    /// `false` and `StorageReplicatedMergeTree::startup`'s `waitFirstTry()` would block forever, turning
+    /// the `DETACH`-vs-startup race this class handles into a hang. Publish and notify `first_try_done`
+    /// here so the waiter always wakes on shutdown (this is a no-op if `run()` already set it).
+    if (!first_try_done.exchange(true))
+        first_try_done.notify_one();
 }
 
 void ReplicatedMergeTreeAttachThread::run()
