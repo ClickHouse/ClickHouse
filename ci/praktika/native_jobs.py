@@ -13,7 +13,6 @@ from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
 from .gh import GH
-from .git import Git
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
