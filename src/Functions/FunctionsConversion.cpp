@@ -1897,7 +1897,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     for (ColumnVariant::Discriminator old_discriminator = 0; old_discriminator != old_variants.size(); ++old_discriminator)
     {
         const auto & old_type = old_variants[old_discriminator];
-        ColumnVariant::Discriminator new_discriminator;
+        ColumnVariant::Discriminator new_discriminator = 0;
         bool force_convert = false;
 
         auto it = new_variant_types_to_new_global_discriminator.find(old_type->getName());
