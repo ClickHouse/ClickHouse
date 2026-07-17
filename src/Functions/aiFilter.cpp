@@ -7,10 +7,6 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Parser.h>
-
 #include <cctype>
 
 namespace DB
@@ -37,7 +33,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String) or LowCardinality(String) or Nullable(LowCardinality(String))"},
             {"condition", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -71,54 +67,12 @@ private:
         auto condition = String(arguments[condition_arg_index].column->getDataAt(0));
         return "You are a boolean text filter. Decide whether the given text satisfies this condition: "
             + condition
-            + ". Respond with ONLY a JSON object matching the schema, nothing else.";
+            + ". Respond with only the lowercase text true or false, nothing else.";
     }
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
         return String(arguments[0].column->getDataAt(row));
-    }
-
-    /// Builds the OpenAI `response_format` schema object constraining the model to a boolean:
-    ///   {
-    ///     "type": "json_schema",
-    ///     "json_schema": {
-    ///       "name": "filter",
-    ///       "strict": true,
-    ///       "schema": {
-    ///         "type": "object",
-    ///         "properties": { "match": {"type": "boolean"} },
-    ///         "required": ["match"],
-    ///         "additionalProperties": false
-    ///       }
-    ///     }
-    ///   }
-    Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const override
-    {
-        Poco::JSON::Object::Ptr match_prop = new Poco::JSON::Object;
-        match_prop->set("type", "boolean");
-
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("match", match_prop);
-
-        Poco::JSON::Array::Ptr required = new Poco::JSON::Array;
-        required->add("match");
-
-        Poco::JSON::Object::Ptr schema = new Poco::JSON::Object;
-        schema->set("type", "object");
-        schema->set("properties", properties);
-        schema->set("required", required);
-        schema->set("additionalProperties", false);
-
-        Poco::JSON::Object::Ptr json_schema = new Poco::JSON::Object;
-        json_schema->set("name", "filter");
-        json_schema->set("strict", true);
-        json_schema->set("schema", schema);
-
-        Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
-        root->set("type", "json_schema");
-        root->set("json_schema", json_schema);
-        return root;
     }
 
     MutableColumnPtr createResultColumn() const override
@@ -131,9 +85,9 @@ private:
         assert_cast<ColumnUInt8 &>(column).insertValue(parseFilterMatch(processed) ? 1 : 0);
     }
 
-    /// Interprets LLM filter output as a boolean. Accepts schema-shaped JSON (`{"match": true}`),
-    /// bare booleans, and common truthy/falsy strings. Anything unrecognised maps to false so a
-    /// row that the model failed to classify cleanly is filtered out rather than kept by accident.
+    /// Interprets LLM filter output as a boolean. Accepts the text `true` (case- and
+    /// whitespace-insensitive). Anything else, including `false` and unrecognised text, maps to
+    /// false so a row that the model failed to classify cleanly is filtered out rather than kept.
     static bool parseFilterMatch(std::string_view raw)
     {
         while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.front())))
@@ -141,36 +95,13 @@ private:
         while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.back())))
             raw.remove_suffix(1);
 
-        if (raw.empty())
+        if (raw.size() != 4)
             return false;
 
-        if (raw.front() == '{')
-        {
-            try
-            {
-                Poco::JSON::Parser parser;
-                auto parsed = parser.parse(String(raw));
-                auto obj = parsed.extract<Poco::JSON::Object::Ptr>();
-                if (obj && obj->has("match"))
-                {
-                    auto var = obj->get("match");
-                    if (var.isBoolean())
-                        return var.convert<bool>();
-                    if (var.isInteger())
-                        return var.convert<Int64>() != 0;
-                }
-            }
-            catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort unwrap, fall through.
-        }
-
-        String lowered;
-        lowered.reserve(raw.size());
-        for (unsigned char ch : raw)
-            lowered.push_back(static_cast<char>(std::tolower(ch)));
-
-        if (lowered == "true" || lowered == "yes" || lowered == "1")
-            return true;
-        return false;
+        String lowered(raw);
+        for (char & ch : lowered)
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return lowered == "true";
     }
 };
 
@@ -180,9 +111,11 @@ REGISTER_FUNCTION(AiFilter)
         .description = R"(
 Evaluates a natural-language condition against the given text using an LLM provider and returns a boolean (`UInt8`) suitable for `WHERE`, `PREWHERE`, and `JOIN ... ON`.
 
-The function sends the text together with a fixed filter prompt and a JSON-schema response format
-constraining the model to return `{"match": true}` or `{"match": false}`. Failed requests (when
+The function asks the model to respond with only lowercase `true` or `false`. Failed requests (when
 `ai_function_throw_on_error` is disabled) and unrecognised responses map to `0`, so the row is filtered out.
+
+**Warning:** Do not trust `aiFilter` results without scrutiny. LLM-based predicates can be incorrect
+or inconsistent; use them only where false positives and false negatives are acceptable.
 
 Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the

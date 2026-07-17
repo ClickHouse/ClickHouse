@@ -165,7 +165,6 @@ protected:
     /// Result-column hooks so subclasses can return non-String types (e.g. `aiFilter` → `UInt8`).
     /// The default implementations preserve `ColumnString` behaviour for existing AI functions.
     virtual MutableColumnPtr createResultColumn() const;
-    virtual void insertDefaultResult(IColumn & column) const;
     virtual void insertProcessedResult(IColumn & column, const String & processed) const;
 
 private:

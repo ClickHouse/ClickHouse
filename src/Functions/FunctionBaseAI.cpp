@@ -332,11 +332,6 @@ MutableColumnPtr FunctionBaseAI::createResultColumn() const
     return ColumnString::create();
 }
 
-void FunctionBaseAI::insertDefaultResult(IColumn & column) const
-{
-    column.insertDefault();
-}
-
 void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & processed) const
 {
     column.insertData(processed.data(), processed.size());
@@ -399,14 +394,14 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     {
         if (prompt_nullable && prompt_nullable->getNullMapData()[i])
         {
-            insertDefaultResult(*result_col);
+            result_col->insertDefault();
             null_map_col->getData()[i] = 1;
             continue;
         }
 
         if (quota.checkQuotas())
         {
-            insertDefaultResult(*result_col);
+            result_col->insertDefault();
             ++rows_skipped;
             continue;
         }
@@ -468,7 +463,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         }
         else
         {
-            insertDefaultResult(*result_col);
+            result_col->insertDefault();
             ++rows_skipped;
         }
     }

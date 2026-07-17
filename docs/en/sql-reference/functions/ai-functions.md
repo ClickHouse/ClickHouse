@@ -12,8 +12,11 @@ AI Functions are built-in functions in ClickHouse that you can use to call AI or
 AI functions are experimental. Set [`allow_experimental_ai_functions`](/operations/settings/settings#allow_experimental_ai_functions) to enable them.
 :::
 
-:::note
+:::warning
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
+
+In particular, do **not** trust the output of `aiFilter` without scrutiny.
+LLM-based boolean predicates can produce incorrect or inconsistent results. Use them only where false positives and false negatives are acceptable.
 :::
 
 All functions are sharing a common infrastructure that provides:
@@ -74,13 +77,6 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 
 -- Overrides the default for this call:
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
-```
-
-Filter rows with a natural-language condition via `aiFilter`, which returns `UInt8` and can be used directly in `WHERE`:
-
-```sql
-SELECT * FROM reviews
-WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
 ### Parameter map {#parameter-map}
