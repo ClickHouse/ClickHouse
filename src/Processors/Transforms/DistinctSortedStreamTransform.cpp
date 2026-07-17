@@ -1,9 +1,18 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
 #include <Core/SortCursor.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char distinct_sorted_stream_transform_pause[];
+}
+
 
 namespace ErrorCodes
 {
@@ -94,6 +103,17 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
     {
+        if ((i & 0xFFF) == 0)
+        {
+            if (i > 0) [[unlikely]]
+                FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+            if (isCancelled())
+            {
+                std::fill(filter.begin() + i + 1, filter.end(), 0);
+                return count;
+            }
+        }
+
         const auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
 
         /// emit the record if there is no such key in the current set, skip otherwise
@@ -177,6 +197,16 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     /// (3) repeat until chunk is processed
     IColumn::Filter filter(chunk_rows);
     auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter); /// try to process chuck as continuation of previous one
+
+    FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+        stopReading();
+        chunk.clear();
+        return;
+    }
+
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
     {
@@ -200,9 +230,19 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         // set where next range start
         range_begin = range_end;
     }
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+        stopReading();
+        chunk.clear();
+        return;
+    }
+
     /// if there is no any new rows in this chunk, just skip it
     if (!output_rows)
     {
+        if (isCancelled())
+            stopReading();
         chunk.clear();
         return;
     }
