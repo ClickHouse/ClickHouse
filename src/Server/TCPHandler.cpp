@@ -1156,7 +1156,7 @@ void TCPHandler::logQueryDuration(QueryState & state)
     /// We already logged more detailed info if we read some rows
     if (elapsed_sec < 1.0 && state.progress.read_rows)
         return;
-    LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
+    LOG_DEBUG(log, "Processed in {:.3f} sec.", elapsed_sec);
 }
 
 
