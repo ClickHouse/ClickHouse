@@ -142,3 +142,57 @@ SELECT x + 1 AS y FROM
     SELECT number AS x FROM numbers(3)
 )
 ORDER BY y;
+
+-- Variant(...) carrier: the divergent aggregate state is wrapped in a Variant. buildCommonHeaderForUnion
+-- picks branch 0's Variant type as the common header; addConvertingToCommonHeaderActionsIfNeeded forces a
+-- CAST, but createVariantToVariantWrapper used to match variant members by getName() only, so the branch
+-- whose nested aggregate function name differs (quantileExactTuple vs quantilesExactTuple(0.9)) was
+-- rejected with CANNOT_CONVERT_TYPE even though the two Variant types are equals()-equal. The wrapper must
+-- match an unmatched-by-name old member to an equals()-equal new member and physically rebuild it with the
+-- target function. Covered for both analyzers and for UNION ALL / INTERSECT / EXCEPT.
+SET enable_analyzer = 1;
+SET allow_experimental_variant_type = 1;
+
+SELECT count() FROM
+(
+    SELECT tuple(v) AS tv FROM
+    (
+        SELECT CAST(quantileExactTupleState((toUInt32(number), toFloat64(number))) AS Variant(AggregateFunction(quantileExactTuple, Tuple(UInt32, Float64)), UInt8)) AS v FROM numbers(100, 1)
+        UNION ALL
+        SELECT CAST(quantilesExactTupleState(0.9)((toUInt32(number), toFloat64(number))) AS Variant(AggregateFunction(quantilesExactTuple(0.9), Tuple(UInt32, Float64)), UInt8)) AS v FROM numbers(101, 257)
+    )
+)
+SETTINGS query_plan_enable_optimizations = 0;
+
+SELECT count() FROM
+(
+    SELECT tuple(v) AS tv FROM
+    (
+        SELECT CAST(quantileExactTupleState((toUInt32(number), toFloat64(number))) AS Variant(AggregateFunction(quantileExactTuple, Tuple(UInt32, Float64)), UInt8)) AS v FROM numbers(100, 1)
+        INTERSECT
+        SELECT CAST(quantilesExactTupleState(0.9)((toUInt32(number), toFloat64(number))) AS Variant(AggregateFunction(quantilesExactTuple(0.9), Tuple(UInt32, Float64)), UInt8)) AS v FROM numbers(101, 257)
+    )
+)
+SETTINGS query_plan_enable_optimizations = 0;
+
+-- Genuine Variant extension (a subset relationship, no divergent names) must still cast for free.
+SELECT count() FROM
+(
+    SELECT CAST(1 AS Variant(UInt8)) AS v FROM numbers(2)
+    UNION ALL
+    SELECT CAST('x' AS Variant(UInt8, String)) AS v FROM numbers(3)
+)
+SETTINGS query_plan_enable_optimizations = 0;
+
+-- Legacy interpreter path (enable_analyzer = 0) for the Variant carrier.
+SET enable_analyzer = 0;
+
+SELECT count() FROM
+(
+    SELECT tuple(v) AS tv FROM
+    (
+        SELECT CAST(quantileExactTupleState((toUInt32(number), toFloat64(number))) AS Variant(AggregateFunction(quantileExactTuple, Tuple(UInt32, Float64)), UInt8)) AS v FROM numbers(100, 1)
+        UNION ALL
+        SELECT CAST(quantilesExactTupleState(0.9)((toUInt32(number), toFloat64(number))) AS Variant(AggregateFunction(quantilesExactTuple(0.9), Tuple(UInt32, Float64)), UInt8)) AS v FROM numbers(101, 257)
+    )
+);

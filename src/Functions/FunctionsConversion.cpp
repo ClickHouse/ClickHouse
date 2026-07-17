@@ -1881,12 +1881,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
         new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
-    /// Create set of old variant types.
     const auto & old_variants = from_variant.getVariants();
-    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
-    old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-    for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
-        old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
     /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
     UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
@@ -1897,29 +1892,64 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     /// representation instead of reusing it as-is, otherwise later reads would interpret the bytes using the
     /// wrong layout and crash. We keep the converting wrapper keyed by the old global discriminator.
     UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, WrapperType> old_global_discriminator_to_convert_wrapper;
-    for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
+    /// Track which new variants an old variant is mapped onto, so that only genuinely new variants are appended below.
+    VectorWithMemoryTracking<bool> new_discriminator_mapped(new_variants.size(), false);
+    for (ColumnVariant::Discriminator old_discriminator = 0; old_discriminator != old_variants.size(); ++old_discriminator)
     {
-        auto it = new_variant_types_to_new_global_discriminator.find(old_variant_type);
-        if (it == new_variant_types_to_new_global_discriminator.end())
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE,
-                "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
-                "of an initial one", from_variant.getName(), to_variant.getName());
-        old_global_discriminator_to_new[old_discriminator] = it->second;
-
         const auto & old_type = old_variants[old_discriminator];
-        const auto & new_type = new_variants[it->second];
-        if (!old_type->equals(*new_type))
+        ColumnVariant::Discriminator new_discriminator;
+        bool force_convert = false;
+
+        auto it = new_variant_types_to_new_global_discriminator.find(old_type->getName());
+        if (it != new_variant_types_to_new_global_discriminator.end())
+        {
+            new_discriminator = it->second;
+        }
+        else
+        {
+            /// The old variant is not present by name in the new Variant. This is normally forbidden,
+            /// but two aggregate-state types can share the same state representation while differing by
+            /// function name (e.g. quantileExactTuple vs quantilesExactTuple(0.9)), possibly nested
+            /// inside a composite type. buildCommonHeaderForUnion may pick one UNION/set-op branch's
+            /// Variant type as the common header for another branch: IDataType::equals() treats such
+            /// members as equal, so the branch must be physically converted to the equals()-equal new
+            /// variant rather than rejected. Otherwise the branch keeps emitting its own variant type
+            /// and the strict per-stream block-structure check aborts at pipeline build.
+            std::optional<ColumnVariant::Discriminator> matched;
+            for (size_t j = 0; j != new_variants.size(); ++j)
+            {
+                if (!new_discriminator_mapped[j] && old_type->equals(*new_variants[j]))
+                {
+                    matched = static_cast<ColumnVariant::Discriminator>(j);
+                    break;
+                }
+            }
+            if (!matched)
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE,
+                    "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
+                    "of an initial one", from_variant.getName(), to_variant.getName());
+            new_discriminator = *matched;
+            /// Names differ (same representation): force a real converting wrapper so the subcolumn is
+            /// physically rebuilt with the target function instead of passing through unchanged.
+            force_convert = true;
+        }
+
+        old_global_discriminator_to_new[old_discriminator] = new_discriminator;
+        new_discriminator_mapped[new_discriminator] = true;
+
+        const auto & new_type = new_variants[new_discriminator];
+        if (force_convert || !old_type->equals(*new_type))
             old_global_discriminator_to_convert_wrapper[old_discriminator] = prepareUnpackDictionaries(old_type, new_type);
     }
 
     /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
     VectorWithMemoryTracking<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
-    variant_types_and_discriminators_to_add.reserve(new_variants.size() - old_variants.size());
+    variant_types_and_discriminators_to_add.reserve(new_variants.size());
     for (size_t i = 0; i != new_variants.size(); ++i)
     {
-        if (!old_variant_types_to_old_global_discriminator.contains(new_variants[i]->getName()))
-            variant_types_and_discriminators_to_add.emplace_back(new_variants[i], i);
+        if (!new_discriminator_mapped[i])
+            variant_types_and_discriminators_to_add.emplace_back(new_variants[i], static_cast<ColumnVariant::Discriminator>(i));
     }
 
     return [old_global_discriminator_to_new, old_global_discriminator_to_convert_wrapper, old_variants, new_variants, variant_types_and_discriminators_to_add]
