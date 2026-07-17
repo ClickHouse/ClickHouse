@@ -37,6 +37,7 @@ run-selected in-flight: the launched selection runs, not the moved caret
 in-flight run-all single: the launched statement runs, not the draft
 in-flight run-all single: the never-run draft is not stamped run=1
 in-flight run-all single: the live draft survives in the editor
+run-one in-flight: the launch-time caret statement runs, not the moved caret
 placeholder dropped: the completed run keeps run=1
 placeholder dropped: the removed placeholder does not leak into the URL
 placeholder dropped: the stale binding is cleared from the tab

@@ -33,11 +33,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     Pinned for both a single query and a "Run all" of several, the latter driving the real
 #     `postMulti` (not just `saveHistory`) so a regression in its own launch-time snapshot
 #     (`launch_query_text`) is caught too, not only one in `saveHistory`'s guard;
-#   - the run entrypoints snapshot the launched query AND selection range BEFORE the WASM-lexer
+#   - the run entrypoints snapshot the launched query AND caret/selection range BEFORE the WASM-lexer
 #     await, so a draft typed (or a caret moved) while the lexer loads never becomes what actually
 #     runs: `postAll`'s single-statement branch runs the parsed launch text rather than re-reading
-#     the live editor (which on the `run=1` path would auto-run a never-launched draft), and
-#     `postOne`'s `Run selected` picks statements from the launch-time selection, not the moved caret.
+#     the live editor (which on the `run=1` path would auto-run a never-launched draft), `postOne`'s
+#     `Run selected` picks statements from the launch-time selection, not the moved caret, and the
+#     no-selection `Run one` path (real `getQueryUnderCursor`) picks the statement under the caret at
+#     launch, not wherever the caret is moved to before the lexer resolves.
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects (including a minimal in-memory
 # IndexedDB), asserting on the observable state: history entries, the active tab, the
@@ -97,6 +99,12 @@ code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
 /// editor snapshot: it must run the statement parsed from the launch-time text, never re-read
 /// `query_area.value` after the `splitAllQueries` lexer await.
 code += '\n' + extractTopLevel(/^async function postAll\(/, 'postAll').replace('async function postAll(', 'async function realPostAll(');
+/// The real "Run one" statement selector, extracted under an alias so the sandbox's
+/// `getQueryUnderCursor` stays the reconcileStartup/no-op stub the other cases rely on. The
+/// no-selection in-flight case below drives this to pin its launch-time caret snapshot: it must
+/// choose the statement the caret was in when `Run` was pressed, never re-read `selectionStart`
+/// after its own `tokenize` (WASM-lexer) await.
+code += '\n' + extractTopLevel(/^async function getQueryUnderCursor\(/, 'getQueryUnderCursor').replace('async function getQueryUnderCursor(', 'async function realGetQueryUnderCursor(');
 
 /// Queued resolvers for in-flight `postImpl` calls made by the real `postMulti` under test
 /// (see `startMultiRun`/`finishMultiRun`); each one hangs until `resolvePendingPostImpl` below
@@ -128,7 +136,7 @@ const sandbox = {
     user_elem: { value: '' },
     /// `selectionStart`/`selectionEnd` back the `Run selected` path; `has_selection` and the
     /// selected statements are derived from them (the in-flight selection case moves them mid-run).
-    query_area: { value: '', selectionStart: 0, selectionEnd: 0, focus() {} },
+    query_area: { value: '', selectionStart: 0, selectionEnd: 0, focus() {}, setSelectionRange(s, e) { this.selectionStart = s; this.selectionEnd = e; } },
     document: {
         title: '', documentElement: { style: { setProperty() {} } },
         /// `postMulti` only ever toggles `.style.display` on these and creates plain
@@ -224,6 +232,12 @@ sandbox.queryUnderCursorStart = 0;
 sandbox.last_query_for_download = '';
 sandbox.last_params_for_download = {};
 sandbox.getQueryUnderCursor = async () => '';
+/// Only the real `getQueryUnderCursor` (driven by the no-selection in-flight case below) reads
+/// these: `getQueryBoundaries` gates whether it visually re-selects the chosen statement (a length
+/// > 1 means "select it"), and `focusEditorForRun` focuses the editor. Neither affects WHICH
+/// statement it returns, so both are stubbed while the caret-vs-await logic under test runs for real.
+sandbox.getQueryBoundaries = () => [{}, {}];
+sandbox.focusEditorForRun = () => {};
 sandbox.splitAllQueries = async text => text.split(';').map(q => ({ query: q.trim(), is_select: true, start: 0, end: 0 }));
 sandbox.document.body = { scrollTo() {} };
 /// Minimal in-memory IndexedDB supporting exactly what `persist`/`loadFromDb` call.
@@ -629,6 +643,40 @@ async function reload()
     assert_eq('in-flight run-all single: the launched statement runs, not the draft', active().result && active().result.query, 'SELECT 1');
     assert_eq('in-flight run-all single: the never-run draft is not stamped run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
     assert_eq('in-flight run-all single: the live draft survives in the editor', active().query, 'DROP TABLE important');
+
+    /// `Run one` with NO selection must run the statement the caret was in WHEN THE RUN WAS LAUNCHED,
+    /// even if the caret moves while `getQueryUnderCursor` awaits the WASM lexer -- moving it does not
+    /// cancel the run. This drives the REAL `getQueryUnderCursor` (extracted as `realGetQueryUnderCursor`,
+    /// normally stubbed) with a hung `tokenize`: the caret starts inside `SELECT 1`, moves into
+    /// `SELECT 2` mid-await, and the launched statement (`SELECT 1;`) must still be what runs. A
+    /// regression that read `query_area.selectionStart` after the await would run `SELECT 2` from the
+    /// moved caret -- a statement the user never launched.
+    reset();
+    sandbox.isMultiQuery = true;
+    sandbox.query_area.value = 'SELECT 1; SELECT 2';
+    active().query = 'SELECT 1; SELECT 2';
+    sandbox.query_area.selectionStart = 3;   /// caret inside `SELECT 1` at launch
+    sandbox.query_area.selectionEnd = 3;
+    sandbox.getQueryUnderCursor = sandbox.realGetQueryUnderCursor;
+    let releaseCursorTokenize;
+    sandbox.tokenize = () => new Promise(resolve => { releaseCursorTokenize = () => resolve([
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '1', significant: true }, { token: ';', significant: true },
+        { token: ' ', significant: false }, { token: 'SELECT', significant: true },
+        { token: ' ', significant: false }, { token: '2', significant: true },
+    ]); });
+    const cursorPromise = sandbox.postOne();
+    await drain();
+    sandbox.query_area.selectionStart = 13;   /// caret moved into `SELECT 2` while the lexer loads
+    sandbox.query_area.selectionEnd = 13;
+    releaseCursorTokenize();
+    await drain();
+    resolvePendingPostImpl();
+    await cursorPromise;
+    await drain();
+    assert_eq('run-one in-flight: the launch-time caret statement runs, not the moved caret', active().result && active().result.query, 'SELECT 1;');
+    sandbox.getQueryUnderCursor = async () => '';   /// restore the default stub for the later cases
+    sandbox.isMultiQuery = false;
 
     /// A query edit that drops a parameter placeholder rebuilds the `param_*` inputs (via
     /// `updateQueryParams`) but leaves `tab.params` holding the previous query's bindings until a

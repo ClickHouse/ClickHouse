@@ -6667,6 +6667,12 @@ let queryUnderCursorStart = 0;
 /// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
 async function getQueryUnderCursor() {
     const all_queries = query_area.value;
+    /// Snapshot the caret at launch time, alongside `all_queries`, before the `tokenize` await.
+    /// Typing or moving the caret during the WASM-lexer load does not cancel this run, so the
+    /// statement to run must be chosen from where the caret was when `Run` was pressed, not from
+    /// wherever it ends up by the time the lexer resolves. Reading it after the await would let a
+    /// caret moved mid-await run a different statement out of the same launch-time `all_queries`.
+    const cursor_position = query_area.selectionStart;
 
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
         queryUnderCursorStart = 0;
@@ -6676,7 +6682,6 @@ async function getQueryUnderCursor() {
     const tokens = await tokenize(all_queries);
     const should_select_query = getQueryBoundaries(tokens, all_queries).length > 1;
 
-    const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
     let current_offset = 0;
     /// Track the most recently completed non-empty query so that if the cursor
