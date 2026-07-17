@@ -1,5 +1,6 @@
--- Tags: no-replicated-database
--- ^ TimeSeries tables are not supported in Replicated databases (same as the other TimeSeries tests).
+-- Tags: no-fasttest, no-replicated-database
+-- ^ no-fasttest: `prometheusQuery` parses PromQL via ANTLR4, which is disabled in the Fast test build
+--   (same as the other prometheus/TimeSeries tests). TimeSeries tables are not supported in Replicated databases.
 
 -- The short forms of the TimeSeries table functions (`timeSeriesMetrics` / `timeSeriesData` /
 -- `timeSeriesTags` / `timeSeriesSelector` / `prometheusQuery` / `prometheusQueryRange`) resolve an omitted
