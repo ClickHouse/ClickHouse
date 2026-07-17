@@ -48,6 +48,23 @@ PRIMARY KEY key;
 - `user` — PostgreSQL user.
 - `password` — User password.
 
+## TLS/SSL {#tls-ssl}
+
+To connect to a PostgreSQL server that requires TLS (and optionally to verify its certificate), specify the `materialized_postgresql_ssl_mode`, `materialized_postgresql_ssl_root_cert`, `materialized_postgresql_ssl_cert` and `materialized_postgresql_ssl_key` settings in the `SETTINGS` clause. They are forwarded to `libpq` as `sslmode`, `sslrootcert`, `sslcert` and `sslkey`, and are described in the [MaterializedPostgreSQL database engine settings](/engines/database-engines/materialized-postgresql#settings).
+
+The certificate and key files must be located inside the directory configured by the server's [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path); relative paths are resolved against it. The TLS/SSL settings are part of the PostgreSQL connection parameters, which are fixed when the table is created.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
+PRIMARY KEY key
+SETTINGS
+    materialized_postgresql_ssl_mode = 'verify-full',
+    materialized_postgresql_ssl_root_cert = '/var/lib/clickhouse/user_files/postgresql-ca.crt';
+```
+
+The same parameters can also be supplied through a [named collection](/operations/named-collections), using the `libpq` key names `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.
+
 ## Requirements {#requirements}
 
 1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
