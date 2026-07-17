@@ -696,6 +696,9 @@ Chunk PuffinMetadataInputFormat::read()
     {
         blob_index = 0;
         footer = readPuffinFooter(*in, seekable_read);
+        /// Metadata never reads blob payloads; drop the full-file buffer from the non-seekable path.
+        footer.data.clear();
+        footer.data.shrink_to_fit();
         initialized = true;
     }
     if (footer.blobs.size() <= blob_index)
