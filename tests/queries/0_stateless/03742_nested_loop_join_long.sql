@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: no-random-settings, long
 
 DROP TABLE IF EXISTS events;
 
