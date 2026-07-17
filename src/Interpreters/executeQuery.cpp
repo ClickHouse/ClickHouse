@@ -1894,6 +1894,10 @@ static BlockIO executeQueryImpl(
                                     validated_cache_entry->metadata_snapshot,
                                     cached_entry->selected_columns);
 
+                                checkStoragesSupportTransactionsForQueryPlanCacheHit(
+                                    context,
+                                    validated_cache_entry->storage_bindings);
+
                                 if (context->getCurrentTransaction()
                                     && settings[Setting::throw_on_unsupported_query_inside_transaction]
                                     && settings[Setting::apply_mutations_on_fly])

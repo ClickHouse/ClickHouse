@@ -30,12 +30,14 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
 }
 
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace
@@ -368,6 +370,26 @@ void checkAccessForQueryPlanCacheHit(
     }
 
     context->checkAccess(AccessType::SELECT, storage_id, selected_columns);
+}
+
+void checkStoragesSupportTransactionsForQueryPlanCacheHit(
+    const ContextPtr & context,
+    const std::vector<QueryPlanStorageBinding> & storage_bindings)
+{
+    if (!context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+        return;
+
+    if (!context->getCurrentTransaction())
+        return;
+
+    for (const auto & binding : storage_bindings)
+    {
+        if (binding.storage && !binding.storage->supportsTransactions())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Storage {} (table {}) does not support transactions",
+                binding.storage->getName(),
+                binding.storage->getStorageID().getNameForLogs());
+    }
 }
 
 }

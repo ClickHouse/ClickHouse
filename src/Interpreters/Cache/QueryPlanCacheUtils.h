@@ -46,4 +46,8 @@ void checkAccessForQueryPlanCacheHit(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & selected_columns);
 
+void checkStoragesSupportTransactionsForQueryPlanCacheHit(
+    const ContextPtr & context,
+    const std::vector<QueryPlanStorageBinding> & storage_bindings);
+
 }
