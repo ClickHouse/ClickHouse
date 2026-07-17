@@ -1,4 +1,3 @@
-
 import Recommendations from '/snippets/recommendations.mdx';
 
 # Install ClickHouse using Homebrew
@@ -26,7 +25,9 @@ By default, MacOS won't run applications or tools created by a developer who can
 
 When attempting to run any `clickhouse` command, you may see this error:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="MacOS developer verification error dialog" border />
+<Frame>
+  <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="MacOS developer verification error dialog" />
+</Frame>
 
 To get around this verification error, you need to remove the app from MacOS' quarantine bin either by finding the appropriate setting in your System Settings window, using the terminal, or by re-installing ClickHouse.
 
@@ -36,12 +37,16 @@ The easiest way to remove the `clickhouse` executable from the quarantine bin is
 1. Open **System settings**.
 1. Navigate to **Privacy & Security**:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS Privacy & Security settings default view" border />
+    <Frame>
+      <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="MacOS Privacy & Security settings default view" />
+    </Frame>
 
 1. Scroll to the bottom of the window to find a message saying _"clickhouse-macos-aarch64" was blocked from use because it isn't from an identified developer".
 1. Click **Allow Anyway**.
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS Privacy & Security settings showing Allow Anyway button" border />
+    <Frame>
+      <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="MacOS Privacy & Security settings showing Allow Anyway button" />
+    </Frame>
 
 1. Enter your MacOS user password.
 
