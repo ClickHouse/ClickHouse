@@ -55,7 +55,8 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const StatsCollectingParams & stats_collecting_params_ = {},
+        bool any_take_last_row_ = false);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin. `plan_key_ndv_` is forwarded to the
     /// `ConcurrentHashJoin` to size/skip its exact-size deferred build (see that constructor).
@@ -67,7 +68,8 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_,
+        const StatsCollectingParams & stats_collecting_params_ = {},
+        bool any_take_last_row_ = false,
         std::optional<size_t> plan_key_ndv_ = std::nullopt);
 
     ~SpillingHashJoin() override;
@@ -126,6 +128,7 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t initial_num_buckets;
     size_t max_num_buckets;
+    bool any_take_last_row;
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;

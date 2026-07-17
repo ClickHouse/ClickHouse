@@ -1152,6 +1152,14 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto join_operator = std::move(entry->join_operator);
             join_operator.strictness = join_strictness;
+
+            /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,
+            /// which produces no join edges) as Cross. That is equivalent only for ALL strictness:
+            /// a Cross join ignores strictness, so `ANY INNER JOIN ... ON 1` would degrade to a full
+            /// cartesian product. Restore Inner so that the physical join falls back to the
+            /// constant-key join (`__lhs_const = __rhs_const`) that preserves strictness semantics.
+            if (join_strictness != JoinStrictness::All && join_operator.kind == JoinKind::Cross)
+                join_operator.kind = JoinKind::Inner;
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
 
