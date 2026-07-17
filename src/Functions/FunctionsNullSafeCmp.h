@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 enum class NullSafeCmpMode : uint8_t
@@ -101,6 +102,19 @@ public:
 
         if (!tryGetLeastSupertype(arguments))
         {
+            /// A top-level `String`/`FixedString` on one side with no least common supertype can
+            /// never be compared null-safely (unlike the regular `=` / `!=` operators.
+            const bool has_string_type
+                = WhichDataType(removeLowCardinalityAndNullable(left_ele_type)).isStringOrFixedString()
+                || WhichDataType(removeLowCardinalityAndNullable(right_ele_type)).isStringOrFixedString();
+            if (has_string_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal types of arguments ({}, {}) of function {}",
+                    backQuote(left_ele_type->getName()),
+                    backQuote(right_ele_type->getName()),
+                    backQuote(name));
+
             /// Types like `UInt64` vs `Int64` (or arrays/tuples of them) have no least common
             /// supertype but are still comparable element-wise using accurate comparison, exactly
             /// like the regular `=` / `!=` operators.
