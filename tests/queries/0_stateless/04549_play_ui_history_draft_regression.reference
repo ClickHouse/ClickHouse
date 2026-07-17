@@ -30,6 +30,12 @@ delayed completion (params changed): the entry does not carry run=1
 delayed completion (multi-query): the live draft survives
 delayed completion (multi-query): the completed run's result is still kept
 delayed completion (multi-query): the entry does not carry run=1
+in-flight single run: the never-run draft is not stamped run=1
+in-flight single run: the result snapshot is the statement that actually ran
+in-flight single run: the live draft survives in the editor
+placeholder dropped: the completed run keeps run=1
+placeholder dropped: the removed placeholder does not leak into the URL
+placeholder dropped: the stale binding is cleared from the tab
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 reload after a color toggle over a draft: the draft is restored as editor text

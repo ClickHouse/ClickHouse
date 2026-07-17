@@ -77,7 +77,13 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     /// exercises `postMulti`'s own use of its launch-time `launch_query_text` argument instead
     /// of re-deriving a snapshot the same way `saveHistory` does -- a regression in how `postAll`/
     /// `postOne` capture and thread that argument through would go uncaught otherwise.
-    'postMulti'];
+    'postMulti',
+    /// The real single-query entrypoint and completion path, so the in-flight single-run case below
+    /// pins `postOne`'s OWN launch-time snapshot of the editor -- the `history_query_text` it threads
+    /// into `postSingle`. A regression that re-read `query_area.value` after the tokenization await
+    /// would stamp a draft typed meanwhile as `run=1`, and neither `saveHistory` nor `postMulti`
+    /// exercises that path.
+    'postSingle', 'postOne'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
 
@@ -196,6 +202,17 @@ sandbox.setParamValues = values => { if (values) for (const [k, v] of Object.ent
 /// The auto-run on a still-authoritative URL. The reload cases assert this fires for a clean
 /// run but never for a restored unrun draft.
 sandbox.postAll = async () => { sandbox.postAllCalled = true; };
+/// Globals the real `postOne`/`postSingle` read that are defined elsewhere in the page. The
+/// in-flight single-run case overrides `getQueryUnderCursor` to hang on its (WASM-lexer) await so a
+/// draft can be typed mid-run; `splitAllQueries` is only reached by a selection run, not driven here.
+sandbox.beginFlight = () => {};
+sandbox.isMultiQuery = false;
+sandbox.queryUnderCursorStart = 0;
+sandbox.last_query_for_download = '';
+sandbox.last_params_for_download = {};
+sandbox.getQueryUnderCursor = async () => '';
+sandbox.splitAllQueries = async text => text.split(';').map(q => ({ query: q.trim(), is_select: true, start: 0, end: 0 }));
+sandbox.document.body = { scrollTo() {} };
 /// Minimal in-memory IndexedDB supporting exactly what `persist`/`loadFromDb` call.
 const idb_stores = {};
 function fakeObjectStore(name)
@@ -515,6 +532,49 @@ async function reload()
     assert_eq('delayed completion (multi-query): the live draft survives', active().query, 'SELECT 3 -- typed while the multi-query run was still in flight');
     assert_eq("delayed completion (multi-query): the completed run's result is still kept", active().result && active().result.multi && active().result.multi.length, 2);
     assert_eq('delayed completion (multi-query): the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+
+    /// A single-query run with the caret in one of several statements. `postOne` must await the WASM
+    /// lexer (`getQueryUnderCursor`) before it knows which statement to run, and typing during that
+    /// await does not cancel the run. The launched statement (`SELECT 1`) is what actually executes,
+    /// so the history entry must never stamp the draft typed meanwhile (`SELECT 99; ...`) as `run=1`
+    /// -- a reload / shared link would auto-execute text that never ran. This drives the REAL
+    /// `postOne`/`postSingle`: a regression that re-read `query_area.value` after the await instead of
+    /// the launch-time snapshot would mark the draft below `run=1`.
+    reset();
+    sandbox.isMultiQuery = true;
+    type('SELECT 1; SELECT 2');
+    let releaseCursor;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursor = () => resolve('SELECT 1'); });
+    const onePromise = sandbox.postOne();
+    await drain();
+    type('SELECT 99; SELECT 2');   /// draft typed while the lexer is still loading
+    releaseCursor();
+    await drain();
+    resolvePendingPostImpl();
+    await onePromise;
+    await drain();
+    assert_eq('in-flight single run: the never-run draft is not stamped run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('in-flight single run: the result snapshot is the statement that actually ran', active().result && active().result.query, 'SELECT 1');
+    assert_eq('in-flight single run: the live draft survives in the editor', active().query, 'SELECT 99; SELECT 2');
+    sandbox.isMultiQuery = false;
+
+    /// A query edit that drops a parameter placeholder rebuilds the `param_*` inputs (via
+    /// `updateQueryParams`) but leaves `tab.params` holding the previous query's bindings until a
+    /// later capture. When the edited query is then run, `saveHistory` must compare against the LIVE
+    /// parameter inputs, not the stale `tab.params`: otherwise the removed placeholder is mistaken for
+    /// an in-flight parameter edit, which drops `run=1` and leaks `param_x` into the entry and the URL.
+    reset();
+    await run('SELECT 0');
+    type('SELECT {x:Int32}');
+    setParam('x', '1');
+    await run('SELECT {x:Int32}');
+    /// The edited query no longer references {x}, so its `param_x` input is gone and the live
+    /// snapshot drops it -- but `tab.params` still lists it. Run the edited query immediately.
+    delete sandbox.param_inputs.x;
+    await run('SELECT 1');
+    assert_eq('placeholder dropped: the completed run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_eq('placeholder dropped: the removed placeholder does not leak into the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    assert_params('placeholder dropped: the stale binding is cleared from the tab', active().params, {});
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so

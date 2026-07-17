@@ -5993,6 +5993,15 @@ function refreshCurrentHistoryEntry(tab) {
 function saveHistory(stateData, titleForDoc) {
     const tab = getActiveTab();
     if (!tab) return;
+    /// Refresh the tab's parameters from the live inputs before comparing. `tab.params` is only
+    /// resynced on an explicit `param-` edit or a `captureActiveTab`; a query edit that adds or
+    /// removes placeholders rebuilds the `param_*` inputs (via `updateQueryParams`) without
+    /// touching `tab.params`, which then keeps the previous query's bindings. Comparing that stale
+    /// field would mistake a removed/added placeholder for an in-flight parameter edit — dropping
+    /// `run=1` and leaking the stale placeholder into the entry and the URL. The live inputs are
+    /// exactly what the completed run's own `paramValuesSnapshot` was read from, so a genuine
+    /// in-flight parameter edit still diverges from `stateData.params` and correctly drops `run=1`.
+    tab.params = getParamValues();
     const ranLiveQuery = tab.query === stateData.query;
     const ranLiveParams = JSON.stringify(tab.params || {}) === JSON.stringify(stateData.params || {});
     if (ranLiveQuery) tab.query = stateData.query;
@@ -6249,11 +6258,16 @@ async function postOne()
             await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart);
         }
     } else {
+        /// Snapshot the full editor at launch time, before the tokenization await: typing during
+        /// `getQueryUnderCursor`'s WASM-lexer load does not cancel this run, so the history text
+        /// must be the launched editor, not whatever it holds by the time the lexer resolves — the
+        /// same launch-time discipline `postMulti` follows with its `launch_query_text` argument.
+        const all_text = query_area.value;
         const query = await getQueryUnderCursor();
         if (my_request_num !== request_num) return;
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined, params_restore_pending, queryUnderCursorStart);
+        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
