@@ -94,8 +94,11 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
     }
 
     /// `Any` mode fails once none of its declared tokens can contribute.
-    /// Pattern queries discover tokens dynamically, so the count applies only to pure-token queries.
-    if (query->getPatterns().empty())
+    /// Pattern queries and value-matcher queries (e.g. `mapContainsValue`) discover their tokens
+    /// dynamically and start with no declared tokens, so the live-token count applies only to
+    /// pure-token queries. Clipping a discovered token must not fail them: their contribution is
+    /// tracked through readable postings, so a later readable token can still satisfy the query.
+    if (query->getPatterns().empty() && query->getValueMatchers().empty())
     {
         if (num_live_tokens > 0)
             --num_live_tokens;

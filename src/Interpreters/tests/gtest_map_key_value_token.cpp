@@ -9,7 +9,7 @@ using namespace DB;
 
 TEST(MapKeyValueToken, RoundTrip)
 {
-    for (auto [k, v] : std::vector<std::pair<std::string, std::string>>{
+    for (const auto & [k, v] : std::vector<std::pair<std::string, std::string>>{
              {"foo", "bar"}, {"", ""}, {"k", ""}, {"", "v"},
              {"a=b", "c"}, {std::string(200, 'x'), "y"}})
     {

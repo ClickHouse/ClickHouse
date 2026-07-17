@@ -91,6 +91,11 @@ CREATE TABLE t_map_kv_bad2 (id UInt64, m Map(String, UInt64), INDEX idx m TYPE t
 -- The keyValuePairs tokenizer requires a Map column.
 CREATE TABLE t_map_kv_bad (id UInt64, s String, INDEX idx s TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
+-- FixedString keys/values are rejected: the query-side key is unpadded while the index stores
+-- the padded FixedString bytes, so lookups would silently miss rows.
+CREATE TABLE t_map_kv_bad_fs (id UInt64, m Map(FixedString(3), String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_map_kv_bad_fsv (id UInt64, m Map(String, FixedString(3)), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
 -- The keyValuePairs tokenizer does not support the preprocessor / postprocessor options.
 CREATE TABLE t_map_kv_bad3 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', preprocessor = 'toString(m)')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_map_kv_bad4 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', postprocessor = 'lower(token)')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
@@ -100,3 +105,22 @@ SELECT id FROM t_map_kv WHERE mapContainsValueLike(m, 'bar') OR mapContainsValue
 SELECT id FROM t_map_kv WHERE m['foo'] LIKE 'bar' OR m['foo'] LIKE 'baz' ORDER BY id;
 
 DROP TABLE t_map_kv;
+
+-- A value-matcher query (e.g. mapContainsValue) discovers its tokens dynamically and must not be
+-- failed by the first clipped token. PK filtering (id >= 7) prunes the granule holding the
+-- earlier-sorted token ('k2' -> 'x' from row 1), making it unreadable; the query must still match
+-- row 8 via its own ('k' -> 'x') token instead of reporting a false negative (empty result).
+DROP TABLE IF EXISTS t_map_kv_clip;
+CREATE TABLE t_map_kv_clip
+(
+    id UInt64,
+    m Map(String, String),
+    INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+INSERT INTO t_map_kv_clip VALUES
+    (1, {'k2':'x'}), (2, {'z':'q'}), (3, {'z':'q'}), (4, {'z':'q'}),
+    (5, {'z':'q'}), (6, {'z':'q'}), (7, {'z':'q'}), (8, {'k':'x'});
+SELECT id FROM t_map_kv_clip WHERE id >= 7 AND mapContainsValue(m, 'x') ORDER BY id;
+DROP TABLE t_map_kv_clip;

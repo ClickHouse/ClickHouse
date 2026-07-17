@@ -2026,10 +2026,14 @@ void validateTextIndexColumnType(const ITokenizer & tokenizer, const DataTypePtr
 {
     if (tokenizer.getType() == ITokenizer::Type::KeyValuePairs)
     {
+        /// Only `String` (optionally `LowCardinality`) keys and values are supported. `FixedString`
+        /// is rejected: the query-side fast path receives the unpadded key (e.g. `"a"`) from
+        /// `FunctionToSubcolumnsPass` / `tryGetMapElementKeyForKeyValueIndex`, while the index stores
+        /// the padded `ColumnFixedString` bytes (e.g. `"a\0\0"`), so lookups would silently miss rows.
         const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
         if (!map_type
-            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isStringOrFixedString()
-            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getValueType())).isStringOrFixedString())
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isString()
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getValueType())).isString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Text index with the `keyValuePairs` tokenizer must be created on a `Map` column with String or "
