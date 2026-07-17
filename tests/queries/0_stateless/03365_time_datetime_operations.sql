@@ -80,7 +80,8 @@ SELECT toTime('00:02:02') - toDateTime('2020-01-01 12:10:10') AS t_minus_dt; -- 
 SELECT toTypeName(toDateTime('2020-01-01 12:10:10', 'Europe/Moscow') + toTime('00:02:02'));
 SELECT toTypeName(toDateTime64('2020-01-01 12:10:10.123', 3, 'Europe/Moscow') + toTime('00:02:02'));
 
--- Overflow with throw (the default): out-of-range results must not wrap
+-- Overflow with throw: out-of-range results must not wrap
+SET date_time_overflow_behavior = 'throw';
 SELECT toDateTime('2106-02-07 06:28:15') + toTime('00:00:01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDateTime('1970-01-01 00:00:00') - toTime('00:00:01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 -- One tick past the last representable DateTime64(9) value
