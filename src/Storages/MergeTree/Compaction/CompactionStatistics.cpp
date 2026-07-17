@@ -167,30 +167,23 @@ std::unordered_set<std::string> collectStaticStreamFileNames(const NamesAndTypes
     return names;
 }
 
-/// Number of on-disk column streams the merged wide part will write. Its substream set is the union of
-/// the source parts' substreams: for JSON / Dynamic columns the merged dynamic structure is chosen from
-/// all source columns (ColumnObject::chooseDynamicStructureForMerge / ColumnDynamic::chooseDynamicStructureForMerge),
-/// so paths or variants that appear in only some of the source parts all end up in the result part. A plain
-/// max over the source parts would undercount exactly that case (part A has only path 'a', part B only 'b',
-/// yet the merged part writes both). Count the union of substream names per column from each source part's
-/// columns_substreams.txt (the reliable source of truth for dynamic substreams), falling back to the default
-/// serialization for columns whose substreams are not recorded (parts written before that file existed, or a
-/// column absent from every source part). The union is an upper bound on the real count - the merge may
-/// collapse some dynamic substreams via max_dynamic_paths / max_dynamic_types - which is the safe direction
-/// for a reservation. For simple column types the union equals the default serialization count, so this only
-/// ever raises the estimate for semi-structured columns.
-///
-/// The per-column union can still miss dynamic substreams that live only in an old source part without
-/// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream, and
-/// tryGetColumnSubstreams returns nothing). Those old parts' dynamic streams are added back explicitly below
-/// (see unrecorded_dynamic_files), so a mixed old/new merge with disjoint dynamic paths is not undercounted.
-/// The result is also floored at the widest source part's actual stream count (countPartStreams reads an old
-/// wide part's real .bin count), since the merged part is never narrower than any single source part. For
-/// simple columns and modern parts both adjustments are no-ops.
-size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
+/// Number of on-disk column streams for a set of columns, recovering the dynamic (JSON / Dynamic) substreams
+/// of each column, by name, from the columns_substreams.txt of whichever given parts physically store it: the
+/// union of the column's recorded substream names across those parts (for JSON / Dynamic the merged dynamic
+/// structure is chosen from all source columns - ColumnObject::chooseDynamicStructureForMerge /
+/// ColumnDynamic::chooseDynamicStructureForMerge - so paths that appear in only some parts all end up in the
+/// result; a plain max over the parts would undercount that case). Fall back to the default serialization for
+/// a column whose substreams no part records (parts written before that file existed, or a column absent from
+/// every given part). The union is an upper bound on the real count - the merge may collapse some dynamic
+/// substreams via max_dynamic_paths / max_dynamic_types - which is the safe direction for a reservation. For
+/// simple column types the union equals the default serialization count, so this only ever raises the estimate
+/// for semi-structured columns. Unlike countOutputStreams below it adds no whole-part floor, so it is exact for
+/// a column set that is narrower than the parts it is matched against - a projection's columns are derived from
+/// the base parts, so its semi-structured columns are priced against the base parts by name here.
+size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const MergeTreeDataPartsVector & source_parts)
 {
     size_t streams = 0;
-    for (const auto & column : output_columns)
+    for (const auto & column : columns)
     {
         std::unordered_set<std::string_view> union_substreams;
         bool recorded = false;
@@ -206,6 +199,21 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
 
         streams += recorded ? union_substreams.size() : countColumnStreams({column});
     }
+    return streams;
+}
+
+/// Number of on-disk column streams the merged wide part will write. Its substream set is the union of
+/// the source parts' substreams (countColumnStreamsFromParts), matched by column name. The per-column union
+/// can still miss dynamic substreams that live only in an old source part without columns_substreams.txt
+/// (there the default serialization collapses JSON / Dynamic to a single stream, and tryGetColumnSubstreams
+/// returns nothing). Those old parts' dynamic streams are added back explicitly below (see
+/// unrecorded_dynamic_files), so a mixed old/new merge with disjoint dynamic paths is not undercounted.
+/// The result is also floored at the widest source part's actual stream count (countPartStreams reads an old
+/// wide part's real .bin count), since the merged part is never narrower than any single source part. For
+/// simple columns and modern parts both adjustments are no-ops.
+size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
+{
+    size_t streams = countColumnStreamsFromParts(output_columns, source_parts);
 
     /// The per-column union above can only see substreams recorded in columns_substreams.txt. A source part
     /// written before that file existed (a pre-25.8 upgrade path) records nothing, so the dynamic substreams
@@ -455,8 +463,16 @@ UInt64 estimateNeededMemoryForMerge(
             else if (projection.with_block_number || settings[MergeTreeSetting::materialize_projections_on_merge])
             {
                 /// The temporary parts are written into the result part's own storage, so they share the
-                /// destination disk's write buffer sizing and are read back from that same disk.
-                const size_t projection_streams = countColumnStreams(projection.sample_block.getNamesAndTypesList());
+                /// destination disk's write buffer sizing and are read back from that same disk. The rebuilt
+                /// projection is recalculated from the merged base rows, so a semi-structured (JSON / Dynamic)
+                /// projection column carries the same dynamic substreams as the base column it is derived from
+                /// (writeTempProjectionPart writes one stream per substream); price it against the source
+                /// parts by name (countColumnStreamsFromParts) rather than the default serialization, which
+                /// would collapse such a column to a single stream and undersize the reservation. A projection
+                /// column that does not match a base column (an aggregate state, a renamed expression) falls
+                /// back to the default serialization count, exactly as before.
+                const size_t projection_streams = countColumnStreamsFromParts(
+                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts);
                 const UInt64 projection_worst_case = projection_streams * write_buffer_size;
                 const UInt64 projection_data_bound = projection_streams * eager_buffers_per_stream
                     + 2 * sum_input_bytes_compressed + sum_input_bytes_uncompressed;
