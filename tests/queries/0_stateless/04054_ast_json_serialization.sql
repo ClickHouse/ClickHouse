@@ -1187,20 +1187,20 @@ FROM (SELECT parseQueryToJSON('USE mydb') AS j);
 
 -- ==========================================================================
 -- 67. ASTTransactionControl
--- Fields: action(int), snapshot(uint)
+-- Fields: action(string), snapshot(uint)
 -- ==========================================================================
 
 SELECT 'TransactionControl_begin' AS t,
     JSONExtractString(j, 'type') AS tp,
-    JSONExtractInt(j, 'action') AS action
+    JSONExtractString(j, 'action') AS action
 FROM (SELECT parseQueryToJSON('BEGIN TRANSACTION') AS j);
 
 SELECT 'TransactionControl_commit' AS t,
-    JSONExtractInt(j, 'action') AS action
+    JSONExtractString(j, 'action') AS action
 FROM (SELECT parseQueryToJSON('COMMIT') AS j);
 
 SELECT 'TransactionControl_rollback' AS t,
-    JSONExtractInt(j, 'action') AS action
+    JSONExtractString(j, 'action') AS action
 FROM (SELECT parseQueryToJSON('ROLLBACK') AS j);
 
 -- ==========================================================================
@@ -1214,12 +1214,12 @@ FROM (SELECT parseQueryToJSON('CHECK TABLE t') AS j);
 
 -- ==========================================================================
 -- 69. ASTBackupQuery
--- Fields: kind(int), backup_name(child)
+-- Fields: kind(string), backup_name(child)
 -- ==========================================================================
 
 SELECT 'BackupQuery' AS t,
     JSONExtractString(j, 'type') AS tp,
-    JSONExtractInt(j, 'kind') AS kind,
+    JSONExtractString(j, 'kind') AS kind,
     JSONHas(j, 'backup_name') AS has_bn
 FROM (SELECT parseQueryToJSON('BACKUP TABLE t TO Disk(\'default\', \'backup1\')') AS j);
 

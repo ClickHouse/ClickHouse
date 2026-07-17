@@ -150,11 +150,11 @@ OptimizeQuery	OptimizeQuery	1	1	1
 DeleteQuery	DeleteQuery	1	1
 UpdateQuery	AlterQuery	1	0	0
 UseQuery	UseQuery	1
-TransactionControl_begin	TransactionControl	0
-TransactionControl_commit	1
-TransactionControl_rollback	2
+TransactionControl_begin	TransactionControl	BEGIN
+TransactionControl_commit	COMMIT
+TransactionControl_rollback	ROLLBACK
 CheckTableQuery	CheckTableQuery
-BackupQuery	BackupQuery	0	1
+BackupQuery	BackupQuery	BACKUP	1
 ViewTargets	0
 SQLSecurity	1
 RefreshStrategy	1
