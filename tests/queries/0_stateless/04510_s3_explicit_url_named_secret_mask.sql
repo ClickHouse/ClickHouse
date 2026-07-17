@@ -194,6 +194,11 @@ CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
 CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
                  access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- A url override built from an expression can embed credentials in its pieces; the reconstructor
+-- must hide it even when it is the only secret-bearing argument.
+CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
+                 url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
+
 -- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
                  headers('X-Auth' = 'SEKRIT_HDR'))); -- { serverError BAD_ARGUMENTS }

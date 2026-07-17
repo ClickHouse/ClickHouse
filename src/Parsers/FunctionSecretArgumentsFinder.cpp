@@ -972,7 +972,14 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     replacement += "'" + value + "'";
                 }
                 else
-                    replacement += "'[HIDDEN]'"; /// Cannot reconstruct the literal safely; hide it rather than leak.
+                {
+                    /// Cannot reconstruct the literal safely (e.g. a url built from an expression, which
+                    /// can embed credentials in its pieces); hide it rather than leak. This counts as a
+                    /// secret: otherwise a replacement whose only hidden part is this value would be
+                    /// discarded below and the original expression would be formatted verbatim.
+                    replacement += "'[HIDDEN]'";
+                    has_secret = true;
+                }
             }
             else
             {
