@@ -151,11 +151,25 @@ bool optimizeVectorSearchWithQuantizedCodes(
     }
 
     /// Leave the vector-similarity-index path alone: if the first pass claimed this read for the index, or it is a
-    /// distributed read, do not engage the codes optimization. (PREWHERE is fine - it prefilters inside the reader.)
+    /// distributed read, do not engage the codes optimization.
     if (read_step->getVectorSearchParameters().has_value())
         return false;
     if (read_step->isParallelReadingFromReplicas())
         return false;
+
+    /// A deterministic PREWHERE is fine - it prefilters inside the reader, below the spliced shortlist. But this pass
+    /// runs after `optimizePrewhere` (and `MergeTreeWhereOptimizer` does not reject stateful predicates), so by now a
+    /// stateful `WHERE` predicate (e.g. `neighbor`, `logTrace`) can be hidden inside the reader - as can an explicit
+    /// user-written `PREWHERE` - where the chain guards above cannot see it. The rewrite changes what the reader-side
+    /// predicate observes (the extra codes subcolumn changes the read, and lazy materialization later restructures the
+    /// read around the inner shortlist limit), so leave the query exact, matching the fences in `optimizeTopK` and
+    /// `useVectorSearch`. A row-level policy filter is reader-side as well.
+    if (const auto & prewhere_info = read_step->getPrewhereInfo())
+        if (prewhere_info->prewhere_actions.hasStatefulFunctions())
+            return false;
+    if (const auto & row_level_filter = read_step->getRowLevelFilter())
+        if (row_level_filter->actions.hasStatefulFunctions())
+            return false;
 
     /// The two-stage rewrite (shortlist over quantized codes + exact rescore) is an approximate search, so it is opt-in:
     /// by default an ORDER BY distance LIMIT on a Quantize-coded column runs as an exact full-precision scan. Only engage

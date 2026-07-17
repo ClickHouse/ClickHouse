@@ -130,7 +130,21 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     }
 
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+    {
+        /// Same reasoning as above, for a reader-side filter: an explicit `PREWHERE` (this pass runs
+        /// before `optimizePrewhere`, so a prewhere here can only be user-written) executes inside the
+        /// reader, but under the post-filter strategy the vector index shortlists the candidate
+        /// granules/rows first, so a stateful function in the prewhere would run on the reduced
+        /// candidate stream instead of every block of the full scan.
+        if (prewhere_info->prewhere_actions.hasStatefulFunctions())
+            return no_layers_updated;
         additional_filters_present = true;
+    }
+
+    /// A row-level policy filter is reader-side as well.
+    if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
+        if (row_level_filter->actions.hasStatefulFunctions())
+            return no_layers_updated;
 
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
         return no_layers_updated; /// user explicitly wanted exact (brute-force) vector search

@@ -107,6 +107,20 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     if (read_from_mergetree_step->isQueryWithFinal())
         return 0;
 
+    /// A reader-side filter - an explicit `PREWHERE` (this optimization runs before `optimizePrewhere`,
+    /// so a prewhere here can only be user-written) or a row-level policy filter - executes inside the
+    /// reader, below both top-K paths, and the `ExpressionStep`/`FilterStep` guards above cannot see it.
+    /// The dynamic `__topKFilter` path is already disabled when a prewhere exists (see
+    /// `use_dynamic_filtering` below), but skip-index top-k pruning would still drop marks before the
+    /// reader-side filter runs, so a stateful function (e.g. `logTrace`, `neighbor`) in it would observe
+    /// only the shortlisted rows.
+    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        if (prewhere_info->prewhere_actions.hasStatefulFunctions())
+            return 0;
+    if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
+        if (row_level_filter->actions.hasStatefulFunctions())
+            return 0;
+
     size_t n = limit_step->getLimitForSorting();
     if (!n || (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization))
         return 0;

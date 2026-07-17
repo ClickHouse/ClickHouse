@@ -18,6 +18,24 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
 
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     const auto & storage_row_level_filter = source_step_with_filter->getRowLevelFilter();
+
+    /// A stateful function (e.g. `logTrace`, `neighbor`, `runningAccumulate`) must observe the same
+    /// input blocks it would see without the optimization. When a reader-side filter (an explicit
+    /// `PREWHERE`, or a row-level policy filter) contains a stateful function, both effects of this
+    /// optimization would change what it sees: composing filters into the index analysis prunes
+    /// granules by the deterministic conjuncts, so the stateful part runs on the reduced stream
+    /// (e.g. `PREWHERE neighbor(v, 1) = 20 AND key < 5` would produce different `neighbor` values
+    /// and select different rows), and the propagated outer `LIMIT` shrinks or truncates the read
+    /// for sources that consume it. Keep the reader untouched: skip both filter composition and
+    /// limit propagation. See the sibling fences in `optimizeTopK`, `useVectorSearch`, and
+    /// `useVectorSearchWithQuantizedCodes`.
+    if ((storage_row_level_filter && storage_row_level_filter->actions.hasStatefulFunctions())
+        || (storage_prewhere_info && storage_prewhere_info->prewhere_actions.hasStatefulFunctions()))
+    {
+        source_step_with_filter->applyFilters();
+        return;
+    }
+
     if (storage_row_level_filter)
         source_step_with_filter->addFilter(storage_row_level_filter->actions.clone(), storage_row_level_filter->column_name);
     if (storage_prewhere_info)
@@ -37,6 +55,14 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
+            /// Same reasoning as for reader-side filters above and for `ExpressionStep` below: a
+            /// stateful function in a `FilterStep` must see the unreduced stream, but composing the
+            /// filter into the index analysis would prune granules by its deterministic conjuncts,
+            /// and walking further would propagate the outer `LIMIT` below the filter into the
+            /// source. `arrayJoin` changes row cardinality the same way. Stop walking here.
+            if (filter_step->getExpression().hasArrayJoin() || filter_step->getExpression().hasStatefulFunctions())
+                break;
+
             auto filter_dag = filter_step->getExpression().clone();
             auto filter_column_name = filter_step->getFilterColumnName();
 
