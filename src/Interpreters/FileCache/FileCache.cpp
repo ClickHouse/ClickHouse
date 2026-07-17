@@ -472,9 +472,9 @@ bool FileCache::skipCacheOnDiskFailure() const
     return skip_cache_on_disk_failure;
 }
 
-String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const
+String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size) const
 {
-    return metadata.getFileSegmentPath(key, offset, segment_kind, origin);
+    return metadata.getFileSegmentPath(key, offset, segment_kind, origin, size);
 }
 
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -2428,14 +2428,35 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         FileSegmentKind kind;
         fs::path path;
         IFileCachePriority::IteratorPtr cache_it; /// filled in phase 2
+        bool size_in_filename; /// whether the size was read from the file name (no `stat` needed)
     };
     std::vector<SegmentToLoad> segments;
+    /// Deduplicate by offset. Encoding the size in the name (`<offset>` -> `<offset>_<size>`, see
+    /// `renameToIncludeSizeInNameUnlocked`) is best-effort: if the target name is already occupied the
+    /// rename fails and the real segment stays under its legacy `<offset>` name next to a stale
+    /// `<offset>_<size>` artifact. Both parse to the same offset, so without deduplication we would
+    /// build two priority entries for one offset and later hit the duplicate-offset path in phase 3
+    /// (a `chassert(false)` in debug builds; a nondeterministic deletion of the real file in release).
+    std::unordered_map<UInt64, size_t> offset_to_index;
 
     for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
+        /// Only regular files hold cache segments. A rename target occupied by a non-regular entry
+        /// (e.g. a leftover directory, as exercised by `RenameToIncludeSizeInNameFailureKeepsSegmentConsistent`)
+        /// is exactly what makes the best-effort rename fail; skip it here so its name is never parsed
+        /// and trusted as a segment (the size of a `<offset>_<size>` entry is read from the name without
+        /// a `stat`). Uses the directory-entry type cached by `directory_iterator` (no extra syscall on
+        /// local filesystems, which always report the entry type).
+        if (!offset_it->is_regular_file())
+        {
+            LOG_WARNING(log, "Unexpected non-regular entry in cache directory: {}", offset_it->path().string());
+            continue;
+        }
+
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed = false;
         UInt64 offset = 0;
+        std::optional<UInt64> size_from_name;
 
         auto delim_pos = offset_with_suffix.find('_');
         if (delim_pos == std::string::npos)
@@ -2446,17 +2467,26 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         {
             parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
 
-            if (offset_with_suffix.substr(delim_pos + 1) == "persistent")
+            const auto suffix = offset_with_suffix.substr(delim_pos + 1);
+            if (suffix == "persistent")
             {
                 /// For compatibility. Persistent files are no longer supported.
                 fs::remove(offset_it->path());
                 continue;
             }
-            if (offset_with_suffix.substr(delim_pos + 1) == "temporary")
+            if (suffix == "temporary")
             {
                 fs::remove(offset_it->path());
                 continue;
             }
+
+            /// New format `<offset>_<size>`: the size is encoded in the name, so we can
+            /// load this segment without a `stat` syscall.
+            UInt64 size_value = 0;
+            if (parsed && tryParse<UInt64>(size_value, suffix))
+                size_from_name = size_value;
+            else
+                parsed = false;
         }
 
         if (!parsed)
@@ -2465,14 +2495,36 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             continue;
         }
 
-        auto size = offset_it->file_size();
+        /// Legacy `<offset>` files (and files left by a download that was interrupted before
+        /// the size was encoded into the name) require a `stat` to obtain the size.
+        UInt64 size = size_from_name.has_value() ? *size_from_name : offset_it->file_size();
         if (!size)
         {
             fs::remove(offset_it->path());
             continue;
         }
 
-        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr});
+        /// If two names map to the same offset (a legacy `<offset>` next to a stale `<offset>_<size>`
+        /// left by a failed best-effort rename), keep the legacy file — its size comes from a real
+        /// `stat`, and it is the segment whose rename failed — and ignore the suffixed duplicate,
+        /// whose size is trusted from the name. Leaving the stale artifact on disk is deliberate:
+        /// removing it here would be a destructive action on this recovery path.
+        if (auto [it, is_new] = offset_to_index.try_emplace(offset, segments.size()); !is_new)
+        {
+            auto & existing = segments[it->second];
+            const bool replace_existing = !size_from_name.has_value() && existing.size_in_filename;
+            LOG_WARNING(
+                log,
+                "Duplicate cache files for offset {}: keeping '{}', ignoring '{}'",
+                offset,
+                replace_existing ? offset_it->path().string() : existing.path.string(),
+                replace_existing ? existing.path.string() : offset_it->path().string());
+            if (replace_existing)
+                existing = {offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, /* size_in_filename */false};
+            continue;
+        }
+
+        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, size_from_name.has_value()});
     }
 
     /// Phase 2: add all segments for the key under a single write lock acquisition.
@@ -2526,7 +2578,8 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     /* background_download_enabled */false,
                     this,
                     key_metadata,
-                    segment.cache_it);
+                    segment.cache_it,
+                    /* size_in_filename */segment.size_in_filename);
 
                 inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
             }

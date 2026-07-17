@@ -328,6 +328,9 @@ void MergeTreeSink::finishDelayedChunk()
             partition.block_with_partition.block = result.filtered_block;
             partition.deduplication_info = std::move(result.deduplication_info);
 
+            /// writeTempPart moves the partition value out of block_with_partition into the part,
+            /// so restore it from the just-written part before rewriting the filtered block.
+            partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
             partition.temp_part = writeNewTempPart(partition.block_with_partition);
 
             /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition

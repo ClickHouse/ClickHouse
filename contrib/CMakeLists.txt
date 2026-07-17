@@ -151,8 +151,8 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
+add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
@@ -250,9 +250,11 @@ else()
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
 endif()
 option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+# `crc32c` is a small portable library used by both `google-cloud-cpp` and the snappy framing format
+# in `SnappyWriteBuffer`/`SnappyFramedReadBuffer`, so it is always built when libraries are enabled.
+add_contrib (crc32c-cmake crc32c)
 if(ENABLE_GOOGLE_CLOUD_CPP)
     add_contrib (nlohmann-json-cmake nlohmann-json)
-    add_contrib (crc32c-cmake crc32c)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
 else()
     message(STATUS "Not using Google Cloud Cpp")
