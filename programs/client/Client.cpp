@@ -854,6 +854,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
         ("structure", po::value<std::string>(), "structure")
+        ("scalar", "Send as Scalar packet (not Data)")
         ("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
@@ -887,8 +888,9 @@ void Client::processOptions(
 
         try
         {
-            external_tables.emplace_back(external_options);
-            if (external_tables.back().file == "-")
+            auto & external_data = external_options.contains("scalar") ? external_scalars : external_tables;
+            external_data.emplace_back(external_options);
+            if (external_data.back().file == "-")
                 ++number_of_external_tables_with_stdin_source;
             if (number_of_external_tables_with_stdin_source > 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
@@ -1256,6 +1258,11 @@ void Client::readArguments(
             }
             else
                 break;
+        }
+        /// Options with no value
+        else if (in_external_group && (arg == "--scalar"))
+        {
+            external_tables_arguments.back().emplace_back(arg);
         }
         else
         {
