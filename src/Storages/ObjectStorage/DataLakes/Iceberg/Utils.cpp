@@ -267,11 +267,15 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
     }
     if (compression_method != CompressionMethod::None)
     {
-        auto suffix = toContentEncodingName(compression_method);
-        String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
-        auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
-        if (object_storage->exists(StoredObject(compressed_path)))
-            return compressed_candidate;
+        /// Try the Iceberg spec extension first (gzip -> "gz"), then the legacy
+        /// Content-Encoding token ("gzip") that older ClickHouse versions wrote.
+        for (const auto & suffix : {toIcebergMetadataCompressionExtension(compression_method), toContentEncodingName(compression_method)})
+        {
+            String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
+            auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
+            if (object_storage->exists(StoredObject(compressed_path)))
+                return compressed_candidate;
+        }
     }
 
     /// Nothing found via direct checks.

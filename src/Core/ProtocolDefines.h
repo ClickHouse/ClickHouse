@@ -66,11 +66,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///            marks travel in the `read_bucket` task parameter. The deserializer rejects a version-1 bucketed
 ///            step (its trailing part-name payload would desync the plan), so all `make_distributed_plan`
 ///            nodes need one version.
-/// Version 3: serialized join steps may carry the in-memory join compression settings
+/// Version 3: adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
+///            replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and
+///            do a full non-parallel read, so the serializer fails closed when this flag is set below version 3.
+/// Version 4: serialized join steps may carry the in-memory join compression settings
 ///            (`max_memory_usage`, `enable_join_in_memory_compression`, `join_decompressed_columns_cache_bytes`).
-///            These names are omitted when serializing for a receiver older than version 3, because
+///            These names are omitted when serializing for a receiver older than version 4, because
 ///            `BaseSettings::readBinary` throws on unknown setting names.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 3;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
+/// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
+/// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

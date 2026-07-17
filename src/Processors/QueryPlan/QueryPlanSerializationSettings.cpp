@@ -137,12 +137,12 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-/// Settings added in query plan serialization version 3 (see DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
-/// They must not be emitted when serializing for a receiver older than version 3: such a receiver does
+/// Settings added in query plan serialization version 4 (see DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+/// They must not be emitted when serializing for a receiver older than version 4: such a receiver does
 /// not know these names and BaseSettings::readBinary throws on unknown setting names, which would break
 /// mixed-version distributed queries (with serialize_query_plan) even when these settings are at
 /// their defaults.
-static constexpr std::array<std::string_view, 3> settings_since_version_3 =
+static constexpr std::array<std::string_view, 3> settings_since_version_4 =
 {
     "max_memory_usage",
     "enable_join_in_memory_compression",
@@ -151,16 +151,16 @@ static constexpr std::array<std::string_view, 3> settings_since_version_3 =
 
 void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out, UInt64 version) const
 {
-    if (version >= 3)
+    if (version >= 4)
     {
         impl->writeChangedBinary(out);
         return;
     }
 
-    /// Omit the version-3 settings for an older receiver by resetting them to defaults on a copy
+    /// Omit the version-4 settings for an older receiver by resetting them to defaults on a copy
     /// (resetting clears the "changed" flag, so writeChangedBinary no longer emits them).
     QueryPlanSerializationSettingsImpl filtered(*impl);
-    for (const auto & name : settings_since_version_3)
+    for (const auto & name : settings_since_version_4)
         filtered.resetToDefault(name);
     filtered.writeChangedBinary(out);
 }
