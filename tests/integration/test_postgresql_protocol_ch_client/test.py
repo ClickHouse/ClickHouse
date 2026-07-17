@@ -107,6 +107,62 @@ def test_wide_and_decimal_type_roundtrip(started_cluster):
     )
 
 
+def test_array_type_roundtrip(started_cluster):
+    # `postgresql(..., 'arr_table')` against a ClickHouse table with array columns must infer the array
+    # element types and dimensions (not fall back to String) and read the values back. The emulated
+    # `pg_attribute` advertises the element OID plus `attndims`, and the server streams the values in
+    # PostgreSQL array-literal form (`{...}`) so `pqxx::array_parser` on the reading side can parse them.
+    node.query("DROP TABLE IF EXISTS test_arrays SYNC")
+    node.query(
+        "CREATE TABLE test_arrays "
+        "(id UInt32, ai Array(Int32), astr Array(String), aai Array(Array(Int32)), au Array(UInt64)) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_arrays VALUES "
+        "(1, [1, 2, 3], ['a', 'b'], [[1, 2], [3, 4]], [10, 20]), "
+        "(2, [], ['x'], [[9]], [18446744073709551615])"
+    )
+
+    # The types are inferred as arrays (a UInt64 element becomes numeric(20, 0) -> Decimal(20, 0)), not String.
+    assert node.query(
+        "SELECT toTypeName(ai), toTypeName(astr), toTypeName(aai), toTypeName(au) "
+        f"FROM {pg_source('default', 'test_arrays')} LIMIT 1"
+    ) == "Array(Int32)\tArray(String)\tArray(Array(Int32))\tArray(Decimal(20, 0))\n"
+
+    # The values round-trip, including nested and empty arrays.
+    assert node.query(
+        f"SELECT id, ai, astr, aai, au FROM {pg_source('default', 'test_arrays')} ORDER BY id"
+    ) == (
+        "1\t[1,2,3]\t['a','b']\t[[1,2],[3,4]]\t[10,20]\n"
+        "2\t[]\t['x']\t[[9]]\t[18446744073709551615]\n"
+    )
+
+
+def test_wire_types_for_wide_and_decimal(started_cluster):
+    # A direct PostgreSQL client reading these columns over the wire must see the correct type OIDs in the
+    # `RowDescription`: the integer types that do not fit into a signed 64-bit `bigint` (UInt64 and the
+    # 128/256-bit types) and the `Decimal` types are advertised as `numeric` (OID 1700), not `varchar`
+    # (OID 1043). `Int64`, which fits into `bigint`, keeps OID 20.
+    node.query("DROP TABLE IF EXISTS test_wire_types SYNC")
+    node.query(
+        "CREATE TABLE test_wire_types (i64 Int64, u64 UInt64, i128 Int128, d Decimal(10, 2)) "
+        "ENGINE = MergeTree ORDER BY i64"
+    )
+    node.query("INSERT INTO test_wire_types VALUES (1, 2, 3, 4.5)")
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT i64, u64, i128, d FROM test_wire_types")
+        # 20 = int8 (bigint), 1700 = numeric.
+        assert [c.type_code for c in cur.description] == [20, 1700, 1700, 1700]
+    finally:
+        conn.close()
+
+
 def test_copy_to_stdout_csv_multiline_value(started_cluster):
     # `COPY (query) TO STDOUT WITH FORMAT csv` must stream a value that itself contains a newline intact:
     # each row is serialized into its own CopyData message, so a quoted CSV field spanning several physical
