@@ -133,13 +133,13 @@ with settings `min_age_to_force_merge_seconds`,
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Obsolete setting, does nothing.
-## allow_experimental_text_index_positions {#allow_experimental_text_index_positions} 
+## allow_experimental_text_index_phrase_search {#allow_experimental_text_index_phrase_search} 
 
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Allow creating text indexes with the experimental `positions` argument which
+Allow creating text indexes with the experimental `support_phrase_search` argument which
 stores token positions to support exact phrase matching.
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key} 
