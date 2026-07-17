@@ -9850,10 +9850,15 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         return ast ? ast->formatWithSecretsOneLine() : "";
     };
 
-    if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
+    /// Compare the normalized key expression list, not the raw definition AST: `a` and `tuple(a)`
+    /// are the same key but format to different strings, so a syntactic compare rejects them across
+    /// versions that serialize the single-column form differently. This matches the primary-key check below.
+    if (query_to_string(my_snapshot->getSortingKey().expression_list_ast)
+        != query_to_string(src_snapshot->getSortingKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
 
-    if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))
+    if (query_to_string(my_snapshot->getPartitionKey().expression_list_ast)
+        != query_to_string(src_snapshot->getPartitionKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
 
     if (format_version != src_data->format_version)

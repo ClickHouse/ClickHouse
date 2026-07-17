@@ -1,0 +1,2 @@
+partition a<-tuple(a)	2
+ordering a<-tuple(a)	1
