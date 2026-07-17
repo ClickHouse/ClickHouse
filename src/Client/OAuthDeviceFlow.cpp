@@ -111,6 +111,8 @@ bool discoverySupportsDeviceCodeGrant(const std::string & json_body)
     }
     catch (...)
     {
+        /// Ok: malformed discovery JSON means we cannot verify grant support; treat as supported
+        /// and let endpoint parsing / Auth0 fallback decide.
         return true;
     }
 }
@@ -137,6 +139,7 @@ std::optional<OAuthDeviceFlowEndpoints> parseOAuthDiscoveryDocument(const std::s
     }
     catch (...)
     {
+        /// Ok: invalid discovery JSON simply means discovery failed for this candidate URL.
         return std::nullopt;
     }
 }
@@ -204,6 +207,7 @@ std::optional<OAuthError> parseOAuthErrorResponse(const std::string & json_body)
     }
     catch (...)
     {
+        /// Ok: non-JSON or incomplete error bodies fall back to HTTP status formatting.
         return std::nullopt;
     }
 }
