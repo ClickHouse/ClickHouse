@@ -20,9 +20,11 @@ namespace DB
 ///       "Default" here is the type-intrinsic default (`IColumn::isDefaultAt` / `IDataType::getDefault`),
 ///       not the column's DDL `DEFAULT` expression. For a `Nullable` / `LowCardinality(Nullable)`
 ///       column the type default is `NULL` (`ColumnNullable::isDefaultAt` == `isNullAt`), so
-///       `default_count` is exactly the number of `NULL` rows and drives `IS NULL` estimation. For
-///       a non-`Nullable` column it is the number of type-default rows (`0`, `''`, ...) and drives
-///       equality-to-default estimation (`col = 0`, `col = ''`).
+///       `default_count` is exactly the number of `NULL` rows and drives `IS NULL` estimation.
+///       `Variant` and `Dynamic` columns also have a `NULL` type default (their `isDefaultAt`
+///       returns true for `NULL_DISCRIMINATOR` rows), so they likewise expose `default_count` as
+///       a null count. For any other non-`Nullable` column it is the number of type-default rows
+///       (`0`, `''`, ...) and drives equality-to-default estimation (`col = 0`, `col = ''`).
 ///
 /// The same column may contribute to multiple sub-statistics (e.g. a `Nullable(UInt32)` produces
 /// both numeric min/max and a default/NULL count). For sub-statistics not applicable to the column
@@ -48,7 +50,8 @@ public:
 
     bool hasNumericMinMax() const { return tracks_numeric; }
     bool hasStringLengthAvg() const { return tracks_string; }
-    /// A NULL count is available only for a `Nullable` column that has a default/NULL count.
+    /// A NULL count is available when the type's column default is `NULL` (i.e. `Nullable`,
+    /// `LowCardinality(Nullable)`, `Variant`, `Dynamic`, ...) and a count has been populated.
     bool hasNullCount() const { return is_nullable && has_default_count; }
     /// True iff a default-value count was populated (by `build` or `deserialize`).
     bool hasDefaultCount() const { return has_default_count; }
@@ -60,7 +63,8 @@ public:
     /// no non-NULL string rows were processed; gate on `hasStringLengthAvg()` plus a non-zero
     /// `getStringTotalBytes()` to distinguish "no data" from "all empty strings".
     Int64 getStringLengthAvg() const;
-    /// For a `Nullable` column the default is `NULL`, so this equals the NULL count; 0 otherwise.
+    /// For a column whose type default is `NULL` (`Nullable`, `Variant`, `Dynamic`, ...) this equals
+    /// the NULL count; returns 0 for columns whose default is a non-`NULL` value.
     UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
     /// Number of rows equal to the type's default value (`NULL` for `Nullable`, else `0`/`''`/...).
     UInt64 getDefaultCount() const { return default_count; }
@@ -81,7 +85,7 @@ private:
     Field column_default_field;
     bool tracks_numeric = false;
     bool tracks_string = false;
-    bool is_nullable = false;    /// column is Nullable / LowCardinality(Nullable) -> default is NULL
+    bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = false; /// a default-value count has actually been populated
 };
 

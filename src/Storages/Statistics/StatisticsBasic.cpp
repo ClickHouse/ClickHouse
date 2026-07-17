@@ -83,13 +83,20 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
 {
     tracks_numeric = data_type->isValueRepresentedByNumber();
     tracks_string = isStringOrFixedString(data_type);
-    is_nullable = isNullableOrLowCardinalityNullable(data_type_);
 
     /// Compute the column-level default once so `estimateEqual` can compare against the same
     /// value that `build` counts via `IColumn::isDefaultAt`.
     auto default_col = data_type->createColumn();
     default_col->insertDefault();
     column_default_field = (*default_col)[0];
+
+    /// A column's type default is NULL when it is `Nullable`/`LowCardinality(Nullable)` (detected
+    /// via `isNullableOrLowCardinalityNullable`) OR when the column-level default field is `NULL`
+    /// even without a `Nullable` wrapper — concretely `Variant` and `Dynamic`, whose
+    /// `ColumnVariant::isDefaultAt` / `ColumnDynamic::isDefaultAt` return true for
+    /// `NULL_DISCRIMINATOR` rows.  In both cases `default_count` from `build` equals the NULL
+    /// count and should be surfaced via `hasNullCount()` / `getNullCount()`.
+    is_nullable = isNullableOrLowCardinalityNullable(data_type_) || column_default_field.isNull();
 }
 
 void StatisticsBasic::build(const ColumnPtr & column)
