@@ -412,8 +412,8 @@ def generate_cardinality_mismatch_large_bitmap() -> None:
     )
 
 
-def generate_dense_cardinality_expansion_bomb() -> None:
-    """RLE-dense roaring: tiny blob, huge cardinality — must be rejected before materialization."""
+def generate_dense_range_100k() -> None:
+    """RLE-dense roaring: tiny on-disk blob, 100k consecutive positions — must remain readable."""
     bitmap = pyroaring.BitMap()
     bitmap.add_range(0, 100_000)
     vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
@@ -423,7 +423,22 @@ def generate_dense_cardinality_expansion_bomb() -> None:
         "cardinality": str(len(bitmap)),
     }
     write_fixture(
-        "dense_cardinality_expansion_bomb.puffin",
+        "dense_range_100k.puffin",
+        build_puffin_file(blob, footer_json_for_blob(blob, properties)),
+    )
+
+
+def generate_cardinality_exceeds_materialization_limit() -> None:
+    """Declared cardinality above the absolute materialization ceiling must be rejected early."""
+    bitmap = pyroaring.BitMap([0])
+    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
+    blob = wrap_deletion_vector_blob(vector)
+    properties = {
+        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+        "cardinality": "100000001",
+    }
+    write_fixture(
+        "cardinality_exceeds_materialization_limit.puffin",
         build_puffin_file(blob, footer_json_for_blob(blob, properties)),
     )
 
@@ -618,7 +633,8 @@ def main() -> None:
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
     generate_cardinality_mismatch_large_bitmap()
-    generate_dense_cardinality_expansion_bomb()
+    generate_dense_range_100k()
+    generate_cardinality_exceeds_materialization_limit()
     generate_invalid_cardinality_strings()
     generate_invalid_dv_snapshot_sequence()
     generate_sparse_large_key()

@@ -30,3 +30,9 @@ run_happy_path() {
 run_happy_path "spark_deletion_vector.puffin" "$DATA/spark_deletion_vector.puffin"
 run_happy_path "compressed_footer.puffin" "$DATA/compressed_footer.puffin"
 run_happy_path "mixed_blob_types.puffin" "$DATA/mixed_blob_types.puffin"
+
+echo "--- dense_range_100k.puffin ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT length(deleted_rows), deleted_rows[1], deleted_rows[100000]
+FROM file('$DATA/dense_range_100k.puffin', Puffin)
+"

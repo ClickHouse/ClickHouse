@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -48,23 +47,13 @@ constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
-/// Cap Array(UInt64) materialization vs on-disk deletion-vector blob size (same threat class as footer LZ4).
-constexpr size_t PUFFIN_DV_MAX_EXPAND_RATIO = 255;
-constexpr UInt64 PUFFIN_DV_MAX_POSITIONS = 100'000'000;
+/// Absolute cap on materialized deleted positions (~800 MiB of UInt64s at this limit).
+constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 /// Matches Iceberg `RoaringPositionBitmap.MAX_POSITION` / iceberg-cpp `kMaxPosition`.
 /// Key INT32_MAX is unsupported: the reference bitmap array length is a signed Int32.
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
-
-UInt64 maxPositionsForDeletionVectorBlob(size_t blob_length)
-{
-    size_t max_bytes = 0;
-    if (common::mulOverflow(blob_length, PUFFIN_DV_MAX_EXPAND_RATIO, max_bytes))
-        return PUFFIN_DV_MAX_POSITIONS;
-
-    return std::min<UInt64>(max_bytes / sizeof(UInt64), PUFFIN_DV_MAX_POSITIONS);
-}
 
 UInt32 readBigEndianUInt32(const UInt8 * data)
 {
@@ -615,14 +604,12 @@ std::string_view extractDeletionVectorPayload(std::string_view blob)
 
 void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions)
 {
-    const UInt64 max_positions = maxPositionsForDeletionVectorBlob(blob.size());
-    if (expected_cardinality > max_positions)
+    if (expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} exceeds materialization limit {} for blob length {}",
+            "Deletion vector cardinality {} exceeds materialization limit {}",
             expected_cardinality,
-            max_positions,
-            blob.size());
+            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
 
     deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, positions);
 }
@@ -927,7 +914,7 @@ Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
-Deletion vectors whose declared `cardinality` would expand beyond a bounded multiple of the on-disk blob size (or an absolute position ceiling) are rejected.
+Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected.
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 
