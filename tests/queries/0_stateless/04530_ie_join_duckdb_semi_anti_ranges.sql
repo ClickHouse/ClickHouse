@@ -3,7 +3,8 @@
 -- SEMI/ANTI with a few wide ranges against many narrow ranges, so that every matched left row
 -- has thousands of matching right rows: SEMI must emit each matched row once; ANTI must emit
 -- the rows before the narrow window plus the NULL-keyed rows. Shapes with a third (tail)
--- predicate are covered by 04522 and 04554 (it becomes a residual condition).
+-- predicate, evaluated as a residual condition, are at the end; their small-fixture
+-- counterparts live in 04522.
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
@@ -60,6 +61,31 @@ SELECT 'anti';
 SELECT l.id, l.start, l.stop, l.symbol, l.price
 FROM wide_ranges_anti l LEFT ANTI JOIN narrow_ranges_anti r ON l.start < r.stop AND r.start < l.stop
 ORDER BY l.id;
+
+-- Tail-predicate variants ported from DuckDB test/sql/join/iejoin/test_iesemijoin.test and
+-- test_ieantijoin.test: a third equality or arbitrary conjunct becomes a residual condition
+-- inside the operator. `ie_join` must lead the priority list, otherwise the hash join claims
+-- the equality tails as its keys.
+SET join_algorithm = 'ie_join,hash';
+SELECT 'wide semi symbol';
+SELECT l.id, l.start, l.stop, l.symbol, l.price FROM wide_ranges l LEFT SEMI JOIN narrow_ranges r
+    ON l.start < r.stop AND r.start < l.stop AND r.symbol = l.symbol ORDER BY id;
+SELECT 'wide semi price';
+SELECT l.id, l.start, l.stop, l.symbol, l.price FROM wide_ranges l LEFT SEMI JOIN narrow_ranges r
+    ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid < 400 ORDER BY id;
+SELECT 'wide semi all';
+SELECT l.id, l.start, l.stop, l.symbol, l.price FROM wide_ranges l LEFT SEMI JOIN narrow_ranges r
+    ON l.start < r.stop AND r.start < l.stop AND r.symbol = l.symbol AND l.price + r.bid < 375 ORDER BY id;
+
+SELECT 'wide anti symbol';
+SELECT l.id, l.start, l.stop, l.symbol, l.price FROM wide_ranges_anti l LEFT ANTI JOIN narrow_ranges_anti r
+    ON l.start < r.stop AND r.start < l.stop AND r.symbol = l.symbol ORDER BY id;
+SELECT 'wide anti price';
+SELECT l.id, l.start, l.stop, l.symbol, l.price FROM wide_ranges_anti l LEFT ANTI JOIN narrow_ranges_anti r
+    ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid < 400 ORDER BY id;
+SELECT 'wide anti all';
+SELECT l.id, l.start, l.stop, l.symbol, l.price FROM wide_ranges_anti l LEFT ANTI JOIN narrow_ranges_anti r
+    ON l.start < r.stop AND r.start < l.stop AND r.symbol = l.symbol AND l.price + r.bid < 375 ORDER BY id;
 
 DROP TABLE wide_ranges;
 DROP TABLE narrow_ranges;

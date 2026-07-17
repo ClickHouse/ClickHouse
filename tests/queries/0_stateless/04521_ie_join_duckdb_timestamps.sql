@@ -1,7 +1,7 @@
 -- Tags: no-old-analyzer
 
--- INNER count of a large timestamp `BETWEEN` band join (167137 x 158 rows, `DateTime64(6)`
--- keys) at full size. The LEFT/RIGHT/FULL variants are checked in 04527.
+-- INNER and LEFT/RIGHT/FULL counts of a large timestamp `BETWEEN` band join
+-- (167137 x 158 rows, `DateTime64(6)` keys) at full size.
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
@@ -182,6 +182,18 @@ SELECT (
     SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop
     SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
+
+-- `join_use_nulls = 1` is required for the outer variants: `count(flag_desc)`/`count(ts)` count
+-- non-NULL values, so unmatched rows must be padded with NULLs, not defaults.
+SET join_use_nulls = 1;
+
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT ota.ts, flags.flag_desc FROM ota LEFT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT ota.ts, flags.flag_desc FROM ota RIGHT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT ota.ts, flags.flag_desc FROM ota FULL JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
+
+SELECT count(), count(ts), count(flag_desc) FROM (SELECT ota.ts AS ts, flags.flag_desc AS flag_desc FROM ota LEFT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop);
+SELECT count(), count(ts), count(flag_desc) FROM (SELECT ota.ts AS ts, flags.flag_desc AS flag_desc FROM ota RIGHT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop);
+SELECT count(), count(ts), count(flag_desc) FROM (SELECT ota.ts AS ts, flags.flag_desc AS flag_desc FROM ota FULL JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop);
 
 DROP TABLE ota;
 DROP TABLE flags;

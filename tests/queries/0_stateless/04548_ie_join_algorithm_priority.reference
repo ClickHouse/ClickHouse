@@ -4,6 +4,8 @@ inequalities, ie_join first	1
 1372	17617849164127806498
 equality, hash first	0
 275	10485042249785034484
+left outer, hash first	0
+null-safe equality, hash first	0
 equality, ie_join first	1
 275	10485042249785034484
 one-sided, ie_join first	1
@@ -11,5 +13,9 @@ one-sided, ie_join first	1
 630	13950741495220601353
 single inequality	0
 left outer with equality	1
-275
-275
+left residual routed	1
+left vs hash	1
+right vs hash	1
+full vs hash	1
+semi vs hash	1
+anti vs hash	1

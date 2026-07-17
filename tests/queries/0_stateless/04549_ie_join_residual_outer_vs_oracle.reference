@@ -9,3 +9,12 @@ full	1
 one-sided left	1
 both-sides expression	1
 join_use_nulls equality residual	1
+semi routed	1
+semi eq	1
+anti eq	1
+semi expr	1
+anti expr	1
+null keys stay anti	1
+semi pairs valid	1
+right semi eq	1
+right anti eq	1

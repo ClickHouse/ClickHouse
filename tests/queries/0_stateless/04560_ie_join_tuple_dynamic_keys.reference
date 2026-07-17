@@ -2,7 +2,13 @@ tuple routed	0
 tuple inner result	1
 nullable tuple routed	0
 nullable tuple result	1
-dynamic routed	0
-dynamic result	1
+dynamic routed (keys allowed)	0
+dynamic result (keys allowed)	1
+dynamic routed (keys disallowed)	0
+dynamic inner (keys disallowed)	2
 tuple residual routed	1
 tuple residual semi	1
+variant routed	0
+variant inner result	1
+variant residual routed	1
+variant residual semi	1

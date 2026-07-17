@@ -1,11 +1,13 @@
 -- Tags: no-old-analyzer
 
--- OUTER IEJoin with residual ON conditions (conjuncts beyond the two inequalities, evaluated
--- inside the operator) on pseudo-random duplicate-heavy data with NULL values, verified against
--- an oracle built from parts: the INNER pairs come from a cross join with a filter over all
--- conditions, the unmatched rows of each side are derived with NOT IN, padded by hand.
--- Multisets are compared with the arraySort(groupArray(...)) idiom; NULLs are mapped to
--- sentinels (-1 for values, 0 for ids: real ids start at 1) so that tuple comparison is exact.
+-- OUTER and SEMI/ANTI IEJoin with residual ON conditions (conjuncts beyond the two inequalities,
+-- evaluated inside the operator) on pseudo-random duplicate-heavy data with NULL values, verified
+-- against cross-join oracles. For the outer kinds the oracle is built from parts: the INNER pairs
+-- come from a cross join with a filter over all conditions, the unmatched rows of each side are
+-- derived with NOT IN, padded by hand. For SEMI/ANTI the surviving ids are compared against
+-- IN/NOT IN over the same cross join. Multisets are compared with the arraySort(groupArray(...))
+-- idiom; NULLs are mapped to sentinels (-1 for values, 0 for ids: real ids start at 1) so that
+-- tuple comparison is exact.
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
@@ -140,6 +142,62 @@ SELECT 'join_use_nulls equality residual', (
     SETTINGS join_algorithm = 'hash'
 );
 SET join_use_nulls = 0;
+
+-- SEMI/ANTI with residuals over the same Nullable data. Rows with a NULL inequality key never
+-- enter the sorted union, so they must always land on the ANTI side; the residual (rarely-passing
+-- equality or a both-sides expression) exercises the mini-batch candidate scan. The equality
+-- residual makes the join hash-executable; `ie_join` still leads the priority list here.
+
+SELECT 'semi routed', count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM tlr l LEFT SEMI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z) WHERE explain LIKE '%IEJoin%';
+
+-- Rarely-passing equality residual: many candidates are scanned before the first pass
+SELECT 'semi eq', (
+    SELECT arraySort(groupArray(id)) FROM (SELECT l.id AS id FROM tlr l LEFT SEMI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z)
+) = (
+    SELECT arraySort(groupArray(id)) FROM tlr WHERE id IN (SELECT l.id FROM tlr l, trr r WHERE l.x < r.x AND l.y > r.y AND l.z = r.z)
+);
+SELECT 'anti eq', (
+    SELECT arraySort(groupArray(id)) FROM (SELECT l.id AS id FROM tlr l LEFT ANTI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z)
+) = (
+    SELECT arraySort(groupArray(id)) FROM tlr WHERE id NOT IN (SELECT l.id FROM tlr l, trr r WHERE l.x < r.x AND l.y > r.y AND l.z = r.z)
+);
+
+-- Both-sides expression residual (NULL z folds to no-match)
+SELECT 'semi expr', (
+    SELECT arraySort(groupArray(id)) FROM (SELECT l.id AS id FROM tlr l LEFT SEMI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z + r.z > 8)
+) = (
+    SELECT arraySort(groupArray(id)) FROM tlr WHERE id IN (SELECT l.id FROM tlr l, trr r WHERE l.x < r.x AND l.y > r.y AND l.z + r.z > 8)
+);
+SELECT 'anti expr', (
+    SELECT arraySort(groupArray(id)) FROM (SELECT l.id AS id FROM tlr l LEFT ANTI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z + r.z > 8)
+) = (
+    SELECT arraySort(groupArray(id)) FROM tlr WHERE id NOT IN (SELECT l.id FROM tlr l, trr r WHERE l.x < r.x AND l.y > r.y AND l.z + r.z > 8)
+);
+
+-- NULL-keyed left rows never match: they must all be on the ANTI side and none on the SEMI side
+SELECT 'null keys stay anti', (
+    SELECT count() FROM (SELECT l.id AS id FROM tlr l LEFT SEMI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z) WHERE id IN (SELECT id FROM tlr WHERE x IS NULL OR y IS NULL)
+) = 0 AND (
+    SELECT count() FROM (SELECT l.id AS id FROM tlr l LEFT ANTI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z) WHERE id IN (SELECT id FROM tlr WHERE x IS NULL OR y IS NULL)
+) = (
+    SELECT count() FROM tlr WHERE x IS NULL OR y IS NULL
+);
+
+-- The SEMI row's right-side companion must itself satisfy all conditions
+SELECT 'semi pairs valid', count() = countIf(l.x < r.x AND l.y > r.y AND l.z = r.z)
+FROM tlr l LEFT SEMI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z;
+
+-- RIGHT SEMI/ANTI: the swapped mirror with the residual's sides flipped
+SELECT 'right semi eq', (
+    SELECT arraySort(groupArray(id)) FROM (SELECT r.id AS id FROM tlr l RIGHT SEMI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z)
+) = (
+    SELECT arraySort(groupArray(id)) FROM trr WHERE id IN (SELECT r.id FROM tlr l, trr r WHERE l.x < r.x AND l.y > r.y AND l.z = r.z)
+);
+SELECT 'right anti eq', (
+    SELECT arraySort(groupArray(id)) FROM (SELECT r.id AS id FROM tlr l RIGHT ANTI JOIN trr r ON l.x < r.x AND l.y > r.y AND l.z = r.z)
+) = (
+    SELECT arraySort(groupArray(id)) FROM trr WHERE id NOT IN (SELECT r.id FROM tlr l, trr r WHERE l.x < r.x AND l.y > r.y AND l.z = r.z)
+);
 
 DROP TABLE tlr;
 DROP TABLE trr;

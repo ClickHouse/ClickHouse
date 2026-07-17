@@ -6,8 +6,15 @@ s2	s3
 s2	s4
 s4	s3
 1
+1
 s1	s3
 s4	s3
+s1	s1
+s1	s3
+s2	s2
+s3	s3
+s4	s3
+s4	s4
 1
 r2	s2
 1

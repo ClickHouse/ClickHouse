@@ -20,9 +20,7 @@ sub AS (
 )
 SELECT min(lid), max(rid) FROM sub;
 
--- Bucketing a year of daily epochs into 40 ranges (the LEFT join variant is covered
--- by test 04531; all buckets are non-empty, so the INNER equivalent here must produce
--- the same aggregate)
+-- Bucketing a year of daily epochs into 40 ranges with a range join and counting rows per bucket
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     WITH data_table AS (SELECT toInt64(1577836800 + number * 86400) AS ts FROM numbers(367)),
@@ -47,6 +45,53 @@ buckets AS (
 SELECT bucket, low, high, count() AS cnt
 FROM buckets JOIN data_table ON data_table.ts >= buckets.low AND data_table.ts < buckets.high
 GROUP BY bucket, low, high ORDER BY bucket;
+
+-- The LEFT form of the same bucketing: `join_use_nulls = 1` so `count(data_table.ts)` counts
+-- only matched rows in would-be-empty buckets (all buckets are non-empty here, so the result
+-- must equal the INNER one row for row)
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    WITH data_table AS (SELECT toInt64(1577836800 + number * 86400) AS ts FROM numbers(367)),
+    S AS (SELECT min(ts) AS minVal, max(ts) - min(ts) AS spread FROM data_table),
+    buckets AS (
+        SELECT toInt64(number) AS bucket,
+            toInt64(intDiv(number * (SELECT spread FROM S), 40) + (SELECT minVal FROM S)) AS low,
+            toInt64(intDiv((number + 1) * (SELECT spread FROM S), 40) + (SELECT minVal FROM S)) AS high
+        FROM numbers(40))
+    SELECT bucket, low, high, count(data_table.ts) AS cnt
+    FROM buckets LEFT JOIN data_table ON data_table.ts >= buckets.low AND data_table.ts < buckets.high
+    GROUP BY bucket, low, high ORDER BY bucket
+    SETTINGS join_use_nulls = 1
+) WHERE explain LIKE '%IEJoin%';
+
+SELECT 'left buckets equal inner', (
+    SELECT groupArray((bucket, low, high, cnt)) FROM (
+        WITH data_table AS (SELECT toInt64(1577836800 + number * 86400) AS ts FROM numbers(367)),
+        S AS (SELECT min(ts) AS minVal, max(ts) - min(ts) AS spread FROM data_table),
+        buckets AS (
+            SELECT toInt64(number) AS bucket,
+                toInt64(intDiv(number * (SELECT spread FROM S), 40) + (SELECT minVal FROM S)) AS low,
+                toInt64(intDiv((number + 1) * (SELECT spread FROM S), 40) + (SELECT minVal FROM S)) AS high
+            FROM numbers(40))
+        SELECT bucket, low, high, count(data_table.ts) AS cnt
+        FROM buckets LEFT JOIN data_table ON data_table.ts >= buckets.low AND data_table.ts < buckets.high
+        GROUP BY bucket, low, high ORDER BY bucket
+        SETTINGS join_use_nulls = 1
+    )
+) = (
+    SELECT groupArray((bucket, low, high, cnt)) FROM (
+        WITH data_table AS (SELECT toInt64(1577836800 + number * 86400) AS ts FROM numbers(367)),
+        S AS (SELECT min(ts) AS minVal, max(ts) - min(ts) AS spread FROM data_table),
+        buckets AS (
+            SELECT toInt64(number) AS bucket,
+                toInt64(intDiv(number * (SELECT spread FROM S), 40) + (SELECT minVal FROM S)) AS low,
+                toInt64(intDiv((number + 1) * (SELECT spread FROM S), 40) + (SELECT minVal FROM S)) AS high
+            FROM numbers(40))
+        SELECT bucket, low, high, count() AS cnt
+        FROM buckets JOIN data_table ON data_table.ts >= buckets.low AND data_table.ts < buckets.high
+        GROUP BY bucket, low, high ORDER BY bucket
+    )
+);
 
 -- A chain of an equality join (empty result), a cross join and an inequality join must not break
 DROP TABLE IF EXISTS test_big;

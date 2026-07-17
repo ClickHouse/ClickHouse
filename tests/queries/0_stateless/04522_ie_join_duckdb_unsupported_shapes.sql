@@ -51,6 +51,7 @@ SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop 
 -- be split off into a filter over the join result), so it is evaluated inside the operator as a
 -- residual condition. A disjunction of inequality conditions stays unsupported.
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300) WHERE explain LIKE '%Residual filter%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300) WHERE explain LIKE '%Residual filter%';
 SELECT 'semi residual';
 SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
 SELECT 'anti residual';
@@ -58,6 +59,29 @@ SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop A
 SELECT 'full residual';
 SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
 SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON (l.start < r.stop AND r.start < l.stop) OR (l.start > r.stop AND r.start > l.stop); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+
+-- Tail-predicate sections ported from DuckDB test/sql/join/iejoin/test_iesemijoin.test and
+-- test_ieantijoin.test: SEMI/ANTI with a third equality conjunct, alone and combined with an
+-- expression conjunct. `ie_join` must lead the priority list, otherwise the hash join claims
+-- the equality as its key.
+SET join_algorithm = 'ie_join,hash';
+SET join_use_nulls = 0;
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.symbol = r.symbol) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.symbol = r.symbol) WHERE explain LIKE '%Residual filter%';
+
+SELECT 'semi symbol';
+SELECT l.id, l.start, l.stop FROM left_small l LEFT SEMI JOIN right_small r
+    ON l.start < r.stop AND r.start < l.stop AND l.symbol = r.symbol ORDER BY 1;
+SELECT 'semi all';
+SELECT l.id, l.start, l.stop FROM left_small l LEFT SEMI JOIN right_small r
+    ON l.start < r.stop AND r.start < l.stop AND l.symbol = r.symbol AND l.price + r.bid > 300 ORDER BY 1;
+
+SELECT 'anti symbol';
+SELECT l.id, l.start, l.stop FROM left_small l LEFT ANTI JOIN right_small r
+    ON l.start < r.stop AND r.start < l.stop AND l.symbol = r.symbol ORDER BY 1;
+SELECT 'anti all';
+SELECT l.id, l.start, l.stop FROM left_small l LEFT ANTI JOIN right_small r
+    ON l.start < r.stop AND r.start < l.stop AND l.symbol = r.symbol AND l.price + r.bid > 300 ORDER BY 1;
 
 DROP TABLE left_small;
 DROP TABLE right_small;

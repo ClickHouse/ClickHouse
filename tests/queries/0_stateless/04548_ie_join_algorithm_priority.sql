@@ -2,10 +2,11 @@
 
 -- The position of `ie_join` in the `join_algorithm` list sets its priority over the
 -- equality-based algorithms. Listed last, it takes only joins that hash cannot execute
--- (no equality conditions in the ON section). Listed first, it takes any join with two
--- inequality conditions: the remaining conditions (including equalities) are applied as
--- a filter over the join result (ALL INNER) or as a residual condition inside the operator
--- (the other kinds), so both routes must produce the same result.
+-- (no equality conditions in the ON section; a null-safe equality counts as an equality).
+-- Listed first, it takes any join with two inequality conditions: the remaining conditions
+-- (including equalities) are applied as a filter over the join result (ALL INNER) or as a
+-- residual condition inside the operator (the other kinds), so both routes must produce
+-- the same result.
 
 -- Pin the setting (it is randomized in tests): with `ie_join` first the runtime-filter pass
 -- must leave the join alone instead of pinning it to a hash-family algorithm.
@@ -33,6 +34,12 @@ SET join_algorithm = 'hash,ie_join';
 SELECT 'equality, hash first', count() FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
 
+-- An equality-bearing outer join also stays on the hash path when hash is listed first
+SELECT 'left outer, hash first', count() FROM (EXPLAIN SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+
+-- A null-safe equality counts as an equality condition and keeps the join on the hash path
+SELECT 'null-safe equality, hash first', count() FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON (l.k IS NOT DISTINCT FROM r.k) AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+
 SET join_algorithm = 'ie_join,hash';
 SELECT 'equality, ie_join first', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
@@ -47,10 +54,40 @@ SELECT 'single inequality', count() FROM (EXPLAIN SELECT count() FROM prio_l l J
 
 -- For non-INNER kinds the extra ON conditions affect matching and cannot be applied as a
 -- filter over the result: forced IEJoin evaluates them as a residual condition inside the
--- operator, producing the same result as hash
+-- operator. The residual is visible in the plan, and every non-INNER kind must match hash
+-- row for row.
 SELECT 'left outer with equality', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
-SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
-SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y SETTINGS join_algorithm = 'hash';
+SELECT 'left residual routed', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%Residual filter%';
+SELECT 'left vs hash', (
+    SELECT arraySort(groupArray((l.k, l.x, l.y, r.k, r.x, r.y))) FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+) = (
+    SELECT arraySort(groupArray((l.k, l.x, l.y, r.k, r.x, r.y))) FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+    SETTINGS join_algorithm = 'hash'
+);
+SELECT 'right vs hash', (
+    SELECT arraySort(groupArray((l.k, l.x, l.y, r.k, r.x, r.y))) FROM prio_l l RIGHT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+) = (
+    SELECT arraySort(groupArray((l.k, l.x, l.y, r.k, r.x, r.y))) FROM prio_l l RIGHT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+    SETTINGS join_algorithm = 'hash'
+);
+SELECT 'full vs hash', (
+    SELECT arraySort(groupArray((l.k, l.x, l.y, r.k, r.x, r.y))) FROM prio_l l FULL JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+) = (
+    SELECT arraySort(groupArray((l.k, l.x, l.y, r.k, r.x, r.y))) FROM prio_l l FULL JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+    SETTINGS join_algorithm = 'hash'
+);
+SELECT 'semi vs hash', (
+    SELECT arraySort(groupArray((l.k, l.x, l.y))) FROM prio_l l LEFT SEMI JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+) = (
+    SELECT arraySort(groupArray((l.k, l.x, l.y))) FROM prio_l l LEFT SEMI JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+    SETTINGS join_algorithm = 'hash'
+);
+SELECT 'anti vs hash', (
+    SELECT arraySort(groupArray((l.k, l.x, l.y))) FROM prio_l l LEFT ANTI JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+) = (
+    SELECT arraySort(groupArray((l.k, l.x, l.y))) FROM prio_l l LEFT ANTI JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
+    SETTINGS join_algorithm = 'hash'
+);
 
 -- IEJoin alone cannot execute a join without inequality conditions
 SET join_algorithm = 'ie_join';

@@ -1,8 +1,7 @@
 -- Tags: no-old-analyzer
 
--- Shapes that must never route to IEJoin even with `ie_join` listed first: unsupported
--- strictness (ANY, ASOF) and keys IEJoin cannot order (Dynamic). The pre-existing behavior
--- (error or fallback) must be preserved.
+-- Strictnesses that must never route to IEJoin even with `ie_join` listed first: ANY with
+-- only inequality conditions keeps the pre-existing error, ASOF stays on the ASOF path.
 
 SET join_algorithm = 'ie_join,hash';
 
@@ -23,20 +22,3 @@ SELECT 'asof', l.t, r.v FROM neg_l l ASOF JOIN neg_r r ON l.k = r.k AND l.t >= r
 
 DROP TABLE neg_l;
 DROP TABLE neg_r;
-
--- Dynamic keys have no total order for IEJoin: INNER falls back to a cross join with
--- a filter, the outer kinds keep the pre-existing error
-DROP TABLE IF EXISTS dyn_l;
-DROP TABLE IF EXISTS dyn_r;
-
-CREATE TABLE dyn_l (x Dynamic, y Int32) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE dyn_r (a Dynamic, b Int32) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO dyn_l VALUES (1, 1), (5, 2);
-INSERT INTO dyn_r VALUES (3, 0), (7, 5);
-
-SELECT 'dynamic not routed', count() FROM (EXPLAIN SELECT * FROM dyn_l l JOIN dyn_r r ON l.x < r.a AND l.y > r.b) WHERE explain LIKE '%IEJoin%';
-SELECT 'dynamic inner', count() FROM dyn_l l JOIN dyn_r r ON l.x < r.a AND l.y > r.b;
-SELECT count() FROM dyn_l l LEFT JOIN dyn_r r ON l.x < r.a AND l.y > r.b; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-
-DROP TABLE dyn_l;
-DROP TABLE dyn_r;

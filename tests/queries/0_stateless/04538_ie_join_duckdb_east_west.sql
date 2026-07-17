@@ -1,6 +1,7 @@
 -- Tags: no-old-analyzer
 
--- The East/West example queries from the IEJoin paper (Khayyat et al., PVLDB 8(13)).
+-- The East/West example queries from the IEJoin paper
+-- (Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13), 2015, Fig. 2).
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
@@ -19,7 +20,11 @@ SELECT s1.rid, s2.rid FROM west s1 JOIN west s2 ON s1.time > s2.time ORDER BY 1,
 
 -- Qp
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT s1.rid, s2.rid FROM west s1 JOIN west s2 ON s1.time > s2.time AND s1.cost < s2.cost) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT s1.rid, s2.rid FROM west s1 JOIN west s2 ON s1.time > s2.time AND s1.cost < s2.cost) WHERE explain LIKE '%IEJoinTransform%';
 SELECT s1.rid, s2.rid FROM west s1 JOIN west s2 ON s1.time > s2.time AND s1.cost < s2.cost ORDER BY 1, 2;
+
+-- Qp with loose comparisons: pairs with equal keys now qualify as well
+SELECT s1.rid, s2.rid FROM west s1 JOIN west s2 ON s1.time >= s2.time AND s1.cost <= s2.cost ORDER BY 1, 2;
 
 -- Qt
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT east.rid, west.rid FROM east JOIN west ON east.dur < west.time AND east.rev > west.cost) WHERE explain LIKE '%IEJoin%';
