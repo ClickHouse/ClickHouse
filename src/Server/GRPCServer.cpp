@@ -95,6 +95,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_GRPC_QUERY_INFO;
     extern const int INVALID_SESSION_TIMEOUT;
@@ -891,6 +892,12 @@ namespace
         {
             /// An empty user name means the default session user (the `default_session_user` server setting).
             user = iserver.context()->getServerSettings()[ServerSetting::default_session_user];
+
+            /// The default session user can be explicitly configured to be empty to prohibit
+            /// connections without a user name, matching the native and Arrow Flight protocols.
+            if (user.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
         }
 
         /// Authentication.
