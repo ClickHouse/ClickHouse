@@ -474,6 +474,14 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else if (dialect == Dialect::promql)
         parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+    /// A foreign dialect (e.g. polyglot) is transpiled to ClickHouse SQL here, on the client, only
+    /// to parse it into an AST that drives client-side handling (statement classification, output
+    /// format, INSERT detection). This transpiled text is thrown away: the client sends the
+    /// *original* query verbatim and the server performs the authoritative transpilation whose
+    /// result is actually executed (so inline INSERT data lives in a server-owned buffer — see
+    /// executeQuery). Consequently the transpiler must also be available on the client (a client
+    /// built without USE_POLYGLOT throws SUPPORT_IS_DISABLED here), and the client and server
+    /// transpilers are assumed to agree — acceptable for an experimental dialect.
     else if (dialect == Dialect::polyglot)
         parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
     else
@@ -2538,11 +2546,12 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        /// With a non-ClickHouse dialect (e.g. polyglot) the query text is a foreign SQL
-        /// statement; its transpiled form — including any inline INSERT data — differs from the
-        /// text the client holds, so the client cannot split the query from its data. Instead it
-        /// sends the whole query verbatim and lets the server transpile it and read the inline
-        /// data itself (the server keeps the transpiled query alive so the data pointers stay valid).
+        /// With a non-ClickHouse dialect (e.g. polyglot) the client already transpiled the query
+        /// locally to obtain this AST (see parseQuery), but that transpiled form — including any
+        /// inline INSERT data — differs from the text the client holds, so the client cannot split
+        /// the query from its data. Instead it sends the *original* query verbatim and lets the
+        /// server perform the authoritative transpilation and read the inline data itself (the
+        /// server keeps the transpiled query alive so the data pointers stay valid).
         const bool send_query_verbatim = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
