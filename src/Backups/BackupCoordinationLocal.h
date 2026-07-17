@@ -63,6 +63,7 @@ public:
 
     void addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup) override;
     String getRocksDBDataPath(const String & rocksdb_dir) const override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
 
     void addFileInfos(BackupFileInfos && file_infos) override;
     BackupFileInfos getFileInfos() const override;

@@ -115,6 +115,12 @@ String BackupCoordinationLocal::getRocksDBDataPath(const String & rocksdb_dir) c
     return rocksdb_tables.getDataPath(rocksdb_dir);
 }
 
+String BackupCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getTableId(rocksdb_dir);
+}
+
 
 void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
 {

@@ -95,9 +95,14 @@ public:
     /// writable table, when present, is always elected as the owner. Only the owner backs up the data.
     virtual void addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup) = 0;
 
-    /// Returns the data path in backup of the elected owner table for a given rocksdb_dir. Sibling tables
-    /// over the same directory reference this path instead of dumping the shared RocksDB again.
+    /// Returns the data path in backup of the elected owner table for a given rocksdb_dir. A read_only
+    /// sibling of a writable owner references this path instead of dumping the shared RocksDB again.
     virtual String getRocksDBDataPath(const String & rocksdb_dir) const = 0;
+
+    /// Returns the election_id of the elected owner table for a given rocksdb_dir. The caller inspects it
+    /// to decide whether to reference the owner (safe only when the owner is a writable table, which sees
+    /// the freshest shared data) or dump its own snapshot (an all-read_only group has no common live view).
+    virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
 
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function

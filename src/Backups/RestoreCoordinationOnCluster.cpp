@@ -316,7 +316,7 @@ void RestoreCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, c
     /// rocksdb_dir is a host-local filesystem path, so qualify the key with current_host: the same string
     /// on two hosts denotes distinct physical directories, while tables sharing one directory are always
     /// co-located on the same host. Each registration creates a child node named by its election_id; the
-    /// owner is the child with the greatest election_id (see isRocksDBDataOwner).
+    /// owner is the child with the greatest election_id (see getRocksDBDataOwnerElectionId).
     auto holder = with_retries.createRetriesControlHolder("addRocksDBTable");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
@@ -332,10 +332,10 @@ void RestoreCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, c
         });
 }
 
-bool RestoreCoordinationOnCluster::isRocksDBDataOwner(const String & rocksdb_dir, const String & election_id) const
+String RestoreCoordinationOnCluster::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
 {
-    bool is_owner = false;
-    auto holder = with_retries.createRetriesControlHolder("isRocksDBDataOwner");
+    String max_election_id;
+    auto holder = with_retries.createRetriesControlHolder("getRocksDBDataOwnerElectionId");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -343,16 +343,15 @@ bool RestoreCoordinationOnCluster::isRocksDBDataOwner(const String & rocksdb_dir
             auto dir_key = escapeForFileName(current_host + "\n" + rocksdb_dir);
             std::string dir_path = fs::path(zookeeper_path) / "rocksdb_tables" / dir_key;
             auto children = zk->getChildren(dir_path);
-            String max_election_id;
+            max_election_id.clear();
             for (const auto & child : children)
             {
                 auto child_election_id = unescapeForFileName(child);
                 if (child_election_id > max_election_id)
                     max_election_id = child_election_id;
             }
-            is_owner = (election_id == max_election_id);
         });
-    return is_owner;
+    return max_election_id;
 }
 
 void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_query)

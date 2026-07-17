@@ -840,6 +840,13 @@ String BackupCoordinationOnCluster::getRocksDBDataPath(const String & rocksdb_di
     return rocksdb_tables->getDataPath(fmt::format("{}\n{}", current_host, rocksdb_dir));
 }
 
+String BackupCoordinationOnCluster::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    prepareRocksDBTables();
+    return rocksdb_tables->getTableId(fmt::format("{}\n{}", current_host, rocksdb_dir));
+}
+
 
 void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
 {

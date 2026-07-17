@@ -64,11 +64,11 @@ void RestoreCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const
         it->second = election_id;
 }
 
-bool RestoreCoordinationLocal::isRocksDBDataOwner(const String & rocksdb_dir, const String & election_id) const
+String RestoreCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
 {
     std::lock_guard lock{mutex};
     auto it = rocksdb_data_owner.find(rocksdb_dir);
-    return it != rocksdb_data_owner.end() && it->second == election_id;
+    return it != rocksdb_data_owner.end() ? it->second : String{};
 }
 
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)

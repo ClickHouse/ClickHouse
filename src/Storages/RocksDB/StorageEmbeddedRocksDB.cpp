@@ -561,22 +561,37 @@ String StorageEmbeddedRocksDB::backupElectionId() const
     return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", getStorageID().getFullTableName());
 }
 
+/// The single-owner optimization (siblings reference the owner's data instead of dumping their own) is safe
+/// only when the elected owner is the writable table: its live handle sees the freshest shared data, so its
+/// one dump represents every sibling. An all-read_only group has no such common live view (each read_only
+/// handle is an independent snapshot that may diverge), so those tables must not collapse onto one dump.
+/// election_id encodes writability in its leading tag, so a writable owner's id starts with "1_rw_".
+static bool isWritableElectionId(const String & election_id)
+{
+    return election_id.starts_with("1_rw_");
+}
+
 void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
     /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. Register
-    /// this table so the elected owner backs up the shared RocksDB once and siblings only reference it. This
-    /// avoids dumping the same directory multiple times from independent snapshots on different handles,
-    /// whose contents could diverge if writes race between the dumps.
+    /// this table so a writable owner backs up the shared RocksDB once and its read_only siblings only
+    /// reference it. This avoids dumping the same directory multiple times from independent snapshots on
+    /// different handles, whose contents could diverge if writes race between the dumps.
     auto coordination = backup_entries_collector.getBackupCoordination();
     coordination->addRocksDBTable(rocksdb_dir, backupElectionId(), data_path_in_backup);
 
-    /// Runs after all tables have registered, so getRocksDBDataPath() returns the elected owner's path.
+    /// Runs after all tables have registered, so getRocksDBDataPath()/getRocksDBDataOwnerElectionId() see
+    /// the whole group.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
+        auto owner_election_id = coordination->getRocksDBDataOwnerElectionId(rocksdb_dir);
         auto owner_data_path = coordination->getRocksDBDataPath(rocksdb_dir);
-        if (owner_data_path != my_data_path_in_backup)
+
+        /// Reference the owner's data.bin instead of dumping again ONLY when the owner is the writable table
+        /// (its live handle holds the freshest shared data). In an all-read_only group there is no common live
+        /// view, so every table dumps its own snapshot rather than collapsing onto one that may not match.
+        if (isWritableElectionId(owner_election_id) && owner_data_path != my_data_path_in_backup)
         {
-            /// A sibling table: reference the owner's data.bin instead of dumping the shared RocksDB again.
             String source_path = fs::path(my_data_path_in_backup) / rocksdb_backup_data_filename;
             String target_path = fs::path(owner_data_path) / rocksdb_backup_data_filename;
             backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
@@ -625,24 +640,30 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
             "silently produce an empty table",
             getStorageID().getNameForLogs(), data_file);
 
-    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. The shared
-    /// RocksDB must be replayed only once; register this table so a single owner is elected. The owner is the
-    /// writable table when present (a read_only handle rejects Write()), so a {rw, ro} pair restores through
-    /// the writable table and the read_only sibling contributes no data restore.
+    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. When a
+    /// writable table shares the directory it is the single owner that replays the shared RocksDB (a read_only
+    /// handle rejects Write()), so a {rw, ro} pair restores through the writable table and the read_only
+    /// sibling contributes no data restore. An all-read_only group has no writable owner and no common live
+    /// view, so each read_only table restores its own backup independently.
     auto restore_coordination = restorer.getRestoreCoordination();
     restore_coordination->addRocksDBTable(rocksdb_dir, backupElectionId());
 
     /// The ownership decision and all writes run inside the data restore task, which executes after every
     /// table has registered (insertDataToTables() waits for all restoreDataFromBackup() calls before the
-    /// data restore tasks run), so isRocksDBDataOwner() sees the full set of siblings.
+    /// data restore tasks run), so getRocksDBDataOwnerElectionId() sees the full set of siblings.
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()),
          backup,
          data_path_in_backup,
          restore_coordination,
+         my_election_id = backupElectionId(),
          allow_non_empty_tables = restorer.isNonEmptyTableAllowed()]
         {
-            if (!restore_coordination->isRocksDBDataOwner(storage->rocksdb_dir, storage->backupElectionId()))
+            auto owner_election_id = restore_coordination->getRocksDBDataOwnerElectionId(storage->rocksdb_dir);
+            /// Skip only when a writable owner (which will replay for the whole group) is some other table.
+            /// If the owner is not writable (all-read_only group) every table replays its own backup, so a
+            /// non-empty read_only backup still hits the read_only rejection in restoreDataOwner().
+            if (isWritableElectionId(owner_election_id) && owner_election_id != my_election_id)
                 return;
             storage->restoreDataOwner(backup, data_path_in_backup, allow_non_empty_tables);
         });

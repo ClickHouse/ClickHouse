@@ -8,3 +8,8 @@ shared ro before restore	0
 SHARED_DIR_RESTORE_OK
 shared rw restored	300	44850
 shared ro sees data	300	44850
+roro snapshots	100	200
+RORO_A_RESTORE_OK
+roro a restored	100
+RORO_B_RESTORE_OK
+roro b restored	200
