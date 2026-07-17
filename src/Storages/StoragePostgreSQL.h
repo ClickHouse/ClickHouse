@@ -22,6 +22,7 @@ namespace DB
 {
 class NamedCollection;
 struct StorageID;
+struct PostgreSQLSettings;
 
 class StoragePostgreSQL final : public StorageWithCommonVirtualColumns
 {
@@ -76,9 +77,12 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id = nullptr);
+    /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
+    /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
+    /// collections instead of being accepted and silently ignored.
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
 
     /// TLS/SSL certificate and key paths accepted from SQL (table functions, engines, DDL-created
     /// dictionaries) must reside inside `user_files_path`: the files are opened by the server process
