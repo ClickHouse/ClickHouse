@@ -12,7 +12,9 @@ constexpr const char * PAIMON_SNAPSHOT_DIR = "snapshot";
 constexpr const char * PAIMON_SNAPSHOT_PREFIX = "snapshot-";
 constexpr const char * PAIMON_SNAPSHOT_EARLIEST_HINT = "EARLIEST";
 constexpr const char * PAIMON_SNAPSHOT_LATEST_HINT = "LATEST";
-/// Snapshot hint files (LATEST/EARLIEST) hold a single snapshot version number.
+/// Snapshot hint files (LATEST/EARLIEST) hold a single snapshot version number (a few bytes).
+/// The cap only bounds the single-shot read; hard to imagine a hint file larger than 10 MiB.
+/// Same value as Iceberg's version-hint cap (Iceberg/Utils.cpp MAX_HINT_FILE_SIZE).
 constexpr size_t PAIMON_MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
 /// for options
 constexpr const char * PAIMON_SCAN_MODE = "scan.mode";
