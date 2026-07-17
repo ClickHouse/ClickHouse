@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ProjectionsDescription.h>
@@ -452,24 +453,26 @@ UInt64 estimateNeededMemoryForMerge(
     /// MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild:
     ///  - a non-Ordinary merge (Replacing, Summing, ...) under the throw / drop
     ///    deduplicate_merge_projection_mode does not process projections at all;
-    ///  - when every source part has the projection, the projection parts are merged by a nested
-    ///    MergeTask over exactly those parts with the projection's own metadata
+    ///  - a merge that may reduce rows REBUILDS every projection from the merged rows regardless of
+    ///    whether the source parts already have it, unless the mode is IGNORE and the projection is not a
+    ///    special (parent-offset / block-number / block-offset) one. This is exactly the
+    ///    merge_may_reduce_rows branch of prepareProjectionsToMergeAndRebuild, so a patch part that adds a
+    ///    new JSON path or expands a projection expression is priced as a rebuild, not as a merge of the
+    ///    stale source projection parts;
+    ///  - otherwise, when every source part has the projection, the projection parts are merged by a
+    ///    nested MergeTask over exactly those parts with the projection's own metadata
     ///    (MergeProjectionsStage::prepareProjections builds the very same FutureMergedMutatedPart), so
     ///    price that nested merge with this same estimate, recursively - a projection has no projections
     ///    of its own, so the recursion is one level deep;
     ///  - when some or all source parts lack the projection, the merge rebuilds it from the merged rows
     ///    only for commit-order projections (which are never written on insert) and under
-    ///    materialize_projections_on_merge, and drops it from the result otherwise. A rebuild does not
-    ///    read the existing projection parts: it recalculates the projection from rows already flowing
-    ///    through the merge, writes temporary projection parts (one temp-part writer at a time per
-    ///    projection, see writeTempProjectionPart) and then merges the temporary parts back
-    ///    (MergeProjectionPartsTask), so price one set of writer streams plus the read-back of the
-    ///    temporary parts, both bounded by the merge's input data volume - projected data cannot exceed
-    ///    the data it is projected from.
-    /// A row-reducing merge (deduplication, cleanup) rebuilds even fully-present projections instead of
-    /// merging them; that is not knowable at selection time, and the nested-merge estimate over the
-    /// existing projection parts is a fair proxy for such a rebuild's temp-part IO. For a table without
-    /// projections all of this adds exactly nothing.
+    ///    materialize_projections_on_merge, and drops it from the result otherwise.
+    /// A rebuild does not read the existing projection parts: it recalculates the projection from rows
+    /// already flowing through the merge, writes temporary projection parts (one temp-part writer at a
+    /// time per projection, see writeTempProjectionPart) and then merges the temporary parts back
+    /// (MergeProjectionPartsTask, which merges up to max_parts_to_merge_in_one_level of them at once), so
+    /// price one set of writer streams plus a read-back that can hold that many reader-buffer sets. For a
+    /// table without projections all of this adds exactly nothing.
     UInt64 projection_memory = 0;
     const auto projection_mode = settings[MergeTreeSetting::deduplicate_merge_projection_mode];
     const bool merge_processes_projections = !future_part.parts.empty()
@@ -477,6 +480,15 @@ UInt64 estimateNeededMemoryForMerge(
             || (projection_mode != DeduplicateMergeProjectionMode::THROW && projection_mode != DeduplicateMergeProjectionMode::DROP));
     if (merge_processes_projections)
     {
+        /// merge_may_reduce_rows as far as it is knowable at selection time: a merge that applies patch
+        /// parts (apply_patches_on_merge), or a non-Ordinary merging mode. The remaining triggers (TTL
+        /// removal, cleanup, deduplication, lightweight deletes) are only decided later during merge
+        /// preparation and can only turn more projections into rebuilds; a rebuild is priced here at least
+        /// as high as the nested merge it replaces, so leaving them out keeps the common no-op case exact
+        /// without under-reserving.
+        const bool merge_may_reduce_rows = !future_part.patch_parts.empty()
+            || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+
         /// Upper bound on the dynamic (JSON / Dynamic) substreams a rebuilt projection column can materialize
         /// when it is produced through an expression rather than a bare source identifier: the total dynamic
         /// substreams present in the source parts (their merged stream count minus the statically enumerable
@@ -489,22 +501,41 @@ UInt64 estimateNeededMemoryForMerge(
 
         for (const auto & projection : metadata_snapshot->getProjections())
         {
+            /// A special (parent-offset / block-number / block-offset) projection is rebuilt by a
+            /// row-reducing merge even under the IGNORE mode; a plain one is rebuilt only when the mode is
+            /// not IGNORE - mirroring prepareProjectionsToMergeAndRebuild exactly.
+            const bool is_special_projection
+                = projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset;
+            const bool rebuild_regardless_of_presence = merge_may_reduce_rows
+                && (projection_mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection);
+
             MergeTreeData::DataPartsVector projection_parts;
             for (const auto & part : future_part.parts)
             {
                 auto it = part->getProjectionParts().find(projection.name);
-                if (it != part->getProjectionParts().end())
+                if (it != part->getProjectionParts().end() && !it->second->is_broken)
                     projection_parts.push_back(it->second);
             }
 
-            if (projection_parts.size() == future_part.parts.size())
+            /// Decide, exactly as the merge will, whether this projection is merged from the existing
+            /// projection parts, rebuilt from the merged rows, or dropped from the result.
+            bool rebuild_projection = rebuild_regardless_of_presence;
+            if (!rebuild_regardless_of_presence && projection_parts.size() != future_part.parts.size())
+            {
+                if (projection.with_block_number || settings[MergeTreeSetting::materialize_projections_on_merge])
+                    rebuild_projection = true;
+                else
+                    continue; /// Dropped from the merged part - no IO.
+            }
+
+            if (!rebuild_projection)
             {
                 FutureMergedMutatedPart projection_future_part;
                 projection_future_part.assign(std::move(projection_parts), /*patch_parts_=*/ {}, &projection);
                 projection_memory += estimateNeededMemoryForMerge(
                     projection_future_part, projection.metadata, context, settings, output_on_remote_disk, remote_write_buffer_ceiling);
             }
-            else if (projection.with_block_number || settings[MergeTreeSetting::materialize_projections_on_merge])
+            else
             {
                 /// The temporary parts are written into the result part's own storage, so they share the
                 /// destination disk's write buffer sizing and are read back from that same disk. The rebuilt
@@ -527,10 +558,16 @@ UInt64 estimateNeededMemoryForMerge(
                 /// object storage it is the full multipart ceiling, which a data-expanding projection can
                 /// genuinely approach - a single such merge is always admitted (see MergeMemoryReservation),
                 /// it only throttles concurrent merges while it holds the reservation.
+                ///
+                /// The read-back stage (MergeProjectionPartsTask) does not merge the temporary parts one at a
+                /// time: it merges up to max_parts_to_merge_in_one_level of them in a single nested merge, so
+                /// it can hold that many reader-buffer sets open at once. A rebuild that squashes into more
+                /// than one temporary part therefore reads back through several readers simultaneously; size
+                /// the read-back for that worst case rather than a single reader set.
                 const UInt64 projection_read_buffer_size = output_on_remote_disk ? remote_read_buffer_size : local_read_buffer_size;
-                projection_memory += projection_streams * write_buffer_size + projection_streams * projection_read_buffer_size;
+                projection_memory += projection_streams * write_buffer_size
+                    + MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_streams * projection_read_buffer_size;
             }
-            /// Otherwise the projection is dropped from the merged part and costs no IO.
         }
     }
 

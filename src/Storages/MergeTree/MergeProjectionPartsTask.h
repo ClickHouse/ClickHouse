@@ -14,6 +14,12 @@ namespace DB
 class MergeProjectionPartsTask : public MergeProjectionsIndexesTask
 {
 public:
+    /// The read-back stage merges at most this many temporary projection parts at once, so it can hold
+    /// up to this many reader-buffer sets in memory simultaneously (used by
+    /// CompactionStatistics::estimateNeededMemoryForMerge to size the projection rebuild reservation).
+    /// TODO(nikitamikhaylov): make this constant a setting
+    static constexpr size_t max_parts_to_merge_in_one_level = 10;
+
     MergeProjectionPartsTask(
         String name_,
         MergeTreeData::MutableDataPartsVector && parts_,
@@ -77,9 +83,6 @@ private:
     std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
     size_t current_level = 0;
     size_t next_level = 1;
-
-    /// TODO(nikitamikhaylov): make this constant a setting
-    static constexpr size_t max_parts_to_merge_in_one_level = 10;
 };
 
 using MergeProjectionPartsTaskPtr = std::unique_ptr<MergeProjectionPartsTask>;
