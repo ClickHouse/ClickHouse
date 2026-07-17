@@ -91,6 +91,14 @@ GROUP BY v WITH TOTALS
 ORDER BY v
 SETTINGS enable_analyzer = 0, optimize_injective_functions_in_group_by = 1;
 
+-- GROUPING SETS for optimizeGroupBy (injective path) on the legacy optimizer: the non-member set
+-- row must keep the key column default, not f(default_of_argument).
+SELECT materialize(3) AS x
+FROM numbers(10)
+GROUP BY GROUPING SETS (('str'), (materialize(3)))
+ORDER BY x
+SETTINGS enable_analyzer = 0, optimize_injective_functions_in_group_by = 1;
+
 SELECT toString(number) AS v, number, count()
 FROM numbers(3)
 GROUP BY v, number WITH TOTALS
