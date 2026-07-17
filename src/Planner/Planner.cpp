@@ -2825,11 +2825,20 @@ void Planner::buildPlanForQueryNode()
                     useful_sets);
 
             addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
+        }
+        else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
+            addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
+        else if (!limit_applied && apply_offset && query_node.hasOffset())
+            addOffsetStep(query_plan, query_analysis_result);
 
-            /// The `limit`/`offset` settings are a global cap on the whole result, not a per-window
-            /// length. They are intentionally kept out of the range window length and off the query
-            /// context (see QueryTreeBuilder), carried on the node, and applied here as an outer step
-            /// after the range step.
+        /** The `limit`/`offset` settings are a global cap on the whole result. When they cannot be
+          * folded into the query's own limit expression - LIMIT AFTER/UNTIL (the explicit LIMIT is a
+          * per-window length) and negative LIMIT (the settings apply to the last |n| rows after they
+          * are selected) - the query tree builder keeps them off the query context, carries them on
+          * the node, and they are applied here as an outer step after the query's own limiting steps.
+          */
+        if (apply_limit && apply_offset)
+        {
             const UInt64 settings_limit = query_node.getSettingsLimit();
             const UInt64 settings_offset = query_node.getSettingsOffset();
             if (settings_limit > 0)
@@ -2854,10 +2863,6 @@ void Planner::buildPlanForQueryNode()
                 query_plan.addStep(std::move(step));
             }
         }
-        else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
-            addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
-        else if (!limit_applied && apply_offset && query_node.hasOffset())
-            addOffsetStep(query_plan, query_analysis_result);
 
         /// Project names is not done on shards, because initiator will not find columns in blocks
         if (!query_processing_info.isToAggregationState())

@@ -531,34 +531,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     if (select_limit_until)
         current_query_tree->getLimitUntil() = buildExpression(select_limit_until, current_context);
 
-    /// Combine limit expression with limit and offset settings into final limit expression
-    /// The sequence of application is the following - offset expression, limit expression, offset setting, limit setting.
-    /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
-    /// we must decrease limit expression by offset setting and then add offset setting to offset expression.
-    ///    select_limit - limit expression
-    ///    limit        - limit setting
-    ///    offset       - offset setting
-    ///
-    /// if select_limit
-    ///   -- if offset >= select_limit                (expr 0)
-    ///      then (0) (0 rows)
-    ///   -- else if limit > 0                        (expr 1)
-    ///      then min(select_limit - offset, limit)   (expr 2)
-    ///   -- else
-    ///      then (select_limit - offset)             (expr 3)
-    /// else if limit > 0
-    ///    then limit
-    ///
-    /// offset = offset + of_expr
     auto select_limit = select_query_typed.limitLength();
     auto select_offset = select_query_typed.limitOffset();
 
-    if (select_limit_after || select_limit_until)
+    /// The `limit`/`offset` settings apply to the result the query's own LIMIT/OFFSET produces, and
+    /// are never merged into existing LIMIT/OFFSET expressions: no arithmetic combination is valid
+    /// for every limit kind (with LIMIT AFTER/UNTIL the explicit LIMIT is a per-window length, and
+    /// negative or fractional LIMIT/OFFSET select rows positionally, not by count). The settings were
+    /// stripped from the context above (to keep child queries clean); when the query has any explicit
+    /// LIMIT, OFFSET or AFTER/UNTIL clause, the expressions are kept verbatim, the settings are
+    /// stored on the node, and the planner applies them as an outer result-cap step. A query without
+    /// those clauses takes the settings directly as its limit and offset, which keeps limit-aware
+    /// optimizations (preliminary limits, single-stream reads) intact for the common case.
+    if (select_limit || select_offset || select_limit_after || select_limit_until)
     {
-        /// With LIMIT AFTER/UNTIL the explicit LIMIT is a per-window length, so the `limit`/`offset`
-        /// settings must not be folded into it. They were stripped from the context above (to keep child
-        /// queries clean) and are stored on the node, so the planner can apply them as an outer global
-        /// cap after the range step. The explicit LIMIT/OFFSET expressions are kept verbatim.
         if (select_limit)
             current_query_tree->getLimit() = buildExpression(select_limit, current_context);
         if (select_offset)
@@ -567,60 +553,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         current_query_tree->setSettingsLimit(limit);
         current_query_tree->setSettingsOffset(offset);
     }
-    else if (select_limit)
+    else
     {
-        /// Shortcut
-        if (offset == 0 && limit == 0)
-        {
-            current_query_tree->getLimit() = buildExpression(select_limit, current_context);
-        }
-        else
-        {
-            /// expr 3
-            auto expr_3 = std::make_shared<FunctionNode>("minus");
-            expr_3->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-            expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-
-            /// expr 2
-            auto expr_2 = std::make_shared<FunctionNode>("least");
-            expr_2->getArguments().getNodes().push_back(expr_3->clone());
-            expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
-
-            /// expr 0
-            auto expr_0 = std::make_shared<FunctionNode>("greaterOrEquals");
-            expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-            expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-
-            /// expr 1
-            auto expr_1 = std::make_shared<ConstantNode>(limit > 0);
-
-            auto function_node = std::make_shared<FunctionNode>("multiIf");
-            function_node->getArguments().getNodes().push_back(expr_0);
-            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0));
-            function_node->getArguments().getNodes().push_back(expr_1);
-            function_node->getArguments().getNodes().push_back(expr_2);
-            function_node->getArguments().getNodes().push_back(expr_3);
-
-            current_query_tree->getLimit() = std::move(function_node);
-        }
-    }
-    else if (limit > 0)
-        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
-
-    /// Combine offset expression with offset setting into final offset expression
-    if (!select_limit_after && !select_limit_until)
-    {
-        if (select_offset && offset)
-        {
-            auto function_node = std::make_shared<FunctionNode>("plus");
-            function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-            current_query_tree->getOffset() = std::move(function_node);
-        }
-        else if (offset)
+        if (limit > 0)
+            current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
+        if (offset > 0)
             current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
-        else if (select_offset)
-            current_query_tree->getOffset() = buildExpression(select_offset, current_context);
     }
 
     return current_query_tree;
