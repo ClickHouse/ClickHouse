@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Planner/Utils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
 
@@ -353,21 +354,16 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         {
             plans[i] = std::make_unique<QueryPlan>();
             nested_interpreters[i]->buildQueryPlan(*plans[i]);
-
-            if (!blocksHaveEqualStructure(*plans[i]->getCurrentHeader(), *result_header))
-            {
-                auto actions_dag = ActionsDAG::makeConvertingActions(
-                        plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
-                        result_header->getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Position,
-                        context);
-                auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
-                converting_step->setStepDescription("Conversion before UNION");
-                plans[i]->addStep(std::move(converting_step));
-            }
-
             headers[i] = plans[i]->getCurrentHeader();
         }
+
+        /// Shared with the query-tree planner (Planner::buildQueryPlanForUnionNode). Forces an
+        /// explicit CAST for any branch column whose type name diverges from the common header,
+        /// even when blocksHaveEqualStructure is tolerant (e.g. aggregate-state columns that share
+        /// the same state representation but differ by type name, quantileExactTuple vs
+        /// quantilesExactTuple). Without it a branch keeps emitting its own type while the union
+        /// advertises the common one, and the strict per-stream block-structure check aborts later.
+        addConvertingToCommonHeaderActionsIfNeeded(plans, *result_header, headers, context);
 
         auto max_threads = getMaxThreadsForAvailableMemory(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);

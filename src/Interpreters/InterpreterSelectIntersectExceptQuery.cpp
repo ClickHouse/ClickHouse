@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Planner/Utils.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 
@@ -141,21 +142,14 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     {
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
-
-        if (!blocksHaveEqualStructure(*plans[i]->getCurrentHeader(), *result_header))
-        {
-            auto actions_dag = ActionsDAG::makeConvertingActions(
-                    plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
-                    result_header->getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position,
-                    context);
-            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
-            converting_step->setStepDescription("Conversion before UNION");
-            plans[i]->addStep(std::move(converting_step));
-        }
-
         headers[i] = plans[i]->getCurrentHeader();
     }
+
+    /// Shared with the query-tree planner (Planner::buildQueryPlanForUnionNode). Forces an explicit
+    /// CAST for any branch column whose type name diverges from the common header, even when
+    /// blocksHaveEqualStructure is tolerant (e.g. aggregate-state columns that share the same state
+    /// representation but differ by type name). See InterpreterSelectWithUnionQuery for details.
+    addConvertingToCommonHeaderActionsIfNeeded(plans, *result_header, headers, context);
 
     const Settings & settings = context->getSettingsRef();
     auto step = std::make_unique<IntersectOrExceptStep>(

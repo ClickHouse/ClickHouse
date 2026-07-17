@@ -105,3 +105,40 @@ SELECT x + 1 AS y FROM
     SELECT number AS x FROM numbers(3)
 )
 ORDER BY y;
+
+-- Legacy interpreter path (enable_analyzer = 0): the query-tree planner is bypassed entirely, so
+-- the forced conversion must also live in the legacy builders InterpreterSelectWithUnionQuery and
+-- InterpreterSelectIntersectExceptQuery. Both used to gate the branch conversion on
+-- blocksHaveEqualStructure + plain makeConvertingActions, leaving the divergent aggregate-state
+-- type name unconverted and reaching the same "Block structure mismatch" abort at pipeline build.
+SET enable_analyzer = 0;
+
+SELECT count() FROM
+(
+    SELECT tuple(s) AS ts FROM
+    (
+        SELECT quantileExactTupleState((toUInt32(number), toFloat64(number))) AS s FROM numbers(100, 5) GROUP BY number % 2
+        UNION ALL
+        SELECT quantilesExactTupleStateOrNull(toDecimal64(0.9, 12))((toUInt32(number), toFloat64(number))) AS s FROM numbers(7) GROUP BY ALL
+    )
+);
+
+-- Same divergent-aggregate-state family through INTERSECT and EXCEPT (legacy IntersectOrExcept builder).
+SELECT count() FROM
+(
+    SELECT tuple(s) AS ts FROM
+    (
+        SELECT quantileExactTupleState((toUInt32(number), toFloat64(number))) AS s FROM numbers(100, 5) GROUP BY number % 2
+        INTERSECT
+        SELECT quantilesExactTupleStateOrNull(toDecimal64(0.9, 12))((toUInt32(number), toFloat64(number))) AS s FROM numbers(7) GROUP BY ALL
+    )
+);
+
+-- Legacy path must still apply the optimization for a genuine same-type union.
+SELECT x + 1 AS y FROM
+(
+    SELECT number AS x FROM numbers(2)
+    UNION ALL
+    SELECT number AS x FROM numbers(3)
+)
+ORDER BY y;
