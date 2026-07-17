@@ -2671,6 +2671,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_keys_list.parse(pos, group_by_key, expected))
             return false;
 
+        for (const auto & key : group_by_key->children)
+            stripParenthesesUnlessAliased(key);
+
         if (s_set.ignore(pos, expected))
         {
             ParserList parser_assignment_list(
@@ -2678,6 +2681,10 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
+
+            for (const auto & assignment : group_by_assignments->children)
+                if (const auto * assignment_ast = assignment->as<ASTAssignment>())
+                    stripParenthesesUnlessAliased(assignment_ast->expression());
         }
     }
     else if (mode == TTLMode::DELETE && s_where.ignore(pos, expected))

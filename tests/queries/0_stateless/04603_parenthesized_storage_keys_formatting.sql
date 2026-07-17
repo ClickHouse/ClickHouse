@@ -9,6 +9,7 @@ SELECT formatQuerySingleLine('CREATE TABLE t (a Int, b Int) ENGINE = MergeTree O
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, b Int) ENGINE = MergeTree ORDER BY (a) DESC');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, b Int, PRIMARY KEY (a)) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, d DateTime) ENGINE = MergeTree ORDER BY a TTL (d + INTERVAL 1 DAY) WHERE (a > 0)');
+SELECT formatQuerySingleLine('CREATE TABLE t (a Int, d DateTime, v Int) ENGINE = MergeTree ORDER BY (a, d) TTL (d + INTERVAL 1 DAY) GROUP BY (a) SET v = (max(v))');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, d DateTime, i Int DEFAULT (a + 1), m Int MATERIALIZED (a * 2), c Int TTL (d + INTERVAL 1 DAY)) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, INDEX ix (a) TYPE minmax, CONSTRAINT cc CHECK (a > 0)) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, b Int, PROJECTION p (SELECT a, b GROUP BY (a)), PROJECTION p2 (SELECT a ORDER BY (a))) ENGINE = MergeTree ORDER BY a');
