@@ -722,6 +722,7 @@ private:
     std::unique_ptr<SQLType> randomDecimalType(RandomGenerator & rg, uint64_t allowed_types, BottomTypeName * tp) const;
     std::unique_ptr<SQLType> randomAggregateType(RandomGenerator & rg, bool simple, BottomTypeName * tp);
     std::unique_ptr<SQLType> bottomType(RandomGenerator & rg, uint64_t allowed_types, bool low_card, BottomTypeName * tp);
+    std::vector<EnumValue> setRandomEnumValues(RandomGenerator & rg, bool bits16, EnumDef * edef);
 
     void dropTable(bool staged, bool drop_peer, const String & tkey);
     void dropDatabase(const String & dbkey, bool all);

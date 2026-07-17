@@ -5,7 +5,7 @@
 #cmakedefine01 USE_ARROWFLIGHT
 #cmakedefine01 CLICKHOUSE_CLOUD
 #cmakedefine01 USE_CPUID
-#cmakedefine01 USE_BASE64
+#cmakedefine01 USE_SIMDUTF
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 USE_SSH
