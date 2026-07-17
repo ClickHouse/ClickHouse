@@ -26,6 +26,10 @@ public:
     /// Only for the `pq` method: the codebook, exposed as the subcolumn `<column>.product_quantization_codebook`.
     static constexpr auto product_quantization_subcolumn_name = "product_quantization_codebook";
 
+    /// This is a per-column custom serialization attached directly (not via ISerialization::pooled), so its
+    /// cached_hash is never set. It must not be pooled: getHash() would fire "Hash is not set for serialization".
+    bool supportsPooling() const override { return false; }
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,

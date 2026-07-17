@@ -7051,6 +7051,41 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     primary_index_size.add(part->getIndexSizeFromFile());
 }
 
+IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
+{
+    auto result = getColumnSizes();
+
+    /// Collect subcolumn names that are not already in the result.
+    Names subcolumn_names;
+    for (const auto & col_name : columns)
+    {
+        if (result.contains(col_name))
+            continue;
+
+        subcolumn_names.push_back(col_name);
+    }
+
+    if (subcolumn_names.empty())
+        return result;
+
+    /// For each requested column that is a subcolumn and not already in the result,
+    /// aggregate its size across all active parts using getSubcolumnSize.
+    /// This gives the correct on-disk size for subcolumns based on required substreams.
+    auto parts_lock = readLockParts();
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+    for (const auto & part : committed_parts_range)
+    {
+        for (const auto & col_name : subcolumn_names)
+        {
+            auto column = part->tryGetColumn(col_name);
+            if (column && column->isSubcolumn())
+                result[col_name].add(part->getSubcolumnSize(col_name));
+        }
+    }
+
+    return result;
+}
+
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
@@ -10723,6 +10758,13 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
             {
+                /// tryCreateZeroCopyExclusiveLock, waitZeroCopyLockToDisappear, and ~ZeroCopyLock (releasing the
+                /// ephemeral lock node when the local `lock` below is destroyed) all issue ZooKeeper requests.
+                /// This runs on a background moves thread (scheduleDataMovingJob / async movePartsToSpace via
+                /// ExecutableLambdaAdapter) with no component scope set, so set one explicitly here; otherwise
+                /// zero-copy part moves abort the server under enforce_keeper_component_tracking.
+                auto component_guard = Coordination::setCurrentComponent("MergeTreeData::moveParts");
+
                 /// This loop is not endless, if shutdown called/connection failed/replica became readonly
                 /// we will return true from waitZeroCopyLock and createZeroCopyLock will return nullopt.
                 while (true)
