@@ -20,10 +20,6 @@
 03803_transaction_mutation_race
 03916_attach_as_replicated_implicit_transaction
 
-# Obfuscator output is platform-dependent (model/hash differs on macOS), so the generated
-# identifiers do not match the reference.
-04037_obfuscator_dictionary_definitions
-
 # Memory limit not hit as expected on macOS (the query that should exceed MEMORY_LIMIT_EXCEEDED
 # succeeds), likely a memory-accounting difference.
 01961_roaring_memory_tracking
@@ -40,25 +36,11 @@
 # Needs a `ch` symlink (clickhouse) on PATH, which the Darwin fast test env does not provide.
 03536_ch_as_client_and_local
 
-# Client/socket error-message text differs on macOS (errno strings), so grep'd error lines are missing.
-02550_client_connections_credentials
-03025_clickhouse_host_env
-
-# Needs the 'pv' tool (not installed locally); loops until it sees timing output.
-02381_client_prints_server_side_time
-
-# Spawns the server binary and greps its stderr; hangs locally. Investigate (server-start behavior).
-02116_clickhouse_stderr
-
-# Local fast-test server did not enable system.text_log; CI does. Re-verify before unskipping.
-02813_starting_in_text_log
-
 # Harness: the per-test database is dropped mid-run on macOS (Database test_XXX does not exist while
 # the test is still running). Investigate whether this is a real CI issue or a local --jobs artifact.
 02483_elapsed_time
 02932_refreshable_materialized_views_2
 02933_replicated_database_forbid_create_as_select
-02995_new_settings_history
 03100_lwu_40_cleanup_race
 
 # Custom-disk static-storage behavior differs (TABLE_IS_PERMANENTLY_READ_ONLY). Worth a look.
@@ -74,5 +56,4 @@
 02294_anova_cmp
 
 # Flaky on CI (stuck timeout)
-04281_sparsity_stream_skips_trivial_count
 04319_skip_unavailable_shards_mode_table_missing

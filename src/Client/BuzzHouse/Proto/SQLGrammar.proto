@@ -507,11 +507,12 @@ message SQLFuncCall {
         Resample = 8;
         ArgMin = 9;
         ArgMax = 10;
+        Tuple = 11;
         /// Not deterministic maybe?
-        SimpleState = 11;
-        State = 12;
-        Merge = 13;
-        MergeState = 14;
+        SimpleState = 12;
+        State = 13;
+        Merge = 14;
+        MergeState = 15;
     }
     required SQLFuncName func = 1;
     repeated AggregateCombinator combinators = 2;
@@ -1878,10 +1879,11 @@ message TopSelect {
 }
 
 message CheckTable {
-    required ExprSchemaTable est = 1;
-    optional SinglePartitionExpr single_partition = 2;
-    optional SettingValues setting_values = 3;
-    optional string format = 4;
+    required SQLObject sobject = 1;
+    required SQLObjectName object = 2;
+    optional SinglePartitionExpr single_partition = 3;
+    optional SettingValues setting_values = 4;
+    optional string format = 5;
 }
 
 message DescribeStatement {
@@ -1938,6 +1940,11 @@ message AddWhere {
 message AddColumn {
     required ColumnDef new_col = 1;
     optional AddWhere add_where = 2;
+}
+
+message AddEnumValues {
+    required ColumnPath col = 1;
+    required EnumDef new_values = 2;
 }
 
 message RenameCol {
@@ -2295,15 +2302,17 @@ message AlterItem {
         bool remove_ttl = 48;
         OptionalPartitionExpr rewrite_parts = 49;
         OptionalPartitionExpr apply_patches = 50;
+        /// For tables: append members to an existing Enum column
+        AddEnumValues add_enum_values = 51;
         /// For Iceberg tables
-        ExecuteCommand execute_command = 51;
+        ExecuteCommand execute_command = 52;
         /// For views
-        SelectParen modify_query = 52;
-        RefreshableView refresh = 53;
+        SelectParen modify_query = 53;
+        RefreshableView refresh = 54;
         /// For tables, views and databases
-        string comment = 54;
+        string comment = 55;
         /// For policies
-        AlterPolicyContent alter_policy = 55;
+        AlterPolicyContent alter_policy = 56;
     }
 }
 
