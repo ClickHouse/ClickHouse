@@ -33,6 +33,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -210,6 +211,46 @@ String getInsertDataSchemaMismatchDescription(
         "Inferred structure of the input data (in format `{}`):\n{}"
         "Expected structure:\n{}",
         format_name, format_structure(inferred), format_structure(expected));
+}
+
+String getInsertDataSchemaMismatchDescriptionFromFile(
+    const String & file_path,
+    const String & compression_method,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context)
+{
+    if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
+        return {};
+
+    String prefix;
+    try
+    {
+        /// Decompress the same way the INSERT itself does (see getReadBufferFromASTInsertQuery), so the
+        /// prefix given to schema inference is the actual data.
+        auto buffer = wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromFile>(file_path),
+            chooseCompressionMethod(file_path, compression_method),
+            /*zstd_window_log_max=*/ 0,
+            context->getSettingsRef()[Setting::snappy_mode]);
+
+        /// Cap the prefix by the same bound schema inference itself uses for sampling.
+        size_t max_bytes = context->getSettingsRef()[Setting::input_format_max_bytes_to_read_for_schema_inference];
+        while (prefix.size() < max_bytes && !buffer->eof())
+        {
+            size_t to_copy = std::min(max_bytes - prefix.size(), buffer->available());
+            prefix.append(buffer->position(), to_copy);
+            buffer->position() += to_copy;
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Best-effort: the path may be a glob matching several files, or the file may have become
+        /// unreadable since the failed attempt to insert it. A diagnostic must not raise a new error.
+        return {};
+    }
+
+    return getInsertDataSchemaMismatchDescription(prefix, format_name, expected_header, context);
 }
 
 void setInsertSchemaMismatchDiagnostic(

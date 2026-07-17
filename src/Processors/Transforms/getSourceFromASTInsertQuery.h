@@ -53,6 +53,17 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, 
 String getInsertDataSchemaMismatchDescription(
     std::string_view data, const String & format_name, const Block & expected_header, const ContextPtr & context);
 
+/// Same as getInsertDataSchemaMismatchDescription, but reads a bounded prefix of the data from a file,
+/// decompressing it the same way `INSERT ... FROM INFILE` itself would. Used for the client-side INFILE
+/// path, where the input format is created deep inside a `StorageFile` pipeline and a lazy provider
+/// cannot be attached to it directly.
+String getInsertDataSchemaMismatchDescriptionFromFile(
+    const String & file_path,
+    const String & compression_method,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context);
+
 /// Attaches getInsertDataSchemaMismatchDescription as a lazy diagnostic to the input format that
 /// reads the inline data of an INSERT query: if parsing fails with a parse error, the resulting
 /// explanation (if any) is appended to the exception message.

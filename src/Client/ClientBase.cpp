@@ -41,6 +41,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/ParseError.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -2182,6 +2183,18 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         }
         catch (Exception & e)
         {
+            /// If parsing the file failed, explain a possible structure mismatch between the data and
+            /// the destination (for diagnostics only). The input format is created deep inside the
+            /// `StorageFile` pipeline, so unlike the inline/stdin paths there is no input format at hand
+            /// to attach a lazy provider to; classify the exception here instead and re-read a bounded
+            /// prefix of the file.
+            if (isParseError(e.code()))
+            {
+                String description = getInsertDataSchemaMismatchDescriptionFromFile(
+                    in_file, compression_method, current_format, sample, client_context);
+                if (!description.empty())
+                    e.addMessage(description);
+            }
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
