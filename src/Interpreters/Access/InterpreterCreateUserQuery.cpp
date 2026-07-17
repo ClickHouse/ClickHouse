@@ -243,6 +243,10 @@ BlockIO InterpreterCreateUserQuery::execute()
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
+        /// Changing which roles activate by default for a user is role administration, which a session
+        /// limited by an authentication method's GRANTS clause must not do (the ALTER path is otherwise
+        /// authorized with plain ALTER_USER and does not go through the admin-option check below).
+        access->checkCanAdministerDefaultRoles();
         default_roles_from_query = RolesOrUsersSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {

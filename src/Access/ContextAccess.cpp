@@ -1126,6 +1126,19 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
     }
 }
 
+void ContextAccess::checkCanAdministerDefaultRoles() const
+{
+    /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
+    /// administer roles (see the fail-close guard in checkAccessImplHelper). Changing which roles are
+    /// activated by default for a user (SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE) is role
+    /// administration, but it is authorized with plain ALTER_USER and so is not covered by that guard,
+    /// so it has to be rejected here explicitly.
+    if (params.authentication_grants)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+            "and such sessions cannot administer roles");
+}
+
 void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
     if (isGranted(context, flags, parameter))

@@ -132,6 +132,13 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
+    /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
+    /// administer roles. Besides the role DDL guarded in checkAccessImplHelper, this includes changing which
+    /// roles are activated by default for a user (SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE), which is
+    /// authorized with plain ALTER_USER and is therefore not caught by that flag-based guard. Throws if the
+    /// current session is limited by such a clause.
+    void checkCanAdministerDefaultRoles() const;
+
     /// Checks access of grants with parameter where a filter can be applied.
     /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
     /// because we are checking for `READ` permissions for all possible URLs.
@@ -326,6 +333,9 @@ public:
     ALWAYS_INLINE void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const { access->checkGranteeIsAllowed(grantee_id, grantee); }
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
+
+    /// Rejects changing users' default roles when the current session is limited by an authentication method's GRANTS clause.
+    ALWAYS_INLINE void checkCanAdministerDefaultRoles() const { access->checkCanAdministerDefaultRoles(); }
 
     /// Checks access of grants with parameter where a filter can be applied.
     ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
