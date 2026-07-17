@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Interval overlap self-join, query Q2 from the IEJoin paper (Khayyat et al., PVLDB 8(13)),
 -- over deterministically derived events; results are verified against the same query with
 -- IEJoin disabled.

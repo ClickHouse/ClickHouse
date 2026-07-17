@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Keys whose SQL comparison diverges from the compareAt total order the IEJoin operator
 -- matches by (Tuple decomposes elementwise with IEEE NaN / NULL propagation, Dynamic unwraps
 -- the underlying values) must not become IEJoin conditions. INNER falls back to a cross join

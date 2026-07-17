@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Switching between join algorithms: there are no size thresholds for IEJoin yet, so the
 -- switch is controlled by the `join_algorithm` list; with `ie_join` listed last, a null-safe
 -- equality keeps the join on the hash path.

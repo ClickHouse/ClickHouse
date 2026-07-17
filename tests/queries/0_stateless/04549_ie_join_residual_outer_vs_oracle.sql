@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- OUTER IEJoin with residual ON conditions (conjuncts beyond the two inequalities, evaluated
 -- inside the operator) on pseudo-random duplicate-heavy data with NULL values, verified against
 -- an oracle built from parts: the INNER pairs come from a cross join with a filter over all

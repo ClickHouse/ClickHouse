@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Shapes that must never route to IEJoin even with `ie_join` listed first: unsupported
 -- strictness (ANY, ASOF) and keys IEJoin cannot order (Dynamic). The pre-existing behavior
 -- (error or fallback) must be preserved.

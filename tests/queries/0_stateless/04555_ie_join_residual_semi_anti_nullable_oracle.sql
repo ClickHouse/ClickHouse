@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- SEMI/ANTI IEJoin with residual ON conditions over Nullable inequality keys, verified against
 -- a cross-join oracle on pseudo-random duplicate-heavy data. Rows with a NULL inequality key
 -- never enter the sorted union, so they must always land on the ANTI side; the residual

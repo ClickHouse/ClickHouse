@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Non-overlapping ranges must produce an empty result with both orders of the conditions
 -- (the second order exercises the short circuit on the second condition).
 

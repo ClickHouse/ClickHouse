@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Empty and all-NULL inputs with `a.x BETWEEN b.x AND b.x` must not read out of bounds.
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';

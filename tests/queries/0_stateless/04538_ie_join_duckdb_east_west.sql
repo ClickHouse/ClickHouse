@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- The East/West example queries from the IEJoin paper (Khayyat et al., PVLDB 8(13)).
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';

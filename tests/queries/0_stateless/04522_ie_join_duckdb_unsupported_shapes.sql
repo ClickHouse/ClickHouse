@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- SEMI/ANTI/LEFT/RIGHT/FULL joins with two inequality conditions route through IEJoin;
 -- extra conjuncts become a residual condition inside the operator; an OR of inequalities
 -- stays error-locked. `join_use_nulls` is enabled so that unmatched rows are padded with

@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Only a subset of the columns is selected from the join, so the unused ones must be pruned
 -- correctly; results are verified against the same query with IEJoin disabled.
 

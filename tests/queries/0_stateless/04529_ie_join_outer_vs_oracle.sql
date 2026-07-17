@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- OUTER/SEMI/ANTI IEJoin on pseudo-random duplicate-heavy data with NULL keys, verified
 -- against an oracle built from parts: the INNER pairs come from a cross join with a filter
 -- (IEJoin disabled), the unmatched rows of each side are derived with NOT IN, padded by hand.

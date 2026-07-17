@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- LEFT/RIGHT/FULL counts of a large timestamp `BETWEEN` band join (167137 x 158 rows,
 -- `DateTime64(6)` keys) at full size, using the same fixture as 04521.
 -- `join_use_nulls = 1` is required: `count(flag_desc)`/`count(ts)` count non-NULL values, so

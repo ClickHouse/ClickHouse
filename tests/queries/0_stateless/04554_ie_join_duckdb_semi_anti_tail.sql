@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Port of the tail-predicate sections of DuckDB test/sql/join/iejoin/test_iesemijoin.test and
 -- test_ieantijoin.test (previously skipped): SEMI/ANTI with a third equality or arbitrary
 -- conjunct, evaluated inside the operator as a residual condition. The plain two-predicate

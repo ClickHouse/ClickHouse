@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- BFloat16 keys with NaN, verified against the cross-join oracle (comma join with the
 -- conditions in WHERE; `cross_to_inner_join_rewrite = 0` keeps it out of IEJoin). BFloat16
 -- is not covered by the fixed-width key encoding, so this exercises the generic comparator

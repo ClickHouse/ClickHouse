@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- `ie_join` listed first in `join_algorithm` claims outer/semi/anti joins whose ON has two
 -- inequality conditions plus equality conditions: the equalities become the operator's
 -- residual condition and the result must match the hash join executing the same query.

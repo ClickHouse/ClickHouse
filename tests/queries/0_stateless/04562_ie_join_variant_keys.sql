@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Keys whose SQL comparison diverges from the compareAt total order the IEJoin operator
 -- matches by must not become IEJoin conditions: comparison of Variant unwraps the underlying
 -- values, yields NULL for NULL values and mismatched alternatives (or throws, depending on
