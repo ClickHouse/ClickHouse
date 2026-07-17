@@ -31,7 +31,7 @@ public:
         const String & end_column_name_,
         bool start_all_,
         std::optional<UInt64> limit_,
-        bool always_read_till_end_ = false);
+        bool always_read_till_end_);
 
     String getName() const override { return "LimitRange"; }
 
@@ -52,18 +52,12 @@ private:
     /// Filter chunk by arbitrary subset of rows.
     static void filterChunk(Chunk & chunk, const IColumn::Filter & filter, size_t filtered_rows);
 
-    static bool isTrueAt(const ColumnPtr & column, size_t row_num);
-
     void transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col);
 
     /// Expression that evaluates the AFTER condition per row.
     ExpressionActionsPtr start_expression;
-    /// Name of the boolean column produced by start_expression.
-    String start_column_name;
     /// Expression that evaluates the UNTIL condition per row.
     ExpressionActionsPtr end_expression;
-    /// Name of the boolean column produced by end_expression.
-    String end_column_name;
     /// ALL mode: emit the union of all windows opened by AFTER matches.
     bool start_all = false;
     /// Maximum number of rows per window (nullopt = unlimited).

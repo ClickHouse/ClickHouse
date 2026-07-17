@@ -1,11 +1,9 @@
 #include <Processors/LimitRangeTransform.h>
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsCommon.h>
-#include <Common/typeid_cast.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
+#include <base/arithmeticOverflow.h>
 #include <limits>
 
 namespace DB
@@ -13,9 +11,52 @@ namespace DB
 
 static UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
 {
-    if (lhs > std::numeric_limits<UInt64>::max() - rhs)
+    UInt64 result;
+    if (common::addOverflow(lhs, rhs, result))
         return std::numeric_limits<UInt64>::max();
-    return lhs + rhs;
+    return result;
+}
+
+namespace
+{
+
+/// Per-chunk view of a boundary condition column: the constant verdict or the byte mask is resolved
+/// once per chunk via FilterDescription instead of dispatching on the column type for every row.
+struct BoundaryColumnView
+{
+    bool always_false = true;
+    bool always_true = false;
+    std::optional<FilterDescription> mask;
+
+    explicit BoundaryColumnView(const ColumnPtr & column)
+    {
+        if (!column)
+            return;
+
+        ConstantFilterDescription constant_description(*column);
+        if (constant_description.always_false)
+            return;
+
+        always_false = false;
+        if (constant_description.always_true)
+        {
+            always_true = true;
+            return;
+        }
+
+        mask.emplace(*column);
+    }
+
+    bool isTrueAt(size_t row_num) const
+    {
+        if (always_false)
+            return false;
+        if (always_true)
+            return true;
+        return (*mask->data)[row_num];
+    }
+};
+
 }
 
 LimitRangeTransform::LimitRangeTransform(
@@ -29,9 +70,7 @@ LimitRangeTransform::LimitRangeTransform(
     bool always_read_till_end_)
     : ISimpleTransform(header_, header_, true)
     , start_expression(std::move(start_expression_))
-    , start_column_name(start_column_name_)
     , end_expression(std::move(end_expression_))
-    , end_column_name(end_column_name_)
     , start_all(start_all_)
     , limit(limit_)
     , always_read_till_end(always_read_till_end_)
@@ -46,34 +85,14 @@ LimitRangeTransform::LimitRangeTransform(
     {
         Block block = getInputPort().getHeader().cloneEmpty();
         start_expression->execute(block, /*dry_run=*/true);
-        start_column_position = block.getPositionByName(start_column_name);
+        start_column_position = block.getPositionByName(start_column_name_);
     }
     if (end_expression)
     {
         Block block = getInputPort().getHeader().cloneEmpty();
         end_expression->execute(block, /*dry_run=*/true);
-        end_column_position = block.getPositionByName(end_column_name);
+        end_column_position = block.getPositionByName(end_column_name_);
     }
-}
-
-bool LimitRangeTransform::isTrueAt(const ColumnPtr & column, size_t row_num)
-{
-    if (!column)
-        return false;
-
-    const IColumn * col = column.get();
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(col))
-    {
-        if (nullable->isNullAt(row_num))
-            return false;
-
-        col = &nullable->getNestedColumn();
-    }
-
-    if (const auto * uint8 = typeid_cast<const ColumnUInt8 *>(col))
-        return uint8->getData()[row_num] != 0;
-
-    return col->getBool(row_num);
 }
 
 size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_rows)
@@ -81,9 +100,16 @@ size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_r
     if (!column || num_rows == 0)
         return num_rows;
 
+    BoundaryColumnView view(column);
+    if (view.always_false)
+        return num_rows;
+    if (view.always_true)
+        return 0;
+
+    const auto & data = *view.mask->data;
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if (isTrueAt(column, i))
+        if (data[i])
             return i;
     }
     return num_rows;
@@ -123,6 +149,9 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
     IColumn::Filter filter(num_rows, 0);
     size_t filtered_rows = 0;
 
+    const BoundaryColumnView start_view(start_col);
+    const BoundaryColumnView end_view(end_col);
+
     /// Track contiguous ranges so we can use IColumn::cut when possible.
     size_t range_begin = num_rows; /// sentinel: no range open
     size_t num_ranges = 0;
@@ -132,14 +161,14 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
     for (size_t row = 0; row < num_rows; ++row)
     {
         const UInt64 current_row = rows_read + row;
-        const bool end_match = end_col && isTrueAt(end_col, row);
+        const bool end_match = end_view.isTrueAt(row);
         if (end_match)
         {
             has_repeated_unbounded_window = false;
             repeated_window_end = current_row;
         }
 
-        const bool start_match = start_col && isTrueAt(start_col, row);
+        const bool start_match = start_view.isTrueAt(row);
         if (start_match && !end_match)
         {
             if (limit)
@@ -217,13 +246,6 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     if (done_outputting)
     {
-        chunk.clear();
-        return;
-    }
-
-    if (limit && rows_output >= *limit)
-    {
-        setDone();
         chunk.clear();
         return;
     }
@@ -318,14 +340,9 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     if (limit)
     {
+        /// rows_output < *limit here: reaching the limit immediately sets done, after which either
+        /// done_outputting clears the chunk above or the input is closed and transform is not called.
         UInt64 remaining = *limit - rows_output;
-        if (remaining == 0)
-        {
-            setDone();
-            chunk.clear();
-            return;
-        }
-
         size_t take = output_end - output_start;
         if (take > remaining)
             output_end = output_start + remaining;
