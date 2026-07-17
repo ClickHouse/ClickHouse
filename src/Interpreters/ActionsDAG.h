@@ -158,7 +158,10 @@ public:
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
+    /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
+    /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
+    /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 

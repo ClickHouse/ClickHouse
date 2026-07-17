@@ -654,7 +654,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
-            Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
+            Result.create_from(
+                name="Pre Hooks",
+                results=res_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
         )
         # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
         env = _Environment.get()
@@ -738,6 +743,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
+        # Reload the environment because workflow filter hooks may have written
+        # report messages through a separate Info instance.
+        env = _Environment.get()
 
     if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
         print("Filter not affected jobs")
@@ -879,22 +887,27 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 env.COMMIT_AUTHORS = list(commit_authors)
                 env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
                 env.dump()
-        else:
-            # Non-PR runs (workflow_dispatch / scheduled, e.g. releases) have no
-            # PR author, so the Slack feed would notify no one and a failure would
-            # be silent. Fall back to the head commit's author so failures still
-            # reach a human.
+        elif not env.COMMIT_AUTHORS:
+            # A push event already has COMMIT_AUTHORS seeded from the webhook
+            # payload by `_Environment.from_env`, so only fill it here when it is
+            # still empty (workflow_dispatch / scheduled runs, e.g. releases).
+            # Those have no PR author, so the Slack feed would notify no one and a
+            # failure would be silent; fall back to the head commit's author so
+            # failures still reach a human. Never overwrite an already-populated
+            # author set — that would drop the full authors of a multi-commit push.
             author_email = ""
             try:
-                author_email = Shell.get_output(
+                head_email = Shell.get_output(
                     f"git log -1 --format='%ae' {env.SHA}", verbose=True
                 ).strip()
+                if head_email and "@" in head_email and "+" not in head_email:
+                    author_email = head_email
             except Exception as e:
                 print(f"WARNING: Failed to get head commit author: {e}")
-            if author_email and "@" in author_email and "+" not in author_email:
-                env.COMMIT_AUTHORS = [author_email]
-                env.JOB_KV_DATA["commit_authors"] = [author_email]
-                env.dump()
+            authors = [author_email] if author_email else []
+            env.COMMIT_AUTHORS = authors
+            env.JOB_KV_DATA["commit_authors"] = authors
+            env.dump()
 
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
@@ -998,7 +1011,12 @@ def _finish_workflow(workflow, job_name):
             results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
-            Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            Result.create_from(
+                name="Post Hooks",
+                results=results_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
         )
 
     ready_for_merge_status = Result.Status.OK

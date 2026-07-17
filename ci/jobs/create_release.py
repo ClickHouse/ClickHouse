@@ -294,7 +294,7 @@ class ReleaseInfo:
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()
-                version = CHVersion.read()
+                version = CHVersion.get_current_version()
                 release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
                 version.bump_release().with_description(VersionType.NEW)
@@ -306,7 +306,7 @@ class ReleaseInfo:
         if release_type == "patch":
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
-                version = CHVersion.read()
+                version = CHVersion.get_current_version()
                 codename = version.get_stable_release_type()
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
@@ -322,7 +322,7 @@ class ReleaseInfo:
             # branch tip, the branch has already moved to a newer release, so this
             # ref is behind / superseded.
             with checkout(f"origin/{release_branch}"):
-                branch_version = CHVersion.read()
+                branch_version = CHVersion.get_current_version()
             newer_release_exists = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
@@ -460,7 +460,7 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        version = CHVersion.read()
+        version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
         version_after_release.bump_release()
@@ -502,7 +502,7 @@ class ReleaseInfo:
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         with checkout(self.commit_sha):
-            version = CHVersion.read()
+            version = CHVersion.get_current_version()
             if self.release_type == "patch":
                 assert version.string == self.version, (
                     f"BUG: version in release info does not match version in git commit, "
@@ -514,7 +514,13 @@ class ReleaseInfo:
             version.with_description(version.get_stable_release_type())
 
         with checkout(self.release_branch):
-            version.write(preserve_sha=self.release_type == "new")
+            if self.release_type == "new":
+                # A freshly cut branch keeps its committed VERSION_GITHASH rather
+                # than repointing it at the release commit.
+                version.githash = CHVersion.get_release_version().githash
+            else:
+                version.githash = Shell.get_output("git rev-parse HEAD") or "0" * 40
+            version.write()
             update_contributors(raise_error=True)
             cmd_commit_version_upd = (
                 f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
@@ -558,11 +564,14 @@ class ReleaseInfo:
             print("Update version on master branch")
             branch_upd = self.get_version_bump_branch()
             with checkout(self.commit_sha):
-                version = CHVersion.read()
+                version = CHVersion.get_current_version()
                 version.bump_release()
                 version.with_description(VersionType.TESTING)
             with checkout("master"):
                 with checkout_new(branch_upd):
+                    # The post-release bump on master must point VERSION_GITHASH
+                    # at master's head, not back at the release commit.
+                    version.githash = Shell.get_output("git rev-parse HEAD") or "0" * 40
                     version.write()
                     update_contributors(raise_error=True)
                     actor = os.getenv("GITHUB_ACTOR", "") or "me"

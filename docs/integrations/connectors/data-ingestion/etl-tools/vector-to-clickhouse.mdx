@@ -30,8 +30,7 @@ The steps below are similar for tailing any type of log file.
 - You have Vector installed
 
 <Steps>
-<Step>
-## Create a database and table {#1-create-a-database-and-table}
+<Step title="Create a database and table" id="1-create-a-database-and-table">
 
 Define a table to store the log events:
 
@@ -55,8 +54,7 @@ ORDER BY tuple()
 **ORDER BY** is set to **tuple()** (an empty tuple) as there is no need for a primary key yet.
 </Note>
 </Step>
-<Step>
-## Configure Nginx {#2--configure-nginx}
+<Step title="Configure Nginx" id="2--configure-nginx">
 
 In this step, you will be shown how to get Nginx logging configured.
 
@@ -85,8 +83,7 @@ Logs in the **combined** format look as follows:
  192.168.208.1 - - [12/Oct/2021:03:31:49 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
  ```
 </Step>
-<Step>
-## Configure Vector {#3-configure-vector}
+<Step title="Configure Vector" id="3-configure-vector">
 
 Vector collects, transforms and routes logs, metrics, and traces (referred to as **sources**) to many different vendors (referred to as **sinks**), including out-of-the-box compatibility with ClickHouse.
 Sources and sinks are defined in a configuration file named **vector.toml**.
@@ -118,8 +115,7 @@ SELECT * FROM nginxdb.access_logs
 
 <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="View ClickHouse logs in table format" />
 </Step>
-<Step>
-## Parse the Logs {#4-parse-the-logs}
+<Step title="Parse the Logs" id="4-parse-the-logs">
 
 Having the logs in ClickHouse is great, but storing each event as a single string doesn't allow for much data analysis.
 We'll next look at how to parse the log events using a [materialized view](/concepts/features/materialized-views/incremental-materialized-view).

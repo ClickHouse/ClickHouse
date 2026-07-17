@@ -193,6 +193,7 @@ def test_version_file_roundtrips(tmp_path, monkeypatch):
     monkeypatch.setattr(chv, "FILE_WITH_VERSION_PATH", str(version_file))
 
     version = chv.CHVersion(26, 6, 1, 54511, 42).with_description("stable")
+    version.githash = "0" * 40
     version.write()
     read = chv._read_versions()
     # tweak is not stored as its own SET() line — it is encoded in the string
@@ -206,8 +207,9 @@ def test_version_file_roundtrips(tmp_path, monkeypatch):
     assert read["string"] == "26.6.1.42"
     assert read["describe"] == "v26.6.1.42-stable"
 
-    reloaded = chv.CHVersion.get_release_version_as_dict()
-    assert (reloaded["major"], reloaded["minor"], reloaded["patch"]) == (26, 6, 1)
+    reloaded = chv.CHVersion.get_release_version()
+    assert (reloaded.major, reloaded.minor, reloaded.patch) == (26, 6, 1)
+    assert reloaded.tweak == 42
 
 
 def test_version_bump():
@@ -222,14 +224,15 @@ def test_version_bump():
     assert (rollover.major, rollover.minor, rollover.patch) == (27, 1, 1)
 
 
-def test_prestable_is_a_valid_version_type():
+def test_new_is_a_valid_version_type():
     import ci.jobs.scripts.clickhouse_version as chv
 
-    # `prestable` must be a valid version type so `with_description` accepts it.
-    assert "prestable" in chv.VersionType.VALID
-    version = chv.CHVersion(26, 6, 1, -1, 1).with_description("prestable")
-    assert version.version_type == "prestable"
-    assert version.describe == "v26.6.1.1-prestable"
+    # `new` must be a valid version type so `with_description` accepts it when
+    # CreateRelease cuts a fresh branch (the `vX.Y.1.1-new` marker).
+    assert "new" in chv.VersionType.VALID
+    version = chv.CHVersion(26, 6, 1, -1, 1).with_description("new")
+    assert version.version_type == "new"
+    assert version.describe == "v26.6.1.1-new"
 
 
 # --- full dry-run patch release, start to finish -----------------------------
