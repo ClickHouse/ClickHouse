@@ -45,6 +45,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
@@ -570,6 +571,46 @@ String StorageEmbeddedRocksDB::backupElectionId() const
     return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", getStorageID().getFullTableName());
 }
 
+/// Canonical fingerprint of the on-disk byte layout. restoreDataImpl() replays raw serialized (key, value)
+/// bytes verbatim, and fillColumns() later decodes them with the TARGET table's metadata: the key bytes are
+/// the primary-key columns serialized in primary-key order, the value bytes are the remaining physical columns
+/// serialized in physical order. So the bytes are only interpretable by a table with the same physical column
+/// types in the same order and the same primary-key column set/order. A same-ttl target that differs in
+/// PK/value column types or ordering would decode the bytes into a wrong (unreadable or silently incorrect)
+/// table, and the RESTORE ... AS <writable_table> / allow_different_table_def workaround skips
+/// RestorerFromBackup's create-query compatibility check, so this fingerprint is what catches it. Table name and
+/// the read_only flag are intentionally excluded: neither affects the byte layout, and RESTORE ... AS restores
+/// into a differently-named (and writable) table on purpose.
+String StorageEmbeddedRocksDB::backupSchemaFingerprint() const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto sample_block = metadata_snapshot->getSampleBlock();
+
+    WriteBufferFromOwnString out;
+    out << "key:";
+    for (size_t i = 0; i < primary_key_pos.size(); ++i)
+    {
+        const auto & col = sample_block.getByPosition(primary_key_pos[i]);
+        if (i)
+            out << ',';
+        out << col.name << ' ' << col.type->getName();
+    }
+    out << "\nvalue:";
+    for (size_t i = 0; i < value_column_pos.size(); ++i)
+    {
+        const auto & col = sample_block.getByPosition(value_column_pos[i]);
+        if (i)
+            out << ',';
+        out << col.name << ' ' << col.type->getName();
+    }
+    return out.str();
+}
+
+/// Companion file recording backupSchemaFingerprint(). Restore compares it against the target table's own
+/// fingerprint and rejects a mismatch before replaying any bytes, so a same-ttl but structurally-different
+/// target cannot silently decode the raw bytes into wrong data.
+static constexpr std::string_view rocksdb_backup_schema_filename = "schema.txt";
+
 /// The single-owner optimization (siblings reference the owner's data instead of dumping their own) is safe
 /// only when the elected owner is the writable table: its live handle sees the freshest shared data, so its
 /// one dump represents every sibling. An all-read_only group has no such common live view (each read_only
@@ -593,12 +634,15 @@ void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_
     /// the whole group.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
-        /// Record this table's ttl so restore can reject a ttl-incompatible target (the value bytes are
-        /// ttl-format-dependent). ttl is a per-table constant, so every table writes its own tiny ttl.txt
-        /// even when it references a sibling's data.bin.
+        /// Record this table's ttl and schema fingerprint so restore can reject an incompatible target: the
+        /// value bytes are ttl-format-dependent, and the raw key/value bytes are only decodable by a table with
+        /// the same physical-column layout. Both are per-table constants, so every table writes its own tiny
+        /// ttl.txt / schema.txt even when it references a sibling's data.bin.
         backup_entries_collector.addBackupEntries(
             {{fs::path(my_data_path_in_backup) / rocksdb_backup_ttl_filename,
-              std::make_shared<BackupEntryFromMemory>(toString(ttl))}});
+              std::make_shared<BackupEntryFromMemory>(toString(ttl))},
+             {fs::path(my_data_path_in_backup) / rocksdb_backup_schema_filename,
+              std::make_shared<BackupEntryFromMemory>(backupSchemaFingerprint())}});
 
         auto owner_election_id = coordination->getRocksDBDataOwnerElectionId(rocksdb_dir);
         auto owner_data_path = coordination->getRocksDBDataPath(rocksdb_dir);
@@ -675,6 +719,27 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
                 "target table has ttl = {}. The stored value bytes are ttl-format-dependent, so restore requires "
                 "a matching ttl. Create the target table with ttl = {} and restore again",
                 getStorageID().getNameForLogs(), backup_ttl, ttl, backup_ttl);
+    }
+
+    /// The raw key/value bytes are only decodable by a table with the same physical-column layout (key = PK
+    /// columns in PK order, value = the remaining physical columns in physical order). A same-ttl target that
+    /// differs in column types or ordering would silently decode the bytes into wrong data. Reject a mismatch
+    /// before replaying anything; this is what guards the RESTORE ... AS <writable_table> /
+    /// allow_different_table_def path, which skips RestorerFromBackup's create-query compatibility check.
+    String schema_file = fs::path(data_path_in_backup) / rocksdb_backup_schema_filename;
+    if (backup->fileExists(schema_file))
+    {
+        String backup_schema;
+        readStringUntilEOF(backup_schema, *backup->readFile(schema_file));
+        String target_schema = backupSchemaFingerprint();
+        if (backup_schema != target_schema)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore EmbeddedRocksDB table {}: the backup's column layout does not match the target "
+                "table. The stored bytes are decoded with the target table's schema, so restore requires an "
+                "identical physical-column layout and primary key. Backup layout [{}] but target layout [{}]. "
+                "Create the target table with a matching schema and restore again",
+                getStorageID().getNameForLogs(), backup_schema, target_schema);
     }
 
     /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. When a

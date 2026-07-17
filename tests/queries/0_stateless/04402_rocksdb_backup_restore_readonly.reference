@@ -16,3 +16,6 @@ roro b restored	200
 CANNOT_RESTORE_TABLE
 TTL_MATCH_RESTORE_OK
 ttl match restored	50
+CANNOT_RESTORE_TABLE
+SCHEMA_MATCH_RESTORE_OK
+schema match restored	50

@@ -26,24 +26,29 @@ RDB_DIR_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_pop"
 RDB_DIR_SHARED="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_shared"
 RDB_DIR_RORO="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_roro"
 RDB_DIR_TTL="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_ttl"
+RDB_DIR_SCHEMA="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_schema"
 BACKUP_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 BACKUP_ID_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_empty"
 BACKUP_ID_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_pop"
 BACKUP_ID_SHARED="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared"
 BACKUP_ID_RORO="${CLICKHOUSE_TEST_UNIQUE_NAME}_roro"
 BACKUP_ID_TTL="${CLICKHOUSE_TEST_UNIQUE_NAME}_ttl"
+BACKUP_ID_SCHEMA="${CLICKHOUSE_TEST_UNIQUE_NAME}_schema"
 BACKUP_NAME="Disk('backups', '${BACKUP_ID}')"
 BACKUP_NAME_EMPTY="Disk('backups', '${BACKUP_ID_EMPTY}')"
 BACKUP_NAME_POP="Disk('backups', '${BACKUP_ID_POP}')"
 BACKUP_NAME_SHARED="Disk('backups', '${BACKUP_ID_SHARED}')"
 BACKUP_NAME_RORO="Disk('backups', '${BACKUP_ID_RORO}')"
 BACKUP_NAME_TTL="Disk('backups', '${BACKUP_ID_TTL}')"
+BACKUP_NAME_SCHEMA="Disk('backups', '${BACKUP_ID_SCHEMA}')"
 USER_FILES_PATH=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'user_files_path'")
 BACKUPS_PATH=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = 'backups'")
 rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
     "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}" "${USER_FILES_PATH:?}/${RDB_DIR_TTL}" \
+    "${USER_FILES_PATH:?}/${RDB_DIR_SCHEMA}" \
     "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}" "${BACKUPS_PATH:?}/${BACKUP_ID_POP}" \
-    "${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}" "${BACKUPS_PATH:?}/${BACKUP_ID_RORO}" "${BACKUPS_PATH:?}/${BACKUP_ID_TTL}"
+    "${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}" "${BACKUPS_PATH:?}/${BACKUP_ID_RORO}" "${BACKUPS_PATH:?}/${BACKUP_ID_TTL}" \
+    "${BACKUPS_PATH:?}/${BACKUP_ID_SCHEMA}"
 
 # Case 1: restore of a NON-empty read_only backup is rejected with a clear CANNOT_RESTORE_TABLE error.
 # Populate an on-disk RocksDB directory through a writable table, then drop it (the explicit dir stays);
@@ -211,12 +216,43 @@ SELECT 'ttl match restored', count() FROM ${CLICKHOUSE_DATABASE}_ttl.dst0;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_ttl SYNC;
 "
 
+# Case 7: restore replays raw serialized (key, value) bytes and later decodes them with the TARGET table's
+# schema (key = PK columns in PK order, value = the remaining physical columns in physical order). A target
+# with the same ttl but a different physical-column layout (different value type, or different PK/value
+# ordering) would silently decode the bytes into wrong data. The read_only workaround
+# (RESTORE ... AS <writable_table> SETTINGS allow_different_table_def = 1) skips the create-query
+# compatibility check, so an explicit restore-time schema-fingerprint check must reject the mismatch. Back up
+# a (k UInt64, v String) table and try to restore it AS a table whose value column type differs
+# (v UInt64) and AS one whose column order differs; both must be rejected. A matching-schema restore still
+# succeeds.
+$CLICKHOUSE_CLIENT --multiquery "
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_schema SYNC;
+CREATE DATABASE ${CLICKHOUSE_DATABASE}_schema;
+CREATE TABLE ${CLICKHOUSE_DATABASE}_schema.src (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SCHEMA}_src') PRIMARY KEY k;
+INSERT INTO ${CLICKHOUSE_DATABASE}_schema.src SELECT number, 'v' || toString(number) FROM numbers(50);
+BACKUP TABLE ${CLICKHOUSE_DATABASE}_schema.src TO ${BACKUP_NAME_SCHEMA} FORMAT Null;
+CREATE TABLE ${CLICKHOUSE_DATABASE}_schema.dst_type (k UInt64, v UInt64) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SCHEMA}_type') PRIMARY KEY k;
+CREATE TABLE ${CLICKHOUSE_DATABASE}_schema.dst_same (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_SCHEMA}_same') PRIMARY KEY k;
+"
+# Different value column type: rejected.
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}_schema.src AS ${CLICKHOUSE_DATABASE}_schema.dst_type FROM ${BACKUP_NAME_SCHEMA} SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1 FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "NO_EXPECTED_ERROR"
+# Matching schema: allowed.
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}_schema.src AS ${CLICKHOUSE_DATABASE}_schema.dst_same FROM ${BACKUP_NAME_SCHEMA} SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1 FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "SCHEMA_MATCH_RESTORE_OK"
+$CLICKHOUSE_CLIENT --multiquery "
+SELECT 'schema match restored', count() FROM ${CLICKHOUSE_DATABASE}_schema.dst_same;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_schema SYNC;
+"
+
 rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
     "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}" \
     "${USER_FILES_PATH:?}/${RDB_DIR_RORO}_a" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}_b" \
     "${USER_FILES_PATH:?}/${RDB_DIR_TTL}_src0" "${USER_FILES_PATH:?}/${RDB_DIR_TTL}_dst5" "${USER_FILES_PATH:?}/${RDB_DIR_TTL}_dst0" \
+    "${USER_FILES_PATH:?}/${RDB_DIR_SCHEMA}_src" "${USER_FILES_PATH:?}/${RDB_DIR_SCHEMA}_type" "${USER_FILES_PATH:?}/${RDB_DIR_SCHEMA}_same" \
     "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUP_ID_EMPTY:+${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}}" \
     "${BACKUP_ID_POP:+${BACKUPS_PATH:?}/${BACKUP_ID_POP}}" \
     "${BACKUP_ID_SHARED:+${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}}" \
     "${BACKUP_ID_RORO:+${BACKUPS_PATH:?}/${BACKUP_ID_RORO}}" \
-    "${BACKUP_ID_TTL:+${BACKUPS_PATH:?}/${BACKUP_ID_TTL}}"
+    "${BACKUP_ID_TTL:+${BACKUPS_PATH:?}/${BACKUP_ID_TTL}}" \
+    "${BACKUP_ID_SCHEMA:+${BACKUPS_PATH:?}/${BACKUP_ID_SCHEMA}}"
