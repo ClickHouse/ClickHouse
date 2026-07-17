@@ -908,6 +908,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
+            /// Reject deprecated statistics types (currently `minmax`) only when a table is freshly created
+            /// with them in `auto_statistics_types`. Skipped for ATTACH and replicated propagation so that
+            /// existing tables which still carry `minmax` in the setting keep loading.
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                validateAutoStatisticsTypes(statistics_types_str);
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }
 
