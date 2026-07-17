@@ -166,6 +166,33 @@ SET check_referential_table_dependencies = 0;
 DROP TABLE dist_over_tf;
 DROP DICTIONARY shard_dict;
 
+-- Restart safety: when the column list is omitted, the inferred structure is persisted in the table metadata
+-- (like the classic named-table form), so at startup the table is re-created from that stored structure and
+-- does not re-instantiate the target table function. `StorageDistributed`'s constructor calls
+-- `getStructureOfRemoteTable` (which would resolve the target's backing objects locally) only when the column
+-- list is empty, and it is never empty once loaded from metadata. So the table loads even if its backing
+-- objects are not loaded yet, and no loading dependency on them is registered. `SHOW CREATE` shows the persisted
+-- structure and `loading_dependencies_table` is empty. (The backing object is still a referential dependency,
+-- as tested above, so it cannot be dropped while the table exists.)
+DROP DICTIONARY IF EXISTS dep_dict;
+DROP TABLE IF EXISTS dep_src;
+CREATE TABLE dep_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+CREATE DICTIONARY dep_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, loop(dep_src));
+SHOW CREATE TABLE dist_over_tf;
+SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_tf';
+DROP TABLE dist_over_tf;
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, dictionary('dep_dict'));
+SHOW CREATE TABLE dist_over_tf;
+SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_tf';
+DROP TABLE dist_over_tf;
+DROP DICTIONARY dep_dict;
+DROP TABLE dep_src;
+
 -- `additional_table_filters` matched against the Distributed table cannot be propagated to the shards
 -- when the target is a table function: the shard query reads from the table function, which has no named
 -- source table to re-key the filter onto (its shard-side expression is referenced only by an internally

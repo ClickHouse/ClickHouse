@@ -150,12 +150,17 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         /// The sharding key is the 4th argument in the classic form
         /// Distributed(logs, default, hits[, sharding_key[, policy_name]]).
         ///
-        /// In the table-function form Distributed(logs, table_function()[, sharding_key]) the
-        /// sharding key is ignored by the engine (see `has_sharding_key` in `StorageDistributed`), so it must
-        /// not create loading dependencies: a `dictGet` / `joinGet` inside the ignored key would otherwise
-        /// block DROP / RENAME of objects the engine never uses, contradicting the documented read-only
-        /// semantics of that form. We detect the table-function form the same way `registerStorageDistributed`
-        /// disambiguates the second argument, and skip dependency extraction for it entirely.
+        /// In the table-function form Distributed(logs, table_function()[, sharding_key]) the sharding key is
+        /// ignored by the engine (see `has_sharding_key` in `StorageDistributed`), so a `dictGet` / `joinGet`
+        /// inside it must not create loading dependencies: it would otherwise constrain the loading order at
+        /// startup and block `DROP` / `RENAME` of an object the engine never uses. We detect the table-function
+        /// form the same way `registerStorageDistributed` disambiguates the second argument, and skip dependency
+        /// extraction for it entirely. The target table function itself needs no loading dependency either: like
+        /// the classic form, an omitted column list is inferred once at CREATE time and the resulting structure
+        /// is persisted in the metadata, so the table is re-created from that structure at startup without
+        /// instantiating the target (`StorageDistributed`'s constructor only calls `getStructureOfRemoteTable`
+        /// when the column list is empty, which it never is once loaded from metadata). The object the target
+        /// reads is still a referential dependency (see `DDLDependencyVisitor::visitDistributedTableEngine`).
         const auto & engine = *storage.engine;
         bool is_table_function_target = false;
         if (engine.arguments && engine.arguments->children.size() >= 2)

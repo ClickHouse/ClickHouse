@@ -5,6 +5,10 @@
 6
 []
 ['shard_dict']
+CREATE TABLE default.dist_over_tf\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', loop(\'default\', \'dep_src\'))
+[]
+CREATE TABLE default.dist_over_tf\n(\n    `key` UInt64,\n    `val` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', dictionary(\'default.dep_dict\'))
+[]
 4	30
 5	15
 2	34
