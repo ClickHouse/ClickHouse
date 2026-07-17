@@ -2207,6 +2207,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
+        if (create.sql_security)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQL SECURITY is not supported for tables created from a table function");
+
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 

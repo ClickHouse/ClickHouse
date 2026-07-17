@@ -1199,6 +1199,9 @@ void DataPartStorageOnDiskBase::copyArchiveEntryTo(
     auto dst = target.writeFile(file_name, write_settings);
     copyData(*src, *dst);
     dst->finalize();
+    /// Carry over the uncompressed size so the rewritten archive keeps v1 accounting.
+    if (auto uncompressed = source_archive.getFileUncompressedSize(file_name))
+        target.setUncompressedSize(file_name, *uncompressed);
 }
 
 void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
@@ -1259,7 +1262,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
 
     auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     HashingWriteBuffer hashing(*out);
-    auto [packed_index, _] = writer.finalize(hashing);
+    auto [packed_index, _] = writer.finalize(hashing, {}, PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE);
     hashing.finalize();
 
     auto & checksum = checksums.files[packed_filename];

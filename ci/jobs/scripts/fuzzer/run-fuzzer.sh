@@ -134,9 +134,12 @@ function fuzz
               --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
       exit "${PIPESTATUS[0]}" ) &
     server_bg_pid=$!
-    for _ in {1..30}
+    # A debug or sanitizer server can take over a minute from fork to listening;
+    # give it the same 120s budget as `wait_ready` in `clickhouse_proc.py`.
+    # A dead server is detected early, so the deadline only affects hung servers.
+    for _ in {1..120}
     do
-        if clickhouse-client --receive_timeout=5 --query "select 1"
+        if clickhouse-client --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi
@@ -232,57 +235,104 @@ function fuzz
         exit 1
     fi
 
-    # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
-    # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
-    # a reasonable time.
-    # Bound the parser/AST recursion on the client command line, matching the server-side caps in
-    # limit-recursion-settings.xml. The client parses every corpus query locally, and a corpus
-    # `SET compatibility=...` reverts max_parser_backtracks to its pre-24.3 default of 0 (unbounded);
-    # a command-line value survives that revert, unlike a profile value.
-    timeout --verbose --signal TERM --kill-after=5m --preserve-status "${FUZZ_TIME_LIMIT:-30m}" clickhouse-client \
-        --max_memory_usage_in_client=1000000000 \
-        --receive_timeout=10 \
-        --receive_data_timeout_ms=10000 \
-        --stacktrace \
-        --max_parser_backtracks=1000000 \
-        --max_parser_depth=1000 \
-        $FUZZER_ARGS \
-        > fuzzer.log \
-        2>&1 &
-    fuzzer_pid=$!
-    echo "Fuzzer pid is $fuzzer_pid"
+    # Convert FUZZ_TIME_LIMIT (e.g. "30m", "60m", "1800s" or plain seconds) into seconds
+    # so that the remaining budget can be recomputed between fuzzer passes.
+    fuzz_time_limit="${FUZZ_TIME_LIMIT:-30m}"
+    case "$fuzz_time_limit" in
+        *h) fuzz_budget_seconds=$(( ${fuzz_time_limit%h} * 3600 ));;
+        *m) fuzz_budget_seconds=$(( ${fuzz_time_limit%m} * 60 ));;
+        *s) fuzz_budget_seconds=$(( ${fuzz_time_limit%s} ));;
+        *)  fuzz_budget_seconds=$(( fuzz_time_limit ));;
+    esac
 
-    # We need to give timeout some time to execute the underlying command with that many arguments
-    elapsed=0
-    maximum=50
-    while [[ $elapsed -lt $maximum ]]; do
-        if ps -o pid= --ppid "$fuzzer_pid"; then
-            echo "Found underlying PID!"
-            break;
-        else
-            echo "Not found. Trying again..."
-        fi
-        sleep 0.1
-        elapsed=$((elapsed+1))
-    done
-
-    # The fuzzer_pid belongs to the timeout process.
-    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
-    if [[ "$IS_ASAN" = "1" ]];
-    then
-        echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
-    else
-        echo "Attaching gdb to the fuzzer itself"
-        gdb -batch -command script.gdb -p $actual_fuzzer_pid &
-    fi
-
-    # Wait for the fuzzer to complete.
-    # Note that the 'wait || ...' thing is required so that the script doesn't
-    # exit because of 'set -e' when 'wait' returns nonzero code.
+    fuzz_started_at=$SECONDS
     fuzzer_exit_code=0
-    wait "$fuzzer_pid" || fuzzer_exit_code=$?
-    echo "Fuzzer exit code is $fuzzer_exit_code"
+    fuzz_pass=0
+    : > fuzzer.log
+    while :; do
+        fuzz_pass=$((fuzz_pass+1))
+        remaining_seconds=$(( fuzz_budget_seconds - (SECONDS - fuzz_started_at) ))
+        echo "=== Fuzzer pass $fuzz_pass, remaining time budget: ${remaining_seconds}s ==="
+
+        # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
+        # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
+        # a reasonable time.
+        # Bound the parser/AST recursion on the client command line, matching the server-side caps in
+        # limit-recursion-settings.xml. The client parses every corpus query locally, and a corpus
+        # `SET compatibility=...` reverts max_parser_backtracks to its pre-24.3 default of 0 (unbounded);
+        # a command-line value survives that revert, unlike a profile value.
+        timeout --verbose --signal TERM --kill-after=5m --preserve-status "${remaining_seconds}s" clickhouse-client \
+            --max_memory_usage_in_client=1000000000 \
+            --receive_timeout=10 \
+            --receive_data_timeout_ms=10000 \
+            --stacktrace \
+            --max_parser_backtracks=1000000 \
+            --max_parser_depth=1000 \
+            $FUZZER_ARGS \
+            >> fuzzer.log \
+            2>&1 &
+        fuzzer_pid=$!
+        echo "Fuzzer pid is $fuzzer_pid"
+
+        # We need to give timeout some time to execute the underlying command with that many arguments
+        elapsed=0
+        maximum=50
+        while [[ $elapsed -lt $maximum ]]; do
+            if ps -o pid= --ppid "$fuzzer_pid"; then
+                echo "Found underlying PID!"
+                break;
+            else
+                echo "Not found. Trying again..."
+            fi
+            sleep 0.1
+            elapsed=$((elapsed+1))
+        done
+
+        # The fuzzer_pid belongs to the timeout process.
+        actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
+
+        if [[ "$IS_ASAN" = "1" ]];
+        then
+            echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+        else
+            echo "Attaching gdb to the fuzzer itself"
+            gdb -batch -command script.gdb -p $actual_fuzzer_pid &
+        fi
+
+        # Wait for the fuzzer to complete.
+        # Note that the 'wait || ...' thing is required so that the script doesn't
+        # exit because of 'set -e' when 'wait' returns nonzero code.
+        fuzzer_exit_code=0
+        wait "$fuzzer_pid" || fuzzer_exit_code=$?
+        echo "Fuzzer exit code is $fuzzer_exit_code"
+
+        # A non-zero exit code is either the time limit (TERM/KILL sent by `timeout`) or a
+        # client/server failure — in both cases stop and let the code below classify it.
+        if [[ "$fuzzer_exit_code" != "0" ]]; then
+            break
+        fi
+        # BuzzHouse enforces its own internal time budget and exits 0 when it is reached.
+        if [[ "$FUZZER_TO_RUN" != "AST Fuzzer" ]]; then
+            break
+        fi
+        # Exit code 0 means the client walked the whole corpus and exited voluntarily. For the
+        # targeted AST fuzzer the corpus is small, so a pass can finish within a couple of
+        # minutes of a 30-minute budget. Each pass starts from a fresh random seed, so rerunning
+        # the corpus explores new mutations instead of throwing away the remaining budget.
+        remaining_seconds=$(( fuzz_budget_seconds - (SECONDS - fuzz_started_at) ))
+        if [[ "$remaining_seconds" -lt 60 ]]; then
+            echo "Fuzzer finished the corpus and only ${remaining_seconds}s of the budget remain, not restarting"
+            break
+        fi
+        # Make sure the server is still accepting queries before restarting: a fuzzer that
+        # exited with code 0 against a dead server would otherwise restart-loop until the budget
+        # runs out and hide the failure.
+        if ! clickhouse-client --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
+            echo "Server is not responding, not restarting the fuzzer"
+            break
+        fi
+        echo "Fuzzer finished the corpus with success, restarting it to use the remaining ${remaining_seconds}s of the budget"
+    done
 
     # If the server dies, most often the fuzzer returns Code 210: Connetion
     # refused, and sometimes also code 32: attempt to read after eof. For

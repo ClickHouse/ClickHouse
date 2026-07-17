@@ -608,7 +608,9 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
+            /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
         }
         else
         {

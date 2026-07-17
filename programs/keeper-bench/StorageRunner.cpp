@@ -610,6 +610,9 @@ void StorageRunner::runBenchmark()
     shared_context = DB::Context::createShared();
     global_context = DB::Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
+    /// Set the config before setApplicationType: it loads server settings from the context's
+    /// config, and keeper-bench has no Poco::Util::Application to provide a global one.
+    global_context->setConfig(config_ptr);
     global_context->setApplicationType(DB::Context::ApplicationType::KEEPER);
 
     setupStorage();

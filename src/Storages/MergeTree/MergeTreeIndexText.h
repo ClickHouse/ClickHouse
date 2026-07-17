@@ -155,7 +155,7 @@ struct SortedToken
 {
     std::string_view token;
     PostingListBuilder * postings = nullptr;
-    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `positions` enabled
+    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `support_phrase_search` enabled
 };
 using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
