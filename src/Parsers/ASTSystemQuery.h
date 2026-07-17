@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -40,9 +41,11 @@ public:
         CLEAR_TEXT_INDEX_CACHES,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
+        CLEAR_ENCRYPTION_HEADERS_CACHE,
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
+        CLEAR_PAIMON_METADATA_CACHE,
         CLEAR_PARQUET_METADATA_CACHE,
         CLEAR_POINT_IN_POLYGON_CACHE,
         CLEAR_FILESYSTEM_CACHE,
@@ -76,6 +79,8 @@ public:
         REPLICA_UNREADY,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
+        UNLOAD_DICTIONARY,
+        UNLOAD_DICTIONARIES,
         RELOAD_MODEL,
         RELOAD_MODELS,
         RELOAD_FUNCTION,
@@ -267,3 +272,12 @@ protected:
 
 
 }
+
+/// ASTSystemQuery::Type has more than 128 values, which is outside the default magic_enum range
+/// [-128, 127]. ParserSystemQuery matches SYSTEM keywords via magic_enum::enum_values, so any
+/// out-of-range value silently drops from the keyword list and stops parsing.
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 512;
+};

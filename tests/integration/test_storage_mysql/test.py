@@ -1240,6 +1240,35 @@ def test_query_passing_engine(started_cluster):
     conn.close()
 
 
+def test_query_passing_type_mismatch(started_cluster):
+    # A declared structure whose types disagree with the passed query must surface as a query error, never
+    # abort the server.
+    table_name = "query_passing_mismatch"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, b VARCHAR(50) NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(
+            f"INSERT INTO clickhouse.{table_name} VALUES (1, 'name_1'), (2, 'name_2')"
+        )
+        conn.commit()
+
+    # Column b holds text but is declared Int32. MySQL's typed accessor reports a query error instead of
+    # crashing.
+    node1.query("DROP TABLE IF EXISTS mysql_type_mismatch")
+    node1.query(
+        f"CREATE TABLE mysql_type_mismatch (a Int32, b Int32) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', query('SELECT a, b FROM {table_name}'), 'root', '{mysql_pass}')"
+    )
+    assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
+    node1.query("DROP TABLE mysql_type_mismatch")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):
