@@ -2928,7 +2928,15 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
             /// A stateful function (e.g. `neighbor`, `logTrace`) in the select list must see the
             /// full pre-sort input, so the storage must not stop reading early because of the limit.
-            UInt64 limit = (query.hasFiltration() || selectListHasStatefulFunction(query.select(), context))
+            /// Likewise, an `arrayJoin` function in the select list changes row cardinality (an empty
+            /// array drops its base row), so a later row must remain free to fill the limit and the
+            /// storage must not stop reading after the first base rows. `getLimitForSorting` only
+            /// rejects the `ARRAY JOIN` clause form, so guard the `arrayJoin` function here too,
+            /// matching the `actions.hasArrayJoin()` fence in `buildSortingDAG` (`optimizeReadInOrder.cpp`)
+            /// and the sibling guard in `maxBlockSizeByLimit`.
+            UInt64 limit = (query.hasFiltration()
+                    || selectListHasArrayJoinFunction(query.select())
+                    || selectListHasStatefulFunction(query.select(), context))
                 ? 0
                 : getLimitForSorting(query, context);
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
