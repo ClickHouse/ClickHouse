@@ -26,6 +26,9 @@ private:
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
     void writeTotals(const Columns & columns, size_t row_num) override;
     void finalizeImpl() override;
+    bool hasDeferredStatistics() const override;
+    void writeDeferredStatisticsAndFinalize() override;
+    void writeRowsBeforeFields();
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {

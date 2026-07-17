@@ -13,3 +13,8 @@ remote JSON HTTP no-stats rows_before_limit_at_least OK
 remote JSON TCP no-stats rows_before_limit_at_least OK
 remote JSONColumnsWithMetadata HTTP no-stats rows_before_limit_at_least OK
 remote XML HTTP no-stats rows_before_limit_at_least OK
+remote JSONEachRowWithProgress HTTP rows_before_limit_at_least OK
+remote JSONEachRowWithProgress HTTP last progress read_rows OK
+remote JSONCompactEachRowWithProgress HTTP rows_before_limit_at_least OK
+remote Template HTTP rows_before_limit OK
+remote Template HTTP rows_read OK

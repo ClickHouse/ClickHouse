@@ -85,7 +85,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & valu
     writeCString("}\n", *ostr);
 }
 
-void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
+void JSONEachRowWithProgressRowOutputFormat::writeRowsBeforeFields()
 {
     if (statistics.applied_limit)
     {
@@ -99,12 +99,36 @@ void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
         writeIntText(statistics.rows_before_aggregation, *ostr);
         writeCString("}\n", *ostr);
     }
+}
+
+void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
+{
+    /// When deferring, the rows-before-* trailer rows are written in phase 2
+    /// (writeDeferredStatisticsAndFinalize): the connection draining that runs between
+    /// the phases can deliver late ProfileInfo packets that update the counters.
+    if (hasDeferredStatistics())
+        return;
+
+    writeRowsBeforeFields();
     if (!exception_message.empty())
     {
         writeCString("{\"exception\":", *ostr);
         writeJSONString(exception_message, *ostr, settings);
         writeCString("}\n", *ostr);
     }
+}
+
+bool JSONEachRowWithProgressRowOutputFormat::hasDeferredStatistics() const
+{
+    /// Defer the whole trailer whenever the query succeeded: with parallel replicas the
+    /// rows-before-* counters often only apply during the drain, so we cannot tell at
+    /// phase 1 whether they will be printed and must defer unconditionally.
+    return exception_message.empty();
+}
+
+void JSONEachRowWithProgressRowOutputFormat::writeDeferredStatisticsAndFinalize()
+{
+    writeRowsBeforeFields();
 }
 
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);

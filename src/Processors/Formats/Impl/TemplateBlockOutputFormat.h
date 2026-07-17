@@ -57,6 +57,8 @@ private:
     void consumeTotals(Chunk chunk) override { statistics.totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { statistics.extremes = std::move(chunk); }
     void finalizeImpl() override;
+    bool hasDeferredStatistics() const override;
+    void writeDeferredStatisticsAndFinalize() override;
     void resetFormatterImpl() override;
 
     void writeRow(const Chunk & chunk, size_t row_num);

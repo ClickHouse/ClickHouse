@@ -224,6 +224,16 @@ void IOutputFormat::completeDeferredStatistics()
     /// the deferred trailer reports the post-drain values.
     snapshotRowsBeforeCounters();
 
+    /// The drain can also deliver late Progress packets. For formats that stream progress
+    /// (e.g. JSONEachRowWithProgress) the progress rows are the only place where the reading
+    /// statistics appear, and direct writes from onProgress are blocked once phase 1 has marked
+    /// the format finalized, so write the pending update here, before the trailer.
+    if (has_progress_update_to_write)
+    {
+        writeProgress(statistics.progress);
+        has_progress_update_to_write = false;
+    }
+
     writeDeferredStatisticsAndFinalize();
     if (auto_flush)
         flushImpl();

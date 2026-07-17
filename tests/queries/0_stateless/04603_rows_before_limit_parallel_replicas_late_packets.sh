@@ -82,6 +82,54 @@ function check_field_xml()
     fi
 }
 
+# The JSON*EachRowWithProgress trailer rows have no space after the colon.
+function check_field_compact()
+{
+    local label=$1
+    local field=$2
+    local expected=$3
+    local output=$4
+    local value
+    value=$(echo "$output" | grep -o "\"${field}\":[0-9]*" | grep -o '[0-9]*')
+    if [ "$value" = "$expected" ]; then
+        echo "${label} ${field} OK"
+    else
+        echo "${label} ${field} FAIL: ${value} (expected ${expected})"
+    fi
+}
+
+# In the WithProgress formats the progress rows are the only place where the reading
+# statistics appear, so the last progress row must carry the post-drain read_rows.
+function check_last_progress_read_rows()
+{
+    local label=$1
+    local expected=$2
+    local output=$3
+    local value
+    value=$(echo "$output" | grep '"progress"' | tail -1 | grep -o '"read_rows":"[0-9]*"' | grep -o '[0-9]*')
+    if [ "$value" = "$expected" ]; then
+        echo "${label} last progress read_rows OK"
+    else
+        echo "${label} last progress read_rows FAIL: ${value} (expected ${expected})"
+    fi
+}
+
+# The Template trailer parts are printed as name=value by the format string below.
+function check_template_field()
+{
+    local label=$1
+    local field=$2
+    local expected=$3
+    local output=$4
+    local value
+    value=$(echo "$output" | grep -o "${field}=[0-9]*" | grep -o '[0-9]*')
+    if [ "$value" = "$expected" ]; then
+        echo "${label} ${field} OK"
+    else
+        echo "${label} ${field} FAIL: ${value} (expected ${expected})"
+    fi
+}
+
 # Make sure the global failpoint does not leak into subsequent tests even if this
 # test fails in the middle.
 trap '$CLICKHOUSE_CLIENT --query="SYSTEM DISABLE FAILPOINT tcp_handler_sleep_before_secondary_query_trailing_packets"' EXIT
@@ -132,5 +180,20 @@ check_field "remote JSONColumnsWithMetadata HTTP no-stats" "rows_before_limit_at
 
 OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT XML SETTINGS output_format_write_statistics=0")
 check_field_xml "remote XML HTTP no-stats" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+# --- Formats that print the whole trailer from finalizeImpl: JSONEachRowWithProgress /
+# JSONCompactEachRowWithProgress (rows_before_limit_at_least row and the final progress row)
+# and Template (${rows_before_limit}, ${rows_read}). Their trailer must also be deferred
+# until after the drain.
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSONEachRowWithProgress")
+check_field_compact "remote JSONEachRowWithProgress HTTP" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+check_last_progress_read_rows "remote JSONEachRowWithProgress HTTP" "$EXPECTED_ROWS_READ" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSONCompactEachRowWithProgress")
+check_field_compact "remote JSONCompactEachRowWithProgress HTTP" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT Template SETTINGS format_template_row_format='\${number:Escaped}', format_template_resultset_format='\${data}\nrows_before_limit=\${rows_before_limit:Escaped}\nrows_read=\${rows_read:Escaped}\n'")
+check_template_field "remote Template HTTP" "rows_before_limit" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+check_template_field "remote Template HTTP" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS ${TABLE_NAME}"

@@ -141,6 +141,22 @@ void TemplateBlockOutputFormat::writePrefix()
 
 void TemplateBlockOutputFormat::finalizeImpl()
 {
+    /// The whole resultset trailer after ${data} is deferred to phase 2
+    /// (writeDeferredStatisticsAndFinalize): it can reference ${rows_before_limit},
+    /// ${rows_before_aggregation}, ${rows_read} and ${bytes_read}, which are updated by
+    /// late ProfileInfo/Progress packets delivered during the connection drain between
+    /// the phases.
+}
+
+bool TemplateBlockOutputFormat::hasDeferredStatistics() const
+{
+    /// This format has no exception path, so there is nothing that would force
+    /// single-phase output.
+    return true;
+}
+
+void TemplateBlockOutputFormat::writeDeferredStatisticsAndFinalize()
+{
     size_t parts = format.format_idx_to_column_idx.size();
     for (size_t i = 0; i < parts; ++i)
     {
