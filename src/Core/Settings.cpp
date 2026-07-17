@@ -48,7 +48,6 @@ constexpr UInt64 default_distributed_cache_send_timeout_ms = DistributedCache::D
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache::DEFAULT_RECEIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
 constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
 constexpr UInt64 default_distributed_cache_data_packet_ack_window = DistributedCache::ACK_DATA_PACKET_WINDOW;
 #else
@@ -63,7 +62,6 @@ constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = 10lu;
 constexpr UInt64 default_distributed_cache_data_packet_ack_window = 5lu;
 #endif
@@ -2399,6 +2397,16 @@ Sets the level of data compression in the response to an HTTP request if [enable
 
 Possible values: Numbers from 1 to 12. Levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels 1 to 9.
 )", 0) \
+    DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
+Controls the wire format used for snappy compression for generic file I/O paths such as `file` and `url`. HTTP `Content-Encoding: snappy` always uses the framing format and ignores this setting.
+
+Note that the raw snappy block format produced by a single `snappy::Compress` call (for example, the Prometheus remote protocol payloads handled by `SnappyBasicReadBuffer`) is a separate, protocol-specific wire format and is not controlled by this setting.
+
+Possible values:
+
+- `basic` — Hadoop snappy block format. Compatible with files read and written by Hadoop. Supports both reading and writing.
+- `framed` — Snappy framing format, the standard streaming format defined by Google. Supports both reading and writing.
+)", 0) \
     \
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
@@ -2633,6 +2641,12 @@ If the destination table contains at least that many active parts in a single pa
 )", 0) \
     DECLARE(UInt64, parts_to_throw_insert, 0, R"(
 If more than this number active parts in a single partition of the destination table, throw 'Too many parts ...' exception.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_delay_insert, 0, R"(
+If the dead blobs queues of the destination table's disks contain at least that many blobs pending removal, artificially slow down insert into table. 0 - use the table setting.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_throw_insert, 0, R"(
+If the dead blobs queues of the destination table's disks contain more than this number of blobs pending removal, throw 'Too many dead blobs ...' exception. 0 - use the table setting.
 )", 0) \
     DECLARE(UInt64, number_of_mutations_to_delay, 0, R"(
 If the mutated table contains at least that many unfinished mutations, artificially slow down mutations of table. 0 - disabled
@@ -6712,7 +6726,7 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
@@ -7169,9 +7183,6 @@ Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed c
 )", 0) \
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
 Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
-)", 0) \
-    DECLARE(Bool, distributed_cache_use_clients_cache_for_write, default_distributed_cache_use_clients_cache_for_write, R"(
-Only has an effect in ClickHouse Cloud. Use clients cache for write requests.
 )", 0) \
     DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
 Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
@@ -8607,6 +8618,7 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
