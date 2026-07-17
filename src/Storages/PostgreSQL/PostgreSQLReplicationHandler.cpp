@@ -393,6 +393,27 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     if (!schema_list.empty() && !postgres_schema.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and common schema at the same time");
 
+    /// A user-provided `materialized_postgresql_replication_slot` pins the replication slot to a single, fixed
+    /// name, whereas `materialized_postgresql_use_unique_replication_consumer_identifier` exists to make the
+    /// replication slot and publication unique per server so that an `ON CLUSTER` deployment works: every
+    /// replica receives the same settings (hence the same user-managed slot name) and would otherwise fight
+    /// over one logical PostgreSQL replication slot (see https://github.com/ClickHouse/ClickHouse/issues/58726).
+    /// The generated publication can be made per-server, but a user-managed slot cannot, so the two settings
+    /// contradict each other: all but one replica would remain unable to replicate. Reject the combination
+    /// instead of silently leaving the deployment half-broken. Only on `CREATE`, not `ATTACH`, so that an
+    /// already-created single-server deployment that happens to set both keeps starting up after an upgrade.
+    if (!is_attach && user_managed_slot && use_unique_replication_consumer_identifier)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use a user-managed replication slot (`materialized_postgresql_replication_slot`) together "
+            "with `materialized_postgresql_use_unique_replication_consumer_identifier`: the latter makes the "
+            "replication slot and publication unique per server so that `ON CLUSTER` replicas do not collide, "
+            "but a user-managed slot has one fixed name shared by every replica and cannot be made per-server, "
+            "so all but one replica would fail to replicate. Either remove "
+            "`materialized_postgresql_replication_slot` to let each server derive its own unique slot, or "
+            "disable `materialized_postgresql_use_unique_replication_consumer_identifier` if a single shared, "
+            "user-managed slot is intended.");
+
     checkReplicationSlot(replication_slot);
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));

@@ -9,6 +9,7 @@ from helpers.postgres_utility import (
     check_tables_are_synchronized,
     get_postgres_conn,
 )
+from helpers.test_tools import assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -134,6 +135,48 @@ def test_on_cluster_unique_replication_consumer(started_cluster):
         time.sleep(1)
     assert 0 == count_replication_slots()
     assert 0 == count_publications()
+
+
+def test_on_cluster_user_managed_slot_rejected(started_cluster):
+    # A user-managed replication slot (`materialized_postgresql_replication_slot`) has a single fixed name that
+    # every `ON CLUSTER` replica shares, so it cannot be made unique per server. Combining it with
+    # `materialized_postgresql_use_unique_replication_consumer_identifier` (whose whole purpose is per-server
+    # uniqueness for `ON CLUSTER`) is contradictory: all but one replica would fight over the single
+    # user-managed slot and fail to replicate, exactly the failure that setting exists to prevent (see
+    # https://github.com/ClickHouse/ClickHouse/issues/58726). The engine must reject the combination instead
+    # of silently leaving the deployment half-broken, and must not create any slot or publication.
+    table = "test_user_managed_slot_table"
+    pg_manager.create_postgres_table(table)
+
+    slots_before = count_replication_slots()
+    publications_before = count_publications()
+
+    node1.query(
+        f"""
+        CREATE DATABASE test_rejected_database ON CLUSTER test_cluster
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_tables_list = '{table}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_replication_slot = 'user_managed_slot',
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """
+    )
+
+    # Replication startup fails closed on every replica with a clear error explaining the contradiction. The
+    # exception is raised while constructing the replication handler, before any slot or publication is created.
+    for node in (node1, node2):
+        assert_logs_contain_with_retry(
+            node, "Cannot use a user-managed replication slot"
+        )
+
+    # No slot or publication was created on either replica: the contradiction is rejected, not half-applied.
+    assert slots_before == count_replication_slots()
+    assert publications_before == count_publications()
+
+    node1.query("DROP DATABASE test_rejected_database ON CLUSTER test_cluster SYNC")
 
 
 def test_upgrade_adopts_presalt_identity(started_cluster):
