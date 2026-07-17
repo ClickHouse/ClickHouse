@@ -2111,7 +2111,13 @@ Block HashJoin::ReleasedJoinedBlocks::next()
     for (size_t i = 0; i < positions.size(); ++i)
     {
         auto column = sample_block.getByPosition(positions[i]);
-        column.column = std::move(stored.columns[positions[i]]);
+        /// Copy (not move) the stored column: `positions` can reference the same stored column more
+        /// than once when the right-hand side has several columns with the same name (aliases), so a
+        /// single stored position may feed multiple output columns. Moving would leave the second and
+        /// later references with a null column and crash downstream in `materializeBlock`. The stored
+        /// source is still freed promptly because `stored` is destroyed when this method returns, so
+        /// the peak memory overhead stays at one block.
+        column.column = stored.columns[positions[i]];
         correctNullabilityInplace(column, is_nullable[i]);
         restored_block.insert(std::move(column));
     }
