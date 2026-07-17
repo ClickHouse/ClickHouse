@@ -46,17 +46,17 @@ enum class TextIndexDirectReadMode : uint8_t
 struct TokenValueMatcher
 {
     /// If set, the decoded key must equal this exactly (nullopt = any key).
-    std::optional<String> key;
+    std::optional<String> key = std::nullopt;
     /// If set, the decoded key must match this pattern (for mapContainsKeyLike).
-    std::shared_ptr<OptimizedRegularExpression> key_pattern;
+    std::shared_ptr<OptimizedRegularExpression> key_pattern = nullptr;
     /// If set, the decoded value must equal this exactly.
-    std::optional<String> value;
+    std::optional<String> value = std::nullopt;
     /// If set, the decoded value must start with this (for startsWith).
-    std::optional<String> value_prefix;
+    std::optional<String> value_prefix = std::nullopt;
     /// If set, the decoded value must end with this (for endsWith).
-    std::optional<String> value_suffix;
+    std::optional<String> value_suffix = std::nullopt;
     /// If set, the decoded value must match this pattern (for LIKE-style search).
-    std::shared_ptr<OptimizedRegularExpression> value_pattern;
+    std::shared_ptr<OptimizedRegularExpression> value_pattern = nullptr;
 
     bool match(std::string_view token_key, std::string_view token_value) const;
 };
