@@ -1638,6 +1638,16 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         });
 }
 
+void MergeTreeIndexTextGranuleBuilder::addTransientDocument(std::string_view document)
+{
+    /// `document` is not backed by padded column memory (unlike tokenizer input read from a column),
+    /// so the token views produced from it would not survive StringHashTable::dispatch, which reads a
+    /// full 8-byte machine word around each key and can over-read a transient (e.g. stack) buffer.
+    /// Persist the document into the arena first — the same padded storage all keys are persisted to.
+    std::string_view arena_document{arena->insert(document.data(), document.size()), document.size()};
+    addDocument(arena_document);
+}
+
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
     bool inserted = false;
@@ -1786,7 +1796,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
                 std::string_view key = keys.getDataAt(j);
                 std::string_view value = values.getDataAt(j);
                 String token = encodeMapKeyValueToken(key, value);
-                granule_builder.addDocument(token);
+                granule_builder.addTransientDocument(token);
             }
             granule_builder.incrementCurrentRow();
         }
