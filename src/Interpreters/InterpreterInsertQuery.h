@@ -66,6 +66,22 @@ public:
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
+    /// Convert a SELECT pipeline to the destination insert schema (type cast plus the
+    /// insert_null_as_default widening), without attaching the write sink. Shared by
+    /// addInsertToSelectPipeline and the async INSERT ... SELECT FROM input() path.
+    /// Returns the resulting insert sample block.
+    static Block convertSelectToInsertSchema(
+        QueryPipelineBuilder & pipeline,
+        const ASTInsertQuery & query,
+        const StoragePtr & table,
+        const ContextPtr & context_,
+        bool no_destination,
+        bool allow_materialized);
+
+    /// True if the SELECT is stably ordered (ORDER BY ALL), used to decide whether
+    /// INSERT ... SELECT deduplication is safe.
+    static bool queryHasOrderByAll(const ASTPtr & select);
+
 private:
     static Block getSampleBlock(
         const Names & names,

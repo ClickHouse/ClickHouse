@@ -375,27 +375,21 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
 }
 
 
-QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
+Block InterpreterInsertQuery::convertSelectToInsertSchema(
+    QueryPipelineBuilder & pipeline,
+    const ASTInsertQuery & query,
+    const StoragePtr & table,
+    const ContextPtr & context_,
+    bool no_destination,
+    bool allow_materialized)
 {
-    auto context = getContext();
-
-    // disable parallel replicas for inserts if enabled
-    // the insert can trigger update for dependent materialized views
-    // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
-    {
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSetting("enable_parallel_replicas", Field{0});
-        context = mutable_context;
-    }
-
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context_, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-    if (context->getSettingsRef()[Setting::insert_null_as_default])
+    if (context_->getSettingsRef()[Setting::insert_null_as_default])
     {
         const auto & input_columns = pipeline.getHeader().getColumnsWithTypeAndName();
         const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
@@ -428,13 +422,32 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
-            context);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::yes));
+            context_);
+    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context_, CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
+
+    return query_sample_block;
+}
+
+QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
+{
+    auto context = getContext();
+
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    auto query_sample_block = convertSelectToInsertSchema(pipeline, query, table, context, no_destination, allow_materialized);
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
@@ -599,7 +612,7 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
-static bool queryHasOrderByAll(const ASTPtr & select)
+bool InterpreterInsertQuery::queryHasOrderByAll(const ASTPtr & select)
 {
     if (auto * select_query = select->as<ASTSelectQuery>())
     {
