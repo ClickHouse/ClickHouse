@@ -37,7 +37,7 @@ public:
 private:
     Chunk read() override;
 
-    FormatSettings format_settings;
+    bool seekable_read = true;
     PuffinFooter footer;
     bool initialized = false;
     size_t blob_index = 0;
@@ -55,7 +55,7 @@ public:
 private:
     Chunk read() override;
 
-    FormatSettings format_settings;
+    bool seekable_read = true;
     PuffinFooter footer;
     bool initialized = false;
     size_t blob_index = 0;

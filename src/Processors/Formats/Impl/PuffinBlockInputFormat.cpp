@@ -52,6 +52,8 @@ constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
 constexpr size_t PUFFIN_DV_MAX_EXPAND_RATIO = 255;
 constexpr UInt64 PUFFIN_DV_MAX_POSITIONS = 100'000'000;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
+/// Matches Iceberg `RoaringPositionBitmap.MAX_POSITION` / iceberg-cpp `kMaxPosition`.
+/// Key INT32_MAX is unsupported: the reference bitmap array length is a signed Int32.
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
 
@@ -696,7 +698,7 @@ void checkPuffinHeader(const Block & header)
 
 PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &buf)
-    , format_settings(format_settings_)
+    , seekable_read(format_settings_.seekable_read)
 {
     checkPuffinMetadataHeader(getPort().getHeader());
 }
@@ -706,8 +708,8 @@ Chunk PuffinMetadataInputFormat::read()
     if (!initialized)
     {
         blob_index = 0;
+        footer = readPuffinFooter(*in, seekable_read);
         initialized = true;
-        footer = readPuffinFooter(*in, format_settings.seekable_read);
     }
     if (footer.blobs.size() <= blob_index)
         return {};
@@ -770,7 +772,7 @@ Chunk PuffinMetadataInputFormat::read()
 
 PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &buf)
-    , format_settings(format_settings_)
+    , seekable_read(format_settings_.seekable_read)
 {
     checkPuffinHeader(getPort().getHeader());
 }
@@ -780,8 +782,8 @@ Chunk PuffinInputFormat::read()
     if (!initialized)
     {
         blob_index = 0;
+        footer = readPuffinFooter(*in, seekable_read);
         initialized = true;
-        footer = readPuffinFooter(*in, format_settings.seekable_read);
     }
 
     while (blob_index < footer.blobs.size())
@@ -801,7 +803,7 @@ Chunk PuffinInputFormat::read()
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
-        const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, format_settings.seekable_read);
+        const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, seekable_read);
         auto col_rows_data = ColumnUInt64::create();
         deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
