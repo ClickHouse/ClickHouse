@@ -297,6 +297,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 if (auto date_type = tryInferDateOrDateTimeFromString(data, format_settings))
                     return date_type;
 
+                if (auto ip_type = tryInferIPv4OrIPv6FromString(data, format_settings))
+                    return ip_type;
+
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
@@ -318,6 +321,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
+            if (auto ip_type = tryInferIPv4OrIPv6FromString(field, format_settings))
+                return ip_type;
+
             return std::make_shared<DataTypeString>();
         }
         case FormatSettings::EscapingRule::Raw: [[fallthrough]];
@@ -337,6 +343,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
+
+            if (auto ip_type = tryInferIPv4OrIPv6FromString(field, format_settings))
+                return ip_type;
 
             /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
             /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it

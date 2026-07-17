@@ -95,3 +95,41 @@ INSERT INTO t FORMAT JSONEachRow {"ip": "192.168.1.1"};
 SELECT dynamicType(json.ip) FROM t;
 SET input_format_try_infer_ipv6 = 0;
 DROP TABLE t;
+
+-- 9. JSON dynamic path: first IP string on a new dynamic path should create IPv4 variant
+SELECT '9. Dynamic path IPv4 inference';
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+SET input_format_try_infer_ipv4 = 1;
+INSERT INTO t FORMAT JSONEachRow {"ip": "192.168.1.1"};
+SELECT dynamicType(json.ip), json.ip FROM t;
+SET input_format_try_infer_ipv4 = 0;
+DROP TABLE t;
+
+-- 10. JSON dynamic path: nested array of IP strings through shared-data fallback should become Array(IPv4)
+SELECT '10. Dynamic path Array(IPv4) inference';
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory;
+SET input_format_try_infer_ipv4 = 1;
+INSERT INTO t FORMAT JSONEachRow {"ips": ["192.168.1.1", "10.0.0.1"]};
+SELECT dynamicType(json.ips), json.ips FROM t;
+SET input_format_try_infer_ipv4 = 0;
+DROP TABLE t;
+
+-- 11. CSV IPv4 inference (unquoted field)
+SELECT '11. CSV IPv4 inference';
+SET input_format_try_infer_ipv4 = 1;
+desc format(CSV, '192.168.1.1\n');
+SET input_format_try_infer_ipv4 = 0;
+
+-- 12. CSV IPv6 inference (unquoted field)
+SELECT '12. CSV IPv6 inference';
+SET input_format_try_infer_ipv6 = 1;
+desc format(CSV, '2001:db8::1\n');
+SET input_format_try_infer_ipv6 = 0;
+
+-- 13. TSV IPv4 inference
+SELECT '13. TSV IPv4 inference';
+SET input_format_try_infer_ipv4 = 1;
+desc format(TSV, '192.168.1.1\n');
+SET input_format_try_infer_ipv4 = 0;

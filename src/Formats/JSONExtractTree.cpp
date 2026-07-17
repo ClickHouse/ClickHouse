@@ -1750,6 +1750,9 @@ private:
                 if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
                     return type;
 
+                if (auto type = tryInferIPv4OrIPv6FromString(data, format_settings))
+                    return type;
+
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
