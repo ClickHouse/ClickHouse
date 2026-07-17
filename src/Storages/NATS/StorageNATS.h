@@ -119,6 +119,13 @@ private:
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
+    /// Snapshot of `consumers_connection->getReconnectCount()` taken after the
+    /// most recent successful subscribe. When the live count differs, the
+    /// streaming loop calls `resubscribeConsumersOnReconnect` to re-establish
+    /// JetStream subscriptions. Accessed only from the streaming task thread,
+    /// so no atomic is needed.
+    uint64_t last_seen_reconnect_count = 0;
+
     INATSConsumerPtr createConsumer();
     INATSProducerPtr createProducer(String subject);
 
@@ -133,6 +140,10 @@ private:
 
     bool subscribeConsumers();
     void unsubscribeConsumers();
+    /// Re-subscribe only those consumers that need re-subscription after a
+    /// NATS reconnect (currently: JetStream pull consumers). Plain core
+    /// subscriptions are auto-restored by libnats and are skipped.
+    bool resubscribeConsumersOnReconnect();
 
     void stopEventLoop();
 
