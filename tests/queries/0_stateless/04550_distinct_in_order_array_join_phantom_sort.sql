@@ -11,8 +11,8 @@
 -- data. The correlated scalar subquery below is decorrelated into exactly this
 -- shape (ORDER BY over an arrayJoin-derived column, re-array-joined above).
 
--- enable_analyzer = 1: the correlated scalar subquery is a new-analyzer-only feature;
--- the old analyzer rejects it with UNKNOWN_IDENTIFIER before this shape can form.
+-- enable_analyzer = 1: correlated scalar subqueries require the analyzer;
+-- the old analyzer rejects this shape with UNKNOWN_IDENTIFIER before it can form.
 SELECT DISTINCT s
 FROM
 (
