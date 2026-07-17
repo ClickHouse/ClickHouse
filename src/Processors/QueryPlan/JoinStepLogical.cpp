@@ -1478,7 +1478,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
 /// join-order output-cardinality cap, and is ANDed across the equi-key min. Anything else - composite or
 /// expression keys, filtered or derived/joined inputs, sources without `uniq` statistics, or a value the
 /// optimizer transformed away from a pure `uniq` count - yields nullopt and falls back to the deferred
-/// HLL-sized build.
+/// HLL-sized build. The returned count reflects the base relation before any row-truncating step
+/// (`LimitStep`, `SortingStep` with a limit), so the caller clamps it to `right_rows_estimation`.
 static std::optional<UInt64> extractTrustworthyRightKeyNdv(const JoinStepLogical & join_step)
 {
     const auto & column_stats = join_step.getRightInputColumnStats();
@@ -1551,7 +1552,15 @@ void JoinStepLogical::buildPhysicalJoin(
         if (join_step->right_rows_estimation)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
 
-        join_step->join_algorithm_params->trustworthy_rhs_key_ndv = extractTrustworthyRightKeyNdv(*join_step);
+        /// Clamp the distinct-key estimate to the row estimate: distinct keys can never exceed the row
+        /// count, so the clamp is always sound and keeps the hint consistent with `rhs_size_estimation`.
+        /// It matters because the column statistics survive row-truncating steps (`LimitStep`,
+        /// `SortingStep` with a limit) that cap `right_rows_estimation` only: without the clamp a
+        /// LIMIT-ed build side would preallocate the maps to the full-relation `uniq` count.
+        auto ndv = extractTrustworthyRightKeyNdv(*join_step);
+        if (ndv && join_step->right_rows_estimation)
+            ndv = std::min(*ndv, *join_step->right_rows_estimation);
+        join_step->join_algorithm_params->trustworthy_rhs_key_ndv = ndv;
 
         if (hash_table_key_hash)
         {
