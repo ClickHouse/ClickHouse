@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <string_view>
 
 namespace DB
 {
@@ -146,7 +147,14 @@ namespace DB
             /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
             /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
             /// through the "year omitted" fallback.
-            if (valid_until_str.starts_with("0000") && (valid_until_str.size() == 4 || !isNumericASCII(valid_until_str[4])))
+            /// `parseDateTimeBestEffort` skips leading spaces before it reads the year field (see the
+            /// space handling in `parseDateTimeBestEffortImpl`), so the check must skip them too;
+            /// otherwise `VALID UNTIL ' 0000-01-01 00:00:00 UTC'` would slip past it and still reach the
+            /// "year omitted" fallback.
+            std::string_view year_field = valid_until_str;
+            while (year_field.starts_with(' '))
+                year_field.remove_prefix(1);
+            if (year_field.starts_with("0000") && (year_field.size() == 4 || !isNumericASCII(year_field[4])))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
@@ -169,6 +177,18 @@ namespace DB
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
+
+        /// Symmetrically, a deadline after the latest `DateLUT`-representable instant would be displayed
+        /// clamped to `9999-12-31 23:59:59` by `SHOW CREATE USER` / `AuthenticationData::toAST` while the
+        /// authentication check keeps enforcing the larger stored value, so the credential would outlive
+        /// the shown deadline. This is reachable through an explicit time-zone offset that crosses the
+        /// year-9999 boundary, e.g. `VALID UNTIL '9999-12-31 23:59:59 -01:00'`. Reject it rather than
+        /// silently clamp on display. (The `VALID FOR` path saturates at this same bound via
+        /// `toDateTime64`, so it never reaches this branch with a larger value.)
+        if (time > MAX_VALID_UNTIL_TIME)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "VALID UNTIL deadline is too far in the future, the latest supported deadline is 9999-12-31 23:59:59 UTC");
 
         /// A non-`infinity` deadline that parses to exactly the Unix epoch (`time == 0`) collides with the
         /// sentinel value `0`, which means "no expiration": `AuthenticationData::toAST` serializes the

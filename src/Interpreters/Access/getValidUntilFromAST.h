@@ -16,6 +16,14 @@ namespace DB
     /// after a restart or replication round-trip than the one that was originally specified.
     constexpr time_t MIN_VALID_UNTIL_TIME = -2208988800; /// 1900-01-01 00:00:00 UTC
 
+    /// The upper bound is the latest instant `DateLUT` can represent and format. Accepting a deadline
+    /// beyond it would make `SHOW CREATE USER` / `AuthenticationData::toAST` display a clamped
+    /// (`9999-12-31 23:59:59`) deadline that is earlier than the one the authentication check actually
+    /// enforces, so the credential would stay valid longer than shown. This is reachable with an explicit
+    /// time-zone offset that pushes an otherwise in-range date past the ceiling, e.g.
+    /// `VALID UNTIL '9999-12-31 23:59:59 -01:00'`.
+    constexpr time_t MAX_VALID_UNTIL_TIME = 253402300799; /// 9999-12-31 23:59:59 UTC
+
     /// Returns the current wall-clock time in seconds. When resolving `VALID FOR <interval>`, sample it
     /// once per `CREATE`/`ALTER USER` statement and pass it to every `getValidUntilFromAST` call, so that
     /// all `VALID FOR` clauses in the same query resolve against the same reference point, instead of each

@@ -171,3 +171,52 @@ TEST(ValidUntilAttachEncoding, HandEditedNumericEpochZeroIsNotConfusedWithNoExpi
         EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1) << definition;
     }
 }
+
+TEST(ValidUntilAttachEncoding, HandEditedSpacedYearZeroFailsToLoad)
+{
+    /// `parseDateTimeBestEffort` skips leading spaces before it decides whether the year field was
+    /// specified, so a hand-edited definition with a leading space in front of an explicit year `0000`
+    /// must be rejected the same way the space-free form is - otherwise best-effort parsing would
+    /// substitute the current year and load a deadline the definition never asked for.
+    for (const char * definition :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL ' 0000-01-01 00:00:00 UTC';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '   0000-01-01 00:00:00 UTC';"})
+    {
+        try
+        {
+            deserializeAccessEntity(definition);
+            FAIL() << "expected the deadline to be rejected: " << definition;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("too far in the past")) << e.message();
+        }
+    }
+}
+
+TEST(ValidUntilAttachEncoding, HandEditedDeadlineBeyondMaxFailsToLoad)
+{
+    /// A deadline after the latest `DateLUT`-representable instant would be displayed clamped to
+    /// `9999-12-31 23:59:59` by `SHOW CREATE USER` / `AuthenticationData::toAST` while the authentication
+    /// check keeps enforcing the larger stored value, so the credential would outlive the shown deadline.
+    /// This is reachable with an explicit time-zone offset that crosses the year-9999 boundary, and must
+    /// fail to load rather than silently clamp on display. (A literal year past `9999` is rejected earlier,
+    /// by the date-time parser itself, so it is not covered here.)
+    const char * definition = "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 23:59:59 -01:00';";
+    try
+    {
+        deserializeAccessEntity(definition);
+        FAIL() << "expected the deadline to be rejected: " << definition;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_TRUE(e.message().contains("too far in the future")) << e.message();
+    }
+
+    /// The latest representable deadline itself still loads, exactly.
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 23:59:59 UTC';");
+    const auto * user = typeid_cast<const User *>(entity.get());
+    ASSERT_NE(user, nullptr);
+    ASSERT_EQ(user->authentication_methods.size(), 1u);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402300799);
+}
