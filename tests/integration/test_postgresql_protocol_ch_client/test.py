@@ -160,9 +160,10 @@ def test_map_and_tuple_columns_are_not_advertised_as_arrays(started_cluster):
         f"FROM {pg_source('default', 'test_nested_containers')} LIMIT 1"
     ) == "String\tString\tArray(Int32)\n"
 
+    # The single quotes inside the `String` value are backslash-escaped by the TSV output format.
     assert node.query(
         f"SELECT id, m, t, arr FROM {pg_source('default', 'test_nested_containers')} ORDER BY id"
-    ) == "1\t{'k':[1,2]}\t([3,4])\t[5,6]\n"
+    ) == "1\t{\\'k\\':[1,2]}\t([3,4])\t[5,6]\n"
 
 
 def test_wire_types_for_wide_and_decimal(started_cluster):
