@@ -352,12 +352,18 @@ DROP TABLE dist_over_tf;
 -- holding decoy tables of the same name, over both the local fast path and the serialized shard query
 -- (`prefer_localhost_replica = 0`), with both analyzers. The DETACH/ATTACH round-trip from the other database
 -- checks that re-running the normalization on the already-qualified persisted form is a no-op.
+-- The binding also walks the target recursively, so a table function nested inside a subquery (or inside
+-- another table function's argument) is bound too, not only the outermost target: `dist_over_tf_nested`
+-- persists `merge('default', '^bind_src$')` inside the scalar subquery, so it keeps reading the creating
+-- database from any session (analyzer only, as the legacy path cannot evaluate the scalar subquery).
 CREATE TABLE bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO bind_src VALUES (1), (2), (3);
 CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, merge(currentDatabase(), '^bind_src$'));
 CREATE TABLE dist_over_tf_subq ENGINE = Distributed(test_shard_localhost, numbers(assumeNotNull((SELECT count() FROM bind_src))));
+CREATE TABLE dist_over_tf_nested ENGINE = Distributed(test_shard_localhost, numbers(assumeNotNull((SELECT count() FROM merge('^bind_src$')))));
 SHOW CREATE TABLE dist_over_tf;
 SHOW CREATE TABLE dist_over_tf_subq;
+SHOW CREATE TABLE dist_over_tf_nested;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
@@ -370,11 +376,15 @@ SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable
 -- (analyzer only: evaluating a scalar subquery in a table function argument at read time is a pre-existing
 -- limitation of the legacy path, and without `assumeNotNull` of both paths - `cluster()` fails the same way)
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf_subq SETTINGS enable_analyzer = 1;
+-- The nested `merge('^bind_src$')` is bound to the creating database, so it reads the 3 rows there, not the
+-- 5 rows of the decoy `bind_src` in the current (querying) database.
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf_nested SETTINGS enable_analyzer = 1;
 DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
 ATTACH TABLE {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
 SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf;
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP TABLE dist_over_tf_subq;
+DROP TABLE dist_over_tf_nested;
 DROP TABLE dist_over_tf;
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.bind_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

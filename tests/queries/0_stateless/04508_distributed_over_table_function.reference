@@ -40,10 +40,12 @@ arr	Array(UInt64)
 y	String
 CREATE TABLE default.dist_over_tf\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', merge(\'default\', \'^bind_src$\'))
 CREATE TABLE default.dist_over_tf_subq\n(\n    `number` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(assumeNotNull((\n    SELECT count()\n    FROM default.bind_src\n))))
+CREATE TABLE default.dist_over_tf_nested\n(\n    `number` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(assumeNotNull((\n    SELECT count()\n    FROM merge(\'default\', \'^bind_src$\')\n))))
 6
 6
 6
 6
+3
 3
 6
 CREATE TABLE default.dist_over_tf\n(\n    `key` UInt64,\n    `val` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', dictionary(\'default.dict_src\'))

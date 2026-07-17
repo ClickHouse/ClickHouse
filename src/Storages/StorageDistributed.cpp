@@ -2343,17 +2343,13 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
     }
     else if (function_name == "loop")
     {
-        /// loop([db.]table); loop(inner_table_function(...)) runs the inner function in the same local
-        /// context, so it is bound recursively. The string form loop('table') is rejected by the
-        /// function itself, so an unqualified name can only be an identifier here.
+        /// loop([db.]table). The string form loop('table') is rejected by the function itself, so an
+        /// unqualified name can only be an identifier here. The `loop(inner_table_function(...))` form needs
+        /// no special handling: the inner table function is reached by the recursive walk in
+        /// `bindTableFunctionTargetsToCurrentDatabase` and bound like any other nested target.
         if (args.size() != 1)
             return;
-        if (const auto * inner_function = args.at(0)->as<ASTFunction>())
-        {
-            if (TableFunctionFactory::instance().isTableFunctionName(inner_function->name))
-                bindTableFunctionTargetToCurrentDatabase(*inner_function, local_context);
-        }
-        else if (const auto * identifier = args.at(0)->as<ASTIdentifier>())
+        if (const auto * identifier = args.at(0)->as<ASTIdentifier>())
         {
             auto table_identifier = identifier->createTable();
             if (!table_identifier || !table_identifier->getDatabaseName().empty())
@@ -2362,6 +2358,22 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
             args.insert(args.begin(), make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
         }
     }
+}
+
+/// Recursively binds every table function used as a data source in a persisted `Distributed` target to the
+/// current database: the target table function itself, and any table function nested inside a subquery or
+/// inside another table function's argument (for example the `merge('^t$')` in
+/// `numbers(assumeNotNull((SELECT count() FROM merge('^t$'))))`, or the inner function of `loop(tf(...))`).
+/// Without this, a nested table function would resolve an omitted database against the current database of
+/// whatever session later queries the table, not against the database of the `CREATE`.
+void bindTableFunctionTargetsToCurrentDatabase(const ASTPtr & ast, const ContextPtr & local_context)
+{
+    if (const auto * function = ast->as<ASTFunction>();
+        function && TableFunctionFactory::instance().isTableFunctionName(function->name))
+        bindTableFunctionTargetToCurrentDatabase(*function, local_context);
+
+    for (const auto & child : ast->children)
+        bindTableFunctionTargetsToCurrentDatabase(child, local_context);
 }
 
 }
@@ -2456,11 +2468,13 @@ void registerStorageDistributed(StorageFactory & factory)
                 add_default_database_visitor.visit(engine_args[1]);
                 add_default_database_visitor.visitDDL(engine_args[1]);
 
-                /// `AddDefaultDatabaseVisitor` above does not rewrite the arguments of the table function
+                /// `AddDefaultDatabaseVisitor` above does not rewrite the arguments of a table function
                 /// itself; bind a database argument the function would otherwise resolve against the
                 /// current database of the querying session (`dictionary('d')`, `timeSeriesMetrics('ts')`,
                 /// `loop(t)`, the single-argument `merge('^regexp$')`, ...) to the current database too.
-                bindTableFunctionTargetToCurrentDatabase(*table_function_ast, local_context);
+                /// This walks the whole target recursively, so a table function nested inside a subquery or
+                /// another table function's argument is bound as well, not only the outermost target.
+                bindTableFunctionTargetsToCurrentDatabase(engine_args[1], local_context);
 
                 auto table_function = TableFunctionFactory::instance().get(engine_args[1], local_context);
                 if (!table_function->canBeUsedToCreateTable())
