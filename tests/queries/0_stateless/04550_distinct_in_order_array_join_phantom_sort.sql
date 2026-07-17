@@ -11,6 +11,8 @@
 -- data. The correlated scalar subquery below is decorrelated into exactly this
 -- shape (ORDER BY over an arrayJoin-derived column, re-array-joined above).
 
+-- enable_analyzer = 1: the correlated scalar subquery is a new-analyzer-only feature;
+-- the old analyzer rejects it with UNKNOWN_IDENTIFIER before this shape can form.
 SELECT DISTINCT s
 FROM
 (
@@ -18,7 +20,7 @@ FROM
     WHERE isNotNull((SELECT DISTINCT s FROM (SELECT toFixedString(NULL, 16) ORDER BY s ASC NULLS LAST) LIMIT 1 SETTINGS optimize_distinct_in_order = 1))
 )
 ORDER BY s
-SETTINGS optimize_distinct_in_order = 1;
+SETTINGS optimize_distinct_in_order = 1, enable_analyzer = 1;
 
 -- The scan over the DAG outputs must skip (not abort on) the unsupported ARRAY JOIN output:
 -- an arrayJoin result listed before a preserved sorted key must not wipe the valid sort prefix
