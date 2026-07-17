@@ -1037,6 +1037,25 @@ void RemoteQueryExecutor::finish()
                     progress_callback(packet.progress);
                 break;
 
+            case Protocol::Server::Totals:
+                /// A replica may deliver its `Totals` block among the trailing packets drained here
+                /// rather than during the normal read (the same window the
+                /// `tcp_handler_sleep_before_secondary_query_trailing_packets` failpoint forces).
+                /// Store it exactly as `processPacket` does; otherwise `RemoteTotalsSource` would later
+                /// read an empty block and a `WITH TOTALS` query would silently lose its totals section.
+                totals = packet.block;
+                if (!totals.empty())
+                    totals = adaptBlockStructure(totals, *header);
+                break;
+
+            case Protocol::Server::Extremes:
+                /// Likewise for `Extremes` (`extremes = 1`), which would otherwise be dropped here and
+                /// leave `RemoteExtremesSource` with an empty block.
+                extremes = packet.block;
+                if (!extremes.empty())
+                    extremes = adaptBlockStructure(packet.block, *header);
+                break;
+
             default:
                 break;
         }
