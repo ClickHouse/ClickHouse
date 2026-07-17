@@ -3185,28 +3185,36 @@ def test_unique_identifier_adopts_own_publication_from_schema_list(started_clust
     # Companion to the test above and a regression for the same review of
     # https://github.com/ClickHouse/ClickHouse/pull/110493: the ownership check for the schema-blind
     # pre-salt publication must recognize this engine's schemas in EVERY mode, not only
-    # `materialized_postgresql_schema`. With `materialized_postgresql_schema_list` (and
-    # `materialized_postgresql_tables_list_with_schema`) the common-schema setting is empty while the engine
-    # still replicates non-default schemas, so the schema set is derived from the list. Before the fix such
-    # a deployment coerced its schema set to `"public"`, failed to recognize its own pre-salt publication on
-    # upgrade, and created a fresh salted publication instead — orphaning the old one and silently dropping
-    # every change written before the fresh publication existed. Here the own pre-salt publication exists and
-    # is correctly adopted, so the streamed rows arrive and nothing is orphaned.
-    schema_name = "list_schema"
+    # `materialized_postgresql_schema`. With `materialized_postgresql_schema_list` the common-schema setting
+    # is empty while the engine still replicates non-default schemas, so the schema set is derived from the
+    # list (see computeReplicatedSchemas). Before the fix such a deployment coerced its schema set to
+    # `"public"`, failed to recognize its own pre-salt publication on upgrade, and refused to start (fail
+    # closed) instead of adopting it. Here the own pre-salt publication exists and is correctly adopted, so
+    # the changes written before the restart stream in and nothing is orphaned.
+    #
+    # The schema list intentionally names more than one schema. A `materialized_postgresql_schema_list` with a
+    # single non-default schema is a separate, pre-existing limitation: PostgreSQL table names are
+    # schema-qualified in the nested database and in the publication only when the list names more than one
+    # schema (see fetchPostgreSQLTablesList), so a single-schema list would fail to build the publication for
+    # reasons unrelated to this fix. Two schemas exercise the schema-qualified path this fix targets.
+    schemas = ["list_schema_a", "list_schema_b"]
     table = "postgresql_replica_0"
     mat_db = "mat_list_schema"
-    pg_db = "list_src"
+    pg_dbs = ["list_src_a", "list_src_b"]
     presalt_publication = "postgres_database_ch_publication"
 
     cursor = pg_manager.get_db_cursor()
-    create_postgres_schema(cursor, schema_name)
-    pg_manager.create_clickhouse_postgres_db(
-        database_name=pg_db,
-        schema_name=schema_name,
-        postgres_database="postgres_database",
-    )
-    create_postgres_table_with_schema(cursor, schema_name, table)
-    instance.query(f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)")
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        create_postgres_schema(cursor, schema_name)
+        pg_manager.create_clickhouse_postgres_db(
+            database_name=pg_db,
+            schema_name=schema_name,
+            postgres_database="postgres_database",
+        )
+        create_postgres_table_with_schema(cursor, schema_name, table)
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)"
+        )
 
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
@@ -3214,17 +3222,18 @@ def test_unique_identifier_adopts_own_publication_from_schema_list(started_clust
         materialized_database=mat_db,
         postgres_database="postgres_database",
         settings=[
-            f"materialized_postgresql_schema_list = '{schema_name}'",
+            f"materialized_postgresql_schema_list = '{', '.join(schemas)}'",
             "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
         ],
     )
-    check_tables_are_synchronized(
-        instance,
-        table,
-        schema_name=schema_name,
-        postgres_database=pg_db,
-        materialized_database=mat_db,
-    )
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
 
     uuid_value = instance.query(
         f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
@@ -3247,7 +3256,7 @@ def test_unique_identifier_adopts_own_publication_from_schema_list(started_clust
     assert salted_publication != presalt_publication
 
     # Reconstruct a pre-salt deployment while the server is down: the schema-blind slot (bare UUID) and the
-    # schema-blind publication that publishes THIS engine's non-default-schema table. Rows added after both
+    # schema-blind publication that publishes THIS engine's non-default-schema tables. Rows added after both
     # exist must stream through the adopted slot after the restart.
     instance.stop_clickhouse()
     cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slot}')")
@@ -3255,26 +3264,29 @@ def test_unique_identifier_adopts_own_publication_from_schema_list(started_clust
     cursor.execute(
         f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
     )
+    published_tables = ", ".join(f'"{schema_name}"."{table}"' for schema_name in schemas)
     cursor.execute(
-        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "{schema_name}"."{table}"'
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY {published_tables}'
     )
-    cursor.execute(
-        f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(30, 49) AS g'
-    )
+    for schema_name in schemas:
+        cursor.execute(
+            f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(30, 49) AS g'
+        )
     instance.start_clickhouse()
 
-    # The attach adopts both the pre-salt slot and — now that its schema is recognized as belonging to this
+    # The attach adopts both the pre-salt slot and — now that its schemas are recognized as belonging to this
     # engine — the pre-salt publication. No re-snapshot, no orphaned or freshly created salted objects.
-    check_tables_are_synchronized(
-        instance,
-        table,
-        schema_name=schema_name,
-        postgres_database=pg_db,
-        materialized_database=mat_db,
-    )
-    assert 50 == int(
-        instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
-    )
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 50 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
+        )
 
     cursor.execute(
         "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
