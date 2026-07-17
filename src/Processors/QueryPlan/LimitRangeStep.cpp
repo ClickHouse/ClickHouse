@@ -23,7 +23,7 @@ static ITransformingStep::Traits getTraits()
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
-            .preserves_sorting = false,
+            .preserves_sorting = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -190,6 +190,24 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         flags & 8,
         limit_value,
         bool(flags & 16));
+}
+
+QueryPlanStepPtr LimitRangeStep::clone() const
+{
+    auto clone_condition = [](const std::optional<std::pair<ActionsDAG, String>> & condition) -> std::optional<std::pair<ActionsDAG, String>>
+    {
+        if (!condition)
+            return std::nullopt;
+        return std::make_pair(condition->first.clone(), condition->second);
+    };
+
+    return std::make_unique<LimitRangeStep>(
+        input_headers.front(),
+        clone_condition(start_condition),
+        clone_condition(end_condition),
+        start_all,
+        limit,
+        always_read_till_end);
 }
 
 void registerLimitRangeStep(QueryPlanStepRegistry & registry);

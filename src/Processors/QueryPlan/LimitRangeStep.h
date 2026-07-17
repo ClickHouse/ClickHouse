@@ -18,7 +18,7 @@ public:
         std::optional<std::pair<ActionsDAG, String>> end_condition_,
         bool start_all_,
         std::optional<UInt64> limit_,
-        bool always_read_till_end_ = false);
+        bool always_read_till_end_);
 
     String getName() const override { return "LimitRange"; }
 
@@ -31,6 +31,8 @@ public:
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override
     {
