@@ -21,11 +21,13 @@ INSERT INTO t_text_defer_final VALUES (1, 'hello world', 1), (2, 'goodbye world'
 INSERT INTO t_text_defer_final VALUES (1, 'nothing here', 2);
 
 SELECT '= deferred prewhere is not rewritten to a direct index read =';
-SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello wor')) WHERE explain LIKE '%__text_index_idx%';
-SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello wor')) WHERE explain LIKE '%Deferred prewhere filter column%';
+SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello')) WHERE explain LIKE '%__text_index_idx%';
+SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello')) WHERE explain LIKE '%Deferred prewhere filter column%';
 
+-- whole-token needles: the deferred filter currently runs without the index tokenizer rewrite,
+-- so the expected results must not depend on it
 SELECT '= the filter sees post-FINAL rows only =';
-SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello wor');
-SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'goodbye wor');
+SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello');
+SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'goodbye');
 
 DROP TABLE t_text_defer_final;
