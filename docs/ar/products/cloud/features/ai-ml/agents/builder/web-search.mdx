@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Web search'
+slug: /cloud/features/ai-ml/agents/builder/web-search
+title: 'Web search'
+description: 'أداة Web search خارجية لـ ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'Web search']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+تتيح Web search للوكيل جلب معلومات من الويب العام أثناء المحادثة. استخدمها للأسئلة التي تتطلب إجابات حديثة — مثل الإصدارات الأخيرة، أو الوثائق الموجودة خارج خدمتك، أو لإجراء تحقق سريع بالرجوع إلى مصدر موثوق.
+
+<div id="enable-it">
+  ## فعِّله
+</div>
+
+في Agent Builder، فعِّل **Web Search** في قسم **Capabilities**. بعد تفعيله، يحدِّد الوكيل متى يُجري بحثًا استنادًا إلى سؤال المستخدم وتعليمات الوكيل. يُجرى البحث، وتُستخرج النتائج، ثم يُمرَّر المحتوى الأكثر صلةً إلى سياق النموذج.
+
+<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="لوحة Capabilities مع تمييز قسم Web Search، وتعرض مربع اختيار Web Search" size="sm" />
+
+<div id="how-a-search-round-works">
+  ## كيف تعمل جولة البحث
+</div>
+
+يتم كل بحث عبر ثلاث مراحل، وتُدار هذه المراحل نيابةً عنك في Cloud:
+
+1. **البحث** - يُرسل استعلام الوكيل إلى موفّر بحث يعيد عناوين URL المرشحة.
+2. **الجلب** - تُجلب الصفحات ذات الصلة ويُستخرج منها النص المفيد.
+3. **إعادة الترتيب** - يُقيّم مُعيد الترتيب النتائج لكي يرى النموذج أكثرها فائدة أولًا.
+
+يستشهد ردّ الوكيل بعناوين URL التي استخدمها فعليًا.
+
+<div id="when-to-use-it">
+  ## متى تستخدمه
+</div>
+
+* اطّلع على ملاحظات الإصدار أو سجلات التغييرات غير الموجودة في خدمتك.
+* تحقّق من معلومة بالرجوع إلى مصدر قد لا يكون النموذج على علم به.
+* اجلب منشورًا عامًا على مدونة أو مستندًا إلى المحادثة لتحليله.
+
+تخطَّه في الأسئلة التي يمكن الإجابة عنها بالاعتماد على بياناتك أو على معرفة النموذج نفسه. كل جولة بحث تضيف زمن استجابة.

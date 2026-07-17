@@ -17,6 +17,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -516,6 +518,13 @@ void Client::connect()
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
+
+    /// Capture the client local time zone before the branch below may switch the process default
+    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
+    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
+    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
+    if (client_local_timezone.empty())
+        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
 
     if (hosts_and_ports.empty())
     {

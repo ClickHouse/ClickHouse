@@ -47,6 +47,7 @@ namespace DB
 
 namespace CoordinationSetting
 {
+    extern const CoordinationSettingsUInt64 dispatch_busy_wait_long_sleep_us;
     extern const CoordinationSettingsUInt64 dispatch_busy_wait_sleep_us;
     extern const CoordinationSettingsUInt64 max_in_flight_request_batches;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
@@ -92,6 +93,8 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::Create2
+        || request->getOpNum() == Coordination::OpNum::CreateContainer
+        || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -113,6 +116,8 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
             {
                 case Coordination::OpNum::Create:
                 case Coordination::OpNum::Create2:
+                case Coordination::OpNum::CreateContainer:
+                case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
@@ -147,6 +152,48 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
     return false;
 }
 
+/// A helper for sleeping while there's no work to do. Sleep duration starts at short_sleep, then
+/// after long_sleep/2 time it exponentially backs off up to long_sleep. So if we get at least one
+/// request every long_sleep/2 the sleeping will add at most short_sleep to request latency.
+/// And if we go idle for >~long_sleep we'll slow down and waste less cpu, but the next request
+/// will get up to long_sleep of added latency.
+struct BusyWaitBackoff
+{
+    std::chrono::microseconds short_sleep;
+    std::chrono::microseconds long_sleep;
+    /// How long to sleep after i idle iterations:
+    ///  i <= backoff_start: short_sleep
+    ///  i >= backoff_start: short_sleep * 2**(i - backoff_start), saturating at long_sleep
+    size_t backoff_start = 0;
+
+    size_t idle_count = 0;
+    std::chrono::microseconds cur_sleep;
+
+    BusyWaitBackoff(UInt64 short_sleep_us, UInt64 long_sleep_us)
+        : short_sleep(short_sleep_us)
+        , long_sleep(std::max(long_sleep_us, short_sleep_us))
+        /// Do short sleeps for half a long sleep duration.
+        , backoff_start(long_sleep_us / std::max(short_sleep_us, UInt64(1)) / 2)
+        , cur_sleep(short_sleep)
+    {
+    }
+
+    /// Reset backoff.
+    void notIdle()
+    {
+        idle_count = 0;
+        cur_sleep = short_sleep;
+    }
+
+    void sleep()
+    {
+        std::this_thread::sleep_for(cur_sleep);
+        idle_count += 1;
+        if (idle_count > backoff_start)
+            /// (max is in case short_sleep is 0)
+            cur_sleep = std::min(std::max(cur_sleep * 2, std::chrono::microseconds(1)), long_sleep);
+    }
+};
 
 KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
     : server(server_)
@@ -255,7 +302,7 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
             entries.reserve(close_requests.size());
             for (const auto & r : close_requests)
-                entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+                entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
 
             temp_stream->append(std::move(entries));
 
@@ -304,7 +351,7 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     int64_t max_request_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_bytes_size]);
     auto try_push = [&]
     {
-        return requests_queue_bytes.load() <= max_request_queue_bytes && requests_queue.tryPush(std::move(request_info));
+        return requests_queue_bytes.load() <= max_request_queue_bytes && requests_queue.tryPush(request_info);
     };
 
     if (!try_push())
@@ -370,7 +417,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
     int64_t max_response_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_response_queue_bytes_size]);
     auto try_push = [&]
     {
-        return response_bytes_in_all_queues.load() <= max_response_queue_bytes && responses_queue.tryPush(std::move(response));
+        return response_bytes_in_all_queues.load() <= max_response_queue_bytes && responses_queue.tryPush(response);
     };
 
     if (!try_push())
@@ -560,6 +607,10 @@ void KeeperRequestDispatcher::dispatchThread()
 
         int64_t operation_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
 
+        BusyWaitBackoff sleep_backoff(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us],
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_long_sleep_us]);
+
         auto last_stuck_check_time = std::chrono::steady_clock::now();
         while (!shutting_down.load())
         {
@@ -643,8 +694,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 ///  Or maybe there are conditions where this breaks and we instead converge to
                 ///  issuing bursts of 100 requests every 5 seconds, with corresponding
                 ///  throughput of 20 requests/s?)
-                std::this_thread::sleep_for(std::chrono::microseconds(
-                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]));
+                sleep_backoff.sleep();
                 continue;
             }
 
@@ -654,12 +704,15 @@ void KeeperRequestDispatcher::dispatchThread()
             {
                 /// No requests to process. Busy-wait here too.
                 /// TODO: Perhaps we should replace this with a futex wait to improve throughput on
-                ///       latency-bound workloads. E.g. one client doing blocking requests in a loop.
-                std::chrono::microseconds dispatch_busy_wait_sleep(
-                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]);
-                std::this_thread::sleep_for(dispatch_busy_wait_sleep);
+                ///       latency-bound workloads. E.g. one client doing blocking requests in a
+                ///       loop. (The reasoning from long comment above doesn't apply here because
+                ///       this would typically be notified from KeeperTCPHandler threads, which
+                ///       have plenty of cpu to spare.)
+                sleep_backoff.sleep();
                 continue;
             }
+
+            sleep_backoff.notIdle();
 
             /// Pick a batch of requests.
 
@@ -765,7 +818,8 @@ void KeeperRequestDispatcher::dispatchThread()
                     Session * session = nullptr;
                     auto op = request.request->getOpNum();
                     if (op != Coordination::OpNum::Close &&
-                        op != Coordination::OpNum::SessionID)
+                        op != Coordination::OpNum::SessionID &&
+                        request.session_id >= 0)
                     {
                         auto it = sessions.find(request.session_id);
                         if (it == sessions.end() || it->second.dead.load())
@@ -888,7 +942,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(requests.size());
                 for (const auto & r : requests)
-                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+                    entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
 
                 /// Add information about the batch to the queue of in-flight requests.
 
@@ -1089,16 +1143,21 @@ void KeeperRequestDispatcher::responseThread()
     {
         DB::setThreadName(ThreadName::KEEPER_RESPONSE);
 
+        BusyWaitBackoff sleep_backoff(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us],
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_long_sleep_us]);
+
         while (!shutting_down.load())
         {
             KeeperResponseForSession response_for_session;
             if (!responses_queue.tryPop(response_for_session))
             {
                 /// Busy-wait.
-                std::this_thread::sleep_for(std::chrono::microseconds(
-                    keeper_context->getCoordinationSettings()[CoordinationSetting::dispatch_busy_wait_sleep_us]));
+                sleep_backoff.sleep();
                 continue;
             }
+
+            sleep_backoff.notIdle();
 
             const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
 

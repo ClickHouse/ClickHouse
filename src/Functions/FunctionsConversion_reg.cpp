@@ -1159,18 +1159,20 @@ toTypeName(value): Date32
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
+Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
     {
-        "String to Time conversion",
+        "DateTime64 to Time conversion",
         R"(
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         )",
         R"(
 14:30:25
@@ -1179,6 +1181,8 @@ SELECT toTime('14:30:25')
     {
         "DateTime to Time conversion",
         R"(
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
@@ -1186,9 +1190,11 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )"
     },
     {
-        "Integer to Time conversion",
+        "Integer (seconds since epoch) to Time conversion",
         R"(
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
         )",
         R"(
 14:30:25
@@ -1203,19 +1209,21 @@ SELECT toTime(52225)
 
     FunctionDocumentation::Description description_toTime64 = R"(
 Converts an input value to type [Time64](/sql-reference/data-types/time64).
-Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
-Provides microsecond precision for time values.
+Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
+Provides sub-second precision for time values, up to `scale` fractional digits.
     )";
-    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x)";
+    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x, scale)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}},
+        {"scale", "Precision (number of fractional digits, `0`–`9`) of the resulting `Time64`.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted value with the requested `scale`.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",
         R"(
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
         )",
         R"(
 14:30:25.123456
@@ -1224,16 +1232,18 @@ SELECT toTime64('14:30:25.123456')
     {
         "DateTime64 to Time64 conversion",
         R"(
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
         )",
         R"(
 14:30:25.123456
         )"
     },
     {
-        "Integer to Time64 conversion",
+        "Float (seconds since midnight) to Time64 conversion",
         R"(
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
         )",
         R"(
 14:30:25.123456
@@ -1302,9 +1312,9 @@ DateTime32 provides extended range compared to `DateTime`, supporting dates from
 SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -1315,12 +1325,12 @@ SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
         )"
     },
     {
@@ -2406,8 +2416,8 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
     )",
     R"(
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │             00:00:00.000 │
-└────────────────────────────────┴──────────────────────────┘
+│                   12:30:45.123 │              00:00:00.000 │
+└────────────────────────────────┴───────────────────────────┘
     )"
     }
     };
@@ -2469,8 +2479,8 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
         )",
         R"(
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
-└─────────────────────────────────────────────────┴─────────────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
+└───────────────────────────────────────────────┴───────────────────────────────┘
         )"
     }
     };
@@ -3549,8 +3559,8 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
         )",
         R"(
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                   ᴺᵁᴸᴸ │
-└────────────────────────────┴────────────────────────┘
+│                 2025-12-30 │                    ᴺᵁᴸᴸ │
+└────────────────────────────┴─────────────────────────┘
         )"
     }
     };
@@ -3707,8 +3717,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
         )",
         R"(
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────────┴───────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴───────────────────────────────┘
         )"
     }
     };

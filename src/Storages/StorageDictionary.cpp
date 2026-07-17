@@ -335,7 +335,8 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     if (location == Location::Custom)
         return;
 
-    auto new_comment = getInMemoryMetadataPtr(alter_context, false)->comment;
+    auto metadata_snapshot = getInMemoryMetadataPtr(alter_context, false);
+    auto new_comment = metadata_snapshot->comment;
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -375,7 +376,8 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+            bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
+                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -483,7 +485,7 @@ Usage example:
 CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
 ```
 
-      Ok
+Ok
 
 Take a look at what's in the table.
 

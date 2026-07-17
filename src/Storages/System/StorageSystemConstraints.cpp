@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemConstraints.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -86,7 +87,7 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
                 return;
             const auto & constraints = metadata_snapshot->getConstraints();
@@ -272,7 +273,7 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -292,3 +293,6 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemConstraints) }

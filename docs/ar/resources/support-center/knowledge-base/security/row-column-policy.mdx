@@ -1,0 +1,21 @@
+---
+date: 2023-08-13
+title: "هل يدعم ClickHouse الأمان على مستوى الصفوف والأعمدة؟"
+description: "تعرّف على قيود الوصول على مستوى الصفوف والأعمدة في ClickHouse وClickHouse Cloud، وكيفية تطبيق التحكم في الوصول المستند إلى الأدوار (RBAC) باستخدام السياسات."
+tags: ['الأمان والمصادقة']
+keywords: ['على مستوى الصفوف', 'على مستوى الأعمدة', 'الأمان']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
+  ## يدعم كلٌّ من ClickHouse وClickHouse Cloud قيود الوصول على مستوى الصفوف والأعمدة
+</div>
+
+يدعم كلٌّ من ClickHouse وClickHouse Cloud قيود الوصول على مستوى الصفوف والأعمدة للمستخدمين المخصّصين للقراءة فقط، وهي ضرورية لتطبيق نموذج التحكم في الوصول المستند إلى الأدوار (RBAC).
+
+يمكن استخدام [سياسات الصفوف](/ar/concepts/features/security/access-rights#row-policy-management) لتحديد الصفوف التي ستُعاد إلى مستخدم للقراءة فقط عند تنفيذ استعلام على جدول. يكون ClickHouse Cloud مُهيّأً افتراضيًا لتمكين سير العمل المعتمد على SQL. للاستفادة من سير العمل هذا، [CREATE](/ar/reference/statements/create/user) مستخدمًا، ثم [GRANT](/ar/reference/statements/grant) امتيازات للمستخدم على جدول، ثم عيّن [ROW POLICY](/ar/concepts/features/security/access-rights#row-policy-management) المناسبة. عندما ينفّذ المستخدم `SELECT * FROM table`، فلن تُعرض إلا الصفوف التي تسمح بها السياسة.
+
+يمكن تحديد القيود على مستوى الأعمدة مباشرةً باستخدام [عبارة GRANT](/ar/reference/statements/grant) لتمكين الوصول على مستوى الجدول للمستخدمين والأدوار. *لا يمكن للمستخدمين إلا* تضمين الأعمدة التي لديهم حق الوصول إليها في الاستعلام. إن تحديد أعمدة مقيّدة من جدول لا يملك فيه المستخدم حق الوصول إلى جميع الأعمدة المحددة، كما في الاستعلام `SELECT * FROM table`، سيؤدي إلى ظهور خطأ يفيد بأن المستخدم لا يملك الأذونات الكافية.

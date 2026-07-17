@@ -1,0 +1,113 @@
+---
+sidebarTitle: 'Gérer les rôles personnalisés'
+slug: /cloud/guides/security/manage-custom-roles
+title: 'Gérer les rôles personnalisés'
+description: 'Cette page explique comment les administrateurs peuvent ajouter, modifier et supprimer des rôles personnalisés'
+doc_type: 'guide'
+keywords: ['rôles personnalisés', 'sécurité', 'permissions']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce guide s’adresse aux utilisateurs disposant du rôle Admin dans ClickHouse Cloud.
+
+Les clients de ClickHouse Cloud peuvent choisir parmi des rôles système prédéfinis ou créer des rôles personnalisés à attribuer aux utilisateurs. Pour plus d’informations sur les rôles système et les permissions associées, consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles). Ce guide présente la gestion des rôles personnalisés en détail.
+
+<div id="create-custom-role">
+  ## Créer des rôles personnalisés
+</div>
+
+Les rôles personnalisés peuvent inclure une combinaison de permissions d’organisation, de service et de base de données. Ces permissions peuvent s’appliquer à l’ensemble des services et des bases de données, ou seulement à un sous-ensemble.
+
+<Steps>
+  <Step>
+    ### Accéder aux paramètres de l’organisation et sélectionner Users and roles
+
+    Depuis la page des services, sélectionnez le nom de votre organisation. Dans le menu contextuel, sélectionnez l’élément `Users and roles`.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Sélectionner l’onglet `Roles`
+
+    Sélectionnez l’onglet `Roles` en haut, au centre de l’écran.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Sélectionner `Create new role` en haut à droite
+
+    Sélectionnez le bouton `Create new role` en haut à droite de l’écran.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Nommer le rôle
+
+    Saisissez un nom de rôle descriptif. C’est ce nom qui s’affichera lorsque vous attribuerez des rôles à des utilisateurs et à des clés API.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Cliquer sur `Allow` et sélectionner la portée des permissions
+
+    Cliquez sur le bouton `Allow`, puis sélectionnez des permissions d’organisation, de service et/ou de base de données. Pour obtenir la description de toutes les permissions, consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles).
+
+    <Tip>
+      Assurez-vous que les utilisateurs qui se connecteront à la console disposent au minimum de la permission Organization &gt; Access organization.
+    </Tip>
+
+    <Info>
+      **Accès à l’onglet Data Sources**
+
+      Pour accéder à l’onglet **Data Sources**, le rôle doit actuellement disposer de la permission `Manage and Delete Selected Services`.
+    </Info>
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Vérifier votre nouveau rôle
+
+    Vérifiez les permissions attribuées à votre nouveau rôle avant de finaliser. Cliquez sur `Create role` lorsque vous avez terminé.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+  </Step>
+</Steps>
+
+<div id="update-custom-role">
+  ## Mettre à jour les rôles personnalisés
+</div>
+
+Les rôles personnalisés peuvent être modifiés après leur création. Les utilisateurs perdront toutes les permissions retirées du rôle et obtiendront toutes les permissions ajoutées.
+
+<Tip>
+  Les permissions des utilisateurs sont cumulatives. Si un utilisateur est autorisé à effectuer une opération via plusieurs rôles, il ne perdra pas nécessairement immédiatement l’accès si la permission n’est retirée que d’un seul rôle.
+</Tip>
+
+1. Accédez aux paramètres de l’organisation et sélectionnez `Users and roles`
+2. Sélectionnez l’onglet `Roles`
+3. Sélectionnez les trois points à côté du rôle que vous souhaitez modifier
+4. Sélectionnez `Edit`
+5. Modifiez les permissions
+6. Sélectionnez `Edit role`
+
+<div id="delete-custom-role">
+  ## Supprimer les rôles personnalisés
+</div>
+
+Les rôles personnalisés peuvent être supprimés à tout moment.
+
+<Warning>
+  Vous devez avoir au moins un utilisateur dans l’organisation disposant de droits d’administration. Si la suppression du rôle retire ces droits au dernier utilisateur concerné, vous ne pourrez pas le supprimer. Pour résoudre ce problème, attribuez à au moins un utilisateur le rôle système Admin avant de supprimer le rôle personnalisé.
+</Warning>
+
+1. Accédez aux paramètres de l’organisation et sélectionnez `Users and roles`
+2. Sélectionnez l’onglet `Roles`
+3. Sélectionnez les trois points à côté du rôle que vous souhaitez supprimer
+4. Vérifiez quels utilisateurs et quelles clés API perdront l’accès lorsque le rôle sera supprimé. Ajustez les attributions si nécessaire.
+5. Sélectionnez `Delete role` pour terminer l’opération

@@ -45,6 +45,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -52,6 +53,8 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <base/range.h>
+
+#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB
@@ -72,12 +75,19 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
+}
+
+namespace
+{
+/// Infer the structure of a result of a user-provided query by running it with `LIMIT 0` on the PostgreSQL side.
+ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const String & query, bool use_nulls);
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
     postgres::PoolWithFailoverPtr pool_,
-    const String & remote_table_name_,
+    const TableNameOrQuery & remote_table_or_query_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -85,7 +95,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
-    , remote_table_name(remote_table_name_)
+    , remote_table_or_query(remote_table_or_query_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
@@ -95,7 +105,7 @@ StoragePostgreSQL::StoragePostgreSQL(
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(pool, remote_table_name, remote_table_schema, context_);
+        auto columns = getTableStructureFromData(pool, remote_table_or_query, remote_table_schema, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -117,14 +127,18 @@ VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
 
 ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     const postgres::PoolWithFailoverPtr & pool_,
-    const String & table,
+    const TableNameOrQuery & table_or_query,
     const String & schema,
     const ContextPtr & context_)
 {
     const bool use_nulls = context_->getSettingsRef()[Setting::external_table_functions_use_nulls];
     auto connection_holder = pool_->get();
+
+    if (table_or_query.isQuery())
+        return doQueryResultStructure(connection_holder->get(), table_or_query.getQuery(), use_nulls);
+
     auto columns_info = fetchPostgreSQLTableStructure(
-            connection_holder->get(), table, schema, use_nulls).physical_columns;
+            connection_holder->get(), table_or_query.getTableName(), schema, use_nulls).physical_columns;
 
     if (!columns_info)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
@@ -146,14 +160,14 @@ public:
         SharedHeader sample_block,
         size_t max_block_size_,
         String remote_table_schema_,
-        String remote_table_name_,
+        TableNameOrQuery remote_table_or_query_,
         postgres::PoolWithFailoverPtr pool_
     )
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
-        , remote_table_name(remote_table_name_)
+        , remote_table_or_query(remote_table_or_query_)
         , pool(std::move(pool_))
     {
     }
@@ -170,28 +184,41 @@ public:
             getOutputHeader(),
             max_block_size,
             remote_table_schema,
-            remote_table_name,
+            remote_table_or_query,
             pool);
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        std::optional<size_t> transform_query_limit;
-        if (limit && !filter_actions_dag)
-            transform_query_limit = limit;
+        String query;
+        if (remote_table_or_query.isQuery())
+        {
+            /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
+            /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
+            /// reject any outer filter under external_table_strict_query.
+            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
+            query = buildQueryForExternalDatabaseSubquery(
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
+        }
+        else
+        {
+            std::optional<size_t> transform_query_limit;
+            if (limit && !filter_actions_dag)
+                transform_query_limit = limit;
 
-        /// Connection is already made to the needed database, so it should not be present in the query;
-        /// remote_table_schema is empty if it is not specified, will access only table_name.
-        String query = transformQueryForExternalDatabase(
-            query_info,
-            required_source_columns,
-            storage_snapshot->metadata->getColumns().getOrdinary(),
-            IdentifierQuotingStyle::DoubleQuotes,
-            LiteralEscapingStyle::PostgreSQL,
-            remote_table_schema,
-            remote_table_name,
-            context,
-            transform_query_limit);
+            /// Connection is already made to the needed database, so it should not be present in the query;
+            /// remote_table_schema is empty if it is not specified, will access only table_name.
+            query = transformQueryForExternalDatabase(
+                query_info,
+                required_source_columns,
+                storage_snapshot->metadata->getColumns().getOrdinary(),
+                IdentifierQuotingStyle::DoubleQuotes,
+                LiteralEscapingStyle::PostgreSQL,
+                remote_table_schema,
+                remote_table_or_query.getTableName(),
+                context,
+                transform_query_limit);
+        }
         LOG_TRACE(logger, "Query: {}", query);
 
         pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, getOutputHeader(), max_block_size)));
@@ -200,7 +227,7 @@ public:
     LoggerPtr logger;
     size_t max_block_size;
     String remote_table_schema;
-    String remote_table_name;
+    TableNameOrQuery remote_table_or_query;
     postgres::PoolWithFailoverPtr pool;
 };
 
@@ -236,7 +263,7 @@ void StoragePostgreSQL::readImpl(
         std::make_shared<const Block>(sample_block),
         max_block_size,
         remote_table_schema,
-        remote_table_name,
+        remote_table_or_query,
         pool);
     query_plan.addStep(std::move(reading));
 }
@@ -561,7 +588,10 @@ private:
 SinkToStoragePtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
 {
-    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
+    if (remote_table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a PostgreSQL table representing the result of a query");
+
+    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
@@ -569,7 +599,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
-        required_arguments.insert("table");
+    {
+        /// The data source is either a remote table or a query passed to PostgreSQL as is.
+        if (named_collection.has("query"))
+            required_arguments.insert("query");
+        else
+            required_arguments.insert("table");
+    }
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
         named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
@@ -592,7 +628,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.password = named_collection.get<String>("password");
     configuration.database = named_collection.getAny<String>({"db", "database"});
     if (require_table)
-        configuration.table = named_collection.get<String>("table");
+    {
+        if (named_collection.has("query"))
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, named_collection.get<String>("query"));
+        else
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection.get<String>("table"));
+    }
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
 
@@ -613,13 +654,20 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage PostgreSQL requires from 5 to 7 parameters: "
-                "PostgreSQL('host:port', 'database', 'table', 'username', 'password' "
+                "PostgreSQL('host:port', 'database', 'table' (or query), 'username', 'password' "
                 "[, 'schema', 'ON CONFLICT ...']. Got: {}",
                 engine_args.size());
         }
 
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+        /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
+        auto maybe_query = tryGetExternalDatabaseQuery(
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
+        for (size_t i = 0; i < engine_args.size(); ++i)
+        {
+            if (i == 2 && maybe_query)
+                continue;
+            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], context);
+        }
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
@@ -631,7 +679,10 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             configuration.port = configuration.addresses[0].second;
         }
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+        if (maybe_query)
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
+        else
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[2], "table"));
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "user");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
@@ -665,7 +716,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,
             std::move(pool),
-            configuration.table,
+            configuration.table_or_query,
             args.columns,
             args.constraints,
             args.comment,
@@ -712,7 +763,7 @@ The table structure can differ from the original PostgreSQL table structure:
 
 - `host:port` — PostgreSQL server address.
 - `database` — Remote database name.
-- `table` — Remote table name.
+- `table` — Remote table name, or a query passed to PostgreSQL as is (see [Passing a query instead of a table name](#passing-a-query)).
 - `user` — PostgreSQL user.
 - `password` — User password.
 - `schema` — Non-default table schema. Optional.
@@ -744,6 +795,23 @@ SELECT * FROM postgresql(postgres_creds, table='table1');
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to PostgreSQL as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/sql-reference/table-functions/postgresql) table function.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
@@ -900,6 +968,111 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 )DOCS_MD",
         .syntax = "ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, 'schema', 'on_conflict'])",
         .related = {"MySQL", "SQLite", "MaterializedPostgreSQL"}});
+}
+
+namespace
+{
+ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const String & query, bool use_nulls)
+{
+    /// Run the query with `LIMIT 0` inside a read-only transaction (so this also works against read-only
+    /// replicas) to obtain the result columns without fetching any data. The wrapping mirrors how the data
+    /// is read later (see buildQueryForExternalDatabaseSubquery).
+    pqxx::ReadTransaction tx(connection);
+    pqxx::result sample{tx.exec("SELECT * FROM (" + query + ") AS __subquery LIMIT 0")};
+
+    const auto num_columns = sample.columns();
+    if (num_columns == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL query returned no columns: {}", query);
+
+    /// Resolve the type names of the result columns from their type OIDs and type modifiers.
+    /// Carrying the type modifier (`format_type(atttypid, atttypmod)`, exactly as the table path does) is
+    /// required so that e.g. `numeric(78, 0)` is mapped to `Int256` instead of falling back to a generic
+    /// `Decimal128`. `WITH ORDINALITY` together with the explicit `ORDER BY` keeps the resolved type names
+    /// lined up with the result columns regardless of how the array is unnested.
+    std::vector<std::string> oids;
+    std::vector<std::string> type_modifiers;
+    oids.reserve(num_columns);
+    type_modifiers.reserve(num_columns);
+    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+    {
+        oids.push_back(std::to_string(sample.column_type(i)));
+        type_modifiers.push_back(std::to_string(sample.column_type_modifier(i)));
+    }
+
+    pqxx::result type_names{tx.exec(
+        "SELECT format_type(type_oid, type_mod) FROM unnest(ARRAY[" + boost::algorithm::join(oids, ",")
+        + "]::oid[], ARRAY[" + boost::algorithm::join(type_modifiers, ",")
+        + "]::integer[]) WITH ORDINALITY AS t(type_oid, type_mod, ord) ORDER BY ord")};
+
+    std::vector<String> resolved_types(num_columns);
+    std::vector<pqxx::row_size_type> array_columns;
+    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+    {
+        resolved_types[i] = type_names[i][0].as<std::string>();
+        if (resolved_types[i].ends_with("[]"))
+            array_columns.push_back(i);
+    }
+
+    /// PostgreSQL array type OIDs do not encode the number of dimensions, so an `integer[][]` result column
+    /// looks exactly like `integer[]`. Probe the actual data with `array_ndims` (as the table path does via
+    /// its `recheck_array` step) to learn the real dimensions; otherwise multidimensional arrays would be
+    /// inferred as one-dimensional and fail at read time with `Got more dimensions than expected`. When the
+    /// query returns no rows there is nothing to probe, and the dimensions stay at one (the result is empty
+    /// anyway).
+    std::vector<uint16_t> dimensions(num_columns, 1);
+    if (!array_columns.empty())
+    {
+        /// Reference the result columns positionally through an explicit column alias list, so we do not have
+        /// to rely on the (possibly duplicate or unnamed) result column names of an arbitrary query.
+        std::vector<std::string> alias_columns;
+        std::vector<std::string> ndims_exprs;
+        alias_columns.reserve(num_columns);
+        ndims_exprs.reserve(array_columns.size());
+        for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+            alias_columns.push_back("c" + std::to_string(i));
+        for (auto i : array_columns)
+            ndims_exprs.push_back("array_ndims(c" + std::to_string(i) + ")");
+
+        pqxx::result ndims_result{tx.exec(
+            "SELECT " + boost::algorithm::join(ndims_exprs, ",") + " FROM (" + query + ") AS __subquery("
+            + boost::algorithm::join(alias_columns, ",") + ") LIMIT 1")};
+
+        if (!ndims_result.empty())
+        {
+            for (size_t j = 0; j < array_columns.size(); ++j)
+            {
+                const auto column = array_columns[j];
+                const auto & field = ndims_result[0][static_cast<pqxx::row_size_type>(j)];
+
+                /// `array_ndims` returns NULL when the sampled array value is NULL or empty, so the dimensions
+                /// cannot be inferred from the first row. Fail early with a clear error (as the table path does
+                /// in its `recheck_array` step) instead of silently inferring a one-dimensional array and then
+                /// failing at read time with the confusing `Got more dimensions than expected`.
+                if (field.is_null())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot infer the number of dimensions of the array in column {} ({}) of the PostgreSQL "
+                        "query result, because its value in the first row is NULL or an empty array. "
+                        "Make sure the first row contains a non-empty array value.",
+                        column + 1, sample.column_name(column));
+
+                dimensions[column] = static_cast<uint16_t>(field.as<int>());
+            }
+        }
+    }
+
+    tx.commit();
+
+    NamesAndTypesList columns;
+    auto recheck_array = []() {}; /// Dimensions are resolved explicitly above, so the recheck callback is unused.
+    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+    {
+        auto data_type = convertPostgreSQLDataType(resolved_types[i], recheck_array, use_nulls, dimensions[i]);
+        columns.emplace_back(sample.column_name(i), data_type);
+    }
+
+    return ColumnsDescription{columns};
+}
 }
 
 }

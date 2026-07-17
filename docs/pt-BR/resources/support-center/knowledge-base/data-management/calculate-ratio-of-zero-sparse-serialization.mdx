@@ -1,0 +1,69 @@
+---
+title: Como calcular a proporção de valores vazios ou zero em cada coluna de uma tabela
+description: Aprenda a calcular a proporção de valores vazios ou zero em cada coluna de uma tabela no ClickHouse para otimizar a serialização de colunas esparsas.
+date: 2023-05-18
+tags: ['Desempenho e otimizações']
+keywords: ['Proporção de valores vazios ou zero', 'Calcular']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## Como calcular a proporção de valores vazios/zero em cada coluna de uma tabela
+</div>
+
+Se uma coluna for esparsa (vazia ou contiver principalmente zeros), o ClickHouse pode codificá-la em um formato esparso e otimizar automaticamente os cálculos — os dados não exigem descompressão completa durante as consultas. Na verdade, se você souber o quão esparsa é uma coluna, poderá definir essa proporção usando a [configuração `ratio_of_defaults_for_sparse_serialization`](/pt-BR/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) para otimizar a serialização.
+
+Esta consulta útil pode levar algum tempo, mas analisa cada linha da tabela e determina a proporção de valores que são zero (ou o valor padrão) em cada coluna da tabela especificada:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+Por exemplo, executamos a consulta acima na tabela [conjunto de dados de sensores ambientais](/pt-BR/get-started/sample-datasets/environmental-sensors) chamada `sensors`, que tem mais de 20B linhas e 19 colunas:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+Aqui está a resposta:
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+A partir dos resultados acima:
+
+* a coluna `sensor_id` não é nem um pouco esparsa. Na verdade, toda linha tem um valor diferente de zero
+* a `sensor_type` é esparsa apenas em cerca de 15,9% dos casos
+* a coluna `P0` é muito esparsa: 99,9% dos valores são zero
+* a coluna `pressure` é bastante esparsa: 83%
+* e a coluna `temperature` tem 53,2% dos valores ausentes ou iguais a zero
+
+Como dissemos, é uma consulta útil para calcular o grau de esparsidade das colunas em uma tabela do ClickHouse!

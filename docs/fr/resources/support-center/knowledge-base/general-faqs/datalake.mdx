@@ -1,0 +1,17 @@
+---
+title: 'ClickHouse prend-il en charge les lacs de données ?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'ClickHouse prend en charge les lacs de données, notamment Iceberg, Delta Lake, Apache Hudi, Apache Paimon et Hive'
+doc_type: 'reference'
+keywords: ['lac de données', 'lakehouse']
+---
+
+ClickHouse prend en charge les lacs de données, notamment Iceberg, Delta Lake, Apache Hudi, Apache Paimon et Hive.
+
+Il prend en charge la **lecture** et l’**écriture**, avec une compatibilité complète avec le partition pruning, le pruning basé sur les statistiques, l’évolution du schéma, les suppressions positionnelles, les suppressions par égalité, le time travel et l’introspection.
+
+Dans ClickHouse, les lacs de données sont pris en charge via les catalogues **Unity**, **AWS Glue**, **Rest**, **Polaris** et **Hive Metastore**, ainsi que via des tables individuelles.
+
+Les performances des requêtes sur les lacs de données sont excellentes grâce au traitement distribué, à un lecteur Parquet natif performant et à la mise en cache des fichiers de données.

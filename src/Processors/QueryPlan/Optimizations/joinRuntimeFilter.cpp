@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
@@ -178,6 +179,29 @@ static UInt64 calculateJoinFingerprint(
     return fingerprint_hash.get64();
 }
 
+/// Use the cached hash table size in hash-table-statistics as a hint for sizing the runtime filter.
+static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & join_step, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.join_runtime_filter_size_from_hash_table_stats
+        || !optimization_settings.collect_hash_table_stats_during_joins)
+        return std::nullopt;
+
+    const UInt64 cache_key = join_step.getRightHashTableCacheKey();
+    if (!cache_key)
+        return std::nullopt;
+
+    const StatsCollectingParams params{
+        cache_key,
+        /*enable_=*/true,
+        optimization_settings.max_entries_for_hash_table_stats,
+        optimization_settings.max_size_to_preallocate_for_joins};
+
+    auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
+    if (!hint || hint->ht_size == 0)
+        return std::nullopt;
+    return hint->ht_size;
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -227,15 +251,68 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
+    /// The runtime filter is built on the build (right) side and is addressed by name
+    /// (BuildRuntimeFilterStep on the key name, findInOutputs, name-keyed permutations). If a join
+    /// KEY column name occurs more than once in the build input header (e.g. a correlated subquery
+    /// decorrelated from `SELECT c, *` where the join key itself is the duplicated column), the
+    /// name-keyed machinery cannot disambiguate the two identically-named key columns; the resulting
+    /// filter then changes a downstream step's stream multiplicity and aborts with
+    /// 'Block structure mismatch in JoinStep'. A duplicated NON-key build column, or a duplicated key
+    /// on the probe side (where the filter is only applied and preserves the header), is harmless, so
+    /// guard the build-side keys specifically. Skipping the filter is always correctness-safe. Mirrors
+    /// JoinStepLogical::canRemoveUnusedColumns(), which disables a sibling optimization on duplicated
+    /// join-condition inputs.
+    {
+        NameSet build_key_names;
+        for (const auto & condition : join_operator.expression)
+        {
+            auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+            if (predicate_op != JoinConditionOperator::Equals)
+                continue;
+            /// Mirror preCalculateKeys(): only a genuine left/right equi-join PAIR contributes a build
+            /// key. A single-side local filter such as `r.c = 1` (build column vs constant) is not a
+            /// runtime-filter key, so it must not enlist `c` into the duplicate-key check — otherwise a
+            /// duplicated NON-key build column guarded by such a filter would needlessly disable the
+            /// filter (which is only ever built on the real key).
+            if (lhs.fromLeft() && rhs.fromRight())
+                build_key_names.insert(rhs.getColumnName());
+            else if (lhs.fromRight() && rhs.fromLeft())
+                build_key_names.insert(lhs.getColumnName());
+        }
+
+        const auto & build_header = *build_filter_node->step->getOutputHeader();
+        for (const auto & key_name : build_key_names)
+        {
+            size_t count = 0;
+            for (const auto & column : build_header)
+            {
+                if (column.name == key_name && ++count > 1)
+                    return false;
+            }
+        }
+    }
+
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
 
-    /// Check that there are only equality predicates
+    /// Collect equality predicates for runtime filter construction.
+    /// Non-equality predicates (e.g. range conditions) are skipped for non-ANTI-JOIN:
+    /// the runtime filter is an over-approximation, so skipping them only lets extra rows
+    /// through the filter, which the join then rejects — no false negatives.
+    ///
+    /// For LEFT ANTI JOIN (check_left_does_not_contain) the all-equality requirement is
+    /// kept: the runtime filter is a NOT IN exclusion, so an over-broad set (built from
+    /// right-side rows that a post-condition would have excluded) produces false exclusions
+    /// — wrong results.
     for (const auto & condition : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals)
-            return false;
+        {
+            if (check_left_does_not_contain)
+                return false;
+            continue;
+        }
 
         /// For the case of ANTI JOIN (more specifically for check_left_does_not_contain) the hash table in JOIN can have extra rows that can be filtered
         /// out by post-condition. In this case we cannot build set of keys for runtime filter from right-side rows because the set will contain more rows
@@ -325,6 +402,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
     /// but the full tuple has no match in the right table.
@@ -370,7 +449,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                /*allow_to_use_not_exact_filter_=*/false);
+                /*allow_to_use_not_exact_filter_=*/false,
+                distinct_keys_hint);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -434,7 +514,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
+                    distinct_keys_hint);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
 
@@ -446,11 +527,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
             /// NOT the stable display name: the filter is registered in the lookup under that key, so
             /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key.
-            if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
+            if (join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table
                 && !check_left_does_not_contain)
             {
-                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(
-                    id.key, join_key_build_side.name);
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(id.key, join_key_build_side.name);
             }
         }
 

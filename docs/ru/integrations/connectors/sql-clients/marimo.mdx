@@ -1,0 +1,124 @@
+---
+slug: /integrations/marimo
+sidebarTitle: 'marimo'
+description: 'marimo — это Python-ноутбук нового поколения для работы с данными'
+title: 'Использование marimo с ClickHouse'
+doc_type: 'guide'
+keywords: ['marimo', 'ноутбук', 'анализ данных', 'python', 'визуализация']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[marimo](https://marimo.io/) — это реактивный ноутбук с открытым исходным кодом для Python со встроенной поддержкой SQL. Когда вы запускаете ячейку или взаимодействуете с элементом интерфейса, marimo автоматически выполняет затронутые ячейки (или помечает их как устаревшие), сохраняя согласованность кода и результатов и предотвращая ошибки ещё до их возникновения. Каждый ноутбук marimo хранится как обычный Python-код, может выполняться как скрипт и разворачиваться как приложение.
+
+<Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="Подключение к ClickHouse" />
+
+<div id="install-marimo-sql">
+  ## 1. Установите marimo с поддержкой SQL
+</div>
+
+```shell
+pip install "marimo[sql]" clickhouse_connect
+marimo edit clickhouse_demo.py
+```
+
+После этого в браузере должна открыться страница на localhost.
+
+<div id="connect-to-clickhouse">
+  ## 2. Подключение к ClickHouse.
+</div>
+
+Перейдите на панель источников данных в левой части редактора marimo и нажмите «Add database».
+
+<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Добавить новую базу данных" />
+
+Затем вам будет предложено указать данные для подключения к базе данных.
+
+<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Укажите данные для подключения к базе данных" />
+
+После этого появится ячейка, которую можно запустить, чтобы установить соединение.
+
+<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Запустите ячейку, чтобы подключиться к ClickHouse" />
+
+<div id="run-sql">
+  ## 3. Выполните SQL-запрос
+</div>
+
+После настройки подключения вы можете создать новую SQL-ячейку и выбрать движок ClickHouse.
+
+<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Выберите SQL-движок" />
+
+В этом руководстве мы будем использовать датасет New York Taxi.
+
+```sql
+CREATE TABLE trips (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+```sql
+INSERT INTO trips
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM gcs(
+    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+```sql
+SELECT * FROM trips LIMIT 1000;
+```
+
+<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Результаты в датафрейме" />
+
+Теперь вы можете просматривать результаты в датафрейме. Я хочу визуализировать самые дорогие поездки из заданной точки посадки. marimo предоставляет несколько компонентов интерфейса, которые помогут вам в этом. Я буду использовать выпадающий список для выбора места и Altair для построения диаграмм.
+
+<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Сочетание выпадающего списка, таблицы и диаграммы" />
+
+Реактивная модель выполнения marimo распространяется и на SQL-запросы, поэтому изменения в SQL автоматически запускают последующие вычисления для зависимых ячеек (или, при желании, помечают ячейки как устаревшие, если вычисления слишком затратны). Поэтому при обновлении запроса меняются и диаграмма, и таблица.
+
+Вы также можете переключиться в App View, чтобы получить более чистый интерфейс для изучения данных.
+
+<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Режим App View" />

@@ -708,7 +708,8 @@ bool StorageNATS::streamToViews()
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 

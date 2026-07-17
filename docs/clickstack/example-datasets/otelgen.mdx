@@ -1,0 +1,174 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/otelgen
+title: 'Generate synthetic OpenTelemetry data with otelgen'
+sidebarTitle: 'Synthetic data with otelgen'
+description: 'Use otelgen to send synthetic logs, traces and metrics to a ClickStack OpenTelemetry collector'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', 'synthetic data', 'OpenTelemetry', 'test', 'logs', 'traces', 'metrics', 'observability']
+---
+
+[`otelgen`](https://github.com/krzko/otelgen) is a small Go CLI that generates synthetic OTLP logs, traces and metrics. Use it to confirm that an existing ClickStack OpenTelemetry collector is accepting data and that events surface in the ClickStack UI.
+
+This guide assumes the collector is already running with OTLP endpoints on `4317` (gRPC) and `4318` (HTTP).
+
+<Tabs>
+<Tab title="Managed ClickStack">
+
+<Steps>
+<Step title="Prerequisites" id="prerequisites-managed">
+
+This guide assumes you have completed the [Getting Started Guide for Managed ClickStack](/clickstack/deployment/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `otelgen` on. If you [secured the collector](/clickstack/ingesting-data/collector#securing-the-collector) with an `OTLP_AUTH_TOKEN`, keep that value handy.
+</Step>
+<Step title="Install otelgen" id="install-otelgen-managed">
+
+Install with Homebrew:
+
+```shell
+brew install krzko/tap/otelgen
+```
+
+Or install with Go:
+
+```shell
+go install github.com/krzko/otelgen@latest
+```
+</Step>
+<Step title="Set environment variables" id="set-env-vars-managed">
+
+Export the collector endpoint and, if the collector is secured, the auth token:
+
+```shell
+export OTEL_ENDPOINT=<host>:4317
+export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+```
+
+Use the host and port of your collector. For a collector running on the same machine, this is `localhost:4317`.
+
+<Info>
+**Unsecured collector**
+
+The ClickStack OpenTelemetry collector is unauthenticated by default. If you haven't followed [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) to set an `OTLP_AUTH_TOKEN`, skip `OTLP_AUTH_TOKEN` here and drop the `--header` flag from the commands below.
+</Info>
+</Step>
+<Step title="Generate traces" id="generate-traces-managed">
+
+Send a short burst of multi-span traces:
+
+```shell
+otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+  --header "authorization=${OTLP_AUTH_TOKEN}" \
+  --protocol grpc --insecure \
+  --rate 2 --duration 10 \
+  traces multi
+```
+
+`--rate` is traces per second and `--duration` is the run length in seconds. `--insecure` disables TLS on the gRPC connection, which is needed when pointing `otelgen` at the collector's plaintext OTLP port.
+</Step>
+<Step title="Generate logs" id="generate-logs-managed">
+
+```shell
+otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+  --header "authorization=${OTLP_AUTH_TOKEN}" \
+  --protocol grpc --insecure \
+  --rate 2 --duration 10 \
+  logs multi
+```
+</Step>
+<Step title="Generate metrics" id="generate-metrics-managed">
+
+The metrics subcommands don't honor `--duration`. Run the command and press `Ctrl+C` after a few seconds to stop it.
+
+```shell
+otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+  --header "authorization=${OTLP_AUTH_TOKEN}" \
+  --protocol grpc --insecure \
+  --rate 2 \
+  metrics sum
+```
+
+`otelgen` also supports `gauge`, `histogram`, `up-down-counter` and `exponential-histogram` subcommands under `metrics`.
+</Step>
+<Step title="Verify in ClickStack" id="verify-managed">
+
+Open the ClickStack UI from the ClickHouse Cloud console. In the `Search` view, switch the source between `Logs` and `Traces` to confirm new events. Set the time range to `Last 15 minutes`. Open the `Chart Explorer`, select `Metrics`, and chart one of the metric names produced by `otelgen` (for example `otelgen.metrics.sum`) to verify metrics ingestion.
+</Step>
+</Steps>
+
+</Tab>
+<Tab title="ClickStack Open Source">
+
+<Steps>
+<Step title="Prerequisites" id="prerequisites-oss">
+
+This guide assumes you have started Open Source ClickStack using the [instructions for the all-in-one image](/clickstack/getting-started/oss), and that the OTLP endpoints (`4317` gRPC and `4318` HTTP) are reachable. You also need the ingestion API key from the HyperDX UI under `Team Settings > API Keys`.
+</Step>
+<Step title="Install otelgen" id="install-otelgen-oss">
+
+Install with Homebrew:
+
+```shell
+brew install krzko/tap/otelgen
+```
+
+Or install with Go:
+
+```shell
+go install github.com/krzko/otelgen@latest
+```
+</Step>
+<Step title="Set environment variables" id="set-env-vars-oss">
+
+Export the collector endpoint and the ingestion API key:
+
+```shell
+export OTEL_ENDPOINT=localhost:4317
+export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+```
+</Step>
+<Step title="Generate traces" id="generate-traces-oss">
+
+Send a short burst of multi-span traces:
+
+```shell
+otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+  --header "authorization=${CLICKSTACK_API_KEY}" \
+  --protocol grpc --insecure \
+  --rate 2 --duration 10 \
+  traces multi
+```
+
+`--rate` is traces per second and `--duration` is the run length in seconds. `--insecure` enables plaintext gRPC against the local collector.
+</Step>
+<Step title="Generate logs" id="generate-logs-oss">
+
+```shell
+otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+  --header "authorization=${CLICKSTACK_API_KEY}" \
+  --protocol grpc --insecure \
+  --rate 2 --duration 10 \
+  logs multi
+```
+</Step>
+<Step title="Generate metrics" id="generate-metrics-oss">
+
+The metrics subcommands don't honor `--duration`. Run the command and press `Ctrl+C` after a few seconds to stop it.
+
+```shell
+otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+  --header "authorization=${CLICKSTACK_API_KEY}" \
+  --protocol grpc --insecure \
+  --rate 2 \
+  metrics sum
+```
+
+`otelgen` also supports `gauge`, `histogram`, `up-down-counter` and `exponential-histogram` subcommands under `metrics`.
+</Step>
+<Step title="Verify in ClickStack" id="verify-oss">
+
+Visit [http://localhost:8080](http://localhost:8080) to open the ClickStack UI. In the `Search` view, switch the source between `Logs` and `Traces` to confirm new events. Set the time range to `Last 15 minutes`. Open the `Chart Explorer`, select `Metrics`, and chart one of the metric names produced by `otelgen` (for example `otelgen.metrics.sum`) to verify metrics ingestion.
+</Step>
+</Steps>
+
+</Tab>
+</Tabs>

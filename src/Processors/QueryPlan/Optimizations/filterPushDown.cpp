@@ -19,12 +19,14 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -559,7 +561,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
     }
 
-    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
+    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available, bool require_stable_types = false)
     {
         Names available_input_columns_for_filter;
 
@@ -579,7 +581,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// (e.g. UInt8 in the input becomes Nullable(UInt8) in the join output), pushing a
             /// filter built for the join output directly to the input side causes a type mismatch.
             /// JoinStepLogical handles this via fix_predicate_for_join_logical_step below.
-            if (!logical_join && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
+            ///
+            /// The disjunction (partial predicate) push-down path has no such type-fixup, so it
+            /// passes require_stable_types to also exclude type-changing columns for JoinStepLogical.
+            if ((!logical_join || require_stable_types)
+                && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(name);
@@ -906,8 +912,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             return updated_steps;
         }
 
+        /// Unlike the main push-down above, addFilterOnTop builds the partial FilterStep directly
+        /// against the join input header without fix_predicate_for_join_logical_step. So a function
+        /// node whose type was computed for the join output (e.g. equals over a USING key widened to
+        /// Nullable) would be applied to the non-widened input column and trip the result-type check
+        /// in updateHeader. Restrict the partial predicate to columns with stable types across the join.
+        Names left_stream_stable_columns_to_push_down = get_available_columns_for_filter(
+            true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
+        Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
+            false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
+
         {
-            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_available_columns_to_push_down);
+            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
@@ -921,7 +937,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
 
         {
-            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_available_columns_to_push_down);
+            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
@@ -997,6 +1013,50 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
           * since we can gen a result row when everything is filtered.
           */
         if (keys.empty())
+            return 0;
+
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
+            return updated_steps;
+    }
+
+    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
+    {
+        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
+        /// window: it only removes whole partitions, and dropping a partition never changes
+        /// any window value on a surviving row (regardless of the window function or frame).
+        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
+        Names partition_keys;
+        for (const auto & sort_column : window->getWindowDescription().partition_by)
+            partition_keys.push_back(sort_column.column_name);
+
+        if (partition_keys.empty())
+            return 0;
+
+        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
+        /// A predicate must be deterministic in the partition key, not merely reference only it:
+        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
+        /// inside a surviving partition before the window runs, which can change which row
+        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
+        /// rows in the partition, so non-deterministic filters are not safe to move below it.
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
+            return updated_steps;
+    }
+
+    if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
+    {
+        /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
+        /// per-group rows (and therefore the result) are identical whether it runs above or
+        /// below the LIMIT BY. But it is only safe to push when every non-empty input group
+        /// keeps at least one output row, i.e. `OFFSET 0` and `LIMIT >= 1`. Otherwise a group
+        /// can be fully discarded by the step (OFFSET past its size, or `LIMIT 0 BY`), and a
+        /// pushed key predicate would then be evaluated on rows the original query never
+        /// reached -- changing exception semantics for throwing key expressions
+        /// (e.g. `intDiv(1, key)` on a group that OFFSET would have dropped). This mirrors
+        /// AggregatingStep, where GROUP BY likewise never empties a non-empty group.
+        /// `step_changes_the_number_of_rows = true`: LIMIT BY drops rows, so
+        /// non-deterministic key predicates must NOT be pushed.
+        const auto & keys = limit_by->getColumns();
+        if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))

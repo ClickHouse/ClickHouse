@@ -53,6 +53,8 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
         description,
         dataflow_cache_updater,
         is_limit_for_settings);
+    if (is_shard_limit)
+        transform->markAsShardLimit();
     pipeline.addTransform(std::move(transform));
 }
 
@@ -129,6 +131,11 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
         deserializeSortDescription(description, ctx.in);
 
     return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description), is_limit_for_settings);
+}
+
+QueryPlanStepPtr LimitStep::clone() const
+{
+    return std::make_unique<LimitStep>(*this);
 }
 
 void registerLimitStep(QueryPlanStepRegistry & registry);

@@ -1,0 +1,199 @@
+---
+description: 'Обзор резервного копирования и восстановления в ClickHouse'
+sidebarTitle: 'Конечная точка S3'
+slug: /operations/backup/s3_endpoint
+title: 'BACKUP / RESTORE в конечную точку S3 или из неё'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/ru/_syntax.mdx';
+
+Эта статья посвящена резервному копированию в S3 бакет или восстановлению резервных копий из него
+через конечную точку S3.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+<Syntax />
+
+<div id="usage-examples">
+  ## Пример использования
+</div>
+
+<div id="incremental-backup-to-an-s3-endpoint">
+  ### Инкрементное резервное копирование в конечную точку S3
+</div>
+
+В этом примере мы создадим резервную копию в конечную точку S3, а затем
+восстановим из неё данные.
+
+<Note>
+  О различиях между полной резервной копией и инкрементной
+  резервной копией см. в разделе [&quot;Типы резервных копий&quot;](/ru/concepts/features/backup-restore/overview#backup-types)
+</Note>
+
+Для использования этого метода вам потребуется следующая информация:
+
+| Параметр                    | Пример                                                       |
+| --------------------------- | ------------------------------------------------------------ |
+| Конечная точка S3           | `https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/` |
+| Идентификатор ключа доступа | `BKIOZLE2VYN3VXXTP9RC`                                       |
+| Секретный ключ доступа      | `40bwYnbqN7xU8bVePaUCh3+YEyGXu8UOMV9ANpwL`                   |
+
+<Tip>
+  Создание S3 бакета описано в разделе [&quot;использование объектного хранилища S3 в качестве диска ClickHouse&quot;](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#configuring-s3-for-clickhouse-use)
+</Tip>
+
+Пункт назначения резервной копии указывается следующим образом:
+
+```sql
+S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extra_credentials>')
+```
+
+<br />
+
+<Steps>
+  <Step>
+    #### Настройка
+
+    Создайте следующую базу данных и таблицу и вставьте в неё немного случайных данных:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test_db;
+    CREATE TABLE test_db.test_table
+    (
+        `key` Int,
+        `value` String,
+        `array` Array(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    ```
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 1000
+    ```
+  </Step>
+
+  <Step>
+    #### Создайте базовую резервную копию
+
+    Для инкрементных резервных копий нужна *базовая* резервная копия, от которой они будут отсчитываться. Первый параметр
+    пункта назначения S3 — это конечная точка S3, а затем указывается каталог в бакете,
+    который будет использоваться для этой резервной копии. В этом примере каталог называется `my_backup`.
+
+    Выполните следующую команду, чтобы создать базовую резервную копию:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ de442b75-a66c-4a3c-a193-f76f278c70f3 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Добавьте больше данных
+
+    Инкрементные резервные копии формируются на основе различий между базовой резервной копией и
+    текущим содержимым таблицы, для которой создаётся резервная копия. Перед созданием
+    инкрементной резервной копии добавьте больше данных:
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 100
+    ```
+  </Step>
+
+  <Step>
+    #### Создание инкрементной резервной копии
+
+    Эта команда резервного копирования похожа на команду создания базовой резервной копии, но дополнительно включает `SETTINGS base_backup` и расположение базовой резервной копии. Обратите внимание, что для инкрементной резервной копии используется не тот же каталог, что и для базовой, а та же конечная точка с другим целевым каталогом внутри бакета. Базовая резервная копия находится в `my_backup`, а инкрементная будет записана в `my_incremental`:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    SETTINGS base_backup = S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Восстановление из инкрементной резервной копии
+
+    Эта команда восстанавливает инкрементную резервную копию в новую таблицу `test_table_restored`.
+    Обратите внимание: при восстановлении инкрементной резервной копии также восстанавливается и базовая резервная копия.
+    При восстановлении указывайте только **инкрементную резервную копию**:
+
+    ```sql
+    RESTORE TABLE data AS test_db.test_table_restored FROM S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status───┐
+    │ ff0c8c39-7dff-4324-a241-000796de11ca │ RESTORED │
+    └──────────────────────────────────────┴──────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Проверьте число строк
+
+    В исходную таблицу `data` были выполнены две вставки: одна на 1 000 строк и одна на 100 строк, итого 1 100.
+    Убедитесь, что в восстановленной таблице 1 100 строк:
+
+    ```sql
+    SELECT count()
+    FROM test_db.test_table_restored
+    ```
+
+    ```response
+    ┌─count()─┐
+    │    1100 │
+    └─────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Проверьте содержимое
+
+    Ниже сравнивается содержимое исходной таблицы `test_table` с восстановленной таблицей `test_table_restored`:
+
+    ```sql
+    SELECT throwIf((
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table
+       ) != (
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table_restored
+    ), 'Data does not match after BACKUP/RESTORE')
+    ```
+  </Step>
+</Steps>

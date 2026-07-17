@@ -178,7 +178,8 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr(context_, false)->getColumns());
+        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
+        storage_metadata.setColumns(dest_table_metadata->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);
@@ -857,7 +858,8 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(getContext(), false), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        optimize(nullptr /*query*/, metadata_snapshot, {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -907,6 +909,13 @@ bool StorageBuffer::supportsPrewhere() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsPrewhere();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToSubcolumns();
     return false;
 }
 

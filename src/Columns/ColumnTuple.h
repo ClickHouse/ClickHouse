@@ -62,6 +62,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
+    UInt64 getNumberOfDefaultRows() const override;
     std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;

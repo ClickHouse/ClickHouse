@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Coordination/CoordinationSettings.h>
@@ -11,6 +12,7 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
+#include <Common/thread_local_rng.h>
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
@@ -24,6 +26,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
 
 namespace ProfileEvents
@@ -43,43 +46,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 rocksdb_load_batch_size;
-}
-
-
 namespace
 {
-    void moveSnapshotBetweenDisks(
-        DiskPtr disk_from,
-        const std::string & path_from,
-        DiskPtr disk_to,
-        const std::string & path_to,
-        const KeeperContextPtr & keeper_context)
-    {
-        moveFileBetweenDisks(
-            std::move(disk_from),
-            path_from,
-            std::move(disk_to),
-            path_to,
-            /*before_file_remove_op=*/{},
-            getLogger("KeeperSnapshotManager"),
-            keeper_context);
-    }
-
-    uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
-    {
-        std::filesystem::path path(snapshot_path);
-        std::string filename = path.stem();
-        std::vector<std::string_view> name_parts;
-        splitInto<'_', '.'>(name_parts, filename);
-        return parse<uint64_t>(name_parts[1]);
-    }
-
     std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
     {
-        auto base = fmt::format("snapshot_{}.bin", up_to_log_idx);
+        /// Unique-from-birth name avoids collisions between concurrent same-index writes.
+        auto base = fmt::format("snapshot_{}_{:016x}.bin", up_to_log_idx, thread_local_rng());
         if (compress_zstd)
             base += ".zstd";
         return base;
@@ -172,6 +144,13 @@ namespace
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
             writeBinary(node.sizeInBytes(), out);
+
+        if (version >= SnapshotVersion::V8)
+        {
+            writeBinary(node.stats.isTTL(), out);
+            if (node.stats.isTTL())
+                writeBinary(node.stats.ttl(), out);
+        }
     }
 
     template<typename Node>
@@ -184,6 +163,7 @@ namespace
             in.readStrict(node.data.get(), node.stats.data_size);
         }
 
+        bool add_usage = true;
         if (version >= SnapshotVersion::V7)
         {
             readBinary(node.acl_id, in);
@@ -223,10 +203,14 @@ namespace
             }
 
             if (!cleanup_acl)
+            {
                 node.acl_id = acl_map.convertACLs(acls);
+                add_usage = false;
+            }
         }
 
-        acl_map.addUsage(node.acl_id);
+        if (add_usage)
+            acl_map.addUsage(node.acl_id);
 
         if (version < SnapshotVersion::V6)
         {
@@ -246,7 +230,9 @@ namespace
         readBinary(node.stats.aversion, in);
         int64_t ephemeral_owner = 0;
         readBinary(ephemeral_owner, in);
-        if (ephemeral_owner != 0)
+        if (ephemeral_owner == std::numeric_limits<int64_t>::min())
+            node.stats.setContainer();
+        else if (ephemeral_owner != 0)
             node.stats.setEphemeralOwner(ephemeral_owner);
 
         if (version < SnapshotVersion::V6)
@@ -264,14 +250,14 @@ namespace
         {
             int64_t seq_num = 0;
             readBinary(seq_num, in);
-            if (ephemeral_owner == 0)
+            if (!node.stats.isEphemeral())
                 node.stats.setSeqNum(seq_num);
         }
         else
         {
             int32_t seq_num = 0;
             readBinary(seq_num, in);
-            if (ephemeral_owner == 0)
+            if (!node.stats.isEphemeral())
                 node.stats.setSeqNum(seq_num);
         }
 
@@ -279,6 +265,18 @@ namespace
         {
             uint64_t size_bytes = 0;
             readBinary(size_bytes, in);
+        }
+
+        if (version >= SnapshotVersion::V8)
+        {
+            bool has_ttl = false;
+            readBinary(has_ttl, in);
+            if (has_ttl)
+            {
+                int64_t ttl_ms = 0;
+                readBinary(ttl_ms, in);
+                node.stats.setTTL(ttl_ms);
+            }
         }
     }
 
@@ -300,9 +298,33 @@ namespace
     }
 }
 
-template<typename Storage>
-void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
+void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
+    if (snapshot.version < SnapshotVersion::V8)
+    {
+        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
+        if (!snapshot.storage->ttl_paths.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
+                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<uint8_t>(snapshot.version),
+                snapshot.storage->ttl_paths.size(),
+                static_cast<uint8_t>(SnapshotVersion::V8));
+    }
+    if (snapshot.version < SnapshotVersion::V9)
+    {
+        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
+        if (!snapshot.storage->container_paths.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot serialize snapshot with version {}: storage contains {} container node(s), which require snapshot "
+                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<uint8_t>(snapshot.version),
+                snapshot.storage->container_paths.size(),
+                static_cast<uint8_t>(SnapshotVersion::V9));
+    }
+
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
 
@@ -391,7 +413,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         writeBinary(session_id, out);
         writeBinary(timeout, out);
 
-        KeeperStorageBase::AuthIDs ids;
+        KeeperStorage::AuthIDs ids;
         if (snapshot.session_and_auth.contains(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
@@ -412,9 +434,8 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
     }
 }
 
-template <typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(
-    SnapshotDeserializationResult<Storage> & deserialization_result,
+void KeeperStorageSnapshot::deserialize(
+    SnapshotDeserializationResult & deserialization_result,
     ReadBuffer & in,
     KeeperContextPtr keeper_context,
     bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -426,7 +447,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
-    Storage & storage = *deserialization_result.storage;
+    KeeperStorage & storage = *deserialization_result.storage;
 
     bool recalculate_digest = keeper_context->digestEnabled();
     if (version >= SnapshotVersion::V5)
@@ -501,15 +522,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(
 
     size_t snapshot_container_size = 0;
     readBinary(snapshot_container_size, in);
-    if constexpr (!use_rocksdb)
-        storage.container.reserve(snapshot_container_size);
+    storage.container.reserve(snapshot_container_size);
 
     if (recalculate_digest)
         storage.nodes_digest = 0;
-
-    auto batch_load_size = keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size];
-    if constexpr (use_rocksdb)
-        storage.container.startLoading(batch_load_size);
 
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
@@ -520,7 +536,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
         in.readStrict(path_data.get(), path_size);
         std::string_view path{path_data.get(), path_size};
 
-        typename Storage::Node node{};
+        typename KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map, keeper_context->shouldBlockACL());
 
         if (!load_full_storage)
@@ -557,7 +573,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
                     LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
-                    node = typename Storage::Node{};
+                    node = typename KeeperStorage::Node{};
                 }
                 else
                     throw Exception(
@@ -569,29 +585,36 @@ void KeeperStorageSnapshot<Storage>::deserialize(
         }
 
         auto ephemeral_owner = node.stats.ephemeralOwner();
-        if constexpr (!use_rocksdb)
-            if (!node.stats.isEphemeral() && node.numChildren() > 0)
-                node.getChildren().reserve(node.numChildren());
+        if (!node.stats.isEphemeral() && node.numChildren() > 0)
+            node.getChildren().reserve(node.numChildren());
 
-        if (ephemeral_owner != 0)
+        if (node.stats.isContainer())
         {
-            storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            storage.container_paths.insert(std::string{path});
+            storage.committed_container_nodes.fetch_add(1);
+        }
+        else if (node.stats.isEphemeral())
+        {
+            storage.committed_ephemerals[ephemeral_owner].insert(std::string{path});
             ++storage.committed_ephemeral_nodes;
         }
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
 
+        if (node.stats.isTTL())
+        {
+            storage.ttl_paths.insert(std::string{path});
+            storage.committed_ttl_nodes.fetch_add(1);
+        }
+
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
 
-    if constexpr (use_rocksdb)
-    {
-        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Update node stats");
-        storage.container.finishLoading();
-    }
+    /// The snapshot's ACL map may contain ACLs that are not referenced by any node, e.g. ACLs
+    /// that were referenced only by uncommitted nodes.
+    storage.acl_map.removeUnusedACLs();
 
-    if constexpr (!use_rocksdb)
     {
         LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
@@ -601,7 +624,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
             {
                 auto parent_path = Coordination::parentNodePath(itr.key);
                 storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                    parent_path, [path = itr.key](typename KeeperStorage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
             }
         }
 
@@ -651,7 +674,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
             size_t session_auths_size = 0;
             readBinary(session_auths_size, in);
 
-            typename Storage::AuthIDs ids;
+            typename KeeperStorage::AuthIDs ids;
             size_t session_auth_counter = 0;
             while (session_auth_counter < session_auths_size)
             {
@@ -659,7 +682,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
                 String id;
                 readBinary(scheme, in);
                 readBinary(id, in);
-                ids.emplace_back(typename Storage::AuthID{scheme, id});
+                ids.emplace_back(typename KeeperStorage::AuthID{scheme, id});
 
                 session_auth_counter++;
             }
@@ -684,8 +707,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(
     storage.updateStats();
 }
 
-template<typename Storage>
-KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
     : storage(storage_)
     , version(version_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
@@ -697,15 +719,16 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64
     auto [size, ver] = storage->container.snapshotSizeWithVersion();
     snapshot_container_size = size;
     storage->enableSnapshotMode(ver);
+    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
+    snapshot_mode_guard.release();
 }
 
-template<typename Storage>
-KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(
-    Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(
+    KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
     : storage(storage_)
     , version(version_)
     , snapshot_meta(snapshot_meta_)
@@ -717,21 +740,21 @@ KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(
     auto [size, ver] = storage->container.snapshotSizeWithVersion();
     snapshot_container_size = size;
     storage->enableSnapshotMode(ver);
+    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
+    snapshot_mode_guard.release();
 }
 
-template<typename Storage>
-KeeperStorageSnapshot<Storage>::~KeeperStorageSnapshot()
+KeeperStorageSnapshot::~KeeperStorageSnapshot()
 {
     storage->disableSnapshotMode();
 }
 
-template<typename Storage>
 SnapshotFileInfoPtr
-KeeperSnapshotManager<Storage>::makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const
+KeeperSnapshotManager::makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const
 {
     return std::shared_ptr<SnapshotFileInfo>(
         new SnapshotFileInfo{std::move(path), std::move(disk)},
@@ -739,12 +762,12 @@ KeeperSnapshotManager<Storage>::makeManagedSnapshotFileInfo(std::string path, Di
         {
             try
             {
-                /// Unlink only snapshots explicitly retired by `removeSnapshot`
-                /// or corruption recovery. Manager destruction keeps files.
+                /// Unlink only explicitly retired snapshots (publish-race losers, failed creates,
+                /// outdated-snapshot maintenance, corruption recovery). Manager destruction keeps files.
                 if (p->retired_for_removal.load(std::memory_order_acquire))
                 {
                     p->disk->removeFileIfExists(p->path);
-                    LOG_DEBUG(logger, "Removed outdated snapshot {} at path {}", log_idx, p->path);
+                    LOG_DEBUG(logger, "Removed retired snapshot {} at path {}", log_idx, p->path);
                 }
             }
             catch (...)
@@ -757,8 +780,7 @@ KeeperSnapshotManager<Storage>::makeManagedSnapshotFileInfo(std::string path, Di
         });
 }
 
-template<typename Storage>
-KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
+KeeperSnapshotManager::KeeperSnapshotManager(
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
     bool compress_snapshots_zstd_,
@@ -771,6 +793,17 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     , keeper_context(keeper_context_)
 {
     std::unordered_set<DiskPtr> read_disks;
+
+    struct DuplicateSnapshotFile
+    {
+        DiskPtr disk;
+        std::string path;
+        uint64_t up_to_log_idx = 0;
+    };
+    /// Same-index duplicates found during the scan; handled after all disks are scanned
+    /// because the decision depends on the latest registered index.
+    std::vector<DuplicateSnapshotFile> duplicate_snapshot_files;
+
     const auto load_snapshot_from_disk = [&](const auto & disk)
     {
         if (read_disks.contains(disk))
@@ -812,16 +845,16 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
                 continue;
 
             LOG_TRACE(log, "Found {} on {}", snapshot_file, disk->getName());
-            size_t snapshot_up_to = getSnapshotPathUpToLogIdx(snapshot_file);
-            auto [_, inserted] = existing_snapshots.insert_or_assign(snapshot_up_to,
-                makeManagedSnapshotFileInfo(snapshot_file, disk, snapshot_up_to));
-
-            if (!inserted)
-                LOG_WARNING(
-                    log,
-                    "Found another snapshots with last log idx {}, will use snapshot from disk {}",
-                    snapshot_up_to,
-                    disk->getName());
+            size_t snapshot_up_to = getLogIdxFromSnapshotPath(snapshot_file);
+            if (existing_snapshots.contains(snapshot_up_to))
+            {
+                /// Equivalent snapshots for the same committed index (upgrade races, crashed loser
+                /// cleanup, interrupted moves). First-scanned copy stays registered; the duplicate
+                /// is handled after the scan.
+                duplicate_snapshot_files.push_back(DuplicateSnapshotFile{disk, snapshot_file, snapshot_up_to});
+                continue;
+            }
+            existing_snapshots.emplace(snapshot_up_to, makeManagedSnapshotFileInfo(snapshot_file, disk, snapshot_up_to));
         }
 
         for (const auto & [name, path] : incomplete_files)
@@ -843,16 +876,81 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     if (latest_snapshot_disk != disk)
         load_snapshot_from_disk(latest_snapshot_disk);
 
-    removeOutdatedSnapshotsIfNeeded(/*just_written_log_idx=*/0);
-    moveSnapshotsIfNeeded();
+    /// Duplicates outside the retained window are deleted. Duplicates within it are kept as
+    /// redundant recovery points (operator can remove a broken copy and restart from another).
+    const uint64_t latest_registered_idx = getLatestSnapshotIndex();
+    std::optional<uint64_t> oldest_retained_idx;
+    if (!existing_snapshots.empty() && snapshots_to_keep > 0)
+    {
+        const size_t purged_count
+            = existing_snapshots.size() > snapshots_to_keep ? existing_snapshots.size() - snapshots_to_keep : 0;
+        oldest_retained_idx = std::next(existing_snapshots.begin(), purged_count)->first;
+    }
+    for (auto & duplicate : duplicate_snapshot_files)
+    {
+        const auto & registered = existing_snapshots.at(duplicate.up_to_log_idx);
+        if (!oldest_retained_idx || duplicate.up_to_log_idx < *oldest_retained_idx)
+        {
+            LOG_WARNING(
+                log,
+                "Found duplicate snapshot file {} on disk {} for log index {} which is outside the retained window; "
+                "keeping {} on disk {} and removing the duplicate",
+                duplicate.path,
+                duplicate.disk->getName(),
+                duplicate.up_to_log_idx,
+                registered->path,
+                registered->disk->getName());
+            duplicate.disk->removeFileIfExists(duplicate.path);
+            continue;
+        }
+
+        /// Same-named cross-disk duplicate (interrupted move): re-point registration to the copy
+        /// already on the target disk so maintenance doesn't overwrite it via `copyFile`.
+        const DiskPtr target_disk = (duplicate.up_to_log_idx == latest_registered_idx) ? getLatestSnapshotDisk() : getDisk();
+        if (duplicate.path == registered->path && duplicate.disk != registered->disk && duplicate.disk == target_disk)
+        {
+            LOG_WARNING(
+                log,
+                "Re-pointing registered snapshot {} for retained log index {} from disk {} to its same-named copy on target disk {}; "
+                "keeping both copies as redundant recovery points",
+                registered->path,
+                duplicate.up_to_log_idx,
+                registered->disk->getName(),
+                duplicate.disk->getName());
+            /// Track the now-unreferenced original so retention reclaims it with this index.
+            const DiskPtr orphaned_disk = registered->disk;
+            retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
+                makeManagedSnapshotFileInfo(registered->path, orphaned_disk, duplicate.up_to_log_idx));
+            registered->disk = duplicate.disk;
+        }
+        else
+        {
+            LOG_WARNING(
+                log,
+                "Found duplicate snapshot file {} on disk {} for retained log index {}; keeping it as a redundant recovery copy "
+                "next to the registered {} on disk {} until the index leaves the retained window",
+                duplicate.path,
+                duplicate.disk->getName(),
+                duplicate.up_to_log_idx,
+                registered->path,
+                registered->disk->getName());
+            /// Track the kept duplicate so it ages out with its index (as the message promises).
+            retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
+                makeManagedSnapshotFileInfo(std::move(duplicate.path), std::move(duplicate.disk), duplicate.up_to_log_idx));
+        }
+    }
+
+    /// Runs before `init` sets the mark, so `protected_snapshot_log_idx == 0` here — nothing
+    /// to pin yet. With `snapshots_to_keep == 0` retention keeps none at startup (pre-existing).
+    runMaintenanceInline(/*just_written_log_idx=*/0);
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx)
 {
+    const auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
+
     ReadBufferFromNuraftBuffer reader(buffer);
 
-    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     auto disk = getLatestSnapshotDisk();
@@ -890,27 +988,48 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
         throw;
     }
 
-    auto snapshot_file_info = registerSnapshotFile(up_to_log_idx, makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx));
-    try
-    {
-        removeOutdatedSnapshotsIfNeeded(up_to_log_idx);
-        moveSnapshotsIfNeeded();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
-    }
-
-    return snapshot_file_info;
+    return makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
 }
 
-template<typename Storage>
-std::unique_ptr<SnapshotReceiveCtx> KeeperSnapshotManager<Storage>::beginSnapshotReceiveToDisk(uint64_t up_to_log_idx)
+SnapshotFileInfoPtr KeeperSnapshotManager::tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const
 {
-    auto disk = getLatestSnapshotDisk();
-    LOG_DEBUG(log, "Receiving snapshot {} to {} disk", up_to_log_idx, isLocalDisk(*disk) ? "local" : "remote");
+    if (auto it = existing_snapshots.find(up_to_log_idx); it != existing_snapshots.end())
+    {
+        LOG_INFO(
+            log,
+            "Snapshot with log index {} is already registered at path {} on disk {}, reusing existing metadata without rewriting it",
+            up_to_log_idx,
+            it->second->path,
+            it->second->disk->getName());
+        return it->second;
+    }
+    return nullptr;
+}
+
+SnapshotFileInfoPtr KeeperSnapshotManager::publishAndRunMaintenance(uint64_t up_to_log_idx, SnapshotFileInfoPtr written)
+{
+    auto published_snapshot_file_info = publishSnapshotFile(up_to_log_idx, written);
+    if (published_snapshot_file_info != written)
+        retireUnpublishedSnapshotFile(written);
+    runMaintenanceInline(up_to_log_idx);
+    return published_snapshot_file_info;
+}
+
+SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+{
+    if (auto existing = tryReuseRegisteredSnapshot(up_to_log_idx))
+        return existing;
+
+    auto snapshot_file_info = writeSnapshotBufferToFile(buffer, up_to_log_idx);
+    return publishAndRunMaintenance(up_to_log_idx, snapshot_file_info);
+}
+
+std::unique_ptr<SnapshotReceiveCtx> KeeperSnapshotManager::beginSnapshotReceiveToDisk(uint64_t up_to_log_idx)
+{
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
 
+    auto disk = getLatestSnapshotDisk();
+    LOG_DEBUG(log, "Receiving snapshot {} to {} disk", up_to_log_idx, isLocalDisk(*disk) ? "local" : "remote");
     const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     try
@@ -932,8 +1051,7 @@ std::unique_ptr<SnapshotReceiveCtx> KeeperSnapshotManager<Storage>::beginSnapsho
     }
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx)
+SnapshotFileInfoPtr KeeperSnapshotManager::finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx)
 {
     const auto tmp_snapshot_file_name = "tmp_" + ctx.snapshot_file_name;
 
@@ -957,22 +1075,11 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
         throw;
     }
 
-    auto snapshot_file_info = registerSnapshotFile(ctx.log_idx, makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx));
-    try
-    {
-        removeOutdatedSnapshotsIfNeeded(ctx.log_idx);
-        moveSnapshotsIfNeeded();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
-    }
-
-    return snapshot_file_info;
+    auto snapshot_file_info = makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx);
+    return publishAndRunMaintenance(ctx.log_idx, snapshot_file_info);
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSnapshotBufferFromDisk()
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
 {
     while (!existing_snapshots.empty())
     {
@@ -996,15 +1103,13 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSna
     return nullptr;
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
     const auto & snapshot_info = *existing_snapshots.at(up_to_log_idx);
     return deserializeSnapshotBufferFromDisk(snapshot_info);
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const
 {
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_info.disk->readFile(snapshot_info.path, getReadSettings());
@@ -1012,8 +1117,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotB
     return writer.getBuffer();
 }
 
-template<typename Storage>
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const
 {
     std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
     auto * buffer_raw_ptr = writer.get();
@@ -1023,13 +1127,12 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToB
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     return buffer_raw_ptr->getBuffer();
 }
 
-template<typename Storage>
-bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
+bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
     static constexpr unsigned char ZSTD_COMPRESSED_MAGIC[4] = {0x28, 0xB5, 0x2F, 0xFD};
 
@@ -1040,8 +1143,7 @@ bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer
     return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
-template<typename Storage>
-SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
+SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
 {
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
@@ -1053,16 +1155,15 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     else
         compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
 
-    SnapshotDeserializationResult<Storage> result;
-    result.storage = std::make_unique<Storage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
-    KeeperStorageSnapshot<Storage>::deserialize(result, *compressed_reader, keeper_context, load_full_storage);
+    SnapshotDeserializationResult result;
+    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
+    KeeperStorageSnapshot::deserialize(result, *compressed_reader, keeper_context, load_full_storage);
     if (load_full_storage)
         result.storage->initializeSystemNodes();
     return result;
 }
 
-template<typename Storage>
-SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+SnapshotMetadataPtr KeeperSnapshotManager::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
     /// `nuraft::buffer::pos(0)` resets the cursor. This method must leave the
     /// buffer at offset `0` on success and on throw.
@@ -1087,8 +1188,7 @@ SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataF
     return deserializeSnapshotMetadata(*compressed_reader);
 }
 
-template<typename Storage>
-SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::restoreFromLatestSnapshot()
+SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
 {
     if (existing_snapshots.empty())
         return {};
@@ -1099,57 +1199,55 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::restoreFr
     return deserializeSnapshotFromBuffer(buffer);
 }
 
-template<typename Storage>
-DiskPtr KeeperSnapshotManager<Storage>::getDisk() const
+DiskPtr KeeperSnapshotManager::getDisk() const
 {
     return keeper_context->getSnapshotDisk();
 }
 
-template<typename Storage>
-DiskPtr KeeperSnapshotManager<Storage>::getLatestSnapshotDisk() const
+DiskPtr KeeperSnapshotManager::getLatestSnapshotDisk() const
 {
     return keeper_context->getLatestSnapshotDisk();
 }
 
-template<typename Storage>
-void KeeperSnapshotManager<Storage>::setProtectedSnapshotIndex(uint64_t log_idx)
+void KeeperSnapshotManager::setProtectedSnapshotIndex(uint64_t log_idx)
 {
     protected_snapshot_log_idx = log_idx;
 }
 
-template<typename Storage>
-void KeeperSnapshotManager<Storage>::setProtectedPendingSnapshotIndex(uint64_t log_idx)
+void KeeperSnapshotManager::setProtectedPendingSnapshotIndex(uint64_t log_idx)
 {
     protected_pending_snapshot_log_idx = log_idx;
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::registerSnapshotFile(uint64_t log_idx, const SnapshotFileInfoPtr & snapshot_file_info)
+std::vector<SnapshotFileInfoPtr>
+KeeperSnapshotManager::detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator itr)
 {
-    auto [it, inserted] = existing_snapshots.try_emplace(log_idx, snapshot_file_info);
-    if (inserted)
-        return it->second;
+    const uint64_t log_idx = itr->first;
+    std::vector<SnapshotFileInfoPtr> retired;
+    auto snapshot_file_info = itr->second;
+    snapshot_file_info->retired_for_removal.store(true, std::memory_order_release);
+    existing_snapshots.erase(itr);
+    retired.push_back(std::move(snapshot_file_info));
 
-    if (it->second->disk == snapshot_file_info->disk && it->second->path == snapshot_file_info->path)
-        return it->second; /// In-place overwrite: keep the canonical entry the map already tracks.
+    /// Retire same-index recovery copies; caller's pin drop unlinks them outside `snapshots_lock`.
+    if (auto dup_it = retained_duplicate_snapshots.find(log_idx); dup_it != retained_duplicate_snapshots.end())
+    {
+        for (auto & duplicate : dup_it->second)
+        {
+            duplicate->retired_for_removal.store(true, std::memory_order_release);
+            retired.push_back(std::move(duplicate));
+        }
+        retained_duplicate_snapshots.erase(dup_it);
+    }
 
-    LOG_WARNING(
-        log,
-        "Snapshot with last log idx {} was already registered at {} (disk {}); replacing the registry entry "
-        "with the just-written file at {} (disk {}) and retiring the old one",
-        log_idx, it->second->path, it->second->disk->getName(),
-        snapshot_file_info->path, snapshot_file_info->disk->getName());
-    /// Different (disk, path), and the managed deleter unlinks only after the last pin releases.
-    it->second->retired_for_removal.store(true, std::memory_order_release);
-    it->second = snapshot_file_info;
-    return it->second;
+    return retired;
 }
 
-template<typename Storage>
-void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx)
+std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager::detachOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx)
 {
     /// Keep the `snapshots_to_keep` newest snapshots, plus the protected (mark-backing) entry,
     /// the pending-install entry, and the just-written entry. Worst-case: snapshots_to_keep + 3.
+    std::vector<SnapshotFileInfoPtr> retired_snapshots;
     size_t pinned_below = 0;
     auto candidate = existing_snapshots.begin();
     while (candidate != existing_snapshots.end()
@@ -1164,55 +1262,70 @@ void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded(uint64_t ju
             continue;
         }
         auto to_remove = candidate++;
-        removeSnapshot(to_remove->first);
+        auto detached = detachSnapshotForRemoval(to_remove);
+        retired_snapshots.insert(
+            retired_snapshots.end(), std::make_move_iterator(detached.begin()), std::make_move_iterator(detached.end()));
     }
+    return retired_snapshots;
 }
 
-template<typename Storage>
-void KeeperSnapshotManager<Storage>::moveSnapshotsIfNeeded()
+std::vector<SnapshotMoveCandidate> KeeperSnapshotManager::selectSnapshotsToMove()
 {
-    /// Move snapshots to their configured disks when no outside holder pins them.
-    auto disk = getDisk();
+    std::vector<SnapshotMoveCandidate> move_candidates;
+    auto regular_disk = getDisk();
     auto latest_snapshot_disk = getLatestSnapshotDisk();
     auto latest_snapshot_idx = getLatestSnapshotIndex();
 
     for (auto & [idx, file_info] : existing_snapshots)
     {
-        DiskPtr target_disk = (idx == latest_snapshot_idx) ? latest_snapshot_disk : disk;
+        DiskPtr target_disk = (idx == latest_snapshot_idx) ? latest_snapshot_disk : regular_disk;
 
         if (file_info->disk == target_disk)
             continue;
 
-        /// `use_count > 1` means a transfer, S3 upload, or caller still
-        /// holds the file. Retry the move on the next snapshot-manager update.
+        if (file_info->retired_for_removal.load(std::memory_order_acquire))
+            continue;
+
         const int64_t count = file_info.use_count();
         if (count > 1)
         {
-            LOG_DEBUG(log,
-                "Deferring move of snapshot {} - has {} outside references",
-                idx, count - 1);
+            LOG_DEBUG(log, "Deferring move of snapshot {} - has {} outside references", idx, count - 1);
             continue;
         }
 
-        moveSnapshotBetweenDisks(file_info->disk, file_info->path, target_disk, file_info->path, keeper_context);
-        file_info->disk = target_disk;
+        move_candidates.push_back(
+            SnapshotMoveCandidate{
+                .log_idx = idx,
+                .file_info = file_info,
+                .source_disk = file_info->disk,
+                .source_path = file_info->path,
+                .target_disk = target_disk,
+                .target_path = file_info->path,
+            });
     }
+
+    return move_candidates;
 }
 
-template<typename Storage>
-void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
+SnapshotMaintenanceTasks KeeperSnapshotManager::prepareSnapshotMaintenanceTasks(uint64_t just_written_log_idx)
 {
-    auto itr = existing_snapshots.find(log_idx);
-    if (itr == existing_snapshots.end())
-        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-
-    /// Mark before erasing so the deleter unlinks after the last pin is released.
-    itr->second->retired_for_removal.store(true, std::memory_order_release);
-    existing_snapshots.erase(itr);
+    SnapshotMaintenanceTasks tasks;
+    tasks.retired_snapshots = detachOutdatedSnapshotsIfNeeded(just_written_log_idx);
+    tasks.move_candidates = selectSnapshotsToMove();
+    return tasks;
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot)
+void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
+{
+    /// Tests/tools only: the dropped pins unlink synchronously here; the server reclaims
+    /// via the deferred Phase 4 path.
+    auto it = existing_snapshots.find(log_idx);
+    if (it == existing_snapshots.end())
+        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
+    detachSnapshotForRemoval(it);
+}
+
+SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorageSnapshot & snapshot)
 {
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
@@ -1237,7 +1350,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
             compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
         const size_t bytes_before = compressed_writer->count();
-        KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+        KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
         const size_t bytes_written = compressed_writer->count() - bytes_before;
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
 
@@ -1259,31 +1372,164 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
         throw;
     }
 
-    auto snapshot_file_info = registerSnapshotFile(up_to_log_idx, makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx));
+    return makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
+}
 
+SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
+{
+    auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
+    if (auto existing = tryReuseRegisteredSnapshot(up_to_log_idx))
+        return existing;
+
+    auto snapshot_file_info = writeSnapshotFile(snapshot);
+    return publishAndRunMaintenance(up_to_log_idx, snapshot_file_info);
+}
+
+SnapshotFileInfoPtr KeeperSnapshotManager::publishSnapshotFile(uint64_t up_to_log_idx, SnapshotFileInfoPtr file_info)
+{
+    if (!file_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot publish empty snapshot file info for log index {}", up_to_log_idx);
+
+    auto [it, inserted] = existing_snapshots.emplace(up_to_log_idx, file_info);
+    if (inserted)
+        return file_info;
+
+    LOG_INFO(
+        log,
+        "Snapshot with log index {} is already registered at path {} on disk {}, reusing existing metadata",
+        up_to_log_idx,
+        it->second->path,
+        it->second->disk->getName());
+    return it->second;
+}
+
+void KeeperSnapshotManager::retireUnpublishedSnapshotFile(const SnapshotFileInfoPtr & file_info) const
+{
+    if (file_info)
+        file_info->retired_for_removal.store(true, std::memory_order_release);
+}
+
+bool KeeperSnapshotManager::publishMovedSnapshotIfValid(const SnapshotMoveCandidate & candidate)
+{
+    const auto it = existing_snapshots.find(candidate.log_idx);
+    if (it == existing_snapshots.end())
+    {
+        LOG_DEBUG(log, "Rejecting move publication for snapshot {} because metadata is absent", candidate.log_idx);
+        return false;
+    }
+
+    if (it->second != candidate.file_info)
+    {
+        LOG_DEBUG(log, "Rejecting move publication for snapshot {} because metadata was replaced", candidate.log_idx);
+        return false;
+    }
+
+    /// `disk`/`path` are mutated only under `snapshots_lock`; a concurrent pin release
+    /// can only lower `use_count`, i.e. reject a move, never make one unsafe.
+    if (candidate.file_info->disk != candidate.source_disk || candidate.file_info->path != candidate.source_path)
+    {
+        LOG_DEBUG(log, "Rejecting move publication for snapshot {} because source metadata changed", candidate.log_idx);
+        return false;
+    }
+
+    if (candidate.file_info->retired_for_removal.load(std::memory_order_acquire))
+    {
+        LOG_DEBUG(log, "Rejecting move publication for retired snapshot {}", candidate.log_idx);
+        return false;
+    }
+
+    const int64_t count = candidate.file_info.use_count();
+    if (count != 2)
+    {
+        LOG_DEBUG(log, "Rejecting move publication for snapshot {} because it has {} shared references", candidate.log_idx, count);
+        return false;
+    }
+
+    auto latest_snapshot_idx = getLatestSnapshotIndex();
+    DiskPtr current_target_disk = (candidate.log_idx == latest_snapshot_idx) ? getLatestSnapshotDisk() : getDisk();
+    if (current_target_disk != candidate.target_disk)
+    {
+        LOG_DEBUG(log, "Rejecting move publication for snapshot {} because target disk role changed", candidate.log_idx);
+        return false;
+    }
+
+    candidate.file_info->disk = candidate.target_disk;
+    candidate.file_info->path = candidate.target_path;
+    return true;
+}
+
+void KeeperSnapshotManager::cleanupCopiedMoveTarget(const SnapshotMoveCandidate & candidate) const
+{
     try
     {
-        removeOutdatedSnapshotsIfNeeded(up_to_log_idx);
-        moveSnapshotsIfNeeded();
+        candidate.target_disk->removeFileIfExists(candidate.target_path);
+        LOG_DEBUG(log, "Removed rejected copied snapshot target {} from disk {}", candidate.target_path, candidate.target_disk->getName());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            log,
+            fmt::format(
+                "Failed to remove rejected copied snapshot target {} from disk {}",
+                candidate.target_path,
+                candidate.target_disk->getName()));
+    }
+}
+
+bool KeeperSnapshotManager::moveSnapshotCandidate(
+    const SnapshotMoveCandidate & candidate,
+    const std::function<bool(const SnapshotMoveCandidate &)> & publish_moved_snapshot)
+{
+    bool metadata_published = false;
+    try
+    {
+        moveFileBetweenDisks(
+            candidate.source_disk,
+            candidate.source_path,
+            candidate.target_disk,
+            candidate.target_path,
+            /// Returning false keeps the source file; the caller owns target cleanup.
+            [&] { metadata_published = publish_moved_snapshot(candidate); return metadata_published; },
+            log,
+            keeper_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to move snapshot {}", candidate.log_idx));
+    }
+
+    if (!metadata_published)
+        cleanupCopiedMoveTarget(candidate); /// harmless if the copy never completed
+    return metadata_published;
+}
+
+void KeeperSnapshotManager::runMaintenanceInline(uint64_t just_written_log_idx)
+{
+    /// Best-effort: swallow all exceptions so a failure here never unregisters the just-written snapshot.
+    try
+    {
+        SnapshotMaintenanceTasks tasks = prepareSnapshotMaintenanceTasks(just_written_log_idx);
+        tasks.retired_snapshots.clear();
+        for (const auto & candidate : tasks.move_candidates)
+            moveSnapshotCandidate(candidate, [this](const SnapshotMoveCandidate & move_candidate)
+            {
+                return publishMovedSnapshotIfValid(move_candidate);
+            });
     }
     catch (...)
     {
         tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
     }
-
-    return snapshot_file_info;
 }
 
-template<typename Storage>
-size_t KeeperSnapshotManager<Storage>::getLatestSnapshotIndex() const
+size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
 {
     if (!existing_snapshots.empty())
         return existing_snapshots.rbegin()->first;
     return 0;
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() const
+SnapshotFileInfoPtr KeeperSnapshotManager::getLatestSnapshotInfo() const
 {
     if (existing_snapshots.empty())
         return nullptr;
@@ -1304,14 +1550,12 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
     return nullptr;
 }
 
-template<typename Storage>
-std::map<uint64_t, SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const
+std::map<uint64_t, SnapshotFileInfoPtr> KeeperSnapshotManager::getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const
 {
     return existing_snapshots;
 }
 
-template<typename Storage>
-SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getSnapshotPin(uint64_t log_idx) const
+SnapshotFileInfoPtr KeeperSnapshotManager::getSnapshotPin(uint64_t log_idx) const
 {
     auto it = existing_snapshots.find(log_idx);
     if (it == existing_snapshots.end())
@@ -1319,10 +1563,4 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getSnapshotPin(uint64_t log_
     return it->second;
 }
 
-template struct KeeperStorageSnapshot<KeeperMemoryStorage>;
-template class KeeperSnapshotManager<KeeperMemoryStorage>;
-#if USE_ROCKSDB
-template struct KeeperStorageSnapshot<KeeperRocksStorage>;
-template class KeeperSnapshotManager<KeeperRocksStorage>;
-#endif
 }

@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'Управление пользователями в облаке'
+slug: /cloud/security/manage-cloud-users
+title: 'Управление пользователями в облаке'
+description: 'На этой странице описано, как администраторы могут добавлять и удалять пользователей, а также управлять их назначениями'
+doc_type: 'guide'
+keywords: ['облачные пользователи', 'управление доступом', 'безопасность', 'разрешения', 'управление командой']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+Это руководство предназначено для пользователей с ролью Admin в ClickHouse Cloud.
+
+<div id="add-users">
+  ## Добавление пользователей в организацию
+</div>
+
+<div id="invite-users">
+  ### Приглашение пользователей
+</div>
+
+Администраторы могут приглашать сразу нескольких пользователей и при приглашении назначать им одну или несколько ролей.
+
+<Steps>
+  <Step>
+    ### Откройте настройки организации и выберите Users and roles
+
+    На странице сервисов выберите название своей организации. Во всплывающем меню выберите пункт `Users and roles`.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Выберите &#39;Invite members&#39; в левом верхнем углу
+
+    Нажмите кнопку `Invite members` в левом верхнем углу.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Введите адреса электронной почты новых участников и назначьте роли
+
+    Введите адреса электронной почты в верхней части экрана приглашения. Выберите одну или несколько ролей для назначения пользователям.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Нажмите `Send invites`
+
+    Нажмите `Send invites` в нижней части экрана. Пользователи получат электронное письмо, из которого смогут перейти к присоединению к организации. Подробнее о принятии приглашений см. в разделе [Управление моей учетной записью](/ru/products/cloud/guides/security/cloud-access-management/manage-my-account).
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+  </Step>
+</Steps>
+
+<div id="add-users-via-saml">
+  ### Добавьте пользователей через провайдер идентификации SAML
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+Если для вашей организации настроен [SAML SSO](/ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup), выполните следующие действия, чтобы добавить пользователей в организацию.
+
+1. Добавьте пользователей в приложение SAML у вашего провайдера идентификации. Пользователи не появятся в ClickHouse, пока хотя бы один раз не войдут в систему.
+2. Когда пользователь войдёт в ClickHouse Cloud, ему автоматически будет назначена роль по умолчанию, выбранная в вашей конфигурации SAML.
+3. Следуйте приведённым ниже инструкциям в разделе `управление назначение ролей пользователей`, чтобы назначить разрешения
+
+<div id="enforce-saml">
+  ### Обязательная аутентификация только через SAML
+</div>
+
+Когда в организации есть хотя бы один пользователь SAML с назначенной ролью Admin, удалите из организации пользователей с другими методами аутентификации, чтобы разрешить для организации только аутентификацию через SAML.
+
+<div id="manage-role-assignments">
+  ## Управление назначение ролей пользователей
+</div>
+
+Пользователи с ролью Admin могут в любое время изменять разрешения других пользователей.
+
+<Steps>
+  <Step>
+    ### Откройте настройки организации и выберите Users and roles
+
+    На странице сервисов выберите название вашей организации. Во всплывающем меню выберите пункт `Users and roles`.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Выберите пользователя, данные которого нужно изменить, и нажмите Edit
+
+    Выберите пункт меню в конце строки нужного пользователя. Во всплывающем меню выберите `Edit`.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Обновите разрешения
+
+    Нажмите на поле `Roles`, чтобы развернуть меню. Установите или снимите флажки, чтобы назначить пользователю роли или удалить их. Список ролей и связанных с ними разрешений см. в разделе [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles).
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Сохраните изменения
+
+    Сохраните изменения с помощью кнопки `Save changes` в нижней части вкладки.
+  </Step>
+</Steps>
+
+<div id="remove-user">
+  ## Удаление пользователя
+</div>
+
+<Info>
+  **Удаление SAML-пользователей**
+
+  SAML-пользователи, которым в провайдере идентификации был отключен доступ к приложению ClickHouse, не смогут войти в ClickHouse Cloud. При этом учетная запись не удаляется из консоли, поэтому ее нужно удалить вручную.
+</Info>
+
+Чтобы удалить пользователя, выполните следующие действия.
+
+1. Выберите название организации в левом нижнем углу
+2. Нажмите `Users and roles`
+3. Нажмите на три точки рядом с именем пользователя и выберите `Remove`
+4. Подтвердите действие, нажав кнопку `Remove user`

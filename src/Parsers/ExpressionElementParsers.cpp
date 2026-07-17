@@ -1497,7 +1497,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return true;
                 }
 
-                layers.back().arr.push_back(literal->value);
+                /// Move the just-finished nested collection into its parent instead of copying it.
+                /// `literal` is a local that is discarded right after (only the outermost layer is
+                /// kept as `node`), so moving its value out is safe. Copying here made parsing a
+                /// deeply nested literal such as `[[[ ... ]]]` quadratic in its depth.
+                layers.back().arr.push_back(std::move(literal->value));
                 continue;
             }
             if (pos->type == TokenType::Comma)
@@ -1793,6 +1797,25 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
+
+        /// Special case: an implicit alias literally named COMMENT is only ambiguous
+        /// when it is immediately followed by a string literal at the very end of the
+        /// query (e.g. "... FROM t COMMENT 'x'"), which is the trailing view/table
+        /// comment syntax. In that specific situation, reject it as an alias so the
+        /// caller backtracks and the caller-level comment parser can consume it
+        /// instead. Everywhere else (e.g. "SELECT 1 comment", "FROM t comment,"),
+        /// COMMENT remains a perfectly valid implicit alias.
+        if (0 == strcasecmp(name.data(), "COMMENT"))
+        {
+            Pos peek = pos;
+            Expected peek_expected;
+            ASTPtr comment_literal;
+            if (ParserStringLiteral().parse(peek, comment_literal, peek_expected))
+            {
+                if (peek->type == TokenType::EndOfStream || peek->type == TokenType::Semicolon)
+                    return false;
+            }
+        }
     }
 
     return true;

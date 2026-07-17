@@ -36,6 +36,8 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
     {{"random",           LoadBalancing::RANDOM},
      {"nearest_hostname", LoadBalancing::NEAREST_HOSTNAME},
      {"hostname_levenshtein_distance", LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE},
+     {"hostname_longest_common_prefix", LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX},
+     {"hostname_longest_common_suffix", LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
@@ -61,7 +63,9 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
-     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE},
+     {"dpsub",              JoinOrderAlgorithm::DPSUB},
+     {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -127,6 +131,10 @@ IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {"value", FormatSettings::AggregateFunctionInputFormat::Value},
     {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
 
+IMPLEMENT_SETTING_ENUM(GeoJSONUnsupportedGeometryHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::UnsupportedGeometryHandling::Throw},
+     {"null",  FormatSettings::UnsupportedGeometryHandling::Null}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
@@ -170,6 +178,10 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
+
+IMPLEMENT_SETTING_ENUM(SnappyMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"basic",  SnappyMode::Basic},
+     {"framed", SnappyMode::Framed}})
 
 IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
     {{"async",          TransactionsWaitCSNMode::ASYNC},
@@ -290,6 +302,10 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENT
      {"partition", ObjectStorageQueueBucketingMode::PARTITION},
      {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
 
+IMPLEMENT_SETTING_ENUM(QueryRunnerMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"synchronous", QueryRunnerMode::SYNCHRONOUS},
+     {"asynchronous", QueryRunnerMode::ASYNCHRONOUS}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -352,7 +368,8 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -378,6 +395,13 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
+
+IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
+     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
@@ -439,6 +463,12 @@ IMPLEMENT_SETTING_ENUM(
      {"none", SearchOrphanedPartsDisks::NONE}})
 
 IMPLEMENT_SETTING_ENUM(
+    TextIndexPostingListCodec,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", TextIndexPostingListCodec::None},
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,
     ErrorCodes::BAD_ARGUMENTS,
     {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},
@@ -481,11 +511,6 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
 
-IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
-    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
-     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
-     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
-
 IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},
      {"symbolized", JemallocProfileFormat::Symbolized},
@@ -495,6 +520,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
+    {{"legacy", ExplainQueryPlanDefault::LEGACY},
+     {"pretty", ExplainQueryPlanDefault::PRETTY}})
 
 IMPLEMENT_SETTING_ENUM(
     FileLikeEngineDefaultPartitionStrategy,

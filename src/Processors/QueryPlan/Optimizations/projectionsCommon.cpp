@@ -1,3 +1,4 @@
+#include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
 #include <Columns/ColumnConst.h>
@@ -21,7 +22,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
@@ -45,7 +45,34 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
+    /// Reading through a projection part bypasses the parent table's
+    /// delete-bitmap filter, so logically-deleted rows would resurface. Decline
+    /// the projection for a unique-key table that carries one (CREATE/ALTER
+    /// reject the combination, but SECONDARY_CREATE/ATTACH load it); the
+    /// optimizer then falls back to the correctly-filtered base-table read, and
+    /// an actual projection-part read is hard-rejected downstream in
+    /// MergeTreeDataSelectExecutor. A unique-key table with no projection is
+    /// unaffected.
+    /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
+    /// TODO(unique-key): count shortcuts that bypass the delete bitmap — the
+    /// implicit _minmax_count_projection here and the trivial-count path
+    /// (supportsTrivialCountOptimization -> totalRows) — are deferred to the
+    /// read+delete work, which makes count() delete-bitmap-aware.
+    {
+        const auto metadata = reading->getStorageMetadata();
+        if (metadata->hasUniqueKey() && metadata->hasProjections())
+            return false;
+    }
+
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
+        return false;
+
+    /// A distributed read (make_distributed_plan) was already turned into a sharded read by an
+    /// earlier optimization pass. A projection match would replace this single read with a Union of
+    /// the surviving-parts read and the projection read, and only one branch carries the sharded
+    /// flag -> the branches expose different shard lists and makeDistributedPlan asserts on the
+    /// mismatch. Keep the read whole; the projection optimization is a no-op for distributed reads.
+    if (reading->getDistributedReadBucketCount() > 0)
         return false;
 
     if (reading->isQueryWithFinal())
@@ -72,10 +99,6 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
         if (!support_projection || enable_aggregation_in_order)
             return false;
     }
-
-    // Currently projection don't support deduplication when moving parts between shards.
-    if (query_settings[Setting::allow_experimental_query_deduplication])
-        return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
     if (query_settings[Setting::aggregate_functions_null_for_empty])
@@ -128,21 +151,19 @@ static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::strin
             if (node->result_type->onlyNull())
                 return nullptr;
 
-            if (!isUInt8(removeNullable(removeLowCardinality(node->result_type))))
+            if (!node->result_type->canBeUsedInBooleanContext())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                    "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
+                    "Illegal type {} of column {} for filter. Must be native integer or float type",
                     node->result_type->getName(), name);
 
             if (remove)
             {
                 outputs.erase(it);
             }
-            else
-            {
-                auto column = node->result_type->createColumnConst(0, 1);
-                *it = &dag.addColumn(std::move(column), node->result_type, node->result_name);
-            }
-
+            /// When the filter column survives (`remove == false`), it must be left alone:
+            /// its `result_name` may also denote a downstream-used data column (e.g.
+            /// `WHERE c GROUP BY c`), and replacing the output with a const-1 placeholder
+            /// would corrupt that column for every consumer of `query.dag`.
             return node;
         }
     }
