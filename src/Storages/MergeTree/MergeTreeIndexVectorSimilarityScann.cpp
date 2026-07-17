@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <numeric>
 
 /// ScaNN headers — included only in this translation unit.
@@ -138,8 +139,8 @@ static size_t getAutoScannCandidatePoolSize(size_t num_candidates, size_t num_ve
 {
     /// Approximate MyScale's balanced alpha=2.0 profile:
     /// num_reorder = 20 * floor(topK^0.65 * sqrt(alpha)) * 2.5.
-    constexpr double alpha = 2.0;
-    double pool = 20.0 * std::floor(std::pow(static_cast<double>(num_candidates), 0.65) * std::sqrt(alpha));
+    /// Alpha is fixed at 2.0, so use the standard sqrt(2) constant directly.
+    double pool = 20.0 * std::floor(std::pow(static_cast<double>(num_candidates), 0.65) * std::numbers::sqrt2);
     if (num_vectors > 10000000)
         pool *= std::sqrt(static_cast<double>(num_vectors) / 1e7);
     if (data_dim >= 1024)
