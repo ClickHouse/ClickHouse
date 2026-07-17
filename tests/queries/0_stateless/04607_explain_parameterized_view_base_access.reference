@@ -1,0 +1,15 @@
+-- INVOKER view, full access (base + view): every form of EXPLAIN matches SELECT and is allowed
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN QUERY TREE: OK
+EXPLAIN QUERY TREE FINAL: OK
+-- INVOKER view, access to the view but not the base table: every form of EXPLAIN is denied exactly as SELECT is
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+EXPLAIN QUERY TREE: ACCESS_DENIED
+EXPLAIN SYNTAX FINAL: ACCESS_DENIED
+EXPLAIN QUERY TREE FINAL: ACCESS_DENIED
+-- DEFINER view, access to the view but not the base table: allowed exactly as SELECT is (base read as the definer)
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN QUERY TREE: OK

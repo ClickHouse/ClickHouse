@@ -778,17 +778,23 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
                     storage_id.getFullTableName());
         }
 
-        /// The check above enforces `SELECT` on this table (or view) object. A regular, non-parameterized
-        /// view that is not inlined (`analyzer_inline_views = 0`, the default) stays as a single `TableNode`,
-        /// so its inner query — and the base tables it reads — never appear in `query_tree`. Real execution
-        /// still reads them: `StorageView::readImpl` builds the view's inner query under the view's own
-        /// context and checks the base-table privileges there. `checkViewBaseTableAccess` reproduces that
-        /// inner pass so a user with `SELECT` on the view but not on its base tables is denied, exactly as a
-        /// plain `SELECT` through the view is. Parameterized views are expanded before the tree is built and
-        /// checked separately; inlined views already expose their base tables as `TableNode`s handled by the
-        /// loop above, so neither is double-checked here.
-        if (const auto * view = typeid_cast<const StorageView *>(table_node->getStorage().get());
-            view && !view->isParameterizedView())
+        /// The check above enforces `SELECT` on this table (or view) object. A view that is not inlined
+        /// stays as a single `TableNode`, so its inner query — and the base tables it reads — never appear
+        /// in `query_tree`. Real execution still reads them: `StorageView::readImpl` builds the view's inner
+        /// query under the view's own context and checks the base-table privileges there.
+        /// `checkViewBaseTableAccess` reproduces that inner pass so a user with `SELECT` on the view but not
+        /// on its base tables is denied, exactly as a plain `SELECT` through the view is.
+        ///
+        /// This covers both a regular, non-parameterized view that is not inlined (`analyzer_inline_views = 0`,
+        /// the default) and a parameterized view: `QueryAnalyzer::resolveTableFunction` turns `pv(...)` into a
+        /// fake `TableNode` whose storage (built by `Context::buildParameterizedViewStorage`) already holds
+        /// the parameter-substituted inner query and the view's SQL security, so exactly the same recursive
+        /// pass applies. Without it a user with `SELECT` on the parameterized view but not on its base table
+        /// could `EXPLAIN QUERY TREE SELECT * FROM pv(...)` (or `EXPLAIN SYNTAX` when expansion is skipped for
+        /// `FINAL` / `SAMPLE` / `SQL SECURITY DEFINER` / `NONE`) and read metadata that real execution rejects
+        /// in `StorageView::readImpl`. Inlined views already expose their base tables as `TableNode`s handled
+        /// by the loop above, so they are not double-checked here.
+        if (typeid_cast<const StorageView *>(table_node->getStorage().get()))
             checkViewBaseTableAccess(table_node->getStorageSnapshot(), scope_context, column_names);
     }
 }
