@@ -85,6 +85,9 @@ class MergeTask
 {
 public:
     static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
+    /// Suffix marker for the throwaway temporary part of OPTIMIZE ... DRY RUN, so its temporary
+    /// directory never collides with a concurrent real merge producing the same result part.
+    static constexpr auto DRY_RUN_TEMP_SUFFIX = "_dry_run_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,

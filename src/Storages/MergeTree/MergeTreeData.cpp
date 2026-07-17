@@ -8619,6 +8619,11 @@ void MergeTreeData::optimizeDryRun(
         future_part,
         task_context);
 
+    /// DRY RUN takes no merge guard, so a concurrent real merge on the same parts would reserve
+    /// the same "tmp_merge_<result>" directory. The dry-run part is throwaway, so give it a unique
+    /// suffix to make that collision impossible.
+    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_SUFFIX) + toString(UUIDHelpers::generateV4());
+
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
@@ -8632,7 +8637,11 @@ void MergeTreeData::optimizeDryRun(
         deduplicate_by_columns,
         cleanup,
         merging_params,
-        nullptr /* txn */);
+        nullptr /* txn */,
+        /*need_prefix=*/ true,
+        /*projection=*/ nullptr,
+        /*parent_part=*/ nullptr,
+        dry_run_suffix);
 
     auto new_part = executeHere(merge_task);
 

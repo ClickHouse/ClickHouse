@@ -113,6 +113,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
 namespace Setting
@@ -554,7 +555,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
     }
 
-    const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
+    /// Honor an explicitly supplied suffix for top-level merges too, not only projections.
+    /// Real top-level merges pass an empty suffix; OPTIMIZE ... DRY RUN passes a unique one.
+    const String local_tmp_suffix = global_ctx->suffix;
 
     global_ctx->checkOperationIsNotCanceled();
 
@@ -614,6 +617,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// it's located inside part's directory
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
+
+    /// Test-only: widen the window between reserving the temporary merge directory and the rest
+    /// of the merge, to deterministically race two OPTIMIZE ... DRY RUN over the same parts.
+    /// Scoped to dry-run merges so an unrelated background merge cannot consume the pause.
+    if (local_tmp_suffix.starts_with(DRY_RUN_TEMP_SUFFIX))
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_reserving_tmp_dir);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
