@@ -16,10 +16,17 @@
 #include <IO/WriteBufferFromString.h>
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTLiteral.h>
+
+#include <algorithm>
+#include <unordered_map>
 
 namespace DB
 {
@@ -52,9 +59,20 @@ String getInsertDataSchemaMismatchDescription(
     ColumnsDescription inferred_columns;
     try
     {
+        /// Schema inference reorders the inferred columns to match the destination table for formats
+        /// without a strict column order (e.g. `JSONEachRow`, `TSKV`), resolving the table through
+        /// `context->getInsertionTable()` in the local `DatabaseCatalog`. On the `clickhouse-client`
+        /// path the destination is a remote table that is not registered in the local catalog, so that
+        /// lookup would throw and (via the catch below) suppress the whole diagnostic. We do not need
+        /// that reordering here — the comparison below matches columns against `expected_header` by name
+        /// for such formats — so run inference with the insertion table cleared to avoid the lookup.
+        auto inference_context = Context::createCopy(context);
+        inference_context->setInsertionTable(StorageID::createEmpty());
+
         auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
         SingleReadBufferIterator read_buffer_iterator(std::move(buffer));
-        inferred_columns = readSchemaFromFormat(format_name, getFormatSettings(context), read_buffer_iterator, context);
+        inferred_columns
+            = readSchemaFromFormat(format_name, getFormatSettings(inference_context), read_buffer_iterator, inference_context);
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -76,20 +94,70 @@ String getInsertDataSchemaMismatchDescription(
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
     auto types_are_compatible = [](const DataTypePtr & inferred_type, const DataTypePtr & expected_type)
     {
-        return inferred_type->equals(*expected_type) || tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr;
+        if (inferred_type->equals(*expected_type))
+            return true;
+        if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
+            return true;
+
+        /// Formats that read values from text (e.g. `JSONEachRow`) keep fields as `String` during schema
+        /// inference even when the real parser accepts them into richer scalar types — `UUID`, `IPv4` /
+        /// `IPv6`, `Enum`, `FixedString` or dates — because inference never reconstructs those from a
+        /// string. Treat a `String` inferred for such a destination as compatible, so a genuine parse
+        /// error elsewhere in the row does not pick up a misleading "structure mismatch" suffix. A numeric
+        /// destination is deliberately not included here: `String` inferred where a number is expected is
+        /// exactly the reliable "text where a number is expected" signal this diagnostic exists to surface.
+        const auto inferred_unwrapped = removeNullable(recursiveRemoveLowCardinality(inferred_type));
+        const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
+        if (WhichDataType(inferred_unwrapped).isString())
+        {
+            const WhichDataType which_expected(expected_unwrapped);
+            if (which_expected.isUUID() || which_expected.isIPv4() || which_expected.isIPv6() || which_expected.isEnum()
+                || which_expected.isFixedString() || which_expected.isDateOrDate32() || which_expected.isDateTimeOrDateTime64())
+                return true;
+        }
+
+        return false;
     };
 
     bool corresponds = inferred.size() == expected.size();
     if (corresponds)
     {
-        auto it_inferred = inferred.begin();
-        auto it_expected = expected.begin();
-        for (; it_inferred != inferred.end(); ++it_inferred, ++it_expected)
+        /// Formats without a strict column order (`JSONEachRow`, `TSKV`) yield named columns whose order
+        /// may differ from the destination, so match them against the expected columns by name. Strict-
+        /// order formats (`TSV`, `CSV`, `Values`) yield positional placeholder names like `c1`, `c2`, ...
+        /// that do not line up with the destination column names, so compare those positionally.
+        std::unordered_map<std::string_view, DataTypePtr> expected_by_name;
+        for (const auto & column : expected)
+            expected_by_name.emplace(column.name, column.type);
+
+        const bool match_by_name = expected_by_name.size() == expected.size()
+            && std::all_of(
+                inferred.begin(),
+                inferred.end(),
+                [&](const NameAndTypePair & column) { return expected_by_name.contains(column.name); });
+
+        if (match_by_name)
         {
-            if (!types_are_compatible(it_inferred->type, it_expected->type))
+            for (const auto & column : inferred)
             {
-                corresponds = false;
-                break;
+                if (!types_are_compatible(column.type, expected_by_name.at(column.name)))
+                {
+                    corresponds = false;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            auto it_inferred = inferred.begin();
+            auto it_expected = expected.begin();
+            for (; it_inferred != inferred.end(); ++it_inferred, ++it_expected)
+            {
+                if (!types_are_compatible(it_inferred->type, it_expected->type))
+                {
+                    corresponds = false;
+                    break;
+                }
             }
         }
     }
