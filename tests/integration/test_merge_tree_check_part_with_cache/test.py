@@ -83,17 +83,24 @@ def test_check_part_with_cache(start_cluster):
         == "2\n"
     )
 
-    with pytest.raises(Exception):
+    # Reading the truncated cache file no longer raises any error (and never a `LOGICAL_ERROR`, which
+    # previously aborted debug/sanitizer builds): the broken segment is bypassed and the read is
+    # transparently re-routed to the source, so the query still returns the correct result.
+    assert (
         node.query(
             "SELECT count() FROM s3_test WHERE NOT ignore(*)",
             settings={"enable_filesystem_cache": 1},
         )
+        == "2\n"
+    )
 
     assert node.query("CHECK TABLE s3_test SETTINGS check_query_single_value_result = 1") == "1\n"
 
-    # Check that cache is removed only for one part after CHECK TABLE
+    # The truncated cache file of all_1_1_0 is bypassed (not removed) by the read above and stays in
+    # place, so its cache entry is still present; CHECK TABLE reads the data from the source and reports
+    # the part as intact. The cache of the untouched part all_2_2_0 is unaffected.
     cache_path = get_cache_path_of_data_file("all_1_1_0")
-    assert len(cache_path) == 0
+    assert len(cache_path) > 0
 
     cache_path = get_cache_path_of_data_file("all_2_2_0")
     assert len(cache_path) > 0
