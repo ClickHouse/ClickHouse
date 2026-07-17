@@ -3513,10 +3513,12 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 new_child = makeFuzzedAsteriskLikeMatcher();
             }
-            else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && fuzz_rand() % 250 == 0)
+            else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && !ident->isParam() && fuzz_rand() % 250 == 0)
             {
                 /// Rewrite a column reference into one of its potential subcolumn accessors
                 /// (typeid_cast is exact, so ASTTableIdentifier / ASTQueryParameter are left alone).
+                /// Parameterized identifiers (e.g. `{db:Identifier}.t`) carry empty placeholder
+                /// name parts, so rebuilding them via the non-param ctor trips chassert(!part.empty()).
                 static const Strings subcolumn_names = {"keys", "null", "size0", "values"};
                 const String subcolumn = pickRandomly(fuzz_rand, subcolumn_names);
                 switch (fuzz_rand() % 5)
@@ -3695,9 +3697,11 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             ASTIdentifier * id = nullptr;
             const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
+            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty() && !id->isParam())
             {
-                /// Move alias to the end of the identifier (most of the time) or somewhere else
+                /// Move alias to the end of the identifier (most of the time) or somewhere else.
+                /// Skip parameterized identifiers: their empty placeholder parts would trip
+                /// chassert(!part.empty()) when rebuilt via the non-param ctor below.
                 Strings clone_parts = id->name_parts;
                 int name_parts_size = static_cast<int>(id->name_parts.size());
                 const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
