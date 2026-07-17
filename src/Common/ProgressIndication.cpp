@@ -103,12 +103,7 @@ ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsa
         });
 }
 
-void ProgressIndication::writeFinalProgress()
-{
-    writeFinalProgress(output_stream);
-}
-
-void ProgressIndication::writeFinalProgress(std::ostream & out)
+void ProgressIndication::writeFinalProgress(WriteBuffer & out)
 {
     std::lock_guard lock(progress_mutex);
 

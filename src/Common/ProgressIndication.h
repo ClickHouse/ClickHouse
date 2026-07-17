@@ -6,7 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
-#include <iostream>
 #include <mutex>
 #include <unistd.h>
 #include <unordered_map>
@@ -14,6 +13,7 @@
 namespace DB
 {
 
+class WriteBuffer;
 class WriteBufferFromFileDescriptor;
 
 struct ThreadEventData
@@ -37,12 +37,10 @@ public:
 
     explicit ProgressIndication
     (
-        std::ostream & output_stream_ = std::cout,
         int in_fd_ = STDIN_FILENO,
         int err_fd_ = STDERR_FILENO
     )
-        : output_stream(output_stream_),
-        in_fd(in_fd_),
+        : in_fd(in_fd_),
         err_fd(err_fd_)
     {
     }
@@ -51,11 +49,9 @@ public:
     void writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
     void clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
 
-    /// Write summary to the configured output stream.
-    void writeFinalProgress();
-    /// Write summary to an arbitrary stream - e.g. an in-memory buffer that is then flushed through a
+    /// Write summary to a buffer - e.g. an in-memory one whose contents are then flushed through a
     /// bounded, non-blocking path so it cannot hang the client on a stuck terminal.
-    void writeFinalProgress(std::ostream & out);
+    void writeFinalProgress(WriteBuffer & out);
 
     /// Reset progress values.
     void resetProgress();
@@ -133,7 +129,6 @@ private:
     mutable std::mutex profile_events_mutex;
     mutable std::mutex progress_mutex;
 
-    std::ostream & output_stream;
     int in_fd;
     int err_fd;
 };

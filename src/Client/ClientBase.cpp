@@ -69,11 +69,13 @@
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -101,7 +103,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <sstream>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -444,7 +445,7 @@ ClientBase::ClientBase(
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
-    , progress_indication(output_stream_, in_fd_, err_fd_)
+    , progress_indication(in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
@@ -2848,11 +2849,13 @@ void ClientBase::processParsedSingleQuery(
         /// buffer is already flushed (the inner resetOutput() ran before this epilogue), so this does
         /// not reorder against any pending formatted output. The decorative final progress table goes
         /// through tty_buf, already budgeted above.
-        std::ostringstream summary;
-        summary << std::endl;
+        /// The elapsed time is printed with fixed 3-decimal precision to match the
+        /// `std::fixed << std::setprecision(3)` the clients set on output_stream at startup.
+        WriteBufferFromOwnString summary;
+        summary << "\n";
         if (!server_exception || processed_rows != 0)
             summary << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
-        summary << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        summary << "Elapsed: " << fmt::format("{:.3f}", progress_indication.elapsedSeconds()) << " sec. ";
         progress_indication.writeFinalProgress(summary);
 
         if (std_out)
