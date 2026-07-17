@@ -128,6 +128,14 @@ bool optimizeVectorSearchWithQuantizedCodes(
         auto * chain_filter_step = typeid_cast<FilterStep *>(read_node->step.get());
         if (!chain_expression_step && !chain_filter_step)
             return false;
+        /// A row-changing action (e.g. `arrayJoin`) in an intervening Expression/Filter step below the sort expands or
+        /// drops rows before the sort/limit. The shortlist limit is spliced above this whole chain, so it would cut
+        /// rows before the expansion and change the result cardinality; bail out (same invariant as the
+        /// rescore-expression `hasArrayJoin` guard below and the `hasArrayJoin` guards in `optimizeTopK`).
+        if (chain_expression_step && chain_expression_step->getExpression().hasArrayJoin())
+            return false;
+        if (chain_filter_step && chain_filter_step->getExpression().hasArrayJoin())
+            return false;
         /// A stateful function in an intervening Expression/Filter step below the sort must observe every source block.
         /// The shortlist limit is spliced above this whole chain, so the stateful function would run on the reduced
         /// candidate stream; bail out to keep the pre-sort semantics (same invariant as the rescore-expression guard

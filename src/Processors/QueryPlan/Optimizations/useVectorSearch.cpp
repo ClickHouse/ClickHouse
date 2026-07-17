@@ -87,6 +87,12 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (!expression_step)
         return no_layers_updated;
 
+    /// A row-changing action (e.g. `arrayJoin`) below the sort expands or drops rows before the sort/limit. Vector
+    /// search shortlists a handful of base rows and only feeds those to this `ExpressionStep`, so a later base row
+    /// whose expansion should satisfy the LIMIT would be missing (e.g. the nearest base row's array is empty, so
+    /// `arrayJoin` drops it and the query returns too few rows). This mirrors the `hasArrayJoin` guard in `optimizeTopK`.
+    if (expression_step->getExpression().hasArrayJoin())
+        return no_layers_updated;
     /// A stateful function (e.g. `logTrace`, `neighbor`, `runningAccumulate`) below the sort must observe every
     /// source block. Vector search shortlists a handful of granules and only feeds the surviving candidate rows to
     /// this `ExpressionStep`, so the stateful function would run on the reduced stream instead of every pre-sort
@@ -105,6 +111,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         /// Do we have a FilterStep on top of ReadFromMergeTree?
         filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
+            return no_layers_updated;
+        /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort changes the row count before
+        /// the sort/limit, but vector search prunes rows before it.
+        if (filter_step->getExpression().hasArrayJoin())
             return no_layers_updated;
         /// Same reasoning as above: a stateful function inside a `FilterStep` below the sort must see every source
         /// block, but vector search prunes rows before it.
