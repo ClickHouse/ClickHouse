@@ -50,6 +50,8 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr int DEFAULT_TOKEN_EXPIRES_IN_SECONDS = 3600;
+
 enum class CatalogShape
 {
     TopLevelTable,
@@ -80,10 +82,10 @@ std::string getRawPath(const std::string & uri)
 class RestCatalogRequestHandler final : public Poco::Net::HTTPRequestHandler
 {
 public:
-    RestCatalogRequestHandler(CatalogShape shape_, int token_expires_in_, std::shared_ptr<std::atomic<size_t>> token_requests_)
+    RestCatalogRequestHandler(CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_)
         : shape(shape_)
-        , token_expires_in(token_expires_in_)
-        , token_requests(std::move(token_requests_))
+        , token_expires_in_seconds(token_expires_in_seconds_)
+        , token_requests(token_requests_)
     {
     }
 
@@ -97,7 +99,7 @@ public:
         if (path == "/token")
         {
             const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
-            ++*token_requests;
+            ++token_requests;
             if (request_body.contains("refresh_token=expired-refresh"))
             {
                 writeJSON(
@@ -110,7 +112,7 @@ public:
                 response,
                 fmt::format(
                     R"({{"token_type":"Bearer","expires_in":{},"access_token":"mock-access-token-{}","refresh_token":"rotated-refresh-token"}})",
-                    token_expires_in, token_requests->load()));
+                    token_expires_in_seconds, token_requests.load()));
             return;
         }
 
@@ -188,38 +190,37 @@ private:
     }
 
     CatalogShape shape;
-    int token_expires_in;
-    std::shared_ptr<std::atomic<size_t>> token_requests;
+    int token_expires_in_seconds;
+    std::atomic<size_t> & token_requests;
 };
 
 class RestCatalogRequestHandlerFactory final : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
-    RestCatalogRequestHandlerFactory(CatalogShape shape_, int token_expires_in_, std::shared_ptr<std::atomic<size_t>> token_requests_)
+    RestCatalogRequestHandlerFactory(CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_)
         : shape(shape_)
-        , token_expires_in(token_expires_in_)
-        , token_requests(std::move(token_requests_))
+        , token_expires_in_seconds(token_expires_in_seconds_)
+        , token_requests(token_requests_)
     {
     }
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
-        return new RestCatalogRequestHandler(shape, token_expires_in, token_requests);
+        return new RestCatalogRequestHandler(shape, token_expires_in_seconds, token_requests);
     }
 
 private:
     CatalogShape shape;
-    int token_expires_in;
-    std::shared_ptr<std::atomic<size_t>> token_requests;
+    int token_expires_in_seconds;
+    std::atomic<size_t> & token_requests;
 };
 
 class RestCatalogTestServer
 {
 public:
-    explicit RestCatalogTestServer(CatalogShape shape, int token_expires_in = 3600)
-        : token_requests(std::make_shared<std::atomic<size_t>>(0))
-        , server_socket(std::make_unique<Poco::Net::ServerSocket>(Poco::Net::SocketAddress("127.0.0.1", 0)))
-        , handler_factory(new RestCatalogRequestHandlerFactory(shape, token_expires_in, token_requests))
+    explicit RestCatalogTestServer(CatalogShape shape, int token_expires_in_seconds = DEFAULT_TOKEN_EXPIRES_IN_SECONDS)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(Poco::Net::SocketAddress("127.0.0.1", 0)))
+        , handler_factory(new RestCatalogRequestHandlerFactory(shape, token_expires_in_seconds, token_requests))
         , server_params(new Poco::Net::HTTPServerParams())
         , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
@@ -238,11 +239,11 @@ public:
 
     size_t tokenRequests() const
     {
-        return token_requests->load();
+        return token_requests.load();
     }
 
 private:
-    std::shared_ptr<std::atomic<size_t>> token_requests;
+    std::atomic<size_t> token_requests{0};
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<RestCatalogRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
@@ -475,7 +476,7 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
 {
     /// expires_in = 0: every issued access token is immediately expired, so every
     /// catalog request must transparently redeem the refresh token again.
-    RestCatalogTestServer server(CatalogShape::Empty, /* token_expires_in */ 0);
+    RestCatalogTestServer server(CatalogShape::Empty, /* token_expires_in_seconds */ 0);
     auto context = DB::Context::createCopy(getContext().context);
     context->makeQueryContext();
 

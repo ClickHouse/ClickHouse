@@ -99,6 +99,9 @@ namespace DataLake
 
 static constexpr auto CONFIG_ENDPOINT = "config";
 static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
+/// A token without a known expiration is reported to consumers as expiring this soon,
+/// so that they ask for a fresh one on the next request.
+static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1);
 
 namespace
 {
@@ -528,7 +531,7 @@ std::pair<std::string, std::chrono::system_clock::time_point> OneLakeCatalog::ge
     const auto token = getValidAccessToken(*state_snapshot, /* force_update */ false);
     /// A token without a known expiration is reported as expiring shortly, so that the
     /// consumer (the Azure SDK credential cache) asks for a fresh one on the next request.
-    const auto expires_on = token.expires_at.value_or(std::chrono::system_clock::now() + std::chrono::minutes(1));
+    const auto expires_on = token.expires_at.value_or(std::chrono::system_clock::now() + UNKNOWN_EXPIRATION_TOKEN_LIFETIME);
     return {token.token, expires_on};
 }
 
