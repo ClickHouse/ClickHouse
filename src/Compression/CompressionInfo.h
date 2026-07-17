@@ -50,7 +50,9 @@ enum class CompressionMethodByte : uint8_t
     GCD             = 0x9a,
     /// ZSTD_QPL        = 0x9b, /// Removed, don't reuse for another codec
     ALP             = 0x9c,
-    LossyQuantile   = 0x9d,
+    SZ3             = 0x9d,
+    Quantized       = 0x9e,
+    LossyQuantile   = 0x9f,
 };
 
 }
