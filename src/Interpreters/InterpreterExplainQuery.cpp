@@ -553,8 +553,6 @@ struct QuerySyntaxSettings
 {
     bool oneline = false;
     bool run_query_tree_passes = false;
-    /// Overridden by checkAndGetSettings() from Setting::explain_syntax_single_record before any
-    /// `single_record = ...` option in the EXPLAIN statement itself is applied.
     bool single_record = false;
     Int64 query_tree_passes = -1;
 
@@ -592,8 +590,6 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
     }
     else if constexpr (std::is_same_v<Settings, QuerySyntaxSettings>)
     {
-        /// default_flag carries Setting::explain_syntax_single_record here, applied before any
-        /// `single_record = ...` option in the EXPLAIN statement overrides it below.
         settings.single_record = default_flag;
     }
 
@@ -906,10 +902,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::AnalyzedSyntax:
         {
-            /// EXPLAIN SYNTAX is a reformatted, copy-pasteable query, so by default it is returned
-            /// as one multi-line record instead of one record per line (issue #80410), controlled by
-            /// Setting::explain_syntax_single_record so `compatibility` with pre-26.7 versions and the
-            /// `single_record = 0` EXPLAIN option both restore the historical row-per-line output.
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(
                 ast.getSettings(), query_context->getSettingsRef()[Setting::explain_syntax_single_record]);
             single_record = settings.single_record;
