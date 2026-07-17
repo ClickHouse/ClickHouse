@@ -34,6 +34,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryReference.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
@@ -489,6 +490,14 @@ bool StorageEmbeddedRocksDB::optimize(
 /// are identical to a plain scan/write.
 static constexpr std::string_view rocksdb_backup_data_filename = "data.bin";
 
+/// Small companion file recording the source table's ttl argument. The backed-up value bytes are
+/// ttl-format-dependent (a ttl > 0 table is a DBWithTTL whose values carry a trailing 4-byte creation
+/// timestamp; a ttl = 0 table has none), and even between two ttl > 0 tables the ttl sets each row's
+/// expiration window. Restore compares this against the target table's ttl and rejects a mismatch, so the
+/// RESTORE ... AS <writable_table> / allow_different_table_def path (which skips RestorerFromBackup's
+/// create-query compatibility check) cannot silently replay incompatible bytes or shift every row's expiry.
+static constexpr std::string_view rocksdb_backup_ttl_filename = "ttl.txt";
+
 /// Flush the restore WriteBatch once it reaches this many bytes so a large backup does not require a
 /// full in-RAM copy of the table (EmbeddedRocksDB is an on-disk engine).
 static constexpr size_t rocksdb_restore_batch_flush_bytes = 64 * 1024 * 1024;
@@ -584,6 +593,13 @@ void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_
     /// the whole group.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
+        /// Record this table's ttl so restore can reject a ttl-incompatible target (the value bytes are
+        /// ttl-format-dependent). ttl is a per-table constant, so every table writes its own tiny ttl.txt
+        /// even when it references a sibling's data.bin.
+        backup_entries_collector.addBackupEntries(
+            {{fs::path(my_data_path_in_backup) / rocksdb_backup_ttl_filename,
+              std::make_shared<BackupEntryFromMemory>(toString(ttl))}});
+
         auto owner_election_id = coordination->getRocksDBDataOwnerElectionId(rocksdb_dir);
         auto owner_data_path = coordination->getRocksDBDataPath(rocksdb_dir);
 
@@ -639,6 +655,27 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
             "(see https://github.com/ClickHouse/ClickHouse/issues/109213) or is corrupted; restoring its data would "
             "silently produce an empty table",
             getStorageID().getNameForLogs(), data_file);
+
+    /// The backed-up value bytes are ttl-format-dependent: a ttl > 0 source is a DBWithTTL whose values
+    /// carry a trailing 4-byte creation timestamp (backed up verbatim) while a ttl = 0 source has none, and
+    /// two ttl > 0 tables interpret those timestamps against their own ttl window. Restoring across a ttl
+    /// mismatch would replay incompatible bytes or silently shift every row's expiration. Enforce it here
+    /// because the RESTORE ... AS <writable_table> / allow_different_table_def workaround for read_only
+    /// tables skips RestorerFromBackup's create-query compatibility check, so nothing else catches it.
+    String ttl_file = fs::path(data_path_in_backup) / rocksdb_backup_ttl_filename;
+    if (backup->fileExists(ttl_file))
+    {
+        String backup_ttl_str;
+        readStringUntilEOF(backup_ttl_str, *backup->readFile(ttl_file));
+        Int32 backup_ttl = parse<Int32>(backup_ttl_str);
+        if (backup_ttl != ttl)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore EmbeddedRocksDB table {}: backup was taken from a table with ttl = {} but the "
+                "target table has ttl = {}. The stored value bytes are ttl-format-dependent, so restore requires "
+                "a matching ttl. Create the target table with ttl = {} and restore again",
+                getStorageID().getNameForLogs(), backup_ttl, ttl, backup_ttl);
+    }
 
     /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. When a
     /// writable table shares the directory it is the single owner that replays the shared RocksDB (a read_only

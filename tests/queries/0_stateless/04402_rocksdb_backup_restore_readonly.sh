@@ -25,22 +25,25 @@ RDB_DIR_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_empty"
 RDB_DIR_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_pop"
 RDB_DIR_SHARED="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_shared"
 RDB_DIR_RORO="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_roro"
+RDB_DIR_TTL="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_ttl"
 BACKUP_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 BACKUP_ID_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_empty"
 BACKUP_ID_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_pop"
 BACKUP_ID_SHARED="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared"
 BACKUP_ID_RORO="${CLICKHOUSE_TEST_UNIQUE_NAME}_roro"
+BACKUP_ID_TTL="${CLICKHOUSE_TEST_UNIQUE_NAME}_ttl"
 BACKUP_NAME="Disk('backups', '${BACKUP_ID}')"
 BACKUP_NAME_EMPTY="Disk('backups', '${BACKUP_ID_EMPTY}')"
 BACKUP_NAME_POP="Disk('backups', '${BACKUP_ID_POP}')"
 BACKUP_NAME_SHARED="Disk('backups', '${BACKUP_ID_SHARED}')"
 BACKUP_NAME_RORO="Disk('backups', '${BACKUP_ID_RORO}')"
+BACKUP_NAME_TTL="Disk('backups', '${BACKUP_ID_TTL}')"
 USER_FILES_PATH=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'user_files_path'")
 BACKUPS_PATH=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = 'backups'")
 rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
-    "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}" \
+    "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}" "${USER_FILES_PATH:?}/${RDB_DIR_TTL}" \
     "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}" "${BACKUPS_PATH:?}/${BACKUP_ID_POP}" \
-    "${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}" "${BACKUPS_PATH:?}/${BACKUP_ID_RORO}"
+    "${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}" "${BACKUPS_PATH:?}/${BACKUP_ID_RORO}" "${BACKUPS_PATH:?}/${BACKUP_ID_TTL}"
 
 # Case 1: restore of a NON-empty read_only backup is rejected with a clear CANNOT_RESTORE_TABLE error.
 # Populate an on-disk RocksDB directory through a writable table, then drop it (the explicit dir stays);
@@ -181,10 +184,39 @@ SELECT 'roro b restored', count() FROM ${CLICKHOUSE_DATABASE}_roro.restored_b;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_roro SYNC;
 "
 
+# Case 6: the backed-up value bytes are ttl-format-dependent (a ttl > 0 table is a DBWithTTL whose values
+# carry a trailing creation timestamp; a ttl = 0 table has none), so restoring across a ttl mismatch would
+# replay incompatible bytes or silently shift every row's expiry. The read_only workaround
+# (RESTORE ... AS <writable_table> SETTINGS allow_different_table_def = 1) skips the create-query
+# compatibility check, so an explicit restore-time ttl check must reject the mismatch. Back up a ttl = 0
+# table and try to restore it AS a ttl = 5 table (and vice versa): both must be rejected; a matching ttl
+# restore still succeeds.
+$CLICKHOUSE_CLIENT --multiquery "
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_ttl SYNC;
+CREATE DATABASE ${CLICKHOUSE_DATABASE}_ttl;
+CREATE TABLE ${CLICKHOUSE_DATABASE}_ttl.src0 (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_TTL}_src0') PRIMARY KEY k;
+INSERT INTO ${CLICKHOUSE_DATABASE}_ttl.src0 SELECT number, 'v' || toString(number) FROM numbers(50);
+BACKUP TABLE ${CLICKHOUSE_DATABASE}_ttl.src0 TO ${BACKUP_NAME_TTL} FORMAT Null;
+CREATE TABLE ${CLICKHOUSE_DATABASE}_ttl.dst5 (k UInt64, v String) ENGINE = EmbeddedRocksDB(5, '${RDB_DIR_TTL}_dst5') PRIMARY KEY k;
+CREATE TABLE ${CLICKHOUSE_DATABASE}_ttl.dst0 (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_TTL}_dst0') PRIMARY KEY k;
+"
+# ttl 0 backup restored into a ttl 5 target: rejected.
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}_ttl.src0 AS ${CLICKHOUSE_DATABASE}_ttl.dst5 FROM ${BACKUP_NAME_TTL} SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1 FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "NO_EXPECTED_ERROR"
+# ttl 0 backup restored into a ttl 0 target: allowed (matching ttl).
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}_ttl.src0 AS ${CLICKHOUSE_DATABASE}_ttl.dst0 FROM ${BACKUP_NAME_TTL} SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1 FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "TTL_MATCH_RESTORE_OK"
+$CLICKHOUSE_CLIENT --multiquery "
+SELECT 'ttl match restored', count() FROM ${CLICKHOUSE_DATABASE}_ttl.dst0;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_ttl SYNC;
+"
+
 rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
     "${USER_FILES_PATH:?}/${RDB_DIR_SHARED}" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}" \
     "${USER_FILES_PATH:?}/${RDB_DIR_RORO}_a" "${USER_FILES_PATH:?}/${RDB_DIR_RORO}_b" \
+    "${USER_FILES_PATH:?}/${RDB_DIR_TTL}_src0" "${USER_FILES_PATH:?}/${RDB_DIR_TTL}_dst5" "${USER_FILES_PATH:?}/${RDB_DIR_TTL}_dst0" \
     "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUP_ID_EMPTY:+${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}}" \
     "${BACKUP_ID_POP:+${BACKUPS_PATH:?}/${BACKUP_ID_POP}}" \
     "${BACKUP_ID_SHARED:+${BACKUPS_PATH:?}/${BACKUP_ID_SHARED}}" \
-    "${BACKUP_ID_RORO:+${BACKUPS_PATH:?}/${BACKUP_ID_RORO}}"
+    "${BACKUP_ID_RORO:+${BACKUPS_PATH:?}/${BACKUP_ID_RORO}}" \
+    "${BACKUP_ID_TTL:+${BACKUPS_PATH:?}/${BACKUP_ID_TTL}}"

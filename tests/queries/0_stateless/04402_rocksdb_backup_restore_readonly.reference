@@ -13,3 +13,6 @@ RORO_A_RESTORE_OK
 roro a restored	100
 RORO_B_RESTORE_OK
 roro b restored	200
+CANNOT_RESTORE_TABLE
+TTL_MATCH_RESTORE_OK
+ttl match restored	50
