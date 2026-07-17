@@ -26,7 +26,9 @@ String toString(ASTCopyQuery::Formats format)
         case ASTCopyQuery::Formats::CSV:
             return "CSV";
         case ASTCopyQuery::Formats::Binary:
-            return "Binary";
+            /// The name of the ClickHouse format that backs `COPY ... WITH FORMAT binary`
+            /// (there is no ClickHouse format named `Binary`).
+            return "RowBinary";
     }
 }
 
