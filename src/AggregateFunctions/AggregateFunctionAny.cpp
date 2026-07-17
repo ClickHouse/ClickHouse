@@ -49,7 +49,6 @@ public:
 
     String getName() const override { return "any"; }
 
-    // Merging keeps the already-set value, like adding more rows would.
     bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     bool addBatchSinglePlaceIsConstant() const override { return true; }
@@ -240,8 +239,7 @@ public:
 
     String getName() const override { return "anyLast"; }
 
-    // Merging overwrites with the later partial state when it has a value (and set of
-    // an empty state keeps the current value), like adding its rows would.
+    // set of an empty partial state keeps the current value.
     bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     bool addBatchSinglePlaceIsConstant() const override { return true; }

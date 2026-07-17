@@ -433,11 +433,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    // Merging partial states is append-equivalent for the whole uniq family, but for
-    // sliding window frames it only pays off when the per-row add is expensive (String
-    // hashing): merging set/sketch states costs proportionally to the state size, so
-    // for cheap numeric adds the plain re-aggregation wins (e.g. uniqHLL12 over numbers
-    // is ~4x faster recomputed, over strings ~1.5x faster merged).
+    // Append-equivalent for the whole uniq family, but merging set/sketch states costs
+    // proportionally to the state size, so it only beats re-aggregating a sliding
+    // frame when the per-row add is expensive (String hashing).
     bool mergeIsEquivalentToAddingRows() const override { return std::is_same_v<T, String>; }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
@@ -573,8 +571,7 @@ public:
     bool allocatesMemoryInArena() const override { return false; }
 
     // Unlike the unary numeric case, the variadic add hashes several columns into a
-    // combined key per row, which is expensive enough that merging partial states wins
-    // (measured ~2.7x for two-argument uniqExact over a 10240-row sliding frame).
+    // combined key per row, which is expensive enough that merging partial states wins.
     bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override

@@ -43,9 +43,6 @@ struct WindowFunctionWorkspace
     // Cached value of aggregate function isState virtual method
     bool is_aggregate_function_state = false;
 
-    // Cached value of aggregate function hasTrivialDestructor virtual method
-    bool has_trivial_destructor = false;
-
     // This field is set for pure window functions. When set, we ignore the
     // window_function.aggregate_function, and work through this interface
     // instead.

@@ -33,10 +33,6 @@ namespace
 template <typename Value, bool interpolated>
 struct QuantileExactWeighted
 {
-    // Merging is append-equivalent (hash-map union of value -> weight), but never
-    // faster than re-adding the rows of a sliding frame: the merge copies the whole
-    // map while the add is a single cheap hash-map bump.
-    static constexpr bool merge_is_equivalent_to_adding_rows = false;
     struct Int128Hash
     {
         size_t operator()(Int128 x) const
