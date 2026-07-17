@@ -829,7 +829,7 @@ SETTINGS disk = disk(
 - **Restart robustness.** A table on a `borrow_from_cache` disk persists its definition like any other table, so it is reattached on restart (necessarily empty, since its data does not survive a restart). If the referenced cache is not registered yet at that point — caches defined inline are materialized in an unspecified order, and the cache may have been dropped — the disk comes up read-only instead of aborting server startup, and becomes writable again once the cache appears. A fresh `CREATE` still fails immediately if the `cache_name` does not exist.
 - **Cache eviction.** Stored segments are pinned in the cache while the table exists. They are released when the table is dropped or the server shuts down, and the cache reclaims the space.
 - **No append writes.** Only full rewrites of objects are supported.
-- **Local storage only.** The disk is not remote — reads go directly to the local filesystem cache.
+- **Data is stored locally.** The underlying data lives in the local filesystem cache, so reads are served locally without any network access. The disk still reuses the object-storage disk machinery, so at the disk-abstraction level it is reported as remote (`system.disks.is_remote = 1`) and `MergeTree` applies its remote-disk read tuning to it, even though no remote storage is involved.
 
 ### Using static Web storage (read-only) {#web-storage}
 
