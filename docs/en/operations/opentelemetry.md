@@ -26,7 +26,7 @@ The trace context is propagated to downstream services in the following cases:
 
 ## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
 
-ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](../guides/sre/keeper/index.md) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
+ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](../../guides/oss/deployment-and-scaling/keeper/index.mdx) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
 
 ### Enabling Keeper Tracing {#enabling-keeper-tracing}
 

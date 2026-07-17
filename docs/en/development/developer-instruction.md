@@ -151,9 +151,9 @@ newFunctionName(arg1, arg2[, arg3])
 
 **Arguments**
 
-- `arg1` — Description of the argument. [DataType](../data-types/float.md)
-- `arg2` — Description of the argument. [DataType](../data-types/float.md)
-- `arg3` — Description of optional argument (optional). [DataType](../data-types/float.md)
+- `arg1` — Description of the argument. [DataType](../sql-reference/data-types/float.md)
+- `arg2` — Description of the argument. [DataType](../sql-reference/data-types/float.md)
+- `arg3` — Description of optional argument (optional). [DataType](../sql-reference/data-types/float.md)
 
 **Implementation Details**
 
@@ -161,7 +161,7 @@ A description of implementation details if relevant.
 
 **Returned value**
 
-- Returns {insert what the function returns here}. [DataType](../data-types/float.md)
+- Returns {insert what the function returns here}. [DataType](../sql-reference/data-types/float.md)
 
 **Example**
 

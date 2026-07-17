@@ -11,13 +11,13 @@
 ### You cannot get deb packages from ClickHouse repository with apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 - Check firewall settings.
-- If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+- If you cannot access the repository for any reason, download packages as described in the [install guide](/get-started/setup/install) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ### You cannot update deb packages from ClickHouse repository with apt-get {#you-cannot-update-deb-packages-from-clickhouse-repository-with-apt-get}
 
 - The issue may be happened when the GPG key is changed.
 
-Please use the manual from the [setup](../getting-started/install.md#setup-the-debian-repository) page to update the repository configuration.
+Please use the manual from the [setup](/get-started/setup/self-managed/debian-ubuntu) page to update the repository configuration.
 
 ### You get different warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
 
@@ -62,7 +62,7 @@ sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec
 sudo rm -f /etc/yum.repos.d/clickhouse.repo
 ```
 
-After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
+After that follow the [install guide](/get-started/setup/self-managed/rpm)
 
 ### You can't run the Docker container {#you-cant-run-docker-container}
 
