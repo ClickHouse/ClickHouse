@@ -3305,6 +3305,142 @@ def test_unique_identifier_adopts_own_publication_from_schema_list(started_clust
     cursor.execute(f'DROP PUBLICATION IF EXISTS "{presalt_publication}"')
 
 
+def test_unique_identifier_legacy_publication_not_adopted_with_wrong_table_set(
+    started_cluster,
+):
+    # Regression for the stronger ownership proof requested in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/110493. The pre-salt publication name is schema-blind,
+    # so a schema-name check alone does not prove ownership: another engine replicating a DIFFERENT set of
+    # tables of the SAME schema may already own an identically-named publication. Adopting it would leave the
+    # engine streaming through the wrong publication — some of its own tables would never receive WAL after
+    # the upgrade, while the extra tables would only be skipped. So the pre-salt publication is adopted only
+    # when it publishes EXACTLY this engine's set of tables; a same-schema publication that lists a different
+    # set fails closed (never hijacked, never replaced by a fresh publication that would lose the WAL gap),
+    # and startup keeps retrying until the operator restores the correct publication.
+    schema_name = "wts_schema"
+    tables = ["wts_a", "wts_b"]
+    mat_db = "mat_wts_schema"
+    pg_db = "wts_src"
+    presalt_publication = "postgres_database_ch_publication"
+
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    for table in tables:
+        create_postgres_table_with_schema(cursor, schema_name, table)
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)"
+        )
+
+    # A database replicating the WHOLE non-default schema (both tables), with the unique identifier.
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema = '{schema_name}'",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_db, materialized_database=mat_db
+        )
+
+    uuid_value = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = uuid_value.lower().replace("-", "_")
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    salted_slot = slots[0]
+    assert salted_slot != presalt_slot
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    salted_publication = pubs[0]
+    assert salted_publication != presalt_publication
+
+    # While the server is down — the upgrade scenario — the database loses both its own salted slot and
+    # publication, a schema-blind pre-salt slot appears, and the schema-blind pre-salt publication that
+    # exists publishes only ONE of this engine's two tables (a WRONG table set, standing in for a different
+    # engine that owned the schema-blind name for its own, narrower table subset).
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{salted_publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "{schema_name}"."{tables[0]}"'
+    )
+    instance.start_clickhouse()
+
+    # The attach adopts the self-proving pre-salt slot, but fails closed on the publication: it publishes a
+    # different set of tables than this engine replicates, so it belongs to another engine. The conflict is
+    # logged and startup keeps retrying.
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes a different set of tables than this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # No silent progress: the replica stays at the 30 rows it already had and never adopts the wrong
+    # publication. Re-check a few times so a wrong adoption would surface.
+    for _ in range(5):
+        for table in tables:
+            assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+
+    # No fresh salted publication was created (the attach failed closed before createPublicationIfNeeded);
+    # only the wrong pre-salt publication and the adopted pre-salt slot exist.
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert {presalt_publication} == {
+        row[0] for row in cursor.fetchall()
+    }, "no fresh salted publication must be created"
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert {presalt_slot} == {
+        row[0] for row in cursor.fetchall()
+    }, "only the adopted pre-salt slot must exist"
+
+    # Recovery: once the operator restores this engine's own publication (schema-blind name, but publishing
+    # this engine's EXACT table set), the retry adopts it and replication resumes. Rows written after the
+    # correct publication exists stream through with no gap.
+    cursor.execute(f'DROP PUBLICATION "{presalt_publication}"')
+    published_tables = ", ".join(f'"{schema_name}"."{table}"' for table in tables)
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY {published_tables}'
+    )
+    for table in tables:
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(30, 20)"
+        )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_db, materialized_database=mat_db
+        )
+        assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{presalt_publication}"')
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

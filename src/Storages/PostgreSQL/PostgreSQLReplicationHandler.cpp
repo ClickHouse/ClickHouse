@@ -575,11 +575,12 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 /// publication must be adopted too: replication streams through it, and creating a fresh publication under
 /// the salted name would silently drop every change written to WAL before that publication existed, because
 /// pgoutput resolves publication membership from a historic catalog snapshot at each change's LSN and skips
-/// a not-yet-created publication. The pre-salt publication name carries no proof of its own — for a
-/// non-default schema it is the same schema-blind name another engine's default-schema deployment could
-/// own — so, exactly as rename 2's schema check below, it is adopted only once every table it publishes is
-/// confirmed to belong to a schema this engine replicates. If it is missing or foreign, the attach fails
-/// closed with an exception (never a fresh publication that would lose the WAL gap, never a hijacked one).
+/// a not-yet-created publication. The pre-salt publication name carries no proof of its own — it is the same
+/// schema-blind name another engine replicating other tables of the same PostgreSQL database could own — so
+/// it is adopted only once its published table set is confirmed to be exactly this engine's set of replicated
+/// tables (a schema-only check is not enough: a same-schema publication that lists a different set of tables
+/// belongs to another engine). If it is missing or foreign, the attach fails closed with an exception (never
+/// a fresh publication that would lose the WAL gap, never a hijacked one).
 ///
 /// 2. The generated publication and default replication-slot names became schema-aware. Deployments
 /// created before that own the legacy, schema-blind objects. The legacy names are schema-blind and
@@ -616,23 +617,87 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
         pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = '{}'", name))};
         return !result.empty();
     };
+    /// The set of PostgreSQL tables this engine replicates, as `(schema, table)` pairs with the default
+    /// schema reported as `"public"` to match `pg_publication_tables.schemaname`. In `tables_list` mode
+    /// (including the single-table engine, whose `tables_list` is the one raw remote table name) the set is
+    /// parsed from `tables_list`; otherwise every table of the replicated schema(s) is fetched from
+    /// PostgreSQL. Adoption runs before `tables_list` is rewritten into its quoted form at the end of
+    /// fetchRequiredTables() (and, for the single-table engine, on the raw name too), so the raw,
+    /// comma-separated form is parsed here, resolving each entry's schema exactly as getSchemaAndTableName().
+    auto expected_replicated_tables = [&]() -> std::set<std::pair<String, String>>
+    {
+        std::set<std::pair<String, String>> tables;
+        auto add = [&](const String & schema, const String & table)
+        {
+            tables.emplace(isDefaultPostgreSQLSchema(schema) ? "public" : schema, table);
+        };
+        if (!tables_list.empty())
+        {
+            /// `schema.table, table2(col1,col2), ...` — drop the optional column lists, split on commas.
+            String cleared = tables_list;
+            while (true)
+            {
+                size_t open_bracket_pos = cleared.find('(');
+                size_t close_bracket_pos = cleared.find(')');
+                if (open_bracket_pos == std::string::npos || close_bracket_pos == std::string::npos)
+                    break;
+                cleared = cleared.substr(0, open_bracket_pos) + cleared.substr(close_bracket_pos + 1);
+            }
+            Strings parts;
+            splitInto<','>(parts, cleared);
+            for (auto & part : parts)
+            {
+                boost::trim(part);
+                if (part.empty())
+                    continue;
+                auto [schema, table] = getSchemaAndTableName(part);
+                add(schema, table);
+            }
+        }
+        else
+        {
+            for (const auto & name : fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list))
+            {
+                auto [schema, table] = getSchemaAndTableName(name);
+                add(schema, table);
+            }
+        }
+        return tables;
+    };
+
     /// `legacy_publication_name` is always the schema-blind name (see its construction in the constructor),
-    /// while this engine may replicate one or more non-default schemas. A schema-blind name alone does not
-    /// prove that the publication belongs to this engine: some other engine replicating the default schema
-    /// (or a different schema targeting the same bare table) may already own an identically-named publication.
-    /// Require every table it publishes to belong to a schema this engine replicates — deriving that set
-    /// (see computeReplicatedSchemas()) from the single common schema, the schema list, or the per-table
-    /// schemas of `tables_list`, not just from `postgres_schema` (which is empty for the multi-schema modes).
-    auto publication_owned_by_this_engine = [&](const String & name)
+    /// while this engine may replicate one or more non-default schemas, so a schema-blind name alone does not
+    /// prove the publication belongs to this engine: another engine replicating other tables of the same
+    /// PostgreSQL database — a different schema, or a different table subset of the same schema — may already
+    /// own an identically-named publication. Adopt it only when it publishes EXACTLY this engine's tables. A
+    /// schema check alone is not enough: a same-schema publication that lists the wrong tables (e.g. this
+    /// engine replicates `foo.a, foo.b` while the publication publishes only `foo.c`) would otherwise be
+    /// adopted, and replication would then stream through it — silently never replicating this engine's own
+    /// tables while consuming the wrong ones. Return a human-readable reason when ownership cannot be proven
+    /// (an empty string means the publication is owned by this engine and may be adopted).
+    auto legacy_publication_ownership_conflict = [&](const String & name) -> String
     {
         pqxx::result result{tx.exec(fmt::format(
-            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", name))};
+            "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", name))};
         if (result.empty())
-            return false;
+            return fmt::format("the pre-salt publication {} publishes no tables", doubleQuoteString(name));
+        std::set<std::pair<String, String>> published;
         for (const auto & row : result)
-            if (!replicated_schemas.contains(row[0].as<std::string>()))
-                return false;
-        return true;
+        {
+            const auto schema = row[0].as<std::string>();
+            if (!replicated_schemas.contains(schema))
+                return fmt::format(
+                    "the pre-salt publication {} publishes tables from a schema this engine does not replicate "
+                    "('{}'), so it belongs to another engine",
+                    doubleQuoteString(name), schema);
+            published.emplace(schema, row[1].as<std::string>());
+        }
+        if (published != expected_replicated_tables())
+            return fmt::format(
+                "the pre-salt publication {} publishes a different set of tables than this engine replicates, so "
+                "it belongs to another engine",
+                doubleQuoteString(name));
+        return {};
     };
 
     if (use_unique_replication_consumer_identifier)
@@ -671,10 +736,14 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
         /// catalog snapshot taken at each change's LSN, so a not-yet-created publication is skipped
         /// (`WARNING: skipped loading publication`) and its rows never reach the replica, which then falls
         /// permanently behind without any error. The pre-salt publication name is schema-blind, so it may
-        /// instead belong to another engine; adopt it only when it exists and every table it publishes
-        /// belongs to a schema this engine replicates. Otherwise fail closed below: never hijack another
-        /// engine's publication, and never fall back to a fresh publication that would lose the WAL gap.
-        if (publication_exists(legacy_publication_name) && publication_owned_by_this_engine(legacy_publication_name))
+        /// instead belong to another engine; adopt it only when it exists and publishes exactly this engine's
+        /// tables. Otherwise fail closed below: never hijack another engine's publication, and never fall back
+        /// to a fresh publication that would lose the WAL gap.
+        const String publication_conflict = publication_exists(legacy_publication_name)
+            ? legacy_publication_ownership_conflict(legacy_publication_name)
+            : fmt::format("the pre-salt publication {} does not exist", doubleQuoteString(legacy_publication_name));
+
+        if (publication_conflict.empty())
         {
             LOG_INFO(
                 log, "Adopting the legacy publication {} (instead of {})",
@@ -682,13 +751,6 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
             publication_name = legacy_publication_name;
             return;
         }
-
-        const String reason = publication_exists(legacy_publication_name)
-            ? fmt::format(
-                "the pre-salt publication {} publishes tables from a schema this engine does not replicate, so "
-                "it belongs to another engine",
-                doubleQuoteString(legacy_publication_name))
-            : fmt::format("the pre-salt publication {} does not exist", doubleQuoteString(legacy_publication_name));
 
         throw Exception(
             ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
@@ -700,7 +762,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
             "{} on the PostgreSQL side (or drop the conflicting one), or recreate this table: startup keeps "
             "retrying and replication starts automatically once the conflict is resolved, without a server "
             "restart or a manual re-attach.",
-            replication_slot, reason, doubleQuoteString(legacy_publication_name));
+            replication_slot, publication_conflict, doubleQuoteString(legacy_publication_name));
     }
 
     if (replication_slot != legacy_replication_slot)
