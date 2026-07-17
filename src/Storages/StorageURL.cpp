@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
@@ -725,7 +726,8 @@ void StorageURLSink::initBuffers()
         std::move(write_buffer),
         compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
-        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+        settings[Setting::snappy_mode]);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, getHeader(), context, format_settings);
 }
 
@@ -965,7 +967,8 @@ namespace
             return {wrapReadBufferWithCompressionMethod(
                 std::move(uri_and_buf.second),
                 compression_method,
-                static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max])), std::nullopt, format};
+                static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]),
+                getContext()->getSettingsRef()[Setting::snappy_mode]), std::nullopt, format};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1013,7 +1016,8 @@ namespace
                 false);
 
             return wrapReadBufferWithCompressionMethod(
-                std::move(uri_and_buf.second), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]));
+                std::move(uri_and_buf.second), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]),
+                getContext()->getSettingsRef()[Setting::snappy_mode]);
         }
 
     private:

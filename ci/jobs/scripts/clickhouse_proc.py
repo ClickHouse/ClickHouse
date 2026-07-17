@@ -2,6 +2,7 @@ import glob
 import json as json_module
 import os
 import platform
+import shutil
 import signal
 import subprocess
 import sys
@@ -264,153 +265,29 @@ class ClickHouseProc:
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
-    def set_memory_ratio(self, ratio):
+    @staticmethod
+    def set_memory_ratio(ratio):
         config = f"""<clickhouse>
     <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        # In DBReplicated mode `install.sh` has already cloned
-        # /etc/clickhouse-server into the two replica config dirs and `start`
-        # launches all three servers, so the override must be written into every
-        # replica config dir too - otherwise the extra replicas keep the default
-        # 0.9 ratio and can still drive the host into a global OOM under the
-        # heavier multi-server footprint (the very failure this cap prevents).
-        config_dirs = [self.ch_config_dir]
-        if self.is_db_replicated:
-            config_dirs += [
-                self.ch_config_dir_replica_1,
-                self.ch_config_dir_replica_2,
-            ]
-        for config_dir in config_dirs:
-            file_path = (
-                f"{config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-            )
-            with open(file_path, "w") as f:
-                f.write(config)
-            print(
-                f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
-            )
-
-    def _install_light(self):
-        """
-        Installs ClickHouse config into ci temporary directory, this way of installation does not require mounting /etc|var/clickhouse-server into docker container.
-        To be used only with start_light(). This method is suitable for jobs that do not require complex configuration, such as clickbench.
-        Jobs like functional tests are hard/not-reasonable to adapt to use this way of installation, thus they have to mount config and other directories into default directories.
-        """
-        Utils.add_to_PATH(temp_dir)
-        commands = [
-            f"mkdir -p {temp_dir}/users.d",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}",
-            # make it ipv4 only
-            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {temp_dir}/config.xml',
-            f"cp -r --dereference ./programs/server/config.d {temp_dir}",
-            f"chmod +x {temp_dir}/clickhouse",
-            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-server",
-            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-client",
-        ]
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        if not res:
-            print("Failed to install ClickHouse config")
-
-        return res
-
-    def start_light(self):
-        """
-        Start ClickHouse server with config installed with _install_config()
-        """
-        print("Starting ClickHouse server")
-        # check binary available and do decompression in the meantime
-        assert Shell.check("clickhouse --version", verbose=True)
-        kill_leftover_server_processes()
-        self.pid_file = f"{temp_dir}/clickhouse-server.pid"
-        self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
-        print("Command: ", self.start_cmd)
-        self.log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
-        self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
+        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        with open(file_path, "w") as f:
+            f.write(config)
+        print(
+            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
         )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
-            return False
-        print("ClickHouse server process started -> wait ready")
-        res = self.wait_ready()
-        if res:
-            print("ClickHouse server ready")
-        else:
-            print("ClickHouse server NOT ready")
 
-        # wait_ready() flushes system logs on its success path (pre-creating the
-        # system log tables once the server is listening).
-        self.save_system_metadata_files_from_remote_database_disk()
-        return res
-
-    def install_clickbench_config(self):
-        res = self._install_light()
-        if not res:
-            return False
-
-        # tweak for clickbench
-        content = """
-profiles:
-    default:
-        allow_introspection_functions: 1
-"""
-        file_path = f"{temp_dir}/users.d/allow_introspection_functions.yaml"
-        with open(file_path, "w") as file:
-            file.write(content)
-        return True
-
-    def install_fuzzer_config(self):
-        res = self._install_light()
-        if not res:
-            return False
-        commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/limit-recursion-settings.xml {temp_dir}/users.d",
-        ]
-
-        c1 = """
-<clickhouse>
-    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
-</clickhouse>
-"""
-        file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        with open(file_path, "w") as file:
-            file.write(c1)
-
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        return res
-
-    def install_vector_search_config(self):
-        # Large values are set, ClickHouse will auto downsize
-        c1 = """
-<max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
-<cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
-<vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
-<max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
-<vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
-</clickhouse>
-        """
-        commands = [f'sed -i "s|</clickhouse>||g" {temp_dir}/config.xml']
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-
-        with open(f"{temp_dir}/config.xml", "a") as config_file:
-            config_file.write(c1)
-        return res
-
-    def create_log_export_config(self):
+    def create_log_export_config(self, config_dir=None):
         print("Create log export config")
-        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        # Write into the config dir the server actually reads. Callers that run
+        # the server from a non-default location (e.g. `ClickHouseService` under
+        # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
+        # `system_logs_export` cluster lands in the default `ch_config_dir` and
+        # the server starts without it, failing replication setup with `Code:
+        # 701. Requested cluster 'system_logs_export' not found`.
+        config_dir = config_dir or self.ch_config_dir
+        config_file = Path(config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.log_export_host, self.log_export_password = (
@@ -459,6 +336,12 @@ profiles:
 
     @staticmethod
     def stop_log_exports():
+        # Flush any buffered system-log records so the final queries are
+        # exported before the replication views are detached.
+        Shell.check(
+            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
+            verbose=True,
+        )
         return Shell.check(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
@@ -571,32 +454,76 @@ profiles:
 
         return res
 
+    _MINIO_LOG_DISK_PATHS = (
+        "/var/lib/clickhouse/disks/minio_audit_logs/",
+        "/var/lib/clickhouse/disks/minio_server_logs/",
+    )
+
+    @staticmethod
+    def _reset_minio_log_disk_dirs():
+        """Remove the minio log tables' pinned disk directories before re-creating them.
+
+        These live outside run_path* (see create_minio_log_tables), so they can
+        survive across restarts; a stale or planted symlink at either path must
+        not be followed - `rm -rf .../` would recurse into whatever it points at.
+        Only a verified real directory (or nothing) is removed.
+        """
+        for path in ClickHouseProc._MINIO_LOG_DISK_PATHS:
+            p = Path(path)
+            if p.is_symlink():
+                print(f"ERROR: refusing to remove {path}: it is a symlink")
+                return False
+            try:
+                if p.exists():
+                    shutil.rmtree(p)
+            except OSError as e:
+                print(f"ERROR: failed to remove {path}: {e}")
+                return False
+        return True
+
     def create_minio_log_tables(self):
         self.minio_setup_error = None
         # Minio log setup is non-fatal (caller continues when this returns
         # False). Every step MUST stay non-strict: a strict=True step would
         # raise before we can record the reason and signal failure. Record the
         # concrete failing sub-step so it reaches CIDB test_context_raw.
-        # storage_policy = 'default' pins these diagnostic tables to local disk.
-        # On s3 storage runs the default merge_tree policy is S3
-        # (s3_storage_policy_for_merge_tree_by_default.xml), which would put the
-        # audit log on S3, so (1) every audit-event insert writes parts to S3 and
-        # thereby generates more audit events (a feedback loop that inflates the
-        # table), and (2) the post-run `select * ... into outfile` dump reads all
-        # of it back from S3 - on amd_tsan this JSON-typed table grew to ~700k
-        # rows / ~1.5 GB and the dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap,
-        # failing the "Scraping system tables" check. These are diagnostics ABOUT
-        # S3 activity; there is no reason to store them ON S3. 'default' is a
-        # local policy on every stateless config (no config remaps it), so this
-        # is a no-op on non-s3 runs.
+        # These two diagnostic tables must live on LOCAL disk. They record the
+        # MinIO audit/server webhook stream, so storing them on S3 is doubly bad:
+        # (1) every audit-event insert writes parts to S3, which itself generates
+        # more audit events - a feedback loop that inflates the table, and (2) the
+        # post-run `select * ... into outfile` dump reads it all back from S3. On
+        # amd_tsan the JSON-typed audit table grew to ~700k rows / ~1.5 GB and the
+        # dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap, failing the "Scraping
+        # system tables" check.
+        #
+        # An explicit `disk = disk(type = 'local', ...)` pins each table to a
+        # dedicated local disk under custom_local_disks_base_directory
+        # (/var/lib/clickhouse/disks/, from custom_disks_base_path.xml, which is
+        # always installed). We deliberately do NOT use `storage_policy =
+        # 'default'`: in the public repo `default` is a local policy, but in the
+        # private/cloud repo `default` is cloud-based (object storage), so pinning
+        # to it would still put these tables on S3. An explicit local disk is
+        # correct in both. Each table gets its own path so it gets its own disk.
         setup_steps = [
             (
+                # start() wipes only run_path*, so each restart destroys these
+                # tables' metadata while their data - pinned below to disks
+                # outside run_path* - would survive it. Both callers run right
+                # after a fresh start() (initial setup and each
+                # bugfix-validation binary swap), so no live table references
+                # the directories; wipe them so a dead incarnation's parts
+                # (~1.5 GB of audit logs on sanitizer s3 runs) are not leaked
+                # on every swap or carried over from a previous run.
+                "reset minio log table disks",
+                self._reset_minio_log_disk_dirs,
+            ),
+            (
                 "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = disk(type = \'local\', path = \'/var/lib/clickhouse/disks/minio_audit_logs/\')"',
             ),
             (
                 "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = disk(type = \'local\', path = \'/var/lib/clickhouse/disks/minio_server_logs/\')"',
             ),
             (
                 "set clickminio logger_webhook config",
@@ -607,8 +534,9 @@ profiles:
                 '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
             ),
         ]
-        for what, command in setup_steps:
-            if not Shell.check(command, verbose=True):
+        for what, step in setup_steps:
+            ok = step() if callable(step) else Shell.check(step, verbose=True)
+            if not ok:
                 self.minio_setup_error = f"failed to {what}"
                 print(f"ERROR: Failed to {what}")
                 return False
