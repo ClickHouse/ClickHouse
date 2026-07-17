@@ -74,8 +74,6 @@
 #include <Stream.hh>
 #include <Types.hh>
 #include <ValidSchema.hh>
-#include <Schema.hh>
-#include <Types.hh>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -1318,7 +1316,7 @@ bool IcebergStorageSink::initializeMetadata()
         metadata_info.path,
         parent_snapshot,
         Iceberg::SnapshotSummaryUpdateAppend{
-            .added_files = static_cast<UInt64>(total_data_files),
+            .added_files = total_data_files,
             .added_records = static_cast<UInt64>(total_rows),
             .added_files_size = static_cast<UInt64>(total_chunks_size),
             .num_partitions = static_cast<UInt64>(writer_per_partition_key.size()),

@@ -5,8 +5,6 @@
 #include <Common/logger_useful.h>
 
 #include <climits>
-#include <type_traits>
-#include <variant>
 
 #if USE_AVRO
 #include <optional>
