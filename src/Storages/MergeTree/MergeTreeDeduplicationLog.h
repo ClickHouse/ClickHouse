@@ -230,15 +230,26 @@ private:
     void rotateAndDropIfNeeded();
 
     /// Read all records of a single log from disk in order, appending them to
-    /// `records`. Returns how many records were read. In case of corruption
+    /// `records` (and the log's number, in lockstep, to `record_log_numbers`, so
+    /// each record can be attributed back to its file). In case of corruption
     /// throws exceptions.
-    size_t loadSingleLog(const std::string & path, std::vector<MergeTreeDeduplicationLogRecord> & records);
+    void loadSingleLog(
+        const std::string & path,
+        size_t log_number,
+        std::vector<MergeTreeDeduplicationLogRecord> & records,
+        std::vector<size_t> & record_log_numbers);
 
     /// Replay a chronologically ordered record stream into the in-memory map.
     /// Each CANCEL record cancels the matching preceding ADD (both are skipped),
     /// so an insert that failed and rolled back consumes no deduplication-window
     /// slot; the remaining ADD/DROP records are applied exactly as they were live.
-    void applyRecords(const std::vector<MergeTreeDeduplicationLogRecord> & records);
+    /// Also recomputes each log's `entries_count` from only the surviving records
+    /// (`record_log_numbers` maps each record back to its file), so retention does
+    /// not count cancelled (ADD, CANCEL) pairs as consumed deduplication-window
+    /// slots and drop a log that still holds live block ids.
+    void applyRecords(
+        const std::vector<MergeTreeDeduplicationLogRecord> & records,
+        const std::vector<size_t> & record_log_numbers);
 };
 
 }

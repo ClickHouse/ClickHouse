@@ -112,13 +112,16 @@ void MergeTreeDeduplicationLog::load()
         /// Collect every record from all logs first (in chronological order), then
         /// replay them together: a CANCEL record can refer to an ADD in an earlier
         /// log file, so the (ADD, CANCEL) pairs of rolled-back inserts can only be
-        /// cancelled out once the whole history is known.
+        /// cancelled out once the whole history is known. `record_log_numbers` keeps
+        /// each record's originating log number so `applyRecords` can recompute the
+        /// per-file `entries_count` from only the surviving records.
         std::vector<MergeTreeDeduplicationLogRecord> records;
+        std::vector<size_t> record_log_numbers;
         for (auto & [log_number, desc] : existing_logs)
         {
             try
             {
-                desc.entries_count = loadSingleLog(desc.path, records);
+                loadSingleLog(desc.path, log_number, records, record_log_numbers);
             }
             catch (...)
             {
@@ -126,7 +129,7 @@ void MergeTreeDeduplicationLog::load()
             }
         }
 
-        applyRecords(records);
+        applyRecords(records, record_log_numbers);
 
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
@@ -137,22 +140,28 @@ void MergeTreeDeduplicationLog::load()
     }
 }
 
-size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path, std::vector<MergeTreeDeduplicationLogRecord> & records)
+void MergeTreeDeduplicationLog::loadSingleLog(
+    const std::string & path,
+    size_t log_number,
+    std::vector<MergeTreeDeduplicationLogRecord> & records,
+    std::vector<size_t> & record_log_numbers)
 {
     auto read_buf = disk->readFile(path, getReadSettings());
 
-    size_t total_entries = 0;
     while (!read_buf->eof())
     {
         MergeTreeDeduplicationLogRecord record;
         readRecord(record, *read_buf);
         records.push_back(std::move(record));
-        total_entries++;
+        /// Kept in lockstep with `records` (pushed together even if a later read
+        /// throws) so every record can be attributed back to this log file.
+        record_log_numbers.push_back(log_number);
     }
-    return total_entries;
 }
 
-void MergeTreeDeduplicationLog::applyRecords(const std::vector<MergeTreeDeduplicationLogRecord> & records)
+void MergeTreeDeduplicationLog::applyRecords(
+    const std::vector<MergeTreeDeduplicationLogRecord> & records,
+    const std::vector<size_t> & record_log_numbers)
 {
     /// First, cancel out the (ADD, CANCEL) pairs left behind by inserts that
     /// failed and rolled back. Each CANCEL record cancels the most recent
@@ -184,6 +193,20 @@ void MergeTreeDeduplicationLog::applyRecords(const std::vector<MergeTreeDeduplic
             }
         }
     }
+
+    /// Recompute each log's `entries_count` from only the records that survive
+    /// cancel-pair elimination. `dropOutdatedLogs` sums these counts from the
+    /// newest log backwards to decide which older logs are redundant; a cancelled
+    /// (ADD, CANCEL) pair contributes nothing to the reconstructed map, so counting
+    /// its raw records would let a failed multi-block insert inflate the counts and
+    /// wrongly drop an older log that still holds live block ids - after which a
+    /// restart forgets those committed blocks. Counting only survivors keeps the
+    /// retention accounting in step with what a replay actually reconstructs.
+    for (auto & log : existing_logs)
+        log.second.entries_count = 0;
+    for (size_t i = 0; i < records.size(); ++i)
+        if (!cancelled[i])
+            existing_logs.at(record_log_numbers[i]).entries_count++;
 
     /// Now replay the surviving records exactly as they happened live: ADD inserts
     /// (evicting the oldest entry when the map is full), DROP erases.
@@ -350,6 +373,11 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// map on a path that might still fail would silently narrow the
     /// deduplication window for unrelated, already-active parts.
     size_t written = 0;
+    /// All ADD records below go to the log that is current right now: no rotation
+    /// happens until the rotateAndDropIfNeeded() after the loop. Remember it so the
+    /// rollback can undo their retention count even if that rotation (or a failed
+    /// write that cancels the writer) has since moved `current_log_number` on.
+    const size_t add_log_number = current_log_number;
     try
     {
         for (const auto & block_id : block_ids)
@@ -399,8 +427,20 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
                 record.part_name = part_info.getPartNameAndCheckFormat(format_version);
                 record.block_id = block_ids[i];
                 writeRecord(record, *current_writer);
-                existing_logs[current_log_number].entries_count++;
             }
+
+            /// The rolled-back ADD records above are cancelled by these CANCEL
+            /// records and survive neither the in-memory map nor a replay, so they
+            /// must not count towards log retention: leaving them (and the CANCEL
+            /// records) in `entries_count` would let dropOutdatedLogs treat them as
+            /// consumed deduplication-window slots and drop an older log that still
+            /// holds live block ids - after which a restart forgets those committed
+            /// blocks. Undo the count of the ADD records (added above, always to
+            /// `add_log_number`) and do not count the CANCEL records, so the live
+            /// accounting matches what a replay of these logs reconstructs. Done
+            /// only after the CANCEL records were written, so a failure to persist
+            /// them (handled below) leaves the on-disk ADD records still counted.
+            existing_logs.at(add_log_number).entries_count -= written;
         }
         catch (...)
         {

@@ -556,3 +556,70 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureDoesNotEvictUnrelatedBlockIds
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: a failed multi-block insert whose rollback writes CANCEL
+/// records must not shrink the retained log history across a restart. Replaying
+/// the log correctly cancels the (ADD, CANCEL) pairs, but log retention
+/// (dropOutdatedLogs) sums per-file record counts to decide which older logs are
+/// redundant. If those counts still include the cancelled pairs, the first restart
+/// over-counts the rolled-back records, rotates, and drops the older log that holds
+/// the committed block IDs - so a second restart replays only the CANCEL-only log
+/// and forgets the committed inserts, wrongly accepting their retries. The counts
+/// must therefore be recomputed from only the surviving records, both in memory
+/// (after the failed insert) and after each replay.
+TEST(MergeTreeDeduplicationLog, RotationSyncFailureRetainsCommittedLogsAfterTwoRestarts)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_retention_two_restarts/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// deduplication_window == 2 gives rotate_interval == 4. The first rotation
+        /// with a live previous writer is the one triggered by the four-block insert
+        /// below, so sync #1 is the finalization of the log file holding all the
+        /// committed and rolled-back ADD records.
+        auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// Two committed inserts fill the deduplication window.
+        log.addPart({"block1"}, part("all_1_1_0"));
+        log.addPart({"block2"}, part("all_2_2_0"));
+
+        /// A four-block insert writes its ADD records, then the rotation that
+        /// follows fails to sync the previous log file, so the insert is rolled back
+        /// with four CANCEL records written into the freshly opened log file.
+        EXPECT_ANY_THROW(log.addPart({"block3", "block4", "block5", "block6"}, part("all_3_3_0")));
+
+        log.shutdown();
+    }
+
+    {
+        /// First "restart" with a healthy disk: replay the logs from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+        log.shutdown();
+    }
+
+    {
+        /// Second "restart": the log file holding "block1" / "block2" must not have
+        /// been dropped by the first restart's retention pass, or the committed
+        /// inserts are forgotten here and their retries wrongly accepted.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// Both committed blocks must still be deduplicated after two restarts.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_5_5_0")).empty());
+
+        /// The rolled-back blocks must still be retryable (never committed).
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
