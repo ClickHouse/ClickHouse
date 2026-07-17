@@ -2313,7 +2313,8 @@ private:
             {
                 std::string_view data = element.getString();
 
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
+                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes
+                    && !format_settings.try_infer_ipv4 && !format_settings.try_infer_ipv6)
                 {
                     encodeDataType(getDataTypesCache().getType("String"), buf);
                     writeStringBinary(data, buf);
@@ -2364,7 +2365,7 @@ private:
                     }
                 }
 
-                if (format_settings.try_infer_ipv6)
+                if (format_settings.try_infer_ipv6 && data.find(':') != std::string_view::npos)
                 {
                     IPv6 ipv6_value;
                     if (IPv6Node<JSONParser>::tryParse(ipv6_value, data))
