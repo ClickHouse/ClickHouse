@@ -402,9 +402,6 @@ void applyActionsToSortDescription(
     if (description.empty())
         return;
 
-    if (dag.hasArrayJoin())
-        return;
-
     const size_t descr_size = description.size();
 
     const auto & inputs = dag.getInputs();
