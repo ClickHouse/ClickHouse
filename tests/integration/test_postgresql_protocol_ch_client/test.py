@@ -139,6 +139,32 @@ def test_array_type_roundtrip(started_cluster):
     )
 
 
+def test_map_and_tuple_columns_are_not_advertised_as_arrays(started_cluster):
+    # An `Array(...)` nested inside a `Map`/`Tuple` type argument must not make the emulated `pg_attribute`
+    # advertise the column as a PostgreSQL array: only the leading `Array(` wrappers count towards
+    # `attndims`. Such columns are exposed as text and read back as `String` (their ClickHouse text form),
+    # while a genuine top-level array in the same table is still inferred as an array.
+    node.query("DROP TABLE IF EXISTS test_nested_containers SYNC")
+    node.query(
+        "CREATE TABLE test_nested_containers "
+        "(id UInt32, m Map(String, Array(UInt8)), t Tuple(a Array(Int32)), arr Array(Int32)) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_nested_containers VALUES "
+        "(1, map('k', [1, 2]), tuple([3, 4]), [5, 6])"
+    )
+
+    assert node.query(
+        "SELECT toTypeName(m), toTypeName(t), toTypeName(arr) "
+        f"FROM {pg_source('default', 'test_nested_containers')} LIMIT 1"
+    ) == "String\tString\tArray(Int32)\n"
+
+    assert node.query(
+        f"SELECT id, m, t, arr FROM {pg_source('default', 'test_nested_containers')} ORDER BY id"
+    ) == "1\t{'k':[1,2]}\t([3,4])\t[5,6]\n"
+
+
 def test_wire_types_for_wide_and_decimal(started_cluster):
     # A direct PostgreSQL client reading these columns over the wire must see the correct type OIDs in the
     # `RowDescription`: the integer types that do not fit into a signed 64-bit `bigint` (UInt64 and the

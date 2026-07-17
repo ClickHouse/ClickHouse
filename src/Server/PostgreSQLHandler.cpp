@@ -1316,7 +1316,9 @@ FROM (
     SELECT
         database, table, name, position, type, numeric_precision, numeric_scale,
         extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*([A-Za-z0-9]+)') AS base,
-        toInt32(countSubstrings(type, 'Array(')) AS ndims
+        /// Count only the leading `Array(` wrappers. An `Array(` nested inside a `Map`/`Tuple` argument
+        /// list must not make the column look like a top-level array: such columns are exposed as text.
+        toInt32(countSubstrings(extract(type, '^((?:Nullable\(|LowCardinality\(|Array\()*)'), 'Array(')) AS ndims
     FROM system.columns
 ) AS cols
 INNER JOIN pg_class_oids AS oids ON cols.database = oids.database AND cols.table = oids.name)");
