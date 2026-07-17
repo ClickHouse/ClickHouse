@@ -220,3 +220,17 @@ TEST(ValidUntilAttachEncoding, HandEditedDeadlineBeyondMaxFailsToLoad)
     ASSERT_EQ(user->authentication_methods.size(), 1u);
     EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402300799);
 }
+
+TEST(ValidUntilAttachEncoding, NoAuthenticationTypeKeepsDeadline)
+{
+    /// `AuthenticationData::fromAST` builds the `no_authentication` method in a dedicated branch, which
+    /// used to return without setting the already-resolved deadline, silently dropping `VALID UNTIL` /
+    /// `VALID FOR` for this authentication type only. The deadline must survive the same way it does for
+    /// every other authentication type.
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_authentication VALID UNTIL '0000000123';");
+    const auto * user = typeid_cast<const User *>(entity.get());
+    ASSERT_NE(user, nullptr);
+    ASSERT_EQ(user->authentication_methods.size(), 1u);
+    EXPECT_EQ(user->authentication_methods.front().getType(), AuthenticationType::NO_AUTHENTICATION);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 123);
+}

@@ -533,6 +533,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     if (query.type && query.type == AuthenticationType::NO_AUTHENTICATION)
     {
         AuthenticationData auth_data{AuthenticationType::NO_AUTHENTICATION};
+        auth_data.setValidUntil(valid_until);
         return auth_data;
     }
 
