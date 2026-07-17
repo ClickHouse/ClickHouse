@@ -16,14 +16,14 @@ run_happy_path() {
     FROM file('$puffin', PuffinMetadata)
     "
     $CLICKHOUSE_LOCAL -q "
-    SELECT deleted_rows
+    SELECT referenced_data_file, deleted_rows
     FROM file('$puffin', Puffin)
     "
     $CLICKHOUSE_LOCAL -q "
-    SELECT row_number
+    SELECT referenced_data_file, row_number
     FROM file('$puffin', Puffin)
     ARRAY JOIN deleted_rows AS row_number
-    ORDER BY row_number
+    ORDER BY referenced_data_file, row_number
     "
 }
 

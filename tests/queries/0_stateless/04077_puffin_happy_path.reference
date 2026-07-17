@@ -1,22 +1,22 @@
 --- spark_deletion_vector.puffin ---
 deletion-vector-v1	-1	-1	4	58		['cardinality','referenced-data-file']	['5','/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet']
-[2,5,7,100,65536]
-2
-5
-7
-100
-65536
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	[2,5,7,100,65536]
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	2
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	5
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	7
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	100
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	65536
 --- compressed_footer.puffin ---
 deletion-vector-v1	-1	-1	4	58		['cardinality','referenced-data-file']	['5','/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet']
-[2,5,7,100,65536]
-2
-5
-7
-100
-65536
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	[2,5,7,100,65536]
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	2
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	5
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	7
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	100
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	65536
 --- mixed_blob_types.puffin ---
 apache-datasketches-theta-v1	-1	-1	4	16		[]	[]
 deletion-vector-v1	-1	-1	20	44		['cardinality','referenced-data-file']	['2','/data/table/part-00000.parquet']
-[2,5]
-2
-5
+/data/table/part-00000.parquet	[2,5]
+/data/table/part-00000.parquet	2
+/data/table/part-00000.parquet	5

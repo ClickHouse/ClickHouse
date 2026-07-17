@@ -618,6 +618,7 @@ NamesAndTypesList getPuffinMetadataSchema()
 NamesAndTypesList getPuffinSchema()
 {
     return {
+        {"referenced_data_file", std::make_shared<DataTypeString>()},
         {"deleted_rows", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
     };
 }
@@ -765,9 +766,6 @@ Chunk PuffinInputFormat::read()
         if (blob.type != "deletion-vector-v1")
             continue;
 
-        auto col_rows_data = ColumnUInt64::create();
-        auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
-
         UInt64 expected_cardinality = 0;
         if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
             throw Exception(
@@ -775,9 +773,16 @@ Chunk PuffinInputFormat::read()
                 "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
                 current_blob_index);
 
+        const auto & referenced_data_file = blob.properties.at("referenced-data-file");
+
         auto blob_buf = readBlobBytes(blob, *in, footer.data);
         auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length), expected_cardinality);
 
+        auto col_file = ColumnString::create();
+        col_file->insertData(referenced_data_file.data(), referenced_data_file.size());
+
+        auto col_rows_data = ColumnUInt64::create();
+        auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
         ColumnArray::Offset rows_offset = 0;
         size_t elem_count = 0;
         for (UInt64 r : rows)
@@ -790,9 +795,16 @@ Chunk PuffinInputFormat::read()
 
         auto col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
 
-        MutableColumns cols;
-        cols.push_back(std::move(col_rows));
-        return Chunk(std::move(cols), 1);
+        std::unordered_map<String, MutableColumnPtr> built;
+        built.emplace("referenced_data_file", std::move(col_file));
+        built.emplace("deleted_rows", std::move(col_rows));
+
+        const Block & out_header = getPort().getHeader();
+        MutableColumns result;
+        result.reserve(out_header.columns());
+        for (const auto & col_with_name : out_header)
+            result.push_back(std::move(built.at(col_with_name.name)));
+        return Chunk(std::move(result), 1);
     }
 
     return {};
@@ -891,27 +903,28 @@ Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puff
 The format exposes deleted row positions from `deletion-vector-v1` blobs. Other blob types (for example `apache-datasketches-theta-v1`) are skipped.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
 
-Fixed output column:
+Fixed output columns:
+- `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 
 ## Example usage {#example-usage}
 
-Read deleted row positions:
+Read deleted row positions with the referenced data file:
 
 ```sql
-SELECT deleted_rows
+SELECT referenced_data_file, deleted_rows
 FROM file(deletes.puffin, Puffin);
 ```
 
 Expand deleted positions into individual rows:
 
 ```sql
-SELECT row_number
+SELECT referenced_data_file, row_number
 FROM file(deletes.puffin, Puffin)
 ARRAY JOIN deleted_rows AS row_number
-ORDER BY row_number;
+ORDER BY referenced_data_file, row_number;
 ```
 
 Use `PuffinMetadata` to inspect footer blob descriptors before reading deletion vectors.

@@ -13,27 +13,28 @@ Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puff
 The format exposes deleted row positions from `deletion-vector-v1` blobs. Other blob types (for example `apache-datasketches-theta-v1`) are skipped.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
 
-Fixed output column:
+Fixed output columns:
+- `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 
 ## Example usage {#example-usage}
 
-Read deleted row positions:
+Read deleted row positions with the referenced data file:
 
 ```sql
-SELECT deleted_rows
+SELECT referenced_data_file, deleted_rows
 FROM file(deletes.puffin, Puffin);
 ```
 
 Expand deleted positions into individual rows:
 
 ```sql
-SELECT row_number
+SELECT referenced_data_file, row_number
 FROM file(deletes.puffin, Puffin)
 ARRAY JOIN deleted_rows AS row_number
-ORDER BY row_number;
+ORDER BY referenced_data_file, row_number;
 ```
 
 Use `PuffinMetadata` to inspect footer blob descriptors before reading deletion vectors.
