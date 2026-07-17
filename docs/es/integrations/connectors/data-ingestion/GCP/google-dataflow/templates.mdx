@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Plantillas'
+slug: /integrations/google-dataflow/templates
+description: 'Puede ingestar datos en ClickHouse con las plantillas de Google Dataflow'
+title: 'Plantillas de Google Dataflow'
+doc_type: 'guide'
+keywords: ['google dataflow', 'gcp', 'pipeline de datos', 'plantillas', 'procesamiento por lotes']
+---
+
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Las plantillas de Google Dataflow ofrecen una forma práctica de ejecutar canalizaciones de datos predefinidas y listas para usar sin necesidad de escribir código personalizado. Estas plantillas están diseñadas para simplificar tareas habituales de procesamiento de datos y se crean con [Apache Beam](https://beam.apache.org/), aprovechando conectores como `ClickHouseIO` para integrarse sin problemas con las bases de datos de ClickHouse. Al ejecutar estas plantillas en Google Dataflow, puede lograr un procesamiento de datos distribuido y altamente escalable con un esfuerzo mínimo.
+
+<div id="why-use-dataflow-templates">
+  ## ¿Por qué usar plantillas de Dataflow?
+</div>
+
+* **Facilidad de uso**: Las plantillas eliminan la necesidad de programar al ofrecer canalizaciones preconfiguradas adaptadas a casos de uso específicos.
+* **Escalabilidad**: Dataflow garantiza que su canalización escale de forma eficiente y procese grandes volúmenes de datos mediante procesamiento distribuido.
+* **Eficiencia de costos**: Pague solo por los recursos que consume, con la posibilidad de optimizar los costos de ejecución de la canalización.
+
+<div id="how-to-run-dataflow-templates">
+  ## Cómo ejecutar las plantillas de Dataflow
+</div>
+
+Actualmente, la plantilla oficial de ClickHouse está disponible a través de Google Cloud Console, la CLI o la API de REST de Dataflow.
+Para obtener instrucciones detalladas paso a paso, consulta la [guía de Google Dataflow para ejecutar una canalización desde una plantilla](https://cloud.google.com/dataflow/docs/templates/provided-templates).
+
+<div id="list-of-clickhouse-templates">
+  ## Lista de plantillas de ClickHouse
+</div>
+
+* [BigQuery a ClickHouse](/es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse)
+* [Pub/Sub a ClickHouse](/es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse)
+* [GCS a ClickHouse](https://github.com/ClickHouse/DataflowTemplates/issues/3) (¡próximamente!)

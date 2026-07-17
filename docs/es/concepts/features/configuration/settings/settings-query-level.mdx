@@ -1,0 +1,252 @@
+---
+description: 'Configuración a nivel de consulta'
+sidebarTitle: 'Configuración de sesión a nivel de consulta'
+slug: /operations/settings/query-level
+title: 'Configuración de sesión a nivel de consulta'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+Hay varias formas de ejecutar sentencias con ajustes específicos.
+Los ajustes se configuran por capas, y cada capa posterior redefine los valores anteriores de un ajuste.
+
+<div id="order-of-priority">
+  ## Orden de prioridad
+</div>
+
+El orden de prioridad para definir un SETTING es:
+
+1. Aplicar un SETTING directamente a un usuario o dentro de un perfil de ajustes
+
+   * SQL (recomendado)
+   * añadir uno o varios archivos XML o YAML a `/etc/clickhouse-server/users.d`
+
+2. Ajustes de sesión
+
+   * Envíe `SET setting=value` desde la SQL Console de ClickHouse Cloud o
+     `clickhouse client` en modo interactivo. Del mismo modo, puede usar
+     sesiones de ClickHouse en el protocolo HTTP. Para ello, debe especificar el
+     parámetro HTTP `session_id`.
+
+3. Ajustes de consulta
+
+   * Al iniciar `clickhouse client` en modo no interactivo, establezca el
+     parámetro de inicio `--setting=value`.
+   * Al usar la API HTTP, pase parámetros CGI (`URL?setting_1=value&setting_2=value...`).
+   * Defina ajustes en la
+     cláusula [SETTINGS](/es/reference/statements/select/index#settings-in-select-query)
+     de la consulta SELECT. El valor del SETTING se aplica solo a esa consulta
+     y se restablece al valor predeterminado o al valor anterior una vez ejecutada la consulta.
+
+<div id="converting-a-setting-to-its-default-value">
+  ## Restablecer un ajuste a su valor predeterminado
+</div>
+
+Si cambia un ajuste y desea restablecerlo a su valor predeterminado, establezca el valor en `DEFAULT`. La sintaxis es la siguiente:
+
+```sql
+SET setting_name = DEFAULT
+```
+
+Por ejemplo, el valor predeterminado de `async_insert` es `0`. Supongamos que cambia ese valor a `1`:
+
+```sql
+SET async_insert = 1;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+La respuesta es:
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+El siguiente comando restablece su valor a 0:
+
+```sql
+SET async_insert = DEFAULT;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+La configuración ha vuelto a su valor predeterminado:
+
+```response
+┌─value───┐
+│ 0       │
+└─────────┘
+```
+
+<div id="custom_settings">
+  ## Ajustes personalizados
+</div>
+
+Además de los [ajustes](/es/reference/settings/session-settings) comunes, los usuarios pueden definir ajustes personalizados.
+Los ajustes personalizados permiten pasar **parámetros específicos de la sesión** que pueden usarse en consultas, políticas o funciones. Esto resulta útil cuando necesita:
+
+* Filtrar datos según la identidad del usuario o la organización
+* Aplicar una lógica de negocio distinta según el contexto
+* Mantener información con estado entre consultas dentro de una sesión
+
+El nombre de un ajuste personalizado debe comenzar con uno de varios prefijos predefinidos de una lista que usted define.
+La lista de prefijos puede especificarse mediante el ajuste del servidor [`custom_settings_prefixes`](/es/reference/settings/server-settings/settings#custom_settings_prefixes), definido en el archivo de configuración del servidor.
+
+En el ejemplo siguiente, se elige `SQL_` como prefijo personalizado:
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+<Note>
+  En ClickHouse Cloud no es posible especificar un prefijo personalizado.
+  Todos los ajustes de usuario personalizados comienzan con el prefijo `SQL_`.
+</Note>
+
+Para definir un ajuste personalizado, use el comando `SET`:
+
+```sql
+SET SQL_a = 123;
+```
+
+Para obtener el valor actual de una configuración personalizada, utilice la función `getSetting()`:
+
+```sql
+SELECT getSetting('SQL_a');
+```
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Todos estos ejemplos establecen el valor del ajuste `async_insert` en `1` y
+muestran cómo examinar los ajustes en un sistema en funcionamiento.
+
+<div id="using-sql-to-apply-a-setting-to-a-user-directly">
+  ### Usar SQL para aplicar directamente un ajuste a un usuario
+</div>
+
+Esto crea el usuario `ingester` con el ajuste `async_inset = 1`:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS async_insert = 1
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### Examine el perfil de configuración y su asignación
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="using-sql-to-create-a-settings-profile-and-assign-to-a-user">
+  ### Uso de SQL para crear un perfil de configuración y asignarlo a un usuario
+</div>
+
+Esto crea el perfil `log_ingest` con la configuración `async_inset = 1`:
+
+```sql
+CREATE
+SETTINGS PROFILE log_ingest SETTINGS async_insert = 1
+```
+
+Esto crea el usuario `ingester` y le asigna el perfil de configuración `log_ingest`:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS PROFILE log_ingest
+```
+
+<div id="using-xml-to-create-a-settings-profile-and-user">
+  ### Uso de XML para crear un perfil de configuración y un usuario
+</div>
+
+```xml title=/etc/clickhouse-server/users.d/users.xml highlight={2-6,11}
+<clickhouse>
+    <profiles>
+        <log_ingest>
+            <async_insert>1</async_insert>
+        </log_ingest>
+    </profiles>
+
+    <users>
+        <ingester>
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <profile>log_ingest</profile>
+        </ingester>
+        <default replace="true">
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
+```
+
+<div id="examine-the-settings-profile-and-assignment-1">
+  #### Examinar el perfil de configuración y su asignación
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3,5}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ CREATE USER default IDENTIFIED WITH sha256_password                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
+│ CREATE SETTINGS PROFILE default                                                    │
+│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
+│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="assign-a-setting-to-a-session">
+  ### Asignar una configuración a una sesión
+</div>
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+<div id="assign-a-setting-during-a-query">
+  ### Asignar una configuración en una consulta
+</div>
+
+```sql highlight={2}
+INSERT INTO YourTable
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* Consulte la página de [Configuración](/es/reference/settings/session-settings) para obtener una descripción de la configuración de ClickHouse.
+* [Configuración global del servidor](/es/reference/settings/server-settings/settings)

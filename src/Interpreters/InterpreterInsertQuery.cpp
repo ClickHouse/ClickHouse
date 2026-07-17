@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool parallel_view_processing;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
@@ -103,7 +104,6 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -470,13 +470,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (!squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 context->getSettingsRef()[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -516,13 +515,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -534,6 +532,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addChains(std::move(sink_chains));
 
     pipeline.setMaxThreads(max_threads);
+    // Cap to 1 when parallel_view_processing=0. Pipe::max_parallel_streams is a watermark that
+    // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
+    pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
     pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
@@ -795,7 +796,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 chain.getInputSharedHeader())
         );
     }
@@ -830,7 +830,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 chain.getInputSharedHeader()));
     }
 
@@ -844,7 +843,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // Pipeline ceiling: simple upper bound on parallelism. Actual slot grants are
     // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
     // does not translate into reserved-but-unused slots.
-    pipeline.setNumThreads(max_threads);
+    // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
+    const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
+    pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)

@@ -1,0 +1,111 @@
+---
+slug: /use-cases/data-lake/biglake-catalog
+sidebarTitle: 'BigLake Metastore'
+title: 'كتالوج وقت التشغيل لـ Lakehouse (BigLake Metastore)'
+description: 'في هذا الدليل، سنشرح لك خطوات الاستعلام عن
+ بياناتك في Google Cloud Storage باستخدام ClickHouse وكتالوج وقت التشغيل لـ Lakehouse (BigLake Metastore).'
+keywords: ['BigLake', 'GCS', 'Data Lake', 'Iceberg', 'Google Cloud', 'Lakehouse Runtime Catalog']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+يدعم ClickHouse التكامل مع عدة catalogs ‏(مثل Unity وGlue وPolaris وغيرها). يوضح لك هذا الدليل الخطوات اللازمة للاستعلام عن جداول Iceberg الخاصة بك في [كتالوج وقت التشغيل لـ Lakehouse المعروف أيضًا باسم BigLake Metastore](https://docs.cloud.google.com/biglake/docs/) عبر ClickHouse.
+
+<Note>
+  نظرًا لأن هذه الميزة لا تزال في مرحلة Beta، فستحتاج إلى تفعيلها باستخدام:
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+قبل إنشاء اتصال من ClickHouse إلى كتالوج وقت التشغيل لـ Lakehouse ‏(BigLake Metastore)، تأكد من توفر ما يلي:
+
+* **مشروع Google Cloud** مع تفعيل كتالوج وقت التشغيل لـ Lakehouse
+* **بيانات اعتماد Application Default** ‏(OAuth client ID وclient secret) لتطبيق، تم إنشاؤها عبر [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
+* **refresh token** تم الحصول عليه من خلال إكمال OAuth flow باستخدام النطاقات المناسبة (على سبيل المثال `https://www.googleapis.com/auth/bigquery` ونطاق التخزين لـ GCS)
+* **مسار warehouse**: ‏GCS bucket ‏(مع prefix اختياري) حيث تُخزَّن الجداول، على سبيل المثال `gs://your-bucket` أو `gs://your-bucket/prefix`
+
+<div id="creating-a-connection">
+  ## إنشاء اتصال بين كتالوج وقت التشغيل لـ Lakehouse وClickHouse
+</div>
+
+بعد توفّر بيانات اعتماد OAuth، أنشئ قاعدة بيانات في ClickHouse تستخدم محرك قاعدة البيانات ‏[DataLakeCatalog](/ar/reference/engines/database-engines/datalake):
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_adc_client_id = '<client-id>',
+    google_adc_client_secret = '<client-secret>',
+    google_adc_refresh_token = '<refresh-token>',
+    google_adc_quota_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+<div id="querying-lakehouse-runtime-tables">
+  ## الاستعلام عن جداول كتالوج وقت التشغيل لـ Lakehouse باستخدام ClickHouse
+</div>
+
+بمجرد إنشاء الاتصال، يمكنك الاستعلام عن الجداول المسجَّلة في كتالوج وقت التشغيل لـ Lakehouse.
+
+```sql
+USE LAKEHOUSE_RUNTIME_CATALOG;
+
+SHOW TABLES;
+```
+
+مخرجات المثال:
+
+```response
+┌─name──────────────────────────────────────┐
+│lakehouse_runtime_catalog.my_iceberg_table │   
+└───────────────────────────────────────────┘
+```
+
+```sql
+SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<Info>
+  **يجب استخدام علامات الاقتباس المعكوسة**
+
+  يجب استخدام علامات الاقتباس المعكوسة لأن ClickHouse لا يدعم سوى مساحة اسم واحدة.
+</Info>
+
+لفحص تعريف الجدول:
+
+```sql
+SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<div id="loading-data-into-clickhouse">
+  ## تحميل البيانات من Lakehouse إلى ClickHouse
+</div>
+
+لتحميل البيانات من جدول في كتالوج وقت التشغيل لـ Lakehouse إلى جدول ClickHouse محلي لتسريع الاستعلامات المتكررة، أنشئ جدول MergeTree ونفّذ insert من الكتالوج:
+
+```sql
+CREATE TABLE clickhouse_table
+(
+    `id` Int64,
+    `event_time` DateTime64(3),
+    `user_id` String,
+    `payload` String
+)
+ENGINE = MergeTree
+ORDER BY (event_time, id);
+
+INSERT INTO local_events
+SELECT * FROM lakehouse_runtime_catalog.`icebench.my_iceberg_table`;
+```
+
+بعد التحميل الأولي، نفّذ استعلامًا على `clickhouse_table` بزمن استجابة أقل. أعد تنفيذ `INSERT INTO ... SELECT` لتحديث البيانات من BigLake عند الحاجة.

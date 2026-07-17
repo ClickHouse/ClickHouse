@@ -1,0 +1,33 @@
+---
+description: 'timeSeriesSamples returns the samples table used by table `db_name.time_series_table`
+  whose table engine is TimeSeries.'
+sidebarTitle: 'timeSeriesSamples'
+slug: /sql-reference/table-functions/timeSeriesSamples
+title: 'timeSeriesSamples'
+doc_type: 'reference'
+---
+
+`timeSeriesSamples(db_name.time_series_table)` - Returns the [samples](/reference/engines/table-engines/integrations/time-series#samples-table) table
+used by table `db_name.time_series_table` whose table engine is [TimeSeries](/reference/engines/table-engines/integrations/time-series):
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
+```
+
+The function also works if the _samples_ table is inner:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesSamples(db_name.time_series_table);
+SELECT * FROM timeSeriesSamples('db_name.time_series_table');
+SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
+```
+
+<Note>
+The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for backwards compatibility.
+</Note>

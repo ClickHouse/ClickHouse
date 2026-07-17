@@ -1,0 +1,89 @@
+---
+title: '通知'
+slug: /cloud/notifications
+description: 'お使いの ClickHouse Cloud サービスの通知'
+keywords: ['クラウド', '通知', 'アラート', 'サービス通知', '請求通知']
+sidebarTitle: '通知'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse Cloud は、サービスまたは組織に関連する重要なイベントについて通知を送信します。通知の送信方法や設定方法を理解するうえで、押さえておくべき概念がいくつかあります。
+
+1. **通知カテゴリ**: 請求通知やサービス関連通知など、通知の分類を指します。各カテゴリには、配信方法を設定できる通知が複数含まれます。
+2. **通知重要度**: 通知の重要度は、その重要性に応じて `info`、`warning`、または `critical` になります。これは設定できません。
+3. **通知チャネル**: チャネルとは、UI、メール、Slack など、通知を受信する手段を指します。これはほとんどの通知で設定可能です。
+
+<div id="receiving-notifications">
+  ## 通知の受信
+</div>
+
+通知は複数のチャネルで受け取れます。ClickHouse Cloud では、メール、ClickHouse Cloud UI、Slack で通知を受信できます。現在の通知を表示するには、左上のメニューにあるベルアイコンをクリックします。すると、フライアウトが開きます。フライアウト下部の **View All** ボタンをクリックすると、すべての通知のアクティビティログが表示されるページに移動します。
+
+<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="ClickHouse Cloud の通知フライアウト" border />
+
+<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="ClickHouse Cloud の通知アクティビティログ" border />
+
+<div id="customizing-notifications">
+  ## 通知のカスタマイズ
+</div>
+
+通知ごとに、受信方法をカスタマイズできます。設定画面には、通知のフライアウトまたは通知アクティビティログの 2 番目のタブからアクセスできます。
+
+Cloud UI 経由で配信される通知はカスタマイズでき、設定はユーザーごとに反映されます。また、自分のメールアドレス宛ての通知もカスタマイズできますが、カスタムメールアドレス宛ての通知や Slack チャンネル宛ての通知をカスタマイズできるのは、管理者権限を持つユーザーのみです。
+
+特定の通知の配信先を設定するには、鉛筆アイコンをクリックして通知の配信チャネルを変更します。
+
+<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="ClickHouse Cloud 通知設定画面" border />
+
+<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="ClickHouse Cloud 通知配信設定" border />
+
+<Note>
+  **Payment failed** など、一部の**必須**通知は設定できません。
+</Note>
+
+<div id="service-notifications">
+  ## サービス通知
+</div>
+
+ClickHouse は、特定のアラート条件がトリガーされるとサービス通知を送信します。ClickHouse Cloud のサービス通知について詳しくは、以下を参照してください。
+
+| 通知されるタイミング          | 具体的なアラート条件                                                     | デフォルトの通知チャネル        | 対応手順                                                                                                                                            |
+| ------------------- | -------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| クラスターをスケールアップできない   | 推奨クラスターサイズが垂直スケーリングの最大上限を超えた場合。推奨クラスターサイズが変更されると、新しい通知が生成されます。 |                     | レプリカごとの最大サイズのオートスケーリング上限を引き上げることを検討してください。[scaling](/ja/products/cloud/features/autoscaling/overview) を参照してください。                                   |
+| パーツが多すぎるエラー         | 「too many parts」エラーが検出された場合。通知は1日1回のみトリガーされます。                 | 管理者ユーザーにメールが送信されます。 | insert のバッチ化を検討してください。[Exception: Too many parts](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) を参照してください。 |
+| 失敗したミューテーション        | ミューテーションが 15 分間失敗状態になっている場合。通知は1日1回のみトリガーされます。                 | 管理者ユーザーにメールが送信されます。 | 失敗したミューテーションの停止を検討してください。[Avoid mutations](/ja/concepts/best-practices/avoid-mutations) を参照してください。                                                 |
+| クエリの同時実行数が高い        | クエリの同時実行数がレプリカあたり 1,000 を超えた場合。通知は1日1回のみトリガーされます。              | 管理者ユーザーにメールが送信されます。 | レプリカの追加を検討してください。                                                                                                                               |
+| クラスターのスケーリング完了      | クラスターのサイズが変更された場合。                                             |                     | N/A                                                                                                                                             |
+| クラスターをスケールダウンできない   | 推奨クラスターサイズが垂直スケーリングの最大上限を超えた場合。推奨クラスターサイズが変更されると、新しい通知が生成されます。 |                     | レプリカごとの最小サイズのオートスケーリング上限を引き下げることを検討してください。[scaling](/ja/products/cloud/features/autoscaling/overview) を参照してください。                                   |
+| ClickHouse バージョンの変更 | ClickHouseサービスのバージョン更新が開始したとき、および完了したとき。                       |                     | N/A                                                                                                                                             |
+
+<div id="clickpipes-notifications">
+  ## ClickPipes の通知
+</div>
+
+ClickPipe で障害や問題が発生した場合、ClickHouse から ClickPipes の通知が送信されます。
+
+<div id="billing-notifications">
+  ## 請求通知
+</div>
+
+ClickHouse は、支払いに問題が発生した場合や、前払いコミットメントの利用量が所定のしきい値に達した場合に、請求通知を送信します。
+
+<div id="supported-notifications">
+  ## 対応している通知
+</div>
+
+現在、請求関連の通知 (支払いの失敗、使用量が一定のしきい値を超えた場合など) と、スケーリング イベント関連の通知 (スケーリングの完了、スケーリングがブロックされた場合など) を送信しています。
+
+<div id="related">
+  ## 関連ページ
+</div>
+
+* [Cloud Console の監視](/ja/products/cloud/features/monitoring/cloud-console) — サービスの健全性、リソース、クエリパフォーマンスのための組み込みダッシュボード
+* [監視の概要](/ja/products/cloud/features/monitoring/overview) — ClickHouse Cloud の監視方法を比較します
+
+<Note>
+  クレジットしきい値の通知は現在、コミット型支出契約のある組織でのみ利用できます。従量課金制 (PAYG) の組織では、これらの通知は受信できません。
+</Note>

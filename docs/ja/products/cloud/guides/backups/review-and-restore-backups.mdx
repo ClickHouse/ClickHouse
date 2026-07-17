@@ -1,0 +1,202 @@
+---
+sidebarTitle: 'バックアップの確認と復元'
+slug: /cloud/manage/backups/overview
+title: 'バックアップの確認と復元'
+keywords: ['バックアップ', 'クラウドバックアップ', '復元']
+description: 'ClickHouse Cloudにおけるバックアップの概要を説明します'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このガイドでは、ClickHouse Cloud におけるバックアップの仕組み、サービスのバックアップを設定するためのオプション、そしてバックアップから復元する方法について説明します。
+
+**前提条件**
+
+* [&quot;ClickHouse Cloud におけるバックアップの仕組み&quot;](/ja/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (機能概要ページ) を読んでいること
+
+<div id="backup-status-list">
+  ## バックアップのステータス一覧
+</div>
+
+サービスは、デフォルトの毎日スケジュールでも、ユーザーが選択した[カスタムスケジュール](/ja/products/cloud/guides/backups/configurable-backups)でも、設定されたスケジュールに基づいてバックアップされます。利用可能なバックアップはすべて、サービスの**Backups**タブから確認できます。ここでは、バックアップのステータス、所要時間、バックアップサイズを確認できます。また、**Actions**カラムから特定のバックアップを復元することもできます。
+
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud のバックアップステータス一覧" border />
+
+<div id="understanding-backup-cost">
+  ## バックアップコストの把握
+</div>
+
+デフォルトのポリシーでは、ClickHouse Cloud では毎日バックアップが実行され、保持期間は 24 時間です。より多くのデータを保持するスケジュールを選択したり、バックアップ頻度を高くしたりすると、バックアップストレージに追加料金が発生する場合があります。
+
+バックアップコストを把握するには、使用状況画面でサービスごとのバックアップコストを確認できます (以下を参照) 。カスタマイズしたスケジュールで数日間バックアップを実行すると、コストの目安を把握でき、それをもとに月間のバックアップコストを見積もれます。
+
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="ClickHouse Cloud のバックアップ使用状況チャート" border />
+
+バックアップの総コストを見積もるには、バックアップスケジュールを設定する必要があります。スケジュールを設定する前でも、次の項目を入力して [料金計算ツール](https://clickhouse.com/pricing) を使えば、月額費用の見積もりを取得できます。
+
+* フルバックアップと増分バックアップのサイズ
+* 希望するバックアップ頻度
+* 希望するバックアップ保持期間
+* クラウドプロバイダーとリージョン
+
+<Note>
+  サービス内のデータ量は時間の経過とともに増加するため、バックアップの見積もりコストも変動する点に注意してください。
+</Note>
+
+<div id="restore-a-backup">
+  ## バックアップを復元する
+</div>
+
+バックアップは、取得元の既存サービスではなく、新しい ClickHouse Cloud サービスに復元されます。
+
+**Restore** バックアップアイコンをクリックすると、作成する新しいサービスのサービス名を指定して、このバックアップを復元できます。
+
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="ClickHouse Cloud でバックアップを復元している様子" />
+
+新しいサービスは、利用可能になるまでサービス一覧に `Provisioning` として表示されます。
+
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="サービスのプロビジョニングが進行中" border />
+
+<div id="working-with-your-restored-service">
+  ## 復元済みサービスの扱い
+</div>
+
+バックアップを復元すると、同様のサービスが 2 つ存在する状態になります。1 つは復元が必要だった**元のサービス**、もう 1 つはその元のサービスのバックアップから作成された新しい**復元済みサービス**です。
+
+バックアップの復元が完了したら、次のいずれかを行ってください。
+
+* 新しい復元済みサービスを使用し、元のサービスを削除します。
+* 新しい復元済みサービスから元のサービスへデータを移行し、新しい復元済みサービスを削除します。
+
+<div id="use-the-new-restored-service">
+  ### **新しい復元済みサービス**を使用する
+</div>
+
+新しい復元済みサービスを使用するには、次の手順を実行します。
+
+1. 新しい復元済みサービスに、用途に応じて必要な IP Access List のエントリがあることを確認します。
+2. 新しい復元済みサービスに、必要なデータが含まれていることを確認します。
+3. 元のサービスを削除します。
+
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### **新たに復元したサービス**から**元のサービス**へデータを移行する
+</div>
+
+何らかの理由で、新たに復元したサービスを利用できない場合があります。たとえば、既存のサービスに接続しているユーザーやアプリケーションがまだある場合です。そのような場合は、新たに復元したデータを元のサービスへ移行することになります。移行は、次の手順で実施できます。
+
+**新たに復元したサービスへのリモートアクセスを許可する**
+
+新しいサービスは、元のサービスと同じ IP Allow List を使用してバックアップから復元する必要があります。これは、**Anywhere** からのアクセスを許可していない限り、他の ClickHouse Cloud サービスへの接続は許可されないためです。許可リストを変更し、一時的に **Anywhere** からのアクセスを許可してください。詳しくは、[IP Access List](/ja/products/cloud/guides/security/connectivity/setting-ip-filters) のドキュメントを参照してください。
+
+**新たに復元した ClickHouse サービス (復元データをホストしているシステム) 上で**
+
+<Note>
+  新しいサービスにアクセスするには、サービスのパスワードをリセットする必要があります。これは、サービス一覧の **Settings** タブから実行できます。
+</Note>
+
+ソーステーブル (この例では `db.table`) を読み取れる読み取り専用ユーザーを追加します。
+
+```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+```
+
+```sql
+  GRANT SELECT ON db.table TO exporter;
+```
+
+テーブル定義をコピーします。
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
+```
+
+**宛先の ClickHouse Cloud システム (破損したテーブルが存在していた側) で:**
+
+宛先データベースを作成します:
+
+```sql
+  CREATE DATABASE db
+```
+
+ソースの `CREATE TABLE` ステートメントを使って、宛先を作成します。
+
+<Tip>
+  `CREATE` ステートメントを実行する際は、`ENGINE` をパラメータなしの `ReplicatedMergeTree` に変更してください。ClickHouse Cloud ではテーブルは常にレプリケートされるため、適切なパラメータは自動的に提供されます。
+</Tip>
+
+```sql
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
+```
+
+`remoteSecure` 関数を使用して、新たに復元した ClickHouse Cloud サービスから元のサービスへデータを取り込みます。
+
+```sql
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+データを元のサービスに正常に挿入したら、そのサービス内のデータを必ず確認してください。データを確認したら、新しい  サービスも削除してください。
+
+<div id="undeleting-or-undropping-tables">
+  ## テーブルの削除取り消し
+</div>
+
+`UNDROP` コマンドは、ClickHouse Cloud で [Shared Catalog](/ja/products/cloud/features/infrastructure/shared-catalog) を通じてサポートされています。
+
+ユーザーが誤ってテーブルを削除しないようにするには、[`GRANT` ステートメント](/ja/reference/statements/grant) を使用して、特定のユーザーまたはロールの [`DROP TABLE` コマンド](/ja/reference/statements/drop#drop-table) に対する権限を取り消すことができます。
+
+<Note>
+  データの誤削除を防ぐため、ClickHouse Cloud ではデフォルトでサイズが `1TB` を超えるテーブルは削除できません。
+  このしきい値を超えるテーブルを削除する場合は、設定 `max_table_size_to_drop` を使用してください。
+
+  ```sql
+  DROP TABLE IF EXISTS table_to_drop
+  SYNC SETTINGS max_table_size_to_drop=2000000000000 -- 制限を2TBに引き上げる
+  ```
+</Note>
+
+<Note>
+  レガシープラン: レガシープランをご利用のお客様には、24時間保持されるデフォルトの日次バックアップがストレージコストに含まれています。
+</Note>
+
+<div id="backup-durations">
+  ## バックアップの所要時間
+</div>
+
+バックアップと復元の所要時間は、データベースのサイズに加え、スキーマやデータベース内のテーブル数など、複数の要因によって異なります。
+増分バックアップは、バックアップ対象のデータ量が少ないため、通常はフルバックアップよりも大幅に短時間で完了します。
+増分バックアップからの復元は、前述のとおり、チェーン内の直近のフルバックアップとそれ以降のすべての増分バックアップを含めて復元するため、フルバックアップからの復元よりもやや時間がかかります。
+
+弊社のテストでは、約 1 TB の比較的小規模なバックアップでも、10～15 分、あるいはそれ以上かかる場合があることを確認しています。
+20 TB 未満のバックアップは通常 1 時間以内に完了し、50 TB のデータのバックアップにはおよそ 2～3 時間かかると見込まれます。
+バックアップはサイズが大きくなるほど規模の経済が働くため、一部の社内サービスでは最大 1 PB のバックアップが約 10 時間で完了することを確認しています。
+
+<Note>
+  外部バケットへのバックアップは、ClickHouse バケットへのバックアップよりも遅くなる場合があります
+</Note>
+
+復元の所要時間は、バックアップの所要時間とほぼ同じです。
+
+実際の所要時間は、前述のとおり複数の要因に左右されるため、より正確な見積もりを得るには、ご自身のデータベースまたはサンプルデータでテストすることをお勧めします。
+
+<div id="configurable-backups">
+  ## 設定可能なバックアップ
+</div>
+
+デフォルトとは異なるバックアップスケジュールを設定したい場合は、[設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)をご覧ください。
+
+<div id="export-backups-to-your-own-cloud-account">
+  ## ご自身のクラウドアカウントにバックアップをエクスポートする
+</div>
+
+バックアップをご自身のクラウドアカウントにエクスポートする場合は、[こちら](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)を参照してください。

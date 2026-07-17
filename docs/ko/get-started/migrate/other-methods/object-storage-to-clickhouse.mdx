@@ -1,0 +1,29 @@
+---
+title: 클라우드 객체 스토리지에서 ClickHouse Cloud로 데이터 이동
+description: '객체 스토리지에서 ClickHouse Cloud로 데이터 이동'
+keywords: ['객체 스토리지', 's3', 'azure blob', 'gcs', '마이그레이션']
+slug: /integrations/migration/object-storage-to-clickhouse
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+클라우드 객체 스토리지를 데이터 레이크로 사용하며 이 데이터를 ClickHouse Cloud로 가져오려는 경우,
+또는 현재 데이터베이스 시스템이 데이터를 클라우드 객체 스토리지로 직접 오프로드할 수 있는 경우, 다음
+테이블 함수 중 하나를 사용해 클라우드 객체 스토리지에 저장된 데이터를 ClickHouse Cloud 테이블로 마이그레이션할 수 있습니다:
+
+* [s3](/ko/reference/functions/table-functions/s3) 또는 [s3Cluster](/ko/reference/functions/table-functions/s3Cluster)
+* [gcs](/ko/reference/functions/table-functions/gcs)
+* [azureBlobStorage](/ko/reference/functions/table-functions/azureBlobStorage)
+
+현재 데이터베이스 시스템이 데이터를 클라우드 객체 스토리지로 직접 오프로드할 수 없다면, [서드파티 ETL/ELT 도구](/ko/get-started/migrate/other-methods/etl-tool-to-clickhouse) 또는 [clickhouse-local](/ko/get-started/migrate/other-methods/clickhouse-local-etl)을 사용해 현재 데이터베이스 시스템의 데이터를 클라우드 객체 스토리지로 먼저 이동한 다음,
+두 번째 단계에서 해당 데이터를 ClickHouse Cloud 테이블로 마이그레이션할 수 있습니다.
+
+이 방식은 2단계 프로세스(데이터를 클라우드 객체 스토리지로 오프로드한 다음 ClickHouse로 로드)지만, 장점은
+클라우드 객체 스토리지에서 고도로 병렬화된 읽기를 지원하는 [강력한 ClickHouse Cloud 지원](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) 덕분에
+페타바이트 규모까지 확장할 수 있다는 점입니다.
+또한 [Parquet](/ko/reference/formats/Parquet/Parquet)와 같은 정교한 압축 포맷도 활용할 수 있습니다.
+
+S3를 사용해 데이터를 ClickHouse Cloud로 가져오는 방법을 구체적인 코드 예시와 함께 보여주는 [블로그 글](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)도 있습니다。

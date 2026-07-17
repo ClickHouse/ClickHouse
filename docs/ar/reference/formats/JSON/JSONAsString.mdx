@@ -1,0 +1,75 @@
+---
+alias: []
+description: 'وثائق تنسيق JSONAsString'
+input_format: true
+keywords: ['JSONAsString']
+output_format: false
+slug: /interfaces/formats/JSONAsString
+title: 'JSONAsString'
+doc_type: 'reference'
+---
+
+| إدخال | إخراج | الاسم المستعار |
+| ----- | ----- | -------------- |
+| ✔     | ✗     |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+في هذا التنسيق، يُفسَّر كائن JSON واحد على أنه قيمة واحدة.
+إذا كان الإدخال يحتوي على عدة كائنات JSON (مفصولة بفواصل)، فستُفسَّر على أنها صفوف منفصلة.
+إذا كانت بيانات الإدخال محاطة بـ `[]`، فستُفسَّر على أنها مصفوفة من كائنات JSON.
+
+<Note>
+  لا يمكن تحليل هذا التنسيق إلا لجدول يحتوي على حقل واحد من النوع [String](/ar/reference/data-types/string).
+  يجب تعيين الأعمدة المتبقية إلى [`DEFAULT`](/ar/reference/statements/create/table#default) أو [`MATERIALIZED`](/ar/reference/statements/create/view#materialized-view)،
+  أو إغفالها.
+</Note>
+
+بمجرد إجراء تسلسل لكائن JSON بالكامل إلى String، يمكنك استخدام [دوال JSON](/ar/reference/functions/regular-functions/json-functions) لمعالجته.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+<div id="basic-example">
+  ### مثال بسيط
+</div>
+
+```sql title="Query"
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+```response title="Response"
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
+```
+
+<div id="an-array-of-json-objects">
+  ### مصفوفة من كائنات JSON
+</div>
+
+```sql title="Query"
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+```response title="Response"
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

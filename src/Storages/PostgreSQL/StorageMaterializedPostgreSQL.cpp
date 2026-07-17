@@ -279,6 +279,20 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 }
 
 
+void StorageMaterializedPostgreSQL::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    /// In MaterializedPostgreSQL database engine mode there is no per-table nested storage
+    /// to size-check (the database engine owns the nested tables); mirror `dropInnerTableIfAny`.
+    if (is_materialized_postgresql_database)
+        return;
+
+    /// Mirror `dropInnerTableIfAny`'s tolerance: if the nested table is missing for any reason
+    /// the drop is a no-op, so the size check is too.
+    if (auto nested = tryGetNested())
+        nested->checkTableSizeBelowDropLimit(query_context);
+}
+
+
 bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
     return needRewriteQueryWithFinalForStorage(column_names, getNested());

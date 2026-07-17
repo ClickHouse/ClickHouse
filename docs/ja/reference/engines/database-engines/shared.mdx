@@ -1,0 +1,45 @@
+---
+description: 'ClickHouse Cloud で利用できる `Shared` データベースエンジンを説明するページ'
+sidebarTitle: 'Shared'
+slug: /engines/database-engines/shared
+title: 'Shared'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+<div id="shared-database-engine">
+  # 共有データベースエンジン
+</div>
+
+`Shared` データベースエンジンは、[`SharedMergeTree`](/ja/products/cloud/features/infrastructure/shared-merge-tree) などのステートレスなテーブルエンジンを使用するテーブルを持つデータベースを管理するために、Shared Catalog と連携して動作します。
+これらのテーブルエンジンは永続的な状態をディスクに書き込まず、動的なコンピュート環境に対応しています。
+
+Cloud の `Shared` データベースエンジンは、ローカルディスクへの依存を排除します。
+これは完全なインメモリエンジンであり、必要なのは CPU とメモリだけです。
+
+<div id="how-it-works">
+  ## どのような仕組みですか？
+</div>
+
+`Shared` データベースエンジンは、Keeper を基盤とする中央の Shared Catalog に、すべてのデータベース定義とテーブル定義を保存します。ローカルディスクに書き込む代わりに、すべてのコンピュートノードで共有される、バージョン管理された単一のグローバル状態を維持します。
+
+各ノードが追跡するのは最後に適用されたバージョンだけで、起動時にはローカルファイルや手動でのセットアップなしに最新の状態を取得します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+エンドユーザーが Shared Catalog と共有データベースエンジンを使用する際に、追加の設定は必要ありません。データベースの作成方法も従来と同じです：
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud は、データベースに共有データベースエンジンを自動的に割り当てます。このようなデータベース内でステートレスエンジンを使用して作成されたテーブルは、Shared Catalog のレプリケーション機能と調整機能を自動的に利用できます。
+
+<Tip>
+  Shared Catalog とその利点の詳細については、Cloud のリファレンスセクションにある[&quot;Shared Catalog と共有データベースエンジン&quot;](/ja/products/cloud/features/infrastructure/shared-catalog)を参照してください。
+</Tip>

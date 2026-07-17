@@ -1,0 +1,79 @@
+<Step title="Select data format" id="3-select-data-format">
+
+The UI will display a list of files in the specified bucket.
+Select your data format (we currently support a subset of ClickHouse formats) and if you want to enable continuous ingestion.
+See the "continuous ingest" section in the overview page for more details.
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="Set data format and topic" />
+</Frame>
+
+</Step>
+<Step title="Configure table, schema and settings" id="5-configure-table-schema-settings">
+
+In the next step, you can select whether you want to ingest data into a new ClickHouse table or reuse an existing one.
+Follow the instructions in the screen to modify your table name, schema, and settings.
+You can see a real-time preview of your changes in the sample table at the top.
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Set table, schema, and settings" />
+</Frame>
+
+You can also customize the advanced settings using the controls provided
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Set advanced controls" />
+</Frame>
+
+Alternatively, you can decide to ingest your data in an existing ClickHouse table.
+In that case, the UI will allow you to map fields from the source to the ClickHouse fields in the selected destination table.
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Use an existing table" />
+</Frame>
+
+<Info>
+You can also map [virtual columns](/reference/functions/table-functions/s3#virtual-columns), like `_path` or `_size`, to fields.
+</Info>
+</Step>
+<Step title="Configure permissions" id="6-configure-permissions">
+
+Finally, you can configure permissions for the internal ClickPipes user.
+
+**Permissions:** ClickPipes will create a dedicated user for writing data into a destination table. You can select a role for this internal user using a custom role or one of the predefined role:
+- `Full access`: with the full access to the cluster. Required if you use materialized view or Dictionary with the destination table.
+- `Only destination table`: with the `INSERT` permissions to the destination table only.
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" />
+</Frame>
+
+</Step>
+<Step title="Complete setup" id="7-complete-setup">
+
+By clicking on "Complete Setup", the system will register your ClickPipe, and you'll be able to see it listed in the summary table.
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Success notice" />
+</Frame>
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Remove notice" />
+</Frame>
+
+The summary table provides controls to display sample data from the source or the destination table in ClickHouse
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="View destination" />
+</Frame>
+
+As well as controls to remove the ClickPipe and display a summary of the ingest job.
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="View overview" />
+</Frame>
+
+**Congratulations!** you have successfully set up your first ClickPipe.
+If this is a ClickPipe configure for continuous ingestion, it will be continuously running, ingesting data in real-time from your remote data source.
+Otherwise, it will ingest the batch and complete.
+</Step>

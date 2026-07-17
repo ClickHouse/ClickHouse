@@ -1,0 +1,175 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed
+title: 'hashed Dictionary レイアウトの種類'
+sidebarTitle: 'hashed'
+description: 'ハッシュテーブルを使用して Dictionary をメモリに格納するレイアウト: hashed, sparse_hashed, complex_key_hashed, complex_key_sparse_hashed'
+doc_type: 'reference'
+---
+
+<div id="hashed">
+  ## hashed
+</div>
+
+このDictionaryは、ハッシュテーブルの形式で完全にメモリ上に格納されます。このDictionaryには、任意の識別子を持つ要素をいくつでも含めることができます。実際には、キーの数は数千万件に達することがあります。
+
+Dictionaryキーの型は [UInt64](/ja/reference/data-types/int-uint) です。
+
+あらゆる種類のソースがサポートされています。更新時には、データ (ファイルまたはテーブルから) が全件読み込まれます。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED())
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <hashed />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+設定付きの設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <hashed>
+        <!-- shards が 1 より大きい場合（デフォルトは `1`）、Dictionaryは
+             データを並列に読み込みます。1 つの
+             Dictionaryに非常に大量の要素がある場合に有効です。 -->
+        <shards>10</shards>
+
+        <!-- 並列キュー内のブロック用バックログのサイズ。
+
+             並列読み込みにおけるボトルネックは再ハッシュであるため、
+             スレッドが再ハッシュを実行している間に
+             処理が停滞しないよう、ある程度の
+             バックログが必要です。
+
+             10000 はメモリと速度のバランスが良好な値です。
+             10e10 個の要素があっても、処理不足を起こさずに負荷をさばけます。 -->
+        <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+        <!-- ハッシュテーブルの最大負荷率です。値を大きくすると、メモリを
+             より効率的に使用できます（無駄なメモリが減ります）が、読み取り性能が
+             低下する可能性があります。
+
+             有効な値: [0.5, 0.99]
+             デフォルト: 0.5 -->
+        <max_load_factor>0.5</max_load_factor>
+      </hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="sparse_hashed">
+  ## sparse_hashed
+</div>
+
+`hashed` と似ていますが、CPU 使用量が増える代わりに、メモリ使用量を抑えられます。
+
+辞書キーの型は [UInt64](/ja/reference/data-types/int-uint) です。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+このタイプの Dictionary では `shards` も使用できます。また、`sparse_hashed` は `hashed` より低速なため、`shards` の利用は `hashed` よりも `sparse_hashed` のほうが重要です。
+
+<div id="complex_key_hashed">
+  ## complex_key_hashed
+</div>
+
+このストレージタイプは、複合[キー](/ja/reference/statements/create/dictionary/attributes#composite-key)で使用します。`hashed` に似ています。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <complex_key_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_sparse_hashed">
+  ## complex_key_sparse_hashed
+</div>
+
+このタイプのストレージは、複合[キー](/ja/reference/statements/create/dictionary/attributes#composite-key)で使用します。[sparse&#95;hashed](#sparse_hashed)に似ています。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <complex_key_sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

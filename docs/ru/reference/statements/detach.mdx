@@ -1,0 +1,73 @@
+---
+description: 'Документация по DETACH'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'Оператор DETACH'
+doc_type: 'reference'
+---
+
+Позволяет серверу &quot;забыть&quot; о существовании таблицы, materialized view, словаря или базы данных.
+
+**Синтаксис**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+Отсоединение не удаляет данные или метаданные таблицы, materialized view, словаря или базы данных. Если сущность не была отсоединена `PERMANENTLY`, при следующем запуске сервера он прочитает метаданные и снова присоединит таблицу/представление/словарь/базу данных. Если сущность была отсоединена `PERMANENTLY`, автоматического повторного присоединения не будет.
+
+Независимо от того, была ли таблица, словарь или база данных отсоединена навсегда, вы в любом случае можете присоединить их обратно с помощью запроса [ATTACH](/ru/reference/statements/attach).
+Системные таблицы логов также можно присоединить обратно (например, `query_log`, `text_log` и т. д.). Другие системные таблицы нельзя присоединить повторно. При следующем запуске сервера он снова присоединит эти таблицы.
+
+`ATTACH MATERIALIZED VIEW` не работает с кратким синтаксисом (без `SELECT`), но ее можно присоединить с помощью запроса `ATTACH TABLE`.
+
+Обратите внимание, что нельзя отсоединить навсегда таблицу, которая уже отсоединена (временно). Но ее можно присоединить обратно, а затем снова отсоединить навсегда.
+
+Также нельзя выполнить [DROP](/ru/reference/statements/drop#drop-table) для отсоединенной таблицы, или [CREATE TABLE](/ru/reference/statements/create/table) с тем же именем, что и у таблицы, отсоединенной навсегда, или заменить ее другой таблицей с помощью запроса [RENAME TABLE](/ru/reference/statements/rename).
+
+Модификатор `SYNC` выполняет действие без задержки.
+
+**Пример**
+
+Создание таблицы:
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Отсоединение таблицы:
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  В ClickHouse Cloud следует использовать предложение `PERMANENTLY`, например: `DETACH TABLE <table> PERMANENTLY`. Если это предложение не использовать, таблицы будут повторно подключены при перезапуске кластера, например во время обновления.
+</Note>
+
+**См. также**
+
+* [Materialized view](/ru/reference/statements/create/view#materialized-view)
+* [Словари](/ru/reference/statements/create/dictionary)
