@@ -1425,7 +1425,7 @@ void WindowTransform::FrameAggregateTree::mergeFrame(AggregateDataPtr result, Ar
     };
     // At most one trailing range per level; levels cannot exceed log_fanout(2^64).
     // Not value-initialized: only [0, trailing_count) is ever read.
-    std::array<SegmentRange, 16> trailing;
+    std::array<SegmentRange, 16> trailing; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     size_t trailing_count = 0;
 
     size_t level = 0;
