@@ -208,6 +208,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
+    if (settings_limit)
+        buffer << ", settings_limit: " << settings_limit;
+
+    if (settings_offset)
+        buffer << ", settings_offset: " << settings_offset;
+
     buffer << ", union_mode: " << toString(union_mode);
 
     if (isCorrelated())
