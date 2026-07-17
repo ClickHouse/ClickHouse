@@ -1100,6 +1100,20 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
                 dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
                 paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                /// The local `path_state` is dropped right here, before the outer
+                /// `SubstreamsCachePathsDataElement` that later covers the produced column is created.
+                /// The state can hold column references through nested states (e.g. nested `Object`
+                /// or `LowCardinality` content of the path values), so verify that the reference
+                /// count of the just-produced path column accounts for those holders too, and a
+                /// broken copy-on-write reference count on a shared child is not freed at this
+                /// earlier destruction point while it is still referenced from the produced column
+                /// (issue #105626).
+                ColumnsOwnershipValidator ownership_validator;
+                ownership_validator.add(path_state);
+                ownership_validator.validate({paths_data_granule.paths_data[requested_path]});
+#endif
             }
         }
     }
