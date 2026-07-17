@@ -119,8 +119,11 @@ UInt32 CompressionCodecLossyQuantile::getMaxCompressedDataSize(UInt32 uncompress
     UInt64 indices_total = (num_values * bits + 7) / 8;
     UInt64 result = HEADER_SIZE + centroids_total + indices_total;
 
-    if (result > std::numeric_limits<UInt32>::max())
-        return std::numeric_limits<UInt32>::max();
+    static constexpr UInt64 MAX_COMPRESSED_BLOCK_SIZE = (1ULL << 32) - 16;
+    if (result > MAX_COMPRESSED_BLOCK_SIZE)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "LossyQuantile codec: compressed size ({}) exceeds maximum supported block size for the given parameters",
+            result);
 
     return static_cast<UInt32>(result);
 }
@@ -363,6 +366,11 @@ UInt32 CompressionCodecLossyQuantile::decompressImpl(const char * source, UInt32
 
 UInt32 CompressionCodecLossyQuantile::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+    if (source_size % float_width != 0)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with codec LossyQuantile: source size ({}) is not a multiple of float width ({})",
+            source_size, static_cast<unsigned>(float_width));
+
     switch (float_width)
     {
         case 4:
@@ -480,6 +488,12 @@ void registerCodecLossyQuantile(CompressionCodecFactory & factory)
         }
         /// else: arguments == nullptr → method-byte readback path,
         /// decompression reads actual parameters from the on-disk header.
+
+        if (codec_stripe_size > 1 && codec_group_size % codec_stripe_size != 0)
+            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                "Codec LossyQuantile: group_size ({}) must be a multiple of stripe_size ({}) "
+                "to maintain stable per-dimension codebooks",
+                codec_group_size, codec_stripe_size);
 
         return std::make_shared<CompressionCodecLossyQuantile>(codec_bits, codec_group_size, codec_stripe_size, float_width);
     };
