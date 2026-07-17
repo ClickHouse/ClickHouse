@@ -167,37 +167,71 @@ std::unordered_set<std::string> collectStaticStreamFileNames(const NamesAndTypes
     return names;
 }
 
+/// Union, by name, of a single column's recorded substream names across the source parts that physically
+/// store it (for JSON / Dynamic the merged dynamic structure is chosen from all source columns -
+/// ColumnObject::chooseDynamicStructureForMerge / ColumnDynamic::chooseDynamicStructureForMerge - so paths
+/// that appear in only some parts all end up in the result; a plain max over the parts would undercount that
+/// case). Returns nullopt when no part records the column's substreams (parts written before
+/// columns_substreams.txt existed, or a column absent from every given part) so the caller can decide the
+/// fallback. The union is an upper bound on the real count - the merge may collapse some dynamic substreams
+/// via max_dynamic_paths / max_dynamic_types - which is the safe direction for a reservation.
+std::optional<size_t> tryCountColumnSubstreamsFromParts(const String & column_name, const MergeTreeDataPartsVector & source_parts)
+{
+    std::unordered_set<std::string_view> union_substreams;
+    bool recorded = false;
+    for (const auto & part : source_parts)
+    {
+        if (const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column_name))
+        {
+            recorded = true;
+            for (const auto & substream : *substreams)
+                union_substreams.insert(substream);
+        }
+    }
+
+    if (!recorded)
+        return std::nullopt;
+    return union_substreams.size();
+}
+
 /// Number of on-disk column streams for a set of columns, recovering the dynamic (JSON / Dynamic) substreams
-/// of each column, by name, from the columns_substreams.txt of whichever given parts physically store it: the
-/// union of the column's recorded substream names across those parts (for JSON / Dynamic the merged dynamic
-/// structure is chosen from all source columns - ColumnObject::chooseDynamicStructureForMerge /
-/// ColumnDynamic::chooseDynamicStructureForMerge - so paths that appear in only some parts all end up in the
-/// result; a plain max over the parts would undercount that case). Fall back to the default serialization for
-/// a column whose substreams no part records (parts written before that file existed, or a column absent from
-/// every given part). The union is an upper bound on the real count - the merge may collapse some dynamic
-/// substreams via max_dynamic_paths / max_dynamic_types - which is the safe direction for a reservation. For
-/// simple column types the union equals the default serialization count, so this only ever raises the estimate
-/// for semi-structured columns. Unlike countOutputStreams below it adds no whole-part floor, so it is exact for
-/// a column set that is narrower than the parts it is matched against - a projection's columns are derived from
-/// the base parts, so its semi-structured columns are priced against the base parts by name here.
+/// of each column, by name, from the source parts (tryCountColumnSubstreamsFromParts), falling back to the
+/// default serialization for a column whose substreams no part records. For simple column types the union
+/// equals the default serialization count, so this only ever raises the estimate for semi-structured columns.
+/// Unlike countOutputStreams below it adds no whole-part floor, so it is exact for a column set that is narrower
+/// than the parts it is matched against - a projection's columns are derived from the base parts, so its
+/// semi-structured columns are priced against the base parts by name here.
 size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const MergeTreeDataPartsVector & source_parts)
 {
     size_t streams = 0;
     for (const auto & column : columns)
-    {
-        std::unordered_set<std::string_view> union_substreams;
-        bool recorded = false;
-        for (const auto & part : source_parts)
-        {
-            if (const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name))
-            {
-                recorded = true;
-                for (const auto & substream : *substreams)
-                    union_substreams.insert(substream);
-            }
-        }
+        streams += tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
+    return streams;
+}
 
-        streams += recorded ? union_substreams.size() : countColumnStreams({column});
+/// Number of on-disk streams the temporary part of a REBUILT projection writes. A rebuild recalculates the
+/// projection from the merged base rows, so a semi-structured (JSON / Dynamic) projection column carries the
+/// dynamic substreams of the base data it is derived from, and writeTempProjectionPart writes one stream per
+/// substream. When the projection output column shares its name with a base column (a bare-identifier
+/// projection, SELECT json ORDER BY ...) it is priced precisely from that column's recorded substreams. But a
+/// projection may materialize a semi-structured value through an expression under a name no base part records
+/// (SELECT identity(json) ..., a CAST to JSON, ...); its real substream count cannot be enumerated from the
+/// default serialization (which collapses it to one stream) nor traced to a base column by name. Bound such a
+/// column by source_dynamic_substreams - the total dynamic substreams present in the source parts - on top of
+/// its statically enumerable skeleton: a value recomputed from the merged rows cannot contain more dynamic
+/// paths than the input holds. For simple projection columns this equals the default serialization count.
+size_t countRebuiltProjectionStreams(
+    const NamesAndTypesList & projection_columns, const MergeTreeDataPartsVector & source_parts, size_t source_dynamic_substreams)
+{
+    size_t streams = 0;
+    for (const auto & column : projection_columns)
+    {
+        if (auto recorded = tryCountColumnSubstreamsFromParts(column.name, source_parts))
+            streams += *recorded;
+        else if (column.type->hasDynamicStructure())
+            streams += countColumnStreams({column}) + source_dynamic_substreams;
+        else
+            streams += countColumnStreams({column});
     }
     return streams;
 }
@@ -443,6 +477,16 @@ UInt64 estimateNeededMemoryForMerge(
             || (projection_mode != DeduplicateMergeProjectionMode::THROW && projection_mode != DeduplicateMergeProjectionMode::DROP));
     if (merge_processes_projections)
     {
+        /// Upper bound on the dynamic (JSON / Dynamic) substreams a rebuilt projection column can materialize
+        /// when it is produced through an expression rather than a bare source identifier: the total dynamic
+        /// substreams present in the source parts (their merged stream count minus the statically enumerable
+        /// skeleton), since a value recomputed from the merged rows cannot hold more dynamic paths than the
+        /// input does. Zero for a merge of only simple columns.
+        const size_t source_static_streams = countColumnStreams(output_columns);
+        const size_t source_all_streams = countOutputStreams(output_columns, source_and_patch_parts, settings);
+        const size_t source_dynamic_substreams
+            = source_all_streams > source_static_streams ? source_all_streams - source_static_streams : 0;
+
         for (const auto & projection : metadata_snapshot->getProjections())
         {
             MergeTreeData::DataPartsVector projection_parts;
@@ -465,22 +509,26 @@ UInt64 estimateNeededMemoryForMerge(
                 /// The temporary parts are written into the result part's own storage, so they share the
                 /// destination disk's write buffer sizing and are read back from that same disk. The rebuilt
                 /// projection is recalculated from the merged base rows, so a semi-structured (JSON / Dynamic)
-                /// projection column carries the same dynamic substreams as the base column it is derived from
-                /// (writeTempProjectionPart writes one stream per substream); price it against the source
-                /// parts by name (countColumnStreamsFromParts) rather than the default serialization, which
-                /// would collapse such a column to a single stream and undersize the reservation. A projection
-                /// column that does not match a base column (an aggregate state, a renamed expression) falls
-                /// back to the default serialization count, exactly as before.
-                const size_t projection_streams = countColumnStreamsFromParts(
-                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts);
-                const UInt64 projection_worst_case = projection_streams * write_buffer_size;
-                const UInt64 projection_data_bound = projection_streams * eager_buffers_per_stream
-                    + 2 * sum_input_bytes_compressed + sum_input_bytes_uncompressed;
+                /// projection column carries the dynamic substreams of the base data it is derived from
+                /// (writeTempProjectionPart writes one stream per substream); count them with
+                /// countRebuiltProjectionStreams rather than the default serialization, which would collapse
+                /// such a column to a single stream and undersize the reservation.
+                const size_t projection_streams = countRebuiltProjectionStreams(
+                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, source_dynamic_substreams);
+
+                /// Unlike the base output above, a rebuilt projection is NOT size-bounded by the merge input:
+                /// a projection expression is not size-monotone (repeat(...), JSON / array construction can
+                /// expand the bytes per row, an aggregate projection can materialize states larger than the raw
+                /// input), so 2 * sum_input_bytes_compressed + sum_input_bytes_uncompressed is not a valid cap
+                /// here and would let the writer's upload buffers and the read-back grow past the reservation.
+                /// Reserve the per-stream worst case instead: a writer stream never holds more than
+                /// write_buffer_size and a read-back stream never more than its read buffer, whatever the
+                /// projected data volume. On a local disk write_buffer_size is a small per-stream constant; on
+                /// object storage it is the full multipart ceiling, which a data-expanding projection can
+                /// genuinely approach - a single such merge is always admitted (see MergeMemoryReservation),
+                /// it only throttles concurrent merges while it holds the reservation.
                 const UInt64 projection_read_buffer_size = output_on_remote_disk ? remote_read_buffer_size : local_read_buffer_size;
-                const UInt64 projection_read_back = std::min<UInt64>(
-                    projection_streams * projection_read_buffer_size,
-                    sum_input_bytes_compressed + sum_input_bytes_uncompressed);
-                projection_memory += std::min(projection_worst_case, projection_data_bound) + projection_read_back;
+                projection_memory += projection_streams * write_buffer_size + projection_streams * projection_read_buffer_size;
             }
             /// Otherwise the projection is dropped from the merged part and costs no IO.
         }
