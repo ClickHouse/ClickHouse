@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <base/sort.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -19,6 +20,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -193,8 +195,8 @@ public:
         buckets.reserve(rhs_buckets.size());
         for (const auto & rhs_bucket : rhs_buckets)
         {
-            auto & bucket = buckets[rhs_bucket.first];
-            bucket.merge(rhs_bucket.second);
+            auto & bucket = buckets[bucketIndexOf(rhs_bucket)];
+            bucket.merge(bucketOf(rhs_bucket));
         }
     }
 
@@ -205,10 +207,10 @@ public:
 
         writeBinaryLittleEndian(data(place)->buckets.size(), buf);
 
-        for (const auto & bucket : data(place)->buckets)
+        for (const auto & entry : data(place)->buckets)
         {
-            writeBinaryLittleEndian(bucket.first, buf);
-            bucket.second.serialize(buf);
+            writeBinaryLittleEndian(bucketIndexOf(entry), buf);
+            bucketOf(entry).serialize(buf);
         }
     }
 
@@ -343,9 +345,8 @@ protected:
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; next_bucket < window_end; ++next_bucket)
                 {
-                    const auto it = buckets.find(next_bucket);
-                    if (it != buckets.end())
-                        aggregator.add(it->second, bucketEndTimestamp(next_bucket));
+                    if (const Bucket * found = findBucket(buckets, next_bucket))
+                        aggregator.add(*found, bucketEndTimestamp(next_bucket));
                 }
                 removeOutOfWindow(aggregator, grid_index);
                 storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
@@ -355,9 +356,9 @@ protected:
         {
             VectorWithMemoryTracking<std::pair<size_t, const Bucket *>> ordered_buckets;
             ordered_buckets.reserve(buckets.size());
-            for (const auto & [bucket_index, bucket] : buckets)
-                ordered_buckets.emplace_back(bucket_index, &bucket);
-            std::sort(ordered_buckets.begin(), ordered_buckets.end(),
+            for (const auto & entry : buckets)
+                ordered_buckets.emplace_back(bucketIndexOf(entry), &bucketOf(entry));
+            ::sort(ordered_buckets.begin(), ordered_buckets.end(),
                 [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
             size_t pos = 0;
@@ -397,10 +398,51 @@ protected:
     const bool first_bucket_is_clamped{};         /// Whether bucket #0's start is below the type minimum (only it can be)
 
 private:
+    /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
+    /// copyable or declaring `is_position_independent`. Others fall back to `std::unordered_map`.
+    static constexpr bool bucket_is_position_independent =
+        std::is_trivially_copyable_v<Bucket> || requires { requires Bucket::is_position_independent; };
+
+    using BucketsMap = std::conditional_t<
+        bucket_is_position_independent,
+        HashMap<UInt64, Bucket, DefaultHash<UInt64>, HashTableGrower<4>>,
+        UnorderedMapWithMemoryTracking<UInt64, Bucket>>;
+
+    /// `HashMap` cells expose `getKey`/`getMapped`; `std::unordered_map` entries are pairs.
+    static UInt64 bucketIndexOf(const auto & map_entry)
+    {
+        if constexpr (bucket_is_position_independent)
+            return map_entry.getKey();
+        else
+            return map_entry.first;
+    }
+
+    static const Bucket & bucketOf(const auto & map_entry)
+    {
+        if constexpr (bucket_is_position_independent)
+            return map_entry.getMapped();
+        else
+            return map_entry.second;
+    }
+
+    static const Bucket * findBucket(const BucketsMap & buckets, size_t bucket_index)
+    {
+        if constexpr (bucket_is_position_independent)
+        {
+            const auto * it = buckets.find(bucket_index);
+            return it ? &it->getMapped() : nullptr;
+        }
+        else
+        {
+            const auto it = buckets.find(bucket_index);
+            return it != buckets.end() ? &it->second : nullptr;
+        }
+    }
+
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
+        BucketsMap buckets;
     };
 
     static DataTypePtr createResultType()
@@ -421,8 +463,8 @@ private:
     /// the hash map is cheaper than collecting and sorting the populated buckets; below it (sparse data) the
     /// collect-and-sort wins. The `timeseries_to_grid_range_scan_vs_std_sort` example measures the crossover density at
     /// ~0.4; it depends on the bucket map's memory layout (~0.45 when buckets sit in index order, ~0.37 when
-    /// scattered as after a merge, so 0.4 is the middle). That example also shows `std::sort` beats a radix sort
-    /// here, so the sparse path uses `std::sort`.
+    /// scattered as after a merge, so 0.4 is the middle). That example also shows comparison sorting beats a radix
+    /// sort here, so the sparse path uses `::sort` (pdqsort).
     static constexpr double BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN = 0.4;
 
     static constexpr UInt16 FORMAT_VERSION = FunctionImpl::FORMAT_VERSION;
