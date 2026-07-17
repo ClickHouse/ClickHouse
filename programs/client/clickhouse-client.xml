@@ -67,6 +67,10 @@
     <!-- Suppress server-client version mismatch message when the client connects to the server. -->
     <!-- <server_client_version_message>false</server_client_version_message> -->
 
+    <!-- Print queries before execution. This overrides the 'enabled if interactive' default and
+         further override is possible with &#45;&#45;echo. -->
+    <!-- <echo>false</echo> -->
+
     <!-- Print query ID before execution. This overrides the 'enabled if interactive' default and
          further override is possible with &#45;&#45;echo-query-id. -->
     <!-- <echo_query_id>false</echo_query_id> -->
