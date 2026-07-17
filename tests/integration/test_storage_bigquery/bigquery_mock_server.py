@@ -539,12 +539,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 {
                     "path": parsed.path,
                     "rows": len(rows),
+                    "body_bytes": len(body),
                     "insert_ids": [entry.get("insertId") for entry in rows],
                     # The raw "json" bodies as received on the wire, so tests can assert the JSON
-                    # type of a value (e.g. that an INT64 is sent as a string, not a number).
-                    "raw_rows": [entry.get("json", {}) for entry in rows],
+                    # type of a value (e.g. that an INT64 is sent as a string, not a number). Skipped
+                    # for very large requests to keep the /__stats__ response small.
+                    "raw_rows": (
+                        [entry.get("json", {}) for entry in rows]
+                        if len(body) <= 1024 * 1024
+                        else []
+                    ),
                 }
             )
+
+            # BigQuery rejects insertId values longer than 128 characters.
+            for entry in rows:
+                insert_id = entry.get("insertId")
+                if insert_id is not None and len(insert_id) > 128:
+                    self.send_json(
+                        *google_error(
+                            400,
+                            "INVALID_ARGUMENT",
+                            f"insertId is too long: {len(insert_id)} characters (max 128)",
+                        )
+                    )
+                    return
+
+            # BigQuery's streaming API rejects requests larger than 10 MB.
+            if len(body) > 10 * 1024 * 1024:
+                self.send_json(
+                    *google_error(
+                        413,
+                        "REQUEST_TOO_LARGE",
+                        f"Request payload size exceeds the limit: {len(body)} bytes (max 10485760)",
+                    )
+                )
+                return
 
             if FAIL_INSERTS[0]:
                 errors = [

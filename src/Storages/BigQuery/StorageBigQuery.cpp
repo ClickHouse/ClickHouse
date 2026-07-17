@@ -14,6 +14,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -21,6 +22,7 @@
 #include <fmt/ranges.h>
 
 #include <ranges>
+#include <sstream>
 
 namespace DB
 {
@@ -38,6 +40,30 @@ namespace
 
 /// The recommended maximum number of rows per `tabledata.insertAll` request.
 constexpr size_t INSERT_ALL_BATCH_SIZE = 500;
+
+/// BigQuery's `tabledata.insertAll` rejects HTTP requests larger than 10 MB. Rows are buffered across
+/// chunks, so the sink flushes by serialized size in addition to the row-count cap, leaving margin for
+/// the request envelope. A single row that alone exceeds this cannot be split and is refused with a
+/// clear error instead of letting BigQuery reject the whole request with an opaque `invalid`.
+constexpr size_t INSERT_ALL_MAX_REQUEST_BYTES = 9 * 1024 * 1024;
+
+/// BigQuery rejects `insertId` values longer than 128 bytes, but the ClickHouse `query_id` used as the
+/// deduplication prefix is user-controllable and unbounded. Keep a short query id verbatim (so the
+/// `insertId` stays human-readable and stable), and replace a long one with its fixed-length hash, which
+/// is just as stable for a given query id. The row ordinal is appended to the returned prefix.
+String boundedInsertIdPrefix(const String & query_id)
+{
+    if (query_id.empty())
+        return {};
+    /// Leave room for the "-<ordinal>" suffix: the ordinal is a `size_t`, at most 20 decimal digits.
+    static constexpr size_t max_insert_id_length = 128;
+    static constexpr size_t max_ordinal_suffix_length = 1 + 20;
+    static constexpr size_t max_prefix_length = max_insert_id_length - max_ordinal_suffix_length;
+    if (query_id.size() <= max_prefix_length)
+        return query_id;
+    /// `sipHash128String` returns 32 hex characters, well within `max_prefix_length`.
+    return sipHash128String(query_id);
+}
 
 class BigQuerySource : public ISource
 {
@@ -155,9 +181,26 @@ public:
                 entry->set("insertId", insert_id_prefix + "-" + std::to_string(row_ordinal));
             ++row_ordinal;
 
+            /// The serialized size of this row, so the batch can be flushed before the request exceeds
+            /// BigQuery's size limit. The measured size matches this row's contribution to the request
+            /// body, which is stringified the same (compact) way in `BigQueryClient::insertAll`.
+            std::ostringstream entry_stream;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            entry->stringify(entry_stream);
+            const size_t entry_size = static_cast<size_t>(entry_stream.tellp());
+            if (entry_size > INSERT_ALL_MAX_REQUEST_BYTES)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "A single row of {} bytes exceeds the maximum BigQuery streaming-insert request size of {} bytes",
+                    entry_size, INSERT_ALL_MAX_REQUEST_BYTES);
+
+            /// Flush the buffered rows before adding one that would push the request over the size limit.
+            if (pending_rows && pending_bytes + entry_size > INSERT_ALL_MAX_REQUEST_BYTES)
+                flush();
+
             if (!pending_rows)
                 pending_rows = new Poco::JSON::Array;
             pending_rows->add(entry);
+            pending_bytes += entry_size;
 
             if (pending_rows->size() >= INSERT_ALL_BATCH_SIZE)
                 flush();
@@ -176,6 +219,7 @@ private:
             return;
         client->insertAll(pending_rows);
         pending_rows = nullptr;
+        pending_bytes = 0;
     }
 
     std::shared_ptr<BigQueryClient> client;
@@ -184,6 +228,7 @@ private:
     const String insert_id_prefix;
     size_t row_ordinal = 0;
     Poco::JSON::Array::Ptr pending_rows;
+    size_t pending_bytes = 0;
 };
 
 /// A BigQuery NULLABLE RECORD is inferred as `Nullable(Tuple(...))` so NULL records round-trip
@@ -431,7 +476,8 @@ SinkToStoragePtr StorageBigQuery::write(
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return std::make_shared<BigQuerySink>(
-        std::move(client), std::move(sink_fields), std::make_shared<const Block>(sample_block), context->getCurrentQueryId());
+        std::move(client), std::move(sink_fields), std::make_shared<const Block>(sample_block),
+        boundedInsertIdPrefix(context->getCurrentQueryId()));
 }
 
 BigQueryConfiguration StorageBigQuery::getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id)

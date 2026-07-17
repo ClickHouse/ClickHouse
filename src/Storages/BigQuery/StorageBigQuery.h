@@ -34,6 +34,10 @@ public:
 
     std::string getName() const override { return "BigQuery"; }
     bool isRemote() const override { return true; }
+    /// A write-capable external database, like `MySQL` / `PostgreSQL`. This exempts `INSERT`s from the
+    /// server-wide `disable_insertion_and_mutation` setting, since they do not create merge tasks on the
+    /// local replica.
+    bool isExternalDatabase() const override { return true; }
 
     Pipe read(
         const Names & column_names,

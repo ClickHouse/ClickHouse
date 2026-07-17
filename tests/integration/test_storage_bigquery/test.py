@@ -12,6 +12,14 @@ node = cluster.add_instance(
     main_configs=["configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
 )
+# A node with the server-wide `disable_insertion_and_mutation` setting enabled, used to check that
+# BigQuery inserts are exempt from it (like other external database engines). It reaches the mock
+# server, which runs inside the "node" container, over the cluster network.
+read_only_node = cluster.add_instance(
+    "read_only_node",
+    main_configs=["configs/named_collections.xml", "configs/read_only.xml"],
+    user_configs=["configs/users.xml"],
+)
 
 MOCK_PORT = 8938
 BASE_URL = f"http://localhost:{MOCK_PORT}"
@@ -398,6 +406,71 @@ def test_insert_id_present():
     # A single common query-id prefix plus a monotonic per-row ordinal.
     assert len({iid.rsplit("-", 1)[0] for iid in ids}) == 1
     assert [iid.rsplit("-", 1)[1] for iid in ids] == ["0", "1", "2"]
+
+
+def test_insert_long_query_id():
+    # BigQuery rejects insertId values longer than 128 characters, but the ClickHouse query_id used as
+    # the dedup prefix is user-controllable. A long query_id must be bounded (hashed) so every insertId
+    # stays valid. The mock rejects overlong insertIds, so this insert fails unless the prefix is bounded.
+    # (INSERT ... SELECT is used so the client query_id reaches the sink, unlike INSERT ... VALUES.)
+    mock_reset()
+    long_query_id = "q" * 200
+    node.query(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name) "
+        f"SELECT number, toString(number) FROM numbers(3)",
+        query_id=long_query_id,
+        settings={"max_threads": 1, "max_insert_threads": 1},
+    )
+    ids = [iid for r in mock_stats()["insert_requests"] for iid in r["insert_ids"]]
+    assert len(ids) == 3
+    assert all(iid and len(iid) <= 128 for iid in ids)
+    # Still a single stable prefix plus per-row ordinals, so insertId deduplication keeps working.
+    assert len({iid.rsplit("-", 1)[0] for iid in ids}) == 1
+    assert [iid.rsplit("-", 1)[1] for iid in ids] == ["0", "1", "2"]
+    assert node.query(f"SELECT count() FROM {bq('writable')}") == "3\n"
+
+
+def test_insert_flushes_by_bytes():
+    # BigQuery's streaming API rejects insertAll requests larger than 10 MB. A batch of wide rows must
+    # be split by serialized size (not only by the 500-row cap) so each request stays under the limit.
+    # The mock rejects oversized requests, so this insert fails unless the sink flushes by bytes.
+    mock_reset()
+    node.query(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name) "
+        f"SELECT number, repeat('x', 700000) FROM numbers(16)",
+        settings={"max_threads": 1, "max_insert_threads": 1},
+    )
+    requests = mock_stats()["insert_requests"]
+    # ~11 MB total across 16 rows (well below the 500-row cap), split into more than one request,
+    # each below BigQuery's 10 MB limit.
+    assert len(requests) > 1
+    assert all(r["body_bytes"] <= 10 * 1024 * 1024 for r in requests)
+    assert sum(r["rows"] for r in requests) == 16
+    assert node.query(f"SELECT count() FROM {bq('writable')}") == "16\n"
+
+
+def test_insert_allowed_when_mutations_disabled():
+    # BigQuery is a write-capable external database, so INSERTs must be exempt from the server-wide
+    # `disable_insertion_and_mutation` setting, like MySQL / PostgreSQL / etc.
+    mock_reset()
+    # The mock server runs inside the "node" container; read_only_node reaches it over the network.
+    args = (
+        f"'{PROJECT}', '{DATASET}', 'writable', "
+        f"base_url = 'http://node:{MOCK_PORT}', access_token = '{ACCESS_TOKEN}'"
+    )
+
+    # Sanity check that the setting is actually enabled on this node: a local insert is rejected.
+    read_only_node.query(
+        "CREATE TABLE IF NOT EXISTS local_t (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    error = read_only_node.query_and_get_error("INSERT INTO local_t VALUES (1)")
+    assert "prohibited" in error.lower()
+
+    # The BigQuery insert, however, is allowed and reaches the remote table.
+    read_only_node.query(
+        f"INSERT INTO FUNCTION bigquery({args}) (id, name) VALUES (1, 'a')"
+    )
+    assert read_only_node.query(f"SELECT count() FROM bigquery({args})") == "1\n"
 
 
 def test_insert_partial_commit_dedup():
