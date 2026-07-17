@@ -56,6 +56,8 @@ String getInsertDataSchemaMismatchDescription(
     if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
         return {};
 
+    const auto format_settings = getFormatSettings(context);
+
     ColumnsDescription inferred_columns;
     try
     {
@@ -71,8 +73,7 @@ String getInsertDataSchemaMismatchDescription(
 
         auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
         SingleReadBufferIterator read_buffer_iterator(std::move(buffer));
-        inferred_columns
-            = readSchemaFromFormat(format_name, getFormatSettings(inference_context), read_buffer_iterator, inference_context);
+        inferred_columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, inference_context);
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -136,11 +137,19 @@ String getInsertDataSchemaMismatchDescription(
     for (const auto & column : expected)
         expected_by_name.emplace(column.name, column.type);
 
+    /// Whether the format identifies fields by name is decided by the format itself: formats that can
+    /// read a subset of the destination columns (`JSONEachRow`, `TSKV`, the `*WithNames*` family when
+    /// the header is used, ...) necessarily map fields to columns by name. Formats that read by name
+    /// but do not declare subset support are still caught by the fallback heuristic: if every inferred
+    /// name is a destination column name, matching by name is the right interpretation.
+    const bool format_reads_by_name = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
+
     const bool match_by_name = expected_by_name.size() == expected.size()
-        && std::all_of(
-            inferred.begin(),
-            inferred.end(),
-            [&](const NameAndTypePair & column) { return expected_by_name.contains(column.name); });
+        && (format_reads_by_name
+            || std::all_of(
+                inferred.begin(),
+                inferred.end(),
+                [&](const NameAndTypePair & column) { return expected_by_name.contains(column.name); }));
 
     bool corresponds = true;
     if (match_by_name)
@@ -151,7 +160,20 @@ String getInsertDataSchemaMismatchDescription(
         /// structure mismatch.
         for (const auto & column : inferred)
         {
-            if (!types_are_compatible(column.type, expected_by_name.at(column.name)))
+            auto expected_column = expected_by_name.find(column.name);
+            if (expected_column == expected_by_name.end())
+            {
+                /// A field present in the input but unknown to the destination. When
+                /// `input_format_skip_unknown_fields` is enabled (the default), the parser legally
+                /// skips such fields, so this is not a structure mismatch. When it is disabled, the
+                /// parser rejects the row precisely because of the unknown field, and pointing out
+                /// the differing structure is accurate.
+                if (format_settings.skip_unknown_fields)
+                    continue;
+                corresponds = false;
+                break;
+            }
+            if (!types_are_compatible(column.type, expected_column->second))
             {
                 corresponds = false;
                 break;
