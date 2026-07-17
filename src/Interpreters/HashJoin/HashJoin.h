@@ -530,6 +530,17 @@ public:
     /// the limit, and the query would throw before anything compresses.
     void setLogicalJoinTotalBytesCounter(const std::atomic<size_t> * counter) { logical_join_total_bytes = counter; }
 
+    /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
+    /// concurrent join's shared query-memory baseline for the `max_memory_usage` (and available-memory)
+    /// compression trigger in `shrinkStoredBlocksToFit`. The slots build sequentially, so each slot would
+    /// otherwise snapshot its own `memory_usage_before_adding_blocks` on its first insert, and a later slot
+    /// would start from a higher baseline (earlier slots already grew the query memory) and need more growth
+    /// before its own half-of-`max_memory_usage` threshold fires - letting the query hit the memory limit
+    /// before those slots ever compress. The first slot to insert publishes the earliest baseline here, and
+    /// every slot then measures the query-memory delta from that common point, matching the way the
+    /// `max_bytes_in_join` trigger is aggregated across slots via `setLogicalJoinTotalBytesCounter`.
+    void setSharedMemoryUsageBaseline(std::atomic<Int64> * baseline) { shared_memory_usage_before_adding_blocks = baseline; }
+
     /// Streams the stored right-side blocks out of the join, one block per `next` call.
     /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
     /// columns) and materializes a single block, destroying its stored source before returning,
@@ -656,6 +667,10 @@ private:
     /// See setLogicalJoinTotalBytesCounter. Null unless this instance is a `ConcurrentHashJoin` slot
     /// with `enable_join_in_memory_compression` on.
     const std::atomic<size_t> * logical_join_total_bytes = nullptr;
+
+    /// See setSharedMemoryUsageBaseline. Null unless this instance is a `ConcurrentHashJoin` slot
+    /// with `enable_join_in_memory_compression` on.
+    std::atomic<Int64> * shared_memory_usage_before_adding_blocks = nullptr;
 
     std::vector<Sizes> key_sizes;
 

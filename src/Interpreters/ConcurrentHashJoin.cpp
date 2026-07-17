@@ -226,10 +226,15 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     /// trigger in each slot must fire on the global total as well: with balanced
                     /// keys, every slot stays under its own half-threshold while the global total
                     /// already exceeds the limit, and the query would throw before any slot
-                    /// compresses. Only wired when compression is enabled, so the plain shrinking
-                    /// behavior with the setting off is unchanged.
+                    /// compresses. The `max_memory_usage` trigger has the same per-slot problem, so
+                    /// all slots share one query-memory baseline (see setSharedMemoryUsageBaseline).
+                    /// Only wired when compression is enabled, so the plain shrinking behavior with
+                    /// the setting off is unchanged.
                     if (table_join_->enableJoinInMemoryCompression())
+                    {
                         inner_hash_join->data->setLogicalJoinTotalBytesCounter(&global_total_bytes);
+                        inner_hash_join->data->setSharedMemoryUsageBaseline(&shared_memory_usage_before_adding_blocks);
+                    }
                     inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
                     global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);

@@ -779,7 +779,21 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
       * In that case memory consumed by stored blocks will be underestimated.
       */
     if (!memory_usage_before_adding_blocks)
-        memory_usage_before_adding_blocks = getCurrentQueryMemoryUsage();
+    {
+        Int64 current_query_memory = getCurrentQueryMemoryUsage();
+        /// For a `parallel_hash` slot with `enable_join_in_memory_compression`, all slots share one
+        /// query-memory baseline so the `max_memory_usage` trigger measures the whole logical join's
+        /// growth rather than each slot's own later baseline. The first slot to insert publishes the
+        /// earliest baseline; the others read it back. See setSharedMemoryUsageBaseline.
+        if (shared_memory_usage_before_adding_blocks)
+        {
+            Int64 expected = 0;
+            shared_memory_usage_before_adding_blocks->compare_exchange_strong(expected, current_query_memory, std::memory_order_relaxed);
+            memory_usage_before_adding_blocks = shared_memory_usage_before_adding_blocks->load(std::memory_order_relaxed);
+        }
+        else
+            memory_usage_before_adding_blocks = current_query_memory;
+    }
 
     if (strictness == JoinStrictness::Asof)
     {

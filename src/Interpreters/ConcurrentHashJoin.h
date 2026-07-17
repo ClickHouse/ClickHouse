@@ -138,6 +138,11 @@ private:
     std::atomic<size_t> global_total_rows{0};
     std::atomic<size_t> global_total_bytes{0};
 
+    /// Shared query-memory baseline for the `max_memory_usage` compression trigger, so it fires on the
+    /// logical join's growth instead of per slot. The first slot to insert publishes the earliest baseline.
+    /// See HashJoin::setSharedMemoryUsageBaseline.
+    std::atomic<Int64> shared_memory_usage_before_adding_blocks{0};
+
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
     void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
