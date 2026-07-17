@@ -769,6 +769,7 @@ void BackupCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, co
     /// this keeps them grouped for owner election. Mirrors the restore-side structure in
     /// RestoreCoordinationOnCluster::addRocksDBTable.
     auto dir_key = escapeForFileName(fmt::format("{}\n{}", current_host, rocksdb_dir));
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addRocksDBTable");
     auto holder = with_retries.createRetriesControlHolder("addRocksDBTable");
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
@@ -789,6 +790,7 @@ void BackupCoordinationOnCluster::prepareRocksDBTables() const
         return;
 
     std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> rocksdb_table_infos;
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::prepareRocksDBTables");
     auto holder = with_retries.createRetriesControlHolder("prepareRocksDBTables");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()

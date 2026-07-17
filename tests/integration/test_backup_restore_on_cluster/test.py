@@ -270,6 +270,38 @@ def test_different_tables_on_nodes():
     assert node2.query("SELECT * FROM tbl") == TSV([-333, -222, -111, 0, 111])
 
 
+def test_embedded_rocksdb_same_name_on_nodes():
+    # Same local EmbeddedRocksDB table name on two hosts. Each host has its own host-local
+    # rocksdb_dir (the default dir derived from the table name is the same STRING on both hosts),
+    # so the backup/restore coordination election_id is identical across hosts. This exercises the
+    # OnCluster RocksDB coordination path: without host-qualified znode names the second host's
+    # registration would collide (ZNODEEXISTS) and lose its data entry. Each host must back up and
+    # restore its own rows.
+    node1.query(
+        "CREATE TABLE tbl (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
+    )
+    node2.query(
+        "CREATE TABLE tbl (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (1, 'node1_a'), (2, 'node1_b')")
+    node2.query("INSERT INTO tbl VALUES (10, 'node2_a'), (20, 'node2_b'), (30, 'node2_c')")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+
+    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY key") == TSV(
+        [[1, "node1_a"], [2, "node1_b"]]
+    )
+    assert node2.query("SELECT * FROM tbl ORDER BY key") == TSV(
+        [[10, "node2_a"], [20, "node2_b"], [30, "node2_c"]]
+    )
+
+
 def test_backup_restore_on_single_replica():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"

@@ -317,6 +317,7 @@ void RestoreCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, c
     /// on two hosts denotes distinct physical directories, while tables sharing one directory are always
     /// co-located on the same host. Each registration creates a child node named by its election_id; the
     /// owner is the child with the greatest election_id (see getRocksDBDataOwnerElectionId).
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::addRocksDBTable");
     auto holder = with_retries.createRetriesControlHolder("addRocksDBTable");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
@@ -335,6 +336,7 @@ void RestoreCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, c
 String RestoreCoordinationOnCluster::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
 {
     String max_election_id;
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::getRocksDBDataOwnerElectionId");
     auto holder = with_retries.createRetriesControlHolder("getRocksDBDataOwnerElectionId");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
