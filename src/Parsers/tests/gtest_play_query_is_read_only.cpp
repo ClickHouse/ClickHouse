@@ -8,12 +8,16 @@
 #include <string>
 #include <vector>
 
-/** Regression coverage for the `queryIsReadOnly` logic in `programs/server/play.html`.
+/** Regression coverage for the `statementIsReadOnly` logic in `programs/server/play.html` and its
+  * two consumers, `queryIsReadOnly` and `splitAllQueries`.
   *
   * The Web UI retries a query without framing when the server rejects the page's `EventStream`
   * request, but a side-effecting statement (`INSERT`, DDL) may already have run before returning a
   * plain-HTTP error, so it must not be resubmitted. `queryIsReadOnly` decides whether a query is
-  * safe to re-run.
+  * safe to re-run. `Run all` (`splitAllQueries` + `postMulti`) reuses the same classification to
+  * decide which statements may run in parallel: read-only statements are batched concurrently while
+  * every other statement is a barrier, so a write must never be misclassified as read-only or a
+  * dependent read could execute before the write commits.
   *
   * The leading keyword is not enough: ClickHouse allows a query to begin with a `WITH` (CTE) clause,
   * so `WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y` starts with the
@@ -26,7 +30,8 @@
   * There is no JavaScript/WebAssembly runtime in CI, so we cannot run the browser code directly.
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
   * (the part most likely to evolve) is shared; only the small detection below is a port. Keep this
-  * in sync with `queryIsReadOnly` in `programs/server/play.html`.
+  * in sync with `statementIsReadOnly` / `queryIsReadOnly` / `splitAllQueries` in
+  * `programs/server/play.html`.
   */
 
 namespace
@@ -85,10 +90,11 @@ bool isClosingBracket(DB::TokenType type)
         || type == DB::TokenType::ClosingCurlyBrace;
 }
 
-/// Faithful port of `queryIsReadOnly` from play.html (the WebAssembly-available branch).
-bool queryIsReadOnly(const std::string & query)
+/// Faithful port of `statementIsReadOnly` from play.html: classifies one statement given as its
+/// significant tokens. Shared - there as here - by the `queryIsReadOnly` retry gate and the
+/// `splitAllQueries` per-statement `is_select` classification.
+bool statementIsReadOnly(const std::vector<Tok> & tokens)
 {
-    const std::vector<Tok> tokens = tokenizeSignificant(query);
     int depth = 0;
     /// Bracket depth at which the leading `WITH` sits; -1 until the leading keyword is seen.
     int with_depth = -1;
@@ -128,6 +134,46 @@ bool queryIsReadOnly(const std::string & query)
             return true;
     }
     return false;
+}
+
+/// Faithful port of `queryIsReadOnly` from play.html (the WebAssembly-available branch).
+bool queryIsReadOnly(const std::string & query)
+{
+    return statementIsReadOnly(tokenizeSignificant(query));
+}
+
+/// Faithful port of the `splitAllQueries` splitting-and-classification loop from play.html
+/// (the WebAssembly-available branch), reduced to what `postMulti` consumes: the per-statement
+/// `is_select` flags. The browser splits the editor content on top-level `;` tokens, collects each
+/// statement's significant tokens, and classifies them with the shared `statementIsReadOnly`.
+std::vector<bool> splitAllQueriesIsSelect(const std::string & text)
+{
+    DB::Lexer lexer(text.data(), text.data() + text.size(), 65536);
+    std::vector<bool> is_select;
+    std::vector<Tok> statement_tokens;
+    bool has_significant = false;
+    while (true)
+    {
+        DB::Token token = lexer.nextToken();
+        if (token.isError() || token.isEnd())
+            break;
+        if (token.type == DB::TokenType::Semicolon)
+        {
+            if (has_significant)
+                is_select.push_back(statementIsReadOnly(statement_tokens));
+            statement_tokens.clear();
+            has_significant = false;
+        }
+        else if (token.isSignificant())
+        {
+            has_significant = true;
+            statement_tokens.push_back({token.type, std::string(token.begin, token.end)});
+        }
+    }
+    /// Last query (no trailing semicolon).
+    if (has_significant)
+        is_select.push_back(statementIsReadOnly(statement_tokens));
+    return is_select;
 }
 
 }
@@ -186,4 +232,25 @@ TEST(PlayQueryIsReadOnly, LeadingWithWriteIsNotReadOnly)
     EXPECT_FALSE(queryIsReadOnly("WITH 42 AS v INSERT INTO x SELECT v"));
     /// Whitespace and comments before the `WITH` do not matter.
     EXPECT_FALSE(queryIsReadOnly("  /* c */ WITH y AS (SELECT 1) INSERT INTO x SELECT * FROM y"));
+}
+
+TEST(PlayQueryIsReadOnly, SplitAllQueriesUsesStatementKind)
+{
+    /// The reported bug: `Run all` classified each statement by its first keyword only, so a
+    /// `WITH ... INSERT ...` was tagged parallelizable and could be launched together with the
+    /// `SELECT` that follows it, letting the read execute before the write commits. The splitter
+    /// must classify with the same CTE-aware walk as the retry gate: the insert is a barrier
+    /// (false), the dependent read is parallelizable (true).
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y; SELECT count() FROM t"),
+        (std::vector<bool>{false, true}));
+    /// The statement kind is per statement, not inherited from neighbors; a trailing semicolon and
+    /// plain writes behave as before.
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("SELECT 1; INSERT INTO t VALUES (1); WITH 42 AS v SELECT v;"),
+        (std::vector<bool>{true, false, true}));
+    /// A semicolon inside a string literal is one token and does not split the statement.
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("SELECT 'a;b'; WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y"),
+        (std::vector<bool>{true, false}));
 }
