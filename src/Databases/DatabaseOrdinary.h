@@ -88,6 +88,14 @@ public:
 
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
+    /// Validate that the MergeTree <-> Replicated conversion in `setMergeTreeEngine` is legal for
+    /// this table's engine and DDL clauses BEFORE any side effect (metadata rewrite). Rejects
+    /// engines that only differ by a name prefix (e.g. Shared*, which `setMergeTreeEngine` would
+    /// blindly turn into an unknown `ReplicatedShared*`) and clauses the target engine does not
+    /// support (e.g. UNIQUE KEY, unsupported by ReplicatedMergeTree). Shared by both the
+    /// `ATTACH ... AS REPLICATED` entrypoint and the restart-time converter. See issue #110854.
+    static void validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated);
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).

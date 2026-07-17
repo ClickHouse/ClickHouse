@@ -30,6 +30,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
@@ -73,6 +74,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -137,6 +139,32 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );
+}
+
+void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated)
+{
+    const String & engine_name = create_query.storage->engine->name;
+
+    /// `setMergeTreeEngine` only adds/removes the leading "Replicated" prefix. For an engine that
+    /// merely contains "MergeTree" through another prefix (e.g. "SharedMergeTree") this produces a
+    /// non-existent engine ("ReplicatedSharedMergeTree"), which is rejected only after the metadata
+    /// has already been rewritten. Refuse such engines up front.
+    if (engine_name.starts_with("Shared"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Engine {} cannot be converted between MergeTree and Replicated by toggling the Replicated prefix",
+            engine_name);
+
+    const String target_engine_name
+        = to_replicated ? "Replicated" + engine_name : engine_name.substr(strlen("Replicated"));
+
+    /// Reject DDL clauses the target engine does not support before rewriting the metadata.
+    /// Otherwise the rejected conversion leaves the persisted metadata pointing at an unloadable
+    /// engine (e.g. ReplicatedMergeTree + UNIQUE KEY), so the table fails to load after restart.
+    if (create_query.storage->unique_key
+        && !StorageFactory::instance().getStorageFeatures(target_engine_name).supports_unique_key)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Engine {} doesn't support UNIQUE KEY clause, cannot attach table as {}replicated",
+            target_engine_name, to_replicated ? "" : "not ");
 }
 
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
@@ -231,6 +259,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
     checkReplicaPathExists(create_query, getContext());
+    validateEngineSupportsReplicatedConversion(create_query, /*to_replicated*/ true);
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
