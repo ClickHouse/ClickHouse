@@ -16,6 +16,8 @@ no exception: OK
 1
 event: data
 event: exception
---- a query that disables framing is refused client-side, not sent as a plain request
-disables-framing guard extracted: OK
-disables-framing guard: OK
+--- framing_output_format only inside a string literal is not a query-level setting
+text/event-stream
+event: data
+string literal is not a framing setting: OK
+no exception: OK

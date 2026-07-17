@@ -19,10 +19,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 3. An exception raised after data was already streamed arrives as an `exception` packet inside
 #    a 200 OK event stream (the headers were already sent), which the page must report as a query
 #    failure ("Run all" stops, the single run shows the error state).
-# 4. A query that explicitly disables framing (`SETTINGS framing_output_format = 'None'`) is not
-#    "the query's own framing" - the page requires framing to render results, so it refuses such a
-#    query client-side instead of sending it (there is no HTTP request to assert on, so the guard
-#    expression itself is extracted from the served page and exercised directly).
+# 4. The page detects a query-level `framing_output_format` setting with the SQL lexer, not a text
+#    match, so the setting name appearing inside a string literal (or a comment) is not mistaken for
+#    a real setting. That client-side detection is pinned by a unit test
+#    (`src/Parsers/tests/gtest_play_detect_framing_setting.cpp`); here we only check that the server
+#    accepts the framed request the page sends for such a query (its string value comes back as a
+#    normal framed `data` packet), since there is no WebAssembly runtime here to run the page lexer.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -73,34 +75,17 @@ grep -c '^HTTP/1.1 200 OK' "$header_file"
 grep -o -m1 '^event: data' "$result_file"
 grep -o -m1 '^event: exception' "$result_file"
 
-echo '--- a query that disables framing is refused client-side, not sent as a plain request'
-# The guard regex literal is extracted from the served page (as above for `rejection_pattern`), so
-# it cannot drift from the code it pins, and exercised directly. The check uses `python3` (always
-# available in the test environment - unlike `node`); the guard uses only regex constructs whose
-# behavior is identical in JavaScript and Python (`\b`, `\s`, an optional quote, the `i` flag).
-disables_framing_regex="$(echo "$page" | sed -n "s#^ *const user_disables_framing = \(/.*/[a-z]*\)\.test(query);\$#\1#p")"
-[ -n "$disables_framing_regex" ] && echo 'disables-framing guard extracted: OK'
-python3 - "$disables_framing_regex" <<'PY'
-import re, sys
-literal = sys.argv[1]  # a JavaScript regex literal: /pattern/flags
-assert literal.startswith('/'), literal
-last = literal.rfind('/')
-pattern, flags = literal[1:last], literal[last + 1:]
-rx = re.compile(pattern, re.IGNORECASE if 'i' in flags else 0)
-def disables_framing(query):
-    return rx.search(query) is not None
-cases = [
-    ("SELECT 1", False),
-    ("SELECT 1 SETTINGS framing_output_format = 'None'", True),
-    ("select 1 settings framing_output_format='none'", True),
-    ("SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'", False),
-]
-ok = True
-for query, expected in cases:
-    if disables_framing(query) != expected:
-        ok = False
-        print('MISMATCH', repr(query))
-print('disables-framing guard: OK' if ok else 'disables-framing guard: FAIL')
-PY
+echo '--- framing_output_format only inside a string literal is not a query-level setting'
+# The page detects a query-level framing setting with the SQL lexer, so `framing_output_format`
+# inside a string literal is not a real setting: the page frames the query itself (the framed
+# request shape below) and the server returns the string as a framed `data` packet, instead of
+# refusing the query (as `= 'None'` would) or dropping the framing.
+${CLICKHOUSE_CURL} -sS -D "$header_file" \
+    "${URL}&default_format=${framed_default_format}&framing_output_format=EventStream&send_logs_level=trace" \
+    -d "SELECT 'framing_output_format = None' AS x" > "$result_file"
+grep -o -m1 'text/event-stream' "$header_file"
+grep -o -m1 '^event: data' "$result_file"
+grep -q -F 'framing_output_format = None' "$result_file" && echo 'string literal is not a framing setting: OK'
+[ "$(grep -c '^event: exception' "$result_file")" -eq 0 ] && echo 'no exception: OK'
 
 rm -f "$result_file" "$header_file"

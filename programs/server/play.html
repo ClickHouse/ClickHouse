@@ -6441,19 +6441,22 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     ///
     /// A query-level `SETTINGS framing_output_format = ...` overrides the URL parameter after the
     /// query is parsed, so the response could be a framing this page does not parse (the NDJSON
-    /// `JSONEachPacket*` formats). Do not add the page's own framing to such a query (the same
-    /// imprecise text match as for `FORMAT` above): the query's framing applies alone, and the
-    /// response is dispatched by its `Content-Type` - an event stream is handled as usual (the
-    /// query chose `EventStream` itself), anything else is shown as raw text, so the packets the
-    /// user asked to see are displayed verbatim rather than misparsed.
+    /// `JSONEachPacket*` formats). Do not add the page's own framing to such a query: the query's
+    /// framing applies alone, and the response is dispatched by its `Content-Type` - an event
+    /// stream is handled as usual (the query chose `EventStream` itself), anything else is shown as
+    /// raw text, so the packets the user asked to see are displayed verbatim rather than misparsed.
     ///
     /// A query that sets `framing_output_format = 'None'` disables framing rather than choosing
     /// one, so it is not "the query's own framing" - it asks to run without any of it. This page
     /// only supports the framed rendering path (progress, logs, metrics, and the compact default
     /// format all depend on it), so such a query is refused up front instead of being sent with a
     /// `default_format` (`framed_default_format`) that the plain, unframed response cannot use.
-    const user_disables_framing = /\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
-    const user_framing = !user_disables_framing && /\bframing_output_format\b/i.test(query);
+    ///
+    /// The setting is detected with the WASM lexer (`detectFramingSetting`), not a text match, so a
+    /// `framing_output_format` mention inside a string literal or a comment - e.g.
+    /// `SELECT 'framing_output_format = None'` - is not mistaken for a real setting and does not
+    /// change how the request is framed.
+    const { user_framing, user_disables_framing } = await detectFramingSetting(query);
     let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
@@ -8641,6 +8644,45 @@ async function tokenize(query) {
     }
 
     return result;
+}
+
+/// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
+/// setting disables framing (`= 'None'`). Used by `postImpl` to leave a query that chose its own
+/// framing untouched (its framing applies alone) and to refuse a query that turns framing off (this
+/// page renders only the framed path). Returns `{ user_framing, user_disables_framing }`.
+///
+/// The detection walks the lexer tokens rather than matching the raw text: `framing_output_format`
+/// counts only as a real assignment - a `BareWord` immediately followed by `=` - so an occurrence
+/// inside a string literal or a comment is ignored. A plain regex is fooled by e.g.
+/// `SELECT 'framing_output_format = None'` (refused as if it disabled framing) or
+/// `SELECT 'framing_output_format'` (framing silently dropped, so the compact default renders as raw
+/// text instead of a table). Falls back to a text match only when WebAssembly - hence the lexer - is
+/// unavailable, mirroring `getQueryUnderCursor`.
+async function detectFramingSetting(query)
+{
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        const disables = /\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
+        return { user_framing: !disables && /\bframing_output_format\b/i.test(query), user_disables_framing: disables };
+    }
+
+    const tokens = (await tokenize(query)).filter(t => t.significant);
+    for (let i = 0; i + 1 < tokens.length; ++i) {
+        if (tokens[i].type === TT.BareWord
+            && tokens[i].token.toLowerCase() === 'framing_output_format'
+            && tokens[i + 1].type === TT.Equals) {
+            /// The value is the next significant token; a string literal carries its surrounding quotes.
+            const value_token = tokens[i + 2];
+            let value = value_token ? value_token.token : '';
+            if (value_token && value_token.type === TT.StringLiteral) {
+                value = value.slice(1, -1);
+            }
+            if (value.toLowerCase() === 'none') {
+                return { user_framing: false, user_disables_framing: true };
+            }
+            return { user_framing: true, user_disables_framing: false };
+        }
+    }
+    return { user_framing: false, user_disables_framing: false };
 }
 
 /// Absolute character offset (into the textarea) where the query most recently returned by
