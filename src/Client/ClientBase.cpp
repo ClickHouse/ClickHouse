@@ -2195,7 +2195,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin, /*data_is_inline=*/ true);
             if (have_data_in_stdin && !cancelled)
                 sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
@@ -2220,7 +2220,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 }
 
 
-void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data, bool data_is_inline)
 {
     String current_format = "Values";
 
@@ -2249,11 +2249,12 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         ? settings[Setting::min_insert_block_size_bytes]
         : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
 
-    /// If the data is not inline in the query text (e.g. it is read from stdin, separately from a
-    /// query given via --query), ASTInsertQuery::data is null and the parse-error diagnostic below
-    /// cannot re-read the failing bytes from the AST. In that case, capture a bounded prefix of the
-    /// data as it streams through instead.
-    bool data_is_inline = insert && insert->data;
+    /// If the data being parsed by this call is not the inline data of the query text (e.g. it is read
+    /// from stdin, separately from a query given via --query), the parse-error diagnostic below cannot
+    /// re-read the failing bytes from ASTInsertQuery::data. This is decided by the caller and passed via
+    /// `data_is_inline`, because the same ASTInsertQuery is reused for the streamed stdin tail even when
+    /// it also carries an inline prefix, so ASTInsertQuery::data alone cannot tell the two sources apart.
+    /// When the data is not inline, capture a bounded prefix of it as it streams through instead.
     std::optional<PrefixCapturingReadBuffer> capturing_buf;
     if (!data_is_inline)
         capturing_buf.emplace(buf, settings[Setting::input_format_max_bytes_to_read_for_schema_inference]);
