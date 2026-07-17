@@ -370,6 +370,18 @@ FROM
     FROM moving_aggregate_test
 );
 
+-- The same over a frame larger than one parent-segment group span (fanout^2 rows), so
+-- the merged frame combines parent segments with leaf segments on both sides; the
+-- order check is what catches a wrong merge order there.
+SELECT countIf(ga != range(toUInt64(greatest(toInt64(number) - 1200, 0)), number + 1)) AS mismatches
+FROM
+(
+    SELECT
+        number,
+        groupArray(number) OVER (ORDER BY number ROWS BETWEEN 1200 PRECEDING AND CURRENT ROW) AS ga
+    FROM numbers(5000)
+);
+
 -- Functions with non-trivial states and combinators through the tree, cross-checked
 -- against array functions over groupArray (itself verified above). uniqExact goes
 -- through the tree for String arguments (numeric ones keep the recompute path, where
@@ -422,19 +434,20 @@ FROM
 
 -- The frame shrinks exactly when a higher-level segment group of the tree completes
 -- (the key jump is aligned so the skipped group is the last child of a built level-2
--- group), then regrows past two level-2 spans. Regression for a parent segment being
--- built into the wrong slot after such a skip.
+-- group: with fanout 32, row 64800 falls into the level-1 group 63, the last child of
+-- level-2 group 1), then regrows past two level-2 spans (32768 rows each). Regression
+-- for a parent segment being built into the wrong slot after such a skip.
 SELECT countIf(c != cnt OR s != expected_s) AS mismatches
 FROM
 (
     SELECT
         n,
-        if(n < 16200, greatest(toInt64(n) - 12000, 0), greatest(toInt64(16200), toInt64(n) - 12000)) AS lo,
+        if(n < 64800, greatest(toInt64(n) - 96000, 0), greatest(toInt64(64800), toInt64(n) - 96000)) AS lo,
         toInt64(n) - lo + 1 AS cnt,
         intDiv((lo + toInt64(n)) * cnt, 2) AS expected_s,
         count() OVER w AS c, sum(n) OVER w AS s
-    FROM (SELECT number AS n, if(number < 16200, number, number + 13000) AS k FROM numbers(30000))
-    WINDOW w AS (ORDER BY k RANGE BETWEEN 12000 PRECEDING AND CURRENT ROW)
+    FROM (SELECT number AS n, if(number < 64800, number, number + 104000) AS k FROM numbers(240000))
+    WINDOW w AS (ORDER BY k RANGE BETWEEN 96000 PRECEDING AND CURRENT ROW)
 );
 
 -- Functions without mergeIsEquivalentToAddingRows must keep the recompute path: their
