@@ -1241,12 +1241,12 @@ bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
     return target.is_tty_friendly;
 }
 
-bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings) const
+bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const
 {
     const auto & target = getCreators(name);
     if (target.may_produce_raw_bytes)
         return true;
-    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings);
+    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
 }
 
 bool FormatFactory::checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const

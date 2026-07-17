@@ -113,13 +113,30 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     /// cannot survive the text `EventStream` framing (see `checkIfOutputFormatMayEmitCarriageReturn`).
     factory.markOutputFormatMayEmitCarriageReturns("SQLInsert");
 
-    /// `output_format_sql_insert_table_name` is written verbatim, so a table name that is not valid
-    /// UTF-8 makes the output non-textual. This is knowable from the settings, so it is detected here
-    /// and the text framings reject or base64-encode the output accordingly.
-    factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings)
+    /// `output_format_sql_insert_table_name` and the column names (when
+    /// `output_format_sql_insert_include_column_names` is enabled) are written verbatim, so a table or
+    /// column name that is not valid UTF-8 makes the output non-textual. Quoted identifiers can contain
+    /// arbitrary bytes, so a column name is not guaranteed to be valid UTF-8 either. Both are knowable
+    /// before any row is written (from the settings and the header), so they are detected here and the
+    /// text framings reject or base64-encode the output accordingly.
+    factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings, const Block & header)
     {
-        const std::string & table_name = settings.sql_insert.table_name;
-        return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(table_name.data()), table_name.size());
+        auto is_not_valid_utf8 = [](const std::string & s)
+        {
+            return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+        };
+
+        if (is_not_valid_utf8(settings.sql_insert.table_name))
+            return true;
+
+        if (settings.sql_insert.include_column_names)
+        {
+            for (const auto & column_name : header.getNames())
+                if (is_not_valid_utf8(column_name))
+                    return true;
+        }
+
+        return false;
     });
 
     factory.setDocumentation("SQLInsert", Documentation{

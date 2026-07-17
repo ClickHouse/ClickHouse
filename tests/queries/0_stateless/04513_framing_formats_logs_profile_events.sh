@@ -100,6 +100,18 @@ ${CLICKHOUSE_CURL} -sS "${WAIT_URL}&framing_output_format=JSONEachPacketString&s
 [ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'wait_end_of_query exception packet: OK'
 rm "$result_file"
 
+# In contrast to the URL / session case above, a `send_logs_level` set only in the query's own SETTINGS
+# clause takes effect only from query execution onward, because it is not known until the query has been
+# parsed. A query that fails during analysis, before pipeline execution, therefore captures none of the
+# parse/plan/analysis logs from a query-level `send_logs_level`: only the framed `exception` packet is
+# delivered, and the query text logged during parsing does not appear as a `log` packet.
+echo '--- a query-level send_logs_level does not capture analysis-phase logs when the query fails early'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT * FROM table_that_does_not_exist_04513 SETTINGS send_logs_level='trace'" > "$result_file"
+[ "$(grep -c '"packet":"exception"' "$result_file")" -ge 1 ] && echo 'query-level send_logs_level early-failure exception packet: OK'
+[ "$(grep '"packet":"log"' "$result_file" | grep -c 'table_that_does_not_exist_04513')" -eq 0 ] && echo 'query-level send_logs_level early-failure has no query-text log packet: OK'
+rm "$result_file"
+
 # The framing / logs / profile-events settings can be set by the query's own SETTINGS clause, which is
 # applied only after parsing. The queues are reconciled with the effective settings after the query is
 # interpreted, so a query that enables framing (and logs) from its SETTINGS clause - while the URL keeps

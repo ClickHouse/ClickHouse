@@ -125,7 +125,7 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         /// that is not valid UTF-8 (for example `format_custom_row_after_delimiter` set to a non-UTF-8
         /// byte sequence) makes the output non-textual as well. This is knowable from the settings, so
         /// it is detected here rather than relying on the payload being valid UTF-8.
-        factory.registerOutputFormatMayProduceRawBytesChecker(format_name, [](const FormatSettings & settings)
+        factory.registerOutputFormatMayProduceRawBytesChecker(format_name, [](const FormatSettings & settings, const Block &)
         {
             const auto & custom = settings.custom;
             if (custom.escaping_rule == FormatSettings::EscapingRule::Raw)

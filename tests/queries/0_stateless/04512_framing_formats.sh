@@ -336,3 +336,27 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_s
     | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
     | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_sql_insert_table_name=a%FFb" -d "SELECT 1 FORMAT SQLInsert") \
     && echo 'SQLInsert payload with a non-UTF-8 table name round-trips' || echo 'MISMATCH'
+
+# The column names of the header are also written verbatim by `SQLInsert` (`printColumnNames`), and a
+# quoted identifier can contain arbitrary bytes (`SELECT 1 AS `a\xFFb``), so a non-UTF-8 column name is
+# knowable before any row is written and is treated the same as a non-UTF-8 table name.
+echo '--- JSONEachPacketString is rejected for SQLInsert with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT SQLInsert' \
+    | grep -o -m1 'is not compatible with the output format SQLInsert'
+
+echo '--- EventStream base64-encodes SQLInsert with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT SQLInsert'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT SQLInsert' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT 1 AS `a\xFFb` FORMAT SQLInsert') \
+    && echo 'SQLInsert payload with a non-UTF-8 column name round-trips' || echo 'MISMATCH'
+
+# A valid multi-byte UTF-8 column name (here `col` followed by U+2713 CHECK MARK) must not be
+# misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts SQLInsert with a valid UTF-8 (multi-byte) column name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT SQLInsert' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'SQLInsert (valid UTF-8 column name) accepted: OK'
