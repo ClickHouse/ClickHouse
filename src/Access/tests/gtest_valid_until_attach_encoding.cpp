@@ -126,3 +126,21 @@ TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
     ASSERT_EQ(user->authentication_methods.size(), 1u);
     EXPECT_EQ(user->authentication_methods.front().getValidUntil(), -2208988800);
 }
+
+TEST(ValidUntilAttachEncoding, EpochZeroDeadlineIsNotConfusedWithNoExpiration)
+{
+    /// A datetime deadline at exactly the Unix epoch parses to `time_t` 0, which is the sentinel for
+    /// "no expiration": `AuthenticationData::toAST` serializes the deadline only when it is non-zero,
+    /// and the authentication check skips the expiration test when `valid_until` is 0. Only the literal
+    /// `infinity` is meant to map to 0; a real deadline at the epoch is expired, so it is normalized to
+    /// the smallest expired instant (1) - the same way the `VALID FOR` path clamps a pre-epoch deadline -
+    /// instead of collapsing to a non-expiring credential.
+    ASTPtr literal = make_intrusive<ASTLiteral>(Field(String("1970-01-01 00:00:00 UTC")));
+    EXPECT_EQ(getValidUntilFromAST(literal, /* context= */ nullptr, /* is_interval= */ false), 1);
+
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1970-01-01 00:00:00 UTC';");
+    const auto * user = typeid_cast<const User *>(entity.get());
+    ASSERT_NE(user, nullptr);
+    ASSERT_EQ(user->authentication_methods.size(), 1u);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1);
+}

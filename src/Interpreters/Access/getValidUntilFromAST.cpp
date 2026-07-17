@@ -164,6 +164,17 @@ namespace DB
                 ErrorCodes::BAD_ARGUMENTS,
                 "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
 
+        /// A non-`infinity` deadline that parses to exactly the Unix epoch (`time == 0`) collides with the
+        /// sentinel value `0`, which means "no expiration": `AuthenticationData::toAST` serializes the
+        /// deadline only when it is non-zero, and the authentication check skips the expiration test when
+        /// `valid_until` is `0` (see `IAccessStorage::areCredentialsValid`). Only the literal `infinity`
+        /// (handled above) is meant to disable expiration; `VALID UNTIL '1970-01-01 00:00:00'` is a real
+        /// deadline in the past, so it is normalized to the smallest expired instant, `1970-01-01 00:00:01`,
+        /// the same way the `VALID FOR` path clamps a pre-epoch deadline. A deadline strictly before the
+        /// epoch is negative, stays as is (stored in datetime form), and remains distinct from `0`.
+        if (time == 0)
+            return 1;
+
         return time;
     }
 }
