@@ -827,9 +827,10 @@ void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// A non-ClickHouse exception (e.g. a remote table function that fails to connect while being
-        /// resolved) is not an access denial. As above there is no resolved metadata to protect, so the
-        /// check is skipped rather than turning a formatting request into an error.
+        /// Ok to swallow: a non-ClickHouse exception (e.g. a remote table function that fails to
+        /// connect while being resolved) is not an access denial. As above there is no resolved
+        /// metadata to protect, so the check is skipped rather than turning a formatting request
+        /// into an error.
     }
 
     if (resolved)
