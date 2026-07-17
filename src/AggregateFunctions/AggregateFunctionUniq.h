@@ -433,7 +433,12 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    bool mergeIsEquivalentToAddingRows() const override { return true; }
+    // Merging partial states is append-equivalent for the whole uniq family, but for
+    // sliding window frames it only pays off when the per-row add is expensive (String
+    // hashing): merging set/sketch states costs proportionally to the state size, so
+    // for cheap numeric adds the plain re-aggregation wins (e.g. uniqHLL12 over numbers
+    // is ~4x faster recomputed, over strings ~1.5x faster merged).
+    bool mergeIsEquivalentToAddingRows() const override { return std::is_same_v<T, String>; }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override

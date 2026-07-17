@@ -165,6 +165,13 @@ public:
         }
     }
 
+    // Merging folds partial states with the same strict comparison as adding the rows
+    // one by one. For ties of the comparison value the returned argument is already
+    // batch-layout-dependent on the full-recompute path (the SIMD extreme-index kernel
+    // does not pick the same duplicate as the row-by-row fold), so merging partial
+    // states stays within the existing tie non-determinism.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (isMin)

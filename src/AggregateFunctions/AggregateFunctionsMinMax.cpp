@@ -56,6 +56,11 @@ public:
             return "max";
     }
 
+    // Merging partial states folds them with the same strict comparison as adding the
+    // rows one by one (ties keep the earlier value, NaN never replaces a non-NaN value
+    // and any value replaces a NaN-only state), so the result is the same.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (isMin)

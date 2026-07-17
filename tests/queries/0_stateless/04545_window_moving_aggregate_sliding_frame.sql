@@ -371,16 +371,35 @@ FROM
 );
 
 -- Functions with non-trivial states and combinators through the tree, cross-checked
--- against array functions over groupArray (itself verified above).
-SELECT countIf(NOT (u = u2 AND si = si2 AND q = q2)) AS mismatches
+-- against array functions over groupArray (itself verified above). uniqExact goes
+-- through the tree for String arguments (numeric ones keep the recompute path, where
+-- re-adding the rows is cheaper than merging set states); both are checked.
+SELECT countIf(NOT (u = u2 AND un = un2 AND si = si2 AND q = q2)) AS mismatches
 FROM
 (
     SELECT
         n,
-        uniqExact(value) OVER w AS u, length(arrayDistinct(groupArray(value) OVER w)) AS u2,
+        uniqExact(str) OVER w AS u, length(arrayDistinct(groupArray(str) OVER w)) AS u2,
+        uniqExact(value) OVER w AS un, length(arrayDistinct(groupArray(value) OVER w)) AS un2,
         sumIf(value, value % 2 = 0) OVER w AS si, arraySum(arrayFilter(x -> x % 2 = 0, groupArray(value) OVER w)) AS si2,
         quantileExact(value) OVER w AS q, arrayReduce('quantileExact', groupArray(value) OVER w) AS q2
     FROM moving_aggregate_test
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
+);
+
+-- argMin/argMax through the tree, and any/anyLast (whose constant-time batch add keeps
+-- them on the recompute path), cross-checked against the frame rows. The argMin/argMax
+-- comparison keys are unique: tie resolution is documented as non-deterministic.
+SELECT countIf(NOT (af = af2 AND al = al2 AND am = am2 AND ax = ax2)) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        any(value) OVER w AS af, (groupArray(value) OVER w)[1] AS af2,
+        anyLast(value) OVER w AS al, (groupArray(value) OVER w)[-1] AS al2,
+        argMin(value, u) OVER w AS am, arrayReduce('argMin', groupArray(value) OVER w, groupArray(u) OVER w) AS am2,
+        argMax(str, u) OVER w AS ax, arrayReduce('argMax', groupArray(str) OVER w, groupArray(u) OVER w) AS ax2
+    FROM (SELECT n, value, str, cityHash64(n, 42) AS u FROM moving_aggregate_test)
     WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 

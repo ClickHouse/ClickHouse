@@ -49,6 +49,11 @@ public:
 
     String getName() const override { return "any"; }
 
+    // Merging keeps the already-set value, like adding more rows would.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
+    bool addBatchSinglePlaceIsConstant() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (!this->data(place).has())
@@ -234,6 +239,12 @@ public:
     }
 
     String getName() const override { return "anyLast"; }
+
+    // Merging overwrites with the later partial state when it has a value (and set of
+    // an empty state keeps the current value), like adding its rows would.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
+    bool addBatchSinglePlaceIsConstant() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

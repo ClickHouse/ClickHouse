@@ -1,23 +1,32 @@
 <test>
-    <!-- Sliding window frames: once a moving frame is observed to have at least 2048
-         rows, the aggregate state is rebuilt from a FlatFAT-style tree of partial
-         aggregate states (FrameAggregateTree) instead of re-adding the whole frame. -->
+    <!-- Sliding window frames: once a moving frame is observed to have at least
+         min_window_frame_rows_for_aggregate_tree rows, the aggregate state is rebuilt
+         from a FlatFAT-style tree of partial aggregate states (FrameAggregateTree)
+         instead of re-adding the whole frame. -->
     <query>SELECT sum(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT avg(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT min(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT max(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT varSamp(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT argMin(number, cityHash64(number)) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
 
     <!-- The tree also applies to sliding RANGE frames. -->
     <query>SELECT sum(number) OVER (ORDER BY number RANGE BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
 
     <!-- The tree relies only on merge, so it also covers functions with no cheap
-         inverse: floating point sums, combinators, heavy states like uniqExact. -->
+         inverse: floating point sums, combinators, heavy states like string uniqExact
+         or sumMap. -->
     <query>SELECT sum(toFloat64(number)) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
     <query>SELECT sumIf(number, number % 2 = 0) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
-    <query>SELECT uniqExact(number % 1000) OVER (ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) FROM numbers(30000) FORMAT Null</query>
+    <query>SELECT uniqExact(toString(number)) OVER (ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) FROM numbers(30000) FORMAT Null</query>
+    <query>SELECT max(toString(number)) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(300000) FORMAT Null</query>
+    <query>SELECT sumMap([number % 10], [number]) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(300000) FORMAT Null</query>
 
-    <!-- Frames below the ~2048-row crossover stay on the plain recompute path; make
-         sure it does not regress. -->
+    <!-- Frames below the crossover stay on the plain recompute path, and so do
+         functions where re-adding beats merging (numeric uniq states, constant-time
+         batch adds); make sure they do not regress. -->
     <query>SELECT min(number) OVER (ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
     <query>SELECT sum(toFloat64(number)) OVER (ROWS BETWEEN 1000 PRECEDING AND CURRENT ROW) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT uniqExact(number % 1000) OVER (ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) FROM numbers(30000) FORMAT Null</query>
+    <query>SELECT anyLast(number) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(5000000) FORMAT Null</query>
 </test>

@@ -247,8 +247,9 @@ public:
     // frame (cf. Tangwongsan et al., "General Incremental Sliding-Window Aggregation",
     // PVLDB 2015). A segment at level L holds the state of fanout^(L+1) consecutive rows,
     // so re-aggregating a frame of N rows takes O(fanout * log N) merge calls instead of
-    // N add calls. Only sound for functions with mergeIsEquivalentToAddingRows; the
-    // rest keep the full-recompute path.
+    // N add calls; for cheap fixed-size states the per-level suffix caches (LevelAccel)
+    // cut that further to about two merge calls per level. Only sound for functions
+    // with mergeIsEquivalentToAddingRows; the rest keep the full-recompute path.
     // Rows are identified by their index counted from the frame start at activation
     // (the tree is deactivated and rebuilt from scratch if the frame shrinks below the
     // activation threshold and grows past it again).
@@ -260,7 +261,11 @@ public:
     class FrameAggregateTree
     {
     public:
-        static constexpr UInt64 fanout = 16;
+        // Wider is better as long as the leading suffix table serves the whole leading
+        // partial group with one merge: fewer levels mean fewer merge calls per row,
+        // and less total state content for content-heavy functions. 32 measured
+        // slightly ahead of 16 for both classes.
+        static constexpr UInt64 fanout = 32;
 
         bool isActive() const { return function != nullptr; }
         void activate(const IAggregateFunction & function_);
@@ -303,17 +308,49 @@ public:
             UInt64 end_segment = 0;
         };
 
+        // Per-level cache cutting mergeFrame() from ~fanout merges per level down to ~2:
+        // a suffix table over one segment group serving the leading partial range, and a
+        // running combination of the completed-but-unparented segments serving the
+        // trailing range. Both hold their own state copies keyed by segment indices, so
+        // they never dangle; on any key mismatch mergeFrame() falls back to merging the
+        // raw segments. Only used for cheap fixed-size states (see the gate in activate):
+        // for content-heavy states the merge cost is dominated by the state size, not
+        // the call count, and table entries would copy the content up to fanout times.
+        struct LevelAccel
+        {
+            // Slot j (relative to table_group_begin) holds the combination of segments
+            // [table_group_begin + j, table_covered_end); slots [table_first_slot,
+            // table_covered_end - table_group_begin) are built.
+            AlignedBuffer table;
+            UInt64 table_group_begin = std::numeric_limits<UInt64>::max();
+            UInt64 table_covered_end = 0;
+            UInt64 table_first_slot = 0;
+            // Running combination of the trailing segments [trailing_begin,
+            // trailing_end); reset when a parent covers them.
+            AlignedBuffer trailing;
+            bool trailing_created = false;
+            UInt64 trailing_begin = 0;
+            UInt64 trailing_end = 0;
+        };
+
         char * segmentState(size_t level, UInt64 segment);
         char * createSegment(size_t level);
         void buildParents(Arena * arena_ptr);
         void destroySegments(size_t level, UInt64 begin, UInt64 end);
+        void trailingAdd(size_t level, UInt64 segment, Arena * arena_ptr);
+        void trailingReset(size_t level);
+        // Merges the combination of segments [begin, end) of one group into `result`
+        // through the suffix table, (re)building the needed slots on a key mismatch.
+        void tableMerge(size_t level, UInt64 begin, UInt64 end, AggregateDataPtr result, Arena * arena_ptr);
 
         const IAggregateFunction * function = nullptr;
         UInt64 padded_state_size = 0;
         UInt64 state_align = 1;
         UInt64 frame_start_index = 0;
         UInt64 frame_end_index = 0;   // == number of rows appended
+        bool use_accel = false;
         std::vector<Level> levels;
+        std::vector<LevelAccel> accel;
     };
 
     // Indexed in parallel with `workspaces`.
@@ -335,6 +372,17 @@ public:
     // are activated and deactivated as the frame size crosses the threshold). Comes from
     // the `min_window_frame_rows_for_aggregate_tree` setting.
     UInt64 min_frame_rows_for_aggregate_tree;
+
+    // Incremental state of advanceFrameStartRowsOffset (only for a PRECEDING start):
+    // the unclamped position current_row - N, the remaining (negative) offset while it
+    // is clamped at the start of the available data, and the current_row the cache was
+    // made for (with a flag telling whether it was the last row of its block, so that
+    // "advanced by exactly one row" can be checked without touching the blocks).
+    RowNumber frame_start_rows_cache_row;
+    Int64 frame_start_rows_cache_offset_left = 0;
+    RowNumber frame_start_rows_cache_current;
+    bool frame_start_rows_cache_current_at_block_end = false;
+    bool frame_start_rows_cache_valid = false;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).
