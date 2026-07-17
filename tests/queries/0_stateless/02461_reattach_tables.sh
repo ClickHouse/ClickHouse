@@ -71,6 +71,16 @@ BACKUP_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$RANDOM"
 check_if_detached "BACKUP TABLE t_reattach_1 TO Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
 check_if_not_detached "BACKUP DATABASE ${CLICKHOUSE_DATABASE} TO Disk('backups', '${BACKUP_SUFFIX}_db')" "t_reattach_1"
 
+# `RESTORE TABLE old AS new` writes the local DESTINATION table (`new`); the source object name `old` lives
+# only inside the backup. The collector therefore resolves the destination name for `RESTORE`, so a local
+# table whose name matches the in-backup SOURCE name is unrelated to the restore and must NOT be detached
+# (and the fresh destination does not exist yet, so nothing is detached there either). Restore the backup
+# taken just above under a new name and confirm the source-named local table `t_reattach_1` stays attached —
+# this locks down the `backup->kind == RESTORE` branch that must use `new_table_name`, not `table_name`.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_restored"
+check_if_not_detached "RESTORE TABLE t_reattach_1 AS t_reattach_restored FROM Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_restored"
+
 # A `... TEMPORARY TABLE t` statement targets a session-local temporary table, not the persistent table of
 # the same (unqualified) name. With no temporary `t_reattach_1` in the session, these queries do not touch
 # the persistent `t_reattach_1`, so the reattach hook must NOT detach it. `EXISTS TEMPORARY TABLE` returns 0
