@@ -296,7 +296,17 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
+        /// independent of the session `snappy_mode`. The wire format is not encoded in the
+        /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
+        /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
+        /// stay interoperable with other Iceberg engines.
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+            std::move(buffer_metadata),
+            compression_method,
+            static_cast<int>(settings[Setting::output_format_compression_level]),
+            /*zstd_window_log=*/ 0,
+            SnappyMode::Basic);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -507,7 +517,10 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
-            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+            /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
+            /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
+            /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
         else
             buf = std::move(source_buf);
 
