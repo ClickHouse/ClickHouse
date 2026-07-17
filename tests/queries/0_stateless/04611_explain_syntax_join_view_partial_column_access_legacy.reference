@@ -1,0 +1,10 @@
+-- Reading v.z through the JOIN needs base column 'z', which the user may not read: EXPLAIN SYNTAX is denied exactly as the SELECT is
+SELECT (legacy): ACCESS_DENIED
+EXPLAIN SYNTAX (legacy): ACCESS_DENIED
+SELECT (analyzer): ACCESS_DENIED
+EXPLAIN SYNTAX (analyzer): ACCESS_DENIED
+-- Reading only v.y needs just base column 'y', which is granted: EXPLAIN SYNTAX is allowed exactly as the SELECT is
+SELECT (legacy): OK
+EXPLAIN SYNTAX (legacy): OK
+SELECT (analyzer): OK
+EXPLAIN SYNTAX (analyzer): OK

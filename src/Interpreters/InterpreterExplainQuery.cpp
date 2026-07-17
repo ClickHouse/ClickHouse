@@ -1,3 +1,4 @@
+#include <Core/Block.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -34,6 +35,9 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -290,10 +294,13 @@ namespace
         ///
         /// `main_table_column_names` are the columns real execution requests from the FROM (leftmost) storage,
         /// so a FROM-side view is checked with column-level precision. `query_info.view_query` is populated
-        /// only for that main storage, so those columns apply to the leftmost table expression only; the exact
-        /// per-view column set of a JOIN-side view is not readily available from the legacy analysis, so it
-        /// uses the trivial-read fallback in `checkViewBaseTableAccess` (an empty column list) - which still
-        /// denies whenever the user lacks base-table access (the leak this closes) and never over-denies.
+        /// only for that main storage, so those columns apply to the leftmost table expression only. For a
+        /// JOIN-side view the same column set real execution reads is derived from the analyzed `TableJoin`,
+        /// exactly the way `buildJoinedPlan` derives the columns it passes into `interpretSubquery` (and from
+        /// there into `StorageView::readImpl`): the join key columns plus the joined columns the query uses,
+        /// mapped back to their original (unqualified) names. Using anything less (e.g. the trivial-read
+        /// fallback) would let `EXPLAIN SYNTAX` pass with a partial column-level grant where the real
+        /// `SELECT` still needs a column the user may not read, and must deny.
         ///
         /// Parameterized views are excluded: their base-table access is already enforced by the recursive
         /// `InterpreterSelectQuery` analysis of the subquery `ExpandParameterizedViewsMatcher` expanded them into.
@@ -318,7 +325,20 @@ namespace
 
                 Names column_names;
                 if (table_number == 0 && query_info.view_query && !query_info.is_parameterized_view)
+                {
                     column_names = main_table_column_names;
+                }
+                else if (table_number > 0 && query_info.syntax_analyzer_result && query_info.syntax_analyzer_result->analyzed_join)
+                {
+                    /// Reproduce `buildJoinedPlan`: the columns real execution requests from the right side of
+                    /// the join are the required inputs of the joined-block actions (the join key expressions)
+                    /// plus every joined column the query uses, translated back to original storage names.
+                    const auto & analyzed_join = *query_info.syntax_analyzer_result->analyzed_join;
+                    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context, std::make_shared<PreparedSets>());
+                    for (const auto & required_column : analyzed_join.getRequiredColumns(
+                             Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames()))
+                        column_names.push_back(required_column.first);
+                }
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 checkViewBaseTableAccess(storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
@@ -716,7 +736,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
 
 /// Forward declaration: `checkAccessRightsForQueryTree` recurses into non-inlined regular views through
 /// `resolveThenCheckAccessRights`, which in turn calls `checkAccessRightsForQueryTree` on the view body.
-void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context);
+bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context);
 
 /// `EXPLAIN QUERY TREE` (and `EXPLAIN SYNTAX` in the analyzer) resolve the query and dump table
 /// metadata such as column names and types. Unlike `EXPLAIN PLAN`, they do not build a query plan,
@@ -835,7 +855,9 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
 /// covers a remote table function (e.g. `paimonAzure`, `url`) that throws a non-`DB::Exception` while
 /// connecting during resolution: `EXPLAIN QUERY TREE run_passes = 0` dumps the unresolved tree and must
 /// not turn into a connection error. An `ACCESS_DENIED` raised during resolution is still propagated.
-void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context)
+/// Returns whether the access check was actually performed, so a caller about to dump something the
+/// check was supposed to protect can tell that it never ran.
+bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassManager & pass_manager, const ContextPtr & query_context)
 {
     bool resolved = false;
     try
@@ -858,6 +880,8 @@ void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 
     if (resolved)
         checkAccessRightsForQueryTree(query_tree, query_context);
+
+    return resolved;
 }
 
 /// Reproduce the planner's per-table `SELECT` access check for the tables referenced by
@@ -868,10 +892,13 @@ void resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 /// in `QueryAnalyzer::resolveTableFunction` and checks `SELECT` on it in
 /// `prepareBuildQueryPlanForTableExpression`. `run_passes` / `passes` mirror the `EXPLAIN SYNTAX`
 /// settings so the tree is resolved the same way the dump is.
-void checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
+/// Returns whether the access check was actually performed: for a query that cannot be resolved (a
+/// "format but do not resolve" shape) `resolveThenCheckAccessRights` deliberately skips the check, and
+/// the caller must then not dump anything the skipped check was supposed to protect.
+bool checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
 {
     if (explained_query->as<ASTSelectWithUnionQuery>() == nullptr)
-        return;
+        return false;
 
     auto query_tree = buildQueryTree(explained_query, query_context);
     auto query_tree_pass_manager = QueryTreePassManager(query_context);
@@ -882,11 +909,10 @@ void checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextP
     {
         query_tree_pass_manager.run(query_tree, pass_index);
         checkAccessRightsForQueryTree(query_tree, query_context);
+        return true;
     }
-    else
-    {
-        resolveThenCheckAccessRights(std::move(query_tree), query_tree_pass_manager, query_context);
-    }
+
+    return resolveThenCheckAccessRights(std::move(query_tree), query_tree_pass_manager, query_context);
 }
 
 bool explainQueryTree(
@@ -1284,11 +1310,22 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// `InterpreterSelectQuery` analysis of the expanded subquery). Running the view-object
                 /// check in the legacy fallback would make `EXPLAIN SYNTAX` deny a query whose real
                 /// execution succeeds.
+                bool access_check_performed = true;
                 if (expanded_parameterized_view)
-                    checkAccessForExplainedQuery(
+                    access_check_performed = checkAccessForExplainedQuery(
                         explained_query_before_expansion, query_context, settings.run_query_tree_passes, settings.query_tree_passes);
 
-                bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
+                /// The pre-check deliberately skips itself when the original query cannot be resolved (a
+                /// "format but do not resolve" shape, see `resolveThenCheckAccessRights`). Dumping the
+                /// expanded query then would reveal the parameter-substituted view body without any
+                /// `SELECT` check ever having run on the view or its base tables, so fall back to
+                /// formatting the original, unexpanded query instead. That dump carries no view metadata:
+                /// it is the user's own query text, unresolved (the skip can only happen when the query
+                /// tree passes do not run, so `explainQueryTree` dumps the unresolved tree).
+                const ASTPtr & query_to_explain
+                    = (expanded_parameterized_view && !access_check_performed) ? explained_query_before_expansion : ast.getExplainedQuery();
+
+                bool explain_ok = explainQueryTree(query_to_explain, query_context, QueryTreeSettings{
                     .run_passes = settings.run_query_tree_passes,
                     .dump_tree = false,
                     .dump_passes = false,

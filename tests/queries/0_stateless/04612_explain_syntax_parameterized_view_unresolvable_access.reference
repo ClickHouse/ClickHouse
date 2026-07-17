@@ -1,0 +1,9 @@
+-- Unresolvable query (fails before the view): the access check cannot run, so the view body must not be revealed to anyone
+outsider: OK, view body not revealed
+full: OK, view body not revealed
+-- Unresolvable projection: the outsider is denied while resolving the INVOKER view itself; the full user gets the unexpanded fallback
+outsider: ACCESS_DENIED
+full: OK, view body not revealed
+-- Resolvable query: the access check runs; the view body is revealed exactly to those who may read the view
+outsider: ACCESS_DENIED
+full: OK, view body revealed
