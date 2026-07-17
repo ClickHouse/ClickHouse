@@ -2335,6 +2335,27 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         return path;
     };
 
+    /// A raw DOM node name imported from an include source (e.g. a tag `<my.payload>`) becomes a
+    /// top-level key of the merged config, but the final unknown-key check below compares against the
+    /// keys `AbstractConfiguration::keys("")` reports, and `Poco::Util::XMLConfiguration::enumerate`
+    /// escapes a literal dot in a tag name as `\.` there (the same escaping `top_level_component`
+    /// already accounts for, see `gtest_config_dot.cpp`). Mirror that escaping when recording an
+    /// imported tag as an exemption: otherwise a dotted section would be stored raw as `my.payload`
+    /// while its top-level key is `my\.payload`, and the valid, in-use key would be wrongly rejected
+    /// with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    auto escape_dom_name_as_config_key = [](const String & name) -> String
+    {
+        String escaped;
+        escaped.reserve(name.size());
+        for (char c : name)
+        {
+            if (c == '.')
+                escaped += '\\';
+            escaped += c;
+        }
+        return escaped;
+    };
+
     /// Two distinct concepts, kept in separate sets so they cannot cross-contaminate:
     ///
     ///  - `handler_group_paths`: full config prefixes whose rules we scan for `config://`
@@ -2611,7 +2632,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                                         for (auto * c = env_root->firstChild(); c; c = c->nextSibling())
                                         {
                                             if (c->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                                                referenced_top_level_keys.insert(c->nodeName());
+                                                referenced_top_level_keys.insert(escape_dom_name_as_config_key(c->nodeName()));
                                         }
                                     }
                                 }
@@ -2779,7 +2800,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     for (auto * child = root->firstChild(); child; child = child->nextSibling())
                     {
                         if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                            referenced_top_level_keys.insert(child->nodeName());
+                            referenced_top_level_keys.insert(escape_dom_name_as_config_key(child->nodeName()));
                     }
                 }
 
@@ -2800,7 +2821,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             for (auto * child = referenced->firstChild(); child; child = child->nextSibling())
                             {
                                 if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                                    referenced_top_level_keys.insert(child->nodeName());
+                                    referenced_top_level_keys.insert(escape_dom_name_as_config_key(child->nodeName()));
                             }
                         }
                     }

@@ -1104,6 +1104,47 @@ def test_top_level_include_from_external_source_accepted(
         node_include_from_external.query("SYSTEM RELOAD CONFIG")
 
 
+def test_top_level_include_dotted_imported_key_accepted(
+    start_include_from_external_cluster,
+):
+    # Regression for a top-level `<include incl="X"/>` that imports a child whose tag name contains a
+    # literal dot (`<my.dotted.section>`). `ConfigProcessor` inserts that child into the root, so it
+    # becomes a real top-level key of the merged config, but `AbstractConfiguration::keys("")` reports
+    # such a key with the dot escaped (`my\.dotted\.section`, see `gtest_config_dot.cpp`). The validator
+    # must record the imported exemption with the same escaping — otherwise it stores the raw
+    # `my.dotted.section`, the escaped key never matches it, and this valid, in-use configuration fails
+    # to start with `UNKNOWN_ELEMENT_IN_CONFIG`. This is the imported-tag counterpart to
+    # `test_config_ref_with_dotted_key_accepted`, which covers a `config://` reference to a dotted key.
+    external_source_path = "/etc/clickhouse-server/external_dotted_include_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<imported_group>"
+        "<my.dotted.section>imported dotted value</my.dotted.section>"
+        "</imported_group>"
+        "</clickhouse>"
+    )
+    # The top-level `<include incl="imported_group"/>` imports `<my.dotted.section>` into the root.
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include_dotted.xml"
+    include_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        '<include incl="imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: the imported dotted key is exempted, matched against the escaped
+        # top-level key `my\.dotted\.section` the validator actually sees.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
 def test_metrika_default_include_source_top_level_include_accepted(
     start_include_from_external_cluster,
 ):
