@@ -29,6 +29,9 @@
 #include <Parsers/ParserCopyQuery.h>
 #include <Core/Settings.h>
 
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserQuery.h>
@@ -38,6 +41,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/PostgreSQLArrayText.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -568,10 +572,38 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             : copy_query->subquery;
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
-        message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
+
+        /// `Array(...)` columns must be streamed in PostgreSQL array-literal form (`{...}`) rather than
+        /// ClickHouse's `[...]`, because libpq/pqxx (and ClickHouse's own `postgresql(...)` source, which
+        /// reads the result back with `pqxx::array_parser`) expect the PostgreSQL spelling. The chosen COPY
+        /// output format (TSV/CSV/Binary) has no notion of that, so array columns are pre-rendered here into
+        /// a `String` column holding the PostgreSQL literal; the header used for the output format carries
+        /// `String` for those columns accordingly. Elements use the `t`/`f` boolean spelling like the rest
+        /// of the PostgreSQL wire path.
+        const Block source_header = io.pipeline.getHeader();
+        std::vector<UInt8> is_array_column(source_header.columns(), 0);
+        Block output_header;
+        for (size_t col = 0; col < source_header.columns(); ++col)
+        {
+            const auto & src = source_header.getByPosition(col);
+            if (isArray(src.type))
+            {
+                is_array_column[col] = 1;
+                auto str_type = std::make_shared<DataTypeString>();
+                output_header.insert({str_type->createColumn(), str_type, src.name});
+            }
+            else
+                output_header.insert({src.type->createColumn(), src.type, src.name});
+        }
+
+        FormatSettings array_settings;
+        array_settings.bool_true_representation = "t";
+        array_settings.bool_false_representation = "f";
+
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(source_header.columns())));
         VectorWithMemoryTracking<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
-        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, output_header, query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
         Int32 rows_count = 0;
@@ -590,10 +622,22 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
                 Columns row_columns;
                 row_columns.reserve(materialized.columns());
-                for (const auto & elem : materialized)
-                    row_columns.push_back(elem.column->cut(row, 1));
+                for (size_t col = 0; col < materialized.columns(); ++col)
+                {
+                    const auto & elem = materialized.getByPosition(col);
+                    if (is_array_column[col])
+                    {
+                        auto str_column = ColumnString::create();
+                        WriteBufferFromOwnString literal;
+                        writePostgreSQLArrayText(*elem.column, *elem.type, row, literal, array_settings);
+                        str_column->insertData(literal.str().data(), literal.str().size());
+                        row_columns.push_back(std::move(str_column));
+                    }
+                    else
+                        row_columns.push_back(elem.column->cut(row, 1));
+                }
 
-                format_ptr->write(materialized.cloneWithColumns(row_columns));
+                format_ptr->write(output_header.cloneWithColumns(row_columns));
                 format_ptr->flush();
                 output_buffer.finalize();
 
@@ -1023,6 +1067,13 @@ bool PostgreSQLHandler::isTransactionControlQuery(const String & query)
     }
     Poco::toUpperInPlace(normalized);
 
+    /// A transaction-control statement is a single statement. If an internal semicolon remains after the
+    /// trailing one has been trimmed, this is a multi-statement simple query such as `BEGIN READ ONLY; SELECT 1`.
+    /// Treating it as ignorable transaction-control would silently drop the trailing statement, so let it fall
+    /// through to normal processing instead.
+    if (normalized.find(';') != String::npos)
+        return false;
+
     static constexpr std::array prefixes = {"BEGIN", "START TRANSACTION", "COMMIT", "END", "ROLLBACK", "ABORT"};
     for (const auto * prefix : prefixes)
     {
@@ -1092,13 +1143,24 @@ SELECT * FROM VALUES(
     /// `pg_namespace`, `pg_class` and `pg_attribute` combine a fixed set of built-in catalog rows (used by
     /// client type introspection) with rows derived from ClickHouse's own `system.databases`, `system.tables`
     /// and `system.columns`, so that databases, tables and columns of this server are visible through the
-    /// PostgreSQL catalog. The OIDs are deterministic hashes: a namespace OID is a function of the database
-    /// name and a relation OID is a function of the (database, table) pair, so that `pg_class.relnamespace`
-    /// and `pg_attribute.attrelid` line up with `pg_namespace.oid` and `pg_class.oid` respectively. Hash
-    /// ranges are offset (namespaces into [1e9, 2e9), relations into [2e9, 3e9)) to avoid colliding with the
-    /// small built-in OIDs. In addition, tables of the connected database are also exposed under the default
+    /// PostgreSQL catalog. A namespace OID is a deterministic hash of the database name (databases are few,
+    /// so hash collisions are negligible). Relation OIDs, on the other hand, are joined between `pg_class` and
+    /// `pg_attribute` (`fetchPostgreSQLTableStructure` resolves a table through `pg_class.oid` and then pulls
+    /// its columns by `pg_attribute.attrelid`), so a collision would merge the column sets of two tables and
+    /// corrupt schema inference for both. A truncated hash is not collision-free enough at realistic catalog
+    /// sizes, so relation OIDs are assigned a dense, unique number per `(database, table)` pair in the shared
+    /// `pg_class_oids` view. Because that view is unfiltered, the number for a given table is the same in every
+    /// reference within a query, so `pg_class.oid` and `pg_attribute.attrelid` always line up. OID ranges are
+    /// offset (namespaces into [1e9, 2e9), relations into [2e9, 3e9)) to avoid colliding with the small
+    /// built-in OIDs. In addition, tables of the connected database are also exposed under the default
     /// `public` schema (OID 2200), so that clients that do not qualify a table with a schema - which is what
     /// `fetchPostgreSQLTableStructure` does by default - still resolve it in the current database.
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_oids AS
+SELECT
+    database,
+    name,
+    toUInt32(row_number() OVER (ORDER BY database, name) + 2000000000) AS oid
+FROM system.tables)");
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
 SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
@@ -1128,18 +1190,18 @@ SELECT oid, relname, relnamespace, relkind FROM VALUES(
 )
 UNION ALL
 SELECT
-    toUInt32(cityHash64('cls', database, name) % 1000000000 + 2000000000) AS oid,
+    oid,
     name AS relname,
     toUInt32(cityHash64('ns', database) % 1000000000 + 1000000000) AS relnamespace,
     'r' AS relkind
-FROM system.tables
+FROM pg_class_oids
 UNION ALL
 SELECT
-    toUInt32(cityHash64('cls', database, name) % 1000000000 + 2000000000) AS oid,
+    oid,
     name AS relname,
     2200 AS relnamespace,
     'r' AS relkind
-FROM system.tables
+FROM pg_class_oids
 WHERE database = currentDatabase())");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
@@ -1197,43 +1259,67 @@ SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull,
 )
 UNION ALL
 SELECT
-    /// PostgreSQL has neither unsigned nor >64-bit integers, so the integer types that do not fit into a
-    /// signed 64-bit `bigint` (`UInt64` and the 128/256-bit types) are advertised as `numeric` and carry a
-    /// precision in `atttypmod` (see below) large enough to hold every value; the counterpart mapping in
+    /// A non-array column is advertised with the OID of its scalar type; an array column is advertised with
+    /// the OID of the corresponding PostgreSQL array type of its element (the innermost non-array type), and
+    /// the array dimensions are reported in `attndims` below, exactly as PostgreSQL does. PostgreSQL has
+    /// neither unsigned nor >64-bit integers, so the integer types that do not fit into a signed 64-bit
+    /// `bigint` (`UInt64` and the 128/256-bit types) are advertised as `numeric` and carry a precision in
+    /// `atttypmod` (see below) large enough to hold every value; the counterpart mapping in
     /// `convertPostgreSQLDataType` turns such a `numeric(p, 0)` back into a Decimal (or `Int256`) that
     /// preserves the range. Only `UInt32`/`Int64`, which fit into `bigint`, keep OID 20.
-    multiIf(base IN ('Bool', 'Boolean'), 16,
-            base IN ('Int8', 'UInt8', 'Int16'), 21,
-            base IN ('UInt16', 'Int32'), 23,
-            base IN ('UInt32', 'Int64'), 20,
-            base IN ('UInt64', 'Int128', 'UInt128', 'Int256', 'UInt256',
-                     'Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'), 1700,
-            base = 'Float32', 700,
-            base = 'Float64', 701,
-            base = 'UUID', 2950,
-            base IN ('Date', 'Date32'), 1082,
-            base IN ('DateTime', 'DateTime64'), 1114,
-            base IN ('String', 'FixedString'), 25,
+    multiIf(cols.ndims > 0,
+                multiIf(cols.base IN ('Bool', 'Boolean'), 1000,
+                        cols.base IN ('Int8', 'UInt8', 'Int16'), 1005,
+                        cols.base IN ('UInt16', 'Int32'), 1007,
+                        cols.base IN ('UInt32', 'Int64'), 1016,
+                        cols.base IN ('UInt64', 'Int128', 'UInt128', 'Int256', 'UInt256',
+                                      'Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'), 1231,
+                        cols.base = 'Float32', 1021,
+                        cols.base = 'Float64', 1022,
+                        cols.base = 'UUID', 2951,
+                        cols.base IN ('Date', 'Date32'), 1182,
+                        cols.base IN ('DateTime', 'DateTime64'), 1115,
+                        cols.base IN ('String', 'FixedString'), 1009,
+                        1009),
+            cols.base IN ('Bool', 'Boolean'), 16,
+            cols.base IN ('Int8', 'UInt8', 'Int16'), 21,
+            cols.base IN ('UInt16', 'Int32'), 23,
+            cols.base IN ('UInt32', 'Int64'), 20,
+            cols.base IN ('UInt64', 'Int128', 'UInt128', 'Int256', 'UInt256',
+                          'Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'), 1700,
+            cols.base = 'Float32', 700,
+            cols.base = 'Float64', 701,
+            cols.base = 'UUID', 2950,
+            cols.base IN ('Date', 'Date32'), 1082,
+            cols.base IN ('DateTime', 'DateTime64'), 1114,
+            cols.base IN ('String', 'FixedString'), 25,
             25) AS atttypid,
-    toUInt32(cityHash64('cls', database, table) % 1000000000 + 2000000000) AS attrelid,
-    name AS attname,
-    toInt32(position) AS attnum,
+    oids.oid AS attrelid,
+    cols.name AS attname,
+    toInt32(cols.position) AS attnum,
     0 AS attisdropped,
     /// For the types advertised as `numeric`, encode precision and scale the way PostgreSQL does -
     /// `((precision << 16) | scale) + 4` - so that `format_type` renders `numeric(p, s)` and schema
-    /// inference recovers the exact type. `Decimal` uses its own precision/scale; the wide integer types
-    /// use a scale of 0 and a precision that spans their whole value range. Everything else uses -1
-    /// ("no modifier").
-    multiIf(base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'),
-                toInt32(assumeNotNull(numeric_precision) * 65536 + assumeNotNull(numeric_scale) + 4),
-            base = 'UInt64', toInt32(20 * 65536 + 4),
-            base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
-            base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
+    /// inference recovers the exact type. For an array column the modifier applies to the element type, as in
+    /// PostgreSQL. `Decimal` uses its own precision/scale; the wide integer types use a scale of 0 and a
+    /// precision that spans their whole value range. Everything else uses -1 ("no modifier").
+    multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256') AND cols.numeric_precision IS NOT NULL,
+                toInt32(assumeNotNull(cols.numeric_precision) * 65536 + assumeNotNull(cols.numeric_scale) + 4),
+            cols.base = 'UInt64', toInt32(20 * 65536 + 4),
+            cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
+            cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
             -1) AS atttypmod,
-    if (startsWith(type, 'Nullable(') OR startsWith(type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
-    0 AS attndims,
+    if (startsWith(cols.type, 'Nullable(') OR startsWith(cols.type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
+    cols.ndims AS attndims,
     '' AS attgenerated
-FROM (SELECT database, table, name, position, type, numeric_precision, numeric_scale, extract(type, '^(?:Nullable\(|LowCardinality\()*([A-Za-z0-9]+)') AS base FROM system.columns))");
+FROM (
+    SELECT
+        database, table, name, position, type, numeric_precision, numeric_scale,
+        extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*([A-Za-z0-9]+)') AS base,
+        toInt32(countSubstrings(type, 'Array(')) AS ndims
+    FROM system.columns
+) AS cols
+INNER JOIN pg_class_oids AS oids ON cols.database = oids.database AND cols.table = oids.name)");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum AS
 SELECT * FROM VALUES(
