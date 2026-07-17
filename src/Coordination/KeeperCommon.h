@@ -126,6 +126,9 @@ struct KeeperNodeStats
     static constexpr uint64_t FLAGS_MASK = EPHEMERAL | TTL | CONTAINER;
     static_assert(FLAGS_MASK == ~(~0ul >> NUM_FLAGS));
 
+    /// ephemeralOwner value for container nodes (matches `CONTAINER_EPHEMERAL_OWNER` in ZooKeeper).
+    static constexpr int64_t CONTAINER_EPHEMERAL_OWNER = INT64_MIN;
+
     uint32_t data_size = 0;
     uint32_t acl_id = 0;
     int32_t version = 0;
@@ -158,6 +161,7 @@ struct KeeperNodeStats
     void makeEphemeral(int64_t ephemeral_owner);
     /// Similar for TTL.
     void makeTTL(int64_t ttl);
+    void makeContainer();
     void setNumChildren(uint32_t new_num_children);
     void setCTime(int64_t ctime);
 
@@ -171,9 +175,8 @@ struct KeeperNodeStats
     {
         if (isEphemeral())
             return ephemeral_or_seq_num_or_ttl;
-        /// ZooKeeper-compatible sentinel for container nodes (matches `CONTAINER_EPHEMERAL_OWNER` in ZooKeeper).
         if (isContainer())
-            return std::numeric_limits<int64_t>::min();
+            return CONTAINER_EPHEMERAL_OWNER;
         return 0;
     }
     int64_t getTTL() const { return isTTL() ? ephemeral_or_seq_num_or_ttl : 0; }
@@ -187,7 +190,6 @@ struct KeeperNodeStats
 
     uint64_t calculateDigest(std::string_view path, std::string_view data) const;
 
-    void copyStats(const Coordination::Stat & stat);
     void setResponseStat(Coordination::Stat & response_stat) const;
 };
 
