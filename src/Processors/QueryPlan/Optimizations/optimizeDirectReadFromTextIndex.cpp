@@ -469,7 +469,7 @@ private:
                 continue;
 
             /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
-            if (search_query->direct_read_mode == TextIndexDirectReadMode::None)
+            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
@@ -732,7 +732,7 @@ private:
         std::vector<SelectedCondition> selected_conditions;
         for (const auto & condition : all_conditions)
         {
-            if (condition.search_query->direct_read_mode != TextIndexDirectReadMode::None)
+            if (condition.search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
                 selected_conditions.push_back(condition);
         }
         if (selected_conditions.empty())
@@ -744,7 +744,7 @@ private:
         for (const auto & condition : selected_conditions)
         {
             has_materialized_index |= condition.info->is_materialized;
-            has_exact_search |= condition.search_query->direct_read_mode == TextIndexDirectReadMode::Exact;
+            has_exact_search |= condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
         }
 
         /// It doesn't make sense to optimize if index is not materialized in any data part.
@@ -761,10 +761,10 @@ private:
                 /// It will be executed by merge tree reader when index is not materialized in the data part.
                 ASTPtr default_expression;
 
-                if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
+                if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
                     default_expression = convertNodeToAST(function_node);
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
-                else if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
+                else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
                 VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);

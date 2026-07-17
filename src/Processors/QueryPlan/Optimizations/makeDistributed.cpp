@@ -56,6 +56,15 @@ static void validateBucketCount(UInt64 bucket_count, const char * setting_name)
             setting_name, bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
 }
 
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    validateBucketCount(optimization_settings.distributed_plan_default_shuffle_join_bucket_count,
+        "distributed_plan_default_shuffle_join_bucket_count");
+    validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
+        "distributed_plan_default_reader_bucket_count");
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -67,6 +76,7 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -850,10 +860,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
     /// The cap can be raised once the planner sizes bucket counts from statistics, available nodes
     /// and memory (see the TODO at the bucket_count reads) instead of using the raw setting value.
-    validateBucketCount(optimization_settings.distributed_plan_default_shuffle_join_bucket_count,
-        "distributed_plan_default_shuffle_join_bucket_count");
-    validateBucketCount(optimization_settings.distributed_plan_default_reader_bucket_count,
-        "distributed_plan_default_reader_bucket_count");
+    validateDistributedPlanBucketCounts(optimization_settings);
 
     size_t exchange_id = 0;
 

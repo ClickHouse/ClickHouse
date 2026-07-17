@@ -132,19 +132,23 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
+    /// Recursively strip internal representation wrappers (Const, Replicated, Sparse)
+    /// from this column and all its subcolumns. Does NOT strip LowCardinality — that is
+    /// a semantic type, not a representation wrapper. Callers that also need LowCardinality
+    /// removed should chain ->convertToFullColumnIfLowCardinality() for top-level removal,
+    /// or use recursiveRemoveLowCardinality for recursive removal.
+    [[nodiscard]] virtual Ptr convertToFullIfWrapped() const
     {
         Ptr converted = convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
-            ->convertToFullColumnIfSparse()
-            ->convertToFullColumnIfLowCardinality();
+            ->convertToFullColumnIfSparse();
 
         Columns new_subcolumns;
         bool any_changed = false;
 
         converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
         {
-            auto new_sub = subcolumn->convertToFullIfNeeded();
+            auto new_sub = subcolumn->convertToFullIfWrapped();
             any_changed |= (new_sub.get() != subcolumn.get());
             new_subcolumns.push_back(std::move(new_sub));
         });

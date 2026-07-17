@@ -254,9 +254,9 @@ Introduced in: v1.1.0
 Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/reference/data-types/float).
 Integer division is provided by the `intDiv` function.
 
-:::note
+<Note>
 Division by `0` returns `inf`, `-inf`, or `nan`.
-:::
+</Note>
     
 
 **Syntax**
@@ -302,10 +302,10 @@ Introduced in: v22.12.0
 Performs division on two decimals. Result value will be of type [Decimal256](/reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
-:::note
+<Note>
 These function work significantly slower than usual `divide`.
 In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide).
-:::
+</Note>
     
 
 **Syntax**
@@ -1141,10 +1141,10 @@ Introduced in: v22.12.0
 Performs multiplication on two decimals. Result value will be of type [Decimal256](/reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
-:::note
+<Note>
 These functions work significantly slower than usual `multiply`.
 In case you don't really need controlled precision and/or need fast computation, consider using [multiply](#multiply)
-:::
+</Note>
     
 
 **Syntax**

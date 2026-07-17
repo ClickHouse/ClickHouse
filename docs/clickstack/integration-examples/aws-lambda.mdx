@@ -38,8 +38,7 @@ This section covers configuring your existing AWS Lambda functions to send logs 
 - Lambda execution role with permissions to add layers
 
 <Steps>
-<Step>
-#### Choose the appropriate Rotel Lambda Extension layer {#choose-layer}
+<Step title="Choose the appropriate Rotel Lambda Extension layer" id="choose-layer">
 
 Choose the Lambda layer that matches your Lambda runtime architecture. The `{version}` field
 is dependent on the AWS region that you're deploying into. Check the [releases](https://github.com/streamfold/rotel-lambda-extension/releases)
@@ -58,8 +57,7 @@ page for the latest version numbers that correspond to your region.
 - ap-south-1
 - sa-east-1
 </Step>
-<Step>
-#### Add the Rotel layer to your Lambda function {#add-layer}
+<Step title="Add the Rotel layer to your Lambda function" id="add-layer">
 
 _In these examples replace `{arch}`, `{region}`, and `{version}` with the appropriate values above._
 
@@ -95,8 +93,7 @@ Resources:
         - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
 ```
 </Step>
-<Step>
-#### Configure the extension to export to ClickStack {#configure-extension}
+<Step title="Configure the extension to export to ClickStack" id="configure-extension">
 
 The Rotel Lambda Extension is configured using environment variables. You need to configure the OTLP exporter endpoint to point to your ClickStack instance. The examples assume your AWS Lambda function is able to reach the ClickStack instance.
 
@@ -188,8 +185,7 @@ For Parameter Store:
 AWS API calls for secret retrieval add 100-150ms to cold start latency. Secrets are retrieved in batches (up to 10) and only on initialization, so subsequent invocations aren't impacted.
 </Note>
 </Step>
-<Step>
-#### Test the integration {#test-integration}
+<Step title="Test the integration" id="test-integration">
 
 Invoke your Lambda function to verify logs are being sent to ClickStack:
 
@@ -205,8 +201,7 @@ Check the Lambda logs for any errors:
 aws logs tail /aws/lambda/my-function --follow
 ```
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-logs}
+<Step title="Verify logs in HyperDX" id="verify-logs">
 
 Once configured, log into HyperDX (ClickStack's UI) and verify that logs are flowing:
 
@@ -228,8 +223,7 @@ Look for these key attributes in the logs:
 By default, AWS Lambda sends all logs to CloudWatch Logs, which can be expensive at scale. Once you've verified that logs are flowing to ClickStack, you can disable CloudWatch logging to reduce costs.
 
 <Steps>
-<Step>
-#### Remove CloudWatch permissions from the execution role {#remove-permissions}
+<Step title="Remove CloudWatch permissions from the execution role" id="remove-permissions">
 
 1. Open the AWS Console and navigate to **AWS Lambda**
 2. Navigate to your Lambda function
@@ -240,8 +234,7 @@ By default, AWS Lambda sends all logs to CloudWatch Logs, which can be expensive
    - If using the AWS managed policy `AWSLambdaBasicExecutionRole`, remove it from the role
 6. Save the role
 </Step>
-<Step>
-#### Verify CloudWatch logging is disabled {#verify-disabled}
+<Step title="Verify CloudWatch logging is disabled" id="verify-disabled">
 
 Invoke your function again and verify that:
 1. No new CloudWatch log streams are created
@@ -263,8 +256,7 @@ aws logs describe-log-streams \
 The Rotel Lambda Extension works seamlessly with OpenTelemetry auto-instrumentation layers to collect distributed traces and metrics in addition to logs.
 
 <Steps>
-<Step>
-#### Choose your language instrumentation layer {#choose-instrumentation}
+<Step title="Choose your language instrumentation layer" id="choose-instrumentation">
 
 AWS provides OpenTelemetry auto-instrumentation layers for multiple languages:
 
@@ -276,8 +268,7 @@ AWS provides OpenTelemetry auto-instrumentation layers for multiple languages:
 
 Find the latest versions in the [AWS OpenTelemetry Lambda repository](https://github.com/aws-observability/aws-otel-lambda).
 </Step>
-<Step>
-#### Add both layers to your function {#add-both-layers}
+<Step title="Add both layers to your function" id="add-both-layers">
 
 Add **both** the Rotel extension layer and the instrumentation layer:
 
@@ -289,8 +280,7 @@ aws lambda update-function-configuration \
     arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-1-30-2:1
 ```
 </Step>
-<Step>
-#### Configure the auto-instrumentation {#configure-instrumentation}
+<Step title="Configure the auto-instrumentation" id="configure-instrumentation">
 
 Set the `AWS_LAMBDA_EXEC_WRAPPER` environment variable to enable auto-instrumentation:
 
@@ -309,8 +299,7 @@ AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
 AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
 ```
 </Step>
-<Step>
-#### Verify traces in HyperDX {#verify-traces}
+<Step title="Verify traces in HyperDX" id="verify-traces">
 
 After invoking your function:
 
