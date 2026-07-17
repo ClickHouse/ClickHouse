@@ -434,7 +434,7 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
     return parseFooterJSON(footer_json, blob_region_end);
 }
 
-PuffinFooter readPuffinFooter(ReadBuffer & buf)
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
 {
     PuffinFooter result;
 
@@ -442,8 +442,9 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
     auto file_size_opt = tryGetFileSizeFromReadBuffer(buf);
 
     /// Pipes/FIFOs are SeekableReadBuffer subclasses but fstat reports size 0; require a real
-    /// regular file before trusting seek+size (same pattern as ORC/Arrow).
-    if (seekable && seekable->checkIfActuallySeekable() && file_size_opt)
+    /// regular file before trusting seek+size (same pattern as ORC/Arrow). Also honor
+    /// `input_format_allow_seeks` via FormatSettings.seekable_read.
+    if (seekable_read && seekable && seekable->checkIfActuallySeekable() && file_size_opt)
     {
         result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
     }
@@ -463,7 +464,8 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
     return result;
 }
 
-String readPuffinBlobBytes(const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data)
+String readPuffinBlobBytes(
+    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
 {
     const size_t length = static_cast<size_t>(blob.length);
 
@@ -478,7 +480,7 @@ String readPuffinBlobBytes(const PuffinBlob & blob, ReadBuffer & buf, const std:
     }
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf);
-    if (!seekable || !seekable->checkIfActuallySeekable())
+    if (!seekable_read || !seekable || !seekable->checkIfActuallySeekable())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read Puffin blob: input is not seekable and was not buffered");
 
     seekable->seek(blob.offset, SEEK_SET);
@@ -692,8 +694,9 @@ void checkPuffinHeader(const Block & header)
 
 }
 
-PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_)
+PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &buf)
+    , format_settings(format_settings_)
 {
     checkPuffinMetadataHeader(getPort().getHeader());
 }
@@ -704,7 +707,7 @@ Chunk PuffinMetadataInputFormat::read()
     {
         blob_index = 0;
         initialized = true;
-        footer = readPuffinFooter(*in);
+        footer = readPuffinFooter(*in, format_settings.seekable_read);
     }
     if (footer.blobs.size() <= blob_index)
         return {};
@@ -765,8 +768,9 @@ Chunk PuffinMetadataInputFormat::read()
     return Chunk(std::move(result), 1);
 }
 
-PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_)
+PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &buf)
+    , format_settings(format_settings_)
 {
     checkPuffinHeader(getPort().getHeader());
 }
@@ -777,7 +781,7 @@ Chunk PuffinInputFormat::read()
     {
         blob_index = 0;
         initialized = true;
-        footer = readPuffinFooter(*in);
+        footer = readPuffinFooter(*in, format_settings.seekable_read);
     }
 
     while (blob_index < footer.blobs.size())
@@ -797,7 +801,7 @@ Chunk PuffinInputFormat::read()
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
-        const String blob_data = readPuffinBlobBytes(blob, *in, footer.data);
+        const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, format_settings.seekable_read);
         auto col_rows_data = ColumnUInt64::create();
         deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
@@ -864,8 +868,8 @@ void registerInputFormatPuffin(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "PuffinMetadata",
-        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings &)
-        { return std::make_shared<PuffinMetadataInputFormat>(buf, std::make_shared<const Block>(sample)); });
+        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
+        { return std::make_shared<PuffinMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("PuffinMetadata");
 
     factory.setDocumentation("PuffinMetadata", Documentation{
@@ -904,8 +908,8 @@ Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
 
     factory.registerInputFormat(
         "Puffin",
-        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings &)
-        { return std::make_shared<PuffinInputFormat>(buf, std::make_shared<const Block>(sample)); });
+        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
+        { return std::make_shared<PuffinInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("Puffin");
 
     factory.setDocumentation("Puffin", Documentation{
