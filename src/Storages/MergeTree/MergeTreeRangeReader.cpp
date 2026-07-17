@@ -96,7 +96,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfNeeded();
+    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;

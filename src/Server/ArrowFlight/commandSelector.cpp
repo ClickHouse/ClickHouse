@@ -277,7 +277,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
         const size_t num_columns = block.columns();
 
         auto & pk_column = block.getByPosition(column_name_pos);
-        auto pk_col = pk_column.column->convertToFullIfNeeded();
+        auto pk_col = pk_column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
         MutableColumns new_columns;
         for (size_t col = 0; col < num_columns; ++col)
@@ -524,7 +524,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         const size_t table_schema_pos = 4;
         const auto & table_schema_column = block.getByPosition(table_schema_pos);
         auto new_column = ColumnString::create();
-        auto col = table_schema_column.column->convertToFullIfNeeded();
+        auto col = table_schema_column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & arr = typeid_cast<const ColumnArray &>(*col);
         const auto & tuple_col = typeid_cast<const ColumnTuple &>(arr.getData());
         const auto & name_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(0));
