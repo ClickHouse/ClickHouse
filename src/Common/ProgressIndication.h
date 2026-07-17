@@ -51,8 +51,11 @@ public:
     void writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
     void clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
 
-    /// Write summary.
+    /// Write summary to the configured output stream.
     void writeFinalProgress();
+    /// Write summary to an arbitrary stream - e.g. an in-memory buffer that is then flushed through a
+    /// bounded, non-blocking path so it cannot hang the client on a stuck terminal.
+    void writeFinalProgress(std::ostream & out);
 
     /// Reset progress values.
     void resetProgress();

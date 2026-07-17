@@ -105,24 +105,29 @@ ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsa
 
 void ProgressIndication::writeFinalProgress()
 {
+    writeFinalProgress(output_stream);
+}
+
+void ProgressIndication::writeFinalProgress(std::ostream & out)
+{
     std::lock_guard lock(progress_mutex);
 
     if (progress.read_rows < 1000)
         return;
 
-    output_stream << "Processed " << formatReadableQuantity(progress.read_rows.load()) << " rows, "
-                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes.load());
+    out << "Processed " << formatReadableQuantity(progress.read_rows.load()) << " rows, "
+        << formatReadableSizeWithDecimalSuffix(progress.read_bytes.load());
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
-        output_stream << " (" << formatReadableQuantity(static_cast<double>(progress.read_rows.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << " rows/s., "
-                    << formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << "/s.)";
+        out << " (" << formatReadableQuantity(static_cast<double>(progress.read_rows.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << " rows/s., "
+            << formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << "/s.)";
     else
-        output_stream << ". ";
+        out << ". ";
 
     auto peak_memory_usage = getMemoryUsage().peak;
     if (peak_memory_usage >= 0)
-        output_stream << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
+        out << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)

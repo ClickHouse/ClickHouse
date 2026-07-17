@@ -101,6 +101,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -2837,11 +2838,31 @@ void ClientBase::processParsedSingleQuery(
 
     if (is_interactive)
     {
-        output_stream << std::endl;
+        /// This final summary is printed to the same terminal that may still be stuck after a
+        /// Ctrl+C (the very case this feature addresses, #22426): the interrupt handler is already
+        /// stopped here, so a plain blocking iostream flush of the summary could re-hang the client
+        /// in the epilogue, right after the result-set write was made interruptible. Build it in
+        /// memory and flush it through std_out's bounded best-effort path (as printCancellationMessage
+        /// does) - it appears immediately on a live terminal and is dropped after a short wait on a
+        /// stuck one. std_out wraps the same descriptor output_stream writes to, and by now std_out's
+        /// buffer is already flushed (the inner resetOutput() ran before this epilogue), so this does
+        /// not reorder against any pending formatted output. The decorative final progress table goes
+        /// through tty_buf, already budgeted above.
+        std::ostringstream summary;
+        summary << std::endl;
         if (!server_exception || processed_rows != 0)
-            output_stream << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
-        output_stream << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
-        progress_indication.writeFinalProgress();
+            summary << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
+        summary << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        progress_indication.writeFinalProgress(summary);
+
+        if (std_out)
+        {
+            output_stream.flush();
+            std_out->writeBestEffort(summary.str(), /*timeout_ms*/ 1000);
+        }
+        else
+            output_stream << summary.str();
+
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
         bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
         if (need_render_progress_table && show_progress_table)
@@ -2849,7 +2870,11 @@ void ClientBase::processParsedSingleQuery(
             std::unique_lock lock(tty_mutex);
             progress_table.writeFinalTable(*tty_buf, lock);
         }
-        output_stream << std::endl << std::endl;
+
+        if (std_out)
+            std_out->writeBestEffort("\n\n", /*timeout_ms*/ 1000);
+        else
+            output_stream << std::endl << std::endl;
     }
     else
     {
