@@ -32,6 +32,8 @@ public:
 
     void prepareResetProcessingRequests(Coordination::Requests & requests) override;
 
+    PathState getPathState(std::string & failure_message) const override;
+
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
     void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;

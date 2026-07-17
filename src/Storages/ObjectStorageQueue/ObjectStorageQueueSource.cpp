@@ -1669,7 +1669,6 @@ void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
         std::rethrow_exception(finalize_exception);
 }
 
-void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message, int error_code)
 {
     /// This method is only used for SELECT query, not for streaming to materialized views.

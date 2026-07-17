@@ -94,4 +94,22 @@ void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
     LOG_TRACE(log_, "Filter processed paths");
 }
 
+ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetadata::getPathState(
+    std::string & /*failure_message*/) const
+{
+    const auto state = file_status->state.load();
+
+    switch (state) {
+
+    case FileStatus::State::Processed:
+        return PathState::Processed;
+
+    case FileStatus::State::Failed:
+        return PathState::Failed;
+
+    default:
+        return PathState::Unknown;
+    }
+}
+
 }
