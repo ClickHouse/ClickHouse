@@ -7,14 +7,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Wait for number of parts in table $1 to become $2.
 # Print the changed value. If no changes for $3 seconds, prints initial value.
+# $4 (optional, non-empty): nudge the merge selector every second.
 wait_for_number_of_parts() {
     for _ in `seq $3`
     do
-        # Reschedule the merge-selecting task ASAP. For non-replicated MergeTree the
-        # merge cadence is the background-pool no-work backoff (up to 600s), which
-        # merge_selecting_sleep_ms does not affect; a nudge bounds the wait. It only
-        # schedules selection, so min_age/byte-limit rules still decide what merges.
-        $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES $1" 2>/dev/null
+        # Nudge only in the min_age_to_force_merge_seconds branches. For
+        # non-replicated MergeTree the merge cadence is the background-pool
+        # no-work backoff (up to 600s), which merge_selecting_sleep_ms does not
+        # affect, so rescheduling selection bounds the wait for a forced merge.
+        # It only schedules selection, so min_age/byte-limit rules still decide
+        # what merges. The control case must NOT nudge: SYSTEM START MERGES also
+        # runs the ordinary merge selector, which could merge the small parts and
+        # break the "no force-merge within 10s" assertion.
+        if [ -n "$4" ]; then
+            $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES $1" 2>/dev/null
+        fi
         sleep 1
         res=`$CLICKHOUSE_CLIENT -q "SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='$1' AND active"`
         if [ "$res" -eq "$2" ]
@@ -51,7 +58,7 @@ INSERT INTO test_with_merge SELECT 1;
 INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 3;"
 
-wait_for_number_of_parts 'test_with_merge' 1 100
+wait_for_number_of_parts 'test_with_merge' 1 100 nudge
 
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE test_with_merge;
@@ -68,7 +75,7 @@ INSERT INTO test_with_merge SELECT 1;
 INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 2 SETTINGS insert_deduplicate = 0;"
 
-wait_for_number_of_parts 'test_with_merge' 2 100
+wait_for_number_of_parts 'test_with_merge' 2 100 nudge
 
 $CLICKHOUSE_CLIENT -mq "
 SELECT sleepEachRow(1) FROM numbers(9) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null; -- Sleep for 9 seconds and verify that we keep the old part because it's the only one
@@ -87,7 +94,7 @@ INSERT INTO test_with_merge_limit SELECT 1;
 INSERT INTO test_with_merge_limit SELECT 2;
 INSERT INTO test_with_merge_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
 
-wait_for_number_of_parts 'test_with_merge_limit' 2 100
+wait_for_number_of_parts 'test_with_merge_limit' 2 100 nudge
 
 # Partition 2 will limit by max_bytes_to_merge_at_max_space_in_pool
 $CLICKHOUSE_CLIENT -mq "
@@ -102,7 +109,7 @@ INSERT INTO test_with_merge_limit SELECT 1;
 INSERT INTO test_with_merge_limit SELECT 2;
 INSERT INTO test_with_merge_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
 
-wait_for_number_of_parts 'test_with_merge_limit' 3 100
+wait_for_number_of_parts 'test_with_merge_limit' 3 100 nudge
 
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE test_with_merge_limit;"

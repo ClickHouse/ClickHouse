@@ -552,14 +552,39 @@ class ClickHouseProc:
             # - exactly the background-pool interference this path removes.
             # Reset both hooks so "no webhook" is actually enforced; reset is a
             # no-op on a fresh worker. The restart below makes it live.
-            Shell.check(
+            #
+            # Fail closed: if a reset command itself fails, do NOT fall through
+            # as if the hooks were gone - report and abort.
+            reset_ok = Shell.check(
                 "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
                 verbose=True,
-            )
-            Shell.check(
+            ) and Shell.check(
                 "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
                 verbose=True,
             )
+            if not reset_ok:
+                self.minio_setup_error = "failed to reset clickminio webhooks for flaky check"
+                print(f"ERROR: {self.minio_setup_error}")
+                return False
+
+            restarted = self._restart_minio_to_apply_config()
+            if not restarted:
+                return False
+
+            # Verify the hooks are actually absent after the restart re-reads
+            # persisted config. A reset that reported success but did not stick
+            # would leave our endpoint live, so grep the reloaded config for it.
+            for hook in ("logger_webhook", "audit_webhook"):
+                out = Shell.get_output(
+                    f"/mc admin config get clickminio {hook}", verbose=True
+                )
+                if "localhost:8123" in out:
+                    self.minio_setup_error = (
+                        f"clickminio {hook} still live after reset for flaky check"
+                    )
+                    print(f"ERROR: {self.minio_setup_error}")
+                    return False
+            return True
 
         return self._restart_minio_to_apply_config()
 
