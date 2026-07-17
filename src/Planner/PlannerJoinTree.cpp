@@ -599,6 +599,209 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     return true;
 }
 
+/// A branch of a `UNION ALL` is eligible for the trivial (metadata-only) count only when it is a
+/// plain `SELECT <expressions> FROM <single MergeTree-like table>` with nothing that changes the
+/// row count: no WHERE/PREWHERE/GROUP BY/HAVING/QUALIFY/WINDOW/DISTINCT/LIMIT/OFFSET/LIMIT BY/
+/// ORDER BY WITH TIES/WITH/ARRAY JOIN/JOIN, no FINAL/SAMPLE, no row policy, no additional filter,
+/// no running transaction. This mirrors the opt-outs of `applyTrivialCountIfPossible` applied to a
+/// single branch. On success, adds the branch's row count into `total_rows` and returns true.
+bool addBranchTrivialCount(
+    const QueryTreeNodePtr & branch,
+    ContextPtr query_context,
+    UInt64 & total_rows);
+
+/// Recursively sum trivial counts over a `UNION ALL` tree. Only `UNION_ALL` propagates the
+/// optimization (its cardinality is the sum of the branches). `UNION DISTINCT`, `INTERSECT` and
+/// `EXCEPT` depend on the actual row values (set/dedup semantics), so they are rejected. Nested
+/// `UNION ALL` subqueries are handled recursively. Returns false (and leaves `total_rows`
+/// unspecified) if any branch is not trivially countable.
+bool addUnionAllTrivialCount(
+    const UnionNode & union_node,
+    ContextPtr query_context,
+    UInt64 & total_rows)
+{
+    if (union_node.getUnionMode() != SelectUnionMode::UNION_ALL)
+        return false;
+
+    /// A recursive CTE union is never a plain read.
+    if (union_node.hasRecursiveCTETable())
+        return false;
+
+    const auto & queries = union_node.getQueries().getNodes();
+    if (queries.empty())
+        return false;
+
+    for (const auto & query : queries)
+    {
+        if (const auto * nested_union = query->as<UnionNode>())
+        {
+            if (!addUnionAllTrivialCount(*nested_union, query_context, total_rows))
+                return false;
+        }
+        else if (query->getNodeType() == QueryTreeNodeType::QUERY)
+        {
+            if (!addBranchTrivialCount(query, query_context, total_rows))
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool addBranchTrivialCount(
+    const QueryTreeNodePtr & branch,
+    ContextPtr query_context,
+    UInt64 & total_rows)
+{
+    const auto * query_node = branch->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    /// Any clause that can change the branch's row count disqualifies the metadata-only count.
+    if (query_node->hasWith()
+        || query_node->hasWhere()
+        || query_node->hasPrewhere()
+        || query_node->hasGroupBy()
+        || query_node->hasHaving()
+        || query_node->hasQualify()
+        || query_node->hasWindow()
+        || query_node->isDistinct()
+        || query_node->hasLimit()
+        || query_node->hasOffset()
+        || query_node->hasLimitBy()
+        || query_node->isLimitWithTies()
+        || query_node->hasInterpolate())
+        return false;
+
+    /// The FROM must be a single plain table (no JOIN / ARRAY JOIN / subquery / table function).
+    const auto & join_tree = query_node->getJoinTree();
+    const auto * table_node = join_tree->as<TableNode>();
+    if (!table_node)
+        return false;
+
+    /// arrayJoin() in the projection multiplies rows.
+    if (hasFunctionNode(query_node->getProjectionNode(), "arrayJoin"))
+        return false;
+
+    const auto & storage = table_node->getStorage();
+    if (!storage->supportsTrivialCountOptimization(table_node->getStorageSnapshot(), query_context))
+        return false;
+
+    if (getEffectiveRowPolicyFilter(storage, query_context))
+        return false;
+
+    if (hasTrivialCountIncompatibleModifiers(table_node, nullptr))
+        return false;
+
+    std::optional<UInt64> num_rows = storage->totalRows(query_context);
+    if (!num_rows)
+        return false;
+
+    total_rows += num_rows.value();
+    return true;
+}
+
+/// Serve `SELECT count() FROM (<branch> UNION ALL <branch> ...)` from the sum of the per-branch
+/// metadata-only counts, when every branch is trivially countable (see `addUnionAllTrivialCount`).
+/// Emits a single `ReadFromPreparedSource` with the count aggregate state, exactly like
+/// `applyTrivialCountIfPossible`, so the outer `Aggregating`/`MergingAggregated` finishes without
+/// reading any data.
+bool applyTrivialCountOverUnionAllIfPossible(
+    QueryPlan & query_plan,
+    const SelectQueryInfo & select_query_info,
+    const UnionNode * union_node,
+    const QueryTreeNodePtr & query_tree,
+    ContextMutablePtr & query_context,
+    const Names & columns_names,
+    const PlannerContext & planner_context)
+{
+    if (!union_node)
+        return false;
+
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings[Setting::optimize_trivial_count_query])
+        return false;
+
+    if (select_query_info.additional_filter_ast)
+        return false;
+
+    /// See `applyTrivialCountIfPossible`: with a running transaction MergeTree's cached total is
+    /// not necessarily the snapshot count, so the fast path is unsafe.
+    if (query_context->getCurrentTransaction())
+        return false;
+
+    if (settings[Setting::empty_result_for_aggregation_by_empty_set])
+        return false;
+
+    /// Parallel replicas: each remote server would apply the same optimization and the initiator
+    /// would sum N times too many rows. Match `applyTrivialCountIfPossible` and bail out for the
+    /// custom-key / sampling modes; the default mode can safely disable parallel replicas locally.
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    {
+        if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE
+            || settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING
+            || settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY)
+            return false;
+    }
+
+    /// The outer query must be exactly `SELECT count() FROM (<union>)` with no reshaping clauses.
+    auto & main_query_node = query_tree->as<QueryNode &>();
+    if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
+        return false;
+
+    QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
+    if (aggregates.size() != 1)
+        return false;
+
+    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    chassert(function_node.getAggregateFunction() != nullptr);
+    const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
+    if (!count_func)
+        return false;
+
+    /// Try to sum the per-branch metadata counts. If any branch is not trivially countable, bail
+    /// out and let the normal per-branch read planning happen.
+    UInt64 total_rows = 0;
+    if (!addUnionAllTrivialCount(*union_node, query_context, total_rows))
+        return false;
+
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    {
+        query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization over UNION ALL");
+    }
+
+    const AggregateFunctionCount & agg_count = *count_func;
+    std::vector<char> state(agg_count.sizeOfData());
+    AggregateDataPtr place = state.data();
+    agg_count.create(place);
+    SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
+    AggregateFunctionCount::set(place, total_rows);
+
+    auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
+    column->insertFrom(place);
+
+    String trivial_count_column_name = calculateActionNodeName(aggregates.front(), planner_context);
+    if (trivial_count_column_name.empty())
+        trivial_count_column_name = columns_names.front();
+
+    auto block_with_count = std::make_shared<const Block>(Block{
+        {std::move(column),
+         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
+         trivial_count_column_name}});
+
+    auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
+    auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    prepared_count->setStepDescription("Optimized trivial count over UNION ALL");
+    query_plan.addStep(std::move(prepared_count));
+
+    return true;
+}
+
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -2032,6 +2235,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
             read_nothing->setStepDescription("Read from NullSource");
             query_plan.addStep(std::move(read_nothing));
+        }
+        /// `SELECT count() FROM (<branch> UNION ALL <branch> ...)`: sum the per-branch
+        /// metadata-only counts instead of recursively planning a full read of each branch.
+        else if (!select_query_options.build_logical_plan && is_single_table_expression && union_node
+            && select_query_info.has_aggregates
+            && applyTrivialCountOverUnionAllIfPossible(
+                query_plan,
+                select_query_info,
+                union_node,
+                select_query_info.query_tree,
+                planner_context->getMutableQueryContext(),
+                table_expression_data.getColumnNames(),
+                *planner_context))
+        {
+            is_trivial_count_applied = true;
+            till_stage = QueryProcessingStage::WithMergeableState;
         }
         else
         {
