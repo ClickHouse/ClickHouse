@@ -72,6 +72,10 @@ increments the number of seconds in the date with time.
 It is also possible to add a date and a time. Adding a `Date` and a `Time`
 produces a `DateTime`. Adding a `Date` and a `Time64`, or a `Date32` and
 a `Time` or `Time64`, produces a `DateTime64`.
+Adding a `Time` or `Time64` to a `DateTime` or `DateTime64` applies the time
+value as an offset in seconds. `DateTime` plus `Time` produces a `DateTime`,
+any combination involving `DateTime64` or `Time64` produces a `DateTime64`
+with the maximum scale of the two arguments.
     )";
     FunctionDocumentation::Syntax syntax = "plus(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
