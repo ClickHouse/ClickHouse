@@ -80,5 +80,15 @@ $CLICKHOUSE_CLIENT $POLY --max_query_size 100 -q "INSERT INTO t VALUES $big_valu
 echo "--- no insert when payload exceeds max_query_size (expect: 100 5) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# The size guard must also hold in --multiquery / script mode, where the client parses with
+# allow_multi_statements enabled (which disables the generic per-query length limit): the client
+# itself rejects the oversized statement before transpiling or sending anything. If the rejection
+# came from the server instead, query_log would record the query_id as ExceptionBeforeStart.
+oversized_id="${CLICKHOUSE_DATABASE}_04512_oversized"
+$CLICKHOUSE_CLIENT $POLY --multiquery --max_query_size 100 --query_id="$oversized_id" -q "INSERT INTO t VALUES $big_values" 2>&1 | grep -om1 "counts towards max_query_size"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+echo "--- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE query_id = '$oversized_id'"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

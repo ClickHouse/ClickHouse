@@ -125,18 +125,21 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// Foreign dialects may contain syntax that the ClickHouse Lexer cannot
     /// tokenize correctly, so we do not use the token stream at all.
     const char * begin = pos->begin;
-
-    /// Advance the token iterator to the end so the caller knows we
-    /// consumed all remaining input.
-    while (!pos->isEnd())
-        ++pos;
-
     const std::string_view original_query(begin, static_cast<size_t>(raw_end - begin));
 
     /// Transpile the foreign SQL to ClickHouse SQL. The transpiled text lives only for
     /// the duration of this function; that is fine here because this parser is used on
     /// the client to classify the query (the server re-transpiles into an owned buffer).
+    /// This runs before the token stream is touched: the size guard inside must reject an
+    /// oversized query up front, before any tokenization of it.
     const String transpiled = transpilePolyglotToClickHouse(original_query, source_dialect, max_query_size);
+
+    /// Advance the token iterator to the end so the caller knows we consumed all remaining
+    /// input. Stop at `ErrorMaxQuerySizeExceeded`, which is terminal: once the stream is past
+    /// its size cap the lexer returns it on every call, never reaching `EndOfStream`, so
+    /// iterating further would not terminate.
+    while (!pos->isEnd() && pos->type != TokenType::ErrorMaxQuerySizeExceeded)
+        ++pos;
 
     /// Parse the transpiled ClickHouse SQL with the standard parser.
     const char * transpiled_begin = transpiled.data();

@@ -482,8 +482,13 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     /// executeQuery). Consequently the transpiler must also be available on the client (a client
     /// built without USE_POLYGLOT throws SUPPORT_IS_DISABLED here), and the client and server
     /// transpilers are assumed to agree — acceptable for an experimental dialect.
+    /// The classifier gets the real `max_query_size` rather than `max_length`: in multi-statement
+    /// mode `max_length` is 0 (a script may legitimately exceed the per-query limit), but the
+    /// polyglot parser consumes the whole remaining buffer as a single query and transpiles it,
+    /// so the per-query size guard must stay active in every mode to reject an oversized query
+    /// on the client, before the transpiler runs.
     else if (dialect == Dialect::polyglot)
-        parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+        parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
