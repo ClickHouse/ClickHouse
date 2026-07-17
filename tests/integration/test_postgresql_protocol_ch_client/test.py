@@ -139,6 +139,66 @@ def test_array_type_roundtrip(started_cluster):
     )
 
 
+def test_array_of_decimal_roundtrip(started_cluster):
+    # `system.columns.numeric_precision` / `numeric_scale` are NULL for an `Array(Decimal(p, s))` column
+    # (they are only populated for top-level numeric types), so the emulated `pg_attribute` must recover
+    # the element precision and scale from the type name itself; otherwise the column would be advertised
+    # as a bare `numeric[]` and inferred back as `Array(Decimal(38, 19))`.
+    node.query("DROP TABLE IF EXISTS test_dec_arrays SYNC")
+    node.query(
+        "CREATE TABLE test_dec_arrays "
+        "(id UInt32, ad Array(Decimal(5, 2)), awide Array(Decimal(38, 10))) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_dec_arrays VALUES "
+        "(1, [1.25, -3.57], [1234567890123456789012345678.1234567891])"
+    )
+
+    assert node.query(
+        "SELECT toTypeName(ad), toTypeName(awide) "
+        f"FROM {pg_source('default', 'test_dec_arrays')} LIMIT 1"
+    ) == "Array(Decimal(5, 2))\tArray(Decimal(38, 10))\n"
+
+    assert node.query(
+        f"SELECT ad, awide FROM {pg_source('default', 'test_dec_arrays')}"
+    ) == "[1.25,-3.57]\t[1234567890123456789012345678.1234567891]\n"
+
+
+def test_select_constant_array_over_wire(started_cluster):
+    # A constant array expression must be streamed in PostgreSQL array-literal form like a table-backed
+    # one: the array serializer has to cope with a `ColumnConst` input (`SELECT [1, 2]` produces one when
+    # the caller does not materialize its input) instead of assuming a materialized `ColumnArray`.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT [1, 2] AS a, ['x', 'y'] AS s")
+        # Arrays are advertised as text in the RowDescription of a direct SELECT, so the client sees
+        # the PostgreSQL literal itself (every scalar element is quoted).
+        assert cur.fetchall() == [('{"1","2"}', '{"x","y"}')]
+    finally:
+        conn.close()
+
+
+def test_copy_to_stdout_binary_array(started_cluster):
+    # `COPY (query) TO STDOUT WITH FORMAT binary` streams rows in ClickHouse's `RowBinary` format. An
+    # array column must keep its binary serialization (varint length + elements) - the PostgreSQL
+    # array-literal pre-rendering applies only to the text COPY formats.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        out = io.BytesIO()
+        cur.copy_expert("COPY (SELECT [1, 2, 3] AS a, 7 AS n) TO STDOUT WITH FORMAT binary", out)
+        # Array(UInt8) [1, 2, 3] -> varint length 3 + the elements; UInt8 7 -> one byte.
+        assert out.getvalue() == b"\x03\x01\x02\x03\x07"
+    finally:
+        conn.close()
+
+
 def test_map_and_tuple_columns_are_not_advertised_as_arrays(started_cluster):
     # An `Array(...)` nested inside a `Map`/`Tuple` type argument must not make the emulated `pg_attribute`
     # advertise the column as a PostgreSQL array: only the leading `Array(` wrappers count towards
