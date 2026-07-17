@@ -97,6 +97,9 @@ Replica name for Paimon incremental read state. Must be set and unique per repli
     DECLARE(String, storage_aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, storage_aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
     DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, ducklake_schema_name, "", "DuckLake schema (namespace) of this table, used by the DuckLake metadata to query the catalog", 0) \
+    DECLARE(String, ducklake_table_name, "", "DuckLake table name, used by the DuckLake metadata to query the catalog", 0) \
+    DECLARE(String, ducklake_database_name, "", "Name of the ClickHouse DataLakeCatalog database owning this table, used by the DuckLake metadata to locate the catalog", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
     DECLARE(String, disk, "", "Disk name to use for underlying storage", 0) \
 

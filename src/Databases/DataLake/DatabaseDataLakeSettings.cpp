@@ -51,6 +51,9 @@ namespace ErrorCodes
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
+    DECLARE(String, ducklake_backend, "", "Catalog backend for DuckLake: 'postgres' or 'sqlite'", 0) \
+    DECLARE(String, ducklake_connection_string, "", "libpq conninfo string (postgres) or database file path (sqlite, relative to the user_files directory) for the DuckLake catalog", 0) \
+    DECLARE(String, ducklake_catalog_schema, "public", "Schema containing the ducklake_* catalog tables (postgres only)", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

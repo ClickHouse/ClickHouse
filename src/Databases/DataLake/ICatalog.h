@@ -46,7 +46,10 @@ private:
 struct DataLakeSpecificProperties
 {
     std::string iceberg_metadata_file_location;
-};
+    /// DuckLake table coordinates, injected into the storage settings so the metadata
+    /// object can query the catalog for this table (see DatabaseDataLake::getConfiguration).
+    std::string ducklake_schema_name = {};
+    std::string ducklake_table_name = {};};
 
 /// A class representing table metadata,
 /// which was received from Catalog.
