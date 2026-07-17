@@ -3608,17 +3608,16 @@ let last_query_start = 0;
 const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
-/// Whether the URL carries the `run` directive. Immutable fact about the URL this page was
-/// opened from; `run_immediately` below is the live session state derived from it.
+/// Whether the URL carries the `run` directive: run the query instantly once the page has
+/// loaded, and stamp `run=1` into the history entries/URLs this session writes
+/// (`buildHistoryParams`). An immutable fact about the URL this page was opened from —
+/// deliberately NOT mutable session state. On a stale reload (the URL hash is older than a
+/// persisted, never-run local edit) the preserved draft must be neither auto-run nor
+/// re-stamped with `run=1`, but that suppression is scoped to the draft itself: the startup
+/// auto-run is skipped for it (`preserve_local_query` in `reconcileStartup`) and its entries
+/// fail the per-entry `fromRun` check in `buildHistoryParams`. Other, still clean run-backed
+/// tabs and later genuine runs keep writing `run=1` entries.
 const url_run_directive = current_url.searchParams.has("run");
-
-/// Run query instantly after page is loaded if the run parameter is present. Also gates
-/// stamping `run=1` into the history entries/URLs this session writes (`buildHistoryParams`).
-/// Mutable: a stale reload (the URL hash is older than a persisted, never-run local edit)
-/// drops this directive so the edit is not auto-run just because the old URL carried `run=1`,
-/// and a later genuine full run restores it from `url_run_directive` (`saveHistory`) — the
-/// suppression protects the unrun draft, not queries the user has since explicitly executed.
-let run_immediately = url_run_directive;
 
 /// Restore per-column color coding modes from the URL, so a shared/bookmarked link keeps them.
 const color_modes_from_url = current_url.searchParams.get('color_modes');
@@ -5889,7 +5888,11 @@ function buildHistoryParams(params, tabName, fromRun, colorModes) {
     /// rename), but dropping it the moment the editor diverges from the produced result. An
     /// unrun edit must never keep `run=1`: reloading would auto-execute it (e.g. a
     /// `DROP`/`INSERT`), because startup treats a `run=1` URL as authoritative.
-    if (run_immediately && fromRun) out.push('run=1');
+    /// The session gate is the IMMUTABLE `url_run_directive`, never mutable startup state:
+    /// the stale-reload suppression of a preserved draft is already per-entry (the draft
+    /// fails `fromRun`), so it must not leak into rewrites of other, still clean run-backed
+    /// tabs — their shared `run=1` URLs stay re-runnable across a tab switch or rename.
+    if (url_run_directive && fromRun) out.push('run=1');
     if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
     for (const [name, value] of Object.entries(params || {})) {
         /// Serialize every parameter, including empty strings: an empty value is valid for a
@@ -6053,12 +6056,6 @@ function saveHistory(stateData, titleForDoc) {
     /// taken over meanwhile, or the reload's `postAll` would run statements that were never
     /// launched, so the marker must be dropped just as `syncHistory`/`refreshCurrentHistoryEntry` do.
     const fromRun = ranLiveQuery && ranLiveParams && !stateData.partial;
-    /// A genuine full run restores the session's `run=1` affinity that a stale reload dropped:
-    /// that suppression was scoped to the preserved, never-run draft (see `reconcileStartup`),
-    /// not to queries the user has since explicitly executed — their entries must carry `run=1`
-    /// again in a `?run=1` session, exactly as if the stale-reload path was never taken. A
-    /// session opened without the directive stays without it (`url_run_directive` is false).
-    if (fromRun) run_immediately = url_run_directive;
     writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, fromRun);
 }
 
@@ -8509,7 +8506,7 @@ const has_url_query = window.location.hash.length > 1;
 const url_query = query_area.value;          /// already decoded from the hash; may be ''
 /// When the URL carries a query, defer the auto-run until after IndexedDB reconciliation,
 /// so it runs in the right tab (a switch would otherwise abort an in-flight run).
-const defer_run_for_reconcile = run_immediately && has_url_query;
+const defer_run_for_reconcile = url_run_directive && has_url_query;
 
 /// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
 async function reconcileStartup() {
@@ -8625,16 +8622,15 @@ async function reconcileStartup() {
                         /// query, but the saved tab was edited (and persisted) afterwards
                         /// without re-syncing the URL. The IndexedDB value is newer — keep it,
                         /// and don't let the stale URL parameters override the saved ones.
+                        /// The URL's `run=1` was meant to auto-run the (now stale) URL query,
+                        /// not the newer local edit the user never ran: this flag skips the
+                        /// auto-run below, and the `syncHistory` that replaces it cannot
+                        /// re-stamp `run=1` (the preserved draft diverges from its last run,
+                        /// so `tabReflectsRun` fails). A destructive edit (e.g. `DROP`/
+                        /// `INSERT`) left unrun stays unrun, while other clean run-backed tabs
+                        /// and later genuine runs still write `run=1` entries
+                        /// (`buildHistoryParams` keys off the immutable `url_run_directive`).
                         preserve_local_query = true;
-                        /// The URL's `run=1` was meant to auto-run the (now stale) URL query, not
-                        /// the newer local edit the user never ran. Drop the stale run directive so
-                        /// the edit is neither auto-run below nor re-stamped with `run=1` into the
-                        /// synced URL (which would auto-run it on the next reload). A destructive
-                        /// edit (e.g. `DROP`/`INSERT`) left unrun must stay unrun. The suppression
-                        /// covers only the restored draft: the next genuine full run restores the
-                        /// directive (`saveHistory` re-reads `url_run_directive`), so entries the
-                        /// user explicitly executes carry `run=1` again for reload/share.
-                        run_immediately = false;
                     }
                 }
                 activeTabId = match.id;
@@ -8704,7 +8700,7 @@ async function reconcileStartup() {
     /// Auto-run only when the URL is still authoritative. On a stale reload
     /// (`preserve_local_query`), the persisted local edit is newer than the URL and was never
     /// run by the user, so the stale `run=1` must not execute it; just sync the restored tab
-    /// into the URL instead (with the `run=1` directive already dropped above).
+    /// into the URL instead (the entry it writes drops `run=1` via `fromRun`).
     if (defer_run_for_reconcile && query_area.value && !preserve_local_query && !bootstrap_dirty) {
         postAll();   /// saves history itself on completion
     } else if (activated) {
@@ -8718,8 +8714,9 @@ async function reconcileStartup() {
 /// the URL carries a query (`has_url_query`). In that case `reconcileStartup` below is the
 /// SOLE owner of URL parameter restoration and the auto-run: it reconciles the URL against the
 /// IndexedDB workspace first and, on a stale reload, deliberately preserves a newer saved tab
-/// (`preserve_local_query`) and drops the stale `run=1`. Applying the URL `param_*` values or
-/// auto-running here as well would race that reconciliation: this callback resumes after
+/// (`preserve_local_query`) and refuses to auto-run the stale `run=1`. Applying the URL
+/// `param_*` values or auto-running here as well would race that reconciliation: this callback
+/// resumes after
 /// tokenization, which can land after `activateTab` has restored the preserved tab, overwriting
 /// its params with stale URL values that the scheduled `persist` would then save. So only
 /// refresh the editor here and let reconciliation apply the parameters and trigger the run.
@@ -8728,7 +8725,7 @@ if (query_area.value)
     resizeQueryAreaIfSlightlyOverflowing();
     updateQueryParams();
 }
-else if (run_immediately && !defer_run_for_reconcile)
+else if (url_run_directive && !defer_run_for_reconcile)
 {
     postAll();
 }

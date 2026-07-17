@@ -60,6 +60,11 @@ stale reload then rerun: the draft is restored unrun first
 stale reload then rerun: the draft is not auto-run
 stale reload then rerun: the explicit rerun entry carries run=1 again
 stale reload then rerun: reloading the rerun re-runs it
+draft in another tab: the draft is restored unrun
+draft in another tab: the draft is not auto-run
+draft in another tab: the clean tab is restored on switch
+draft in another tab: the clean tab rewrite keeps run=1
+draft in another tab: the draft tab entry stays unstamped
 reload after a color toggle over a draft: the draft is restored as editor text
 reload after a color toggle over a draft: the draft is not auto-run
 reload of a clean run: the run query is restored

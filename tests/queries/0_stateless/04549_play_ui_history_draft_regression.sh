@@ -24,10 +24,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   - the reload path (persist -> reconcileStartup): once any debounced save flushes an
 #     unrun draft that diverges from the URL (the onpopstate save after a preserved-draft
 #     Back/Forward, or persistColorModes over a draft), a reload restores that draft as
-#     editor text but NEVER auto-runs it (the stale-reload branch drops the URL's run=1);
-#     a clean run, by contrast, is both restored and re-run on reload. The dropped run=1
-#     is scoped to that draft: a later genuine full run restores the session's run
-#     affinity, so the entry it writes carries run=1 again and reloading it re-runs it;
+#     editor text but NEVER auto-runs it (the stale-reload branch refuses the URL's run=1);
+#     a clean run, by contrast, is both restored and re-run on reload. The suppression is
+#     scoped to that draft, not the session: a later genuine full run still writes a run=1
+#     entry (and reloading it re-runs it), and switching to another, still clean run-backed
+#     tab after the stale reload rewrites that tab's URL with run=1 intact;
 #   - typing does not cancel an in-flight run, so a delayed completion must not clobber a
 #     newer, unrun draft (or its live parameter edits) typed while the run was still in
 #     flight: `saveHistory` must leave the live editor/params alone and drop `run=1` on the
@@ -80,6 +81,9 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     'captureActiveTab', 'invalidateInFlight', 'activateTab', 'closeTab', 'scheduleSave',
     'buildHistoryParams', 'writeHistoryEntry', 'tabReflectsRun', 'refreshCurrentHistoryEntry',
     'saveHistory', 'syncHistory', 'resolveTabForState',
+    /// The real structural tab operations, so the draft-in-another-tab case below drives the
+    /// same capture/refresh/activate/sync sequence a tab click or the "+" button does.
+    'markBootstrapDirty', 'switchToTab', 'addTab',
     /// The persistence + startup-reconciliation surface exercised by the reload cases below.
     'loadFromDb', 'persist', 'persistColorModes', 'reconcileStartup',
     /// The real multi-query completion path, so the delayed-completion case below actually
@@ -134,10 +138,9 @@ const sandbox = {
     save_timer: null, column_color_modes: {}, elapsed_ns: 0, last_query_start: 0,
     /// With `run=1` propagation enabled, the test can assert that refreshing an entry
     /// from an unrun draft drops the auto-run marker. `url_run_directive` is the immutable
-    /// "the URL carried `?run=1`" fact `run_immediately` is derived from (and restored from
-    /// by a genuine full run after the stale-reload branch cleared it).
+    /// "the URL carried `?run=1`" fact; entry stamping keys off it plus the per-entry
+    /// `fromRun`, so it is the only session-level `run=1` state.
     url_run_directive: true,
-    run_immediately: true,
     user_elem: { value: '' },
     /// `selectionStart`/`selectionEnd` back the `Run selected` path; `has_selection` and the
     /// selected statements are derived from them (the in-flight selection case moves them mid-run).
@@ -385,9 +388,9 @@ function reset()
     sandbox.document.title = '';
     /// Simulate a session opened from a `run=1` URL so a genuine run stamps `run=1` into its entry
     /// and the reload cases can observe that a restored unrun draft has it dropped. A real reload
-    /// starts a fresh JS context; here `reconcileStartup` mutates this global, so restore it.
+    /// starts a fresh JS context; here `reload` re-derives this global from the reloaded URL,
+    /// so restore it.
     sandbox.url_run_directive = true;
-    sandbox.run_immediately = true;
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
     sandbox.activeTabId = tab.id;
@@ -408,8 +411,7 @@ async function reload()
     sandbox.url_tab_name = sandbox.current_url.searchParams.get('tab');
     sandbox.has_url_query = sandbox.url_query.length > 0;
     sandbox.url_run_directive = sandbox.current_url.searchParams.has('run');
-    sandbox.run_immediately = sandbox.url_run_directive;
-    sandbox.defer_run_for_reconcile = sandbox.run_immediately && sandbox.has_url_query;
+    sandbox.defer_run_for_reconcile = sandbox.url_run_directive && sandbox.has_url_query;
     sandbox.query_area.value = sandbox.url_query;
     sandbox.param_inputs = {};
     sandbox.bootstrap_dirty = false;
@@ -848,12 +850,12 @@ async function reload()
     assert_eq('reload after a preserved draft: the draft is restored as editor text', active().query, 'SELECT 2');
     assert_eq('reload after a preserved draft: the draft is not auto-run', sandbox.postAllCalled, false);
 
-    /// After a stale reload preserved an unrun draft (dropping the URL's stale `run=1`), a LATER
-    /// genuine full run must restore the session's `run=1` affinity: the suppression protects
-    /// only the draft the user never ran, not queries they explicitly execute afterwards. A
-    /// regression that left the directive cleared for the whole session would write the rerun's
-    /// entry without `run=1`, so reloading (or sharing) it would no longer re-run a query the
-    /// user actually executed — unlike the clean-run reload control below.
+    /// After a stale reload preserved an unrun draft (refusing to auto-run the URL's stale
+    /// `run=1`), a LATER genuine full run must still write a `run=1` entry: the suppression
+    /// protects only the draft the user never ran, not queries they explicitly execute
+    /// afterwards. A regression that suppressed `run=1` stamping for the whole session would
+    /// write the rerun's entry without `run=1`, so reloading (or sharing) it would no longer
+    /// re-run a query the user actually executed — unlike the clean-run reload control below.
     reset();
     await run('SELECT 1');
     type('SELECT 2');
@@ -864,6 +866,28 @@ async function reload()
     assert_eq('stale reload then rerun: the explicit rerun entry carries run=1 again', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
     await reload();
     assert_eq('stale reload then rerun: reloading the rerun re-runs it', sandbox.postAllCalled, true);
+
+    /// The stale-reload suppression must not leak into OTHER tabs either: after a reload
+    /// preserved an unrun draft in one tab, switching to a different, still clean run-backed
+    /// tab rewrites that tab's URL (`switchToTab` -> `syncHistory`), and the rewrite must keep
+    /// `run=1` — the query it carries WAS fully executed, so reloading or sharing it must keep
+    /// re-running it. A regression that suppressed stamping session-wide would drop the marker
+    /// here; the draft's own refreshed entry must stay unstamped at the same time.
+    reset();
+    await run('SELECT 1');                     /// first tab: clean, run-backed
+    const clean_tab_id = sandbox.activeTabId;
+    sandbox.addTab();                          /// real addTab: folds the first tab's entry, activates the new one
+    await drain();
+    await run('SELECT 2');
+    type('SELECT 3');                          /// unrun draft on top of the second tab's run
+    await reload();                            /// stale reload: the draft is preserved, not auto-run
+    assert_eq('draft in another tab: the draft is restored unrun', active().query, 'SELECT 3');
+    assert_eq('draft in another tab: the draft is not auto-run', sandbox.postAllCalled, false);
+    await sandbox.switchToTab(clean_tab_id);   /// real switch: refreshes the draft entry, syncs the clean tab
+    await drain();
+    assert_eq('draft in another tab: the clean tab is restored on switch', active().query, 'SELECT 1');
+    assert_eq('draft in another tab: the clean tab rewrite keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_eq('draft in another tab: the draft tab entry stays unstamped', sandbox.history.stack[sandbox.history.idx - 1].url.includes('run=1'), false);
 
     /// Reload after a color-mode toggle over an unrun draft. persistColorModes is a result-only
     /// change, but its debounced save snapshots the live editor (`captureActiveTab`), so the draft
