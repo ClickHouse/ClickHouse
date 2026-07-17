@@ -463,32 +463,28 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf)
     return result;
 }
 
-using BlobBufPtr = std::unique_ptr<SeekableReadBuffer, void(*)(SeekableReadBuffer*)>;
-
-BlobBufPtr readBlobBytes(
-    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data)
+String readPuffinBlobBytes(const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data)
 {
-    /// When the footer path buffered the whole file, serve blobs from that copy — the original
-    /// buffer may still look Seekable (e.g. a consumed pipe) but must not be seeked.
+    const size_t length = static_cast<size_t>(blob.length);
+
+    /// When the footer path buffered the whole file, copy from that buffer — the original input
+    /// may still look Seekable (e.g. a consumed pipe) but must not be seeked.
     if (!data.empty())
     {
         if (static_cast<UInt64>(blob.offset) + static_cast<UInt64>(blob.length) > data.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob offset/length out of bounds of buffered data");
 
-        return {
-            new ReadBufferFromMemory(data.data() + blob.offset, static_cast<size_t>(blob.length)),
-            [](SeekableReadBuffer * p){ delete p; }
-        };
+        return String(reinterpret_cast<const char *>(data.data() + blob.offset), length);
     }
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf);
-    if (seekable && seekable->checkIfActuallySeekable())
-    {
-        seekable->seek(blob.offset, SEEK_SET);
-        return {seekable, [](SeekableReadBuffer*){}};
-    }
+    if (!seekable || !seekable->checkIfActuallySeekable())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read Puffin blob: input is not seekable and was not buffered");
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read Puffin blob: input is not seekable and was not buffered");
+    seekable->seek(blob.offset, SEEK_SET);
+    String result(length, '\0');
+    seekable->readStrict(result.data(), length);
+    return result;
 }
 
 roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
@@ -503,18 +499,10 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
     }
 }
 
-std::vector<UInt64> deserializeRoaringPositionBitmap(
-    std::string_view bytes, UInt64 expected_cardinality, UInt64 max_positions)
+void deserializeRoaringPositionBitmap(std::string_view bytes, UInt64 expected_cardinality, ColumnUInt64 & positions)
 {
     if (bytes.size() < sizeof(Int64))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
-
-    if (expected_cardinality > max_positions)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} exceeds materialization limit {}",
-            expected_cardinality,
-            max_positions);
 
     const char * ptr = bytes.data();
     size_t remaining = bytes.size();
@@ -527,7 +515,6 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(
     if (bitmap_count < 0 || bitmap_count > std::numeric_limits<Int32>::max())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap count: {}", bitmap_count);
 
-    std::vector<UInt64> positions;
     Int32 last_key = -1;
     Int32 remaining_count = static_cast<Int32>(bitmap_count);
     UInt64 running_cardinality = 0;
@@ -567,13 +554,6 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(
                 new_running_cardinality,
                 expected_cardinality);
 
-        if (new_running_cardinality > max_positions)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Deletion vector cardinality {} exceeds materialization limit {}",
-                new_running_cardinality,
-                max_positions);
-
         running_cardinality = new_running_cardinality;
 
         for (UInt32 sub_position : bitmap)
@@ -581,7 +561,7 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(
             const UInt64 position = positionFromKeyAndSubPosition(static_cast<UInt32>(key), sub_position);
             if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector position {} is out of supported range", position);
-            positions.push_back(position);
+            positions.insertValue(position);
         }
 
         ptr += bitmap_size;
@@ -599,8 +579,6 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(
             "Deletion vector cardinality {} does not match deserialized row count {}",
             expected_cardinality,
             running_cardinality);
-
-    return positions;
 }
 
 std::string_view extractDeletionVectorPayload(std::string_view blob)
@@ -631,23 +609,18 @@ std::string_view extractDeletionVectorPayload(std::string_view blob)
     return std::string_view(blob.data() + 2 * sizeof(UInt32), vector_size);
 }
 
-std::vector<UInt64> deserializeDeletionVectorV1(ReadBuffer & buf, size_t size, UInt64 expected_cardinality)
+void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions)
 {
-    const UInt64 max_positions = maxPositionsForDeletionVectorBlob(size);
+    const UInt64 max_positions = maxPositionsForDeletionVectorBlob(blob.size());
     if (expected_cardinality > max_positions)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Deletion vector cardinality {} exceeds materialization limit {} for blob length {}",
             expected_cardinality,
             max_positions,
-            size);
+            blob.size());
 
-    String blob_data(size, '\0');
-    buf.readStrict(blob_data.data(), size);
-
-    const std::string_view blob_view(blob_data);
-    const std::string_view vector_bytes = extractDeletionVectorPayload(blob_view);
-    return deserializeRoaringPositionBitmap(vector_bytes, expected_cardinality, max_positions);
+    deserializeRoaringPositionBitmap(extractDeletionVectorPayload(blob), expected_cardinality, positions);
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -824,45 +797,27 @@ Chunk PuffinInputFormat::read()
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
-        const UInt64 max_positions = maxPositionsForDeletionVectorBlob(static_cast<size_t>(blob.length));
-        if (expected_cardinality > max_positions)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: deletion-vector-v1 cardinality {} exceeds materialization limit {} for blob length {}",
-                current_blob_index,
-                expected_cardinality,
-                max_positions,
-                blob.length);
-
-        auto blob_buf = readBlobBytes(blob, *in, footer.data);
-        auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length), expected_cardinality);
+        const String blob_data = readPuffinBlobBytes(blob, *in, footer.data);
+        auto col_rows_data = ColumnUInt64::create();
+        deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
         auto col_file = ColumnString::create();
         col_file->insertData(referenced_data_file.data(), referenced_data_file.size());
 
-        auto col_rows_data = ColumnUInt64::create();
         auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
-        ColumnArray::Offset rows_offset = 0;
-        size_t elem_count = 0;
-        for (UInt64 r : rows)
-        {
-            ++elem_count;
-            col_rows_data->insertValue(r);
-        }
-        rows_offset += elem_count;
-        col_rows_offsets->insertValue(rows_offset);
-
+        col_rows_offsets->insertValue(col_rows_data->size());
         auto col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
-
-        std::unordered_map<String, MutableColumnPtr> built;
-        built.emplace("referenced_data_file", std::move(col_file));
-        built.emplace("deleted_rows", std::move(col_rows));
 
         const Block & out_header = getPort().getHeader();
         MutableColumns result;
         result.reserve(out_header.columns());
         for (const auto & col_with_name : out_header)
-            result.push_back(std::move(built.at(col_with_name.name)));
+        {
+            if (col_with_name.name == "referenced_data_file")
+                result.push_back(std::move(col_file));
+            else
+                result.push_back(std::move(col_rows));
+        }
         return Chunk(std::move(result), 1);
     }
 
