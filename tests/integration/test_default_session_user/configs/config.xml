@@ -51,7 +51,11 @@
         <rule>
             <url>/write</url>
             <handler>
-                <type>remote_write</type>
+                <!-- In an `http_handlers` section the prometheus handler types are dispatched
+                     by their `prometheus_` prefix, so use `prometheus_remote_write` (the bare
+                     `remote_write` alias is only recognized inside a `prometheus.handlers`
+                     section). -->
+                <type>prometheus_remote_write</type>
                 <table>default.prometheus_ts</table>
                 <user>fixed_write_user</user>
             </handler>
