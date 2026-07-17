@@ -1320,6 +1320,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
             {"dead_blobs_to_throw_insert", 0, 1000000, "New setting to reject inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
+            {"reuse_precomputed_mutations_after_keeper_reconnect", false, false, "New opt-in setting to let an in-progress part mutation survive a transient Keeper session re-establishment and reuse the already-computed part instead of cancelling and re-mutating from scratch."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
