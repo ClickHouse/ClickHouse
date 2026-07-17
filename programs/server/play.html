@@ -2536,6 +2536,24 @@ class QueryResultElement extends HTMLElement
         td.appendChild(btn);
     }
 
+    /// Peel transparent scalar wrappers down to the underlying value type, so that columns such as
+    /// `LowCardinality(Nullable(BFloat16))` or `SimpleAggregateFunction(sum, Float64)` are still
+    /// recognized as numeric/date. `AggregateFunction(...)` is intentionally left alone: its values
+    /// are opaque serialized states, not scalars, so they should stay left-aligned and uncolorized.
+    _unwrapScalarType(type)
+    {
+        let prev;
+        do
+        {
+            prev = type;
+            type = type
+                .replace(/^(?:Nullable|LowCardinality)\(([\s\S]*)\)$/, '$1')
+                .replace(/^SimpleAggregateFunction\([^,]+,\s*([\s\S]*)\)$/, '$1');
+        }
+        while (type !== prev);
+        return type;
+    }
+
     appendHeader(meta)
     {
         if (meta.length == 0) { return; }
@@ -2564,8 +2582,9 @@ class QueryResultElement extends HTMLElement
             type_hint.appendChild(document.createTextNode(elem.type));
             th.appendChild(type_hint);
 
-            this._column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
-            this._column_is_date[elem.name] = !!elem.type.match(/^(Nullable\()?Date/);
+            const unwrapped_type = this._unwrapScalarType(elem.type);
+            this._column_is_number[elem.name] = !!unwrapped_type.match(/^(U?Int|Decimal|Float|BFloat)/);
+            this._column_is_date[elem.name] = !!unwrapped_type.match(/^Date/);
             this._appendColorizeToggle(th, elem.name);
 
             this._appendHeaderResizer(th);
@@ -3700,6 +3719,7 @@ let tabs = [];           /// array of tab objects; display order == array order
 let activeTabId = null;
 let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
 let tabTitleSeq = 0;     /// counter for default titles "Query A", "Query B", ...
+let activeTitleCommit = null;  /// commit fn of the open inline title editor, or null; lets other paths flush a pending rename
 let dbReady = null;      /// Promise<IDBDatabase|null>; null result means persistence is unavailable
 
 /// The page is interactive from first paint (the bootstrap tab holds the URL query, if any),
@@ -5724,11 +5744,10 @@ async function restoreFromHistory(state, token) {
 
 let query_area = document.getElementById('query');
 
-/// Opening a table in a new tab via a middle click focuses the query editor. On Linux/X11 the
-/// middle button additionally pastes the PRIMARY selection into the freshly-focused editor,
-/// appending clipboard junk after the query we just set. The new-tab activation (`activateTab`
-/// with `guard_paste`) arms this flag right around that `query_area.focus()`, so we swallow
-/// exactly that one paste.
+/// A middle click that focuses the query editor - duplicating a tab, or opening a table in a new
+/// tab - additionally pastes the X11 PRIMARY selection on Linux, appending clipboard junk after the
+/// query we just set. The new-tab activation (`activateTab` with `guard_paste`) arms this flag
+/// right around that `query_area.focus()`, so we swallow exactly that one paste.
 ///
 /// The guard must never eat a real keyboard paste. The X11 PRIMARY paste is mouse-driven and
 /// carries no keystroke, whereas a real keyboard paste - Ctrl+V / Cmd+V, or Shift+Insert on
@@ -5752,7 +5771,12 @@ function disarmMiddleclickPaste() {
     middleclick_paste_timeout = null;
 }
 query_area.addEventListener('keydown', e => {
-    const keyboard_paste = ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V'))
+    /// Match the physical `V` key via `e.code` rather than the printed character `e.key`: on a
+    /// non-Latin layout (e.g. Russian) `Ctrl`/`Cmd`+paste reports a non-'v' `e.key`, so keying off
+    /// the character would leave the guard armed and swallow the genuine paste. `e.code === 'KeyV'`
+    /// is layout-independent, matching how the OS binds the paste shortcut on such layouts.
+    /// `Shift+Insert` already keys off the layout-independent named key `'Insert'`.
+    const keyboard_paste = ((e.ctrlKey || e.metaKey) && e.code === 'KeyV')
         || (e.shiftKey && e.key === 'Insert');
     if (keyboard_paste) disarmMiddleclickPaste();
 });
@@ -5924,6 +5948,24 @@ function uniqueTitle(desired, excludeId) {
     }
 }
 
+/// Title for a duplicated tab: the whole source title is the family base, and the copy gets a
+/// " N" suffix, N starting at 1 and incrementing until the result is free (titles must stay
+/// unique — see `uniqueTitle`). Duplicating "Query A" yields "Query A 1", "Query A 2", …
+///
+/// The full source title is always used as the base — a trailing " N" is never stripped — so a
+/// user-authored numeric ending is preserved and the duplicate lineage stays unambiguous:
+/// duplicating "Incident 2025" yields "Incident 2025 1" (not "Incident 1"), and "Release 24 7"
+/// yields "Release 24 7 1". A title-only heuristic cannot tell a user's trailing digits from a
+/// duplicate counter — e.g. with both "Incident" and "Incident 2025" open, stripping " 2025"
+/// would wrongly collapse the copy into the unrelated "Incident" family — so we do not strip.
+function duplicateTitle(title) {
+    const taken = new Set(tabs.map(t => t.title));
+    for (let i = 1; ; ++i) {
+        const candidate = title + ' ' + i;
+        if (!taken.has(candidate)) return candidate;
+    }
+}
+
 function makeTab(title, query) {
     return {
         id: 't' + (++tabSeq),
@@ -5985,9 +6027,9 @@ async function activateTab(id, guard_paste = false) {
     /// even when there is no result to render (restoreFromHistory skips this otherwise).
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
     renderTabBar();
-    /// A middle-click new-tab open arms the X11 PRIMARY paste guard right around this focus, so
-    /// the paste Linux delivers to the freshly-focused editor is swallowed - and only that one.
-    /// Anchoring the guard here, rather than at the original `auxclick`, means a slow activation
+    /// A middle-click duplicate or new-tab open arms the X11 PRIMARY paste guard right around this
+    /// focus, so the paste Linux delivers to the freshly-focused editor is swallowed - and only that
+    /// one. Anchoring the guard here, rather than at the original `auxclick`, means a slow activation
     /// can never let it expire before focus. It is cleared by the swallowed paste, by a real
     /// paste-shortcut keydown (which must never be eaten - see `suppress_middleclick_paste`), or by
     /// the short fallback below in case no paste fires at all (non-Linux, empty selection), so the
@@ -6026,6 +6068,32 @@ function addTab() {
     scheduleSave();
 }
 
+/// Duplicate a tab: copy its query and parameters into a new tab inserted right after the
+/// source, then switch to the copy. Triggered by a middle-click or Ctrl/Shift/Cmd+click on
+/// the title — the browser gesture for "open in a new tab". `guard_paste` is set for a genuine
+/// middle click, so the activation swallows the X11 PRIMARY paste that follows focusing the editor.
+function duplicateTab(id, guard_paste = false) {
+    const src = tabs.find(t => t.id === id);
+    if (!src) return;
+    /// Flush any in-progress inline title rename here, before `duplicateTitle(src.title)` reads the
+    /// title below, so a copy of the tab being renamed reflects the new name rather than the stale
+    /// one. `renderTabBar` also flushes on every rebuild, but that runs later (via `activateTab`),
+    /// after the title has already been read. The editor is always the active tab.
+    if (activeTitleCommit) activeTitleCommit(true);
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
+    /// Fold live editor edits into the (possibly source) tab first, so the copy reflects them.
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
+
+    const tab = makeTab(duplicateTitle(src.title), src.query);
+    tab.params = { ...src.params };
+    const idx = tabs.findIndex(t => t.id === id);
+    tabs.splice(idx + 1, 0, tab);
+    activeTabId = tab.id;
+    activateTab(tab.id, guard_paste).then(syncHistory);
+    scheduleSave();
+}
+
 /// Like `addTab`, but the new tab starts pre-filled with `query` and becomes active.
 /// Used by the databases panel when a table is opened with a new-tab gesture: middle
 /// click, Shift+click, or the platform's new-tab modifier click - Cmd+click on macOS,
@@ -6043,6 +6111,7 @@ function openQueryInNewTab(query, guard_paste = false) {
     activateTab(tab.id, guard_paste).then(syncHistory);
     scheduleSave();
 }
+
 
 function closeTab(id) {
     const idx = tabs.findIndex(t => t.id === id);
@@ -6090,6 +6159,7 @@ function startTitleEdit(tab, titleEl) {
     const commit = (save) => {
         if (done) return;
         done = true;
+        if (activeTitleCommit === commit) activeTitleCommit = null;
         if (save) {
             /// Collapse any pasted newlines/runs of whitespace into single spaces.
             const v = titleEl.textContent.replace(/\s+/g, ' ').trim();
@@ -6101,6 +6171,9 @@ function startTitleEdit(tab, titleEl) {
         syncHistory();
         scheduleSave();
     };
+    /// Expose the commit so paths that rerender the tab bar (e.g. duplicating another tab)
+    /// can flush this pending rename first — the editor otherwise only writes back on `blur`.
+    activeTitleCommit = commit;
     titleEl.addEventListener('keydown', (e) => {
         /// Keep keys (Space/Enter) from reaching the tab-level switch handler.
         e.stopPropagation();
@@ -6112,6 +6185,14 @@ function startTitleEdit(tab, titleEl) {
 
 /// Rebuild the whole tab bar. Cheap (few nodes) so we never diff.
 function renderTabBar() {
+    /// Flush any in-progress inline title rename before we rebuild and destroy its editable span.
+    /// The editor writes back to `tab.title` only on `blur`, but many paths rerender the bar without
+    /// a blur first — a slow query completing calls `writeHistoryEntry` -> `renderTabBar`, closing a
+    /// tab or navigating rerenders too, and a middle click suppresses the blur — each of which would
+    /// otherwise silently drop the pending rename. Committing here, the single rerender chokepoint,
+    /// covers every path (not just `duplicateTab`). Safe against re-entry: `commit` clears
+    /// `activeTitleCommit` before it calls back into `renderTabBar`, so this becomes a no-op.
+    if (activeTitleCommit) activeTitleCommit(true);
     const active = getActiveTab();
     /// Hidden when there is a single tab that has never produced a result from a genuine
     /// run, so the page looks exactly as before tabs existed. Keying off `result.ran`
@@ -6144,11 +6225,31 @@ function renderTabBar() {
 
         el.addEventListener('click', (e) => {
             if (e.target === closeEl) { e.stopPropagation(); closeTab(tab.id); return; }
+            /// On macOS `Ctrl+Click` is the secondary (context-menu) click, not a new-tab
+            /// gesture - leave it entirely to the browser (see `set_query_or_run`). The macOS
+            /// duplicate modifier is Cmd (`metaKey`), checked below.
+            if (isMac && e.ctrlKey) return;
+            /// While the title is being edited inline, let clicks act on the editor (cursor placement,
+            /// selection) rather than duplicating from the not-yet-committed title.
+            if (e.target === titleEl && titleEl.isContentEditable) return;
+            /// Shift+click or the platform's new-tab modifier click (Cmd on macOS, Ctrl elsewhere)
+            /// on the title duplicates the tab (browser "open in new tab" gesture).
+            if (e.target === titleEl && (e.shiftKey || (isMac ? e.metaKey : e.ctrlKey))) { e.preventDefault(); duplicateTab(tab.id); return; }
             if (tab.id === activeTabId) {
                 if (e.target === titleEl) startTitleEdit(tab, titleEl);
             } else {
                 switchToTab(tab.id);
             }
+        });
+        /// Middle-click does not raise a `click` event; it comes through as `auxclick` (button 1).
+        /// A genuine middle click needs the X11 PRIMARY paste guard (see `suppress_middleclick_paste`).
+        el.addEventListener('auxclick', (e) => {
+            /// Skip while editing so a middle click pastes the X11 PRIMARY selection into the title instead.
+            if (e.button === 1 && e.target === titleEl && !titleEl.isContentEditable) { e.preventDefault(); duplicateTab(tab.id, true); }
+        });
+        /// Suppress the middle-click autoscroll cursor over the title (but not while editing, so PRIMARY paste works).
+        el.addEventListener('mousedown', (e) => {
+            if (e.button === 1 && e.target === titleEl && !titleEl.isContentEditable) e.preventDefault();
         });
         el.addEventListener('keydown', (e) => {
             /// Ignore keys coming from the inline title editor (so Space/Enter type normally).

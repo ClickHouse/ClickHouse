@@ -48,7 +48,6 @@ constexpr UInt64 default_distributed_cache_send_timeout_ms = DistributedCache::D
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache::DEFAULT_RECEIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
 constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
 constexpr UInt64 default_distributed_cache_data_packet_ack_window = DistributedCache::ACK_DATA_PACKET_WINDOW;
 #else
@@ -63,7 +62,6 @@ constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = 10lu;
 constexpr UInt64 default_distributed_cache_data_packet_ack_window = 5lu;
 #endif
@@ -2644,6 +2642,12 @@ If the destination table contains at least that many active parts in a single pa
     DECLARE(UInt64, parts_to_throw_insert, 0, R"(
 If more than this number active parts in a single partition of the destination table, throw 'Too many parts ...' exception.
 )", 0) \
+    DECLARE(UInt64, dead_blobs_to_delay_insert, 0, R"(
+If the dead blobs queues of the destination table's disks contain at least that many blobs pending removal, artificially slow down insert into table. 0 - use the table setting.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_throw_insert, 0, R"(
+If the dead blobs queues of the destination table's disks contain more than this number of blobs pending removal, throw 'Too many dead blobs ...' exception. 0 - use the table setting.
+)", 0) \
     DECLARE(UInt64, number_of_mutations_to_delay, 0, R"(
 If the mutated table contains at least that many unfinished mutations, artificially slow down mutations of table. 0 - disabled
 )", 0) \
@@ -3555,10 +3559,12 @@ Default value: `THROW`.
 - [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
-Changes the behaviour of join operations with `ANY` strictness.
+Changes the behaviour of join operations with `ANY` strictness when the right table has more than one matching row for a key.
 
 :::note
-This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+This setting applies to [`Join`](../../engines/table-engines/special/join.md) engine tables and hash-based join algorithms.
+
+If a join is built in parallel, the order of rows can be non-deterministic. This means that `join_any_take_last_row = 1` can return a non-deterministic row for `ANY JOIN` queries.
 :::
 
 Possible values:
@@ -5326,12 +5332,13 @@ Possible values:
 - 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
 - 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
 )", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
-Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", R"(
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32`, `date2String` or `geometry`. All modern mappings (`decimal`, `datetime64`, `date2Date32`, `geometry`) are enabled by default.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `MULTIPOINT` or `GEOMETRYCOLLECTION` map to `String`.
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
@@ -6722,7 +6729,7 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
@@ -7179,9 +7186,6 @@ Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed c
 )", 0) \
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
 Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
-)", 0) \
-    DECLARE(Bool, distributed_cache_use_clients_cache_for_write, default_distributed_cache_use_clients_cache_for_write, R"(
-Only has an effect in ClickHouse Cloud. Use clients cache for write requests.
 )", 0) \
     DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
 Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
@@ -7771,6 +7775,9 @@ Parts virtually divided into segments to be distributed between replicas for par
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", 0) \
+    DECLARE(Bool, parallel_replicas_plan_based, false, R"(
+Express the parallel replicas local/remote boundary as a plan transformation. The planner builds a plain local plan; a split step is then inserted above the reading step and replaced with a `UNION` of a local read and a remote read of the part of the plan below the split step, so that fragment runs on the replicas while the rest runs on the coordinator. Experimental, takes precedence over `parallel_replicas_local_plan`.
+)", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
 When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
 When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
@@ -8617,6 +8624,7 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
