@@ -1178,6 +1178,18 @@ QueryPlan QueryPlan::clone() const
     return result;
 }
 
+QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
+{
+    QueryPlan result;
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    auto * subplan_copy_root = &result.nodes.back();
+
+    result.cloneInplace(subplan_copy_root, subplan_root);
+    result.root = subplan_copy_root;
+
+    return result;
+}
+
 void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
 {
     if (!subplan_root)

@@ -50,7 +50,7 @@ public:
 
     bool empty() const override;
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
 
     Namespaces getNamespaces() const override;
 
@@ -193,7 +193,7 @@ protected:
     /// `limit` is a soft cap on the number of returned names; 0 means no limit.
     DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
 
-    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
