@@ -22,3 +22,11 @@ no_prefetching_with_more_parts_than_streams
 1
 no_prefetching_with_max_streams_setting
 1
+limit_by_reads_in_order
+1
+limit_by_multi_part_no_prefetching
+1
+limit_by_correctness
+1
+limit_by_per_group_count
+1

@@ -9,6 +9,8 @@ plain_nested_merge_not_read_in_order_yet	1
 agg_in_order_no_prefetching_nested_merge	1
 plain_no_prefetching_nested_merge	1
 join_outer_limit_no_prefetching_nested_merge	1
+limit_by_reads_in_order_merge	1
+limit_by_no_prefetching_merge	1
 correctness
 4049955000	90000
 1
@@ -18,3 +20,6 @@ nested_correctness
 4049955000	90000
 1
 [0,1,2,3,4,5,6,7,8,9]
+limit_by_correctness
+1
+1

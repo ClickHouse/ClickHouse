@@ -172,3 +172,55 @@ SELECT count() = 0 FROM (
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 DROP TABLE t_prefetching_concat_cap;
+
+-- `LIMIT BY` drives read-in-order without an outer `ORDER BY`: `LimitByStep` runs a
+-- per-stream `LimitBySortedStreamTransform` prefilter, then merges the streams with a final
+-- `resize(1)` + `LimitByTransform`, so it benefits from multiple parallel input streams.
+-- The read-in-order input order carries `limit = 0`, so on a multi-part table the per-part
+-- `PrefetchingConcat` path (`can_use_per_part_prefetching`) would otherwise be taken and
+-- collapse the parallel prefilter into one stream per part. `setPreferMultipleStreams`
+-- disables it, so `PrefetchingConcat` must NOT appear for a `LIMIT BY` read, while the read
+-- still goes in order (proven by the streaming `LimitBySortedStreamTransform`, which is only
+-- used on the in-order `LIMIT BY` path — this guards against a vacuous pass where the read
+-- simply did not go in order).
+DROP TABLE IF EXISTS t_prefetching_concat_limit_by;
+CREATE TABLE t_prefetching_concat_limit_by (grp UInt64, key UInt64, value String)
+ENGINE = MergeTree PARTITION BY intDiv(key, 30000) ORDER BY (grp, key)
+SETTINGS index_granularity = 1024;
+INSERT INTO t_prefetching_concat_limit_by SELECT number % 100, number, toString(number) FROM numbers(90000);
+OPTIMIZE TABLE t_prefetching_concat_limit_by FINAL;
+
+SELECT 'limit_by_reads_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+) WHERE explain LIKE '%LimitBySortedStreamTransform%';
+
+SELECT 'limit_by_multi_part_no_prefetching';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+-- Correctness: exactly 3 rows per group, all groups present, and every returned row is
+-- self-consistent (`key % 100` is the group it was placed in). `LIMIT BY` without an outer
+-- `ORDER BY` does not fix *which* 3 rows are kept, so we assert order-independent invariants.
+SELECT 'limit_by_correctness';
+SELECT count() = 300 AND uniqExact(grp) = 100 AND countIf(key % 100 != grp) = 0 FROM (
+    SELECT grp, key FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
+    SETTINGS max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+);
+
+SELECT 'limit_by_per_group_count';
+SELECT min(c) = 3 AND max(c) = 3 FROM (
+    SELECT count() AS c FROM (
+        SELECT grp, key FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
+        SETTINGS max_threads = 6, optimize_read_in_order = 1,
+                 merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+    ) GROUP BY grp
+);
+
+DROP TABLE t_prefetching_concat_limit_by;
