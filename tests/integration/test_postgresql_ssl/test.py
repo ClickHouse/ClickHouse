@@ -222,8 +222,12 @@ def test_postgresql_database_engine_over_ssl(started_cluster):
     # table engine and table function that go through `StoragePostgreSQL`. Prove the
     # TLS parameters are honored there too by creating the database over a
     # verify-full connection and reading through one of its tables.
+    #
+    # The collection here (`pg_ssl_db`) carries no `table` key: the database engine
+    # wraps a whole database and rejects a `table` key, so the single-table `pg_ssl`
+    # collection would fail validation before the SSL path is ever reached.
     node.query("DROP DATABASE IF EXISTS pg_db_ssl")
-    node.query(f"CREATE DATABASE pg_db_ssl ENGINE = PostgreSQL(pg_ssl, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')")
+    node.query(f"CREATE DATABASE pg_db_ssl ENGINE = PostgreSQL(pg_ssl_db, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')")
     assert node.query("SELECT count() FROM pg_db_ssl.test_table").strip() == "10"
     assert node.query("SELECT sum(value) FROM pg_db_ssl.test_table").strip() == str(sum(i * 10 for i in range(10)))
     node.query("DROP DATABASE pg_db_ssl")

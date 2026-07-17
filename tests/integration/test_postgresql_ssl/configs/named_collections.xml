@@ -16,5 +16,15 @@
             <database>certdb</database>
             <table>cert_table</table>
         </pg_ssl_cert>
+        <!-- The `PostgreSQL` database engine wraps a whole database, so its named
+             collection must not carry a `table` key (that key is only valid for the
+             table function / table engine that address a single table). -->
+        <pg_ssl_db>
+            <user>postgres</user>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
+            <host>postgres1</host>
+            <port>5432</port>
+            <database>postgres</database>
+        </pg_ssl_db>
     </named_collections>
 </clickhouse>
