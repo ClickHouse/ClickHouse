@@ -2514,12 +2514,31 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// source) into the root, so those child tags become real top-level keys of the merged config
         /// even when the source is external and not merged. Collected only from server-config files
         /// (never the users config, whose `<include>` targets a separate tree).
+        ///
+        /// Known limitation (deliberately fail-open): these references are collected as the *union* of
+        /// the top-level `<include .../>` elements seen across the raw pre-merge fragments; the merge's
+        /// `replace`/`remove` semantics on the `<include>` element itself are not replayed. Unlike
+        /// `<include_from>` (whose single merged value survives on the `config` object and is read back
+        /// below), a top-level `<include>` element is *expanded and removed* during processing, so the
+        /// merged `config` no longer contains it and there is nothing to read back — a faithful
+        /// reconstruction would have to replay `ConfigProcessor::merge` (where every `<include>`
+        /// collapses to one merge identifier and is consumed positionally). The union therefore
+        /// over-approximates: if a later fragment `replace`s or `remove`s a top-level `<include>`, the
+        /// old reference is still resolved and its imported keys stay exempt. This only ever *widens*
+        /// the exemption set (a rare false negative — an unknown key colliding with a no-longer-imported
+        /// name passes), never rejects a valid config, so it fails open; tightening it is intentionally
+        /// left to a full merge replay rather than a partial one that could refuse to start a valid
+        /// config.
         std::unordered_set<std::string> top_level_include_refs;
 
         /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
         /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
         /// need a ZooKeeper connection at config-validation time (before `<zookeeper>` itself is
         /// validated), so the imported keys cannot be determined here — the check bails out below.
+        /// Same fail-open over-approximation as `top_level_include_refs` above: a later fragment that
+        /// `remove`s the `<include from_zk=.../>` is not replayed, so the whole check may still be
+        /// skipped even though the merged config imports nothing from ZooKeeper — again only ever
+        /// widening what is tolerated, never rejecting a valid config.
         bool has_unresolvable_top_level_from_zk_include = false;
 
         /// Canonicalize paths so that symlinks (e.g. a symlinked `/etc/clickhouse-server`) and
