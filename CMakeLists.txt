@@ -616,6 +616,8 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
+    # Note: for musl builds (-nostartfiles), the CRT startup files are added to every
+    # executable through the link flags, see cmake/linux/default_libs.cmake.
     add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
 
     get_target_property (type ${target} TYPE)
@@ -736,6 +738,7 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

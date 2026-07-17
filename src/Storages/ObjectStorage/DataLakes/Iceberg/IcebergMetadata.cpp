@@ -635,6 +635,9 @@ void IcebergMetadata::mutate(
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg does not support multiple mutation commands in a single ALTER");
+
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");

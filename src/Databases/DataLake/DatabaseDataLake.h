@@ -134,6 +134,21 @@ private:
 
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
+    /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
+    /// keep_unresolved_tables controls what happens when a single table's metadata cannot
+    /// be resolved: when true (system.tables path) the table is kept in the listing with a
+    /// null storage object so metadata-dependent columns degrade to defaults instead of the
+    /// whole scan aborting; when false (every other consumer, e.g. StorageMerge, which
+    /// dereferences the storage unconditionally) the original contract is preserved -- the
+    /// error is propagated when database_datalake_require_metadata_access=1 and the table is
+    /// dropped from the listing otherwise. This confines null-storage rows to system.tables.
+    DatabaseTablesIteratorPtr getTablesIteratorImpl(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter,
+        bool keep_unresolved_tables) const;
+
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
     StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg) const;

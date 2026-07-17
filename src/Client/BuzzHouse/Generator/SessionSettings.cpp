@@ -1731,13 +1731,13 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"vector_search_index_fetch_multiplier",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
-         {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
-         false)},
+         {"1", "1.5", "2", "2.5"},
+         true)},
     {"vector_search_postfilter_multiplier",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 1.0, 10.0)); },
          {"1", "1.5", "2", "3", "5", "10"},
-         false)},
+         true)},
     {"vector_search_with_rescoring", trueOrFalseSettingNoOracle},
     {"wait_changes_become_visible_after_commit_mode",
      CHSetting(

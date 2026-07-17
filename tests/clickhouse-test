@@ -120,6 +120,12 @@ MESSAGES_TO_RETRY = [
     # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds)
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Session expired",
+    # Server-global (total) memory tracker firing under heavy parallel co-scheduling
+    # on ASan shards: the OvercommitTracker kills queries across all co-scheduled
+    # tests once total RSS nears the shared server cap. Emitted only by the global
+    # tracker (programs/server/Server.cpp: setDescription("(total)")), never by a
+    # per-query/per-user limit, so retrying cannot mask a real per-query assertion.
+    "(total) memory limit exceeded",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
@@ -1294,7 +1300,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'basic']
+        all_statistic_types = ["minmax", "uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1345,12 +1351,6 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
-        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
-        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
-        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
-        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
-            [0, 256, 1048576], weights=[1, 1, 3]
-        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),

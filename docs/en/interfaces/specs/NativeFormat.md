@@ -1432,11 +1432,31 @@ flowchart LR
 
 ### Method byte values {#method-byte-values}
 
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
+
+The method byte also encodes the [column-level codecs](/sql-reference/statements/create/table#column_compression_codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
+
+| Byte   | Method            |
+|--------|-------------------|
+| `0x91` | `Multiple` (a composite codec wrapping a sequence of nested codecs) |
+| `0x92` | `Delta`           |
+| `0x93` | `T64`             |
+| `0x94` | `DoubleDelta`     |
+| `0x95` | `Gorilla`         |
+| `0x96` | `AES_128_GCM_SIV` (encryption) |
+| `0x97` | `AES_256_GCM_SIV` (encryption) |
+| `0x98` | `FPC`             |
+| `0x9a` | `GCD`             |
+| `0x9c` | `ALP`             |
+| `0x9d` | `SZ3`             |
+
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 ### Checksum {#checksum}
 
