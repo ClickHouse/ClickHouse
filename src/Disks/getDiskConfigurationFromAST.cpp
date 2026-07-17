@@ -186,7 +186,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
         else if (key == "service_account_key_file")
-            has_service_account_key_file = !value_str.empty() && !indirect;
+            /// Tracked regardless of `indirect`: a value supplied via `from_env`/`from_zk` still resolves to a
+            /// server-side file path that the native GCS backend opens, so it must be rejected below exactly like
+            /// a literal path (the placeholder string is itself non-empty).
+            has_service_account_key_file = !value_str.empty();
         else if (key == "_server_credentials_allowed")
             has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
 
@@ -229,14 +232,21 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// query: unlike the S3 credential checks below, this is not gated by a setting, mirroring how table
     /// functions such as `file` are confined to `user_files_path` rather than an opt-in. A `system`-database
     /// disk is server-internal (admin-configured, not user SQL), so it is exempt like the S3 restriction above.
+    /// A backend that cannot be proven non-GCS at parse time -- the `type`, or for the `object_storage` wrapper
+    /// its `object_storage_type`, is supplied indirectly (`from_env`/`from_zk`) and could resolve to `gcs` -- is
+    /// treated conservatively as potentially GCS, the same way `maybe_s3_disk` below treats indirect types. The
+    /// `service_account_key_file` value is likewise rejected whether it is a literal path or an indirect one,
+    /// since an indirect value still resolves to a server-side path the backend opens.
     const bool is_gcs_disk = is_gcs_disk_via_type || (type_is_object_storage && is_gcs_disk_via_object_storage_type);
-    if (is_gcs_disk && has_service_account_key_file && !for_system_database)
+    const bool maybe_gcs_disk = is_gcs_disk || type_is_indirect;
+    if (maybe_gcs_disk && has_service_account_key_file && !for_system_database)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "A dynamic GCS disk created from user SQL may not use `service_account_key_file`, which would make "
-            "the server read an arbitrary local file path supplied by the query. Provide the service account key "
-            "inline with `service_account_key`, or configure `service_account_key_file` on a server-managed disk "
-            "in the server configuration instead.");
+            "the server read an arbitrary local file path supplied by the query (this also applies when the path, "
+            "or the backend type, is supplied indirectly via `from_env`/`from_zk`). Provide the service account "
+            "key inline with `service_account_key`, or configure `service_account_key_file` on a server-managed "
+            "disk in the server configuration instead.");
 
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
     /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
