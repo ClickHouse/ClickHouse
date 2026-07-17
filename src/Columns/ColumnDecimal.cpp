@@ -698,7 +698,7 @@ template <is_decimal T>
 void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
 {
     using Native = T::NativeType;
-    if constexpr (std::is_integral_v<Native> || is_big_int_v<Native>)
+    if constexpr (!std::is_same_v<T, Time64> && (std::is_integral_v<Native> || is_big_int_v<Native>))
     {
         Native value = data[n].value;
         transformEndianness<std::endian::big>(value);

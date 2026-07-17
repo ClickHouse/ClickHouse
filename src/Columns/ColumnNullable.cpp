@@ -1081,6 +1081,9 @@ void ColumnNullable::batchSerializeAsComparable(
     VectorWithMemoryTracking<String> & out,
     const IColumn::Permutation * permutation) const
 {
+    if (num_rows == 0)
+        return;
+
     /// Eagerly validate that the nested type supports comparable serialization.
     /// Without this, an all-NULL block would skip nested_column->serializeAsComparable
     /// entirely, silently accepting unsupported nested types (e.g. LowCardinality, Array).
