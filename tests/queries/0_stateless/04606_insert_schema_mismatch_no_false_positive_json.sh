@@ -27,8 +27,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE test_mismatch_json_decimal (d Decimal(9, 2),
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_mismatch_json_omitted (a UInt8, b String) ENGINE = Memory"
 
 echo "-- Decimal read from a quoted string is compatible; the parse fails only on the fractional UInt8 value"
+# The scenario the diagnostic must handle is inference leaving the quoted value as `String`; pin
+# `input_format_json_try_infer_numbers_from_strings 0` (the default) so the premise holds regardless of
+# settings randomization, where a `1` would make inference read `"1.23"` as a number instead.
 printf 'INSERT INTO test_mismatch_json_decimal FORMAT JSONEachRow\n{"d": "1.23", "n": 1.5}\n' \
-    | $CLICKHOUSE_CLIENT --async_insert 0 2>&1 | check
+    | $CLICKHOUSE_CLIENT --async_insert 0 --input_format_json_try_infer_numbers_from_strings 0 2>&1 | check
 
 echo "-- a row that omits a column is default-filled, not a structure mismatch; the parse fails only on the fractional value"
 printf 'INSERT INTO test_mismatch_json_omitted FORMAT JSONEachRow\n{"a": 1.5}\n' \
