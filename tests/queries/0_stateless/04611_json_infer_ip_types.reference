@@ -19,3 +19,7 @@ IPv6	2001:db8::1
 6. Typed path takes precedence
 IPv4
 10.0.0.1
+7. IP inference with dates/datetimes disabled
+IPv4
+8. IPv4 literal not inferred as IPv6
+String

@@ -70,3 +70,28 @@ INSERT INTO t FORMAT JSONEachRow {"ip": "10.0.0.1"};
 SELECT toTypeName(json.ip) FROM t;
 SELECT json.ip FROM t;
 DROP TABLE t;
+
+-- 7. IP inference works independently of date/datetime inference settings
+SELECT '7. IP inference with dates/datetimes disabled';
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory;
+SET input_format_try_infer_dates = 0;
+SET input_format_try_infer_datetimes = 0;
+SET input_format_try_infer_ipv4 = 1;
+INSERT INTO t FORMAT JSONEachRow {"ip": "10.0.0.1"};
+SELECT dynamicType(json.ip) FROM t;
+SET input_format_try_infer_ipv4 = 0;
+SET input_format_try_infer_dates = 1;
+SET input_format_try_infer_datetimes = 1;
+DROP TABLE t;
+
+-- 8. Pure IPv4 literal is not inferred as IPv6 when only ipv6 inference is enabled
+SELECT '8. IPv4 literal not inferred as IPv6';
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory;
+SET input_format_try_infer_ipv4 = 0;
+SET input_format_try_infer_ipv6 = 1;
+INSERT INTO t FORMAT JSONEachRow {"ip": "192.168.1.1"};
+SELECT dynamicType(json.ip) FROM t;
+SET input_format_try_infer_ipv6 = 0;
+DROP TABLE t;
