@@ -135,6 +135,22 @@ protected:
 
 private:
 
+    ColumnPtr executeInternal(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Called when an exception escapes execution: if this function declares canThrow = false and
+    /// the same call over zero rows does not throw (i.e. the exception depends on the processed
+    /// rows), logs a contract violation which is detected by a dedicated log check in CI.
+    void validateCanThrowOnException(
+            int code,
+            const std::string & message,
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run) const;
+#endif
+
     ColumnPtr defaultImplementationForConstantArguments(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 

@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -55,6 +56,15 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+#ifdef DEBUG_OR_SANITIZER_BUILD
+extern const int MEMORY_LIMIT_EXCEEDED;
+extern const int CANNOT_ALLOCATE_MEMORY;
+extern const int CANNOT_SCHEDULE_TASK;
+extern const int TIMEOUT_EXCEEDED;
+extern const int TOO_SLOW;
+extern const int QUERY_WAS_CANCELLED;
+extern const int ABORTED;
+#endif
 }
 
 namespace
@@ -524,7 +534,82 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     return result;
 }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+void IExecutableFunction::validateCanThrowOnException(
+    int code,
+    const std::string & message,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run) const
+{
+    /// Exceptions raised over empty input cannot depend on the processed rows.
+    if (input_rows_count == 0)
+        return;
+
+    /// Environmental exceptions may be raised by any function at any time regardless of the
+    /// processed rows; they are outside the canThrow contract. Logical errors are reported as is.
+    if (code == ErrorCodes::LOGICAL_ERROR
+        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+        || code == ErrorCodes::CANNOT_SCHEDULE_TASK
+        || code == ErrorCodes::TIMEOUT_EXCEEDED
+        || code == ErrorCodes::TOO_SLOW
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::ABORTED)
+        return;
+
+    DataTypesWithConstInfo argument_types;
+    argument_types.reserve(arguments.size());
+    for (const auto & argument : arguments)
+        argument_types.push_back({argument.type, argument.column && isColumnConst(*argument.column)});
+
+    if (canThrow(argument_types))
+        return;
+
+    ColumnsWithTypeAndName empty_arguments;
+    empty_arguments.reserve(arguments.size());
+    for (const auto & argument : arguments)
+        empty_arguments.push_back({argument.column ? argument.column->cloneResized(0) : nullptr, argument.type, argument.name});
+
+    try
+    {
+        executeInternal(empty_arguments, result_type, 0, dry_run);
+    }
+    catch (...)
+    {
+        /// The exception reproduces over zero rows, so it fires under every plan shape and cannot
+        /// be introduced by executing the function over rows the original plan would not have fed it.
+        return;
+    }
+
+    /// Detected by a dedicated check over the server logs in CI.
+    LOG_ERROR(getLogger("IExecutableFunction"),
+        "canThrow contract violation: function {} declares canThrow = false, but threw an exception (code {}) "
+        "that depends on the processed rows: {}",
+        getName(), code, message);
+}
+#endif
+
 ColumnPtr IExecutableFunction::execute(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    try
+    {
+        return executeInternal(arguments, result_type, input_rows_count, dry_run);
+    }
+    catch (const Exception & e)
+    {
+        validateCanThrowOnException(e.code(), e.message(), arguments, result_type, input_rows_count, dry_run);
+        throw;
+    }
+#else
+    return executeInternal(arguments, result_type, input_rows_count, dry_run);
+#endif
+}
+
+ColumnPtr IExecutableFunction::executeInternal(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
