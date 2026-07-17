@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakeMetadata.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -486,6 +487,16 @@ using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureCon
 #endif
 
 using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
+
+#if USE_AWS_S3
+using StorageS3DuckLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DuckLakeMetadata>;
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureDuckLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DuckLakeMetadata>;
+#endif
+
+using StorageLocalDuckLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DuckLakeMetadata>;
 
 #endif
 
