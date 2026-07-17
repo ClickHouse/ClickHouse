@@ -177,7 +177,15 @@ ClickHouse's own `HiveText` input:
   [`input_format_hive_text_collection_items_delimiter`](#format-settings) /
   [`input_format_hive_text_map_keys_delimiter`](#format-settings). So nested output such
   as `SELECT [1, 2] FORMAT HiveText` is **not** read back by
-  `INSERT ... FORMAT HiveText` — only top-level scalar fields round-trip.
+  `INSERT ... FORMAT HiveText` — only top-level scalar fields round-trip, and only with
+  the default `\n` row delimiter (see the next point).
+- Round-tripping also requires the default `\n` row delimiter. When
+  [`format_hive_text_rows_delimiter`](#format-settings) is changed, the output separates
+  rows with the configured byte, but the input side is still the newline-based
+  `CSVRowInputFormat` and there is no matching `input_format_hive_text_rows_delimiter`. So
+  multi-row scalar output such as
+  `SELECT number FROM numbers(3) FORMAT HiveText SETTINGS format_hive_text_rows_delimiter=';'`
+  (which produces `0;1;2;`) is **not** read back by `INSERT ... FORMAT HiveText` as three rows.
 - Only the default, unescaped `LazySimpleSerDe` subset is implemented. Fields are written
   without escaping (there is no equivalent of Hive's optional `ROW FORMAT DELIMITED ...
   ESCAPED BY`), and `NULL` is always written as `\N` (there is no equivalent of
