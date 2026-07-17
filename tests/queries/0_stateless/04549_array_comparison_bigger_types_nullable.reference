@@ -1,54 +1,41 @@
--- all six operators, non-NULL values
 0
 1
 1
 1
 0
 0
--- NULL equals only NULL
 1
 0
 0
 1
--- NULL sorts after every non-NULL value
 0
 1
 1
 0
 1
 1
--- NULL inside the common prefix
 1
 0
 0
 1
--- length tie-break on equal common prefix (with NULLs)
 1
 0
--- mixed nullability: one side Nullable elements, the other not
 1
 1
 1
--- non-constant (materialized) path
 0
 1
 1
 1
--- wide integers
 1
 1
--- nested arrays with Nullable innermost elements
 1
--- multi-row via table (per-row NULLs and offsets)
 1	0	0
 0	1	0
 0	0	1
 0	0	1
 0	1	0
--- result type is definite UInt8 (not Nullable)
 UInt8
 UInt8
--- consistency with the least-common-supertype path (same-type Nullable arrays)
 1
 1
--- incomparable element types still throw
