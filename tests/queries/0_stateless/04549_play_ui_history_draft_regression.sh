@@ -139,8 +139,10 @@ const sandbox = {
     /// With `run=1` propagation enabled, the test can assert that refreshing an entry
     /// from an unrun draft drops the auto-run marker. `url_run_directive` is the immutable
     /// "the URL carried `?run=1`" fact; entry stamping keys off it plus the per-entry
-    /// `fromRun`, so it is the only session-level `run=1` state.
+    /// `fromRun`, and `run_directive_spent` (set when reconciliation drops the directive's
+    /// target context — pruned blank tab / dirty-startup merge) stays false in these cases.
     url_run_directive: true,
+    run_directive_spent: false,
     user_elem: { value: '' },
     /// `selectionStart`/`selectionEnd` back the `Run selected` path; `has_selection` and the
     /// selected statements are derived from them (the in-flight selection case moves them mid-run).
@@ -389,8 +391,9 @@ function reset()
     /// Simulate a session opened from a `run=1` URL so a genuine run stamps `run=1` into its entry
     /// and the reload cases can observe that a restored unrun draft has it dropped. A real reload
     /// starts a fresh JS context; here `reload` re-derives this global from the reloaded URL,
-    /// so restore it.
+    /// so restore it (and the spent marker with it).
     sandbox.url_run_directive = true;
+    sandbox.run_directive_spent = false;
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
     sandbox.activeTabId = tab.id;
@@ -411,7 +414,8 @@ async function reload()
     sandbox.url_tab_name = sandbox.current_url.searchParams.get('tab');
     sandbox.has_url_query = sandbox.url_query.length > 0;
     sandbox.url_run_directive = sandbox.current_url.searchParams.has('run');
-    sandbox.defer_run_for_reconcile = sandbox.url_run_directive && sandbox.has_url_query;
+    sandbox.run_directive_spent = false;
+    sandbox.defer_run_for_reconcile = sandbox.url_run_directive;
     sandbox.query_area.value = sandbox.url_query;
     sandbox.param_inputs = {};
     sandbox.bootstrap_dirty = false;
