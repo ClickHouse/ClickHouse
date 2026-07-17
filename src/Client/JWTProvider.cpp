@@ -51,31 +51,9 @@ namespace ErrorCodes
 namespace
 {
 #if defined(OS_DARWIN) || defined(OS_LINUX)
-bool commandExistsOnPath(const char * command)
+void closeFD([[maybe_unused]] int fd)
 {
-    const char * path_env = std::getenv("PATH");
-    if (!path_env)
-        return false;
-
-    std::string paths = path_env;
-    size_t start = 0;
-    while (start <= paths.size())
-    {
-        size_t end = paths.find(':', start);
-        if (end == std::string::npos)
-            end = paths.size();
-        std::string dir = paths.substr(start, end - start);
-        if (!dir.empty())
-        {
-            std::string candidate = dir + "/" + command;
-            if (access(candidate.c_str(), X_OK) == 0)
-                return true;
-        }
-        if (end == paths.size())
-            break;
-        start = end + 1;
-    }
-    return false;
+    [[maybe_unused]] int err = close(fd);
 }
 #endif
 }
@@ -495,9 +473,7 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
 
 #if defined(OS_DARWIN) || defined(OS_LINUX)
     /// Optional: render a terminal QR via `qrencode` when available (RFC 8628 Section 3.3.1).
-    if (!commandExistsOnPath("qrencode"))
-        return;
-
+    /// Do not probe PATH with getenv (mt-unsafe); let posix_spawnp fail if the tool is missing.
     int pipefd[2] = {-1, -1};
     if (pipe(pipefd) != 0)
         return;
@@ -507,8 +483,8 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
     posix_spawn_file_actions_t actions;
     if (posix_spawn_file_actions_init(&actions) != 0)
     {
-        [[maybe_unused]] int err0 = close(pipefd[0]);
-        [[maybe_unused]] int err1 = close(pipefd[1]);
+        closeFD(pipefd[0]);
+        closeFD(pipefd[1]);
         return;
     }
     posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
@@ -517,11 +493,11 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
 
     const int status = posix_spawnp(&pid, "qrencode", &actions, nullptr, const_cast<char * const *>(argv), nullptr);
     posix_spawn_file_actions_destroy(&actions);
-    [[maybe_unused]] int err_write = close(pipefd[1]);
+    closeFD(pipefd[1]);
 
     if (status != 0)
     {
-        [[maybe_unused]] int err_read = close(pipefd[0]);
+        closeFD(pipefd[0]);
         return;
     }
 
@@ -530,7 +506,7 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
     ssize_t n = 0;
     while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0)
         out.write(buffer, static_cast<std::streamsize>(n));
-    [[maybe_unused]] int err_read = close(pipefd[0]);
+    closeFD(pipefd[0]);
 
     int wait_status = 0;
     waitpid(pid, &wait_status, 0);
