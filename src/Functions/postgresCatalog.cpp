@@ -34,6 +34,19 @@ namespace
 /// offsets the whole modifier by `VARHDRSZ` (4). A modifier of -1 means "unspecified".
 constexpr Int64 VARHDRSZ = 4;
 
+/// Render a `numeric` type name, decoding the precision and scale carried in the type modifier. PostgreSQL
+/// encodes them as `((precision << 16) | scale) + VARHDRSZ`. A modifier below `VARHDRSZ` (in particular the
+/// default -1) means no precision was specified, so the bare name is used.
+String pgFormatNumeric(Int64 typmod)
+{
+    if (typmod < VARHDRSZ)
+        return "numeric";
+    const Int64 tm = typmod - VARHDRSZ;
+    const Int64 precision = (tm >> 16) & 0xFFFF;
+    const Int64 scale = tm & 0xFFFF;
+    return fmt::format("numeric({},{})", precision, scale);
+}
+
 /// PostgreSQL type OID -> human readable name, in the spelling produced by PostgreSQL's `format_type`.
 /// The set mirrors the built-in types advertised by ClickHouse's `pg_type` emulation (see PostgreSQLHandler).
 /// Unknown OIDs are rendered as `text`, matching how the counterpart mapping in
@@ -41,6 +54,9 @@ constexpr Int64 VARHDRSZ = 4;
 /// The type modifier is honoured for `numeric`, where it carries the precision and scale: this is what
 /// lets a self-connected `Decimal(p, s)` (and wide integer types encoded as `numeric(p, 0)`) round-trip
 /// through schema inference in `fetchPostgreSQLTableStructure` instead of collapsing to bare `numeric`.
+/// Array types are rendered as `<element>[]` (regardless of the number of dimensions, which PostgreSQL
+/// carries separately in `attndims`); for a `numeric` array the modifier applies to the element type, so
+/// e.g. `numeric(20, 0)[]` round-trips back to `Array(Decimal(20, 0))`.
 String pgFormatType(Int64 oid, Int64 typmod)
 {
     switch (oid)
@@ -61,20 +77,22 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1082: return "date";
         case 1114: return "timestamp without time zone";
         case 1184: return "timestamp with time zone";
-        case 1700:
-            /// `numeric` carries its precision and scale in the type modifier, encoded exactly as
-            /// PostgreSQL does: `((precision << 16) | scale) + VARHDRSZ`. A modifier below `VARHDRSZ`
-            /// (in particular the default -1) means no precision was specified, so the bare name is used.
-            if (typmod < VARHDRSZ)
-                return "numeric";
-            else
-            {
-                const Int64 tm = typmod - VARHDRSZ;
-                const Int64 precision = (tm >> 16) & 0xFFFF;
-                const Int64 scale = tm & 0xFFFF;
-                return fmt::format("numeric({},{})", precision, scale);
-            }
+        case 1700: return pgFormatNumeric(typmod);
         case 2950: return "uuid";
+
+        /// Array types (element OID + "[]").
+        case 1000: return "boolean[]";
+        case 1005: return "smallint[]";
+        case 1007: return "integer[]";
+        case 1009: return "text[]";
+        case 1016: return "bigint[]";
+        case 1021: return "real[]";
+        case 1022: return "double precision[]";
+        case 1115: return "timestamp without time zone[]";
+        case 1182: return "date[]";
+        case 1231: return pgFormatNumeric(typmod) + "[]";
+        case 2951: return "uuid[]";
+
         default: return "text";
     }
 }
