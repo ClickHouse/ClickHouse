@@ -5,6 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
+#include <IO/SnappyMode.h>
 #include <cstddef>
 #include <memory>
 #include <string_view>
@@ -41,7 +42,8 @@ Pipe getSourceFromASTInsertQuery(
 
 /// Prepares a read buffer, that allows to read inlined data
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast);
+/// `snappy_mode` selects the snappy framing used when the data (e.g. `INSERT ... FROM INFILE`) is snappy-compressed.
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode = SnappyMode::Basic);
 
 /// For diagnostics only. Infers the structure of `data` in the given format (if the format supports
 /// schema inference) and compares it with `expected_header`. Returns a human-readable explanation of
