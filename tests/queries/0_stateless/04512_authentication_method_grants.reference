@@ -78,3 +78,6 @@ AUTHENTICATION_FAILED
 AUTHENTICATION_FAILED
 -- An externally verified method sharing the credential does not shorten the session (documented limitation)
 1
+-- Default-role administration is denied for a limited credential even when ALTER USER is listed and granted
+ACCESS_DENIED
+ACCESS_DENIED

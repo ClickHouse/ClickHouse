@@ -17,8 +17,11 @@ user7="u7_04512_${CLICKHOUSE_DATABASE}"
 user8="u8_04512_${CLICKHOUSE_DATABASE}"
 user9="u9_04512_${CLICKHOUSE_DATABASE}"
 user10="u10_04512_${CLICKHOUSE_DATABASE}"
+user11="u11_04512_${CLICKHOUSE_DATABASE}"
+victim="uv_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 role2="r2_04512_${CLICKHOUSE_DATABASE}"
+role3="r3_04512_${CLICKHOUSE_DATABASE}"
 
 function login()
 {
@@ -37,11 +40,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP USER IF EXISTS ${user8}" -q "DROP USER IF EXISTS ${user9}" -q "DROP USER IF EXISTS ${user10}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP USER IF EXISTS ${user8}" -q "DROP USER IF EXISTS ${user9}" -q "DROP USER IF EXISTS ${user10}" -q "DROP USER IF EXISTS ${user11}" -q "DROP USER IF EXISTS ${victim}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x" -q "DROP ROLE IF EXISTS ${role3}"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP USER IF EXISTS ${user8}" -q "DROP USER IF EXISTS ${user9}" -q "DROP USER IF EXISTS ${user10}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP USER IF EXISTS ${user8}" -q "DROP USER IF EXISTS ${user9}" -q "DROP USER IF EXISTS ${user10}" -q "DROP USER IF EXISTS ${user11}" -q "DROP USER IF EXISTS ${victim}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x" -q "DROP ROLE IF EXISTS ${role3}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -249,3 +252,19 @@ echo "-- An externally verified method sharing the credential does not shorten t
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user10} IDENTIFIED WITH sha256_password BY 'shared10', ldap SERVER 'unused' VALID UNTIL '2000-01-01'"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user10}"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user10}&password=shared10" -d "SELECT x FROM t1"
+
+# Administering roles includes changing which roles are activated by default for a user, so a limited credential
+# must not be able to run SET DEFAULT ROLE / ALTER USER ... DEFAULT ROLE. Unlike the role DDL above, these are
+# authorized with the plain ALTER USER access type, so a token holding ALTER USER would otherwise still be able
+# to reconfigure another user's default roles - which is role administration - contradicting the fail-close contract.
+echo "-- Default-role administration is denied for a limited credential even when ALTER USER is listed and granted"
+${CLICKHOUSE_CLIENT} -q "CREATE ROLE ${role3}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${victim} IDENTIFIED WITH sha256_password BY 'victim_password'"
+${CLICKHOUSE_CLIENT} -q "GRANT ${role3} TO ${victim}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user11} IDENTIFIED WITH plaintext_password BY 'full11', plaintext_password BY 'user_token' GRANTS (ALTER USER ON *.*)"
+${CLICKHOUSE_CLIENT} -q "GRANT ALTER USER ON *.* TO ${user11}"
+# The full credential of the same user can set the victim's default roles (empty output on success).
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user11}&password=full11" -d "SET DEFAULT ROLE ${role3} TO ${victim}"
+# The token has ALTER USER after the intersection, but the role-administration guard still denies the default-role change.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user11}&password=user_token" -d "SET DEFAULT ROLE ${role3} TO ${victim}" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user11}&password=user_token" -d "ALTER USER ${victim} DEFAULT ROLE ${role3}" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
