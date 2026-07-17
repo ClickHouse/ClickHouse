@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-random-settings, no-parallel-replicas
+# no-parallel-replicas: the row-policy `SELECT(a)` assertion is not stable under `ParallelReplicas`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -280,6 +280,9 @@ test_select_prewhere()
 
 test_row_policy()
 {
+    local select_a_query="SELECT a FROM table1_04510 SETTINGS optimize_move_to_prewhere = 0"
+    local select_count_query="SELECT count() FROM table1_04510 SETTINGS optimize_move_to_prewhere = 0"
+
     cleanup_objects
     echo "row_policy"
     $CLICKHOUSE_CLIENT --query "
@@ -287,16 +290,16 @@ test_row_policy()
         INSERT INTO table1_04510 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0);
         CREATE ROW POLICY pol1_04510 ON table1_04510 USING b = 0 TO ${user_name};
     "
-    assert_has "$(error_as_user "SELECT a FROM table1_04510")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
-    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_a_query")" "it's necessary to have the grant SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_count_query")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
     $CLICKHOUSE_CLIENT --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
-    assert_has "$(error_as_user "SELECT a FROM table1_04510")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
-    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_a_query")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_count_query")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
     $CLICKHOUSE_CLIENT --query "GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
-    [ "$(query_as_user "SELECT a FROM table1_04510")" = $'xxx\nzzz' ]
-    [ "$(query_as_user "SELECT count() FROM table1_04510")" = "2" ]
+    [ "$(query_as_user "$select_a_query")" = $'xxx\nzzz' ]
+    [ "$(query_as_user "$select_count_query")" = "2" ]
     $CLICKHOUSE_CLIENT --query "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510 FROM ${user_name}"
-    assert_has "$(error_as_user "SELECT a FROM table1_04510")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
-    assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_a_query")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
+    assert_has "$(error_as_user "$select_count_query")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
     echo "OK"
 }
