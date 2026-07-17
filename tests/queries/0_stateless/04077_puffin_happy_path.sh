@@ -36,3 +36,13 @@ $CLICKHOUSE_LOCAL -q "
 SELECT length(deleted_rows), deleted_rows[1], deleted_rows[100000]
 FROM file('$DATA/dense_range_100k.puffin', Puffin)
 "
+
+echo "--- subset without deleted_rows ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT referenced_data_file
+FROM file('$DATA/dense_range_100k.puffin', Puffin)
+"
+$CLICKHOUSE_LOCAL -q "
+SELECT referenced_data_file
+FROM file('$DATA/cardinality_exceeds_materialization_limit.puffin', Puffin)
+"

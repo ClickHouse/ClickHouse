@@ -762,6 +762,7 @@ PuffinInputFormat::PuffinInputFormat(ReadBuffer & buf, SharedHeader header_, con
     , seekable_read(format_settings_.seekable_read)
 {
     checkPuffinHeader(getPort().getHeader());
+    need_deleted_rows = getPort().getHeader().has("deleted_rows");
 }
 
 Chunk PuffinInputFormat::read()
@@ -781,25 +782,29 @@ Chunk PuffinInputFormat::read()
         if (blob.type != "deletion-vector-v1")
             continue;
 
-        UInt64 expected_cardinality = 0;
-        if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-                current_blob_index);
-
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
-
-        const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, seekable_read);
-        auto col_rows_data = ColumnUInt64::create();
-        deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
         auto col_file = ColumnString::create();
         col_file->insertData(referenced_data_file.data(), referenced_data_file.size());
 
-        auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
-        col_rows_offsets->insertValue(col_rows_data->size());
-        auto col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
+        MutableColumnPtr col_rows;
+        if (need_deleted_rows)
+        {
+            UInt64 expected_cardinality = 0;
+            if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+                    current_blob_index);
+
+            const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, seekable_read);
+            auto col_rows_data = ColumnUInt64::create();
+            deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
+
+            auto col_rows_offsets = ColumnArray::ColumnOffsets::create();
+            col_rows_offsets->insertValue(col_rows_data->size());
+            col_rows = ColumnArray::create(std::move(col_rows_data), std::move(col_rows_offsets));
+        }
 
         const Block & out_header = getPort().getHeader();
         MutableColumns result;

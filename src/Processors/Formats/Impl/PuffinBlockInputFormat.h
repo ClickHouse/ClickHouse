@@ -56,6 +56,7 @@ private:
     Chunk read() override;
 
     bool seekable_read = true;
+    bool need_deleted_rows = true;
     PuffinFooter footer;
     bool initialized = false;
     size_t blob_index = 0;
