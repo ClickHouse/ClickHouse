@@ -1374,6 +1374,9 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
             "processing_threads_num": 2,
             "buckets": 2,
         },
+        partitioning_mode="regex",
+        partition_regex=r"(?P<partition>test_\d+\.csv)",
+        partition_component="partition",
     )
     create_mv(node, table_name, dst_table_name)
 

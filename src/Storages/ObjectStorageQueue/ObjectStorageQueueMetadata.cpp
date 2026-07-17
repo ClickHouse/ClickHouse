@@ -1682,7 +1682,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     };
 
     std::optional<ActiveRegistryOwners> active_registry_owners;
-    if (!bucket_lock_paths.empty())
+    if (!bucket_lock_paths.empty() && partitioning_mode == ObjectStorageQueuePartitioningMode::REGEX)
         active_registry_owners = get_active_registry_owners();
 
     auto current_time = getCurrentTime();
