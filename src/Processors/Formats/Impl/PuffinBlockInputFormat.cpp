@@ -774,6 +774,12 @@ Chunk PuffinInputFormat::read()
     {
         blob_index = 0;
         footer = readPuffinFooter(*in, seekable_read);
+        /// No deletion-vector payload will be read; drop the full-file buffer from the non-seekable path.
+        if (!need_deleted_rows)
+        {
+            footer.data.clear();
+            footer.data.shrink_to_fit();
+        }
         initialized = true;
     }
 

@@ -46,3 +46,8 @@ $CLICKHOUSE_LOCAL -q "
 SELECT referenced_data_file
 FROM file('$DATA/cardinality_exceeds_materialization_limit.puffin', Puffin)
 "
+$CLICKHOUSE_LOCAL -q "
+SELECT referenced_data_file
+FROM file('$DATA/dense_range_100k.puffin', Puffin)
+SETTINGS input_format_allow_seeks = 0
+"

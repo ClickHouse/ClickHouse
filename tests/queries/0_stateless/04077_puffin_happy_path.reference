@@ -25,3 +25,4 @@ deletion-vector-v1	-1	-1	20	44		['cardinality','referenced-data-file']	['2','/da
 --- subset without deleted_rows ---
 /data/table/part-00000.parquet
 /data/table/part-00000.parquet
+/data/table/part-00000.parquet
