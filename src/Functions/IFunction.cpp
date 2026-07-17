@@ -571,8 +571,10 @@ void IExecutableFunction::validateCanThrowOnException(
     }
     catch (...)
     {
-        /// The exception reproduces over zero rows, so it fires under every plan shape and cannot
-        /// be introduced by executing the function over rows the original plan would not have fed it.
+        /// Ok, this probe only asks whether execution over zero rows throws; the original exception
+        /// is rethrown by the caller. The exception reproduces over zero rows, so it fires under every
+        /// plan shape and cannot be introduced by executing the function over rows the original plan
+        /// would not have fed it.
         return;
     }
 
