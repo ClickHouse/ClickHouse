@@ -144,6 +144,27 @@ private:
     /// Keeper session.
     bool isLeader() const;
 
+    /// Register this replica under <keeper_path>/replicas, so that dropping the engine on another
+    /// replica knows the shared PostgreSQL objects (slot, publication) are still in use. Idempotent.
+    void registerReplicaInKeeper();
+
+    /// Unregister this replica from <keeper_path>/replicas. Returns true when it was the last
+    /// registered replica: only then may the caller drop the shared PostgreSQL objects and the
+    /// coordination nodes.
+    bool unregisterReplicaAndCheckLast();
+
+    /// Remove the coordination-owned Keeper nodes (leader, replicas, snapshot marker). Does not touch
+    /// <keeper_path>/tables: the nested replicated tables remove their own trees when they are dropped.
+    void removeCoordinationNodes();
+
+    /// The durable "initial snapshot finished" marker. An existing replication slot alone does not
+    /// prove that the previous active worker finished copying the pre-slot table contents: it may have
+    /// died mid-snapshot, and WAL replay from the slot would then permanently miss the rows it never
+    /// copied. A new leader may resume from the slot's confirmed LSN only when this marker exists;
+    /// otherwise it has to redo the snapshot from scratch.
+    bool isInitialSnapshotCompleted();
+    void markInitialSnapshotCompleted(const String & lsn);
+
     ConsumerPtr getConsumer();
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);

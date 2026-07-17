@@ -7,6 +7,8 @@ from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
     check_tables_are_synchronized,
+    create_replication_slot,
+    get_postgres_conn,
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -127,6 +129,38 @@ def create_coordinated_db(tables_list):
     )
 
 
+def pg_query(query):
+    conn = get_postgres_conn(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, database=True
+    )
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+# The generated (non-user-managed) slot name for the database engine over the default schema
+# is the PostgreSQL database name.
+SHARED_SLOT_NAME = "postgres_database"
+
+
+def replication_slot_exists():
+    return (
+        len(
+            pg_query(
+                f"SELECT slot_name FROM pg_replication_slots WHERE slot_name = '{SHARED_SLOT_NAME}'"
+            )
+        )
+        > 0
+    )
+
+
+def publication_exists():
+    return len(pg_query("SELECT pubname FROM pg_publication")) > 0
+
+
 def test_replicated_nested_tables_converge_with_single_leader(started_cluster):
     pg_manager.create_postgres_table("test_table")
     instance.query(
@@ -219,3 +253,144 @@ def test_unknown_table_engine_is_rejected(started_cluster):
         f"SETTINGS materialized_postgresql_table_engine = 'MergeTree'"
     )
     assert "materialized_postgresql_table_engine" in error
+
+
+def test_keeper_path_requires_replicated_engine(started_cluster):
+    # Coordination with a plain (non-replicated) nested engine would leave the standbys without
+    # data, so a takeover would lose every row replicated before the failover.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_plain_engine_with_keeper "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_keeper_path = '{KEEPER_PATH}'"
+    )
+    assert "ReplicatedReplacingMergeTree" in error
+
+
+def test_takeover_before_snapshot_completion_reloads_all_rows(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # Simulate an active worker that died after creating the replication slot but before
+    # finishing the initial snapshot: the slot exists, but the durable snapshot-completion
+    # marker in Keeper is absent.
+    replication_conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+        replication=True,
+    )
+    create_replication_slot(replication_conn, slot_name=SHARED_SLOT_NAME)
+    replication_conn.close()
+
+    create_coordinated_db("test_table")
+
+    # Without the marker the new active worker must redo the snapshot instead of resuming from
+    # the slot's confirmed LSN; otherwise the 100 pre-slot rows would be lost permanently.
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 100
+
+    # And ongoing changes keep flowing through the recreated slot.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+
+def test_second_create_adopts_publication(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert publication_exists()
+
+    # The second CREATE must adopt the existing publication (shared state) instead of dropping
+    # it from under the active worker.
+    pg_manager2.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+    )
+    assert publication_exists()
+
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+
+def test_attach_detach_table_is_rejected_in_coordinated_mode(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("extra_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    # Dynamically adding/removing tables mutates the shared publication and only takes effect on
+    # one replica, so it is refused on every replica (leader and standby alike).
+    for node in (instance, instance2):
+        error = node.query_and_get_error(
+            "ATTACH TABLE test_database.extra_table"
+        )
+        assert "coordinated MaterializedPostgreSQL" in error
+
+        error = node.query_and_get_error(
+            "DETACH TABLE test_database.test_table PERMANENTLY"
+        )
+        assert "coordinated MaterializedPostgreSQL" in error
+
+    # The refused operations must not have broken replication.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+
+def test_drop_keeps_shared_state_until_last_replica(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert replication_slot_exists()
+    assert publication_exists()
+
+    leader_name = wait_for_leader(instance)
+    leader_instance = instance if leader_name == "coord_instance1" else instance2
+    leader_manager = pg_manager if leader_name == "coord_instance1" else pg_manager2
+    standby_manager = pg_manager2 if leader_name == "coord_instance1" else pg_manager
+
+    # Dropping a standby must keep the shared replication slot and publication for the leader.
+    standby_manager.drop_materialized_db()
+    assert replication_slot_exists()
+    assert publication_exists()
+
+    leader_instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(leader_instance, "test_table")
+
+    # Dropping the last replica removes the shared objects from PostgreSQL.
+    leader_manager.drop_materialized_db()
+    assert not replication_slot_exists()
+    assert not publication_exists()

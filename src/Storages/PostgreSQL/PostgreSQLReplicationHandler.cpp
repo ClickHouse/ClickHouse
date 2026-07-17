@@ -8,6 +8,7 @@
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <Common/thread_local_rng.h>
@@ -69,6 +70,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
 }
@@ -274,6 +276,13 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             "It enables single-active-worker coordination of the PostgreSQL replication slot across ClickHouse "
             "replicas, which is what makes a replicated/shared nested table engine safe to use", engine);
 
+    if (coordination_enabled && !is_replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path requires materialized_postgresql_table_engine to be "
+            "ReplicatedReplacingMergeTree or SharedReplacingMergeTree. With a plain ReplacingMergeTree the standby "
+            "replicas would hold no data (they receive it through ClickHouse replication of the nested tables), "
+            "so a takeover would permanently lose every row replicated before the failover");
+
     if (coordination_enabled && settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "materialized_postgresql_keeper_path (replica coordination) cannot be combined with "
@@ -388,6 +397,7 @@ void PostgreSQLReplicationHandler::startup(bool delayed)
         }
         else
         {
+            registerReplicaInKeeper();
             ensureNestedTablesExist();
             coordination_task->activateAndSchedule();
         }
@@ -442,6 +452,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
         connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
         if (coordination_enabled)
         {
+            registerReplicaInKeeper();
             ensureNestedTablesExist();
             coordination_task->activateAndSchedule();
         }
@@ -501,6 +512,9 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
 
 void PostgreSQLReplicationHandler::shutdown()
 {
+    /// Releasing `leader_node` below issues a Keeper remove request from this thread.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::shutdown");
+
     stop_synchronization.store(true);
 
     LOG_TRACE(log, "Deactivating startup task");
@@ -660,6 +674,10 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
+    /// In coordinated mode this function reads and writes the snapshot-completion marker in Keeper, and
+    /// loading the snapshot inserts into Replicated tables, which also issues Keeper requests.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::startSynchronization");
+
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
     adoptLegacyReplicationIdentityIfNeeded(tx);
@@ -699,6 +717,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
+        bool all_tables_loaded = true;
         for (const auto & [table_name, storage] : materialized_storages)
         {
             try
@@ -707,6 +726,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
+                all_tables_loaded = false;
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(log);
 
@@ -715,6 +735,18 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 if (throw_on_error && !is_materialized_postgresql_database)
                     throw;
             }
+        }
+
+        /// Only after every table's snapshot data is durably inserted may a future active worker resume
+        /// from the slot's confirmed LSN instead of redoing the snapshot (see isInitialSnapshotCompleted).
+        if (coordination_enabled)
+        {
+            if (all_tables_loaded)
+                markInitialSnapshotCompleted(start_lsn);
+            else
+                LOG_WARNING(log,
+                    "Not marking the initial snapshot as completed because loading some tables failed. "
+                    "The next active worker will redo the snapshot");
         }
     };
 
@@ -730,10 +762,29 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     }
     /// Always drop replication slot if it is CREATE query and not ATTACH.
     /// When coordination is enabled the slot is shared across replicas and an existing slot means another
-    /// replica (or this one before a restart/handover) already created it and its nested tables; a new
-    /// active worker must resume from `confirmed_flush_lsn` instead of dropping the slot and reloading.
+    /// replica (or this one before a restart/handover) already created it; a new active worker must resume
+    /// from `confirmed_flush_lsn` instead of dropping the slot and reloading - but only when the durable
+    /// snapshot-completion marker confirms the initial snapshot actually finished (see below).
     else if (!is_attach && !coordination_enabled)
     {
+        if (!user_managed_slot)
+            dropReplicationSlot(tx);
+
+        initial_sync();
+        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
+    }
+    /// The slot exists, but no active worker ever finished the initial snapshot: the previous one died
+    /// mid-snapshot. WAL replay from the slot only covers changes after the slot-creation LSN, so resuming
+    /// would permanently lose the rows that were never copied. Redo the snapshot from scratch. Rows the
+    /// dead worker did copy are re-inserted, which is safe: the nested tables are ReplacingMergeTree trees
+    /// and reads through the engine collapse duplicates by primary key and `_version`.
+    else if (coordination_enabled && !isInitialSnapshotCompleted())
+    {
+        LOG_WARNING(log,
+            "Replication slot {} exists, but the initial snapshot is not marked as completed. "
+            "Assuming the previous active worker died before finishing it; reloading all tables from a new snapshot",
+            replication_slot);
+
         if (!user_managed_slot)
             dropReplicationSlot(tx);
 
@@ -920,6 +971,9 @@ PostgreSQLReplicationHandler::ConsumerPtr PostgreSQLReplicationHandler::getConsu
 
 void PostgreSQLReplicationHandler::consumerFunc()
 {
+    /// In coordinated mode consuming inserts into Replicated nested tables, which issues Keeper requests.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::consumerFunc");
+
     assertInitialized();
 
     /// When coordination is enabled, only the active worker may consume (peek/advance) the shared slot.
@@ -993,6 +1047,9 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
     /// Create the nested tables on this replica without loading a snapshot. When coordination is enabled
     /// they are replicas of a shared replicated tree, so the data (including the initial snapshot that the
     /// active worker loads) propagates to this replica through ClickHouse replication.
+    /// Creating a Replicated table issues Keeper requests.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureNestedTablesExist");
+
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
 
@@ -1024,6 +1081,9 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
 
 void PostgreSQLReplicationHandler::coordinationFunc()
 {
+    /// This task talks to Keeper directly (leader election, session management).
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::coordinationFunc");
+
     if (stop_synchronization)
         return;
 
@@ -1089,6 +1149,78 @@ void PostgreSQLReplicationHandler::coordinationFunc()
 }
 
 
+void PostgreSQLReplicationHandler::registerReplicaInKeeper()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::registerReplicaInKeeper");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
+    zookeeper->createAncestors(replica_path);
+    zookeeper->createIfNotExists(replica_path, "");
+    LOG_DEBUG(log, "Registered replica '{}' at {}", coordination_replica_name, replica_path);
+}
+
+
+bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String replicas_path = coordination_keeper_path + "/replicas";
+    zookeeper->tryRemove(replicas_path + "/" + coordination_replica_name);
+
+    Strings remaining;
+    if (zookeeper->tryGetChildren(replicas_path, remaining) == Coordination::Error::ZOK && !remaining.empty())
+    {
+        LOG_INFO(log,
+            "Unregistered replica '{}'; {} replica(s) still registered, keeping the shared replication slot and publication",
+            coordination_replica_name, remaining.size());
+        return false;
+    }
+
+    LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
+    return true;
+}
+
+
+void PostgreSQLReplicationHandler::removeCoordinationNodes()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::removeCoordinationNodes");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    zookeeper->tryRemove(coordination_keeper_path + "/leader");
+    zookeeper->tryRemoveRecursive(coordination_keeper_path + "/replicas");
+    zookeeper->tryRemove(coordination_keeper_path + "/snapshot_completed");
+    /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
+    /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
+    /// dropped after this handler shuts down, so these removals may legitimately fail as not-empty,
+    /// leaving empty nodes behind - correctness over tidiness.
+    zookeeper->tryRemove(coordination_keeper_path + "/tables");
+    zookeeper->tryRemove(coordination_keeper_path);
+}
+
+
+bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::isInitialSnapshotCompleted");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    return zookeeper->exists(coordination_keeper_path + "/snapshot_completed");
+}
+
+
+void PostgreSQLReplicationHandler::markInitialSnapshotCompleted(const String & lsn)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::markInitialSnapshotCompleted");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String marker_path = coordination_keeper_path + "/snapshot_completed";
+    zookeeper->createAncestors(marker_path);
+    zookeeper->createIfNotExists(marker_path, lsn);
+    LOG_INFO(log, "Marked the initial snapshot as completed (lsn: {})", lsn);
+}
+
+
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
@@ -1102,7 +1234,10 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
 {
     auto publication_exists = isPublicationExist(tx);
 
-    if (!is_attach && publication_exists)
+    /// When coordination is enabled the publication is shared state, exactly like the replication slot: it
+    /// was created by another replica of the same coordinated setup (or by this one before a handover), and
+    /// dropping it here would break the replica that is consuming through it. Adopt it instead.
+    if (!is_attach && publication_exists && !coordination_enabled)
     {
         /// This is a case for single Materialized storage. In case of database engine this check is done in advance.
         LOG_WARNING(log,
@@ -1112,7 +1247,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         dropPublication(tx);
     }
 
-    if (!is_attach || !publication_exists)
+    if ((!is_attach && !coordination_enabled) || !publication_exists)
     {
         if (tables_list.empty())
         {
@@ -1331,6 +1466,13 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
+        /// The replication slot and the publication are shared with the other replicas of a coordinated
+        /// setup, so they may only be dropped together with the last replica. If Keeper is unavailable
+        /// here, the exception falls through to the catch below and nothing shared is dropped (fail-close:
+        /// a leaked slot can be dropped manually, breaking the surviving replicas cannot be undone).
+        if (coordination_enabled && !unregisterReplicaAndCheckLast())
+            return;
+
         /// Do not use fault injection during cleanup: leaked replication slots
         /// can exhaust PostgreSQL's max_replication_slots and break subsequent
         /// MaterializedPostgreSQL databases.
@@ -1344,14 +1486,17 @@ void PostgreSQLReplicationHandler::shutdownFinal()
                 dropReplicationSlot(tx, /* temporary */true);
         });
 
-        if (user_managed_slot)
-            return;
-
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        if (!user_managed_slot)
         {
-            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
-                dropReplicationSlot(tx, /* temporary */false);
-        });
+            connection.execWithRetry([&](pqxx::nontransaction & tx)
+            {
+                if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
+                    dropReplicationSlot(tx, /* temporary */false);
+            });
+        }
+
+        if (coordination_enabled)
+            removeCoordinationNodes();
     }
     catch (...)
     {
@@ -1409,7 +1554,10 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     /// If there is a tables list -- check that lists are consistent and if not -- remove publication, it will be recreated.
     if (publication_exists_before_startup)
     {
-        if (!is_attach)
+        /// When coordination is enabled the publication is shared with the other replicas of the same
+        /// coordinated setup: a second CREATE must adopt it (like an ATTACH does), not drop it from under
+        /// the replica that is consuming through it.
+        if (!is_attach && !coordination_enabled)
         {
             LOG_WARNING(log,
                         "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
@@ -1648,6 +1796,17 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
 
 void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
+    /// Adding a table mutates the shared publication and reloads data through a temporary slot, and it
+    /// only takes effect on the replica executing it: the other replicas would neither create the nested
+    /// table nor learn the updated tables list, and after a failover the new active worker would consume a
+    /// publication that no longer matches its configuration. Until these operations are routed through the
+    /// coordination (and applied on every replica), refuse them instead of corrupting the shared state.
+    if (coordination_enabled)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ATTACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     assertInitialized();
 
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
@@ -1703,6 +1862,13 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
 void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
 {
+    /// See the explanation in addTableToReplication.
+    if (coordination_enabled)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     assertInitialized();
 
     consumer_task->deactivate();

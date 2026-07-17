@@ -44,6 +44,7 @@ namespace Setting
 
 namespace MaterializedPostgreSQLSetting
 {
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_keeper_path;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
 }
 
@@ -375,6 +376,15 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
+    /// Refuse before creating the nested table below (it would be left behind by a throw later in
+    /// attachTable): see PostgreSQLReplicationHandler::addTableToReplication for the reasoning.
+    /// Checked on the settings (not on the handler, which is only created by the background startup task).
+    if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ATTACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
@@ -394,6 +404,15 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     /// If there is no query context then we need to attach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        /// Refuse before mutating anything (the tables-list setting is altered below and would not be
+        /// rolled back): see PostgreSQLReplicationHandler::addTableToReplication for the reasoning.
+        /// Checked on the settings (not on the handler, which is only created by the background startup task).
+        if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "ATTACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
 
@@ -443,6 +462,15 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        /// Refuse before mutating anything (the tables-list setting is altered below and would not be
+        /// rolled back): see PostgreSQLReplicationHandler::removeTableFromReplication for the reasoning.
+        /// Checked on the settings (not on the handler, which is only created by the background startup task).
+        if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
         auto & table_to_delete = materialized_tables[table_name];
         if (!table_to_delete)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
