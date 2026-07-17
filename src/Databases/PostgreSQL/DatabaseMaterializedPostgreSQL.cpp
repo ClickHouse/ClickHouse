@@ -870,6 +870,8 @@ This is also what makes a `MaterializedPostgreSQL` database work when it is crea
 
 Deployments that already used this setting before it became unique per server keep working after an upgrade: on attach, when the replication slot and publication exist under the previously generated names, they are adopted instead of creating new ones, so replication continues from the same position without reloading the initial snapshot.
 
+This setting cannot be combined with a user-managed `materialized_postgresql_replication_slot`: a user-managed slot has a single fixed name shared by every `ON CLUSTER` replica and cannot be made unique per server, so the two settings are contradictory and the combination is rejected on `CREATE`. Use one or the other.
+
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
