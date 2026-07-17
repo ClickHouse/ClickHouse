@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: the finalization-failure section enables the `framing_finalize_throw` fail point,
+# which affects the whole server. It fires on the next framing-format finalization anywhere on the
+# server, so a concurrent framing query from another test (e.g. `04512_framing_formats`) could consume
+# the injected fault - making this test miss its own exception packet and the other test throw
+# spuriously. Running the test alone keeps the fault scoped to this test's own query.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
