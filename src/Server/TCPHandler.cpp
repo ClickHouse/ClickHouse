@@ -126,6 +126,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool interserver_tables_status_require_auth;
     extern const ServerSettingsBool process_query_plan_packet;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
@@ -1155,7 +1156,7 @@ void TCPHandler::logQueryDuration(QueryState & state)
     /// We already logged more detailed info if we read some rows
     if (elapsed_sec < 1.0 && state.progress.read_rows)
         return;
-    LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
+    LOG_DEBUG(log, "Processed in {:.3f} sec.", elapsed_sec);
 }
 
 
@@ -1599,12 +1600,82 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
 void TCPHandler::processTablesStatusRequest()
 {
+    /// `TablesStatusRequest` is sent during connection establishment, before any query
+    /// authenticates the connection with the cluster secret. In interserver mode the request
+    /// is authenticated with a cluster-secret hash that also covers the request body (mirroring
+    /// the per-query secret hash `processQuery` computes over the query text), so a relayed hash
+    /// cannot be reused for a different set of tables. On that path the hash precedes the body on
+    /// the wire, so the body is deserialized to recompute the digest — but the tables are only
+    /// *resolved* (existence / readonly / replication-delay) after the hash has been validated.
+    /// An unauthenticated request that will be rejected is refused *before* its body is read, so an
+    /// unauthenticated peer cannot make the server deserialize an arbitrary request.
     TablesStatusRequest request;
-    request.read(*in, client_tcp_protocol_version);
-
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
+#if USE_SSL
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
+        {
+            std::string received_hash;
+            readStringBinary(received_hash, *in, 32);
+
+            /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
+            /// the query before validating the per-query secret hash). Tables are resolved only after
+            /// the hash validates below.
+            request.read(*in, client_tcp_protocol_version);
+
+            String cluster_secret;
+            try
+            {
+                cluster_secret = server.context()->getCluster(cluster)->getSecret();
+            }
+            catch (const Exception & e)
+            {
+                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            }
+
+            if (salt.empty() || cluster_secret.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed for TablesStatusRequest (no salt/cluster secret)");
+
+            /// Mirrors the per-query secret hash, reusing the salt/nonce from the Hello, and
+            /// binds the requested tables so a relayed hash cannot be reused for another set.
+            /// `StringWithMemoryTracking` (as in `processQuery`) routes the digest/hash duplicate of
+            /// the potentially large request through the throwing memory-tracker path.
+            StringWithMemoryTracking data(salt);
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
+            data += cluster_secret;
+            data += "TablesStatusRequest";
+            data += request.getAuthDigest();
+
+            if (encodeSHA256(data) != received_hash)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed for TablesStatusRequest");
+        }
+        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
+                 && !is_interserver_authenticated)
+        {
+            /// Older client that sends no hash: rejected by default
+            /// (`interserver_tables_status_require_auth` defaults to true), *before* reading the
+            /// body so an unauthenticated peer cannot make us deserialize its request. Operators can
+            /// turn the setting off as a temporary opt-out for a mixed-version rolling upgrade.
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+        }
+        else
+        {
+            /// Old client authenticated by an earlier query on this connection, or auth not required:
+            /// no hash to bind the body to, so just read it.
+            request.read(*in, client_tcp_protocol_version);
+        }
+#else
+        if (!is_interserver_authenticated)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+        request.read(*in, client_tcp_protocol_version);
+#endif
+
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
@@ -1617,6 +1688,7 @@ void TCPHandler::processTablesStatusRequest()
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
+        request.read(*in, client_tcp_protocol_version);
     }
 
     TablesStatusResponse response;
@@ -1659,6 +1731,16 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::processUnexpectedTablesStatusRequest()
 {
+    /// Consume the same wire prefix as processTablesStatusRequest: on a new-protocol
+    /// interserver connection the request body is preceded by the authentication hash.
+#if USE_SSL
+    if (is_interserver_mode && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
+    {
+        std::string skipped_hash;
+        readStringBinary(skipped_hash, *in, 32);
+    }
+#endif
+
     TablesStatusRequest skip_request;
     skip_request.read(*in, client_tcp_protocol_version);
 

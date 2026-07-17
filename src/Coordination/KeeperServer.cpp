@@ -1544,4 +1544,9 @@ std::vector<std::pair<std::string, Int32>> KeeperServer::getExpiredTTLPathsForGa
     return state_machine->getExpiredTTLPathsForGarbageCollector(batch_size);
 }
 
+std::vector<std::pair<std::string, Int32>> KeeperServer::getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const
+{
+    return state_machine->getContainerCandidatesForGarbageCollector(batch_size, max_never_used_interval_ms);
+}
+
 }
