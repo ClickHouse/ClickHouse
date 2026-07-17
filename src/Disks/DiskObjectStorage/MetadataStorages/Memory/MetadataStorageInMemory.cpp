@@ -413,9 +413,9 @@ void MetadataStorageInMemoryTransaction::setLastModified(const std::string & pat
     });
 }
 
-void MetadataStorageInMemoryTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
+void MetadataStorageInMemoryTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
-    operations.emplace_back([this, path, if_exists, should_remove_objects]()
+    operations.emplace_back([this, path, if_exists]()
     {
         auto it = metadata_storage.files.find(path);
         if (it == metadata_storage.files.end())
@@ -431,7 +431,17 @@ void MetadataStorageInMemoryTransaction::unlinkFile(const std::string & path, bo
         auto & blob_group = it->second.blob_group;
         blob_group->ref_count -= 1;
 
-        if (blob_group->ref_count == 0 && should_remove_objects)
+        /// `should_remove_objects` (i.e. `keep_shared_data`) is intentionally ignored for this backend:
+        /// once the last metadata owner is unlinked (`ref_count == 0`), the underlying objects must always
+        /// be released. `keep_shared_data == true` means "a durable out-of-band owner still references
+        /// these blobs", which is meaningless here — `memory` metadata is node-local and ephemeral, is only
+        /// valid with `borrow_from_cache`, and has zero-copy replication disabled, so no other replica keeps
+        /// the blobs alive. Blobs legitimately shared by hardlinks are already tracked by `ref_count` (see
+        /// `createHardLink`), so `ref_count == 0` is authoritative. Honoring `keep_shared_data` would instead
+        /// leak the borrowed `FileSegmentsHolder` until shutdown — e.g. an aborted fetch's
+        /// `removeSharedRecursive(true)` cleanup (`DataPartsExchange.cpp`) would pin cache space and
+        /// eventually surface `NOT_ENOUGH_SPACE` on later writes.
+        if (blob_group->ref_count == 0)
         {
             for (const auto & obj : blob_group->objects)
                 objects_to_remove.push_back(obj);
@@ -540,9 +550,9 @@ void MetadataStorageInMemoryTransaction::removeDirectory(const std::string & pat
 
 void MetadataStorageInMemoryTransaction::removeRecursive(
     const std::string & path,
-    const ShouldRemoveObjectsPredicate & should_remove_objects)
+    const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
 {
-    operations.emplace_back([this, path, should_remove_objects]()
+    operations.emplace_back([this, path]()
     {
         std::string prefix = path;
         if (!prefix.empty() && prefix.back() != '/')
@@ -559,13 +569,18 @@ void MetadataStorageInMemoryTransaction::removeRecursive(
                 auto & blob_group = it->second.blob_group;
                 blob_group->ref_count -= 1;
 
+                /// The `should_remove_objects` predicate (built from `keep_all_shared_data` /
+                /// `file_names_remove_metadata_only`) is intentionally ignored for this backend: once the
+                /// last metadata owner is unlinked (`ref_count == 0`), the underlying objects must always be
+                /// released. See the detailed rationale in `unlinkFile` — for the non-durable, node-local,
+                /// zero-copy-disabled `memory` backend there is no out-of-band owner keeping the blobs alive,
+                /// so honoring `keep_shared_data` would leak the borrowed cache segments. In particular
+                /// `DataPartsExchange.cpp` cleans up an aborted fetch with an unconditional
+                /// `removeSharedRecursive(true)`, whose predicate always returns `false`.
                 if (blob_group->ref_count == 0)
                 {
-                    if (!should_remove_objects || should_remove_objects(fs::relative(it->first, path)))
-                    {
-                        for (const auto & obj : blob_group->objects)
-                            objects_to_remove.push_back(obj);
-                    }
+                    for (const auto & obj : blob_group->objects)
+                        objects_to_remove.push_back(obj);
                 }
                 it = metadata_storage.files.erase(it);
             }

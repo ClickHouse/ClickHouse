@@ -347,3 +347,91 @@ TEST_F(MetadataInMemoryTest, TestPendingRemovalBlobs)
     EXPECT_EQ(metadata->recordAsRemoved({blob}), 1);
     EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
 }
+
+/// Unlinking the last owner of a blob must always submit that blob for removal, even when the caller
+/// asks to keep shared data (`should_remove_objects == false`). For this backend `keep_shared_data`
+/// has no valid meaning: `memory` metadata is node-local and ephemeral, is only used with
+/// `borrow_from_cache`, and has zero-copy replication disabled, so there is no out-of-band owner that
+/// could keep the blobs alive. Honoring `keep_shared_data` would leak the borrowed `FileSegmentsHolder`
+/// until shutdown — e.g. an aborted replicated fetch cleaning up with an unconditional
+/// `removeSharedRecursive(true)` (`DataPartsExchange.cpp`) would otherwise pin cache space and later
+/// fail writes with `NOT_ENOUGH_SPACE`.
+TEST_F(MetadataInMemoryTest, TestKeepSharedDataStillReleasesLastOwnerBlobs)
+{
+    /// `removeSharedFile(path, keep_shared_data=true)` maps to `unlinkFile(path, false, false)`.
+    {
+        auto metadata = getMetadataStorage();
+        const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 111);
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->createMetadataFile("file", {blob});
+            transaction->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ false);
+            transaction->commit(DB::NoCommitOptions{});
+            /// Even with `should_remove_objects == false`, the last owner's blob is released.
+            EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+        }
+        EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+    }
+
+    /// `removeSharedRecursive(path, keep_all_shared_data=true)` maps to `removeRecursive(path, pred)`
+    /// where the predicate always returns `false`.
+    {
+        auto metadata = getMetadataStorage();
+        const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "dir/file", 222);
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->createDirectory("dir");
+            transaction->createMetadataFile("dir/file", {blob});
+            transaction->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->removeRecursive("dir", /* should_remove_objects= */ [](const std::string &) { return false; });
+            transaction->commit(DB::NoCommitOptions{});
+            EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+        }
+        EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+    }
+}
+
+/// The last-owner release above must not over-release blobs that are still referenced through a
+/// hardlink: `ref_count` remains authoritative, so a blob shared by two links is released only once
+/// its last link is unlinked, regardless of `should_remove_objects`.
+TEST_F(MetadataInMemoryTest, TestHardlinkedBlobReleasedOnlyOnLastUnlink)
+{
+    auto metadata = getMetadataStorage();
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 333);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->createHardLink("file", "file_link");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// First unlink (still one link left) releases nothing, even though `should_remove_objects == true`.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 0);
+    }
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+
+    /// Last unlink releases the blob even with `should_remove_objects == false` (keep_shared_data).
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("file_link", /* if_exists= */ false, /* should_remove_objects= */ false);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+    }
+    EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+}
