@@ -6,6 +6,7 @@
 #    include <polyglot.h>
 #endif
 
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -21,6 +22,24 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace
+{
+
+/// Return the `INSERT` that owns the inline-data section of a parsed statement, if any.
+/// The client locates the inline-data boundary the same way in `ClientBase::analyzeMultiQueryText`:
+/// it also unwraps a single `EXPLAIN` layer, so that `EXPLAIN INSERT ... VALUES (...)` is handled
+/// like a plain `INSERT`. We must therefore recognize the explained `INSERT` here too.
+ASTInsertQuery * findInlineDataInsert(IAST * node)
+{
+    if (auto * insert = node->as<ASTInsertQuery>())
+        return insert;
+    if (auto * explain = node->as<ASTExplainQuery>(); explain && explain->getExplainedQuery())
+        return explain->getExplainedQuery()->as<ASTInsertQuery>();
+    return nullptr;
+}
+
+}
+
 String transpilePolyglotToClickHouse(
     [[maybe_unused]] std::string_view query,
     [[maybe_unused]] std::string_view source_dialect,
@@ -32,10 +51,22 @@ String transpilePolyglotToClickHouse(
         "Polyglot SQL transpiler is not available. "
         "Rust code or polyglot itself may be disabled. Use another dialect!");
 #else
-    /// Reject oversized queries before passing them to the transpiler
-    /// to prevent memory/CPU amplification.
+    /// The transpiler must receive the whole foreign query at once, including any inline
+    /// `INSERT ... VALUES`/`FORMAT` data (which it rewrites as well), because it cannot know where
+    /// the SQL header ends without parsing the foreign dialect. Unlike a native ClickHouse
+    /// `INSERT` — whose inline data is streamed and is not bounded by `max_query_size` — a polyglot
+    /// query, data included, must therefore fit within `max_query_size`. This is a known limitation
+    /// of the experimental dialect: the feature is scoped to inline payloads that fit the parser
+    /// size limit. Reject oversized input up front with a dedicated, actionable error (fail-close)
+    /// instead of silently truncating it or amplifying memory/CPU usage in the transpiler.
     if (max_query_size && query.size() > max_query_size)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Query size {} exceeds max_query_size {}", query.size(), max_query_size);
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Polyglot query size {} exceeds max_query_size {}. In the polyglot dialect the whole "
+            "query is transpiled at once, so any inline INSERT data counts towards max_query_size too "
+            "(unlike a native ClickHouse INSERT, whose inline data is streamed and is not subject to "
+            "this limit). Increase max_query_size to submit larger inline payloads in this dialect.",
+            query.size(), max_query_size);
 
     uint8_t * sql_query_ptr{nullptr};
     uint64_t sql_query_size{0};
@@ -139,8 +170,10 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// SQL text, at which parsing stops; the leftover is that data, not a second statement.
     /// The data pointers reference `transpiled`, which is freed when this function returns,
     /// so clear them: the client sends the original query verbatim and lets the server
-    /// re-transpile and read the data from its own owned buffer.
-    if (auto * insert = node->as<ASTInsertQuery>(); insert && insert->data)
+    /// re-transpile and read the data from its own owned buffer. This must also cover an
+    /// `EXPLAIN INSERT ... VALUES`, whose nested `INSERT` the client dereferences the same way
+    /// (`ClientBase::analyzeMultiQueryText`) — otherwise its `data`/`end` would dangle.
+    if (auto * insert = findInlineDataInsert(node.get()); insert && insert->data)
     {
         insert->data = nullptr;
         insert->end = nullptr;
