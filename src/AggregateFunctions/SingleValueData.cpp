@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 
@@ -1374,11 +1375,17 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         /// inflated by every intermediate reallocation. Only once the whole payload has arrived
         /// do we make a single Arena allocation (rounded up to a power of two) and copy into it.
         ///
+        /// The staging buffer must use StringWithMemoryTracking rather than a plain String:
+        /// allocations made through the global operator new are only counted against the
+        /// memory limit, not refused when it is exceeded, so a plain String could stage an
+        /// arbitrarily large payload past `max_memory_usage`. AllocatorWithMemoryTracking
+        /// enforces the limit as the buffer grows, matching the Arena's behavior.
+        ///
         /// The reuse branch requires `capacity >= size` (not just `>= bytes_to_read`) so that
         /// the legacy-format fixup below can safely append one byte at index `size - 1`.
         if (capacity < size)
         {
-            String tmp;
+            StringWithMemoryTracking tmp;
             UInt32 bytes_read = 0;
             while (bytes_read < bytes_to_read)
             {
