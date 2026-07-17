@@ -105,6 +105,16 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
     if (!select_query->groupBy())
         return;
 
+    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
+    /// row. In such a row the key is output as its column default. Rewriting f(g) -> g makes the
+    /// output projection recompute f(defaultOf(g)) instead of defaultOf(typeOf(f(g))) (e.g.
+    /// toString(number) from number = 0 gives '0' instead of the required String default ''),
+    /// which changes the result. See #110715.
+    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
+        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
+        return;
+
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
         return ast->as<ASTLiteral>();
@@ -605,6 +615,16 @@ void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query, ContextPtr co
 void TreeOptimizer::optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
     if (!select_query->groupBy())
+        return;
+
+    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
+    /// row. In such a row the key is output as its column default. Dropping a key that is a function
+    /// of other keys makes the output projection recompute it from those keys' totals-row defaults
+    /// (e.g. toString(number) from number = 0 gives '0' instead of the required String default ''),
+    /// which changes the result. See #110715.
+    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
+        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
         return;
 
     auto group_by = select_query->groupBy();

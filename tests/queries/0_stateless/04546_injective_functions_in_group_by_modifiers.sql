@@ -79,3 +79,33 @@ FROM numbers(3)
 GROUP BY v, number
 ORDER BY number
 SETTINGS optimize_group_by_function_keys = 1;
+
+-- The same invariants must hold on the legacy AST optimizer (enable_analyzer = 0), which runs
+-- optimizeGroupBy (optimize_injective_functions_in_group_by) and optimizeGroupByFunctionKeys
+-- (optimize_group_by_function_keys) in src/Interpreters/TreeOptimizer.cpp. Both must skip the
+-- rewrite under WITH TOTALS / GROUPING SETS so the totals/non-member rows keep the key column
+-- default rather than recomputing it from other keys' defaults (#110715).
+SELECT toString(number) AS v, count()
+FROM numbers(3)
+GROUP BY v WITH TOTALS
+ORDER BY v
+SETTINGS enable_analyzer = 0, optimize_injective_functions_in_group_by = 1;
+
+SELECT toString(number) AS v, number, count()
+FROM numbers(3)
+GROUP BY v, number WITH TOTALS
+ORDER BY number
+SETTINGS enable_analyzer = 0, optimize_group_by_function_keys = 1;
+
+SELECT toString(number) AS v, number, count()
+FROM numbers(3)
+GROUP BY GROUPING SETS ((v, number), (number))
+ORDER BY number, v
+SETTINGS enable_analyzer = 0, optimize_group_by_function_keys = 1;
+
+-- The optimizations still apply (results unchanged) for plain GROUP BY on the legacy path.
+SELECT toString(number) AS v, number
+FROM numbers(3)
+GROUP BY v, number
+ORDER BY number
+SETTINGS enable_analyzer = 0, optimize_injective_functions_in_group_by = 1, optimize_group_by_function_keys = 1;
