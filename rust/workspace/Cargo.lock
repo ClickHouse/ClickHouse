@@ -6,6 +6,7 @@ version = 4
 name = "_ch_rust_pco"
 version = "0.1.0"
 dependencies = [
+ "half",
  "pco",
 ]
 

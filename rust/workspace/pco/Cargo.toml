@@ -7,6 +7,10 @@ version = "0.1.0"
 # The pcodec ("pco") crate, patched in the ClickHouse fork to add runtime CPU
 # feature dispatch for its hot loops (see contrib/pcodec).
 pco = { path = "../../../contrib/pcodec/pco" }
+# `half::f16` is one of pco's number types (NUMBER_TYPE_BYTE = 9); it is a
+# transitive dependency of `pco`, and we name it directly on the untyped decode
+# path. Kept in the same major as pco's own `half` so it resolves to one crate.
+half = "2"
 
 [lib]
 crate-type = ["staticlib"]

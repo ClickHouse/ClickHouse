@@ -166,6 +166,7 @@ pub unsafe extern "C" fn pco_compress(
         6 => compress_typed::<f64>(src, n, level, false, dst, cap, out_size),
         7 => compress_typed::<u16>(src, n, level, false, dst, cap, out_size),
         8 => compress_typed::<i16>(src, n, level, false, dst, cap, out_size),
+        9 => compress_typed::<half::f16>(src, n, level, false, dst, cap, out_size),
         10 => compress_typed::<u8>(src, n, level, true, dst, cap, out_size),
         11 => compress_typed::<i8>(src, n, level, true, dst, cap, out_size),
         _ => PCO_ERROR,
@@ -224,6 +225,7 @@ pub unsafe extern "C" fn pco_decompress(
             6 if width == 8 => decompress_typed::<f64>(source, dst, n, cap),
             7 if width == 2 => decompress_typed::<u16>(source, dst, n, cap),
             8 if width == 2 => decompress_typed::<i16>(source, dst, n, cap),
+            9 if width == 2 => decompress_typed::<half::f16>(source, dst, n, cap),
             10 if width == 1 => decompress_typed::<u8>(source, dst, n, cap),
             11 if width == 1 => decompress_typed::<i8>(source, dst, n, cap),
             _ => PCO_ERROR,
@@ -286,10 +288,46 @@ mod tests {
             roundtrip(7, 2, &u16s);
             let i16s: Vec<u8> = (0..5000i16).flat_map(|i| i.wrapping_sub(2500).to_le_bytes()).collect();
             roundtrip(8, 2, &i16s);
+            let f16s: Vec<u8> = (0..5000u32).flat_map(|i| half::f16::from_f32(i as f32 * 0.5).to_le_bytes()).collect();
+            roundtrip(9, 2, &f16s);
             let u8s: Vec<u8> = (0..5000u32).map(|i| (i % 251) as u8).collect();
             roundtrip(10, 1, &u8s);
             let i8s: Vec<u8> = (0..5000u32).map(|i| ((i % 251) as i32 - 125) as u8).collect();
             roundtrip(11, 1, &i8s);
+        }
+    }
+
+    #[test]
+    fn decompress_external_f16_stream() {
+        // A valid standalone `.pco` stream carrying `f16` values (number type
+        // byte 9) — as an external pcodec producer or an HTTP `decompress=1`
+        // client would send — must decode on the untyped method-byte path. The
+        // stream is built with the reference `simple_compress` API (not the FFI
+        // compress arm) so this exercises decode independently.
+        unsafe {
+            let nums: Vec<half::f16> = (0..5000u32).map(|i| half::f16::from_f32(i as f32 * 0.25)).collect();
+            let compressed = pco::standalone::simple_compress(&nums, &ChunkConfig::default())
+                .expect("compress f16 stream");
+
+            let expected: Vec<u8> = nums.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let mut restored = vec![0u8; expected.len()];
+            let rc = pco_decompress(
+                2,
+                compressed.as_ptr(),
+                compressed.len() as u64,
+                restored.as_mut_ptr(),
+                nums.len() as u64,
+                restored.len() as u64,
+            );
+            assert_eq!(rc, PCO_OK, "decompress rc for external f16 stream");
+            assert_eq!(&restored, &expected, "roundtrip bytes for external f16 stream");
+
+            // A width that disagrees with the stream's f16 (2 bytes) fails closed.
+            let mut wide = vec![0u8; expected.len() * 2];
+            assert_eq!(
+                pco_decompress(4, compressed.as_ptr(), compressed.len() as u64, wide.as_mut_ptr(), nums.len() as u64, wide.len() as u64),
+                PCO_ERROR
+            );
         }
     }
 
