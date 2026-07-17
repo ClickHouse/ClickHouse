@@ -6235,14 +6235,20 @@ async function postOne()
     document.body.scrollTo(0, 0);
     beginFlight();
 
-    const has_selection = query_area.selectionStart !== query_area.selectionEnd;
+    /// Snapshot the selection range at launch time, alongside `has_selection` and the text below.
+    /// Typing or moving the caret during the `splitAllQueries` lexer await does not cancel this run,
+    /// so the statements to run must be chosen from the launched selection, not from wherever the
+    /// caret ends up by the time the lexer resolves. `selStart`/`selEnd` index into the same
+    /// launch-time `all_text` snapshot (and its `parsed` offsets), the same launch-time discipline
+    /// the run text itself follows.
+    const selStart = query_area.selectionStart;
+    const selEnd = query_area.selectionEnd;
+    const has_selection = selStart !== selEnd;
     if (has_selection && isMultiQuery) {
         /// Find all queries that intersect the selection and run them.
         const all_text = query_area.value;
         const parsed = await splitAllQueries(all_text);
         if (my_request_num !== request_num) return;
-        const selStart = query_area.selectionStart;
-        const selEnd = query_area.selectionEnd;
 
         /// Use start/end offsets from splitAllQueries to find which queries overlap with the selection.
         const selected = [];
@@ -6293,9 +6299,16 @@ async function postAll()
     if (parsed.length > 1) {
         await postMulti(my_request_num, parsed, params_restore_pending, all_text);
     } else {
-        const query = await getQueryUnderCursor();
-        if (my_request_num !== request_num) return;
-        await postSingle(my_request_num, query, undefined, params_restore_pending, queryUnderCursorStart);
+        /// A single statement (or none): run the launch-time snapshot `splitAllQueries` produced
+        /// from `all_text`, never a fresh `getQueryUnderCursor` read of the live editor. `postAll`
+        /// runs everything, so the statement is `parsed[0]` (or the raw `all_text` when nothing
+        /// parsed); re-reading `query_area.value` after the lexer await would let a draft typed
+        /// mid-await execute on the `run=1` / reload path — a shared link or reload would then
+        /// auto-run text that was never launched. This follows the same launch-time discipline the
+        /// multi-query branch above and `postOne` already use.
+        const query = parsed.length ? parsed[0].query : all_text;
+        const queryStart = parsed.length ? parsed[0].queryStart : 0;
+        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight

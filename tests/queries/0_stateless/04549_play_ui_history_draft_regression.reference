@@ -33,6 +33,10 @@ delayed completion (multi-query): the entry does not carry run=1
 in-flight single run: the never-run draft is not stamped run=1
 in-flight single run: the result snapshot is the statement that actually ran
 in-flight single run: the live draft survives in the editor
+run-selected in-flight: the launched selection runs, not the moved caret
+in-flight run-all single: the launched statement runs, not the draft
+in-flight run-all single: the never-run draft is not stamped run=1
+in-flight run-all single: the live draft survives in the editor
 placeholder dropped: the completed run keeps run=1
 placeholder dropped: the removed placeholder does not leak into the URL
 placeholder dropped: the stale binding is cleared from the tab

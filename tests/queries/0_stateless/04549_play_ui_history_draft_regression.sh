@@ -32,7 +32,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     entry it produces, even though it still keeps the completed run's own result snapshot.
 #     Pinned for both a single query and a "Run all" of several, the latter driving the real
 #     `postMulti` (not just `saveHistory`) so a regression in its own launch-time snapshot
-#     (`launch_query_text`) is caught too, not only one in `saveHistory`'s guard.
+#     (`launch_query_text`) is caught too, not only one in `saveHistory`'s guard;
+#   - the run entrypoints snapshot the launched query AND selection range BEFORE the WASM-lexer
+#     await, so a draft typed (or a caret moved) while the lexer loads never becomes what actually
+#     runs: `postAll`'s single-statement branch runs the parsed launch text rather than re-reading
+#     the live editor (which on the `run=1` path would auto-run a never-launched draft), and
+#     `postOne`'s `Run selected` picks statements from the launch-time selection, not the moved caret.
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects (including a minimal in-memory
 # IndexedDB), asserting on the observable state: history entries, the active tab, the
@@ -86,6 +91,12 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     'postSingle', 'postOne'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
+/// The real "Run all" / `run=1` auto-run entrypoint, extracted under an alias so the sandbox's
+/// `postAll` stays the `reconcileStartup` stub the reload cases assert on (`postAllCalled`). The
+/// in-flight "Run all" single-statement case below drives this to pin `postAll`'s launch-time
+/// editor snapshot: it must run the statement parsed from the launch-time text, never re-read
+/// `query_area.value` after the `splitAllQueries` lexer await.
+code += '\n' + extractTopLevel(/^async function postAll\(/, 'postAll').replace('async function postAll(', 'async function realPostAll(');
 
 /// Queued resolvers for in-flight `postImpl` calls made by the real `postMulti` under test
 /// (see `startMultiRun`/`finishMultiRun`); each one hangs until `resolvePendingPostImpl` below
@@ -115,7 +126,9 @@ const sandbox = {
     /// from an unrun draft drops the auto-run marker.
     run_immediately: true,
     user_elem: { value: '' },
-    query_area: { value: '', focus() {} },
+    /// `selectionStart`/`selectionEnd` back the `Run selected` path; `has_selection` and the
+    /// selected statements are derived from them (the in-flight selection case moves them mid-run).
+    query_area: { value: '', selectionStart: 0, selectionEnd: 0, focus() {} },
     document: {
         title: '', documentElement: { style: { setProperty() {} } },
         /// `postMulti` only ever toggles `.style.display` on these and creates plain
@@ -344,6 +357,8 @@ function reset()
     sandbox.history.stack.length = 0;
     sandbox.history.idx = -1;
     sandbox.query_area.value = '';
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
     sandbox.param_inputs = {};
     sandbox.document.title = '';
     /// Simulate a session opened from a `run=1` URL so a genuine run stamps `run=1` into its entry
@@ -557,6 +572,63 @@ async function reload()
     assert_eq('in-flight single run: the result snapshot is the statement that actually ran', active().result && active().result.query, 'SELECT 1');
     assert_eq('in-flight single run: the live draft survives in the editor', active().query, 'SELECT 99; SELECT 2');
     sandbox.isMultiQuery = false;
+
+    /// `Run selected` must target the statement selected when the run was LAUNCHED, even if the
+    /// caret moves (or text is typed) while the `splitAllQueries` lexer promise is still in flight --
+    /// typing/moving does not cancel the run. `postOne` snapshots the selection range together with
+    /// the text before that await; a regression that re-read `query_area.selectionStart`/`selectionEnd`
+    /// afterwards would run whichever statement the moved caret now overlaps (`SELECT 1`) instead of
+    /// the launched one (`SELECT 2`). Drives the REAL `postOne`/`postSingle` with a hung lexer.
+    reset();
+    sandbox.isMultiQuery = true;
+    sandbox.query_area.value = 'SELECT 1; SELECT 2';
+    active().query = 'SELECT 1; SELECT 2';
+    sandbox.query_area.selectionStart = 10;   /// 'SELECT 2' selected at launch time
+    sandbox.query_area.selectionEnd = 18;
+    let releaseSelSplit;
+    sandbox.splitAllQueries = () => new Promise(resolve => { releaseSelSplit = () => resolve([
+        { query: 'SELECT 1', is_select: true, start: 0, end: 8, queryStart: 0 },
+        { query: 'SELECT 2', is_select: true, start: 10, end: 18, queryStart: 10 },
+    ]); });
+    const selPromise = sandbox.postOne();
+    await drain();
+    sandbox.query_area.selectionStart = 1;    /// caret moved near the start while the lexer loads
+    sandbox.query_area.selectionEnd = 1;
+    releaseSelSplit();
+    await drain();
+    resolvePendingPostImpl();
+    await selPromise;
+    await drain();
+    assert_eq('run-selected in-flight: the launched selection runs, not the moved caret', active().result && active().result.query, 'SELECT 2');
+    sandbox.isMultiQuery = false;
+
+    /// A "Run all" of a SINGLE statement on the `run=1` / reload path must run the statement parsed
+    /// from the launch-time text, never re-read the live editor after the `splitAllQueries` lexer
+    /// await. Drives the REAL `postAll` (aliased to `realPostAll`, see above): launch `SELECT 1`, type
+    /// `DROP TABLE important` while the lexer is still loading, and the run/result/history stay on
+    /// `SELECT 1` while the live draft survives untouched and unrun. A regression that re-read
+    /// `query_area.value` (via `getQueryUnderCursor`) would execute the draft and stamp it `run=1`,
+    /// so a shared link / reload would auto-run text that was never launched.
+    reset();
+    sandbox.query_area.value = 'SELECT 1';
+    active().query = 'SELECT 1';
+    /// The regressed branch reads the live editor here; the fixed one uses the parsed launch text.
+    sandbox.getQueryUnderCursor = async () => sandbox.query_area.value;
+    let releaseAllSplit;
+    sandbox.splitAllQueries = text => new Promise(resolve => { releaseAllSplit = () => resolve([
+        { query: text.trim(), is_select: true, start: 0, end: text.length, queryStart: 0 },
+    ]); });
+    const allPromise = sandbox.realPostAll();
+    await drain();
+    type('DROP TABLE important');   /// draft typed while the lexer is still loading
+    releaseAllSplit();
+    await drain();
+    resolvePendingPostImpl();
+    await allPromise;
+    await drain();
+    assert_eq('in-flight run-all single: the launched statement runs, not the draft', active().result && active().result.query, 'SELECT 1');
+    assert_eq('in-flight run-all single: the never-run draft is not stamped run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('in-flight run-all single: the live draft survives in the editor', active().query, 'DROP TABLE important');
 
     /// A query edit that drops a parameter placeholder rebuilds the `param_*` inputs (via
     /// `updateQueryParams`) but leaves `tab.params` holding the previous query's bindings until a
