@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionArrayShingles final : public IFunction
+class FunctionArrayShingles : public IFunction
 {
 public:
     static constexpr auto name = "arrayShingles";

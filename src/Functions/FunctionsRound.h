@@ -11,7 +11,6 @@
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
 #include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -112,12 +111,7 @@ struct IntegerRoundingComputation
         {
             case RoundingMode::Trunc:
             {
-                /// `x - x % scale` instead of `x / scale * scale`. For wide integer types
-                /// (`Decimal128`/`Decimal256`) the compiler emits a single divmod helper call
-                /// (`__udivmodti4`) that returns both quotient and remainder, so we can
-                /// compute the truncated value with a subtraction and skip the multi-word
-                /// `imul scale` that the textbook formulation would otherwise require.
-                return x - x % scale;
+                return x / scale * scale;
             }
             case RoundingMode::Floor:
             {
@@ -682,7 +676,7 @@ public:
 /// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
 /// Accept an additional optional parameter of type (U)Int8/16/32/64 (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-class FunctionRounding final : public IFunction
+class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -771,7 +765,7 @@ public:
 
 /// Rounds down to a number within explicitly specified array.
 /// If the value is less than the minimal bound - returns the minimal bound.
-class FunctionRoundDown final : public IFunction
+class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
@@ -883,33 +877,15 @@ private:
     void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
-        VectorWithMemoryTracking<ValueType> boundary_values;
-        boundary_values.reserve(boundaries.size());
-        for (const auto & boundary_field : boundaries)
-        {
-            auto boundary = static_cast<ValueType>(boundary_field.safeGet<ValueType>());
-            /// Drop NaN boundaries: they have no position in the ordering, so keeping them
-            /// would break the strict-weak-ordering contract of `::sort` below.
-            if constexpr (is_floating_point<ValueType>)
-                if (isNaN(boundary))
-                    continue;
-            boundary_values.push_back(boundary);
-        }
-
-        size_t size = src.size();
-        dst.resize(size);
-
-        /// No finite boundary to round to (every boundary was NaN). Reachable only for
-        /// floating-point ValueType.
-        if (boundary_values.empty())
-        {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = NaNOrZero<ValueType>();
-            return;
-        }
+        std::vector<ValueType> boundary_values(boundaries.size());
+        for (size_t i = 0; i < boundaries.size(); ++i)
+            boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
 
         ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
+
+        size_t size = src.size();
+        dst.resize(size);
 
         /// NaN inputs have no defined position in the boundary ordering: every comparison
         /// against NaN is false, which breaks both the linear-search carry-over hint and

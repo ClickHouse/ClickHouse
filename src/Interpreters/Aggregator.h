@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
+#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -11,9 +12,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/MemoryTracker.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -171,7 +170,7 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -191,7 +190,6 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
@@ -311,7 +309,7 @@ private:
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
     /// Positions of aggregate function argument columns in the header.
-    const ColumnNumbersList aggregates_positions;
+    const std::vector<ColumnNumbers> aggregates_positions;
     /// Types of key columns from the input header.
     const DataTypes key_types;
     /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.
@@ -326,7 +324,7 @@ private:
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -337,10 +335,8 @@ private:
 
     bool all_aggregates_has_trivial_destructor = false;
 
-    /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
+    /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
-    /// Track memory held by the aggreagation state during execution.
-    std::unique_ptr<MemoryTracker> memory_tracker;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
@@ -364,7 +360,7 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable std::unique_ptr<ThreadPool> thread_pool;
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */

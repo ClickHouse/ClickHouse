@@ -10,7 +10,7 @@ import lz4.frame
 import pytest
 import pytz
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -188,7 +188,7 @@ class QueryThread(Thread):
 def start_cluster():
     cluster.start()
     try:
-        with create_channel():
+        with create_channel() as channel:
             yield cluster
 
     finally:
@@ -604,13 +604,7 @@ def test_cancel_while_generating_output():
     output = b""
     for result in results:
         output += result.output
-    # The exact number of rows emitted before the cancel takes effect depends on
-    # how the server-side block production races against the cancel signal,
-    # which is timing-sensitive under load. Verify cancellation interrupted the
-    # query mid-stream by checking the output is a strict prefix of the full result.
-    full_output = b"".join(b"%d\t0\n" % i for i in range(10))
-    assert full_output.startswith(output), f"output not a prefix of full result: {output!r}"
-    assert len(output) < len(full_output), "cancel did not interrupt: got the full result"
+    assert output == b"0\t0\n1\t0\n2\t0\n3\t0\n"
 
 
 def test_compressed_output():

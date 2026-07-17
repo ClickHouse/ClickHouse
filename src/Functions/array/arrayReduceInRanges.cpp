@@ -14,7 +14,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -38,7 +37,7 @@ namespace ErrorCodes
   *
   * arrayReduceInRanges('agg', indices, lengths, arr1, ...)
   */
-class FunctionArrayReduceInRanges final : public IFunction
+class FunctionArrayReduceInRanges : public IFunction
 {
 public:
     static const size_t minimum_step = 64;
@@ -76,7 +75,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
-    VectorWithMemoryTracking<ColumnPtr> materialized_columns;
+    std::vector<ColumnPtr> materialized_columns;
 
     /// Handling ranges
 
@@ -106,7 +105,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     const size_t num_arguments_columns = arguments.size() - 2;
 
-    VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+    std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
@@ -328,7 +327,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 namespace
 {
 
-class FunctionArrayReduceInRangesOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceInRangesOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduceInRanges";

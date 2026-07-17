@@ -111,7 +111,7 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
@@ -120,8 +120,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
     if (auto entry = cache.get(key))
     {
-        if (increment_profile_events)
-            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
         std::shared_lock lock(entry->mutex);
 
@@ -136,8 +135,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     }
     else
     {
-        if (increment_profile_events)
-            ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
         LOG_TEST(
             logger,

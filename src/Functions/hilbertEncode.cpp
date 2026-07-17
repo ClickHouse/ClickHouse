@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionHilbertEncode final : public FunctionSpaceFillingCurveEncode
+class FunctionHilbertEncode : public FunctionSpaceFillingCurveEncode
 {
 public:
     static constexpr auto name = "hilbertEncode";
