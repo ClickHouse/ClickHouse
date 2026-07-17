@@ -204,6 +204,11 @@ private:
     /// `generateOutputChunks` reconciles this charge to the exact bytes actually buffered.
     void chargePendingInput();
     void dischargePendingInput();
+    /// Release the pending input chunk's provisional pre-split budget charge and drop it without splitting.
+    /// Used on every path where the pulled block will never be scattered: the outputs all finished before
+    /// work() could split it (a downstream LIMIT or cancellation), or the budget was exceeded. Leaving the
+    /// charge behind would make sibling scatters (sharing the counter) trip the budget spuriously.
+    void dropPendingInput();
 
     size_t num_shards;
     ColumnNumbers key_columns;

@@ -188,6 +188,15 @@ void BufferedShardByHashTransform::dischargePendingInput()
     pending_input_touched.clear();
 }
 
+void BufferedShardByHashTransform::dropPendingInput()
+{
+    if (!has_pending_input_chunk)
+        return;
+    dischargePendingInput();
+    pending_input_chunk = {};
+    has_pending_input_chunk = false;
+}
+
 bool BufferedShardByHashTransform::allOutputsFinished() const
 {
     for (const auto & output : outputs)
@@ -227,14 +236,8 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 
     if (all_finished)
     {
-        /// Release the pending input's budget charge if we finish before splitting it, so a leftover charge
-        /// never makes sibling scatters (sharing the counter) trip the budget spuriously.
-        if (has_pending_input_chunk)
-        {
-            dischargePendingInput();
-            pending_input_chunk = {};
-            has_pending_input_chunk = false;
-        }
+        /// Drop the pending input chunk if we reach EOF before splitting it.
+        dropPendingInput();
         input.close();
         return Status::Finished;
     }
@@ -379,18 +382,26 @@ void BufferedShardByHashTransform::work()
         if (!allOutputsFinished())
             throwBufferBudgetExceeded();
 
-        if (has_pending_input_chunk)
-        {
-            dischargePendingInput();
-            pending_input_chunk = {};
-            has_pending_input_chunk = false;
-        }
+        dropPendingInput();
         budget_exceeded = false;
         return;
     }
 
     if (has_pending_input_chunk)
     {
+        /// Between the prepare() that pulled this chunk and this work(), a downstream can finish every output -
+        /// a `LimitTransform` closes all of its upstream inputs the moment it reaches its limit, and so does a
+        /// cancellation. The buffered block is then needed by nobody, so skip the repartitioning entirely
+        /// instead of letting `generateOutputChunks` hash and `scatter` the whole block - materializing every
+        /// per-shard column up front, and possibly hitting `max_memory_usage` - only to enqueue nothing because
+        /// every output is finished. This mirrors the all-outputs-finished carve-out on the budget_exceeded path
+        /// above; the next prepare() observes the finished outputs and finishes this processor cleanly.
+        if (allOutputsFinished())
+        {
+            dropPendingInput();
+            return;
+        }
+
         generateOutputChunks();
         has_pending_input_chunk = false;
 
