@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured on the server.
+Contains a list of [user accounts](/sql-reference/statements/create/user) configured on the server.
 
 ## Columns {#columns}
 

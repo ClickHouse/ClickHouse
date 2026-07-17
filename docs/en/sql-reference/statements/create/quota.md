@@ -7,7 +7,7 @@ title: 'CREATE QUOTA'
 doc_type: 'reference'
 ---
 
-Creates a [quota](../../../guides/sre/user-management/index.md#quotas-management) that can be assigned to a user or a role.
+Creates a [quota](/sql-reference/statements/create/quota) that can be assigned to a user or a role.
 
 Syntax:
 

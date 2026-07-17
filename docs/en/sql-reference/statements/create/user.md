@@ -7,7 +7,7 @@ title: 'CREATE USER'
 doc_type: 'reference'
 ---
 
-Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
+Creates [user accounts](/sql-reference/statements/create/user).
 
 Syntax:
 

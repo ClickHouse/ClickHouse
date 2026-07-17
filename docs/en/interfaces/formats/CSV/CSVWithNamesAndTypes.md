@@ -15,7 +15,7 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../formats/TabSeparatedWithNamesAndTypes).
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../TabSeparated/TabSeparatedWithNamesAndTypes.md).
 
 ## Example usage {#example-usage}
 

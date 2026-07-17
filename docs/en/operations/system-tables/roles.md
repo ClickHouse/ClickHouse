@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-Contains information about configured [roles](../../guides/sre/user-management/index.md#role-management).
+Contains information about configured [roles](/sql-reference/statements/create/role).
 
 ## Columns {#columns}
 

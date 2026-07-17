@@ -7,7 +7,7 @@ title: 'CREATE SETTINGS PROFILE'
 doc_type: 'reference'
 ---
 
-Creates [settings profiles](../../../guides/sre/user-management/index.md#settings-profiles-management) that can be assigned to a user or a role.
+Creates [settings profiles](/sql-reference/statements/create/settings-profile) that can be assigned to a user or a role.
 
 Syntax:
 

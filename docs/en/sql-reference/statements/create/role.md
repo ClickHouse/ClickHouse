@@ -7,7 +7,7 @@ title: 'CREATE ROLE'
 doc_type: 'reference'
 ---
 
-Creates new [roles](../../../guides/sre/user-management/index.md#role-management). Role is a set of [privileges](/sql-reference/statements/grant#granting-privilege-syntax). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
+Creates new [roles](/sql-reference/statements/create/role). Role is a set of [privileges](/sql-reference/statements/grant#granting-privilege-syntax). A [user](../../../sql-reference/statements/create/user.md) assigned a role gets all the privileges of this role.
 
 Syntax:
 

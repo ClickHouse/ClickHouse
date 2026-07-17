@@ -12,7 +12,7 @@ doc_type: 'reference'
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
 
 - [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
-- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
+- [`format_display_secrets_in_show_and_select` ](../../operations/settings/settings-formats.md#format_display_secrets_in_show_and_select) (format setting)  
 
 Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md/#displaysecretsinshowandselect) privilege.
 :::
@@ -422,7 +422,7 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 
 ## SHOW USERS {#show-users}
 
-The `SHOW USERS` statement returns a list of [user account](../../guides/sre/user-management/index.md#user-account-management) names. 
+The `SHOW USERS` statement returns a list of [user account](/sql-reference/statements/create/user) names. 
 To view user accounts parameters, see the system table [`system.users`](/operations/system-tables/users).
 
 ### Syntax {#syntax-13}
@@ -433,7 +433,7 @@ SHOW USERS
 
 ## SHOW ROLES {#show-roles}
 
-The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
+The `SHOW ROLES` statement returns a list of [roles](/sql-reference/statements/create/role). 
 To view other parameters, 
 see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role_grants).
 
@@ -444,7 +444,7 @@ SHOW [CURRENT|ENABLED] ROLES
 ```
 ## SHOW PROFILES {#show-profiles}
 
-The `SHOW PROFILES` statement returns a list of [setting profiles](../../guides/sre/user-management/index.md#settings-profiles-management). 
+The `SHOW PROFILES` statement returns a list of [setting profiles](/sql-reference/statements/create/settings-profile). 
 To view user accounts parameters, see system table [`settings_profiles`](/operations/system-tables/settings_profiles).
 
 ### Syntax {#syntax-15}
@@ -455,7 +455,7 @@ SHOW [SETTINGS] PROFILES
 
 ## SHOW POLICIES {#show-policies}
 
-The `SHOW POLICIES` statement returns a list of [row policies](../../guides/sre/user-management/index.md#row-policy-management) for the specified table. 
+The `SHOW POLICIES` statement returns a list of [row policies](/sql-reference/statements/create/row-policy) for the specified table. 
 To view user accounts parameters, see system table [`system.row_policies`](/operations/system-tables/row_policies).
 
 ### Syntax {#syntax-16}
@@ -466,7 +466,7 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ## SHOW QUOTAS {#show-quotas}
 
-The `SHOW QUOTAS` statement returns a list of [quotas](../../guides/sre/user-management/index.md#quotas-management). 
+The `SHOW QUOTAS` statement returns a list of [quotas](/sql-reference/statements/create/quota). 
 To view quotas parameters, see the system table [`system.quotas`](/operations/system-tables/quotas).
 
 ### Syntax {#syntax-17}
@@ -487,7 +487,7 @@ SHOW [CURRENT] QUOTA
 ```
 ## SHOW ACCESS {#show-access}
 
-The `SHOW ACCESS` statement shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
+The `SHOW ACCESS` statement shows all [users](/sql-reference/statements/create/user), [roles](/sql-reference/statements/create/role), [profiles](/sql-reference/statements/create/settings-profile), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
 
 ### Syntax {#syntax-19}
 

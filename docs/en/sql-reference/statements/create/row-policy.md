@@ -7,7 +7,7 @@ title: 'CREATE ROW POLICY'
 doc_type: 'reference'
 ---
 
-Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
+Creates a [row policy](/sql-reference/statements/create/row-policy), i.e. a filter used to determine which rows a user can read from a table.
 
 :::tip
 Row policies make sense only for users with readonly access. If a user can modify a table or copy partitions between tables, it defeats the restrictions of row policies.

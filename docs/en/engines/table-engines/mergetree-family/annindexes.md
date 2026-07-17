@@ -91,7 +91,7 @@ Alternatively, to add a vector similarity index to an existing table:
 ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>];
 ```
 
-Vector similarity indexes are special kinds of skipping indexes (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](../../../optimize/skipping-indexes)).
+Vector similarity indexes are special kinds of skipping indexes (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](/concepts/features/performance/skip-indexes/skipping-indexes)).
 Accordingly, above `ALTER TABLE` statement only causes the index to be built for future new data inserted into the table.
 To build the index for existing data as well, you need to materialize it:
 
@@ -114,7 +114,7 @@ As a result, vector indexes with `L2Distance` and `cosineDistance` can only be u
 `<dimensions>` specifies the array cardinality (number of elements) in the underlying column.
 If ClickHouse finds an array with a different cardinality during index creation, the index is discarded and an error is returned.
 
-The optional GRANULARITY parameter `<N>` refers to the size of the index granules (see [here](../../../optimize/skipping-indexes)).
+The optional GRANULARITY parameter `<N>` refers to the size of the index granules (see [here](/concepts/features/performance/skip-indexes/skipping-indexes)).
 Unlike regular skip indexes, which use a default index granularity of 1, vector similarity indexes use 100 million as default index granularity.
 This value makes sure that only few indexes are build internally even for large parts.
 We recommend changing the index granularity only for advanced users who understand the implications of what they are doing (see [below](#differences-to-regular-skipping-indexes)).
@@ -608,10 +608,10 @@ LIMIT 3;
 ```
 
 Further example datasets that use approximate vector search:
-- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
-- [LAION-5B](../../../getting-started/example-datasets/laion-5b-dataset)
-- [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
-- [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
+- [LAION-400M](/get-started/sample-datasets/laion)
+- [LAION-5B](/get-started/sample-datasets/laion5b)
+- [dbpedia](/get-started/sample-datasets/dbpedia)
+- [hackernews](/get-started/sample-datasets/hacker-news-vector-search)
 
 ### Vector search with quantized codecs {#vector-search-with-quantized-codecs}
 
