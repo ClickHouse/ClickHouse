@@ -48,17 +48,22 @@ DataTypePtr AggregateFunctionTuple::deriveResultType(
 /// serialize to the same `DataTypeAggregateFunction` type name, and reconstructing a function from
 /// that name (over the distributed wire, on disk, or when merging totals) resolves the wrong variant
 /// and reinterprets the state bytes. Every single-nested combinator (`-Array`, `-If`, `-OrNull`)
-/// already composes its name from `nested_func->getName()` for the same reason. Only-null elements
-/// collapse to a `nothing*` placeholder with an empty state and no variant, so they carry no naming
-/// information: skip them and fall back to the pre-resolution name when every element is a placeholder.
+/// already composes its name from `nested_func->getName()` for the same reason.
+///
+/// Only-null elements collapse to a placeholder from the `nothing*` family, possibly wrapped in
+/// further combinators (`nothingUInt64Distinct`, `nothingNullArrayIf`, ...). Such a placeholder has
+/// an empty state and no variant, so it carries no naming information and must be ignored regardless
+/// of how it is wrapped; matching only the three bare `nothing*` names would let a composite
+/// placeholder win and reintroduce the same non-injective name. Detect placeholder-ness structurally
+/// via isOnlyNullPlaceholder() (which unwraps the combinator chain) and pick the first real element;
+/// fall back to the pre-resolution name only when every element is a placeholder.
 static String deriveNestedFuncName(
     const String & nested_name, const VectorWithMemoryTracking<AggregateFunctionPtr> & nested_functions)
 {
     for (const auto & nested_function : nested_functions)
     {
-        const String & resolved_name = nested_function->getName();
-        if (resolved_name != "nothing" && resolved_name != "nothingNull" && resolved_name != "nothingUInt64")
-            return resolved_name;
+        if (!nested_function->isOnlyNullPlaceholder())
+            return nested_function->getName();
     }
     return nested_name;
 }

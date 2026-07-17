@@ -7,6 +7,15 @@ SELECT toTypeName(anyLastTupleState(tuple(number)) RESPECT NULLS) != toTypeName(
 SELECT toTypeName(anyLastTupleState(tuple(number)) RESPECT NULLS) FROM numbers(1);
 SELECT toTypeName(anyLastTupleState(tuple(number))) FROM numbers(1);
 
+-- Placeholder-ness must be detected structurally, not by matching the bare nothing* names. An only-null
+-- element under an inner combinator resolves to a composite placeholder (nothingUInt64Distinct here), so
+-- an exact-name filter would let it win the base name and produce nothingUInt64DistinctTuple. The type
+-- must stay sumDistinctTuple, and reconstructing from it must rebuild the second element as sumDistinct
+-- (sum of distinct 0,1,2 = 3), not as the placeholder.
+SELECT toTypeName(sumDistinctTupleState((NULL, toUInt64(number)))) FROM numbers(3);
+SELECT finalizeAggregation(CAST(sumDistinctTupleState((NULL, toUInt64(number)))
+    AS AggregateFunction(sumDistinctTuple, Tuple(Nullable(Nothing), UInt64)))) FROM numbers(3);
+
 -- A Distributed table whose declared type differs from the shard type serializes shard aggregate
 -- states under the declared type name. When the name did not encode the nulls-action variant, the
 -- initiator reconstructed the wrong nested variant and reinterpreted the state bytes, crashing under

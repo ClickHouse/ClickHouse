@@ -1,4 +1,6 @@
 1
 AggregateFunction(anyLast_respect_nullsTuple, Tuple(UInt64))
 AggregateFunction(anyLastTuple, Tuple(UInt64))
+AggregateFunction(sumDistinctTuple, Tuple(Nullable(Nothing), UInt64))
+(NULL,3)
 ((0),(0))
