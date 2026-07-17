@@ -1981,8 +1981,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     /// key at most once (at most twice for Collapsing engines), while an unmerged part may
                     /// contain arbitrarily many versions of a key (e.g. inserted with optimize_on_insert = 0)
                     /// and gives no lower bound on the collapsed size. Count only rows of merged parts and
-                    /// divide by the number of parts to get a lower bound of a layer's output; keep layers
-                    /// unless the limit fits into one layer even under this worst-case duplication.
+                    /// divide by the number of parts to estimate a layer's output; keep layers unless the
+                    /// limit fits into one layer even under this worst-case duplication.
+                    /// The estimate deliberately counts rows that FINAL may still drop (is_deleted tombstones,
+                    /// Collapsing rows cancelling across parts, rows masked by lightweight deletes): they are
+                    /// assumed to be a small fraction of the data.
                     size_t merged_parts_rows = 0;
                     for (const auto & part : new_parts)
                         if (part.data_part->info.level > 0)

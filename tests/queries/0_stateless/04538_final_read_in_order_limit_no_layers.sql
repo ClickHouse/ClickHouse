@@ -67,6 +67,36 @@ INSERT INTO t_final_layers_dups SELECT number % 30000, number + 300000 FROM numb
 
 SELECT 'unmerged duplicates small limit, layers:', countIf(explain LIKE '%FilterSortedStreamByRange%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_final_layers_dups FINAL ORDER BY k LIMIT 10);
+SET optimize_on_insert = 1;
+
+-- The estimate of a layer's output deliberately counts rows that FINAL may still drop
+-- (e.g. is_deleted tombstones kept in merged parts until cleanup, Collapsing rows
+-- cancelling across parts), assuming they are a small fraction of the data, so the
+-- gate applies to these engines as well.
+DROP TABLE IF EXISTS t_final_layers_del;
+CREATE TABLE t_final_layers_del (k UInt64, ver UInt64, is_del UInt8)
+ENGINE = ReplacingMergeTree(ver, is_del) ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_final_layers_del SELECT number, 1, 0 FROM numbers(300000);
+INSERT INTO t_final_layers_del SELECT number, 2, 1 FROM numbers(10000);
+OPTIMIZE TABLE t_final_layers_del FINAL;
+SYSTEM STOP MERGES t_final_layers_del;
+INSERT INTO t_final_layers_del SELECT number, 3, 0 FROM numbers(10000);
+
+SELECT 'is_deleted small limit, layers:', countIf(explain LIKE '%FilterSortedStreamByRange%') > 0
+FROM (EXPLAIN PIPELINE SELECT k FROM t_final_layers_del FINAL ORDER BY k LIMIT 10);
+
+DROP TABLE IF EXISTS t_final_layers_collapsing;
+CREATE TABLE t_final_layers_collapsing (k UInt64, sign Int8)
+ENGINE = CollapsingMergeTree(sign) ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_final_layers_collapsing SELECT number, 1 FROM numbers(300000);
+OPTIMIZE TABLE t_final_layers_collapsing FINAL;
+SYSTEM STOP MERGES t_final_layers_collapsing;
+INSERT INTO t_final_layers_collapsing SELECT number, -1 FROM numbers(10000);
+
+SELECT 'collapsing small limit, layers:', countIf(explain LIKE '%FilterSortedStreamByRange%') > 0
+FROM (EXPLAIN PIPELINE SELECT k FROM t_final_layers_collapsing FINAL ORDER BY k LIMIT 10);
 
 -- The result must be the same with and without splitting into layers.
 SELECT k, v FROM t_final_layers FINAL ORDER BY k LIMIT 5;
@@ -75,3 +105,5 @@ SETTINGS split_intersecting_parts_ranges_into_layers_final = 0;
 
 DROP TABLE t_final_layers;
 DROP TABLE t_final_layers_dups;
+DROP TABLE t_final_layers_del;
+DROP TABLE t_final_layers_collapsing;
