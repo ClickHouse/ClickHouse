@@ -13,9 +13,13 @@ QUERY id: 0
         TABLE id: 3, alias: __table2, table_name: default.test
       JOIN EXPRESSIONS
         LIST id: 5, nodes: 1
-          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: UInt64, source_id: 4
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: UInt8, source_id: 4
             EXPRESSION
-              COLUMN id: 7, column_name: arr, result_type: Array(UInt64), source_id: 3
+              FUNCTION id: 7, function_name: arrayWithConstant, function_type: ordinary, result_type: Array(UInt8)
+                ARGUMENTS
+                  LIST id: 8, nodes: 2
+                    COLUMN id: 9, column_name: arr.size0, result_type: UInt64, source_id: 3
+                    CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
 [1,2]
 [1,2]
 [1,2]
@@ -32,6 +36,10 @@ QUERY id: 0
         TABLE id: 3, alias: __table2, table_name: default.test
       JOIN EXPRESSIONS
         LIST id: 5, nodes: 1
-          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: UInt32, source_id: 4
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: UInt8, source_id: 4
             EXPRESSION
-              COLUMN id: 7, column_name: t.b, result_type: Array(UInt32), source_id: 3
+              FUNCTION id: 7, function_name: arrayWithConstant, function_type: ordinary, result_type: Array(UInt8)
+                ARGUMENTS
+                  LIST id: 8, nodes: 2
+                    COLUMN id: 9, column_name: t.b.size0, result_type: UInt64, source_id: 3
+                    CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
