@@ -45,6 +45,8 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replication_slot;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
 }
 
 namespace ErrorCodes
@@ -639,6 +641,31 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
+
+        /// A user-managed `materialized_postgresql_replication_slot` pins the replication slot to a single,
+        /// fixed name shared by every `ON CLUSTER` replica, so it cannot be made unique per server, whereas
+        /// `materialized_postgresql_use_unique_replication_consumer_identifier` exists precisely to make the
+        /// slot and publication unique per server so that `ON CLUSTER` replicas do not collide (see
+        /// https://github.com/ClickHouse/ClickHouse/issues/58726). The two settings contradict each other.
+        /// The replication handler also rejects the combination, but for the database engine it is constructed
+        /// only in the background `tryStartSynchronization` task, after the metadata has already been written;
+        /// rejecting here — while `CREATE DATABASE` still runs synchronously and before any metadata is
+        /// persisted (see InterpreterCreateQuery::createDatabase) — makes the query fail cleanly instead of
+        /// leaving a database that retries forever in the background. Only on `CREATE`, not `ATTACH`, so that
+        /// an already-created single-server deployment that happens to set both keeps starting after an upgrade.
+        if (!args.create_query.attach
+            && !(*postgresql_replica_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty()
+            && (*postgresql_replica_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use a user-managed replication slot (`materialized_postgresql_replication_slot`) together "
+                "with `materialized_postgresql_use_unique_replication_consumer_identifier`: the latter makes the "
+                "replication slot and publication unique per server so that `ON CLUSTER` replicas do not collide, "
+                "but a user-managed slot has one fixed name shared by every replica and cannot be made per-server, "
+                "so all but one replica would fail to replicate. Either remove "
+                "`materialized_postgresql_replication_slot` to let each server derive its own unique slot, or "
+                "disable `materialized_postgresql_use_unique_replication_consumer_identifier` if a single shared, "
+                "user-managed slot is intended.");
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,

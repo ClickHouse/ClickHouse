@@ -9,7 +9,6 @@ from helpers.postgres_utility import (
     check_tables_are_synchronized,
     get_postgres_conn,
 )
-from helpers.test_tools import assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -151,7 +150,10 @@ def test_on_cluster_user_managed_slot_rejected(started_cluster):
     slots_before = count_replication_slots()
     publications_before = count_publications()
 
-    node1.query(
+    # `CREATE DATABASE` fails synchronously on every replica with a clear error explaining the contradiction:
+    # the check runs while the database engine is created (before any metadata is persisted), so the query
+    # is rejected outright instead of leaving a database that retries forever in the background.
+    error = node1.query_and_get_error(
         f"""
         CREATE DATABASE test_rejected_database ON CLUSTER test_cluster
         ENGINE = MaterializedPostgreSQL(
@@ -162,21 +164,25 @@ def test_on_cluster_user_managed_slot_rejected(started_cluster):
                  materialized_postgresql_backoff_max_ms = 100,
                  materialized_postgresql_replication_slot = 'user_managed_slot',
                  materialized_postgresql_use_unique_replication_consumer_identifier = 1
-        """
+        """,
+        # Surface the per-host failure as a query error regardless of the server default.
+        settings={"distributed_ddl_output_mode": "throw"},
     )
+    assert "Cannot use a user-managed replication slot" in error
 
-    # Replication startup fails closed on every replica with a clear error explaining the contradiction. The
-    # exception is raised while constructing the replication handler, before any slot or publication is created.
+    # The database was not created on either replica, and no slot or publication was created: the
+    # contradiction is rejected, not half-applied.
     for node in (node1, node2):
-        assert_logs_contain_with_retry(
-            node, "Cannot use a user-managed replication slot"
-        )
-
-    # No slot or publication was created on either replica: the contradiction is rejected, not half-applied.
+        assert "" == node.query(
+            "SELECT name FROM system.databases WHERE name = 'test_rejected_database'"
+        ).strip()
     assert slots_before == count_replication_slots()
     assert publications_before == count_publications()
 
-    node1.query("DROP DATABASE test_rejected_database ON CLUSTER test_cluster SYNC")
+    # Defensive cleanup in case a replica ever persisted the rejected database.
+    node1.query(
+        "DROP DATABASE IF EXISTS test_rejected_database ON CLUSTER test_cluster SYNC"
+    )
 
 
 def test_upgrade_adopts_presalt_identity(started_cluster):
