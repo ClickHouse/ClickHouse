@@ -15,6 +15,8 @@
 #include <arrow/result.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 
 
 namespace DB
@@ -81,8 +83,7 @@ Chunk ArrowBlockInputFormat::read()
         {
             auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
             if (!rows.ok())
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+                throwFromArrowStatus(rows.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
             return getChunkForCount(*rows);
         }
 
@@ -90,13 +91,16 @@ Chunk ArrowBlockInputFormat::read()
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
+        throwFromArrowStatus(batch_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
+
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch_result);
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Error while reading batch of Arrow data: {}", table_result.status().ToString());
+        throwFromArrowStatus(table_result.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
 
     ++record_batch_current;
 
@@ -170,8 +174,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     options.memory_pool = ArrowMemoryPool::instance();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-                        "Error while opening a table: {}", stream_reader_status.status().ToString());
+        throwFromArrowStatus(stream_reader_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table");
     return *stream_reader_status;
 }
 
@@ -188,8 +191,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
     options.memory_pool = ArrowMemoryPool::instance();
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while opening a table: {}", file_reader_status.status().ToString());
+        throwFromArrowStatus(file_reader_status.status(), ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table");
     return *file_reader_status;
 }
 
@@ -282,7 +284,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
 
     auto rows = file_reader->CountRows();
     if (!rows.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+        throwFromArrowStatus(rows.status(), ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data");
 
     return *rows;
 }
@@ -295,9 +297,12 @@ void registerInputFormatArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings) -> InputFormatPtr
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, header, false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -305,10 +310,120 @@ void registerInputFormatArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings) -> InputFormatPtr
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, header, true, format_settings);
         });
+    factory.markFormatSupportsSubsetOfColumns("ArrowStream");
+
+    factory.setDocumentation("Arrow", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+[Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
+`Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
+
+## Data types matching {#data-types-matching}
+
+The table below shows the supported data types and how they correspond to ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Arrow data type (`INSERT`)              | ClickHouse data type                                                                                       | Arrow data type (`SELECT`) |
+|-----------------------------------------|------------------------------------------------------------------------------------------------------------|----------------------------|
+| `BOOL`                                  | [Bool](/sql-reference/data-types/boolean.md)                                                       | `BOOL`                     |
+| `UINT8`, `BOOL`                         | [UInt8](/sql-reference/data-types/int-uint.md)                                                     | `UINT8`                    |
+| `INT8`                                  | [Int8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)   | `INT8`                     |
+| `UINT16`                                | [UInt16](/sql-reference/data-types/int-uint.md)                                                    | `UINT16`                   |
+| `INT16`                                 | [Int16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `INT16`                    |
+| `UINT32`                                | [UInt32](/sql-reference/data-types/int-uint.md)                                                    | `UINT32`                   |
+| `INT32`                                 | [Int32](/sql-reference/data-types/int-uint.md)                                                     | `INT32`                    |
+| `UINT64`                                | [UInt64](/sql-reference/data-types/int-uint.md)                                                    | `UINT64`                   |
+| `INT64`                                 | [Int64](/sql-reference/data-types/int-uint.md)                                                     | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/sql-reference/data-types/float.md)                                                      | `FLOAT32`                  |
+| `DOUBLE`                                | [Float64](/sql-reference/data-types/float.md)                                                      | `FLOAT64`                  |
+| `DATE32`                                | [Date32](/sql-reference/data-types/date32.md)                                                      | `UINT16`                   |
+| `DATE64`                                | [DateTime](/sql-reference/data-types/datetime.md)                                                  | `UINT32`                   |
+| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/sql-reference/data-types/datetime64.md)                                              | `TIMESTAMP`                |
+| `STRING`, `BINARY`                      | [String](/sql-reference/data-types/string.md)                                                      | `BINARY`                   |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/sql-reference/data-types/fixedstring.md)                                            | `FIXED_SIZE_BINARY`        |
+| `DECIMAL`                               | [Decimal](/sql-reference/data-types/decimal.md)                                                    | `DECIMAL`                  |
+| `DECIMAL256`                            | [Decimal256](/sql-reference/data-types/decimal.md)                                                 | `DECIMAL256`               |
+| `LIST`                                  | [Array](/sql-reference/data-types/array.md)                                                        | `LIST`                     |
+| `STRUCT`                                | [Tuple](/sql-reference/data-types/tuple.md)                                                        | `STRUCT`                   |
+| `MAP`                                   | [Map](/sql-reference/data-types/map.md)                                                            | `MAP`                      |
+| `UINT32`                                | [IPv4](/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/sql-reference/data-types/ipv6.md)                                                          | `FIXED_SIZE_BINARY`        |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                             | `FIXED_SIZE_BINARY`        |
+| `DURATION`                              | [Interval](/sql-reference/data-types/special-data-types/interval.md) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
+| `INT64`                                 | [Interval](/sql-reference/data-types/special-data-types/interval.md) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
+
+Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
+
+The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
+
+Unsupported Arrow data types:
+- `JSON`
+- `ENUM`.
+
+The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+
+## Example usage {#example-usage}
+
+### Inserting data {#inserting-data}
+
+You can insert Arrow data from a file into ClickHouse table using the following command:
+
+```bash
+$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+### Selecting data {#selecting-data}
+
+You can select data from a ClickHouse table and save it into some file in the Arrow format using the following command:
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
+```
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                  | Description                                                                                        | Default      |
+|--------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|--------------|
+| `input_format_arrow_allow_missing_columns`                                                                               | Allow missing columns while reading Arrow input formats                                            | `1`          |
+| `input_format_arrow_case_insensitive_column_matching`                                                                    | Ignore case when matching Arrow columns with CH columns.                                           | `0`          |
+| `input_format_arrow_import_nested`                                                                                       | Obsolete setting, does nothing.                                                                    | `0`          |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`                                             | Skip columns with unsupported types while schema inference for format Arrow                        | `0`          |
+| `input_format_arrow_use_native_reader`                                                                                   | Use the native ClickHouse reader for the `Arrow` and `ArrowStream` formats instead of the Apache Arrow library. Set to `0` to use the Apache Arrow library reader. | `1`          |
+| `output_format_arrow_compression_method`                                                                                 | Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed) | `lz4_frame`  |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                                                                   | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                        | `1`          |
+| `output_format_arrow_low_cardinality_as_dictionary`                                                                      | Enable output LowCardinality type as Dictionary Arrow type                                         | `0`          |
+| `output_format_arrow_string_as_string`                                                                                   | Use Arrow String type instead of Binary for String columns                                         | `1`          |
+| `output_format_arrow_unsupported_types_as_binary`                                                                        | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. Applies to both the native and the Apache Arrow library writer. | `1`          |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                                                                  | Always use 64 bit integers for dictionary indexes in Arrow format                                  | `0`          |
+| `output_format_arrow_use_native_writer`                                                                                  | Use the native ClickHouse writer for the `Arrow` and `ArrowStream` formats instead of the Apache Arrow library. Set to `0` to use the Apache Arrow library writer. | `1`          |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                                                                  | Use signed integers for dictionary indexes in Arrow format                                         | `1`          |
+)DOCS_MD"});
+
+    factory.setDocumentation("ArrowStream", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+`ArrowStream` is Apache Arrow's "stream mode" format. It is designed for in-memory stream processing.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 void registerArrowSchemaReader(FormatFactory & factory);
@@ -316,25 +431,43 @@ void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Arrow",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            if (settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCSchemaReader>(buf, false, settings);
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
 
     factory.registerAdditionalInfoForSchemaCacheGetter("Arrow", [](const FormatSettings & settings)
     {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+            "use_native_reader={};skip_columns_with_unsupported_types={};allow_geoparquet_parser={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_tuple_type,
+            settings.arrow.input_use_native_reader,
+            settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
+            settings.parquet.allow_geoparquet_parser);
     });
     factory.registerSchemaReader(
         "ArrowStream",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            if (settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCSchemaReader>(buf, true, settings);
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
         });
 
     factory.registerAdditionalInfoForSchemaCacheGetter("ArrowStream", [](const FormatSettings & settings)
     {
-       return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+            "use_native_reader={};skip_columns_with_unsupported_types={};allow_geoparquet_parser={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_tuple_type,
+            settings.arrow.input_use_native_reader,
+            settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
+            settings.parquet.allow_geoparquet_parser);
     });
 }
 

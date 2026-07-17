@@ -352,14 +352,15 @@ void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr
         structure = *parsing_result.structure;
 }
 
-void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr context)
+void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr context, bool use_blob_endpoint)
 {
     if (args.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
 
     String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
 
-    fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
+    const String full_suffix = use_blob_endpoint ? ".blob.fabric.microsoft.com" : ".dfs.fabric.microsoft.com";
+    fillBlobsFromURLCommon(connection_url, ".com", full_suffix);
 
     connection_params.endpoint.container_already_exists = true;
 
@@ -693,7 +694,7 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     {
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
                 AzureStorageParsedArguments::getMaxNumberOfArguments(),
                 args.size());
@@ -877,14 +878,27 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     AzureStorageParsedArguments parsed_arguments;
-    if (!onelake_client_id.empty())
+    if (is_onelake)
     {
-        parsed_arguments.initializeForOneLake(engine_args, context);
-        parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
-            onelake_tenant_id,
-            onelake_client_id,
-            onelake_client_secret
-        );
+        parsed_arguments.initializeForOneLake(engine_args, context, onelake_use_blob_endpoint);
+        if (!onelake_access_token.empty())
+        {
+            /// Pre-obtained bearer token from `onelake_bearer_token`.
+            /// Use epoch as the expiry time. There is no refresh -- the database must be
+            /// recreated with a new token once it expires.
+            parsed_arguments.connection_params.auth_method = std::make_shared<AzureBlobStorage::StaticCredential>(
+                onelake_access_token,
+                std::chrono::system_clock::time_point{}
+            );
+        }
+        else
+        {
+            parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
+                onelake_tenant_id,
+                onelake_client_id,
+                onelake_client_secret
+            );
+        }
     }
     else
     {

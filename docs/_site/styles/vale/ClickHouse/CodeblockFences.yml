@@ -1,0 +1,12 @@
+---
+name: gitlab_base.CodeblockFences
+description: |
+  Ensures all codeblock language tags use the full name, not aliases.
+extends: existence
+message: "Instead of '%s' for the code block, use yaml, ruby, plaintext, markdown, javascript, shell, go, python, dockerfile, or typescript."
+link: https://docs.gitlab.com/development/documentation/styleguide/#code-blocks
+vocab: false
+level: suggestion
+scope: raw
+raw:
+  - '\`\`\`(yml|rb|text|md|bash|sh\n|js\n|golang\n|py\n|docker\n|ts|irb)'

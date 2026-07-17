@@ -358,7 +358,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             {
                 if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
                 {
-                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream));
+                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity));
                 }
                 else
                 {
@@ -383,8 +383,10 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             variants.reserve(structure_state->num_dynamic_types + 1); /// +1 for shared variant.
             if ((settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format) || structure_state->structure_version.value == SerializationVersion::V3)
             {
+                /// Native input carries the effective limit via format_settings; a V3 part read has none and decodes unlimited.
+                const size_t max_complexity = settings.format_settings ? settings.format_settings->binary.max_binary_type_complexity : 0;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
-                    variants.push_back(decodeDataType(*structure_stream));
+                    variants.push_back(decodeDataType(*structure_stream, max_complexity));
             }
             else
             {
@@ -614,6 +616,13 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         {
             ColumnPtr type_column = flattened_column.types[i]->createColumn();
             flattened_column.types[i]->getDefaultSerialization()->deserializeBinaryBulkWithMultipleStreams(type_column, 0, flattened_limits[i], settings, dynamic_state->flattened_states[i], cache);
+            if (type_column->size() != flattened_limits[i])
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Mismatch in flattened Dynamic column: indexes declare {} rows for type {}, but only {} rows were deserialized",
+                    flattened_limits[i],
+                    flattened_column.types[i]->getName(),
+                    type_column->size());
             flattened_column.columns.emplace_back(std::move(type_column));
         }
 
@@ -658,7 +667,7 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto field_type = decodeDataType(istr);
+    auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
         field = Null();
@@ -775,7 +784,7 @@ void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr
 
 void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto variant_type = decodeDataType(istr);
+    auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(variant_type))
     {
         dynamic_column.insertDefault();

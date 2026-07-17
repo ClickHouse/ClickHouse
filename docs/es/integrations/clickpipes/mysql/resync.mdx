@@ -1,0 +1,56 @@
+---
+title: 'Resync de un ClickPipe de una base de datos'
+description: 'Documentación para Resync de un ClickPipe de una base de datos'
+slug: /integrations/clickpipes/mysql/resync
+sidebarTitle: 'Resync ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'CDC', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="what-mysql-resync-do">
+  ### ¿Qué hace Resync?
+</div>
+
+Resync implica las siguientes operaciones, en este orden:
+
+1. Se elimina el ClickPipe existente y se inicia un nuevo ClickPipe de &quot;resync&quot;. De este modo, al volver a ejecutar un resync, se detectarán los cambios en las estructuras de las tablas de origen.
+2. El ClickPipe de resync crea (o reemplaza) un nuevo conjunto de tablas de destino con los mismos nombres que las tablas originales, salvo por el sufijo `_resync`.
+3. Se realiza la carga inicial en las tablas `_resync`.
+4. A continuación, las tablas `_resync` se intercambian por las tablas originales. Las filas con eliminación lógica se transfieren de las tablas originales a las tablas `_resync` antes del intercambio.
+
+Toda la configuración del ClickPipe original se conserva en el ClickPipe de resync. Las estadísticas del ClickPipe original se borran en la UI.
+
+<div id="use-cases-mysql-resync">
+  ### Casos de uso para hacer Resync a un ClickPipe
+</div>
+
+Estos son algunos escenarios:
+
+1. Puede que necesites hacer cambios importantes en el esquema de las tablas de origen que rompan el ClickPipe existente y obliguen a reiniciarlo. Solo tienes que hacer clic en Resync después de realizar los cambios.
+2. En ClickHouse en particular, puede que hayas tenido que cambiar las claves de ORDER BY de las tablas de destino. Puedes hacer Resync para volver a cargar los datos en la nueva tabla con la clave de ordenación correcta.
+
+<Note>
+  Puedes hacer Resync varias veces; sin embargo, ten en cuenta la carga en la base de datos de origen cuando lo hagas.
+</Note>
+
+<div id="guide-mysql-resync">
+  ### Guía para hacer Resync de ClickPipe
+</div>
+
+1. En la pestaña **Data Sources**, haz clic en el MySQL ClickPipe al que quieras hacer Resync.
+2. Ve a la pestaña **Settings**.
+3. Haz clic en el botón **Resync**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic de nuevo en **Resync**.
+5. Ve a la pestaña **Metrics**.
+6. En unos 5 segundos (y también al actualizar la página), el estado del pipe debería ser **Setup** o **Snapshot**.
+7. La carga inicial del Resync puede supervisarse en la pestaña **Tables**, en la sección **Initial Load Stats**.
+8. Una vez completada la carga inicial, el pipe intercambiará de forma atómica las tablas `_resync` por las tablas originales. Durante el intercambio, el estado será **Resync**.
+9. Una vez completado el intercambio, el pipe pasará al estado **Running** y realizará CDC si está habilitado.

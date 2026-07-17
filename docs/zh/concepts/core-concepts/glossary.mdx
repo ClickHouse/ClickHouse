@@ -1,0 +1,166 @@
+---
+sidebarTitle: '术语表'
+description: '本页列出了与 ClickHouse 相关的常用词汇和短语及其定义。'
+title: '术语表'
+slug: /concepts/glossary
+keywords: ['术语表', '定义', '术语']
+doc_type: 'reference'
+---
+
+{/* no-glossary */}
+
+<div id="atomicity">
+  ## 原子性
+</div>
+
+原子性确保一个事务 (一系列数据库操作) 被视为一个单一且不可分割的整体。这意味着事务中的所有操作要么全部执行，要么全部不执行。一个原子事务的典型例子是将资金从一个银行账户转到另一个账户。如果转账过程中的任何一步失败，整个事务都会失败，资金仍会留在第一个账户中。原子性确保资金既不会丢失，也不会凭空产生。
+
+<div id="block">
+  ## 块
+</div>
+
+块是组织数据处理和存储的逻辑单元。每个块都包含列式数据，这些数据会一起处理，以提升查询执行期间的性能。通过按块处理数据，ClickHouse 能够高效利用 CPU 核心，减少缓存未命中并促进向量化执行。ClickHouse 使用多种压缩算法 (如 LZ4、ZSTD 和 Delta) 对块中的数据进行压缩。
+
+<div id="cluster">
+  ## 集群
+</div>
+
+一组协同工作的节点 (服务器) ，共同用于存储和处理数据。
+
+<div id="cmek">
+  ## CMEK
+</div>
+
+客户管理的加密密钥 (CMEK) 使客户能够使用其密钥管理服务 (KMS) 中的密钥来加密 ClickHouse 磁盘数据密钥，从而保护其静态数据。
+
+<div id="dictionary">
+  ## 字典
+</div>
+
+字典是键值对映射，适用于各种类型的参考列表。这是一项强大的功能，可在查询中高效使用字典，而这通常比对参考表使用 `JOIN` 更高效。
+
+<div id="distributed-table">
+  ## 分布式表
+</div>
+
+ClickHouse 中的分布式表是一种特殊类型的表，它本身不存储数据，而是为集群中多个服务器上的分布式查询处理提供一个统一的视图。
+
+<div id="granule">
+  ## 粒度
+</div>
+
+粒度是未压缩块中的一批行。读取数据时，ClickHouse 访问的是粒度而非单独的行，因此能够在分析型工作负载中更高效地处理数据。默认情况下，一个粒度包含 8192 行。主索引中每个粒度对应一个条目。
+
+<div id="incremental-materialized-view">
+  ## 增量materialized view
+</div>
+
+在 ClickHouse 中，增量materialized view 是一种在写入时处理并聚合数据的 materialized view。当新数据写入源表时，materialized view 仅对新写入的块执行预定义的 SQL 聚合查询，并将聚合结果写入目标表。
+
+<div id="lightweight-update">
+  ## 轻量级更新
+</div>
+
+ClickHouse 中的轻量级更新是一项实验性功能，允许你使用标准 SQL UPDATE 语法更新表中的行；但与传统变更不同，它不会重写整个列或数据分区片段，而是会创建仅包含已更新列和行的“补丁分区片段”。这些更新会通过补丁应用立即反映在 SELECT 查询中，但只有在后续合并期间，物理数据才会被实际更新。
+
+<div id="mark-file">
+  ## 标记文件
+</div>
+
+ClickHouse 中的标记文件用于存储“标记”，即帮助 ClickHouse 快速定位特定数据范围在数据文件中存储位置的索引条目。
+
+<div id="materialized-view">
+  ## materialized view
+</div>
+
+ClickHouse 中的 materialized view 是一种机制：当数据插入源表时，它会自动对这些数据运行查询，并将转换后或聚合后的结果存储到单独的目标表中，以加快查询速度。
+
+<div id="mergetree">
+  ## MergeTree
+</div>
+
+ClickHouse 中的 MergeTree 是一种表引擎，专为高数据摄取速率和海量数据而设计。它是 ClickHouse 的核心存储引擎，提供列式存储、自定义分区、稀疏主索引，以及对后台数据合并的支持。
+
+<div id="mutation">
+  ## 变更
+</div>
+
+在 ClickHouse 中，变更是指对表中现有数据进行修改或删除的操作，通常使用 ALTER TABLE ... UPDATE 或 ALTER TABLE ... DELETE 等命令。变更以异步后台进程的形式执行：它会重写受影响的整个数据分区片段，而不是原地修改行。
+
+<div id="on-the-fly-mutation">
+  ## 即时变更
+</div>
+
+ClickHouse 中的即时变更是一种机制：提交变更后，无需等待后台变更过程完成，更新或删除操作便会立即在后续的 SELECT 查询中生效。
+
+<div id="parts">
+  ## parts
+</div>
+
+磁盘上的物理文件，用于存储表中部分数据。这与分区不同；分区是通过分区键创建的、对表数据进行的逻辑划分。
+
+<div id="partitioning-key">
+  ## 分区键
+</div>
+
+ClickHouse 中的分区键是创建表时在 `PARTITION BY` 子句中定义的 SQL 表达式。它决定了数据在磁盘上如何在逻辑上划分为分区。分区键的每个唯一值都会形成各自独立的物理分区，从而能够高效执行数据管理操作，例如删除、移动或归档整个分区。
+
+<div id="primary-key">
+  ## 主键
+</div>
+
+在 ClickHouse 中，主键决定数据在磁盘上的存储顺序，并用于构建可加快查询过滤速度的稀疏索引。与传统数据库不同，ClickHouse 中的主键不强制要求唯一性——多行可以具有相同的主键值。
+
+<div id="projection">
+  ## 投影
+</div>
+
+ClickHouse 中的投影是一种隐藏且自动维护的表，它以不同的顺序存储数据，或存储预先计算好的聚合结果，以加快查询速度，尤其适用于按不在主键中的列进行过滤的查询。
+
+<div id="refreshable-materialized-view">
+  ## 可刷新materialized view
+</div>
+
+可刷新materialized view 是一种 materialized view，会定期针对整个数据集重新执行查询，并将结果存储到目标表中。与增量materialized view 不同，可刷新materialized view 按计划进行更新，并且能够支持复杂查询，包括 JOIN 和 UNION，且没有限制。
+
+<div id="replica">
+  ## 副本
+</div>
+
+存储在 ClickHouse 数据库中的数据副本。为实现冗余和提高可靠性，你可以为同一份数据保留任意数量的副本。副本通常与 ReplicatedMergeTree 表引擎配合使用，该引擎使 ClickHouse 能够在不同服务器之间保持多份数据副本的同步。
+
+<div id="shard">
+  ## 分片
+</div>
+
+数据的一个子集。ClickHouse 中，你的数据始终至少会有一个分片。如果不将数据拆分到多台服务器上，数据就会存储在单个分片中。当单台服务器的容量不足时，可以通过将数据分布到多台服务器上的多个分片来分摊负载。
+
+<div id="skipping-index">
+  ## 跳过索引
+</div>
+
+跳过索引会在多个连续粒度的层面存储少量元数据，使 ClickHouse 能够避免扫描无关的行。跳过索引是投影的一种轻量级替代方案。
+
+<div id="sorting-key">
+  ## 排序键
+</div>
+
+在 ClickHouse 中，排序键定义了行在磁盘上的物理排列顺序。如果未指定主键，ClickHouse 会将排序键用作主键。如果两者都已指定，则主键必须是排序键的前缀。
+
+<div id="sparse-index">
+  ## 稀疏索引
+</div>
+
+一种索引方式，其中主索引为一组行包含一个条目，而不是为每一行单独包含一个条目。与一组行对应的这个条目称为标记。使用稀疏索引时，ClickHouse 会先找出可能匹配查询的若干组行，然后再分别处理这些行组以找到匹配项。因此，主索引足够小，可以加载到内存中。
+
+<div id="table-engine">
+  ## 表引擎
+</div>
+
+ClickHouse 中的表引擎决定了数据的写入、存储和访问方式。MergeTree 是最常用的表引擎，支持快速插入海量数据，并在后台进行处理。
+
+<div id="ttl">
+  ## TTL
+</div>
+
+生存时间 (TTL) 是 ClickHouse 的一项功能，可在经过一段时间后自动移动、删除或汇总列或行。这样你就能更高效地管理存储，因为可以删除、移动或归档不再需要频繁访问的数据。

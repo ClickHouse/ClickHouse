@@ -91,12 +91,20 @@ private:
     bool refresh();
     void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper, bool all);
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
-    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
+    void refreshEntityImpl(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(refresh_mutex);
 
     AccessEntityPtr tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const;
     void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)  TSA_REQUIRES(mutex);
     void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
 
+    /// Serializes every "read from ZooKeeper -> publish into memory_storage" sequence (entity
+    /// refreshes and the cache updates of local writes), so that a publish based on an older
+    /// ZooKeeper read can never overwrite a publish based on a newer one. Held across ZooKeeper
+    /// round trips, therefore never taken by the read-only methods (findEntity etc.).
+    /// Lock order: cached_zookeeper_mutex -> refresh_mutex -> mutex.
+    std::mutex refresh_mutex;
+
+    /// Guards memory_storage; held only for in-memory operations, never across ZooKeeper requests.
     mutable std::mutex mutex;
 };
 

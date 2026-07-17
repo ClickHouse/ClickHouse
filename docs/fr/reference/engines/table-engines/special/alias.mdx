@@ -1,0 +1,342 @@
+---
+description: 'Le moteur de table Alias crée un proxy transparent vers une autre table. Toutes les opérations sont redirigées vers la table cible, tandis que l’alias lui-même ne stocke aucune donnée.'
+sidebarTitle: 'Alias'
+slug: /engines/table-engines/special/alias
+title: 'Moteur de table Alias'
+doc_type: 'reference'
+---
+
+Le moteur `Alias` crée un proxy vers une autre table. Toutes les opérations de lecture et d’écriture sont redirigées vers la table cible, tandis que l’alias lui-même ne stocke aucune donnée et conserve uniquement une référence à la table cible.
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [db_name.]alias_name
+ENGINE = Alias(target_table)
+```
+
+Ou en indiquant explicitement le nom de la base de données :
+
+```sql
+CREATE TABLE [db_name.]alias_name
+ENGINE = Alias(target_db, target_table)
+```
+
+<Note>
+  La table `Alias` ne prend pas en charge les définitions de colonnes explicites. Les colonnes sont automatiquement héritées de la table cible. Cela garantit que l’alias correspond toujours au schéma de la table cible.
+</Note>
+
+<div id="engine-parameters">
+  ## Paramètres du moteur
+</div>
+
+* **`target_db (optional)`** — Nom de la base de données contenant la table cible.
+* **`target_table`** — Nom de la table cible.
+
+<Note>
+  Lorsque `target_db` est omis et que `target_table` n’est pas entièrement qualifiée (par exemple, `Alias('my_table')`), la cible est associée à la même base de données que l’alias lui-même, et non à la base de données active de la session.
+</Note>
+
+<div id="supported-operations">
+  ## Opérations prises en charge
+</div>
+
+Le moteur de table `Alias` prend en charge toutes les opérations principales. 
+
+<div id="operations-on-target">
+  ### Opérations sur la table cible
+</div>
+
+Ces opérations sont redirigées vers la table cible :
+
+| Opération                    | Prise en charge | Description                                                     |
+| ---------------------------- | --------------- | --------------------------------------------------------------- |
+| `SELECT`                     | ✅               | Lire les données de la table cible                              |
+| `INSERT`                     | ✅               | Écrire des données dans la table cible                          |
+| `INSERT SELECT`              | ✅               | Insertion par lot dans la table cible                           |
+| `ALTER TABLE ADD COLUMN`     | ✅               | Ajouter des colonnes à la table cible                           |
+| `ALTER TABLE MODIFY SETTING` | ✅               | Modifier les paramètres de la table cible                       |
+| `ALTER TABLE PARTITION`      | ✅               | Opérations sur les partitions (DETACH/ATTACH/DROP) sur la cible |
+| `ALTER TABLE UPDATE`         | ✅               | Mettre à jour des lignes dans la table cible (mutation)         |
+| `ALTER TABLE DELETE`         | ✅               | Supprimer des lignes de la table cible (mutation)               |
+| `OPTIMIZE TABLE`             | ✅               | Optimiser la table cible (fusion des parts)                     |
+| `TRUNCATE TABLE`             | ✅               | Vider la table cible                                            |
+
+<div id="operations-on-alias">
+  ### Opérations sur l&#39;alias lui-même
+</div>
+
+Ces opérations n&#39;affectent que l&#39;alias, **pas** la table cible :
+
+| Opération      | Prise en charge | Description                                                      |
+| -------------- | --------------- | ---------------------------------------------------------------- |
+| `DROP TABLE`   | ✅               | Supprime uniquement l&#39;alias ; la table cible reste inchangée |
+| `RENAME TABLE` | ✅               | Renomme uniquement l&#39;alias ; la table cible reste inchangée  |
+
+<div id="usage-examples">
+  ## Exemples d’utilisation
+</div>
+
+<div id="basic-alias-creation">
+  ### Création d&#39;un alias simple
+</div>
+
+Créez un alias simple dans la même base de données :
+
+```sql
+-- Create source table
+CREATE TABLE source_data (
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = MergeTree
+ORDER BY id;
+
+-- Insert some data
+INSERT INTO source_data VALUES (1, 'one', 10.1), (2, 'two', 20.2);
+
+-- Create alias
+CREATE TABLE data_alias ENGINE = Alias('source_data');
+
+-- Query through alias
+SELECT * FROM data_alias;
+```
+
+```text
+┌─id─┬─name─┬─value─┐
+│  1 │ one  │  10.1 │
+│  2 │ two  │  20.2 │
+└────┴──────┴───────┘
+```
+
+<div id="cross-database-alias">
+  ### Alias entre bases de données
+</div>
+
+Créez un alias qui pointe vers une table d’une autre base de données :
+
+```sql
+-- Create databases
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+
+-- Create source table in db1
+CREATE TABLE db1.events (
+    timestamp DateTime,
+    event_type String,
+    user_id UInt32
+) ENGINE = MergeTree
+ORDER BY timestamp;
+
+-- Create alias in db2 pointing to db1.events
+CREATE TABLE db2.events_alias ENGINE = Alias('db1', 'events');
+
+-- Or using database.table format
+CREATE TABLE db2.events_alias2 ENGINE = Alias('db1.events');
+
+-- Both aliases work identically
+INSERT INTO db2.events_alias VALUES (now(), 'click', 100);
+SELECT * FROM db2.events_alias2;
+```
+
+<div id="write-operations">
+  ### Opérations d’écriture via l’alias
+</div>
+
+Toutes les opérations d’écriture sont redirigées vers la table cible :
+
+```sql
+CREATE TABLE metrics (
+    ts DateTime,
+    metric_name String,
+    value Float64
+) ENGINE = MergeTree
+ORDER BY ts;
+
+CREATE TABLE metrics_alias ENGINE = Alias('metrics');
+
+-- Insert through alias
+INSERT INTO metrics_alias VALUES 
+    (now(), 'cpu_usage', 45.2),
+    (now(), 'memory_usage', 78.5);
+
+-- Insert with SELECT
+INSERT INTO metrics_alias 
+SELECT now(), 'disk_usage', number * 10 
+FROM system.numbers 
+LIMIT 5;
+
+-- Verify data is in the target table
+SELECT count() FROM metrics;  -- Returns 7
+SELECT count() FROM metrics_alias;  -- Returns 7
+```
+
+<div id="schema-modification">
+  ### Modification du schéma
+</div>
+
+Les opérations ALTER modifient le schéma de la table cible :
+
+```sql
+CREATE TABLE users (
+    id UInt32,
+    name String
+) ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE users_alias ENGINE = Alias('users');
+
+-- Add column through alias
+ALTER TABLE users_alias ADD COLUMN email String DEFAULT '';
+
+-- Column is added to target table
+DESCRIBE users;
+```
+
+```text
+┌─name──┬─type───┬─default_type─┬─default_expression─┐
+│ id    │ UInt32 │              │                    │
+│ name  │ String │              │                    │
+│ email │ String │ DEFAULT      │ ''                 │
+└───────┴────────┴──────────────┴────────────────────┘
+```
+
+<div id="data-mutations">
+  ### Mutations de données
+</div>
+
+Les opérations UPDATE et DELETE sont prises en charge :
+
+```sql
+CREATE TABLE products (
+    id UInt32,
+    name String,
+    price Float64,
+    status String DEFAULT 'active'
+) ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE products_alias ENGINE = Alias('products');
+
+INSERT INTO products_alias VALUES 
+    (1, 'item_one', 100.0, 'active'),
+    (2, 'item_two', 200.0, 'active'),
+    (3, 'item_three', 300.0, 'inactive');
+
+-- Update through alias
+ALTER TABLE products_alias UPDATE price = price * 1.1 WHERE status = 'active';
+
+-- Delete through alias
+ALTER TABLE products_alias DELETE WHERE status = 'inactive';
+
+-- Changes are applied to target table
+SELECT * FROM products ORDER BY id;
+```
+
+```text
+┌─id─┬─name─────┬─price─┬─status─┐
+│  1 │ item_one │ 110.0 │ active │
+│  2 │ item_two │ 220.0 │ active │
+└────┴──────────┴───────┴────────┘
+```
+
+<div id="partition-operations">
+  ### Opérations sur les partitions
+</div>
+
+Pour les tables partitionnées, les opérations sur les partitions sont redirigées :
+
+```sql
+CREATE TABLE logs (
+    date Date,
+    level String,
+    message String
+) ENGINE = MergeTree
+PARTITION BY toYYYYMM(date)
+ORDER BY date;
+
+CREATE TABLE logs_alias ENGINE = Alias('logs');
+
+INSERT INTO logs_alias VALUES 
+    ('2024-01-15', 'INFO', 'message1'),
+    ('2024-02-15', 'ERROR', 'message2'),
+    ('2024-03-15', 'INFO', 'message3');
+
+-- Detach partition through alias
+ALTER TABLE logs_alias DETACH PARTITION '202402';
+
+SELECT count() FROM logs_alias;  -- Returns 2 (partition 202402 detached)
+
+-- Attach partition back
+ALTER TABLE logs_alias ATTACH PARTITION '202402';
+
+SELECT count() FROM logs_alias;  -- Returns 3
+```
+
+<div id="table-optimization">
+  ### Optimisation de la table
+</div>
+
+Optimisez les opérations de fusion des parts de la table cible :
+
+```sql
+CREATE TABLE events (
+    id UInt32,
+    data String
+) ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE events_alias ENGINE = Alias('events');
+
+-- Multiple inserts create multiple parts
+INSERT INTO events_alias VALUES (1, 'data1');
+INSERT INTO events_alias VALUES (2, 'data2');
+INSERT INTO events_alias VALUES (3, 'data3');
+
+-- Check parts count
+SELECT count() FROM system.parts 
+WHERE database = currentDatabase() 
+  AND table = 'events' 
+  AND active;
+
+-- Optimize through alias
+OPTIMIZE TABLE events_alias FINAL;
+
+-- Parts are merged in target table
+SELECT count() FROM system.parts 
+WHERE database = currentDatabase() 
+  AND table = 'events' 
+  AND active;  -- Returns 1
+```
+
+<div id="alias-management">
+  ### Gestion des alias
+</div>
+
+Les alias peuvent être renommés ou supprimés indépendamment :
+
+```sql
+CREATE TABLE important_data (
+    id UInt32,
+    value String
+) ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO important_data VALUES (1, 'critical'), (2, 'important');
+
+CREATE TABLE old_alias ENGINE = Alias('important_data');
+
+-- Rename alias (target table unchanged)
+RENAME TABLE old_alias TO new_alias;
+
+-- Create another alias to same table
+CREATE TABLE another_alias ENGINE = Alias('important_data');
+
+-- Drop one alias (target table and other aliases unchanged)
+DROP TABLE new_alias;
+
+SELECT * FROM another_alias;  -- Still works
+SELECT count() FROM important_data;  -- Data intact, returns 2
+```

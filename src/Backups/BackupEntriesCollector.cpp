@@ -15,8 +15,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Common/typeid_cast.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -408,7 +406,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}))
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -570,10 +568,16 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
-            if (const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get()))
+            /// Record REPLACE targets of refreshable materialized views from the create query, not
+            /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
+            /// from a ZooKeeper snapshot and may return null if not yet created on this replica.
+            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append
+                && create.hasTargetTableID(ViewTarget::To))
             {
-                if (mv->isRefreshable() && !mv->isAppendRefreshStrategy())
-                    rmv_replace_target_ids.insert(mv->getTargetTableId());
+                StorageID target_id = create.getTargetTableID(ViewTarget::To);
+                if (!target_id.hasDatabase())
+                    target_id.database_name = database_name;
+                rmv_replace_target_ids.insert(target_id);
             }
         }
     }
@@ -883,17 +887,15 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
-    const StoragePtr & storage,
+    /// Used in the Cloud build.
+    [[maybe_unused]] const StoragePtr & storage,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
         return false;
 
-    if (!storage)
-        return true;
-
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
-        && rmv_replace_target_ids.contains(storage->getStorageID()))
+        && rmv_replace_target_ids.contains(StorageID{table_name.database, table_name.table}))
     {
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;

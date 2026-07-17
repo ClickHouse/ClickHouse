@@ -4,6 +4,7 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -73,6 +74,12 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
 
     auto array_column = arguments[0].column;
     auto size_column = arguments[1].column;
+
+    /// `getInt` on a Decimal column returns the raw unscaled value, so without this conversion
+    /// `arrayResize([1, 2, 3], 1.5::Decimal(2, 1))` would resize to 15 elements. Convert the size to a
+    /// plain integer to use its real value (rounded towards zero), consistent with Float and integer sizes.
+    if (isDecimal(arguments[1].type))
+        size_column = castColumn(arguments[1], std::make_shared<DataTypeInt64>());
 
     if (!arguments[0].type->equals(*return_type))
         array_column = castColumn(arguments[0], return_type);

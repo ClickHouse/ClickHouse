@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
@@ -143,7 +143,7 @@ def assign_approver_to_pr(pr_number: int, approver: str) -> bool:
     """
     try:
         cmd = f"gh pr edit {pr_number} --add-assignee {approver}"
-        output = Shell.get_output(cmd, verbose=True)
+        Shell.get_output(cmd, verbose=True)
         print(f"  ✓ Assigned {approver} to PR #{pr_number}")
         return True
     except Exception as e:

@@ -104,6 +104,7 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
@@ -229,6 +230,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
+
+    QueryPlanRawPtrs getChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

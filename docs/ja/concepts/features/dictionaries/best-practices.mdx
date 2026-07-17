@@ -1,0 +1,66 @@
+---
+slug: /dictionary/best-practices
+title: 'Dictionary のベストプラクティス'
+sidebarTitle: 'ベストプラクティス'
+description: 'Dictionary レイアウトの選び方、Dictionary と JOIN の使い分け、Dictionary の使用状況の監視に関するガイドライン。'
+doc_type: 'guide'
+keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 'flat', 'performance']
+---
+
+このページでは、適切な Dictionary レイアウトを選ぶための実践的な指針、Dictionary が JOIN より適している場合 (およびそうでない場合) の見極め方、そして Dictionary の使用状況の監視について説明します。
+
+実例を交えた Dictionary の入門については、[Dictionary のメインガイド](/ja/concepts/features/dictionaries/index)を参照してください。
+
+<div id="when-to-use-dictionaries-vs-joins">
+  ## Dictionary と JOIN の使い分け
+</div>
+
+Dictionary が最も効果を発揮するのは、JOIN の片側がメモリに収まるルックアップテーブルである場合です。標準的な JOIN では、ClickHouse は左側から照合する前に右側からハッシュテーブルを構築します。たとえその後 `WHERE` フィルタで大半の行が破棄される場合でもです。最近のバージョン (24.12+) では、多くのケースで JOIN より前にフィルタが適用されるようになりましたが、それでもオーバーヘッドを常に解消できるとは限りません。一方、Dictionary では `dictGet` をインラインで呼び出すため、ルックアップが実行されるのは、フィルタを通過した行だけです。
+
+ただし、`dictGet` が常に最適な選択肢とは限りません。テーブル内のかなり多くの行に対して `dictGet` を呼び出す必要がある場合、たとえば `dictGet('dict', 'elevation', id) > 1800` のような `WHERE` 条件では、通常のカラムとネイティブな索引を使うほうが適していることがあります。通常のカラムであれば、ClickHouse は `PREWHERE` を使って granule をスキップできますが、`dictGet` は索引の支援なしに行ごとに評価されます。
+
+経験則としては、次のとおりです。
+
+* ルックアップキーがすでに利用可能な小さなディメンションテーブルに対する JOIN を置き換えるには、Dictionary を使用します。
+* 多くの行にわたってルックアップした値でフィルタする場合は、通常のカラムと索引を使用します。
+
+<div id="choosing-a-layout">
+  ## レイアウトの選択
+</div>
+
+`LAYOUT` 句は、Dictionary の内部データ構造を制御します。使用可能なすべてのレイアウトは、[レイアウトのリファレンス](/ja/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) に記載されています。
+
+レイアウトを選ぶ際は、次のガイドラインを参考にしてください。
+
+* **`flat`** — 最も高速なレイアウトです (単純な配列オフセットによるルックアップ) 。ただし、キーは `UInt64` である必要があり、デフォルトでは 500,000 (`max_array_size`) までに制限されます。小規模から中規模のテーブルで、単調増加する整数キーに最適です。キー分布がスパースな場合 (たとえばキー値が 1 と 500,000 のような場合) 、配列は最大キーに合わせて確保されるため、メモリを無駄にします。500k の上限に達しているなら、`hashed_array` へ切り替えるべきサインです。
+* **`hashed_array`** — ほとんどのユースケースで推奨されるデフォルトです。属性を配列に格納し、ハッシュテーブルでキーを配列インデックスにマッピングします。`hashed` とほぼ同等の速度で、特に属性が多い場合はよりメモリ効率に優れます。
+* **`hashed`** — Dictionary 全体をハッシュテーブルに格納します。属性がごく少ない場合は `hashed_array` より高速になることがありますが、属性数が増えるにつれてメモリ消費も大きくなります。
+* **`complex_key_hashed` / `complex_key_hashed_array`** — キーを `UInt64` に CAST できない場合 (たとえば `String` キー) に使用します。性能面でのトレードオフは、complex でない対応レイアウトと同じです。
+* **`sparse_hashed`** — `hashed` よりメモリ使用量を抑えられる一方で、CPU コストは増えます。最適な選択になることはまれで、効率的なのは属性が 1 つしかない場合に限られます。ほとんどの場合、`hashed_array` のほうが適しています。
+* **`cache` / `ssd_cache`** — 頻繁にアクセスされるキーだけをキャッシュします。データセット全体がメモリに収まらない場合に有用ですが、cache ミス時にはルックアップがソースに到達することがあります。レイテンシに敏感なワークロードには推奨されません。
+* **`direct`** — インメモリストレージを使わず、すべてのルックアップでソースに対してクエリを実行します。データの更新頻度が高すぎてキャッシュできない場合や、Dictionary が大きすぎてメモリに収まらない場合に使用してください。
+
+<div id="monitoring-dictionary-usage">
+  ## Dictionaryの使用状況を監視する
+</div>
+
+[`system.dictionaries`](/ja/reference/system-tables/dictionaries) テーブルを使用して、メモリ使用量と正常性を確認できます。
+
+```sql
+SELECT
+    name,
+    status,
+    element_count,
+    formatReadableSize(bytes_allocated) AS size,
+    query_count,
+    hit_rate,
+    found_rate,
+    last_exception
+FROM system.dictionaries
+```
+
+キーカラム:
+
+* `bytes_allocated` — Dictionary が消費しているメモリ量。Dictionary はデータを非圧縮で格納するため、この値は圧縮後のテーブルサイズを大幅に上回ることがあります。
+* `hit_rate` と `found_rate` — `cache` レイアウトの有効性を評価する際に役立ちます。
+* `last_exception` — Dictionary の読み込みや更新に失敗した場合は、ここを確認してください。

@@ -169,6 +169,23 @@ struct AVX512MD5Trait
 
 #endif
 
+#if USE_MD5_AARCH64_ASIMD
+
+struct ASIMDMD5Trait
+{
+    using Ops = DB::TargetSpecific::Default::ASIMDMD5Ops;
+    static constexpr size_t lanes = Ops::lanes;
+
+    static void skipIfUnsupported() { }
+
+    static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
+    {
+        DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
+    }
+};
+
+#endif
+
 
 // ============================================================
 // Typed test suite
@@ -190,6 +207,10 @@ using MD5Implementations = ::testing::Types<
     ,
     AVX2MD5Trait,
     AVX512MD5Trait
+#endif
+#if USE_MD5_AARCH64_ASIMD
+    ,
+    ASIMDMD5Trait
 #endif
     >;
 

@@ -21,6 +21,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
+#include <Core/SortCursor.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -348,6 +349,20 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
             input_header.getPositionByName(column.column_name));
     }
 
+    // We only need to materialize (remove Const/LowCardinality/Sparse from) the columns we actually
+    // read while computing the window functions: the PARTITION BY and ORDER BY keys and the function
+    // arguments. Everything else is passed through to the output untouched.
+    should_materialize.assign(input_header.columns(), 0);
+    for (const auto index : partition_by_indices)
+        should_materialize[index] = 1;
+
+    for (const auto index : order_by_indices)
+        should_materialize[index] = 1;
+
+    for (const auto & workspace : workspaces)
+        for (auto argument_column_indice : workspace.argument_column_indices)
+            should_materialize[argument_column_indice] = 1;
+
     // Choose a row comparison function for RANGE OFFSET frame based on the
     // type of the ORDER BY column.
     if (window_description.frame.type == WindowFrame::FrameType::RANGE
@@ -369,7 +384,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             window_description.frame.begin_offset = convertFieldToTypeOrThrow(
                 window_description.frame.begin_offset,
-                *entry.type);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
             if (accurateLess(window_description.frame.begin_offset, Field(0)))
             {
@@ -383,7 +398,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         {
             window_description.frame.end_offset = convertFieldToTypeOrThrow(
                 window_description.frame.end_offset,
-                *entry.type);
+                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
 
             if (accurateLess(window_description.frame.end_offset, Field(0)))
             {
@@ -504,7 +519,10 @@ void WindowTransform::advancePartitionEnd()
     chassert(prev_frame_start < partition_end || partition_start == partition_end);
     chassert(first_block_number <= prev_frame_start.block);
     const auto block_rows = blockRowsNumber(partition_end);
-    for (; partition_end.row < block_rows; ++partition_end.row)
+
+    // First, check whether the first unprocessed row already belongs to the next partition, by
+    // comparing it against the reference row (prev_frame_start, which may live in another block, so
+    // we can't fold it into the equal-range scan below).
     {
         size_t i = 0;
         for (; i < partition_by_columns; ++i)
@@ -529,8 +547,21 @@ void WindowTransform::advancePartitionEnd()
         }
     }
 
-    // Went until the end of block, go to the next.
-    chassert(partition_end.row == block_rows);
+    // partition_end.row matches the reference on all PARTITION BY keys, so the partition extends over
+    // the contiguous run of rows equal to it. The input is sorted by PARTITION BY, so we find that
+    // run's end within this block with a fast equal-range scan.
+    const size_t partition_end_row = getEqualRangeEndAssumeSorted(
+        inputAt(partition_end), partition_by_indices, partition_end.row, block_rows, 1 /* nan_direction_hint */);
+
+    if (partition_end_row < block_rows)
+    {
+        // Found the partition boundary inside this block.
+        partition_end.row = partition_end_row;
+        partition_ended = true;
+        return;
+    }
+
+    // The partition runs to the end of this block, go to the next.
     ++partition_end.block;
     partition_end.row = 0;
 
@@ -831,10 +862,56 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // Equality would mean "no data to process", for which we checked above.
     chassert(frame_end.row < rows_end);
 
-    // Advance frame_end while it is still peers with the current row.
-    for (; frame_end.row < rows_end; ++frame_end.row)
+    // Advance frame_end to the end of the current row's peer group.
+    if (window_description.frame.type != WindowFrame::FrameType::ROWS)
     {
-        if (!arePeers(current_row, frame_end))
+        // RANGE/GROUPS: peers are the rows whose ORDER BY values equal current_row's (or all rows if
+        // there is no ORDER BY). The input is sorted by ORDER BY within the partition, so we find the
+        // peer group's end with a fast equal-range scan.
+        // First check whether frame_end is still a peer of current_row -- the reference (current_row)
+        // may be in a different block, so we compare against it directly.
+        const size_t order_by_columns = order_by_indices.size();
+        size_t i = 0;
+        for (; i < order_by_columns; ++i)
+        {
+            const auto * reference_column = inputAt(current_row)[order_by_indices[i]].get();
+            const auto * compared_column = inputAt(frame_end)[order_by_indices[i]].get();
+            if (compared_column->compareAt(frame_end.row, current_row.row, *reference_column, 1 /* nan_direction_hint */) != 0)
+            {
+                break;
+            }
+        }
+
+        if (i < order_by_columns)
+        {
+            // frame_end is already past the current row's peer group.
+            frame_ended = true;
+            return;
+        }
+
+        // frame_end is a peer; extend over the run of equal ORDER BY values within this block,
+        // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
+        // so the scan will just return the end of the block.
+        const UInt64 peer_group_end_row
+            = getEqualRangeEndAssumeSorted(inputAt(frame_end), order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+
+        if (peer_group_end_row < rows_end)
+        {
+            frame_end.row = peer_group_end_row;
+            frame_ended = true;
+            return;
+        }
+        frame_end.row = rows_end;
+    }
+    else
+    {
+        // ROWS frame: a row is only its own peer, so the peer group is just current_row, and
+        // frame_end sits at current_row on entry -- advancing it one row reaches the peer group's
+        // end.
+        if (frame_end == current_row)
+            ++frame_end.row;
+
+        if (frame_end.row < rows_end)
         {
             frame_ended = true;
             return;
@@ -1067,6 +1144,11 @@ void WindowTransform::writeOutCurrentRow()
     chassert(current_row < partition_end);
     chassert(current_row.block >= first_block_number);
 
+    // Whether this row's frame equals the previous row's. When current_row_number == 1 it's the first
+    // row of the partition, so there's no previous row in this partition (and thus no previous frame)
+    // to compare against.
+    const bool frame_unchanged = current_row_number > 1 && frame_start == prev_frame_start && frame_end == prev_frame_end;
+
     const auto & block = blockAt(current_row);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
@@ -1075,36 +1157,50 @@ void WindowTransform::writeOutCurrentRow()
         if (ws.window_function_impl)
         {
             ws.window_function_impl->windowInsertResultInto(this, wi);
+            continue;
+        }
+
+        IColumn * result_column = block.output_columns[wi].get();
+        const auto * a = ws.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+        // FIXME does it also allocate the result on the arena?
+        // We'll have to pass it out with blocks then...
+
+        if (frame_unchanged && !ws.is_aggregate_function_state && current_row.row > 0)
+        {
+            // Same frame as the previous row -> same result. When that row is in this same block its
+            // result is already in result_column one position back, so copy it instead of
+            // re-finalizing. We copy the column into itself with insertRangeFrom (not insertFrom):
+            // insertRangeFrom appends via resize + memcpy from a disjoint source range, which is
+            // self-safe even if the append reallocates and even for nested columns (Array, Variant,
+            // Dynamic, JSON) whose sub-columns are not covered by the top-level reserve.
+            chassert(result_column->size() == current_row.row);
+            result_column->insertRangeFrom(*result_column, current_row.row - 1, 1);
+        }
+        else if (ws.is_aggregate_function_state)
+        {
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            a->insertMergeResultInto(buf, *result_column, arena.get());
         }
         else
         {
-            IColumn * result_column = block.output_columns[wi].get();
-            const auto * a = ws.aggregate_function.get();
-            auto * buf = ws.aggregate_function_state.data();
-            // FIXME does it also allocate the result on the arena?
-            // We'll have to pass it out with blocks then...
-
-            if (ws.is_aggregate_function_state)
-            {
-                /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-                /// correctly if result contains AggregateFunction's states
-                a->insertMergeResultInto(buf, *result_column, arena.get());
-            }
-            else
-            {
-                a->insertResultInto(buf, *result_column, arena.get());
-            }
+            a->insertResultInto(buf, *result_column, arena.get());
         }
     }
 }
 
-static void assertSameColumns(const Columns & left_all,
-    const Columns & right_all)
+static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<UInt8> & columns_to_check)
 {
     chassert(left_all.size() == right_all.size());
 
     for (size_t i = 0; i < left_all.size(); ++i)
     {
+        // Only the materialized columns are guaranteed to match the (materialized) header structure;
+        // the pass-through columns are left in their original representation.
+        if (!columns_to_check[i])
+            continue;
+
         const auto * left_column = left_all[i].get();
         const auto * right_column = right_all[i].get();
 
@@ -1166,11 +1262,15 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Aggregator does.
         // Likewise, aggregate functions can't work with LowCardinality,
         // so we have to materialize them too.
-        // Just materialize everything.
+        // We only materialize the columns we actually read: the PARTITION BY / ORDER BY keys and
+        // the function arguments. The other columns are emitted to the output as-is from original_input_columns to
+        // avoid paying unnecessary Const/LowCardinality/Sparse cost.
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
-        for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+        for (size_t i = 0; i < columns.size(); ++i)
+            if (should_materialize[i])
+                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
@@ -1186,7 +1286,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // As a debugging aid, assert that all chunks have the same C++ type of
         // columns, that also matches the input header, because we often have to
         // work across chunks.
-        assertSameColumns(input_header.getColumns(), block.input_columns);
+        assertSameColumns(input_header.getColumns(), block.input_columns, should_materialize);
     }
 
     // Start the calculations. First, advance the partition end.
@@ -2296,6 +2396,13 @@ struct CumeDistState
 {
     RowNumber start_row;
     UInt64 current_partition_rows = 0;
+
+    // The peer-group-end row number is identical for every row in a peer group, so we compute it
+    // once (by scanning forward to the last peer) when entering a new peer group and reuse it for
+    // the rest of the group. Without this the per-row scan is O(k^2) for a peer group of size k.
+    // 0 for not cached is safe because the first row in a partition is always peer group 1.
+    UInt64 cached_peer_group_number = 0;
+    UInt64 cached_peer_group_end_row_number = 0;
 };
 }
 
@@ -2338,9 +2445,10 @@ public:
         {
             state.current_partition_rows = 0;
             state.start_row = transform->current_row;
+            state.cached_peer_group_number = 0;
         }
 
-        insertPeerGroupEndRowNumberIntoColumn(transform, function_index);
+        insertPeerGroupEndRowNumberIntoColumn(transform, function_index, state);
         state.current_partition_rows++;
 
         if (!WindowFunctionHelpers::checkPartitionEnterLastRow(transform))
@@ -2387,24 +2495,32 @@ public:
         return getState(workspace);
     }
 
-    inline void insertPeerGroupEndRowNumberIntoColumn(const WindowTransform * transform, size_t function_index) const
+    inline void insertPeerGroupEndRowNumberIntoColumn(const WindowTransform * transform, size_t function_index, CumeDistState & state) const
     {
-        // Calculate the peer group end row number by finding the last row in the current peer group
-        UInt64 peer_group_end_row_number = transform->current_row_number;
-        RowNumber check_row = transform->current_row;
-
-        // Advance through all rows that are peers with the current row
-        while (true)
+        // The peer-group-end row number is the same for every row in a peer group. Recompute it (by
+        // scanning forward to the last peer) only when we enter a new peer group; otherwise reuse the
+        // cached value. This turns the per-peer-group cost from O(k^2) into O(k).
+        if (state.cached_peer_group_number != transform->peer_group_number)
         {
-            RowNumber next = transform->nextRowNumber(check_row);
-            if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
-                break;
-            check_row = next;
-            peer_group_end_row_number++;
+            UInt64 peer_group_end_row_number = transform->current_row_number;
+            RowNumber check_row = transform->current_row;
+
+            // Advance through all rows that are peers with the current row
+            while (true)
+            {
+                RowNumber next = transform->nextRowNumber(check_row);
+                if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
+                    break;
+                check_row = next;
+                peer_group_end_row_number++;
+            }
+
+            state.cached_peer_group_number = transform->peer_group_number;
+            state.cached_peer_group_end_row_number = peer_group_end_row_number;
         }
 
         auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
-        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(peer_group_end_row_number));
+        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(state.cached_peer_group_end_row_number));
     }
 };
 

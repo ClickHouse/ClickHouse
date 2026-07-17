@@ -128,7 +128,7 @@ DiskObjectStorage::DiskObjectStorage(
         .is_cached = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache(),
         .zookeeper_name = metadata_storage->getZooKeeperName(),
     };
-    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
+    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStoragePtr()->getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
             std::unique_lock lock{resource_mutex};
@@ -744,6 +744,7 @@ bool DiskObjectStorage::isSharedCompatible() const
         case MetadataStorageType::Plain:
         case MetadataStorageType::PlainRewritable:
         case MetadataStorageType::StaticWeb:
+        case MetadataStorageType::WebIndex:
             return true;
         default:
             return false;
@@ -834,6 +835,12 @@ void DiskObjectStorage::prepareRead(
     /// Delegate to the object storage to set source and add cache stage if needed.
     /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
+
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential
+    /// windows; independent of the cache / prefetch stages below. A null limit (feature off
+    /// or 0 slots) keeps the stateless one-shot path.
+    if (read_settings.reader_executor.enabled && read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
 
     if (use_distributed_cache)
         pipeline.needDistributedCache();

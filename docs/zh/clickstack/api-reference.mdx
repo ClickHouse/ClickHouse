@@ -1,0 +1,207 @@
+---
+slug: /use-cases/observability/clickstack/api-reference
+title: 'API 参考文档'
+description: '用于通过编程方式管理仪表盘、告警和数据源的 ClickStack API 参考文档'
+doc_type: 'guide'
+keywords: ['ClickStack', '可观测性', 'API', 'REST API', '仪表盘', '告警', 'HyperDX']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickStack 提供 REST API，可用于以编程方式管理仪表盘、告警和数据源。该 API 同时适用于 **托管 ClickStack** (ClickHouse Cloud) 和 **ClickStack 开源** 部署，不过两者的端点和身份验证机制有所不同。
+
+<div id="api-docs">
+  ## API 参考文档
+</div>
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    对于托管 ClickStack，需通过 **ClickHouse Cloud API** 访问 API。ClickStack 的端点可在 [Cloud API 规范](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickStack) 中查看。
+
+    以下端点可用：
+
+    | 资源      | 操作                |
+    | ------- | ----------------- |
+    | **仪表盘** | 创建、列出、获取、更新和删除仪表盘 |
+    | **告警**  | 创建、列出、获取、更新和删除告警  |
+    | **数据源** | 列出数据源             |
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    对于开源 ClickStack，完整的 API 规范由 [HyperDX 仓库](https://github.com/hyperdxio/hyperdx) 维护，可交互式查看或下载为 OpenAPI 规范：
+
+    * [交互式 API 参考文档](https://www.clickhouse.com/docs/clickstack/api-reference)
+    * [下载 OpenAPI 规范 (JSON) ](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
+
+    以下端点可用：
+
+    | 资源           | 操作                   |
+    | ------------ | -------------------- |
+    | **仪表盘**      | 创建、列出、获取、更新和删除仪表盘    |
+    | **告警**       | 创建、列出、获取、更新和删除告警     |
+    | **图表**       | 查询时间序列数据 (仅支持 POST)  |
+    | **数据源**      | 列出数据源                |
+    | **Webhooks** | 列出 Webhooks          |
+  </Tab>
+</Tabs>
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    托管 ClickStack 通过 [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) 使用 **ClickHouse Cloud API key** 进行身份验证。要创建和管理 API key，请参阅[管理 API key](/zh/products/cloud/features/admin-features/api/openapi)。
+
+    使用 HTTP Basic Authentication 时，需提供 key ID 和 secret：
+
+    ```bash
+    export KEY_ID=<your_key_id>
+    export KEY_SECRET=<your_key_secret>
+
+    curl --user $KEY_ID:$KEY_SECRET \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+    ```
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    开源 ClickStack 使用 **Personal API Access Key** 作为 **Bearer token** 进行身份验证。
+
+    要获取 API key：
+
+    1. 在你的 ClickStack URL 打开 HyperDX (例如 http://localhost:8080)
+    2. 创建账户，或在需要时登录
+    3. 导航到 **Team Settings → API Keys**
+    4. 复制你的 **Personal API Access Key**
+
+    <Image img="/images/clickstack/api-key-personal.webp" alt="ClickStack API Key" />
+
+    <Note>
+      这与 **Team Settings** 中的 **摄取 API key** 不同，后者用于对发送到 OpenTelemetry Collector 的遥测数据进行身份验证。
+    </Note>
+
+    API 服务器默认运行在 `8000` 端口 (与使用 `8080` 端口的 UI 分开) 。使用 all-in-one Docker 镜像时，请确保显式映射此端口：
+
+    ```bash
+    docker run -p 8080:8080 -p 8000:8000 -p 4317:4317 -p 4318:4318 docker.hyperdx.io/hyperdx/hyperdx-all-in-one
+    ```
+
+    在 `Authorization` 请求头中包含该 key：
+
+    ```bash
+    curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+      http://localhost:8000/api/v2/dashboards
+    ```
+  </Tab>
+</Tabs>
+
+<div id="base-url">
+  ## Base URL 和请求格式
+</div>
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    所有托管 ClickStack API 请求都会发送到 ClickHouse Cloud API：
+
+    ```bash
+    https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+    ```
+
+    你可以在 ClickHouse Cloud 控制台的 **Organization → Organization details** 中找到 **Organization ID**。**Service ID** 可在服务 URL 或服务详情页面中查看。
+
+    ### 示例：列出仪表盘
+
+    ```bash
+    curl --user $KEY_ID:$KEY_SECRET \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+    ```
+
+    ### 示例：创建告警
+
+    ```bash
+    curl -X POST --user $KEY_ID:$KEY_SECRET \
+      -H "Content-Type: application/json" \
+      -d '{
+        "dashboardId": "<DASHBOARD_ID>",
+        "tileId": "<TILE_ID>",
+        "threshold": 100,
+        "interval": "1h",
+        "source": "tile",
+        "thresholdType": "above",
+        "channel": {
+          "type": "webhook",
+          "webhookId": "<WEBHOOK_ID>"
+        },
+        "name": "Error Spike Alert",
+        "message": "Error rate exceeded 100 in the last hour"
+      }' \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+    ```
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    所有开源 ClickStack API 请求都会发送到端口 `8000` 上的 HyperDX API 服务器：
+
+    ```bash
+    http://<YOUR_HYPERDX_HOST>:8000/api/v2/<resource>
+    ```
+
+    例如，在默认的本地部署中：
+
+    ```bash
+    http://localhost:8000/api/v2/dashboards
+    ```
+
+    ### 示例：列出仪表盘
+
+    ```bash
+    curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+      http://localhost:8000/api/v2/dashboards
+    ```
+
+    ### 示例：创建告警
+
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <YOUR_API_KEY>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "dashboardId": "<DASHBOARD_ID>",
+        "tileId": "<TILE_ID>",
+        "threshold": 100,
+        "interval": "1h",
+        "source": "tile",
+        "thresholdType": "above",
+        "channel": {
+          "type": "webhook",
+          "webhookId": "<WEBHOOK_ID>"
+        },
+        "name": "Error Spike Alert",
+        "message": "Error rate exceeded 100 in the last hour"
+      }' \
+      http://localhost:8000/api/v2/alerts
+    ```
+
+    ### 示例：查询图表序列数据
+
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <YOUR_API_KEY>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "startTime": 1647014400000,
+        "endTime": 1647100800000,
+        "granularity": "1h",
+        "series": [
+          {
+            "sourceId": "<SOURCE_ID>",
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "groupBy": []
+          }
+        ]
+      }' \
+      http://localhost:8000/api/v2/charts/series
+    ```
+  </Tab>
+</Tabs>

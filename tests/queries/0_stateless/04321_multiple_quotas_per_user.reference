@@ -1,0 +1,10 @@
+--- both quotas are enforced for the user (system.quota_usage shows both) ---
+q_04321_hash
+q_04321_user
+--- SHOW CREATE QUOTA CURRENT lists every enforced quota (previously only one) ---
+q_04321_hash
+q_04321_user
+--- normalized_query_hash quota: query_selects = 2 per query pattern is enforced ---
+QUOTA_EXCEEDED
+--- user_name quota: query_inserts = 2 is enforced (the second quota is not dead weight) ---
+QUOTA_EXCEEDED

@@ -1,0 +1,321 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/odigos
+title: '通过 Odigos 将 OpenTelemetry 发送到 ClickStack'
+sidebarTitle: 'Odigos'
+description: '使用 Odigos 自动为 Kubernetes 工作负载插桩，并通过 OTLP 将遥测数据导出到 ClickStack'
+doc_type: 'guide'
+keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', '自动插桩']
+---
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  本指南将介绍如何将 Odigos 遥测数据导出到 ClickStack。你将了解如何：
+
+  * 使用 Helm 在 Kubernetes 上部署 Odigos
+  * 在 Odigos UI 中添加数据源
+  * 添加一个指向 ClickStack 的 OTLP HTTP 目标端
+  * 在 ClickStack 中验证日志、指标和链路追踪
+
+  Odigos 无需修改代码或重启即可自动为应用注入遥测采集能力；ClickStack 则将数据存储在 ClickHouse 中并供查询分析。
+
+  所需时间：10–20 分钟
+</Info>
+
+{/* vale off */}
+
+<div id="what-is-odigos">
+  ## 什么是 Odigos？
+</div>
+
+{/* vale on */}
+
+[Odigos](https://odigos.io/) 是一个面向 Kubernetes 和 VM 的插桩控制平面，通过 **eBPF** 在内核层为应用实现插桩。由于采集在内核中运行，应用开销能够保持很低，同时仍具备很强的可观测性。你无需在应用代码中接入新的 agent，也不必等待所有服务完成库升级，就能获得生产级的 OpenTelemetry 链路追踪、指标、日志和 profile。
+
+正是这一 eBPF layer，让大规模实现深入且一致的观测数据采集成为可能。Odigos 可以在需要时自动开启或关闭更深层的插桩，帮助调试或排查问题：
+
+* **代码级上下文** — 与函数和运行时行为关联的属性
+* **HTTP 流量** — 服务之间的请求与响应
+* **消息系统** — 来自 Kafka 和类似消息代理的载荷与消息
+* **详细错误信息** — 出现故障时的堆栈跟踪
+* **自定义插桩** — 在 auto-instrumentation 覆盖不到的地方继续扩展，无需修改代码或重启
+
+在底层，Odigos 会为你的集群创建并管理一整套 OpenTelemetry 管道：可随负载扩缩的 collectors、将数据路由到你选择的后端，以及可在 UI 中控制的管道逻辑。你可以定义 **采样** 来控制数据量，配置 **PII masking** 以避免敏感数据被导出，并使用 **OTTL 规则** 在观测数据离开集群之前对其进行过滤、转换或增强。
+
+{/* vale off */}
+
+<div id="why-odigos-clickstack">
+  ## 为什么选择 Odigos + ClickStack？
+</div>
+
+{/* vale on */}
+
+在众多服务中部署 OpenTelemetry 往往既耗时，又只能提供较浅层的应用可观测性。Odigos 通过 eBPF 实现更深层的插桩，并负责 Kubernetes 上 collector 的运行；ClickStack 则提供基于 ClickHouse 的存储，以及用于大规模查询遥测数据的 HyperDX UI。
+
+<Tip>
+  **关键要点**
+
+  * **Odigos** 可自动为任何 Kubernetes 工作负载进行插桩，无需重启，并自动管理 OpenTelemetry 管道。
+  * **ClickStack** 将日志、指标和链路追踪存储在 ClickHouse 中，并在 HyperDX 中展示。
+</Tip>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 已安装 **ClickStack**，并且可从你的 Kubernetes 集群访问。参见 [开始使用开源 ClickStack](/zh/clickstack/getting-started/oss) 或 [开始使用托管 ClickStack](/zh/clickstack/getting-started/managed)。
+* 你的 ClickStack **OTLP HTTP 端点** (端口 `4318`) ，以及 Odigos 将在 `Authorization` 请求头中传递的身份验证值。对于开源 ClickStack，这个值是 HyperDX UI 中 **Team Settings → API Keys** 里的 **API 摄取密钥**。对于托管 ClickStack，这个值是你在启动自己的独立 ClickStack 收集器时设置的 **`OTLP_AUTH_TOKEN`**。
+* 一个 **Kubernetes 集群** (用于 eBPF instrumentation 的 Linux 节点内核版本需为 4.18 或更高)
+* 要安装到 `odigos-system` 命名空间所需的 **Helm**、**kubectl** 和集群凭证
+* 一个 **Odigos Enterprise 本地部署 token** —— 联系 [Odigos team](https://odigos.io/) 获取访问权限
+
+{/* vale off */}
+
+<div id="integrate-odigos-clickstack">
+  ## 将 ClickStack 与 Odigos 集成
+</div>
+
+{/* vale on */}
+
+<Steps>
+  <Step>
+    #### 使用 Helm 部署 Odigos
+
+    Odigos Enterprise 需要本地部署许可证令牌。请在 shell 中将其导出：
+
+    ```bash
+    export ODIGOS_ONPREM_TOKEN="<your-enterprise-token>"
+    ```
+
+    或者，您也可以在安装前将该令牌存储到名为 `odigos-pro` 的 Kubernetes Secret 中。请参阅[Odigos Enterprise 安装](https://docs.odigos.io/enterprise/setup/installation)。
+
+    添加 Odigos Helm 仓库，并将该 chart 安装到 `odigos-system`：
+
+    ```bash
+    helm repo add odigos https://odigos-io.github.io/odigos/
+    helm repo update
+
+    helm upgrade --install odigos odigos/odigos \
+      --namespace odigos-system \
+      --create-namespace \
+      --set onPremToken=$ODIGOS_ONPREM_TOKEN
+    ```
+
+    你可以通过 `--set` 标志或自定义 values 文件 (`-f`) 传入额外的配置覆盖项。Chart 的默认配置值位于 GitHub 上的 [helm/odigos/values.yaml](https://github.com/odigos-io/odigos/blob/main/helm/odigos/values.yaml)。
+
+    确认 Odigos Pod (容器组) 正在运行：
+
+    ```bash
+    kubectl get pods -n odigos-system
+    ```
+  </Step>
+
+  <Step>
+    #### 在 Odigos UI 中添加数据源
+
+    1. 为 Odigos UI 服务设置端口转发：
+
+    ```bash
+    kubectl port-forward svc/ui -n odigos-system 3000:3000
+    ```
+
+    2. 在浏览器中打开 [http://localhost:3000](http://localhost:3000)。
+    3. 前往 **Sources**，然后选择要插桩的命名空间或工作负载。
+    4. 在所有工作负载都标记为需要插桩后，点击底部的 done。
+    5. 在 Sources 列中确认工作负载已成功插桩。
+  </Step>
+
+  <Step>
+    #### 在 Odigos UI 中将 ClickStack 添加为目标端
+
+    要将遥测数据发送到 ClickStack，请在 Odigos 中添加一个 **OTLP HTTP** 目标端。具体配置取决于 ClickStack 的部署方式。对于开源 ClickStack，OpenTelemetry collector 已内置，HyperDX UI 会自动为你生成摄取 key。对于托管 ClickStack，则需要你自行运行独立的 ClickStack collector，并在启动容器时自行选择身份验证令牌。
+
+    <Tip>
+      **替代方案：直接写入 ClickHouse**
+
+      如果你的 Kubernetes 集群可以访问 ClickHouse，则可以完全跳过 OTLP collector，改用 Odigos 的[原生 **ClickHouse** 目标端](#native-clickhouse-destination)。这同样适用于开源 ClickStack 和托管 ClickStack。
+    </Tip>
+
+    <Tabs>
+      <Tab title="开源 ClickStack">
+        对于开源 ClickStack，例如一体化镜像，网关 OpenTelemetry collector 已包含在内，并且 HyperDX 会自动生成摄取 API key。
+
+        1. 在 Odigos UI 中，点击 **Add Destination** 并选择 **OTLP HTTP**。
+        2. 将 **OTLP HTTP Endpoint** 设置为你的 ClickStack collector (例如，`http://clickstack.example.com:4318`) 。有关端点详情，请参阅[使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry#sending-data-to-collector-oss)。
+        3. 在 ClickStack UI 的 **Team Settings → API Keys** 中复制你的 API 摄取 key。
+        4. 在 **Headers** 中，添加：
+           * **Key**: `Authorization`
+           * **Value**: 你的 API 摄取 key
+        5. 启用 **Logs**、**Metrics** 和 **Traces**。
+        6. 保存目标端。
+      </Tab>
+
+      <Tab title="Managed ClickStack">
+        托管 ClickStack 不提供托管的 OpenTelemetry collector，也不会在 UI 中显示摄取 key。相反，你需要自行运行[独立模式下的 ClickStack 版 collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector)，并在启动容器时通过 `OTLP_AUTH_TOKEN` 环境变量设置身份验证令牌。随后，Odigos 会将 OTLP HTTP 流量发送到该 collector，并在 `Authorization` 请求头中携带相同的令牌。
+
+        1. 以独立模式启动 ClickStack collector，使其指向你的 ClickHouse Cloud 服务，并使用你自行选择的 `OTLP_AUTH_TOKEN` 对其进行保护：
+
+           ```shell
+           export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+           export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+           export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+           export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+           docker run \
+             -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+             -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+             -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+             -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+             -p 4317:4317 \
+             -p 4318:4318 \
+             clickhouse/clickstack-otel-collector:latest
+           ```
+
+           有关 TLS、专用摄取用户以及其他生产环境建议，请参阅[保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+        2. 在 Odigos UI 中，点击 **Add Destination** 并选择 **OTLP HTTP**。
+        3. 将 **OTLP HTTP Endpoint** 设置为你刚刚启动的独立 collector (例如，`http://my-collector.example.com:4318`) 。
+        4. 在 **Headers** 中，添加：
+           * **Key**: `Authorization`
+           * **Value**: 你在 collector 上设置的 `OTLP_AUTH_TOKEN` 值
+        5. 启用 **Logs**、**Metrics** 和 **Traces**。
+        6. 保存目标端。
+
+        <Info>
+          **可选：Kubernetes 清单**
+
+          你也可以不通过 UI，而是使用 `Destination` 清单来配置同一个目标端。请参阅高级配置中的[使用 Kubernetes 清单配置目标端](#destination-manifest)。
+        </Info>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    #### 在 ClickStack 中验证遥测数据
+
+    1. 打开 ClickStack UI (HyperDX) ：
+       * **开源 ClickStack**：例如，在一体化 image 中访问 `http://<host>:8080`。
+       * **托管 ClickStack**：在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的 service，然后点击 **Launch ClickStack**。详情请参见[导航到 ClickStack UI](/zh/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud)。
+    2. 检查来自已插桩服务的 **日志**、**指标** 和 **链路追踪** 数据。
+    3. 按 `odigos.version` 过滤链路追踪，以验证端到端导出是否正常。
+
+    如果没有看到数据，请检查 collector 日志：`kubectl logs deploy/odigos-gateway -n odigos-system`
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## 高级配置
+</div>
+
+<div id="hyperdx-log-normalizer">
+  ### HyperDX 日志规范化器
+</div>
+
+如果你使用 Odigos 原生的 **ClickHouse** 目标端直接将数据导出到 ClickHouse (而不是通过 OTLP HTTP 导出到 ClickStack) ，请启用 **HyperDX 日志规范化器** (`HYPERDX_LOG_NORMALIZER: true`) 。它会解析 JSON 格式的日志正文，并对属性进行规范化，以便在 ClickStack UI 中更高效地查询。
+
+<div id="native-clickhouse-destination">
+  ### 原生 ClickHouse 目标端
+</div>
+
+当集群可直接访问 ClickHouse 时，可以使用 Odigos 的原生 **ClickHouse** 目标端，而不是 OTLP HTTP。在 UI 中或通过清单配置 ClickHouse 端点、数据库名和 schema 选项——请参阅 [Odigos ClickHouse destination](https://docs.odigos.io/backends/clickhouse)。
+
+* **生产 schema**：将 `CLICKHOUSE_CREATE_SCHEME` 设置为 `false`，并使用你自己的 DDL。
+* **TLS / 认证**：使用 `CLICKHOUSE_TLS_ENABLED`、`CLICKHOUSE_USERNAME`，并通过 Kubernetes Secret 提供密码。
+
+<div id="destination-manifest">
+  ### 通过 Kubernetes 清单配置目标端
+</div>
+
+**OTLP HTTP (ClickStack)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickstack
+  namespace: odigos-system
+spec:
+  type: otlphttp
+  destinationName: otlphttp
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    OTLP_HTTP_ENDPOINT: 'http://clickstack.example.com:4318'
+    # 开源 ClickStack 的 API 摄取密钥，或托管 ClickStack 的 OTLP_AUTH_TOKEN
+    OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
+```
+
+**ClickHouse (直连)&#x20;**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickhouse
+  namespace: odigos-system
+spec:
+  type: clickhouse
+  destinationName: clickhouse
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
+    CLICKHOUSE_DATABASE_NAME: 'otel'
+    CLICKHOUSE_CREATE_SCHEME: 'true'
+```
+
+应用此清单：
+
+```bash
+kubectl apply -f destination.yaml
+```
+
+{/* vale off */}
+
+<div id="odigos-vm-agent">
+  ### Odigos VM Agent
+</div>
+
+{/* vale on */}
+
+[Odigos VM Agent](https://docs.odigos.io/vmagent/overview) 使用 eBPF 为 Linux 进程、systemd 服务和/或 Docker 容器添加遥测采集能力。遥测数据会导出到与基于集群的 Odigos 相同的目标端，包括通过 OTLP HTTP 导出到 ClickStack。
+
+VM Agent 是 Odigos Pro 的一部分。有关设置、数据源和目标端配置，请参阅 [VM Agent 概述](https://docs.odigos.io/vmagent/overview)。
+
+{/* vale off */}
+
+<div id="odigos-central">
+  ### Odigos Central
+</div>
+
+{/* vale on */}
+
+[Odigos Central](https://docs.odigos.io/central/overview) 是一个集中式控制平面，可通过单一 UI 统一管理多个 Kubernetes 集群中的插桩、目标端和管道配置，而无需逐个集群分别配置。
+
+Odigos Central 在 Odigos Enterprise 中可用。有关多集群管理、SSO 和统一采样规则，请参阅 [Central 概述](https://docs.odigos.io/central/overview)。
+
+<div id="next-steps">
+  ## 下一步
+</div>
+
+* **在 ClickStack 中查看已插桩服务的链路追踪**
+* **为 Odigos 导出的指标创建仪表盘**
+* **根据您的保留策略和查询模式，优化 ClickHouse schema 和生存时间 (TTL)**
+
+<div id="read-more">
+  ## 延伸阅读
+</div>
+
+* [Odigos Enterprise 安装](https://docs.odigos.io/enterprise/setup/installation)
+* [Odigos ClickHouse 目标端](https://docs.odigos.io/backends/clickhouse)
+* [Odigos VM Agent 概述](https://docs.odigos.io/vmagent/overview)
+* [Odigos Central 概述](https://docs.odigos.io/central/overview)
+* [告别生产环境中的盲目猜测：使用 ClickHouse 和 Odigos 实现大规模全保真追踪](https://clickhouse.com/blog/odigos-full-fidelity-tracing)
+* [开源 ClickStack 入门](/zh/clickstack/getting-started/oss)

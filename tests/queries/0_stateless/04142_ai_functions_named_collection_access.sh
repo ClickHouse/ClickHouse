@@ -32,13 +32,37 @@ function check_access_both()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
         SET allow_experimental_ai_functions = 1;
-        SELECT aiGenerate('$collection_name', 'hi') FORMAT Null;
+        SELECT aiGenerate('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed('$collection_name', 'hi') FORMAT Null;
+        SELECT aiEmbed('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiGenerate('$collection_name', x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT aiGenerate(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed('$collection_name', x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT aiEmbed(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+    " 2>&1 | awk '
+        /ACCESS_DENIED/ { denied = 1; next }
+        /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }
+        END { print (denied ? "ACCESS_DENIED" : "OK") }
+    '
+}
+
+# Same checks, but credentials are selected via the default-credentials settings instead of the
+# `credentials` map key. This settings-based indirection is a separate, security-sensitive path
+# (`ai_function_text_default_credentials` for text functions, `ai_function_embedding_default_credentials`
+# for aiEmbed) that must enforce the same NAMED_COLLECTION grant.
+function check_access_both_default()
+{
+    $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
+        SET allow_experimental_ai_functions = 1;
+        SET ai_function_text_default_credentials = '$collection_name';
+        SET ai_function_embedding_default_credentials = '$collection_name';
+        SELECT aiGenerate('hi') FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiEmbed('hi') FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiEmbed(x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }
@@ -48,13 +72,16 @@ function check_access_both()
 
 # Without NAMED COLLECTION grant: must fail with ACCESS_DENIED before any network call,
 # even on the zero-row queries (the access check must precede the empty-input fast path).
+# Both credential-selection paths (explicit map key and default settings) must deny.
 check_access_both
+check_access_both_default
 
 $CLICKHOUSE_CLIENT -q "GRANT NAMED COLLECTION ON $collection_name TO $user_name"
 
-# With the grant: access check passes. The 1-row calls still fail (unreachable host),
-# but the failure must not be ACCESS_DENIED. The 0-row calls now succeed cleanly.
+# With the grant: access check passes for both paths. The 1-row calls still fail (unreachable
+# host), but the failure must not be ACCESS_DENIED. The 0-row calls now succeed cleanly.
 check_access_both
+check_access_both_default
 
 $CLICKHOUSE_CLIENT -q "
 DROP USER IF EXISTS $user_name;

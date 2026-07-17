@@ -18,21 +18,20 @@ SET optimize_inverse_dictionary_lookup = 1;
 EXPLAIN indexes = 1
 SELECT count() FROM pruning_data
 WHERE dictGetString('pruning_dict', 'name', id) = 'match';
-CreatingSets (Create sets before main query execution)
-  Expression ((Project names + Projection))
-    Aggregating
-      Expression (Before GROUP BY)
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromMergeTree (default.pruning_data)
-          Indexes:
-            PrimaryKey
-              Keys:
-                id
-              Condition: (id in 1-element set)
-              Parts: 1/1
-              Granules: 1/100
-              Search Algorithm: binary search
-            Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.pruning_data)
+        Indexes:
+          PrimaryKey
+            Keys:
+              id
+            Condition: (id in [4242, 4242])
+            Parts: 1/1
+            Granules: 1/100
+            Search Algorithm: binary search
+          Ranges: 1
 -- Without optimization: `dictGet(...)` is stays, so all granules are scanned.
 SET optimize_inverse_dictionary_lookup = 0;
 EXPLAIN indexes = 1

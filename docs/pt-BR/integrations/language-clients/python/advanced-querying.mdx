@@ -1,0 +1,506 @@
+---
+sidebarTitle: 'Consultas avançadas'
+keywords: ['clickhouse', 'python', 'consulta', 'avançadas']
+description: 'Consultas avançadas com ClickHouse Connect'
+slug: /integrations/language-clients/python/advanced-querying
+title: 'Consultas avançadas'
+doc_type: 'reference'
+---
+
+<div id="querycontexts">
+  ## QueryContexts
+</div>
+
+O ClickHouse Connect executa consultas padrão em um `QueryContext`. O `QueryContext` contém as principais estruturas usadas para montar consultas no banco de dados ClickHouse, bem como a configuração usada para processar o resultado em um `QueryResult` ou outra estrutura de dados de resposta. Isso inclui a própria consulta, parâmetros, configurações, formatos de leitura e outras propriedades.
+
+Um `QueryContext` pode ser obtido usando o método `create_query_context` do cliente. Esse método aceita os mesmos parâmetros que o método principal de consulta. Esse contexto de consulta pode então ser passado aos métodos `query`, `query_df` ou `query_np` como o argumento nomeado `context`, em vez de alguns ou de todos os outros argumentos desses métodos. Observe que argumentos adicionais especificados na chamada do método substituirão quaisquer propriedades do `QueryContext`.
+
+O caso de uso mais claro para um `QueryContext` é enviar a mesma consulta com valores diferentes para os parâmetros de associação. Todos os valores dos parâmetros podem ser atualizados chamando o método `QueryContext.set_parameters` com um dicionário, ou qualquer valor individual pode ser atualizado chamando `QueryContext.set_parameter` com o par `key`, `value` desejado.
+
+```python
+client.create_query_context(query='SELECT value1, value2 FROM data_table WHERE key = {k:Int32}',
+                            parameters={'k': 2},
+                            column_oriented=True)
+result = client.query(context=qc)
+assert result.result_set[1][0] == 'second_value2'
+qc.set_parameter('k', 1)
+result = test_client.query(context=qc)
+assert result.result_set[1][0] == 'first_value2'
+```
+
+Observe que `QueryContext`s não são thread-safe, mas é possível obter uma cópia em um ambiente multithread chamando o método `QueryContext.updated_copy`.
+
+<div id="streaming-queries">
+  ## Consultas em streaming
+</div>
+
+O cliente ClickHouse Connect oferece vários métodos para recuperar dados como um stream (implementado como um gerador Python):
+
+* `query_column_block_stream` -- Retorna os dados da consulta em blocos, como uma sequência de colunas, usando objetos nativos do Python
+* `query_row_block_stream` -- Retorna os dados da consulta como um bloco de linhas, usando objetos nativos do Python
+* `query_rows_stream` -- Retorna os dados da consulta como uma sequência de linhas, usando objetos nativos do Python
+* `query_np_stream` -- Retorna cada bloco de dados da consulta do ClickHouse como um array NumPy
+* `query_df_stream` -- Retorna cada bloco de dados da consulta do ClickHouse como um DataFrame do Pandas
+* `query_arrow_stream` -- Retorna os dados da consulta como PyArrow RecordBlocks
+* `query_df_arrow_stream` -- Retorna cada bloco de dados da consulta do ClickHouse como um DataFrame do Pandas com suporte a Arrow ou um DataFrame do Polars, dependendo do kwarg `dataframe_library` (o padrão é &quot;pandas&quot;).
+
+Cada um desses métodos retorna um objeto `ContextStream` que deve ser aberto com uma instrução `with` para começar a consumir o stream.
+
+<div id="data-blocks">
+  ### Blocos de dados
+</div>
+
+O ClickHouse Connect processa todos os dados do método principal `query` como um stream de blocos recebidos do servidor ClickHouse. Esses blocos são transmitidos de e para o ClickHouse no formato personalizado &quot;Native&quot;. Um &quot;bloco&quot; é simplesmente uma sequência de colunas de dados binários, em que cada coluna contém o mesmo número de valores do tipo de dados especificado. (Como banco de dados colunar, o ClickHouse armazena esses dados de forma semelhante.) O tamanho de um bloco retornado por uma consulta é determinado por duas configurações que podem ser definidas em vários níveis (perfil de usuário, usuário, sessão ou consulta). São elas:
+
+* [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size) -- Limite do tamanho do bloco em linhas. Padrão: 65536.
+* [preferred&#95;block&#95;size&#95;bytes](/pt-BR/reference/settings/session-settings#preferred_block_size_bytes) -- Limite flexível do tamanho do bloco em bytes. Padrão: 1,000,0000.
+
+Independentemente de `preferred_block_size_setting`, nenhum bloco terá mais de `max_block_size` linhas. Dependendo do tipo de consulta, os blocos efetivamente retornados podem ter qualquer tamanho. Por exemplo, consultas a uma tabela distribuída que abrange muitos shards podem conter blocos menores recuperados diretamente de cada shard.
+
+Ao usar um dos métodos `query_*_stream` do Client, os resultados são retornados bloco a bloco. O ClickHouse Connect carrega apenas um bloco por vez. Isso permite processar grandes volumes de dados sem precisar carregar um conjunto de resultados grande inteiro na memória. Observe que a aplicação deve estar preparada para processar qualquer número de blocos, e o tamanho exato de cada bloco não pode ser controlado.
+
+<div id="http-data-buffer-for-slow-processing">
+  ### Buffer de dados HTTP para processamento lento
+</div>
+
+Devido a limitações do protocolo HTTP, se os blocos forem processados em uma taxa significativamente mais lenta do que a taxa em que o servidor ClickHouse transmite os dados, o servidor ClickHouse fechará a conexão, resultando no lançamento de uma Exception na thread de processamento. Isso pode ser parcialmente mitigado aumentando o tamanho do buffer de streaming HTTP (que, por padrão, é de 10 megabytes) usando a configuração comum `http_buffer_size`. Valores altos de `http_buffer_size` devem funcionar bem nessa situação, desde que haja memória suficiente disponível para a aplicação. Os dados no buffer são armazenados de forma comprimida ao usar compressão `lz4` ou `zstd`; portanto, usar esses tipos de compressão aumentará o buffer total disponível.
+
+<div id="streamcontexts">
+  ### StreamContexts
+</div>
+
+Cada um dos métodos `query_*_stream` (como `query_row_block_stream`) retorna um objeto `StreamContext` do ClickHouse, que combina um contexto e um gerador do Python. Este é o uso básico:
+
+```python
+with client.query_row_block_stream('SELECT pickup, dropoff, pickup_longitude, pickup_latitude FROM taxi_trips') as stream:
+    for block in stream:
+        for row in block:
+            <faça algo com cada linha de dados de viagem Python>
+```
+
+Observe que tentar usar um `StreamContext` sem uma instrução `with` resultará em erro. Usar um contexto do Python garante que o stream (neste caso, uma resposta HTTP em streaming) seja fechado corretamente, mesmo que nem todos os dados sejam consumidos e/ou uma exceção seja gerada durante o processamento. Além disso, `StreamContext`s só podem ser usados uma vez para consumir o stream. Tentar usar um `StreamContext` depois que ele tiver sido encerrado resultará em `StreamClosedError`.
+
+Você pode usar a propriedade `source` do `StreamContext` para acessar o objeto `QueryResult` pai, que inclui nomes de colunas e tipos.
+
+<div id="stream-types">
+  ### Tipos de stream
+</div>
+
+O método `query_column_block_stream` retorna o bloco como uma sequência de dados de coluna armazenados como tipos de dados nativos do Python. Usando as consultas `taxi_trips` acima, os dados retornados serão uma lista em que cada elemento é outra lista (ou tupla) contendo todos os dados da coluna correspondente. Assim, `block[0]` seria uma tupla contendo apenas strings. Formatos orientados a colunas são mais usados para executar operações de agregação sobre todos os valores de uma coluna, como somar o total das tarifas.
+
+O método `query_row_block_stream` retorna o bloco como uma sequência de linhas, como em um banco de dados relacional tradicional. Para viagens de táxi, os dados retornados serão uma lista em que cada elemento é outra lista representando uma linha de dados. Assim, `block[0]` conteria todos os campos (em ordem) da primeira viagem de táxi, `block[1]` conteria uma linha com todos os campos da segunda viagem de táxi, e assim por diante. Resultados orientados a linhas normalmente são usados para exibição ou para processos de transformação.
+
+O `query_row_stream` é um método de conveniência que avança automaticamente para o próximo bloco ao iterar pelo stream. Fora isso, ele é idêntico a `query_row_block_stream`.
+
+O método `query_np_stream` retorna cada bloco como um array NumPy bidimensional. Internamente, arrays NumPy são (geralmente) armazenados como colunas, portanto não são necessários métodos distintos para linhas ou colunas. O &quot;shape&quot; do array NumPy será expresso como (colunas, linhas). A biblioteca NumPy fornece muitos métodos para manipular arrays NumPy. Observe que, se todas as colunas na consulta compartilharem o mesmo dtype do NumPy, o array NumPy retornado também terá apenas um dtype e poderá ser redimensionado/rotacionado sem realmente alterar sua estrutura interna.
+
+O método `query_df_stream` retorna cada bloco do ClickHouse como um DataFrame bidimensional do Pandas. Aqui está um exemplo que mostra que o objeto `StreamContext` pode ser usado como contexto de forma diferida (mas apenas uma vez).
+
+```python
+df_stream = client.query_df_stream('SELECT * FROM hits')
+column_names = df_stream.source.column_names
+with df_stream:
+    for df in df_stream:
+        <do something with the pandas DataFrame>
+```
+
+O método `query_df_arrow_stream` retorna cada bloco do ClickHouse como um DataFrame com backend de dtype do PyArrow. Esse método oferece suporte a DataFrames do Pandas (2.x ou superior) e do Polars por meio do parâmetro `dataframe_library` (o padrão é `"pandas"`). Cada iteração produz um DataFrame convertido de batches de registros do PyArrow, oferecendo melhor desempenho e eficiência de memória para determinados tipos de dados.
+
+Por fim, o método `query_arrow_stream` retorna um resultado do ClickHouse no formato `ArrowStream` como um `pyarrow.ipc.RecordBatchStreamReader` encapsulado em `StreamContext`. Cada iteração do stream retorna um RecordBlock do PyArrow.
+
+<div id="streaming-examples">
+  ### Exemplos de streaming
+</div>
+
+<div id="stream-rows">
+  #### Fazer streaming de linhas
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Transmite grandes conjuntos de resultados linha por linha
+with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.numbers LIMIT 100000") as stream:
+    for row in stream:
+        print(row)  # Processa cada linha
+        # Saída:
+        # (0, 0)
+        # (1, 2)
+        # (2, 4)
+        # ....
+```
+
+<div id="stream-row-blocks">
+  #### Fazer streaming de blocos de linhas
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Transmite em blocos de linhas (mais eficiente do que linha por linha)
+with client.query_row_block_stream("SELECT number, number * 2 FROM system.numbers LIMIT 100000") as stream:
+    for block in stream:
+        print(f"Received block with {len(block)} rows")
+        # Saída:
+        # Bloco recebido com 65409 linhas
+        # Bloco recebido com 34591 linhas
+```
+
+<div id="stream-pandas-dataframes">
+  #### Fazer streaming de DataFrames do Pandas
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Transmitir resultados de consulta como Pandas DataFrames
+with client.query_df_stream("SELECT number, toString(number) AS str FROM system.numbers LIMIT 100000") as stream:
+    for df in stream:
+        # Processar cada bloco de DataFrame
+        print(f"Received DataFrame with {len(df)} rows")
+        print(df.head(3))
+        # Saída:
+        # Received DataFrame with 65409 rows
+        #    number str
+        # 0       0   0
+        # 1       1   1
+        # 2       2   2
+        # Received DataFrame with 34591 rows
+        #    number    str
+        # 0   65409  65409
+        # 1   65410  65410
+        # 2   65411  65411
+```
+
+<div id="stream-arrow-batches">
+  #### Transmitir lotes de Arrow
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Transmite resultados da consulta como lotes de registros Arrow
+with client.query_arrow_stream("SELECT * FROM large_table") as stream:
+    for arrow_batch in stream:
+        # Processa cada lote Arrow
+        print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
+        # Saída:
+        # Lote Arrow recebido com 65409 linhas
+        # Lote Arrow recebido com 34591 linhas
+```
+
+<div id="numpy-pandas-and-arrow-queries">
+  ## Consultas com NumPy, Pandas e Arrow
+</div>
+
+O ClickHouse Connect oferece métodos de consulta especializados para trabalhar com estruturas de dados do NumPy, Pandas e Arrow. Esses métodos permitem recuperar os resultados das consultas diretamente nesses formatos de dados populares, sem necessidade de conversão manual.
+
+<div id="numpy-queries">
+  ### Consultas com NumPy
+</div>
+
+O método `query_np` retorna os resultados da consulta como um array do NumPy em vez de um `QueryResult` do ClickHouse Connect.
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# A consulta retorna um array NumPy
+np_array = client.query_np("SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 5")
+
+print(type(np_array))
+# Saída:
+# <class "numpy.ndarray">
+
+print(np_array)
+# Saída:
+# [[0 0]
+#  [1 2]
+#  [2 4]
+#  [3 6]
+#  [4 8]]
+```
+
+<div id="pandas-queries">
+  ### Consultas com Pandas
+</div>
+
+O método `query_df` retorna os resultados da consulta como um DataFrame do Pandas, em vez de um `QueryResult` do ClickHouse Connect.
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# A consulta retorna um Pandas DataFrame
+df = client.query_df("SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 5")
+
+print(type(df))
+# Saída: <class "pandas.core.frame.DataFrame">
+print(df)
+# Saída:
+#    number  doubled
+# 0       0        0
+# 1       1        2
+# 2       2        4
+# 3       3        6
+# 4       4        8
+```
+
+<div id="pyarrow-queries">
+  ### Consultas com PyArrow
+</div>
+
+O método `query_arrow` retorna os resultados da consulta como uma tabela do PyArrow. Ele usa diretamente o formato `Arrow` do ClickHouse, portanto aceita apenas três argumentos em comum com o método `query` principal: `query`, `parameters` e `settings`. Além disso, há um argumento adicional, `use_strings`, que determina se a tabela Arrow representará os tipos String do ClickHouse como strings (se True) ou bytes (se False).
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# A consulta retorna uma PyArrow Table
+arrow_table = client.query_arrow("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
+
+print(type(arrow_table))
+# Saída:
+# <class "pyarrow.lib.Table">
+
+print(arrow_table)
+# Saída:
+# pyarrow.Table
+# number: uint64 not null
+# str: string not null
+# ----
+# number: [[0,1,2]]
+# str: [["0","1","2"]]
+```
+
+<div id="arrow-backed-dataframes">
+  ### DataFrames com Arrow como backend
+</div>
+
+O ClickHouse Connect oferece criação rápida e eficiente em termos de memória de DataFrames a partir de resultados em Arrow por meio dos métodos `query_df_arrow` e `query_df_arrow_stream`. Esses métodos são wrappers leves sobre os métodos de consulta Arrow e realizam conversões sem cópia para DataFrames sempre que possível:
+
+* `query_df_arrow`: Executa a consulta usando o formato de saída `Arrow` do ClickHouse e retorna um DataFrame.
+  * Para `dataframe_library='pandas'`, retorna um DataFrame do pandas 2.x usando dtypes com backend Arrow (`pd.ArrowDtype`). Isso requer pandas 2.x e aproveita buffers sem cópia sempre que possível para oferecer excelente desempenho e baixo uso de memória.
+  * Para `dataframe_library='polars'`, retorna um DataFrame do Polars criado a partir da tabela Arrow (`pl.from_arrow`), que é igualmente eficiente e pode operar sem cópia, dependendo dos dados.
+* `query_df_arrow_stream`: Transmite os resultados como uma sequência de DataFrames (pandas 2.x ou Polars) convertidos a partir de lotes de stream Arrow.
+
+<div id="query-to-arrow-backed-dataframe">
+  #### Consulta para DataFrame com Arrow como backend
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# A consulta retorna um Pandas DataFrame com dtypes Arrow (requer pandas 2.x)
+df = client.query_df_arrow(
+    "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3",
+    dataframe_library="pandas"
+)
+
+print(df.dtypes)
+# Saída:
+# number    uint64[pyarrow]
+# str       string[pyarrow]
+# dtype: object
+
+# Ou use Polars
+polars_df = client.query_df_arrow(
+    "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3",
+    dataframe_library="polars"
+)
+print(df.dtypes)
+# Saída:
+# [UInt64, String]
+
+# Streaming em lotes de DataFrames (exemplo com polars)
+with client.query_df_arrow_stream(
+    "SELECT number, toString(number) AS str FROM system.numbers LIMIT 100000", dataframe_library="polars"
+) as stream:
+    for df_batch in stream:
+        print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
+        # Saída:
+        # Received <class 'polars.dataframe.frame.DataFrame'> batch with 65409 rows and dtypes: [UInt64, String]
+        # Received <class 'polars.dataframe.frame.DataFrame'> batch with 34591 rows and dtypes: [UInt64, String]
+```
+
+<div id="notes-and-caveats">
+  #### Observações e limitações
+</div>
+
+* Mapeamento de tipos do Arrow: ao retornar dados no Arrow format, o ClickHouse mapeia os tipos para os tipos do Arrow compatíveis mais próximos. Alguns tipos do ClickHouse não têm um equivalente nativo no Arrow e são retornados como bytes brutos em campos do Arrow (geralmente `BINARY` ou `FIXED_SIZE_BINARY`).
+  * Exemplos: `IPv4` é representado como Arrow `UINT32`; `IPv6` e inteiros grandes (`Int128/UInt128/Int256/UInt256`) costumam ser representados como `FIXED_SIZE_BINARY`/`BINARY` com bytes brutos.
+  * Nesses casos, a coluna do DataFrame conterá valores em bytes baseados no campo do Arrow; cabe ao código do cliente interpretar/converter esses bytes de acordo com a semântica do ClickHouse.
+* Tipos de dados do Arrow não compatíveis (por exemplo, UUID/ENUM como tipos reais do Arrow) não são emitidos; os valores são representados usando o tipo do Arrow compatível mais próximo (geralmente como bytes binários) na saída.
+* Requisito do pandas: dtypes com suporte do Arrow exigem pandas 2.x. Para versões mais antigas do pandas, use `query_df` (sem Arrow) no lugar.
+* Strings vs. binário: a opção `use_strings` (quando compatível com a server setting `output_format_arrow_string_as_string`) controla se colunas `String` do ClickHouse são retornadas como strings do Arrow ou como binário.
+
+<div id="mismatched-clickhousearrow-type-conversion-examples">
+  #### Exemplos de conversão entre tipos incompatíveis do ClickHouse/Arrow
+</div>
+
+Quando o ClickHouse retorna colunas como dados binários brutos (por exemplo, `FIXED_SIZE_BINARY` ou `BINARY`), cabe ao código da aplicação converter esses bytes para tipos Python apropriados. Os exemplos abaixo mostram que algumas conversões podem ser feitas com APIs da biblioteca DataFrame, enquanto outras podem exigir abordagens em Python puro, como `struct.unpack` (que sacrificam desempenho, mas mantêm a flexibilidade).
+
+As colunas `Date` podem vir como `UINT16` (dias desde a epoch Unix, 1970‑01‑01). Fazer a conversão dentro do DataFrame é eficiente e simples:
+
+```python
+# Polars
+df = df.with_columns(pl.col("event_date").cast(pl.Date))
+
+# Pandas
+df["event_date"] = pd.to_datetime(df["event_date"], unit="D")
+```
+
+Colunas como `Int128` podem vir como `FIXED_SIZE_BINARY`, com bytes brutos. O Polars oferece suporte nativo a inteiros de 128 bits:
+
+```python
+# Polars - suporte nativo
+df = df.with_columns(pl.col("data").bin.reinterpret(dtype=pl.Int128, endianness="little"))
+```
+
+A partir do NumPy 2.3, não existe nenhum `dtype` público de inteiro de 128 bits, então precisamos recorrer a Python puro e podemos fazer algo assim:
+
+```python
+# Assumindo que temos um dataframe pandas com uma coluna Int128 do dtype fixed_size_binary[16][pyarrow]
+
+print(df)
+# Saída:
+#   str_col                                        int_128_col
+# 0    num1  b'\\x15}\\xda\\xeb\\x18ZU\\x0fn\\x05\\x01\\x00\\x00\\x00...
+# 1    num2  b'\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00...
+# 2    num3  b'\\x15\\xdfp\\x81r\\x9f\\x01\\x00\\x00\\x00\\x00\\x00\\x...
+
+print([int.from_bytes(n, byteorder="little") for n in df["int_128_col"].to_list()])
+# Saída:
+# [1234567898765432123456789, 8, 456789123456789]
+```
+
+A principal conclusão é: o código da aplicação deve lidar com essas conversões com base nos recursos da biblioteca DataFrame escolhida e nos trade-offs de desempenho aceitáveis. Quando conversões nativas de DataFrame não estão disponíveis, abordagens puras em Python continuam sendo uma opção.
+
+<div id="read-formats">
+  ## Formatos de leitura
+</div>
+
+Os formatos de leitura controlam os tipos de dados dos valores retornados pelos métodos `query`, `query_np` e `query_df` do cliente. (Os métodos `raw_query` e `query_arrow` não modificam os dados recebidos do ClickHouse, portanto o controle de formato não se aplica.) Por exemplo, se o formato de leitura de um UUID for alterado do formato `native` padrão para o formato alternativo `string`, uma consulta do ClickHouse de uma coluna `UUID` será retornada como valores de string (usando o formato padrão RFC 1422 8-4-4-4-12), em vez de objetos UUID do Python.
+
+O argumento &quot;data type&quot; de qualquer função de formatação pode incluir curingas. O formato é uma única string em minúsculas.
+
+Os formatos de leitura podem ser definidos em vários níveis:
+
+* Globalmente, usando os métodos definidos no pacote `clickhouse_connect.datatypes.format`. Isso controlará o formato do tipo de dado configurado para todas as consultas.
+
+```python
+from clickhouse_connect.datatypes.format import set_read_format
+
+# Retorna valores IPv6 e IPv4 como strings
+set_read_format('IPv*', 'string')
+
+# Retorna todos os tipos Date como epoch em segundos ou dias
+set_read_format('Date*', 'int')
+```
+
+* Para uma consulta inteira, usando o argumento opcional de dicionário `query_formats`. Nesse caso, qualquer coluna (ou subcoluna) dos tipos de dados especificados usará o formato configurado.
+
+```python
+# Retorna qualquer coluna UUID como string
+client.query('SELECT user_id, user_uuid, device_uuid from users', query_formats={'UUID': 'string'})
+```
+
+* Para os valores em uma coluna específica, usando o argumento de dicionário opcional `column_formats`. A chave é o nome da coluna conforme retornado pelo ClickHouse, e o valor é o formato da coluna de dados ou um dicionário secundário de &quot;format&quot;, com um nome de tipo do ClickHouse como chave e um valor de formatos de consulta. Esse dicionário secundário pode ser usado para tipos de coluna aninhados, como Tuples ou Maps.
+
+```python
+# Retorna valores IPv6 na coluna `dev_address` como strings
+client.query('SELECT device_id, dev_address, gw_address from devices', column_formats={'dev_address':'string'})
+```
+
+<div id="read-format-options-python-types">
+  ### Opções de formato de leitura (tipos Python)
+</div>
+
+| ClickHouse Type       | Tipo nativo de Python   | Formatos de leitura | Comentários                                                                                                                          |
+| --------------------- | ----------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Int[8-64], UInt[8-32] | int                     | -                   |                                                                                                                                      |
+| UInt64                | int                     | signed              | No momento, o Superset não lida com valores UInt64 grandes sem sinal                                                                 |
+| [U]Int[128,256]       | int                     | string              | Os valores int do Pandas e do NumPy têm no máximo 64 bits, então podem ser retornados como strings                                   |
+| BFloat16              | float                   | -                   | Todos os floats do Python têm internamente 64 bits                                                                                   |
+| Float32               | float                   | -                   | Todos os floats do Python têm internamente 64 bits                                                                                   |
+| Float64               | float                   | -                   |                                                                                                                                      |
+| Decimal               | decimal.Decimal         | -                   |                                                                                                                                      |
+| String                | string                  | bytes               | As colunas String do ClickHouse não têm codificação inerente, por isso também são usadas para dados binários de comprimento variável |
+| FixedString           | bytes                   | string              | FixedStrings são arrays de bytes de tamanho fixo, mas às vezes são tratadas como strings do Python                                   |
+| Enum[8,16]            | string                  | string, int         | Enums do Python não aceitam strings vazias, então todos os enums são representados como strings ou como o valor int subjacente.      |
+| Date                  | datetime.date           | int                 | O ClickHouse armazena Dates como dias desde 01/01/1970. Esse valor está disponível como int                                          |
+| Date32                | datetime.date           | int                 | Igual a Date, mas para um intervalo maior de datas                                                                                   |
+| DateTime              | datetime.datetime       | int                 | O ClickHouse armazena DateTime em segundos desde a epoch. Esse valor está disponível como int                                        |
+| DateTime64            | datetime.datetime       | int                 | O datetime.datetime do Python é limitado à precisão de microssegundos. O valor int bruto de 64 bits está disponível                  |
+| Time                  | datetime.timedelta      | int, string, time   | O instante é salvo como um Unix timestamp. Esse valor está disponível como int                                                       |
+| Time64                | datetime.timedelta      | int, string, time   | O datetime.timedelta do Python é limitado à precisão de microssegundos. O valor int bruto de 64 bits está disponível                 |
+| IPv4                  | `ipaddress.IPv4Address` | string              | Endereços IP podem ser lidos como strings, e strings formatadas corretamente podem ser inseridas como endereços IP                   |
+| IPv6                  | `ipaddress.IPv6Address` | string              | Endereços IP podem ser lidos como strings, e valores formatados corretamente podem ser inseridos como endereços IP                   |
+| Tuple                 | dict or tuple           | tuple, json         | Tuplas nomeadas são retornadas como dicionários por padrão. Tuplas nomeadas também podem ser retornadas como strings JSON            |
+| Map                   | dict                    | -                   |                                                                                                                                      |
+| Nested                | Sequence[dict]          | -                   |                                                                                                                                      |
+| UUID                  | uuid.UUID               | string              | UUIDs podem ser lidos como strings formatadas de acordo com a RFC 4122<br />                                                         |
+| JSON                  | dict                    | string              | Um dicionário Python é retornado por padrão. O formato `string` retornará uma string JSON                                            |
+| Variant               | object                  | -                   | Retorna o tipo Python correspondente ao tipo de dado do ClickHouse armazenado para o valor                                           |
+| Dynamic               | object                  | -                   | Retorna o tipo Python correspondente ao tipo de dado do ClickHouse armazenado para o valor                                           |
+
+<div id="external-data">
+  ## Dados externos
+</div>
+
+As consultas do ClickHouse podem aceitar dados externos em qualquer formato do ClickHouse. Esses dados binários são enviados junto com a string de consulta para serem usados no processamento dos dados. Os detalhes do recurso de Dados Externos estão [aqui](/pt-BR/reference/engines/table-engines/special/external-data). Os métodos `query*` do cliente aceitam um parâmetro opcional `external_data` para aproveitar esse recurso. O valor do parâmetro `external_data` deve ser um objeto `clickhouse_connect.driver.external.ExternalData`. O construtor desse objeto aceita os seguintes argumentos:
+
+| Nome          | Tipo              | Descrição                                                                                                                                                      |
+| ------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| file&#95;path | str               | Caminho para um arquivo no sistema local, de onde os dados externos serão lidos. `file_path` ou `data` é obrigatório                                           |
+| file&#95;name | str               | O nome do &quot;arquivo&quot; de dados externos. Se não for fornecido, será determinado com base em `file_path` (sem extensões)                                |
+| data          | bytes             | Os dados externos em formato binário (em vez de serem lidos de um arquivo). `data` ou `file_path` é obrigatório                                                |
+| fmt           | str               | O [Formato de entrada](/pt-BR/reference/formats/index) do ClickHouse para os dados. O padrão é `TSV`                                                                 |
+| types         | str or seq of str | Uma lista de tipos de dados das colunas nos dados externos. Se for uma string, os tipos devem ser separados por vírgulas. `types` ou `structure` é obrigatório |
+| structure     | str or seq of str | Uma lista de nomes de colunas + tipos de dados nos dados (veja os exemplos). `structure` ou `types` é obrigatório                                              |
+| mime&#95;type | str               | Tipo MIME opcional dos dados do arquivo. No momento, o ClickHouse ignora esse subcabeçalho HTTP                                                                |
+
+Para enviar uma consulta com um arquivo CSV externo contendo dados de &quot;movie&quot; e combinar esses dados com uma tabela `directors` já presente no servidor ClickHouse:
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver.external import ExternalData
+
+client = clickhouse_connect.get_client()
+ext_data = ExternalData(file_path='/data/movies.csv',
+                        fmt='CSV',
+                        structure=['movie String', 'year UInt16', 'rating Decimal32(3)', 'director String'])
+result = client.query('SELECT name, avg(rating) FROM directors INNER JOIN movies ON directors.name = movies.director GROUP BY directors.name',
+                      external_data=ext_data).result_rows
+```
+
+Arquivos de dados externos adicionais podem ser adicionados ao objeto inicial `ExternalData` usando o método `add_file`, que aceita os mesmos parâmetros do construtor. Para HTTP, todos os dados externos são transmitidos por meio de um upload de arquivo `multi-part/form-data`.
+
+<div id="time-zones">
+  ## Fusos horários
+</div>
+
+Há vários mecanismos para aplicar um fuso horário a valores DateTime e DateTime64 do ClickHouse. Internamente, o servidor ClickHouse sempre armazena qualquer objeto DateTime ou `DateTime64` como um número sem fuso horário que representa os segundos desde a epoch, 1970-01-01 00:00:00 UTC. Para valores `DateTime64`, a representação pode ser em milissegundos, microssegundos ou nanossegundos desde a epoch, dependendo da precisão. Como resultado, qualquer informação de fuso horário é sempre aplicada no lado do cliente. Observe que isso envolve um custo computacional adicional relevante; por isso, em aplicações críticas em termos de desempenho, recomenda-se tratar os tipos DateTime como timestamps de epoch, exceto para exibição ao usuário e conversão (por exemplo, os Pandas Timestamps são sempre inteiros de 64 bits que representam nanossegundos desde a epoch para melhorar o desempenho).
+
+Ao usar tipos de dados com fuso horário em consultas — em especial o objeto Python `datetime.datetime` — o `clickhouse-connect` aplica um fuso horário no lado do cliente usando as seguintes regras de precedência:
+
+1. Se o parâmetro do método de consulta `client_tzs` for especificado para a consulta, será aplicado o fuso horário específico da coluna
+2. Se a coluna do ClickHouse tiver metadados de fuso horário (isto é, for de um tipo como DateTime64(3, &#39;America/Denver&#39;)), será aplicado o fuso horário da coluna do ClickHouse. (Observe que esses metadados de fuso horário não estão disponíveis para o clickhouse-connect em colunas DateTime anteriores à versão 23.2 do ClickHouse)
+3. Se o parâmetro do método de consulta `query_tz` for especificado para a consulta, será aplicado o &quot;fuso horário da consulta&quot;.
+4. Se uma configuração de fuso horário for aplicada à consulta ou à sessão, esse fuso horário será aplicado. (Essa funcionalidade ainda não foi lançada no servidor ClickHouse)
+5. Por fim, se o parâmetro do cliente `apply_server_timezone` tiver sido definido como True (o padrão), será aplicado o fuso horário do servidor ClickHouse.
+
+Observe que, se o fuso horário aplicado com base nessas regras for UTC, o `clickhouse-connect` *sempre* retornará um objeto Python `datetime.datetime` sem fuso horário. Se desejado, informações adicionais de fuso horário poderão então ser adicionadas a esse objeto sem fuso horário pelo código da aplicação.

@@ -1,0 +1,4 @@
+<clickhouse>
+    <user_defined_executable_functions_config>/etc/clickhouse-server/functions/*.xml</user_defined_executable_functions_config>
+    <asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s>
+</clickhouse>

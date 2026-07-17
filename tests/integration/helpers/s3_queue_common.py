@@ -1,14 +1,8 @@
 import io
-import json
 import logging
 import random
 import string
-import time
-import uuid
-from multiprocessing.dummy import Pool
-import pytest
 from minio.deleteobjects import DeleteObject
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
 
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]

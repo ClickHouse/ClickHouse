@@ -60,7 +60,7 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
 
     patch_metadata(TABLE_NAME)
 
-    files = default_upload_directory(
+    default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -192,7 +192,7 @@ def test_read_in_order_with_complex_bucket(started_cluster_iceberg_with_spark,  
 
     patch_metadata(TABLE_NAME)
 
-    files = default_upload_directory(
+    default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -239,7 +239,7 @@ def test_read_in_order_with_complex_truncate(started_cluster_iceberg_with_spark,
 
     patch_metadata(TABLE_NAME)
 
-    files = default_upload_directory(
+    default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",

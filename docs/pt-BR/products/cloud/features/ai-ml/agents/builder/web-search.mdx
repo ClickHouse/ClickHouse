@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Web search'
+slug: /cloud/features/ai-ml/agents/builder/web-search
+title: 'Web search'
+description: 'Ferramenta externa de pesquisa na web para ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'Web search']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge />
+
+Web search permite que um agente busque informações na web pública durante uma conversa. Use esse recurso para perguntas cuja resposta precise estar atualizada — lançamentos recentes, documentação hospedada fora do seu serviço ou uma checagem rápida em uma fonte confiável.
+
+<div id="enable-it">
+  ## Ative
+</div>
+
+No Agent Builder, ative **Web Search** na seção **Capabilities**. Depois de ativado, o agente decide quando fazer uma busca com base na pergunta do usuário e nas instruções do agente. A busca é executada, os resultados são coletados, e o conteúdo mais relevante é repassado ao contexto do modelo.
+
+<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="Painel de Capabilities com a seção Web Search destacada, mostrando a caixa de seleção de Web Search" size="sm" />
+
+<div id="how-a-search-round-works">
+  ## Como funciona uma rodada de busca
+</div>
+
+Cada busca acontece em três etapas, gerenciadas para você na Cloud:
+
+1. **Busca** - a consulta do agente é enviada a um provedor de busca, que retorna URLs candidatas.
+2. **Coleta** - páginas relevantes são obtidas, e o texto importante é extraído.
+3. **Reclassificação** - um reranker atribui pontuações aos resultados para que o modelo veja primeiro os mais úteis.
+
+A resposta do agente cita as URLs que ele realmente usou.
+
+<div id="when-to-use-it">
+  ## Quando usar
+</div>
+
+* Consulte notas de lançamento ou changelogs que não estejam disponíveis no seu serviço.
+* Confirme uma informação em uma fonte que o modelo talvez não conheça.
+* Traga um post público de blog ou uma documentação para a conversa para análise.
+
+Não use isso para perguntas que possam ser respondidas com base nos seus dados ou no próprio conhecimento do modelo. Cada rodada de busca adiciona latência.

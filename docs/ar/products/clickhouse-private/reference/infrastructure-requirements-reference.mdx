@@ -1,0 +1,420 @@
+---
+noindex: true
+title: "مرجع متطلبات البنية التحتية"
+sidebarTitle: "متطلبات البنية التحتية"
+description: "يجمع هذا المستند المتطلبات المسبقة للبنية التحتية، ومواصفات العُقد، والشبكات، والتخزين، ومتطلبات IAM عبر جميع بيئات ClickHouse المدعومة"
+---
+
+يجمع هذا المستند المتطلبات المسبقة للبنية التحتية، ومواصفات العُقد، والشبكات، والتخزين، ومتطلبات IAM عبر جميع منصات نشر ClickHouse Private المدعومة.
+
+***
+
+<div id="prerequisites-by-platform">
+  ## المتطلبات الأساسية حسب المنصة
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+| المتطلب             | التفاصيل                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| AWS CLI             | مُثبّت ومُعَدّ                                                                               |
+| `kubectl`           | مُثبّت                                                                                       |
+| `helm`              | الإصدار v3.x مُثبّت                                                                          |
+| `skopeo`            | يُوصى به لنسخ صور الحاويات (ويحتفظ بجميع البنى المعمارية)                                    |
+| IAM role لعنقود EKS | أُنشئ عبر وحدة تحكم AWS باستخدام &quot;Create recommended role&quot; مع الأذونات الافتراضية  |
+| IAM roles للعُقد    | أُنشئت عبر وحدة تحكم AWS باستخدام &quot;Create recommended role&quot; مع الأذونات الافتراضية |
+| OIDC provider       | أُنشئ لعنقود EKS                                                                             |
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+| المتطلب                          | التفاصيل                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| مشروع GCP                        | الفوترة مفعّلة                                                                             |
+| أداة سطر الأوامر `gcloud`        | مثبّتة وتمت المصادقة عليها                                                                 |
+| `kubectl`                        | مثبّت                                                                                      |
+| `helm`                           | الإصدار v3.x مثبّت                                                                         |
+| `skopeo`                         | مثبّت (لنسخ صور الحاويات)                                                                  |
+| بيانات اعتماد AWS                | صلاحية قراءة إلى ClickHouse ECR (لنسخ الصور)                                               |
+| مضيف Bastion                     | داخل VPC للوصول إلى العنقود الخاص                                                          |
+| حساب خدمة النشر                  | مع الأذونات المناسبة (راجع [متطلبات IAM / حساب الخدمة](#iam-service-account-requirements)) |
+| **(FIPS فقط)** صورة Red Hat UBI8 | تُسحب عبر GKE لإنشاء الشهادات                                                              |
+
+<div id="bare-metal-rke2">
+  ### الخوادم المادية (RKE2)
+</div>
+
+| المتطلب               | التفاصيل                                        |
+| --------------------- | ----------------------------------------------- |
+| Terraform             | v1.13.2+                                        |
+| Ansible               | مع دور `lablabs.rke2` ومجموعة `kubernetes.core` |
+| `kubectl`             | مثبّت                                           |
+| `helm`                | الإصدار v3.x مثبّت                              |
+| بيانات اعتماد AWS IAM | مفتاح الوصول والمفتاح السري لـ ECR وS3/MinIO    |
+| RKE2                  | v1.33.5+rke2r1 (يُنشر عبر Ansible)              |
+| نظام التشغيل          | Rocky Linux 9.6 (أو متوافق)                     |
+| MinIO                 | Operator وtenant لتخزين الكائنات المتوافق مع S3 |
+
+***
+
+<div id="node-group-specifications">
+  ## مواصفات مجموعات العُقد
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+<div id="keeper-node-group">
+  #### مجموعة عقد Keeper
+</div>
+
+| الخاصية                                 | القيمة                                             |
+| --------------------------------------- | -------------------------------------------------- |
+| AMI (x86)                               | `AL2023_x86_64`                                    |
+| AMI (arm64)                             | `AL2023_ARM_64`                                    |
+| حجم القرص                               | 20 GB                                              |
+| نوع المثيل الموصى به                    | `m7g.2xlarge`                                      |
+| الحد الأدنى للعقد (من دون تحجيم تلقائي) | 3 لكل عنقود ClickHouse                             |
+| وسم Kubernetes ‏(x86)                   | `clickhouseGroup: keeper`                          |
+| وسم Kubernetes ‏(arm64)                 | `clickhouseGroup: keeper-arm64`                    |
+| Taint                                   | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| Taint ‏(arm64 فقط)                      | `clickhouse.com/arch: arm64, NoSchedule`           |
+| الموارد الموصى بها                      | CPU: 4، الذاكرة: 16Gi                              |
+
+<div id="server-node-group">
+  #### مجموعة عُقد الخادم
+</div>
+
+| الخاصية                                    | القيمة                                                        |
+| ------------------------------------------ | ------------------------------------------------------------- |
+| AMI ‏(x86)                                 | `AL2023_x86_64`                                               |
+| AMI ‏(arm64)                               | `AL2023_ARM_64`                                               |
+| حجم القرص                                  | 20 GB                                                         |
+| نوع المثيل الموصى به                       | `m7gd.16xlarge` (يوصى بشدة بسلسلة &quot;d&quot; مع NVMe SSD)  |
+| الحد الأدنى للعقد (من دون تحجيم تلقائي)    | يساوي العدد المطلوب من النسخ المتماثلة لـ ClickHouse          |
+| وسم Kubernetes ‏(x86)                      | `clickhouseGroup: server`                                     |
+| وسم Kubernetes ‏(arm64)                    | `clickhouseGroup: server-arm64`                               |
+| Taint                                      | `clickhouse.com/do-not-schedule: true, NoSchedule`            |
+| Taint ‏(arm64 فقط)                         | `clickhouse.com/arch: arm64, NoSchedule`                      |
+| الموارد الموصى بها                         | CPU: 64, Memory: 256Gi                                        |
+| قالب الإطلاق                               | يلزم قالب مخصص لإعداد RAID على NVMe SSD (راجع المستند الأصلي) |
+
+<div id="operator-node-group-x86">
+  #### مجموعة عقد المشغّل (x86)
+</div>
+
+| الخاصية                 | القيمة                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| AMI                     | `AL2023_x86_64`                                                                       |
+| حجم القرص               | 20 GB                                                                                 |
+| الحد الأدنى لحجم المثيل | xlarge                                                                                |
+| نوع المثيل              | أي نوع متوافق مع x86                                                                  |
+| ملاحظات                 | يمكن أن تكون مجموعة عقد موجودة مسبقًا إذا كانت متوافقة بالفعل مع x86 وبحد أدنى xlarge |
+
+**تتطلب جميع عقد AWS [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) للاستيثاق.**
+
+بالنسبة إلى مجموعات عقد Keeper وserver، **أنشئ مجموعة عقد واحدة لكل AZ** إذا كنت تريد دعم cluster autoscaler عبر مناطق AZ.
+
+وسوم cluster-autoscaler (إذا كنت تستخدم cluster-autoscaler): - `k8s.io/cluster-autoscaler/enabled: true` - `k8s.io/cluster-autoscaler/$CLUSTER_NAME: owned`
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+<div id="keeper-node-pool">
+  #### مجموعة عُقد Keeper
+</div>
+
+| الخاصية                     | القيمة                                           |
+| --------------------------- | ------------------------------------------------ |
+| نوع الجهاز (dev)            | `n2-standard-4`                                  |
+| نوع الجهاز (prod)           | `n2-standard-8`                                  |
+| نوع القرص                   | `pd-ssd`                                         |
+| حجم القرص                   | 20 جيجابايت                                      |
+| وسم العقدة                  | `clickhouseGroup=keeper`                         |
+| Taint                       | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| التحجيم التلقائي            | الحد الأدنى 1، الحد الأقصى 3                     |
+| البيانات الوصفية لعبء العمل | `GKE_METADATA` (لـ Workload Identity)            |
+| الموارد الموصى بها          | CPU: 2، الذاكرة: 8Gi                             |
+
+<div id="server-node-group">
+  #### مجموعة عُقد الخادم
+</div>
+
+| الخاصية                     | القيمة                                                           |
+| --------------------------- | ---------------------------------------------------------------- |
+| نوع الجهاز (للتطوير)        | `n2-standard-8`                                                  |
+| نوع الجهاز (للإنتاج)        | `n2-standard-64`                                                 |
+| نوع القرص                   | `pd-standard` + Local SSD                                        |
+| حجم القرص                   | 20 GB                                                            |
+| عدد أقراص Local SSD         | 1                                                                |
+| وسم العقدة                  | `clickhouseGroup=server`                                         |
+| Taint                       | `clickhouse.com/do-not-schedule=true:NoSchedule`                 |
+| التحجيم التلقائي            | الحد الأدنى 1، الحد الأقصى 10                                    |
+| البيانات الوصفية لعبء العمل | `GKE_METADATA` (من أجل Workload Identity)                        |
+| الموارد الموصى بها          | CPU: 4، Memory: 16Gi (للتطوير)؛ CPU: 64، Memory: 256Gi (للإنتاج) |
+| مسار تركيب SSD              | `/mnt/disks/ssd0` (عبر مجموعة خفية؛ جذر GKE COS للقراءة فقط)     |
+
+<div id="default-node-pool">
+  #### مجموعة العقد الافتراضية
+</div>
+
+| الخاصية    | القيمة          |
+| ---------- | --------------- |
+| نوع الجهاز | `n2-standard-4` |
+| نوع القرص  | `pd-standard`   |
+| حجم القرص  | 50 GB           |
+| العقد      | 1               |
+
+<div id="bare-metal-rke2">
+  ### الخوادم المادية (RKE2)
+</div>
+
+<div id="node-layout">
+  #### توزيع العقد
+</div>
+
+| الدور                        | أسماء المضيفين (مثال)                          | الوسوم                         | ملاحظات                       |
+| ---------------------------- | ---------------------------------------------- | ------------------------------ | ----------------------------- |
+| طبقة التحكم + etcd (الخوادم) | `chb-rke2s101`, `chb-rke2s201`, `chb-rke2s301` | `clickhouseGroup=keeper-amd64` | 3 عقد موزعة على مناطق التوافر |
+| Agent (العُقد العاملة)       | `chb-rke2s102`, `chb-rke2s202`, `chb-rke2s302` | `clickhouseGroup=server-amd64` | 3 عقد موزعة على مناطق التوافر |
+
+<div id="resource-configuration">
+  #### إعدادات الموارد
+</div>
+
+| المكوّن | CPU | الذاكرة | التخزين                               |
+| ------- | --- | ------- | ------------------------------------- |
+| الخادم  | 64  | 128Gi   | 300Gi (NVMe محلي عبر `local-nvme-sc`) |
+| Keeper  | 4   | 16Gi    | 30Gi (NVMe محلي عبر `local-nvme-sc`)  |
+
+تحتوي كل عقدة على محركَي تخزين NVMe للمثيل، بسعة 838 GiB لكل منهما.
+
+***
+
+<div id="networking-requirements">
+  ## متطلبات الشبكة
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| المكوّن         | المواصفة                                |
+| --------------- | --------------------------------------- |
+| VPC CIDR        | `10.20.0.0/16` (مثال)                   |
+| IPv6            | غير مستخدم                              |
+| Tenancy         | افتراضي                                 |
+| Minimum AZs     | 3 (للتوافر العالي)                      |
+| Public subnets  | 3 (واحدة لكل AZ، `/20` لكل منها)        |
+| Private subnets | 3 (واحدة لكل AZ، `/18` لكل منها)        |
+| NAT gateways    | 1 لكل AZ                                |
+| VPC endpoints   | بوابة S3                                |
+| DNS hostnames   | مفعّلة                                  |
+| DNS resolution  | مفعّلة                                  |
+| CNI             | يتطلب IPv4 (مثل Amazon VPC CNI مع IRSA) |
+
+مثال على توزيع الشبكات الفرعية (us-west-2):
+
+| النوع | AZ         | CIDR             |
+| ----- | ---------- | ---------------- |
+| عام   | us-west-2a | `10.20.192.0/20` |
+| عام   | us-west-2b | `10.20.208.0/20` |
+| عام   | us-west-2c | `10.20.224.0/20` |
+| خاص   | us-west-2a | `10.20.0.0/18`   |
+| خاص   | us-west-2b | `10.20.64.0/18`  |
+| خاص   | us-west-2c | `10.20.128.0/18` |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| المكوّن                     | المواصفة                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| وضع VPC                     | شبكة فرعية مخصّصة                                                                           |
+| نطاق الشبكة الفرعية لـ GKE  | `10.1.0.0/24` (مثال)                                                                        |
+| النطاق الثانوي للبود        | `10.244.0.0/14` (يجب أن يكون على حد `/14`؛ ويجب أن يكون الأوكتت الثالث قابلاً للقسمة على 4) |
+| النطاق الثانوي للخدمة       | `10.252.0.0/20` (يجب أن يكون على حد `/20`)                                                  |
+| نطاق CIDR الرئيسي لـ IPv4   | `172.16.0.0/28`                                                                             |
+| العُقد الخاصة               | مفعّلة (عناوين IP داخلية فقط)                                                               |
+| نقطة النهاية الخاصة         | مفعّلة (لا توجد API عامة؛ ‏FedRAMP)                                                         |
+| الشبكات المصرّح بها للرئيسي | الشبكة الفرعية لـ GKE + الشبكة الفرعية لـ bastion                                           |
+| Cloud NAT                   | مطلوب للوصول الصادر إلى الإنترنت من العُقد الخاصة                                           |
+| Private Google Access       | مفعّل على الشبكة الفرعية                                                                    |
+
+<div id="bare-metal">
+  ### الخوادم المادية
+</div>
+
+| المكوّن              | المواصفة                                |
+| -------------------- | --------------------------------------- |
+| VPC CIDR             | وفق تهيئة Terraform                     |
+| شبكة Kubernetes      | CNI المدمجة في RKE2                     |
+| محاكاة مناطق التوافر | تسميات الطوبولوجيا لكل عقدة             |
+| بوابة الدخول         | عبر إعادة توجيه المنفذ أو موازن التحميل |
+
+***
+
+<div id="storage-requirements">
+  ## متطلبات التخزين
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| المورد                     | التفاصيل                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| حاوية S3                   | فئة Standard، مع تفعيل التشفير، وفي نفس المنطقة مثل عنقود EKS                                        |
+| نطاق حاوية S3              | واحدة لكل عنقود ClickHouse، أو مشتركة مع `keyPrefix` فريد لكل عنقود                                  |
+| برنامج تشغيل EBS CSI       | مطلوب؛ ثبِّته عبر Helm باستخدام IRSA                                                                 |
+| StorageClass               | `gp3-encrypted` (يوفّره مخطط Helm) أو مخصّص                                                          |
+| ذاكرة تخزين مؤقت NVMe      | مثيلات الفئة &quot;d&quot; (مثل `m7gd.*`)؛ تُركَّب عبر سكربت RAID في قالب تشغيل EC2 عند `/nvme/disk` |
+| تحجيم ذاكرة التخزين المؤقت | `bytesPerGiRAM * pod_memory_limit` (مثلًا، 11.3Gi * 250Gi = 2825Gi)                                  |
+| VolumeSnapshot CRDs        | مطلوبة بواسطة المشغِّل                                                                               |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| المورد                         | التفاصيل                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| حاوية GCS                      | الفئة Standard، وصول موحّد على مستوى الحاوية، وفي نفس المنطقة مثل عنقود GKE                    |
+| نقطة نهاية GCS المتوافقة مع S3 | `https://storage.googleapis.com`                                                               |
+| إعداد المنطقة لـ GCS           | `auto`                                                                                         |
+| StorageClass                   | ‏`premium-rwo` (مدمجة في GKE) أو مخصّصة عبر مخطط Helm باستخدام الموفّر `pd.csi.storage.gke.io` |
+| مفتاح الطوبولوجيا              | `topology.gke.io/zone` (وليس `topology.kubernetes.io/zone`)                                    |
+| ذاكرة تخزين مؤقت محلية على SSD | تُركَّب عند `/mnt/disks/ssd0` عبر مجموعة خفيّة (يكون نظام ملفات الجذر في GKE COS للقراءة فقط)  |
+| VolumeSnapshot CRDs            | مطلوبة من قِبل المشغّل                                                                         |
+
+<div id="bare-metal">
+  ### الخوادم المادية
+</div>
+
+| المورد               | التفاصيل                                                  |
+| -------------------- | --------------------------------------------------------- |
+| تخزين الكائنات       | MinIO (متوافق مع S3) مع DirectPV لمحركات أقراص NVMe       |
+| StorageClass         | `local-nvme-sc` باستخدام المزوِّد `rancher.io/local-path` |
+| محركات أقراص NVMe    | تُكتشَف وتُهيَّأ عبر DirectPV، وتُركَّب عند `/nvme/disk`  |
+| مشغّل التخزين المحلي | Rancher local-path-provisioner v0.0.32                    |
+
+***
+
+<div id="iam-service-account-requirements">
+  ## متطلبات IAM / حساب الخدمة
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+<div id="ecr-pull-role">
+  #### دور السحب من ECR
+</div>
+
+* **اسم الدور:** `ClickHouseAirgapECRPullRole`
+* **الغرض:** سحب الصور من مستودع ECR الخاص بـ ClickHouse
+* **الأذونات:** `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:DescribeImages`, `ecr:ListImages`, `ecr:GetAuthorizationToken`
+* **الإجراء:** زوّد فريق ClickHouse بـ ARN الخاص بالدور
+
+<div id="clickhouse-serverkeeper-s3-role">
+  #### دور S3 لخادم ClickHouse/Keeper
+</div>
+
+* **دور واحد لكل عنقود ClickHouse تم توفيره**
+* **نمط التسمية:** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+* `$NAME`: اسم العنقود (مثلًا: `default-xx-01`)
+* `$REGION`: اختصار المنطقة (مثلًا: `uw2` بدلًا من `us-west-2`)
+* `$ORDINAL`: محجوز، ويُضبط على `00`
+* مثال: `CH-S3-default-xx-01-uw2-00-Role`
+* **الأذونات:** `s3:*` و`s3:ListBucket` على مورد الـ bucket
+* **سياسة الثقة:** IRSA عبر `sts:AssumeRoleWithWebIdentity` باستخدام موفّر OIDC لعنقود EKS
+
+<div id="ebs-csi-driver-role">
+  #### دور EBS CSI Driver
+</div>
+
+* **اسم المثال:** `ClickHouse_EksEbsCsiDriverRole`
+* **السياسة المُدارة:** `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`
+* **سياسة الثقة:** IRSA مع موفّر OIDC لعنقود EKS
+
+<div id="gcp">
+  ### GCP
+</div>
+
+<div id="deployer-service-account">
+  #### حساب خدمة النشر
+</div>
+
+| الدور                                   | الغرض                                                      |
+| --------------------------------------- | ---------------------------------------------------------- |
+| `roles/compute.networkAdmin`            | إنشاء/إدارة شبكات VPC والشبكات الفرعية وNAT وأجهزة التوجيه |
+| `roles/container.admin`                 | إنشاء/إدارة مجموعات GKE ومجموعات العُقد                    |
+| `roles/storage.admin`                   | إنشاء/إدارة حاويات GCS                                     |
+| `roles/iam.serviceAccountAdmin`         | إنشاء/إدارة حسابات الخدمة                                  |
+| `roles/iam.serviceAccountUser`          | استخدام حسابات الخدمة مع Workload Identity                 |
+| `roles/iam.workloadIdentityUser`        | تهيئة ارتباطات Workload Identity                           |
+| `roles/artifactregistry.admin`          | إنشاء/إدارة مستودعات Artifact Registry                     |
+| `roles/resourcemanager.projectIamAdmin` | إدارة سياسات IAM على المشروع                               |
+
+<div id="clickhouse-workload-identity-service-account">
+  #### حساب الخدمة الخاص بـ Workload Identity في ClickHouse
+</div>
+
+* **حساب خدمة GCP:** `clickhouse@$PROJECT.iam.gserviceaccount.com`
+* **حساب خدمة K8s (يدوي):** `clickhouse` في مساحة الأسماء `ns-$CLUSTER_NAME`
+* **حساب خدمة K8s (أنشأه Helm):** `ch-$CLUSTER_NAME-sa` في مساحة الأسماء `ns-$CLUSTER_NAME`
+* **الوسم التوضيحي لحساب خدمة K8s:** `iam.gke.io/gcp-service-account=<GSA_EMAIL>`
+* **عضو ربط IAM:** `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]`
+* **أذونات حاوية التخزين:** `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+* **أذونات Artifact Registry:** `roles/artifactregistry.reader`
+
+<div id="bare-metal">
+  ### الخوادم المادية
+</div>
+
+* **بيانات اعتماد AWS:** مفتاح الوصول والمفتاح السري لسحب صور ECR
+* **بيانات اعتماد MinIO:** مفتاح وصول ومفتاح سري منفصلان لتخزين متوافق مع S3
+* **أسرار سحب الصور:** سرّ `docker-registry` المسمى `all-icr-io` في مساحة الاسم `clickhouse-operator-system` ومساحات أسماء العنقود
+* **حساب الخدمة:** `default` (من دون IRSA؛ تُمرَّر بيانات الاعتماد عبر متغيرات البيئة)
+
+***
+
+<div id="cluster-naming-conventions">
+  ## قواعد تسمية عناقيد ClickHouse
+</div>
+
+تتبع عناقيد ClickHouse قواعد تسمية موحّدة على جميع المنصات:
+
+```text
+$DESCRIPTOR-$LETTERS-$ORDINAL
+```
+
+| المكوّن       | الوصف                          | مثال      |
+| ------------- | ------------------------------ | --------- |
+| `$DESCRIPTOR` | اسم وصفي (أحرف فقط)            | `default` |
+| `$LETTERS`    | محجوز؛ أي حرفين                | `xx`      |
+| `$ORDINAL`    | رقم ترتيبي متزايد يبدأ من `01` | `01`      |
+
+**اسم المثال:** `default-xx-01`
+
+يجب أن يكون اسم العنقود **فريدًا داخل عنقود Kubernetes المستهدف**، ويُستخدم في: - حيز أسماء Kubernetes: `ns-$CLUSTER_NAME` - موارد Kubernetes: مسبوقة بـ `c-$CLUSTER_NAME` - أسماء أدوار IAM ‏(AWS): `CH-S3-$CLUSTER_NAME-$REGION-$ORDINAL-Role` - بادئات مفاتيح S3/GCS: `ch-s3-<uuid>` (فريدة لكل عنقود)
+
+***
+
+<div id="required-kubernetes-components">
+  ## مكوّنات Kubernetes المطلوبة
+</div>
+
+| المكوّن             | AWS                          | GCP                                   | Bare Metal                           |
+| ------------------- | ---------------------------- | ------------------------------------- | ------------------------------------ |
+| CNI (IPv4)          | Amazon VPC CNI (موصى به)     | مدمج في GKE                           | مدمج في RKE2                         |
+| برنامج تشغيل CSI    | aws-ebs-csi-driver           | مدمج في GKE (pd.csi.storage.gke.io)   | Rancher local-path-provisioner       |
+| DNS                 | CoreDNS                      | مدمج في GKE                           | مدمج في RKE2                         |
+| VolumeSnapshot CRDs | مطلوب                        | مطلوب                                 | غير محدد                             |
+| الموسّع التلقائي    | Cluster Autoscaler (موصى به) | التوسّع التلقائي لمجموعة العقد في GKE | غير متاح                             |
+| Cert manager        | غير مطلوب (إلا في حالة FIPS) | مطلوب لـ FIPS                         | مطلوب (cert-manager + trust-manager) |

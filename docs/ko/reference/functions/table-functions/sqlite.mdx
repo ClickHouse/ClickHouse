@@ -1,0 +1,53 @@
+---
+description: 'SQLite 데이터베이스에 저장된 데이터를 쿼리할 수 있습니다.'
+sidebarTitle: 'sqlite'
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
+doc_type: 'reference'
+---
+
+[SQLite](/ko/reference/engines/database-engines/sqlite) 데이터베이스에 저장된 데이터를 쿼리할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+* `db_path` — SQLite 데이터베이스가 있는 파일의 경로입니다. [String](/ko/reference/data-types/string).
+* `table_name` — SQLite 데이터베이스의 테이블 이름입니다. [String](/ko/reference/data-types/string).
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+* 원본 `SQLite` 테이블과 동일한 컬럼을 갖는 테이블 객체입니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+<div id="related">
+  ## 관련
+</div>
+
+* [SQLite](/ko/reference/engines/table-engines/integrations/sqlite) 테이블 엔진
+* [SQLite 데이터베이스 엔진](/ko/reference/engines/database-engines/sqlite) — 데이터 타입 지원 섹션

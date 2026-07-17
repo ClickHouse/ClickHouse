@@ -1,0 +1,353 @@
+---
+slug: /guides/developer/deduplication
+sidebarTitle: '去重策略'
+description: '当您需要频繁执行 upsert、更新和删除操作时，可使用去重。'
+title: '去重策略'
+keywords: ['去重策略', '数据去重', 'upsert', '更新和删除', '开发者指南']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+**去重**是&#x6307;***删除数据集中重复行***&#x7684;过程。在 OLTP 数据库中，这很容易实现，因为每一行都有唯一的主键——但代价是插入速度会变慢。每次插入一行，都需要先查找是否已存在；如果存在，就需要替换。
+
+ClickHouse 在数据插入方面是为高速度而设计的。存储文件是不可变的，而且 ClickHouse 在插入一行之前不会检查是否已存在相同的主键——因此，去重需要额外花一些功夫。这也意味着去重不是立即完成的——而是**最终**才会发生，这会带来一些副作用：
+
+* 在任何时刻，你的表中都可能仍然存在重复项 (具有相同排序键的行)
+* 重复行的实际删除发生在 parts 合并期间
+* 你的查询需要考虑到可能存在重复项
+
+<div class="transparent-table">
+  |                                                                                  |                                                                                                                                                                                     |
+  | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <Image img="/images/guides/developer/de_duplication.webp" alt="去重标志" size="sm" /> | ClickHouse 提供关于去重及许多其他主题的免费培训。[Deleting and Updating Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)是一个很好的入门起点。 |
+</div>
+
+<div id="options-for-deduplication">
+  ## 去重方案
+</div>
+
+ClickHouse 使用以下表引擎实现去重：
+
+1. `ReplacingMergeTree` 表引擎：使用这种表引擎时，具有相同排序键的重复行会在合并过程中被移除。`ReplacingMergeTree` 非常适合模拟 upsert 行为 (即希望查询返回最后插入的那一行) 。
+
+2. 行折叠：`CollapsingMergeTree` 和 `VersionedCollapsingMergeTree` 表引擎采用这样一种逻辑：先将现有行“抵消”，再插入新行。与 `ReplacingMergeTree` 相比，它们实现起来更复杂，但查询和聚合写起来会更简单，因为无需关心数据是否已经完成合并。这两种表引擎在需要频繁更新数据时尤其有用。
+
+下面我们将介绍这两种技术。更多详情，请参阅我们的免费按需 [Deleting and Updating Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)。
+
+<div id="using-replacingmergetree-for-upserts">
+  ## 使用 ReplacingMergeTree 实现 Upsert
+</div>
+
+来看一个简单示例：某张表包含 Hacker News 的评论，其中 `views` 列表示某条评论的查看次数。假设我们在文章发布时插入一行新数据，并在该值增加时每天通过 upsert 写入一行包含总查看次数的新数据：
+
+```sql
+CREATE TABLE hackernews_rmt (
+    id UInt32,
+    author String,
+    comment String,
+    views UInt64
+)
+ENGINE = ReplacingMergeTree
+PRIMARY KEY (author, id)
+```
+
+插入两行：
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 0),
+   (2, 'ch_fan', 'This is post #2', 0)
+```
+
+要更新 `views` 列，请插入一条主键相同的新行 (注意 `views` 列的新值) ：
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 100),
+   (2, 'ch_fan', 'This is post #2', 200)
+```
+
+该表现在共有 4 行：
+
+```sql
+SELECT *
+FROM hackernews_rmt
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │     0 │
+│  1 │ ricardo │ This is post #1 │     0 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+上面输出中的两个独立方框展示了底层的两个 parts——这些数据尚未合并，因此重复的行也还没有被移除。让我们在 `SELECT` 查询中使用 `FINAL` 关键字，这会对查询结果进行逻辑合并：
+
+```sql
+SELECT *
+FROM hackernews_rmt
+FINAL
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+结果只有 2 行，返回的是最后插入的那一行。
+
+<Note>
+  如果数据量较小，使用 `FINAL` 还算可行。但如果处理的是大量数据，
+  `FINAL` 可能就不是最佳选择了。下面我们来看看一种更好的方法，
+  用于找出某一列的最新值。
+</Note>
+
+<div id="avoiding-final">
+  ### 避免使用 FINAL
+</div>
+
+现在再次更新这两行唯一数据的 `views` 列：
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 150),
+   (2, 'ch_fan', 'This is post #2', 250)
+```
+
+该表现在有 6 行，因为实际的合并还没有发生 (只有在使用 `FINAL` 时才会在查询阶段进行合并) 。
+
+```sql
+SELECT *
+FROM hackernews_rmt
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │     0 │
+│  1 │ ricardo │ This is post #1 │     0 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   250 │
+│  1 │ ricardo │ This is post #1 │   150 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+与其使用 `FINAL`，不如利用一些业务逻辑——我们知道 `views` 列始终是递增的，因此按所需列分组后，可以使用 `max` 函数选出值最大的那一行：
+
+```sql
+SELECT
+    id,
+    author,
+    comment,
+    max(views)
+FROM hackernews_rmt
+GROUP BY (id, author, comment)
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─max(views)─┐
+│  2 │ ch_fan  │ This is post #2 │        250 │
+│  1 │ ricardo │ This is post #1 │        150 │
+└────┴─────────┴─────────────────┴────────────┘
+```
+
+实际上，像上面查询那样进行分组，其效率 (就查询性能而言) 实际上可能高于使用 `FINAL` 关键字。
+
+我们的 [Deleting and Updating Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) 对这个示例做了更深入的讲解，包括如何将 `version` 列与 `ReplacingMergeTree` 搭配使用。
+
+<div id="using-collapsingmergetree-for-updating-columns-frequently">
+  ## 使用 CollapsingMergeTree 频繁更新列
+</div>
+
+更新某一列时，需要删除现有行，再用新值替换。正如前文所述，这类 ClickHouse 中的变更是*最终*才会发生的——也就是在合并期间。如果有大量行需要更新，与其使用 `ALTER TABLE..UPDATE`，直接在现有数据旁边插入新数据反而可能更高效。我们可以添加一列，用来标记数据是已过时还是最新……实际上，已经有一种表引擎很好地实现了这种行为，尤其是它还会自动删除过时数据。下面来看看它的工作方式。
+
+假设我们通过一个外部系统跟踪 Hacker News 评论的浏览次数，并且每隔几小时就将数据推送到 ClickHouse。我们希望旧行被删除，而新行则表示每条 Hacker News 评论的最新状态。我们可以使用 `CollapsingMergeTree` 来实现这种行为。
+
+下面定义一个表来存储浏览次数：
+
+```sql
+CREATE TABLE hackernews_views (
+    id UInt32,
+    author String,
+    views UInt64,
+    sign Int8
+)
+ENGINE = CollapsingMergeTree(sign)
+PRIMARY KEY (id, author)
+```
+
+请注意，`hackernews_views` 表中有一个名为 sign 的 `Int8` 列，也就是 **sign** 列。sign 列的名称可以任意指定，但数据类型必须是 `Int8`。另外请注意，这个列名会传递给 `CollapsingMergeTree` 表的构造函数。
+
+`CollapsingMergeTree` 表的 sign 列是什么？它表示该行的 *状态*，并且 sign 列的值只能是 1 或 -1。其工作方式如下：
+
+* 如果两行具有相同的主键 (如果排序顺序与主键不同，则按排序顺序) ，但 sign 列的值不同，那么最后插入的、值为 +1 的那一行会成为状态行，其他行则会相互抵消
+* 相互抵消的行会在 merge 期间被删除
+* 没有匹配对的行会被保留
+
+现在向 `hackernews_views` 表添加一行。由于这是该主键下唯一的一行，我们将其状态设为 1：
+
+```sql
+INSERT INTO hackernews_views VALUES
+   (123, 'ricardo', 0, 1)
+```
+
+现在假设我们要修改 `views` 列。你需要插入两行：一行用于冲销现有行，另一行包含该行的新状态：
+
+```sql
+INSERT INTO hackernews_views VALUES
+   (123, 'ricardo', 0, -1),
+   (123, 'ricardo', 150, 1)
+```
+
+该表现在有 3 行，主键为 `(123, 'ricardo')`：
+
+```sql
+SELECT *
+FROM hackernews_views
+```
+
+```response
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │     0 │   -1 │
+│ 123 │ ricardo │   150 │    1 │
+└─────┴─────────┴───────┴──────┘
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │     0 │    1 │
+└─────┴─────────┴───────┴──────┘
+```
+
+请注意，添加 `FINAL` 后会返回当前的状态行：
+
+```sql
+SELECT *
+FROM hackernews_views
+FINAL
+```
+
+```response
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │   150 │    1 │
+└─────┴─────────┴───────┴──────┘
+```
+
+但当然，对于大型表，不建议使用 `FINAL`。
+
+<Note>
+  在我们的示例中，传入 `views` 列的值实际上并不是必需的，也不必与旧行中 `views` 的当前值一致。事实上，只提供主键和一个 -1 就能抵消一行：
+
+  ```sql
+  INSERT INTO hackernews_views(id, author, sign) VALUES
+     (123, 'ricardo', -1)
+  ```
+</Note>
+
+<div id="real-time-updates-from-multiple-threads">
+  ## 多个线程的实时更新
+</div>
+
+对于 `CollapsingMergeTree` 表，行会通过 sign 列相互抵消，而一行的状态由最后插入的那一行决定。但是，如果你从不同线程插入行，而这些行可能会乱序写入，就会出现问题。在这种情况下，依赖“最后”一行是行不通的。
+
+这时 `VersionedCollapsingMergeTree` 就派上用场了——它会像 `CollapsingMergeTree` 一样折叠行，但它保留的不是最后插入的行，而是你指定的版本列中值最大的那一行。
+
+我们来看一个示例。假设我们要跟踪 Hacker News 评论的浏览次数，并且数据会频繁更新。我们希望报表使用最新值，而不必强制执行或等待合并。我们从一个类似于 `CollapsedMergeTree` 的表开始，不同之处在于我们增加了一列，用来存储该行状态的版本：
+
+```sql
+CREATE TABLE hackernews_views_vcmt (
+    id UInt32,
+    author String,
+    views UInt64,
+    sign Int8,
+    version UInt32
+)
+ENGINE = VersionedCollapsingMergeTree(sign, version)
+PRIMARY KEY (id, author)
+```
+
+请注意，该表使用 `VersionsedCollapsingMergeTree` 作为引擎，并传入了**sign 列**和**版本列**。下面是该表的工作方式：
+
+* 它会删除每一对主键和版本相同、但 sign 不同的行
+* 行被插入的顺序并不重要
+* 请注意，如果版本列不是主键的一部分，ClickHouse 会将其隐式添加到主键中，作为最后一个字段
+
+在编写查询时，你也要使用同样的逻辑——按主键分组，并用巧妙的逻辑避开那些已被抵消但尚未删除的行。让我们向 `hackernews_views_vcmt` 表中添加一些行：
+
+```sql
+INSERT INTO hackernews_views_vcmt VALUES
+   (1, 'ricardo', 0, 1, 1),
+   (2, 'ch_fan', 0, 1, 1),
+   (3, 'kenny', 0, 1, 1)
+```
+
+现在我们更新其中两行，并删除其中一行。要取消某一行，请务必包含之前的版本号 (因为它是主键的一部分) ：
+
+```sql
+INSERT INTO hackernews_views_vcmt VALUES
+   (1, 'ricardo', 0, -1, 1),
+   (1, 'ricardo', 50, 1, 2),
+   (2, 'ch_fan', 0, -1, 1),
+   (3, 'kenny', 0, -1, 1),
+   (3, 'kenny', 1000, 1, 2)
+```
+
+我们将运行与之前相同的查询，它会根据 sign 列巧妙地对值进行加减：
+
+```sql
+SELECT
+    id,
+    author,
+    sum(views * sign)
+FROM hackernews_views_vcmt
+GROUP BY (id, author)
+HAVING sum(sign) > 0
+ORDER BY id ASC
+```
+
+结果有两行：
+
+```response
+┌─id─┬─author──┬─sum(multiply(views, sign))─┐
+│  1 │ ricardo │                         50 │
+│  3 │ kenny   │                       1000 │
+└────┴─────────┴────────────────────────────┘
+```
+
+我们来强制执行一次表合并：
+
+```sql
+OPTIMIZE TABLE hackernews_views_vcmt
+```
+
+结果中应当只有两行：
+
+```sql
+SELECT *
+FROM hackernews_views_vcmt
+```
+
+```response
+┌─id─┬─author──┬─views─┬─sign─┬─version─┐
+│  1 │ ricardo │    50 │    1 │       2 │
+│  3 │ kenny   │  1000 │    1 │       2 │
+└────┴─────────┴───────┴──────┴─────────┘
+```
+
+当你需要在多个客户端和/或线程插入行的同时实现去重时，`VersionedCollapsingMergeTree` 表就非常实用。
+
+<div id="why-arent-my-rows-being-deduplicated">
+  ## 为什么我的行没有被去重？
+</div>
+
+插入的行未被去重，其中一个原因可能是你在 `INSERT` 语句中使用了非幂等函数或表达式。比如，如果插入的行包含列定义 `createdAt DateTime64(3) DEFAULT now()`，那么这些行必然各不相同，因为每一行的 `createdAt` 列都会有一个唯一的默认值。由于每次插入的行都会生成唯一的校验和，MergeTree / ReplicatedMergeTree 表引擎无法判断这些行应被去重。
+
+在这种情况下，你可以为每个批次的行指定自己的 `insert_deduplication_token`，以确保对同一批次进行多次插入时，不会导致相同的行被重复插入。有关如何使用此设置的更多信息，请参阅 [`insert_deduplication_token` 文档](/zh/reference/settings/session-settings#insert_deduplication_token)。

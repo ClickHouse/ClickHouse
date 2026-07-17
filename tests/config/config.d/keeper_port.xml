@@ -31,6 +31,8 @@
             <commit_logs_cache_size_threshold>524288000</commit_logs_cache_size_threshold>
 
             <use_xid_64>1</use_xid_64>
+
+            <nuraft_use_bg_thread_for_snapshot_io>0</nuraft_use_bg_thread_for_snapshot_io>
         </coordination_settings>
 
         <raft_configuration>

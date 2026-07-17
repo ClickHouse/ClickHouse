@@ -133,6 +133,7 @@ void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
+    extern const Event GlobalMemoryLimitExceeded;
     extern const Event PageCacheOvercommitResize;
     extern const Event MemoryAllocatedWithoutCheck;
     extern const Event MemoryAllocatedWithoutCheckBytes;
@@ -232,6 +233,8 @@ void MemoryTracker::injectFault() const
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
     ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    if (level == VariableContext::Global)
+        ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
     const auto * description = description_ptr.load(std::memory_order_relaxed);
     throw DB::Exception(
         DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
@@ -348,6 +351,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
             ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+            if (level == VariableContext::Global)
+                ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
@@ -367,7 +372,16 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
     {
 #if USE_JEMALLOC
-        if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded))
+        /// Skip jemalloc profile flushing if allocations are denied in the current scope
+        /// (e.g. in signal handlers or MergeTreeBackgroundExecutor), because flushProfile allocates.
+        /// Mirrors the same guard in updatePeak; this path is reached via the member
+        /// MemoryTracker::allocImpl (adjustWithUntrackedMemory), which bypasses
+        /// CurrentMemoryTracker's own deny check, so the deny flag is still set here.
+        if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded)
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+            && !memory_tracker_always_throw_logical_error_on_allocation
+#endif
+            )
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             bool prof_active = false;
@@ -440,6 +454,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
                 MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+                if (level == VariableContext::Global)
+                    ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
