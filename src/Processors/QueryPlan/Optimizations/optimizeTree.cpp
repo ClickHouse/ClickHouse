@@ -186,6 +186,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
+void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -348,8 +349,9 @@ void optimizeTreeSecondPass(
             }
         });
 
-    stack.push_back({.node = &root});
+    applyParallelReplicas(query_plan, nodes, optimization_settings);
 
+    stack.push_back({.node = &root});
     while (!stack.empty())
     {
         {
@@ -472,6 +474,7 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
+                local_optimization_settings.enable_parallel_replicas = false;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
