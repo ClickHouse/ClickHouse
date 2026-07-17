@@ -277,31 +277,52 @@ namespace
         }
 
         /// `InterpreterSelectQuery::analyze` (called below) only checks `SELECT` on the view object itself
-        /// (`checkAccessRightsForSelect`, using the view's un-rewritten `table_id`). A real `SELECT` through
+        /// (`checkAccessRightsForSelect`, using each view's un-rewritten `table_id`). A real `SELECT` through
         /// a regular, non-parameterized view goes on to check the base-table privileges too, but only once
         /// the pipeline is actually built, in `StorageView::readImpl` - which `EXPLAIN SYNTAX` never reaches.
-        /// Look up the view straight from the AST (before it gets rewritten into a subquery below) and
-        /// reproduce that inner check, so a user with `SELECT` on the view but not on its base table is
-        /// denied here too, instead of leaking the expanded view body. Parameterized views are excluded:
-        /// their base-table access is already enforced by the recursive `InterpreterSelectQuery` analysis of
-        /// the subquery they were expanded into by `ExpandParameterizedViewsMatcher` above.
-        static void checkNonParameterizedViewBaseTableAccess(const ASTSelectQuery & select, const ContextPtr & context, const Names & column_names)
+        /// Look up every view referenced straight from the AST (before the FROM table gets rewritten into a
+        /// subquery below) and reproduce that inner check, so a user with `SELECT` on the view but not on its
+        /// base table is denied here too, instead of leaking the expanded view body.
+        ///
+        /// This iterates all table expressions - the FROM table and every JOIN side - not just the leftmost
+        /// one: `query_info.view_query` and `StorageView::replaceWithSubquery` only handle the first table
+        /// expression, so a `SQL SECURITY INVOKER` view on the JOIN side would otherwise never be checked.
+        ///
+        /// `main_table_column_names` are the columns real execution requests from the FROM (leftmost) storage,
+        /// so a FROM-side view is checked with column-level precision. `query_info.view_query` is populated
+        /// only for that main storage, so those columns apply to the leftmost table expression only; the exact
+        /// per-view column set of a JOIN-side view is not readily available from the legacy analysis, so it
+        /// uses the trivial-read fallback in `checkViewBaseTableAccess` (an empty column list) - which still
+        /// denies whenever the user lacks base-table access (the leak this closes) and never over-denies.
+        ///
+        /// Parameterized views are excluded: their base-table access is already enforced by the recursive
+        /// `InterpreterSelectQuery` analysis of the subquery `ExpandParameterizedViewsMatcher` expanded them into.
+        static void checkNonParameterizedViewBaseTableAccess(
+            const ASTSelectQuery & select, const ContextPtr & context, const SelectQueryInfo & query_info, const Names & main_table_column_names)
         {
-            const auto * table_expression = getTableExpression(select, 0);
-            if (!table_expression || !table_expression->database_and_table_name)
-                return;
+            const auto table_expressions = getTableExpressions(select);
+            for (size_t table_number = 0; table_number < table_expressions.size(); ++table_number)
+            {
+                const auto * table_expression = table_expressions[table_number];
+                if (!table_expression || !table_expression->database_and_table_name)
+                    continue;
 
-            const auto * table_identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
-            if (!table_identifier)
-                return;
+                const auto * table_identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
+                if (!table_identifier)
+                    continue;
 
-            auto storage = DatabaseCatalog::instance().tryGetTable(context->resolveStorageID(table_identifier->getTableId()), context);
-            const auto * view = storage ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
-            if (!view || view->isParameterizedView())
-                return;
+                auto storage = DatabaseCatalog::instance().tryGetTable(context->resolveStorageID(table_identifier->getTableId()), context);
+                const auto * view = storage ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
+                if (!view || view->isParameterizedView())
+                    continue;
 
-            auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-            checkViewBaseTableAccess(storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
+                Names column_names;
+                if (table_number == 0 && query_info.view_query && !query_info.is_parameterized_view)
+                    column_names = main_table_column_names;
+
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                checkViewBaseTableAccess(storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
+            }
         }
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
@@ -310,14 +331,16 @@ namespace
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
+
+            /// `getRequiredColumns` reflects `syntax_analyzer_result->requiredSourceColumns()`, i.e. the same
+            /// columns real execution would request from the FROM storage via `storage->read` (see
+            /// `StorageView::readImpl`'s `column_names` parameter), computed by the `analyze()`-mode interpreter
+            /// above from this very query. Run the base-table access check for every regular view referenced,
+            /// including JOIN sides, before the FROM view (if any) is rewritten into a subquery.
+            checkNonParameterizedViewBaseTableAccess(select, data.getContext(), query_info, interpreter.getRequiredColumns());
+
             if (query_info.view_query)
             {
-                if (!query_info.is_parameterized_view)
-                    /// `getRequiredColumns` reflects `syntax_analyzer_result->requiredSourceColumns()`, i.e. the same
-                    /// columns real execution would request from the view via `storage->read` (see `StorageView::readImpl`'s
-                    /// `column_names` parameter), computed by the `analyze()`-mode interpreter above from this very query.
-                    checkNonParameterizedViewBaseTableAccess(select, data.getContext(), interpreter.getRequiredColumns());
-
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
@@ -1012,7 +1035,12 @@ static void checkViewBaseTableAccess(
         auto projection_expression_list_ast = make_intrusive<ASTExpressionList>();
         projection_expression_list_ast->children.reserve(columns_to_read.size());
         for (const auto & column_name : columns_to_read)
-            projection_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(column_name));
+            /// Build the projected identifier the same way `normalizeAndValidateQuery` does, so a view output
+            /// whose name is a compound or subcolumn identifier (`n.x`, `arr.size0`, tuple elements, ...) gets
+            /// the correct multi-part identifier shape. A plain `ASTIdentifier(column_name)` would carry the
+            /// whole dotted name as a single part, fail to resolve, and - because `resolveThenCheckAccessRights`
+            /// swallows non-`ACCESS_DENIED` resolution errors - silently skip the base-table access check.
+            projection_expression_list_ast->children.push_back(createIdentifierFromColumnName(column_name));
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
 
         inner_query = std::move(select_query);

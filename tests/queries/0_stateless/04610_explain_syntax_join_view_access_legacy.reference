@@ -1,0 +1,9 @@
+-- Reader has SELECT on the view but not its base table: the JOIN-side view is denied exactly as the SELECT is
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+-- Full user has SELECT on the view and its base table: EXPLAIN SYNTAX matches SELECT and is allowed
+SELECT: OK
+EXPLAIN SYNTAX: OK
+-- Outsider has no access to the view: EXPLAIN SYNTAX is denied
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED

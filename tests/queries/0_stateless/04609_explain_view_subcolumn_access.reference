@@ -1,0 +1,10 @@
+-- Reader has SELECT on the view but not the base table: reading a subcolumn is denied exactly as the SELECT is
+SELECT n.x: ACCESS_DENIED
+EXPLAIN QUERY TREE n.x: ACCESS_DENIED
+EXPLAIN SYNTAX n.x: ACCESS_DENIED
+EXPLAIN SYNTAX n.x (legacy): ACCESS_DENIED
+-- Full user has SELECT on both the view and the base table: reading a subcolumn matches SELECT and is allowed
+SELECT n.x: OK
+EXPLAIN QUERY TREE n.x: OK
+EXPLAIN SYNTAX n.x: OK
+EXPLAIN SYNTAX n.x (legacy): OK

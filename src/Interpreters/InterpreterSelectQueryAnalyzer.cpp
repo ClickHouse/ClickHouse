@@ -63,9 +63,6 @@ extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 }
 
-namespace
-{
-
 ASTPtr createIdentifierFromColumnName(const String & column_name)
 {
     Tokens tokens(column_name.data(), column_name.data() + column_name.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
@@ -77,6 +74,9 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
         return make_intrusive<ASTIdentifier>(column_name);
     return res;
 }
+
+namespace
+{
 
 ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {

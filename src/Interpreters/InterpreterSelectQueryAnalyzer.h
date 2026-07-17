@@ -12,6 +12,13 @@ namespace DB
 class ActionsDAG;
 class QueryPlan;
 
+/// Parse a column name that may be a compound or subcolumn identifier (e.g. `n.x`, `arr.size0`) into the
+/// matching identifier AST, falling back to a plain single-part identifier when the name does not parse as
+/// one. Shared so callers that rebuild a `SELECT <columns> FROM (...)` wrapper the way a real view read does
+/// (see `normalizeAndValidateQuery` and `StorageView::readImpl`) construct the same identifier shape the
+/// analyzer expects, instead of a short identifier that would fail to resolve for compound column names.
+ASTPtr createIdentifierFromColumnName(const String & column_name);
+
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
