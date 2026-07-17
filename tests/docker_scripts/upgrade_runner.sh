@@ -364,6 +364,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       time, no production usage expected), so the feature owner declined an engine-side alias. Tables written by
 #       an older server that reference the removed setting fail on attach after the upgrade. Narrowed to the exact
 #       legacy setting name so genuinely unknown settings are not masked.
+# `Unexpected text index arguments: positions` is the sibling failure from the same #109900 rename: the text-index
+#       argument `positions` was renamed to `support_phrase_search`, so a table written by an older server with
+#       `positions = 0/1` in its text index definition leaves `positions` unrecognized and fails on attach in
+#       textIndexCreator/textIndexValidator. Narrowed to the exact legacy argument name so genuinely unexpected
+#       text index arguments are not masked.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
@@ -523,6 +528,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
            -e "Unknown tokenizer: 'unicode_word'" \
            -e "Unknown setting 'allow_experimental_text_index_positions'" \
+           -e "Unexpected text index arguments: positions" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
