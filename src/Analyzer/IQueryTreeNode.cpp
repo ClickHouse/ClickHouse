@@ -116,8 +116,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
-        if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
-            return false;
+        if (compare_options.compare_aliases)
+        {
+            if (lhs_node_to_compare->alias != rhs_node_to_compare->alias)
+                return false;
+
+            /// A double-quoted alias pins the name under `standard` matching, so it is part of identity.
+            if (!lhs_node_to_compare->alias.empty()
+                && (lhs_node_to_compare->alias_quote == IdentifierPartQuote::DoubleQuoted)
+                    != (rhs_node_to_compare->alias_quote == IdentifierPartQuote::DoubleQuoted))
+                return false;
+        }
 
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;
@@ -223,6 +232,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
+            hash_state.update(node_to_process->alias_quote == IdentifierPartQuote::DoubleQuoted);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);

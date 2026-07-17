@@ -77,4 +77,23 @@ ${CLIENT_STANDARD} --query 'SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH 
 ${CLICKHOUSE_CLIENT} --query "SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE (Val AS Val + 1)"
 ${CLICKHOUSE_CLIENT} --query "SELECT x, Val FROM t_col_interp ORDER BY x ASC WITH FILL FROM 1 TO 4 INTERPOLATE (val AS Val + 1)" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW v_col_pin; DROP TABLE t_col_interp; DROP TABLE t_col_match; DROP TABLE t_col_siblings; DROP TABLE t_col_group; DROP TABLE t_col_join_l; DROP TABLE t_col_join_r; DROP TABLE t_col_join_sib"
+echo '--- standard: ARRAY JOIN aliases fold, quoted aliases pin'
+${CLIENT_STANDARD} --query "SELECT ITEM FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS item"
+${CLIENT_STANDARD} --query 'SELECT item FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS "Item"' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query 'SELECT "Item" FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS "Item"'
+${CLICKHOUSE_CLIENT} --query "SELECT ITEM FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS item" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLICKHOUSE_CLIENT} --query "SELECT item FROM (SELECT [1,2] AS arr) ARRAY JOIN arr AS item"
+
+echo '--- standard: compound over ARRAY JOIN alias folds the alias part, tuple element keeps canonical spelling'
+${CLIENT_STANDARD} --query "SELECT ITEM.Name FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item"
+${CLIENT_STANDARD} --query "SELECT ITEM.\"Name\" FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item"
+${CLIENT_STANDARD} --query "SELECT ITEM.name FROM (SELECT CAST([tuple('a')], 'Array(Tuple(Name String))') AS arr) ARRAY JOIN arr AS item" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_interp_nulls (x Int32, Val Int32) ENGINE = Memory; INSERT INTO t_col_interp_nulls VALUES (1, 10)"
+
+echo '--- standard: INTERPOLATE target folds with group_by_use_nulls (projection resolved after GROUP BY)'
+${CLIENT_STANDARD} --group_by_use_nulls=1 --query "SELECT Val FROM (SELECT x, sum(Val) AS Val FROM t_col_interp_nulls GROUP BY ROLLUP(x) ORDER BY x ASC NULLS LAST WITH FILL FROM 1 TO 3 INTERPOLATE (val AS Val + 1)) WHERE Val IS NOT NULL"
+${CLICKHOUSE_CLIENT} --group_by_use_nulls=1 --query "SELECT Val FROM (SELECT x, sum(Val) AS Val FROM t_col_interp_nulls GROUP BY ROLLUP(x) ORDER BY x ASC NULLS LAST WITH FILL FROM 1 TO 3 INTERPOLATE (Val AS Val + 1)) WHERE Val IS NOT NULL"
+${CLICKHOUSE_CLIENT} --group_by_use_nulls=1 --query "SELECT Val FROM (SELECT x, sum(Val) AS Val FROM t_col_interp_nulls GROUP BY ROLLUP(x) ORDER BY x ASC NULLS LAST WITH FILL FROM 1 TO 3 INTERPOLATE (val AS Val + 1)) WHERE Val IS NOT NULL" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+
+${CLICKHOUSE_CLIENT} --query "DROP VIEW v_col_pin; DROP TABLE t_col_interp; DROP TABLE t_col_interp_nulls; DROP TABLE t_col_match; DROP TABLE t_col_siblings; DROP TABLE t_col_group; DROP TABLE t_col_join_l; DROP TABLE t_col_join_r; DROP TABLE t_col_join_sib"

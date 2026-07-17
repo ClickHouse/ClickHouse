@@ -79,3 +79,26 @@ UNKNOWN_IDENTIFIER
 2	11
 3	10
 UNKNOWN_IDENTIFIER
+--- standard: ARRAY JOIN aliases fold, quoted aliases pin
+1
+2
+UNKNOWN_IDENTIFIER
+1
+2
+UNKNOWN_IDENTIFIER
+1
+2
+--- standard: compound over ARRAY JOIN alias folds the alias part, tuple element keeps canonical spelling
+a
+a
+UNKNOWN_IDENTIFIER
+--- standard: INTERPOLATE target folds with group_by_use_nulls (projection resolved after GROUP BY)
+10
+11
+10
+11
+10
+11
+10
+11
+UNKNOWN_IDENTIFIER

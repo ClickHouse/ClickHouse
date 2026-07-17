@@ -1892,6 +1892,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
       * SELECT * FROM test_table_1 AS t1 ARRAY JOIN [1,2,3] AS id INNER JOIN test_table_2 AS t2 USING (id);
       * SELECT * FROM test_table_1 AS t1 ARRAY JOIN t1.id AS id INNER JOIN test_table_2 AS t2 USING (id);
       */
+    NameMatchMode name_match_mode = scope.context->getSettingsRef()[Setting::column_and_query_name_matching];
+    bool lookup_has_quote_structure = name_match_mode == NameMatchMode::Standard
+        && identifier_lookup.identifier_name.size() == identifier_lookup.identifier.getPartsSize();
+
     for (const auto & array_join_column_expression : array_join_column_expressions_nodes)
     {
         auto & array_join_column_expression_typed = array_join_column_expression->as<ColumnNode &>();
@@ -1902,7 +1906,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
             ? array_join_column_expression_typed.getAlias()
             : array_join_column_expression_typed.getColumnName();
 
-        if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name))
+        if (array_join_column_expression_typed.hasAlias() && lookup_has_quote_structure)
+        {
+            /// Same quote-aware part 0 matching as table expression aliases: fold unless pinned.
+            bool alias_pinned = array_join_column_expression_typed.getAliasQuote() == IdentifierPartQuote::DoubleQuoted;
+            if (!lookupPartMatchesName(identifier_lookup, 0, alias_or_name, name_match_mode, alias_pinned))
+                continue;
+            identifier_view.popFirst(1);
+        }
+        else if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name))
             identifier_view.popFirst(*prefix_size);
         else
             continue;

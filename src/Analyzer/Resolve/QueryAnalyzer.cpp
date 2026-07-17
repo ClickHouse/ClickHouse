@@ -5339,6 +5339,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
+        auto array_join_expression_alias_quote = array_join_expression->getAliasQuote();
 
         std::string identifier_full_name;
 
@@ -5433,7 +5434,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
             NameAndTypePair array_join_column(array_join_column_name, result_type);
             auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, array_join_node);
-            array_join_column_node->setAlias(array_join_expression_alias);
+            array_join_column_node->setAlias(array_join_expression_alias, array_join_expression_alias_quote);
             array_join_column_expressions.push_back(std::move(array_join_column_node));
         };
 
@@ -6914,9 +6915,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
-    /// With `group_by_use_nulls` the projection is resolved later, so `projection_columns` is
-    /// still empty here and the `standard`-mode target canonicalization does not apply.
-    if (query_node_typed.hasInterpolate())
+    /// With `group_by_use_nulls` the projection is resolved later, so INTERPOLATE is deferred
+    /// there too: the `standard`-mode target canonicalization needs `projection_columns`.
+    if (query_node_typed.hasInterpolate() && !scope.group_by_use_nulls)
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope, projection_columns);
 
     expandLimitByAll(query_node_typed);
@@ -6959,6 +6960,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+
+        if (query_node_typed.hasInterpolate())
+            resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope, projection_columns);
     }
 
     /// Capture double-quoted projection aliases before aliases are stripped below: outer
