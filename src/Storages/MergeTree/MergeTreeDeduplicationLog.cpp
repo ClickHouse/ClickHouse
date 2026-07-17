@@ -477,36 +477,56 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     chassert(current_writer != nullptr);
 
-    for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
+    /// Collect every block id covered by the dropped part before touching the log
+    /// or the in-memory map. Writing the DROP records and erasing the block ids
+    /// must be all-or-nothing, the same contract as addPart: rotateAndDropIfNeeded
+    /// can now rethrow a failure to finalize or fsync the previous log file, and a
+    /// plain writeRecord can throw too. Erasing eagerly, one block id at a time,
+    /// before that failure-prone boundary (as the code used to) left the in-memory
+    /// map in a partial state when the loop was interrupted partway - some block
+    /// ids of the dropped part erased, the rest still published - which the caller
+    /// (StorageMergeTree::dropPartNoWaitNoThrow) cannot repair: it has already taken
+    /// the part out of the active set and never retries the drop.
+    std::vector<std::string> block_ids;
+    std::vector<std::string> part_names;
+    for (const auto & node : deduplication_map)
     {
-        const auto & part_info = itr->value;
-        /// Part is covered by dropped part, let's remove it from
-        /// deduplication history
-        if (drop_part_info.contains(part_info))
+        /// Part is covered by the dropped part, so it must leave deduplication history.
+        if (drop_part_info.contains(node.value))
         {
-            /// Create drop record
-            MergeTreeDeduplicationLogRecord record;
-            record.operation = MergeTreeDeduplicationOp::DROP;
-            record.part_name = part_info.getPartNameAndCheckFormat(format_version);
-            record.block_id = itr->key;
-            /// Write it to disk
-            writeRecord(record, *current_writer);
-            /// We have one more record on disk
-            existing_logs[current_log_number].entries_count++;
-
-            /// Increment itr before erase, otherwise it will invalidated
-            ++itr;
-            /// Remove block_id from in-memory table
-            deduplication_map.erase(record.block_id);
-
-            /// Rotate and drop old logs if needed
-            rotateAndDropIfNeeded();
-        }
-        else
-        {
-            ++itr;
+            block_ids.push_back(node.key);
+            part_names.push_back(node.value.getPartNameAndCheckFormat(format_version));
         }
     }
+
+    if (block_ids.empty())
+        return;
+
+    /// Write all the DROP records first. If a write throws partway, no block id has
+    /// been erased yet, so every covered block id stays published in memory - the
+    /// deduplicating (safe) direction - and the map still matches a replay of the
+    /// records that did reach the log.
+    for (size_t i = 0; i < block_ids.size(); ++i)
+    {
+        MergeTreeDeduplicationLogRecord record;
+        record.operation = MergeTreeDeduplicationOp::DROP;
+        record.part_name = part_names[i];
+        record.block_id = block_ids[i];
+        /// Write it to disk
+        writeRecord(record, *current_writer);
+        /// We have one more record on disk
+        existing_logs[current_log_number].entries_count++;
+    }
+
+    /// Rotate before erasing from the in-memory map: if the rotation rethrows a
+    /// failure to finalize or fsync the previous log file, the DROP records just
+    /// written may not be durable, so leaving every block id published keeps the
+    /// map all-or-nothing and never wrongly forgets a block id whose DROP was lost.
+    rotateAndDropIfNeeded();
+
+    /// Everything is durable now; erase the dropped block ids from the map.
+    for (const auto & block_id : block_ids)
+        deduplication_map.erase(block_id);
 }
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)

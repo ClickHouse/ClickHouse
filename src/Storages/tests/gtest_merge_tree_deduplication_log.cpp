@@ -623,3 +623,58 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureRetainsCommittedLogsAfterTwoR
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: dropPart must apply to the in-memory map all-or-nothing, just
+/// like addPart. It writes a DROP record per covered block id and then, since
+/// rotate can now rethrow a failure to finalize or fsync the previous log file
+/// (needed so addPart can trust that boundary), the rotation that follows may
+/// throw partway through a multi-block drop. Erasing the block ids one at a time
+/// before that boundary (as the code used to) left the map in a partial state -
+/// the first covered block erased, the rest still published - which the caller
+/// (StorageMergeTree::dropPartNoWaitNoThrow) never retries. Instead the whole drop
+/// must fail atomically: every covered block id stays published, so a failed drop
+/// never wrongly forgets a block id (which would let a later retry duplicate data).
+TEST(MergeTreeDeduplicationLog, DropPartRotationSyncFailureIsAllOrNothing)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_drop_all_or_nothing/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    /// The deduplication log syncs a writer only in rotate, and no rotation with a
+    /// live previous writer happens during the setup below, so sync #1 is exactly
+    /// the finalization of the log file triggered by the drop.
+    auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    /// deduplication_window == 2 gives rotate_interval == 4.
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    /// Bring the current log to three records (one short of rotate_interval) while
+    /// leaving only "block1" and "block2" in the two-slot map: the throwaway insert
+    /// gets evicted by "block2" but its ADD record still counts. That way the DROP
+    /// of "block1" is the record that reaches rotate_interval and triggers the
+    /// rotation - so the old, one-block-at-a-time code would rotate (and fail) right
+    /// after erasing "block1" but before handling "block2".
+    log.addPart({"throwaway"}, part("all_5_5_0"));
+    log.addPart({"block1"}, part("all_1_1_0"));
+    log.addPart({"block2"}, part("all_2_2_0"));
+
+    /// Drop a range covering both "block1" and "block2". The rotation that the DROP
+    /// records trigger fails to sync the previous log file and rethrows.
+    EXPECT_ANY_THROW(log.dropPart(part("all_0_9_999")));
+
+    /// The drop failed as a whole, so neither block id may have been erased: a retry
+    /// of either must still be deduplicated. The old code erased "block1" before the
+    /// rotation threw, so it would wrongly accept a retry of "block1" here.
+    EXPECT_FALSE(log.addPart({"block1"}, part("all_6_6_0")).empty());
+    EXPECT_FALSE(log.addPart({"block2"}, part("all_7_7_0")).empty());
+
+    /// The log must still be usable: the rotation switched over to the new writer
+    /// before propagating the failure, so a fresh insert must not abort.
+    EXPECT_NO_THROW(log.addPart({"block8"}, part("all_8_8_0")));
+
+    std::filesystem::remove_all(work_dir);
+}
