@@ -722,14 +722,10 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            if (element.isInt64() && (element.getInt64() < 0))
-            {
-                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
-                return false;
-            }
-
             if (element.isInt64())
             {
+                /// A negative integer is a pre-epoch Unix timestamp; the final clamp below brings it into the
+                /// `DateTime` range (the epoch), matching the row input serializer, rather than rejecting it.
                 value = element.getInt64();
             }
             else
@@ -746,19 +742,15 @@ public:
             /// serializer, `CAST` and `toDateTime`. Parse the shortest round-trip text of the double with the same
             /// decimal reader and range check as the row input serializer (`tryReadDateTimeAsNumber`), so a number
             /// that does not fit the reader's precision (e.g. `1e39`) is rejected rather than silently clamped to
-            /// the `DateTime` maximum, matching the row input path and the adjacent `DateTime64` DOM case. The
-            /// parity with the row input path holds only up to `Float64` precision: the DOM parser has already
-            /// rounded the literal to the nearest `Float64`, so a value it cannot represent exactly can cross the
-            /// second boundary before the truncation (`1703363853.9999999` reaches this branch as `1703363854.0`
-            /// and gives the next second, while the row input path truncates the original text to `1703363853`).
-            /// With `read_datetime_number_as_raw_value` (i.e. the pre-26.7 behavior) a fractional `DateTime` number
-            /// is rejected, as the row serializer's legacy path did.
-            double number = element.getDouble();
-            if (number < 0)
-            {
-                error = fmt::format("cannot convert negative value {} to DateTime", number);
-                return false;
-            }
+            /// the `DateTime` maximum, matching the row input path and the adjacent `DateTime64` DOM case. A
+            /// negative (pre-epoch) number is clamped to the `DateTime` epoch by the shared reader, exactly as the
+            /// row input serializer does, rather than being rejected. The parity with the row input path holds only
+            /// up to `Float64` precision: the DOM parser has already rounded the literal to the nearest `Float64`,
+            /// so a value it cannot represent exactly can cross the second boundary before the truncation
+            /// (`1703363853.9999999` reaches this branch as `1703363854.0` and gives the next second, while the row
+            /// input path truncates the original text to `1703363853`). With `read_datetime_number_as_raw_value`
+            /// (i.e. the pre-26.7 behavior) a fractional `DateTime` number is rejected, as the row serializer's
+            /// legacy path did.
             String str_value = jsonElementToString<JSONParser>(element, format_settings);
             ReadBufferFromMemory buf(str_value);
             if (!tryReadDateTimeAsNumber(value, buf) || !buf.eof())

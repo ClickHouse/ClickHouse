@@ -67,3 +67,13 @@ SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1e39}'); -- { serverError 
 -- path, so the two agree.
 SELECT JSONExtract('{"t":1e30}', 't', 'DateTime');
 SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1e30}');
+
+-- A negative (pre-epoch) number is a Unix timestamp below the DateTime range; it is clamped to the epoch
+-- on the DOM path (JSONExtract, typed JSON) exactly as the row input serializer does, rather than being
+-- rejected. This holds for both an integer and a fractional negative number.
+SELECT JSONExtract('{"t":-1}', 't', 'DateTime');
+SELECT JSONExtract('{"t":-0.5}', 't', 'DateTime');
+SELECT CAST('{"t":-1}', 'JSON(t DateTime)');
+SELECT CAST('{"t":-0.5}', 'JSON(t DateTime)');
+SELECT JSONExtract('{"t":-1}', 't', 'DateTime') = (SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":-1}'));
+SELECT JSONExtract('{"t":-0.5}', 't', 'DateTime') = (SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":-0.5}'));
