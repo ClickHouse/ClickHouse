@@ -4,6 +4,10 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+
+#if defined(OS_LINUX)
+#include <netinet/tcp.h>
+#endif
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
@@ -194,6 +198,68 @@ namespace DB::ErrorCodes
 
 namespace
 {
+
+/// Coalesces a train of small protocol messages into as few TCP segments as possible.
+///
+/// The connection runs with TCP_NODELAY and every protocol message is flushed to the
+/// socket separately, so a multi-message sequence - e.g. the end-of-query train of
+/// totals, extremes, profile info, progress, profile events, empty block, logs and
+/// end-of-stream - otherwise leaves the host as roughly one small packet per message.
+/// The TCP congestion window is accounted in segments, not bytes, so on a high-RTT
+/// link the tail of such a train can exceed the (post-idle) window and stall for a
+/// full round trip waiting for ACKs, which clients observe as 2x RTT query latency.
+///
+/// While corked, the kernel buffers flushed bytes and emits only full segments;
+/// destruction uncorks and transmits the remainder immediately (exception-safe).
+/// Keep the scope tight: corking a code path that blocks (reads, query execution)
+/// would delay data by up to 200 ms (the kernel's cork timeout).
+///
+/// Best-effort: a no-op on platforms without TCP_CORK and on sockets that do not
+/// support setOption (e.g. secure socket wrappers).
+class TCPCorkGuard
+{
+public:
+    explicit TCPCorkGuard(Poco::Net::StreamSocket & socket_) : socket(socket_)
+    {
+#if defined(OS_LINUX)
+        try
+        {
+            socket.setOption(IPPROTO_TCP, TCP_CORK, 1);
+            corked = true;
+        }
+        catch (...) /// NOLINT(bugprone-empty-catch)
+        {
+            /// Coalescing is an optimization; carry on uncorked.
+        }
+#endif
+    }
+
+    ~TCPCorkGuard()
+    {
+#if defined(OS_LINUX)
+        if (!corked)
+            return;
+        try
+        {
+            socket.setOption(IPPROTO_TCP, TCP_CORK, 0);
+        }
+        catch (...)
+        {
+            /// The kernel transmits corked data after ~200 ms regardless; a socket
+            /// that fails here is usually being torn down anyway.
+            DB::tryLogCurrentException("TCPCorkGuard");
+        }
+#endif
+    }
+
+    TCPCorkGuard(const TCPCorkGuard &) = delete;
+    TCPCorkGuard & operator=(const TCPCorkGuard &) = delete;
+
+private:
+    [[maybe_unused]] Poco::Net::StreamSocket & socket;
+    [[maybe_unused]] bool corked = false;
+};
+
 // This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
 // "ClickHouse client" was sent with the hello message.
@@ -929,6 +995,7 @@ void TCPHandler::runImpl()
                 /// by increasing revision.
                 {
                     std::lock_guard lock(*callback_mutex);
+                    TCPCorkGuard cork(socket());
                     sendProgress(*query_state);
                     sendSelectProfileEvents(*query_state);
                 }
@@ -943,6 +1010,7 @@ void TCPHandler::runImpl()
                     create_query && create_query->isCreateQueryWithImmediateInsertSelect())
                 {
                     std::lock_guard lock(*callback_mutex);
+                    TCPCorkGuard cork(socket());
                     sendProgress(*query_state);
                     sendSelectProfileEvents(*query_state);
                 }
@@ -953,6 +1021,7 @@ void TCPHandler::runImpl()
 
             {
                 std::lock_guard lock(*callback_mutex);
+                TCPCorkGuard cork(socket());
                 sendLogs(*query_state);
                 sendEndOfStream(*query_state);
             }
@@ -1334,6 +1403,10 @@ void TCPHandler::startInsertQuery(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
 
+    /// TableColumns + header block + logs are emitted back-to-back before the
+    /// server starts reading the client's data; coalesce them into one segment.
+    TCPCorkGuard cork(socket());
+
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
@@ -1475,6 +1548,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
             {
                 std::lock_guard lock(*callback_mutex);
+                TCPCorkGuard cork(socket());
                 if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
                     sendProgress(state);
                 sendInsertProfileEvents(state);
@@ -1578,6 +1652,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
 
         std::lock_guard lock(*callback_mutex);
+
+        /// The rest of the response is a train of small messages generated
+        /// back-to-back with no intervening client read; let them leave as
+        /// one full segment instead of one small packet each.
+        TCPCorkGuard cork(socket());
 
         receivePacketsExpectCancel(state);
 
