@@ -103,7 +103,7 @@ CREATE TABLE t_04512_nonadaptive
 )
 ENGINE = MergeTree
 ORDER BY (g, r DESC)
-SETTINGS allow_experimental_reverse_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+SETTINGS allow_experimental_reverse_key = 1, index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_04512_nonadaptive VALUES ('manual', 'ok'), ('manual', 'poor'), ('novel', 'great'), ('novel', 'great');
 
@@ -122,7 +122,7 @@ DROP TABLE IF EXISTS t_04512_nullable;
 CREATE TABLE t_04512_nullable (n Nullable(Int32))
 ENGINE = MergeTree
 ORDER BY n DESC
-SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_04512_nullable VALUES (NULL), (NULL), (NULL), (5);
 
@@ -142,7 +142,7 @@ DROP TABLE IF EXISTS t_04512_nullable2;
 CREATE TABLE t_04512_nullable2 (ts Nullable(Int32))
 ENGINE = MergeTree
 ORDER BY ts DESC
-SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_04512_nullable2 VALUES (4), (3), (NULL);
 
@@ -164,7 +164,7 @@ DROP TABLE IF EXISTS t_04512_nullable3;
 CREATE TABLE t_04512_nullable3 (a Int32, n Nullable(Int32))
 ENGINE = MergeTree
 ORDER BY (a, n DESC)
-SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0;
+SETTINGS allow_experimental_reverse_key = 1, allow_nullable_key = 1, index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 -- Storage order within a=2 is NULL, 7, 4 (NULL sorts first for descending).
 INSERT INTO t_04512_nullable3 VALUES (1, 5), (1, 3), (2, NULL), (2, 7), (2, 4), (3, 9);
