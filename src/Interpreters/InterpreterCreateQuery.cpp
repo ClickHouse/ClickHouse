@@ -2905,6 +2905,21 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// Validate that the target engine supports the table's DDL clauses BEFORE any side effect
+    /// (clearing transaction metadata / rewriting the on-disk metadata file). Otherwise a
+    /// conversion rejected later by StorageFactory (e.g. UNIQUE KEY on ReplicatedMergeTree) would
+    /// leave the persisted metadata pointing at an unloadable engine, making the table fail to
+    /// load after restart (ASYNC_LOAD_WAIT_FAILED). See issue #110854.
+    if (create.storage->unique_key)
+    {
+        String target_engine_name
+            = to_replicated ? "Replicated" + engine_name : engine_name.substr(strlen("Replicated"));
+        if (!StorageFactory::instance().getStorageFeatures(target_engine_name).supports_unique_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Engine {} doesn't support UNIQUE KEY clause, cannot attach table as {}replicated",
+                target_engine_name, to_replicated ? "" : "not ");
+    }
+
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold
     /// in-memory version metadata referencing those files, and the debug
