@@ -7,6 +7,7 @@
 #include <Common/quoteString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -1336,9 +1337,33 @@ private:
         /// Now we can gather aligned elements into two equally-sized columns and compare them all at once
         const DataTypePtr & nested_type0 = assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType();
         const DataTypePtr & nested_type1 = assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType();
+        /// `full_elements{0,1}` own the gathered (possibly `Nullable`) columns and are kept alive for the
+        /// whole function so the null maps borrowed from them stay valid.
+        ColumnPtr full_elements0 = column_array0.getDataPtr()->index(*indexes0, 0);
+        ColumnPtr full_elements1 = column_array1.getDataPtr()->index(*indexes1, 0);
+
+        /// `Nullable` elements are compared with array semantics: a NULL is a regular comparable value
+        /// that is equal only to another NULL and sorts after every non-NULL value.
+        const NullMap * null_map0 = nullptr;
+        const NullMap * null_map1 = nullptr;
+        ColumnPtr elements0 = full_elements0;
+        ColumnPtr elements1 = full_elements1;
+        /// Unwrap the null maps here and feed the underlying non-`Nullable` values to the scalar comparison, then fold the NULL
+        /// logic back in per element below.
+        if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(full_elements0.get()))
+        {
+            null_map0 = &nullable0->getNullMapData();
+            elements0 = nullable0->getNestedColumnPtr();
+        }
+        if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(full_elements1.get()))
+        {
+            null_map1 = &nullable1->getNullMapData();
+            elements1 = nullable1->getNestedColumnPtr();
+        }
+
         ColumnsWithTypeAndName element_args{
-            {column_array0.getDataPtr()->index(*indexes0, 0), nested_type0, "left"},
-            {column_array1.getDataPtr()->index(*indexes1, 0), nested_type1, "right"}};
+            {std::move(elements0), removeNullable(nested_type0), "left"},
+            {std::move(elements1), removeNullable(nested_type1), "right"}};
 
         auto run = [&](const FunctionOverloadResolverPtr & resolver) -> ColumnPtr
         {
@@ -1357,6 +1382,32 @@ private:
 
         const ColumnUInt8::Container * element_order = order_col ? &assert_cast<const ColumnUInt8 &>(*order_col).getData() : nullptr;
 
+        /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
+        auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
+
+        /// Null-safe element equality: a NULL is equal only to another NULL.
+        auto elements_equal = [&](size_t j) -> bool
+        {
+            bool n0 = elem_is_null(null_map0, j);
+            bool n1 = elem_is_null(null_map1, j);
+            if (n0 || n1)
+                return n0 && n1;
+            return element_equals[j];
+        };
+
+        /// Order of the first differing element, with NULL sorting after every non-NULL value.
+        /// `order_resolver` already encodes the direction (`less` for `<`/`<=`, `greater` for `>`/`>=`).
+        const bool order_is_less = is_less || is_less_or_equals;
+        auto element_precedes = [&](size_t j) -> UInt8
+        {
+            bool n0 = elem_is_null(null_map0, j);
+            bool n1 = elem_is_null(null_map1, j);
+            /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
+            if (n0 || n1)
+                return (order_is_less ? n1 : n0) ? 1 : 0;
+            return (*element_order)[j];
+        };
+
         auto result = ColumnUInt8::create(input_rows_count);
         auto & res = result->getData();
 
@@ -1370,7 +1421,7 @@ private:
             {
                 bool equal = length_cmp[row] == 0;
                 for (size_t k = 0; equal && k < common_length; ++k)
-                    equal = element_equals[pos + k];
+                    equal = elements_equal(pos + k);
                 res[row] = is_equals ? equal : !equal;
             }
             else
@@ -1380,9 +1431,9 @@ private:
                 bool decided = false;
                 for (size_t k = 0; k < common_length; ++k)
                 {
-                    if (!element_equals[pos + k])
+                    if (!elements_equal(pos + k))
                     {
-                        value = (*element_order)[pos + k];
+                        value = element_precedes(pos + k);
                         decided = true;
                         break;
                     }
@@ -1475,16 +1526,12 @@ public:
                 const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
                 if (left_array && right_array)
                 {
-                    auto left_nested_type = left_array->getNestedType();
-                    auto right_nested_type = right_array->getNestedType();
+                    /// Array element comparison treats inner NULLs as regular comparable values (a NULL
+                    /// is equal only to another NULL and sorts after every non-NULL value), producing a
+                    /// definite non-`Nullable` `UInt8` result.
+                    auto left_nested_type = removeNullable(left_array->getNestedType());
+                    auto right_nested_type = removeNullable(right_array->getNestedType());
 
-                    /// Use is_null_safe_cmp_mode to produce a definite non-Nullable `UInt8`, matching the
-                    /// runtime array specialization that compares elements with `FunctionIsNotDistinctFrom`.
-                    if constexpr (is_null_safe_cmp_mode)
-                    {
-                        left_nested_type = removeNullable(left_nested_type);
-                        right_nested_type = removeNullable(right_nested_type);
-                    }
                     auto element_comparison
                         = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name, is_null_safe_cmp_mode>>(params));
                     ColumnsWithTypeAndName element_args{{nullptr, left_nested_type, ""}, {nullptr, right_nested_type, ""}};
