@@ -31,7 +31,7 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 
-#if USE_AVRO && !CLICKHOUSE_CLOUD
+#if USE_AVRO
 
 namespace DB::ErrorCodes
 {

@@ -491,7 +491,7 @@ Note: converting from `String` type is always performed through parsing, if you 
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
 
-```text
+```sql
 ┌─variant───┬─variant_type─┐
 │ [1, 2, 3] │ String       │
 └───────────┴──────────────┘

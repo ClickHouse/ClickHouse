@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -51,7 +50,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
     using RocksDBStoragePtr = std::shared_ptr<StorageEmbeddedRocksDB>;
     std::map<String, std::map<String, RocksDBStoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;
@@ -136,6 +135,3 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRocksDB) }

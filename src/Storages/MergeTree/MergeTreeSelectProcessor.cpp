@@ -251,9 +251,7 @@ ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(
-            prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
-            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
+        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows, read_steps_performance_counters);
 
     auto res = task_algorithm.readFromTask(current_task);
 

@@ -690,7 +690,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
     Allow creating text indexes with the experimental `positions` argument which
     stores token positions to support exact phrase matching.
-    )", EXPERIMENTAL) \
+    )", BETA) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -2249,17 +2249,7 @@ namespace ErrorCodes
     Batch size for ZooKeeper multi-create get-part requests when cloning replica.
     )", 0) \
     DECLARE(Bool, table_readonly, false, R"(
-    If set to true, the table is in read-only mode and performs no modifications on disk.
-
-    All foreground operations that would modify the table are rejected: inserts, mutations, `OPTIMIZE`, and the data-mutating partition commands
-    (`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, as well as `MOVE PARTITION ... TO TABLE` targeting this table). Operations
-    that do not modify the table's data, such as `FREEZE`/`UNFREEZE` and `FORGET PARTITION`, remain allowed.
-
-    No background work is scheduled either: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
-    and background part moves are all suppressed. As a consequence, a table with a TTL no longer reclaims or moves its expired data while this setting
-    is enabled.
-
-    The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). It is not supported for `ReplicatedMergeTree`.
+    If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
     When enabled, INSERTs create new parts with projections.
@@ -2743,9 +2733,9 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
     }
 }
 
-VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
+std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<std::string_view> setting_names;
+    std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -2765,16 +2755,6 @@ std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
 std::string_view MergeTreeSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
-}
-
-std::string_view MergeTreeSettings::getTypeName(std::string_view name) const
-{
-    return impl->getTypeName(name);
-}
-
-String MergeTreeSettings::getDefaultValueString(std::string_view name) const
-{
-    return impl->getDefaultValueString(name);
 }
 
 SettingsTierType MergeTreeSettings::getTier(std::string_view name) const

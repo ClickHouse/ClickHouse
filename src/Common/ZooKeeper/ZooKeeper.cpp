@@ -2135,30 +2135,34 @@ Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
     request->path = path;
+    request->list_request_type = list_request_type;
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
-
-    if (list_request_type != Coordination::ListRequestType::ALL)
-        request->list_request_type = list_request_type;
-
     return request;
 }
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    if (!with_stat && !with_data)
+    // Use the derived request class when stats or data are requested
+    if (with_stat || with_data)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataRequest>();
+        request->path = path;
+        request->list_request_type = list_request_type;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+        request->watch_callback = watch;
+        request->has_watch = static_cast<bool>(watch);
+        return request;
+    }
+    else
+    {
+        // Fall back to base request if no extra data needed
         return makeListRequest(path, list_request_type, watch);
-
-    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
-    request->path = path;
-    request->list_request_type = list_request_type;
-    request->with_stat = with_stat;
-    request->with_data = with_data;
-    request->watch_callback = watch;
-    request->has_watch = static_cast<bool>(watch);
-    return request;
+    }
 }
 
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch)

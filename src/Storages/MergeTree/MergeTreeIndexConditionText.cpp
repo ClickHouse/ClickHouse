@@ -880,16 +880,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
-        /// Special case: Don't use the index if the needle is empty.
-        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
-        ///   is invalid.
-        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
-        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
-        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
-        ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
-            return false;
-
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1256,17 +1246,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            /// `multiMatchAny` is executed by vectorscan, which compiles each pattern as a NUL-terminated
-            /// C-string (`hs_compile_multi` takes no length), so it stops at the first NUL byte. The regexp
-            /// analyzer below is binary-safe and keeps the NUL as a literal, so it would extract a required
-            /// substring spanning the NUL that the matcher never requires, and the index would wrongly prune
-            /// granules that the function matches. Truncate the pattern at the first NUL to analyze exactly
-            /// what vectorscan sees. (This differs from `match`, which is executed by binary-safe re2.)
-            String pattern_string = pattern.safeGet<String>();
-            if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
-                pattern_string.resize(nul_pos);
-
-            auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
+            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
 
             if (tokens_for_queries.empty())
             {

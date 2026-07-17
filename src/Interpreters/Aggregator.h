@@ -310,7 +310,7 @@ private:
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
     /// Positions of aggregate function argument columns in the header.
-    const ColumnNumbersList aggregates_positions;
+    const std::vector<ColumnNumbers> aggregates_positions;
     /// Types of key columns from the input header.
     const DataTypes key_types;
     /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.

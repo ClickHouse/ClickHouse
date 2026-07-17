@@ -5,7 +5,6 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
@@ -116,15 +115,8 @@ void MergeTreeSink::consume(Chunk & chunk)
     std::vector<UInt128> all_partwriter_hashes;
     all_partwriter_hashes.reserve(part_blocks.size());
 
-    auto process_list_element = context->getProcessListElement();
-
     for (auto & current_block : part_blocks)
     {
-        /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with
-        /// max_partitions_per_insert_block); honor cancellation/timeout between them.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
-
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
@@ -248,15 +240,8 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
-    auto process_list_element = context->getProcessListElement();
-
     for (auto & partition : delayed_chunk->partitions)
     {
-        /// Honor cancellation/timeout between parts; finalizing each can be slow on object storage.
-        /// onFinish() skips finishDelayedChunk() when cancelled, so a normal finish never throws here.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
-
         Stopwatch watch;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
@@ -341,6 +326,11 @@ void MergeTreeSink::finishDelayedChunk()
             partition.deduplication_info = std::move(result.deduplication_info);
 
             partition.temp_part = writeNewTempPart(partition.block_with_partition);
+
+            /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+            /// could become empty after merge and then no part is created.
+            if (!partition.temp_part->part)
+                break;
 
             ++retry_times;
         }
