@@ -254,10 +254,13 @@ private:
     void fuzzTableName(ASTTableExpression & table);
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzMergeFunctionArguments(ASTFunction & fn);
     String makeBraceExpansion();
     String makeRemoteHostDescriptor();
     String makeFuzzedUrl();
     void wrapTableAsDistributed(ASTTableExpression & table);
+    void wrapTableAsMerge(ASTTableExpression & table);
+    void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);

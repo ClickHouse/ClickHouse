@@ -3292,6 +3292,8 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
 
     /// Fuzz the connection argument of cluster/remote-family functions.
     fuzzClusterFunctionArguments(*fn);
+    /// Fuzz the database/table regexp arguments of the merge() table function.
+    fuzzMergeFunctionArguments(*fn);
 }
 
 /// Fuzz the connection argument of cluster/remote/url-family table functions in place:
@@ -3326,6 +3328,45 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
     }
 }
 
+/// Interesting regexps for merge() argument fuzzing. `table_regexps` includes the empty pattern (an
+/// empty regexp matches all tables); `nonempty_regexps` omits it because REGEXP() rejects an empty string.
+static const std::vector<String> merge_databases = {"default", "system", "information_schema"};
+static const std::vector<String> nonempty_regexps = {".*", ".+", "^", "t.*", ".*[0-9].*", "^system$"};
+static const std::vector<String> table_regexps = {".*", ".+", "^", "", "t.*", ".*[0-9].*"};
+
+/// Fuzz the merge() table function arguments: merge(['db_name_or_regexp',] 'tables_regexp').
+/// Rewrites the table regexp and fuzzes/toggles the optional database (plain name or REGEXP('...')).
+void QueryFuzzer::fuzzMergeFunctionArguments(ASTFunction & fn)
+{
+    if (fn.name != "merge" || !fn.arguments || fn.arguments->children.empty() || fuzz_rand() % 5 != 0)
+        return;
+
+    auto & args = fn.arguments->children;
+
+    auto make_database_argument = [&]() -> ASTPtr
+    {
+        if (fuzz_rand() % 2 == 0)
+            return make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, merge_databases)));
+        /// REGEXP('pattern') is interpreted as a database regexp by merge().
+        return makeASTFunction("REGEXP", make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, nonempty_regexps))));
+    };
+
+    /// The tables_regexp is always the last argument.
+    args.back() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, table_regexps)));
+
+    if (args.size() == 1 && fuzz_rand() % 2 == 0)
+        /// Promote to the 2-argument form by prepending a database matcher.
+        args.insert(args.begin(), make_database_argument());
+    else if (args.size() == 2)
+    {
+        /// Either drop the database (fall back to the current database) or fuzz it.
+        if (fuzz_rand() % 3 == 0)
+            args.erase(args.begin());
+        else
+            args.front() = make_database_argument();
+    }
+}
+
 /// A brace expansion of 1..4 items — a {m..n} range or an {a,b,...} enumeration. Shared by the remote
 /// host descriptor and the url() path fuzzing.
 String QueryFuzzer::makeBraceExpansion()
@@ -3348,9 +3389,7 @@ String QueryFuzzer::makeBraceExpansion()
 }
 
 /// Build a syntactically valid IPv4 or IPv6 host descriptor for remote()/remoteSecure(): the last
-/// group uses brace expansion of 1..4 hosts, with an optional port. IPv4 expansions all resolve to
-/// loopback (127.0.0.0/8); IPv6 uses [::N] (only ::1 is loopback, the rest exercise connection-
-/// failover). Either way the host count stays bounded.
+/// group is a 1..4-host brace expansion (loopback, so bounded) with an optional port.
 String QueryFuzzer::makeRemoteHostDescriptor()
 {
     const String braces = makeBraceExpansion();
@@ -3369,10 +3408,23 @@ String QueryFuzzer::makeFuzzedUrl()
     return scheme + "://127.0.0.1:8123/data" + makeBraceExpansion();
 }
 
+/// Swap a table expression's plain-table or subquery child for the table-function AST `wrapped`,
+/// preserving the alias so references like `x.col` keep resolving.
+void QueryFuzzer::replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped)
+{
+    if (const String alias = replaced->tryGetAlias(); !alias.empty())
+        wrapped->setAlias(alias);
+
+    auto & ch = table.children;
+    ch.erase(std::remove(ch.begin(), ch.end(), replaced), ch.end());
+    table.database_and_table_name.reset();
+    table.subquery.reset();
+    table.table_function = wrapped;
+    ch.emplace_back(std::move(wrapped));
+}
+
 /// Rewrite a plain local table reference into a self-referential distributed read over loopback
-/// (remote/remoteSecure/cluster/clusterAllReplicas), exercising the whole Distributed pipeline
-/// against real data. A derived table (subquery) is distributed via view(<subquery>). FINAL cannot
-/// cross a remote read, so skip it; leave already-wrapped table functions alone.
+/// (remote/cluster-family); a subquery is distributed via view(<subquery>). Skips FINAL and table functions.
 void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
 {
     /// Wrap only plain tables and derived tables (subqueries).
@@ -3428,16 +3480,52 @@ void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
         replaced = table.subquery;
     }
 
-    /// Preserve the table alias so references like `x.col` (e.g. in JOINs) keep resolving.
-    if (const String alias = replaced->tryGetAlias(); !alias.empty())
-        wrapped->setAlias(alias);
+    replaceTableExpressionWithFunction(table, std::move(replaced), std::move(wrapped));
+}
 
-    auto & ch = table.children;
-    ch.erase(std::remove(ch.begin(), ch.end(), replaced), ch.end());
-    table.database_and_table_name.reset();
-    table.subquery.reset();
-    table.table_function = wrapped;
-    ch.emplace_back(std::move(wrapped));
+/// Rewrite a plain local table reference `db.table` into merge(db, '^table$'), exercising StorageMerge
+/// against real data. As a parameter fuzz the table matcher is sometimes widened (may match siblings)
+/// and the database sometimes emitted as REGEXP('...'). Subqueries and table functions are skipped.
+void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
+{
+    if (!table.database_and_table_name || table.table_function || fuzz_rand() % 40 != 0)
+        return;
+
+    const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
+    if (!identifier)
+        return;
+    const auto table_id = identifier->getTableId();
+    const String table_name = table_id.getTableName();
+    if (table_name.empty())
+        return;
+
+    /// The table's database (currentDatabase() if unqualified), sometimes an anchored REGEXP('...').
+    ASTPtr db_arg;
+    if (table_id.database_name.empty())
+        db_arg = makeASTFunction("currentDatabase");
+    else
+    {
+        switch (fuzz_rand() % 6)
+        {
+            case 0: db_arg = makeASTFunction("REGEXP", make_intrusive<ASTLiteral>("^" + table_id.database_name + "$")); break;
+            case 1: db_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, merge_databases))); break;
+            case 2:
+                db_arg = makeASTFunction("REGEXP", make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, nonempty_regexps))));
+                break;
+            default: db_arg = make_intrusive<ASTLiteral>(table_id.database_name);
+        }
+    }
+    /// Usually an exact anchored match; occasionally widened to also match sibling tables.
+    ASTPtr table_arg;
+    switch (fuzz_rand() % 8)
+    {
+        case 0: table_arg = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, table_regexps))); break;
+        case 1: table_arg = make_intrusive<ASTLiteral>(table_name); break;
+        case 2: table_arg = make_intrusive<ASTLiteral>("^" + table_name); break;
+        default: table_arg = make_intrusive<ASTLiteral>("^" + table_name + "$"); break;
+    }
+    ASTPtr wrapped = makeASTFunction("merge", db_arg, table_arg);
+    replaceTableExpressionWithFunction(table, table.database_and_table_name, std::move(wrapped));
 }
 
 void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
@@ -3492,56 +3580,56 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 {
     auto & changes = settings_ast.changes;
 
-    static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind
-        = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
-           {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
-           {ASTExplainQuery::ExplainKind::QueryPlan,
-            {"header",
-             "description",
-             "actions",
-             "indexes",
-             "projections",
-             "optimize",
-             "json",
-             "sorting",
-             "distributed",
-             "keep_logical_steps",
-             "input_headers",
-             "compact",
-             "column_structure",
-             "pretty"}},
-           {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph", "compact", "compact_repeated_processor_chains", "distributed"}},
-           {ASTExplainQuery::ExplainKind::Analyze,
-            {"header",
-             "description",
-             "actions",
-             "indexes",
-             "projections",
-             "sorting",
-             "input_headers",
-             "compact",
-             "column_structure",
-             "pretty",
-             "processors"}},
-           {ASTExplainQuery::ExplainKind::QueryEstimates,
-            {"header",
-             "description",
-             "actions",
-             "indexes",
-             "projections",
-             "optimize",
-             "json",
-             "sorting",
-             "distributed",
-             "keep_logical_steps",
-             "input_headers",
-             "compact",
-             "column_structure",
-             "pretty"}},
-           {ASTExplainQuery::ExplainKind::TableOverride, {}},
-           {ASTExplainQuery::ExplainKind::CurrentTransaction, {}},
-           {ASTExplainQuery::ExplainKind::WhatIf, {"empirical"}}};
+    static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind = {
+        {ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
+        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
+        {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
+        {ASTExplainQuery::ExplainKind::QueryPlan,
+         {"header",
+          "description",
+          "actions",
+          "indexes",
+          "projections",
+          "optimize",
+          "json",
+          "sorting",
+          "distributed",
+          "keep_logical_steps",
+          "input_headers",
+          "compact",
+          "column_structure",
+          "pretty"}},
+        {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph", "compact", "compact_repeated_processor_chains", "distributed"}},
+        {ASTExplainQuery::ExplainKind::Analyze,
+         {"header",
+          "description",
+          "actions",
+          "indexes",
+          "projections",
+          "sorting",
+          "input_headers",
+          "compact",
+          "column_structure",
+          "pretty",
+          "processors"}},
+        {ASTExplainQuery::ExplainKind::QueryEstimates,
+         {"header",
+          "description",
+          "actions",
+          "indexes",
+          "projections",
+          "optimize",
+          "json",
+          "sorting",
+          "distributed",
+          "keep_logical_steps",
+          "input_headers",
+          "compact",
+          "column_structure",
+          "pretty"}},
+        {ASTExplainQuery::ExplainKind::TableOverride, {}},
+        {ASTExplainQuery::ExplainKind::CurrentTransaction, {}},
+        {ASTExplainQuery::ExplainKind::WhatIf, {"empirical"}}};
 
     const auto & settings = settings_by_kind.at(kind);
     if (fuzz_rand() % 50 == 0 && !changes.empty())
@@ -5339,6 +5427,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         fuzzTableName(*table_expr);
         wrapTableAsDistributed(*table_expr);
+        wrapTableAsMerge(*table_expr);
         fuzzTableFunctionName(table_expr->table_function);
 
         /// Fuzz SAMPLE clause
