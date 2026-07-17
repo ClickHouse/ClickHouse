@@ -1913,6 +1913,9 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
+/// Legacy name of ARGUMENT_POSITIONS before #109900. Accepted as an alias so that
+/// text indexes created by older servers can still be read.
+static const String ARGUMENT_POSITIONS_LEGACY = "positions";
 
 namespace
 {
@@ -1995,6 +1998,22 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+/// Extract the phrase-search flag. Accepts both the current `support_phrase_search`
+/// argument and the legacy `positions` name (renamed in #109900) so that text indexes
+/// created by older servers can still be read. Specifying both at once is an error.
+std::optional<UInt64> extractPositionsOption(std::unordered_map<String, ASTPtr> & options)
+{
+    auto value = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS);
+    auto legacy_value = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS_LEGACY);
+
+    if (value && legacy_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Text index arguments '{}' and its legacy alias '{}' cannot be specified together",
+            ARGUMENT_POSITIONS, ARGUMENT_POSITIONS_LEGACY);
+
+    return value ? value : legacy_value;
+}
+
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
@@ -2017,7 +2036,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 positions = extractPositionsOption(options).value_or(DEFAULT_POSITIONS);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
@@ -2037,7 +2056,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
@@ -2064,11 +2083,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 positions = extractPositionsOption(options).value_or(DEFAULT_POSITIONS);
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
-    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
+    /// Skip the experimental gate on ATTACH: a table created by an older server (which used the
+    /// now-removed `allow_experimental_text_index_positions` setting) must still attach even though
+    /// the current experimental setting is not enabled in its metadata.
+    if (positions && !attach && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
