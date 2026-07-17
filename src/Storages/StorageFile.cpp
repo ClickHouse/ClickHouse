@@ -43,6 +43,9 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Storages/MergeTree/MarkRange.h>
+#include <Common/Exception.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -561,6 +564,36 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     }
 
     return file_stat;
+}
+
+/// Sub-second-precision version token for a file, folding in the inode and size so that an
+/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
+/// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
+String computeFileCacheVersionToken(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+    return fmt::format(
+        "{}.{:09}_{}_{}",
+        static_cast<Int64>(mtim_sec),
+        static_cast<Int64>(mtim_nsec),
+        static_cast<Int64>(file_stat.st_ino),
+        file_stat.st_size);
+}
+
+/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
+/// local-file read (once right after opening, once right before trusting the read for the Query
+/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
+/// and either checkpoint is caught instead of silently pinning a mismatched generation.
+bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
+{
+    struct stat current_stat{};
+    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -1671,19 +1704,27 @@ Chunk StorageFileSource::generate()
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
                 /// second that keeps the file size unchanged would otherwise reuse a stale entry.
+                current_file_cache_version = computeFileCacheVersionToken(file_stat);
+
+                /// The version token above proves a rewrite only after the file has settled.
+                /// Filesystem timestamps are coarser than the wall clock (one clock tick of
+                /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
+                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
+                /// same timestamp tick as the previous write produces an identical token. Once
+                /// the last modification is comfortably in the past, its tick is over and any
+                /// further write is guaranteed to change the token. The query condition cache
+                /// skips whole row groups based on this token, so for files modified more
+                /// recently - or with an mtime in the future, e.g. due to clock skew on a
+                /// network mount - it fails close and stays bypassed (see the gates below)
+                /// rather than risking stale results.
 #if defined(OS_DARWIN)
                 const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
 #else
                 const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
 #endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
+                static constexpr Int64 file_version_settle_seconds = 3;
+                current_file_version_settled
+                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -1697,7 +1738,20 @@ Chunk StorageFileSource::generate()
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
                 else
+                {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+
+                    /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
+                    /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
+                    /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
+                    /// by ours - could truncate and rewrite the file in that window. Re-stat right after
+                    /// opening: if the token no longer matches what we just opened, it cannot be trusted to
+                    /// pin this read's generation, so fail close (the gates below skip both the Query
+                    /// Condition Cache lookup and, per the bracketing check further down, its population).
+                    if (!storage->use_table_fd && current_file_version_settled
+                        && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                        current_file_version_settled = false;
+                }
             }
 
             size_t file_num = 0;
@@ -1725,6 +1779,61 @@ Chunk StorageFileSource::generate()
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
                 object_with_metadata.emplace(current_path, std::move(md));
+            }
+
+            /// Consult the Query Condition Cache. If a previous query with the same predicate already
+            /// determined that some row groups in this exact file version contain no matching rows,
+            /// restrict the reader to the surviving row groups (or skip the whole file). This mirrors
+            /// the object-storage read path (`StorageObjectStorageSource`). The file version token
+            /// (`current_file_cache_version`, part of `object_with_metadata`) is folded into the cache
+            /// key so an in-place rewrite yields a cache miss rather than stale results; the cache is
+            /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
+            /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
+            /// formats miss.
+            FileBucketInfoPtr buckets_to_read;
+            QueryConditionCachePtr query_condition_cache;
+            if (object_with_metadata.has_value() && current_file_version_settled
+                && format_filter_info && format_filter_info->condition_hash)
+                query_condition_cache = getContext()->getQueryConditionCache();
+
+            if (query_condition_cache)
+            {
+                const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                auto matching_marks = query_condition_cache->read(
+                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                if (matching_marks.has_value())
+                {
+                    const auto & marks = *matching_marks;
+                    std::vector<size_t> matching_row_groups;
+                    for (size_t i = 0; i < marks.size(); ++i)
+                        if (marks[i])
+                            matching_row_groups.push_back(i);
+
+                    LOG_DEBUG(
+                        getLogger("StorageFile"),
+                        "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
+                        marks.size() - matching_row_groups.size(),
+                        marks.size(),
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        current_path);
+
+                    if (matching_row_groups.empty())
+                    {
+                        /// The whole file is known not to match the condition — skip it entirely.
+                        read_buf.reset();
+                        continue;
+                    }
+
+                    if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(storage->format_name))
+                    {
+                        buckets_to_read = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                        if (!buckets_to_read)
+                        {
+                            read_buf.reset();
+                            continue;
+                        }
+                    }
+                }
             }
 
             if (object_with_metadata.has_value())
@@ -1763,6 +1872,7 @@ Chunk StorageFileSource::generate()
                     need_only_count);
             }
 
+            input_format->setBucketsToRead(buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -1837,6 +1947,64 @@ Chunk StorageFileSource::generate()
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
+
+        /// Populate the Query Condition Cache with the row groups that produced no matching rows,
+        /// so subsequent queries with the same predicate can skip them. Mirrors the write path in
+        /// `StorageObjectStorageSource`. Gated on a real local file with a settled version token
+        /// (an unsettled token cannot prove a later rewrite, so caching would risk stale results)
+        /// and a deterministic single-output predicate (`condition_hash`). Only Parquet reports
+        /// matched buckets; other formats return `nullopt` here and are silently skipped. The
+        /// re-stat bracket closes the window opened right after `createReadBuffer`: a rewrite that
+        /// happens while this file was being read would otherwise let a version token, still valid
+        /// at open time, get written together with row groups derived from bytes it no longer
+        /// describes.
+        if (input_format && current_file_cache_version.has_value() && current_file_version_settled
+            && format_filter_info && format_filter_info->condition_hash
+            && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        {
+            try
+            {
+                auto buckets_opt = input_format->getMatchedBuckets();
+                if (buckets_opt.has_value())
+                {
+                    const auto & matched_groups = buckets_opt->first;
+                    size_t total_groups = buckets_opt->second;
+
+                    std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
+                    MarkRanges unmatched_ranges;
+                    for (size_t i = 0; i < total_groups; ++i)
+                    {
+                        if (!matched_set.contains(i))
+                        {
+                            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                                unmatched_ranges.back().end++;
+                            else
+                                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+                        }
+                    }
+
+                    if (!unmatched_ranges.empty())
+                    {
+                        if (auto query_condition_cache = getContext()->getQueryConditionCache())
+                        {
+                            const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                            query_condition_cache->write(
+                                storage->getStorageID().uuid,
+                                cache_file_key,
+                                *format_filter_info->condition_hash,
+                                format_filter_info->filter_actions_dag->dumpNames(),
+                                unmatched_ranges,
+                                total_groups,
+                                /*has_final_mark=*/false);
+                        }
+                    }
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("StorageFile"), "Failed to write to query condition cache");
+            }
+        }
 
         /// Close file prematurely if stream was ended.
         reader.reset();
