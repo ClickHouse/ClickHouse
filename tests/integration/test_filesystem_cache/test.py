@@ -2066,11 +2066,17 @@ def test_reserve_granularity_reclaims_surplus_after_read(cluster):
     assert downloaded > 0
     assert range_size > downloaded, "expected at least one partially downloaded segment"
 
-    # FilesystemCacheSize tracks the space charged against the cache (sum of reserved sizes).
+    # `current_size` tracks the space charged against the cache (sum of reserved sizes) —
+    # the per-cache counterpart of the global `FilesystemCacheSize` metric, which cannot be
+    # used here because background activity on unrelated caches (e.g. the periodic statistics
+    # refresh re-downloading `statistics.packed` of another test's table after our
+    # `SYSTEM DROP FILESYSTEM CACHE`) perturbs the global value.
     # After reclaiming the reserve-ahead surplus it must equal the actually downloaded bytes,
     # not the rounded-up range. Without the fix it would equal `range_size`.
     reserved = int(
-        node.query("SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'")
+        node.query(
+            "SELECT current_size FROM system.filesystem_cache_settings WHERE cache_name = 'reserve_granularity_cache'"
+        )
     )
     assert reserved == downloaded, f"reserved {reserved} != downloaded {downloaded} (range {range_size})"
 
