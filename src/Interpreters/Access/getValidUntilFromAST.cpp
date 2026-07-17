@@ -119,46 +119,52 @@ namespace DB
         /// No query context means we are deserializing a stored access entity (`ATTACH USER` coming
         /// from replicated or disk access storage). Post-epoch deadlines are serialized as zero-padded
         /// Unix timestamp strings (see `AuthenticationData::toAST`), which denote the same instant
-        /// regardless of the server time zone and are read here as plain integers.
+        /// regardless of the server time zone and are read here as plain integers. Otherwise the value
+        /// is in the `YYYY-MM-DD hh:mm:ss[ UTC]` datetime form: a `VALID UNTIL` value coming from a
+        /// query, a stored pre-1970 deadline (which carries an explicit `UTC` suffix), an entity written
+        /// by an older version (a bare local-time string, resolved in the server time zone, as before),
+        /// or a hand-edited stored definition.
+        ///
+        /// Both forms then go through the same bounds checks below: a hand-edited definition must fail
+        /// to load, or resolve to an already-expired credential, rather than silently resolve to a
+        /// different deadline or - worse - to the `0 == no expiration` sentinel, the same way
+        /// `CREATE`/`ALTER USER` reject or normalize the value at query time. (The server still starts:
+        /// the directory scan skips a broken definition with a logged error, and a lazy per-entity read
+        /// reports the error to the operation that touches it.)
         if (!context && std::all_of(valid_until_str.begin(), valid_until_str.end(), isNumericASCII))
         {
             readIntText(time, in);
-            return time;
         }
+        else
+        {
+            /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
+            /// year field of `0` means "not specified", so it is silently replaced with the current
+            /// (or previous) year instead of being kept as-is - see the `!year` fallback in
+            /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). That would make the
+            /// bound check below pass on a deadline the caller never asked for. The documented `VALID
+            /// UNTIL` syntax (docs/en/sql-reference/statements/create/user.md) is always a delimited
+            /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
+            /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
+            /// through the "year omitted" fallback.
+            if (valid_until_str.starts_with("0000") && (valid_until_str.size() == 4 || !isNumericASCII(valid_until_str[4])))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
 
-        /// Everything else is in the `YYYY-MM-DD hh:mm:ss[ UTC]` datetime form: a `VALID UNTIL` value
-        /// coming from a query, a stored pre-1970 deadline (which carries an explicit `UTC` suffix),
-        /// an entity written by an older version (a bare local-time string, resolved in the server time
-        /// zone, as before), or a hand-edited stored definition. All of these go through the same
-        /// bounds checks: a hand-edited definition must fail to load rather than silently resolve to
-        /// a different deadline, the same way `CREATE`/`ALTER USER` reject the value at query time.
-        /// (The server still starts: the directory scan skips a broken definition with a logged
-        /// error, and a lazy per-entity read reports the error to the operation that touches it.)
-        ///
-        /// `parseDateTimeBestEffort` cannot represent an explicit year of `0000`: internally, a
-        /// year field of `0` means "not specified", so it is silently replaced with the current
-        /// (or previous) year instead of being kept as-is - see the `!year` fallback in
-        /// `parseDateTimeBestEffortImpl` (src/IO/parseDateTimeBestEffort.cpp). That would make the
-        /// bound check below pass on a deadline the caller never asked for. The documented `VALID
-        /// UNTIL` syntax (docs/en/sql-reference/statements/create/user.md) is always a delimited
-        /// date starting with the year, so a leading `0000` followed by a non-digit unambiguously
-        /// means the year field itself is `0000`; reject it explicitly rather than let it round-trip
-        /// through the "year omitted" fallback.
-        if (valid_until_str.starts_with("0000") && (valid_until_str.size() == 4 || !isNumericASCII(valid_until_str[4])))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
+            /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
+            /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
 
-        /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
-        /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
-        const auto & time_zone = DateLUT::instance("");
-        const auto & utc_time_zone = DateLUT::instance("UTC");
-
-        parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
 
         /// Deadlines before this bound cannot be represented exactly in the stored access entity
         /// encoding, so accepting them here would only be discovered later, as a silently clamped
-        /// value after a restart or replication round-trip (see `AuthenticationData::toAST`).
+        /// value after a restart or replication round-trip (see `AuthenticationData::toAST`). A stored
+        /// numeric deadline is always non-negative, so for the `ATTACH` numeric branch this only guards
+        /// against a hand-edited out-of-range value, which must fail to load rather than silently
+        /// weaken expiration.
         if (time < MIN_VALID_UNTIL_TIME)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -171,7 +177,10 @@ namespace DB
         /// (handled above) is meant to disable expiration; `VALID UNTIL '1970-01-01 00:00:00'` is a real
         /// deadline in the past, so it is normalized to the smallest expired instant, `1970-01-01 00:00:01`,
         /// the same way the `VALID FOR` path clamps a pre-epoch deadline. A deadline strictly before the
-        /// epoch is negative, stays as is (stored in datetime form), and remains distinct from `0`.
+        /// epoch is negative, stays as is (stored in datetime form), and remains distinct from `0`. This
+        /// also covers a hand-edited `ATTACH USER ... VALID UNTIL '0'` (or `'0000000000'`), which the
+        /// numeric branch above reads as `0`: it becomes an already-expired credential rather than a
+        /// non-expiring one.
         if (time == 0)
             return 1;
 

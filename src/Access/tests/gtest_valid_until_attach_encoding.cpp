@@ -144,3 +144,30 @@ TEST(ValidUntilAttachEncoding, EpochZeroDeadlineIsNotConfusedWithNoExpiration)
     ASSERT_EQ(user->authentication_methods.size(), 1u);
     EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1);
 }
+
+TEST(ValidUntilAttachEncoding, HandEditedNumericEpochZeroIsNotConfusedWithNoExpiration)
+{
+    /// A stored deadline is serialized as an all-digit Unix timestamp (see `AuthenticationData::toAST`),
+    /// which the no-context reader parses through the numeric branch. That branch must apply the same
+    /// post-parse normalization as the datetime-text form: a hand-edited `'0'` (or its zero-padded
+    /// `'0000000000'`) reads as `time_t` 0, which is the "no expiration" sentinel. The server never
+    /// writes `0` in this form (it drops the clause for a non-expiring credential), so such a value can
+    /// only be hand-edited, and it must fail closed - normalized to the smallest expired instant (1) -
+    /// rather than silently turning the credential into a non-expiring one.
+    for (const char * literal_value : {"0", "0000000000"})
+    {
+        ASTPtr literal = make_intrusive<ASTLiteral>(Field(String(literal_value)));
+        EXPECT_EQ(getValidUntilFromAST(literal, /* context= */ nullptr, /* is_interval= */ false), 1) << literal_value;
+    }
+
+    for (const char * definition :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '0';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '0000000000';"})
+    {
+        const auto entity = deserializeAccessEntity(definition);
+        const auto * user = typeid_cast<const User *>(entity.get());
+        ASSERT_NE(user, nullptr) << definition;
+        ASSERT_EQ(user->authentication_methods.size(), 1u) << definition;
+        EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1) << definition;
+    }
+}
