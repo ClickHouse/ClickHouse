@@ -2652,10 +2652,12 @@ void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
 {
     /// The codec settings below are applied without a column type, which bypasses the
     /// `allow_experimental_codecs` validation of column-level codecs; experimental codecs must not
-    /// sneak in through them. `marks_compression_codec` and `primary_key_compression_codec` are
-    /// additionally applied to untyped streams directly, so a codec that requires a column type
-    /// (e.g. `PCO`) would only fail later, at the first write — reject it here instead.
-    auto check_codec_setting = [&](const String & codec_string, bool changed, std::string_view setting_name, bool untyped_stream)
+    /// sneak in through them. They are also applied to untyped streams: `marks_compression_codec` and
+    /// `primary_key_compression_codec` compress the marks and primary key directly, and
+    /// `default_compression_codec` becomes the part default codec, which is fed raw into the statistics
+    /// and text-index streams. So a codec that requires a column type (e.g. `PCO`) would only fail later,
+    /// at the first such write — reject it here instead.
+    auto check_codec_setting = [&](const String & codec_string, bool changed, std::string_view setting_name)
     {
         if (!changed || codec_string.empty())
             return;
@@ -2668,7 +2670,7 @@ void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
                 " (with the 'allow_experimental_codecs' setting enabled)",
                 setting_name,
                 codec_string);
-        if (untyped_stream && codec->requiresColumnTypeToCompress())
+        if (codec->requiresColumnTypeToCompress())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Setting '{}' cannot use the codec {} because it requires a column type and the setting is applied to untyped data",
@@ -2677,11 +2679,11 @@ void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
     };
 
     const auto & dcc = (*this)[MergeTreeSetting::default_compression_codec];
-    check_codec_setting(dcc.value, dcc.changed, "default_compression_codec", /*untyped_stream=*/false);
+    check_codec_setting(dcc.value, dcc.changed, "default_compression_codec");
     const auto & mcc = (*this)[MergeTreeSetting::marks_compression_codec];
-    check_codec_setting(mcc.value, mcc.changed, "marks_compression_codec", /*untyped_stream=*/true);
+    check_codec_setting(mcc.value, mcc.changed, "marks_compression_codec");
     const auto & pcc = (*this)[MergeTreeSetting::primary_key_compression_codec];
-    check_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec", /*untyped_stream=*/true);
+    check_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

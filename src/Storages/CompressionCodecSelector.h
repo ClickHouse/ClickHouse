@@ -4,6 +4,7 @@
 #include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -74,12 +76,37 @@ public:
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
 
+        const auto & factory = CompressionCodecFactory::instance();
+
         for (const auto & name : keys)
         {
             if (!startsWith(name, "case"))
                 throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'case'", config_prefix, name);
 
-            elements.emplace_back(config, config_prefix + "." + name);
+            const auto & element = elements.emplace_back(config, config_prefix + "." + name);
+
+            /// The chosen codec becomes the part's default codec, which some writers (statistics and
+            /// text-index streams) feed raw, untyped data into. An experimental codec would bypass the
+            /// per-column `allow_experimental_codecs` gate, and a codec that requires a column type (e.g.
+            /// `PCO`) would only fail later, at the first such write, with a confusing error. Reject both
+            /// here — mirroring how the `default_compression_codec`, `marks_compression_codec` and
+            /// `primary_key_compression_codec` settings are validated — so a misconfiguration is reported
+            /// when the server configuration is loaded.
+            auto codec = factory.get(element.family_name, element.level);
+            if (codec->isExperimental())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The '{}' configuration cannot use the experimental codec {}. Experimental codecs can only be"
+                    " specified per column (with the 'allow_experimental_codecs' setting enabled)",
+                    config_prefix,
+                    element.family_name);
+            if (codec->requiresColumnTypeToCompress())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The '{}' configuration cannot use the codec {} because it requires a column type and is applied"
+                    " to untyped data",
+                    config_prefix,
+                    element.family_name);
         }
     }
 
