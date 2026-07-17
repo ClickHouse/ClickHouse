@@ -20,3 +20,11 @@ CREATE TABLE t_empty_polygon (a Polygon) ENGINE = Memory();
 INSERT INTO t_empty_polygon VALUES ([]);
 SELECT hex(wkb(a)), a FROM t_empty_polygon;
 DROP TABLE t_empty_polygon;
+
+-- A column already holding the non-canonical [[]] shape (one empty ring, e.g. rows
+-- written by an older build) must still serialize to canonical WKB via wkb().
+DROP TABLE IF EXISTS t_noncanon_polygon;
+CREATE TABLE t_noncanon_polygon (a Polygon) ENGINE = Memory();
+INSERT INTO t_noncanon_polygon VALUES ([[]]);
+SELECT hex(wkb(a)) FROM t_noncanon_polygon;
+DROP TABLE t_noncanon_polygon;
