@@ -80,5 +80,23 @@ SELECT id, toTypeName(id) FROM t_narrow INNER JOIN t_wide USING (id) ORDER BY id
 DROP TABLE t_narrow;
 DROP TABLE t_wide;
 
+-- The relaxation matches a direct `equals` of the two resolved columns in the nearest join's ON; it
+-- does not chase a transitive equivalence class through an intermediate table. In a multi-way chain
+-- whose later ON equates a key that is not the exposed left representative, the reference stays
+-- ambiguous by design: here the left subtree (t1 INNER JOIN t2) exposes `id` as `t1.id`, but the
+-- second ON equates `t2.id` with `t3.id`, so a direct `t1.id = t3.id` is absent and no relaxation
+-- applies. Resolving this would require following the equivalence class `t1.id = t2.id = t3.id`
+-- across the left subtree, which is deliberately out of scope.
+DROP TABLE IF EXISTS t3;
+CREATE TABLE t3 (id Int32, v Int32) ENGINE = Memory;
+INSERT INTO t3 VALUES (2, 302), (3, 303), (5, 305);
+
+SELECT id FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t2.id = t3.id; -- { serverError AMBIGUOUS_IDENTIFIER }
+
+-- But when the later ON equates the exposed representative (t1.id) directly, it resolves as expected.
+SELECT id FROM t1 INNER JOIN t2 ON t1.id = t2.id INNER JOIN t3 ON t1.id = t3.id ORDER BY id;
+
+DROP TABLE t3;
+
 DROP TABLE t1;
 DROP TABLE t2;
