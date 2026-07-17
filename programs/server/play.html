@@ -8654,36 +8654,64 @@ async function tokenize(query) {
 /// framing untouched (its framing applies alone) and to refuse a query that turns framing off (this
 /// page renders only the framed path). Returns `{ user_framing, user_disables_framing }`.
 ///
-/// The detection walks the lexer tokens rather than matching the raw text: `framing_output_format`
-/// counts only as a real assignment - a `BareWord` immediately followed by `=` - so an occurrence
-/// inside a string literal or a comment is ignored. A plain regex is fooled by e.g.
-/// `SELECT 'framing_output_format = None'` (refused as if it disabled framing) or
+/// The detection walks the lexer tokens rather than matching the raw text, and it counts
+/// `framing_output_format = value` only when it appears in a real settings context: a top-level
+/// `SETTINGS` clause (at bracket depth 0) or a standalone `SET` statement (the setting is the leading
+/// keyword). An occurrence inside a string literal, a comment, a subquery's own `SETTINGS`, or the
+/// query body as an ordinary comparison is ignored. A plain regex is fooled by e.g.
+/// `SELECT 'framing_output_format = None'` (refused as if it disabled framing),
 /// `SELECT 'framing_output_format'` (framing silently dropped, so the compact default renders as raw
-/// text instead of a table). Falls back to a text match only when WebAssembly - hence the lexer - is
-/// unavailable, mirroring `getQueryUnderCursor`.
+/// text instead of a table), or `SELECT framing_output_format = 'None' FROM values(...)` (a boolean
+/// comparison refused as if it turned framing off). The `SETTINGS` clause may follow the `FORMAT`
+/// clause (`SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'None'` is valid). Falls back to a
+/// best-effort text match only when WebAssembly - hence the lexer - is unavailable, mirroring
+/// `getQueryUnderCursor`.
 async function detectFramingSetting(query)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        const disables = /\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
-        return { user_framing: !disables && /\bframing_output_format\b/i.test(query), user_disables_framing: disables };
+        /// Without the lexer, require a `SETTINGS`/`SET` keyword before the assignment so that a bare
+        /// comparison in the query body is not mistaken for a setting.
+        const has_setting = /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=/i.test(query);
+        const disables = has_setting && /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
+        return { user_framing: has_setting && !disables, user_disables_framing: disables };
     }
 
     const tokens = (await tokenize(query)).filter(t => t.significant);
-    for (let i = 0; i + 1 < tokens.length; ++i) {
-        if (tokens[i].type === TT.BareWord
-            && tokens[i].token.toLowerCase() === 'framing_output_format'
-            && tokens[i + 1].type === TT.Equals) {
-            /// The value is the next significant token; a string literal carries its surrounding quotes.
-            const value_token = tokens[i + 2];
-            let value = value_token ? value_token.token : '';
-            if (value_token && value_token.type === TT.StringLiteral) {
-                value = value.slice(1, -1);
+    let depth = 0;
+    let in_settings = false;
+    /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
+    /// recognized per statement.
+    let at_statement_start = true;
+    for (let i = 0; i < tokens.length; ++i) {
+        const t = tokens[i];
+        const is_top_level_semicolon = depth === 0 && t.type === TT.Semicolon;
+        if (OPENING_BRACKETS.has(t.type)) {
+            ++depth;
+        } else if (CLOSING_BRACKETS.has(t.type)) {
+            if (depth > 0) --depth;
+        } else if (is_top_level_semicolon) {
+            in_settings = false;
+        } else if (t.type === TT.BareWord && depth === 0) {
+            const lower = t.token.toLowerCase();
+            if (lower === 'settings' || (lower === 'set' && at_statement_start)) {
+                in_settings = true;
+            } else if (in_settings
+                && lower === 'framing_output_format'
+                && tokens[i + 1] && tokens[i + 1].type === TT.Equals) {
+                /// The value is the next significant token; a string literal carries its surrounding quotes.
+                const value_token = tokens[i + 2];
+                let value = value_token ? value_token.token : '';
+                if (value_token && value_token.type === TT.StringLiteral) {
+                    value = value.slice(1, -1);
+                }
+                if (value.toLowerCase() === 'none') {
+                    return { user_framing: false, user_disables_framing: true };
+                }
+                return { user_framing: true, user_disables_framing: false };
             }
-            if (value.toLowerCase() === 'none') {
-                return { user_framing: false, user_disables_framing: true };
-            }
-            return { user_framing: true, user_disables_framing: false };
         }
+        /// The next token starts a new statement only right after a top-level `;`.
+        at_statement_start = is_top_level_semicolon;
     }
     return { user_framing: false, user_disables_framing: false };
 }
@@ -8694,25 +8722,44 @@ async function detectFramingSetting(query)
 /// (whose charts are rendered from the whole response rather than streamed).
 ///
 /// Like `detectFramingSetting`, the detection walks the lexer tokens rather than matching the raw
-/// text: `FORMAT` counts only as a real clause - a `BareWord` `format` immediately followed by the
-/// format name (another `BareWord`) - so an occurrence inside a string literal or a comment is
-/// ignored. A plain regex is fooled by e.g. `SELECT 'FORMAT JSONCompactColumns'`, which would be
-/// taken as a format clause and make `use_framing` false, silently dropping the page's own
-/// `EventStream` request and the streamed `log` / `profile_events` packets. Falls back to a text
-/// match only when WebAssembly - hence the lexer - is unavailable, mirroring `getQueryUnderCursor`.
+/// text, and it counts `FORMAT` only as a real trailing clause: a `BareWord` `format` at bracket
+/// depth 0, immediately followed by the format name (another `BareWord`), after which the query has
+/// nothing more except an optional statement-terminating `;` or a trailing `SETTINGS` clause (the
+/// `FORMAT` and `SETTINGS` clauses may appear in either order). This ignores a `FORMAT` mention
+/// inside a string literal or a comment and, crucially, a column named `format` in the query body:
+/// a plain regex is fooled by e.g. `SELECT 'FORMAT JSONCompactColumns'` or
+/// `SELECT format JSONCompactColumns FROM values('format UInt8', (1))` (a column aliased as
+/// `JSONCompactColumns`), either of which would make `use_framing` false and silently drop the page's
+/// own `EventStream` request and the streamed `log` / `profile_events` packets. Falls back to a
+/// best-effort text match only when WebAssembly - hence the lexer - is unavailable, mirroring
+/// `getQueryUnderCursor`.
 async function detectExplicitFormat(query)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        const m = query.match(/\bFORMAT\s+(\w+)/i);
+        const m = query.match(/\bFORMAT\s+(\w+)\s*(?:;|\bSETTINGS\b|$)/i);
         return m ? m[1] : null;
     }
 
     const tokens = (await tokenize(query)).filter(t => t.significant);
+    let depth = 0;
     for (let i = 0; i + 1 < tokens.length; ++i) {
-        if (tokens[i].type === TT.BareWord
-            && tokens[i].token.toLowerCase() === 'format'
+        const t = tokens[i];
+        if (OPENING_BRACKETS.has(t.type)) {
+            ++depth;
+        } else if (CLOSING_BRACKETS.has(t.type)) {
+            if (depth > 0) --depth;
+        } else if (depth === 0
+            && t.type === TT.BareWord
+            && t.token.toLowerCase() === 'format'
             && tokens[i + 1].type === TT.BareWord) {
-            return tokens[i + 1].token;
+            /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
+            /// `SETTINGS` list may follow the format name.
+            const after = tokens[i + 2];
+            if (!after
+                || after.type === TT.Semicolon
+                || (after.type === TT.BareWord && after.token.toLowerCase() === 'settings')) {
+                return tokens[i + 1].token;
+            }
         }
     }
     return null;

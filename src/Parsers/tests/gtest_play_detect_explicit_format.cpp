@@ -12,14 +12,19 @@
   *
   * The Web UI decides whether a query has a real `FORMAT` clause - to know whether the page's
   * default format applies (and hence whether to request extremes) and whether to opt out of framing
-  * for `JSONCompactColumns`. A plain text match is fooled by a `FORMAT` mention inside a string
-  * literal or a comment, e.g. `SELECT 'FORMAT JSONCompactColumns'`, which would be taken as a real
-  * clause and silently drop the page's own `EventStream` request. Walking the lexer tokens ignores
-  * such occurrences.
+  * for `JSONCompactColumns`.
   *
   * The detection tokenizes the query with the ClickHouse `Lexer` (compiled to WebAssembly from
-  * `src/Parsers/Lexer.cpp` - the very same source exercised here) and looks for a real clause: a
-  * `BareWord` `format` immediately followed by another `BareWord` (the format name).
+  * `src/Parsers/Lexer.cpp` - the very same source exercised here) and counts `FORMAT` only as a real
+  * trailing clause: a `BareWord` `format` at bracket depth 0, immediately followed by the format name
+  * (another `BareWord`), after which the query has nothing more except an optional `;` or a trailing
+  * `SETTINGS` clause (the `FORMAT` and `SETTINGS` clauses may appear in either order). A plain text
+  * match is fooled by a `FORMAT` mention inside a string literal or a comment, e.g.
+  * `SELECT 'FORMAT JSONCompactColumns'`, and - crucially - by a column named `format` in the query
+  * body, e.g. `SELECT format JSONCompactColumns FROM values('format UInt8', (1))` (a column aliased
+  * as `JSONCompactColumns`). Either would be taken as a real clause and silently drop the page's own
+  * `EventStream` request. Walking the lexer tokens with the trailing-clause constraint ignores such
+  * occurrences.
   *
   * There is no JavaScript/WebAssembly runtime in CI, so we cannot run the browser code directly.
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
@@ -59,18 +64,53 @@ std::vector<Tok> tokenizeSignificant(const std::string & query)
     return tokens;
 }
 
+/// Mirror of `OPENING_BRACKETS` / `CLOSING_BRACKETS` in play.html.
+bool isOpeningBracket(DB::TokenType type)
+{
+    return type == DB::TokenType::OpeningRoundBracket
+        || type == DB::TokenType::OpeningSquareBracket
+        || type == DB::TokenType::OpeningCurlyBrace;
+}
+
+bool isClosingBracket(DB::TokenType type)
+{
+    return type == DB::TokenType::ClosingRoundBracket
+        || type == DB::TokenType::ClosingSquareBracket
+        || type == DB::TokenType::ClosingCurlyBrace;
+}
+
 /// Faithful port of `detectExplicitFormat` from play.html. Returns the format name, or `nullopt`
 /// when the query has no real `FORMAT` clause.
 std::optional<std::string> detectExplicitFormat(const std::string & query)
 {
     const std::vector<Tok> tokens = tokenizeSignificant(query);
+    int depth = 0;
     for (size_t i = 0; i + 1 < tokens.size(); ++i)
     {
-        if (tokens[i].type == DB::TokenType::BareWord
-            && toLower(tokens[i].text) == "format"
+        const Tok & t = tokens[i];
+        if (isOpeningBracket(t.type))
+        {
+            ++depth;
+        }
+        else if (isClosingBracket(t.type))
+        {
+            if (depth > 0)
+                --depth;
+        }
+        else if (depth == 0
+            && t.type == DB::TokenType::BareWord
+            && toLower(t.text) == "format"
             && tokens[i + 1].type == DB::TokenType::BareWord)
         {
-            return tokens[i + 1].text;
+            /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
+            /// `SETTINGS` list may follow the format name.
+            const bool has_after = i + 2 < tokens.size();
+            if (!has_after
+                || tokens[i + 2].type == DB::TokenType::Semicolon
+                || (tokens[i + 2].type == DB::TokenType::BareWord && toLower(tokens[i + 2].text) == "settings"))
+            {
+                return tokens[i + 1].text;
+            }
         }
     }
     return std::nullopt;
@@ -103,6 +143,10 @@ TEST(PlayDetectExplicitFormat, RealFormatClause)
     expectFormat("INSERT INTO t FORMAT CSV", "CSV");
     /// A format name that is also a SQL keyword (`Values`) is still returned.
     expectFormat("INSERT INTO t FORMAT Values", "Values");
+    /// A trailing `;` still ends the clause.
+    expectFormat("SELECT 1 FORMAT JSON;", "JSON");
+    /// The `SETTINGS` clause may follow the `FORMAT` clause.
+    expectFormat("SELECT 1 FORMAT TSV SETTINGS max_threads = 1", "TSV");
 }
 
 TEST(PlayDetectExplicitFormat, StringLiteralIsNotAFormatClause)
@@ -111,6 +155,14 @@ TEST(PlayDetectExplicitFormat, StringLiteralIsNotAFormatClause)
     /// clause, otherwise the page opts out of its own framing.
     expectFormat("SELECT 'FORMAT JSONCompactColumns'", std::nullopt);
     expectFormat("SELECT 'FORMAT JSON' AS x", std::nullopt);
+}
+
+TEST(PlayDetectExplicitFormat, IdentifierInBodyIsNotAFormatClause)
+{
+    /// The reported bug: `format <name>` in the query body (a column named `format` with an alias)
+    /// is not an output `FORMAT` clause - more of the query follows the candidate name.
+    expectFormat("SELECT format JSONCompactColumns FROM values('format UInt8', (1))", std::nullopt);
+    expectFormat("SELECT format AS x FROM t", std::nullopt);
 }
 
 TEST(PlayDetectExplicitFormat, CommentIsNotAFormatClause)
