@@ -185,16 +185,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 {
     checkStackSize();
 
-    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-
     /// Since we're passing a pre-analyzed query tree (not AST), the interpreter won't run
     /// query tree passes anyway. We must NOT set ignoreASTOptimizations() here because it
     /// causes isASTLevelOptimizationAllowed() to return false in PlannerContext, which changes
     /// how constant node names are generated (using source expression instead of _CAST wrapper),
     /// leading to column name mismatches with the expected header.
     auto select_query_options = SelectQueryOptions(processed_stage);
+    select_query_options.is_local_shard_plan
+        = processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Positional arguments in the outer query were already resolved by the initiator.
     /// Use a context flag instead of disabling enable_positional_arguments so that

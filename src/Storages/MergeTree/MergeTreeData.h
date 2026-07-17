@@ -1052,6 +1052,9 @@ public:
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
+    /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.
+    static bool sortingKeyChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key);
+
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
