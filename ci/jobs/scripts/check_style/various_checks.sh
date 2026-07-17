@@ -113,6 +113,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionJoinGet.cpp
     -e /generateSerialID.cpp
     -e /evalMLMethod.cpp
+    -e /FunctionNaiveBayesClassifier.cpp
     -e /FunctionBinaryArithmetic.h
     -e /FunctionUnaryArithmetic.h
     -e /ITupleFunction.h
