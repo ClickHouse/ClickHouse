@@ -13,7 +13,6 @@ the data is correct.
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", with_zookeeper=True, stay_alive=True)
