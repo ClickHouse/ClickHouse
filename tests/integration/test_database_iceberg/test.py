@@ -186,6 +186,7 @@ def started_cluster():
                 "configs/backups.xml",
                 "configs/cluster.xml",
                 "configs/text_log.xml",
+                "configs/display_secrets.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -859,6 +860,63 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
+def test_optimize_manifest_with_catalog(started_cluster):
+    # OPTIMIZE TABLE ... MANIFEST on a catalog-managed table must consolidate the per-insert manifests
+    # and commit the new snapshot back through the catalog, without changing the data.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_optimize_manifest_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    # Unpartitioned table, so every per-insert data manifest can consolidate into a single one.
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # Several separate inserts -> several snapshots, each adding its own data manifest.
+    num_inserts = 5
+    for i in range(num_inserts):
+        node.query(
+            f"INSERT INTO {table_ref} VALUES (NULL, 'sym{i}', {100 + i}, {200 + i}, tuple('bot'));",
+            settings=write_settings,
+        )
+
+    def current_snapshot_id():
+        # Read the current snapshot from the catalog's metadata.json (avoids parsing the manifest-list
+        # Avro, which pyiceberg rejects because ClickHouse omits field-ids there).
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        assert table.current_snapshot() is not None, "expected a current snapshot after inserts"
+        return table.metadata.current_snapshot_id
+
+    snapshot_id_before = current_snapshot_id()
+    rows_before = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+
+    node.query(
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # The compaction must commit a new (replace) snapshot back through the catalog.
+    assert current_snapshot_id() != snapshot_id_before, (
+        "OPTIMIZE TABLE ... MANIFEST did not commit a new snapshot through the catalog"
+    )
+
+    # The metadata-only rewrite must not change the data.
+    rows_after = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+    assert rows_after == rows_before
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [
@@ -1130,22 +1188,27 @@ def test_system_tables_with_nullptr_table(started_cluster):
     node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
 
     try:
-        ## This triggers getFilteredTables with engine_column populated (the crash site).
+        ## getFilteredTables with engine_column populated (a former crash site). The table
+        ## whose storage object could not be resolved is now KEPT in the listing with an empty
+        ## engine, rather than being silently dropped.
         result = node.query(
-            f"SELECT engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
-        ## With the failpoint, all tables return nullptr so we get empty result.
-        assert result.strip() == ""
+        assert table_name in result
+        ## engine is empty for the unresolved table (nothing after the name + tab).
+        assert f"{table_name}\t" in result or f"{table_name}." in result
 
-        ## This triggers the fillData main loop path.
+        ## fillData main loop path: the row is present (not dropped) even though every
+        ## storage-dependent column is defaulted.
         result = node.query(
-            f"SELECT * FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
-        assert result.strip() == ""
+        assert int(result.strip()) >= 1
 
-        ## Also test with count() to exercise a different code path.
+        ## A predicate on engine still filters correctly: the unresolved table has an empty
+        ## engine, so it does not match a concrete engine pattern.
         result = node.query(
             f"SELECT count(engine) FROM system.tables WHERE database = '{CATALOG_NAME}' "
             f"AND engine LIKE '%ReplicatedMergeTree' "
@@ -1166,6 +1229,192 @@ def test_system_tables_with_nullptr_table(started_cluster):
     assert int(result.strip()) > 0
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/110032.
+
+    When a table's metadata is unresolvable, a system.tables scan of the whole
+    DataLakeCatalog database must not abort (with database_datalake_require_metadata_access=1)
+    nor silently drop the table (with =0). Either way the table stays listed by name, with
+    default/empty values for the storage-dependent columns.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## Simulate a per-table metadata resolution failure (throws).
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+
+    try:
+        for require in (1, 0):
+            settings = (
+                f"SETTINGS show_data_lake_catalogs_in_system_tables = 1, "
+                f"database_datalake_require_metadata_access = {require}"
+            )
+
+            ## Name-only fast path always worked; still lists the table.
+            result = node.query(
+                f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"name-only path, require={require}"
+
+            ## The whole-database scan requesting a storage-dependent column must NOT abort
+            ## and must NOT drop the table -- it is kept with an empty engine.
+            result = node.query(
+                f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"full scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert int(result.strip()) >= 1, f"count, require={require}"
+
+            ## total_rows (a per-column stat that needs the opened storage) is defaulted, not fatal.
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND total_rows IS NULL {settings}"
+            )
+            assert int(result.strip()) >= 1, f"total_rows default, require={require}"
+
+            ## parameterized_view_parameters needs the opened storage too. Selecting it alongside
+            ## other columns must keep the column aligned (defaulted to an empty array), not abort.
+            result = node.query(
+                f"SELECT name, parameterized_view_parameters FROM system.tables "
+                f"WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"parameterized_view_parameters scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND empty(parameterized_view_parameters) {settings}"
+            )
+            assert int(result.strip()) >= 1, f"parameterized_view_parameters default, require={require}"
+
+            ## create_table_query / engine_full / as_select re-enter the catalog metadata query
+            ## for a null-storage row. Selecting them must not re-throw and abort the scan; the
+            ## columns are defaulted to empty strings for the unresolvable table.
+            result = node.query(
+                f"SELECT name, create_table_query, engine_full, as_select FROM system.tables "
+                f"WHERE database = '{CATALOG_NAME}' {settings}"
+            )
+            assert table_name in result, f"create_table_query scan, require={require}"
+
+            result = node.query(
+                f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+                f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
+            )
+            assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## Direct access to the broken table still surfaces the error (query_and_get_error already
+    ## asserts the query failed; here we check it is the injected metadata failure).
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        assert "Injected metadata resolution failure" in node.query_and_get_error(
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` "
+            f"SETTINGS database_datalake_require_metadata_access = 1"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):
+    """
+    Regression test for the StorageMerge consumer of DatabaseDataLake::getTablesIterator.
+
+    Only system.tables (getTablesIteratorWithHint) keeps a row with a null storage object
+    for a table whose metadata is unresolvable. Every other consumer -- StorageMerge in
+    particular -- dereferences the storage object of every iterated row unconditionally
+    (ReadFromMerge::getSelectedTables skips null storage with `continue` without advancing
+    the iterator, so it would loop forever; traverseTablesUntil callers such as
+    supportsPrewhere / totalRows deref the table directly). getTablesIterator therefore must
+    NOT yield null-storage rows: it propagates the error when
+    database_datalake_require_metadata_access=1 and drops the unresolved table otherwise.
+
+    A SELECT through a Merge table over the catalog with one broken table must fail cleanly
+    or return only the resolvable tables' rows, never hang or crash during planning.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_merge_unresolvable"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "broken_table"
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## An explicitly-created Merge table with a declared structure skips schema inference, so a
+    ## SELECT through it reaches ReadFromMerge::getSelectedTables directly -- the read path the
+    ## bot flagged, where a null-storage iterator row would spin forever (`if (!storage)
+    ## continue;` never advances the iterator). (The merge() table function cannot exercise this
+    ## because it forces schema inference first, which resolves/errors before the read path.)
+    node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
+    node.query(
+        f"CREATE TABLE default.merge_over_datalake (symbol Nullable(String)) "
+        f"ENGINE = Merge('{CATALOG_NAME}', '.*broken_table.*')"
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+
+    ## Pre-fix, getTablesIterator handed StorageMerge a null-storage iterator row for the
+    ## broken table; ReadFromMerge::getSelectedTables then spun forever (`if (!storage)
+    ## continue;` never advances the iterator), so the SELECT hung. With the fix that row is
+    ## never yielded to StorageMerge -- the error is propagated (require_metadata_access
+    ## defaults to 1 in the storage context) instead. Either way the query must COMPLETE
+    ## within the timeout (a hang would trip the timeout and fail the test) and the server
+    ## must survive. A generous-but-bounded timeout converts the pre-fix hang into a clean
+    ## test failure rather than hanging the whole job.
+    def run_merge_select(require):
+        ## Completes (error or result) within the timeout == no infinite loop; return the
+        ## outcome text for a sanity assertion. A hang raises and fails the test.
+        try:
+            return node.query(
+                "SELECT count() FROM default.merge_over_datalake "
+                f"SETTINGS database_datalake_require_metadata_access = {require}",
+                timeout=60,
+            ).strip()
+        except QueryRuntimeException as e:
+            return str(e)
+
+    try:
+        for require in (1, 0):
+            outcome = run_merge_select(require)
+            ## Either a clean numeric result (unresolved table dropped -> 0 rows) or the
+            ## injected metadata error -- never a hang, never a crash/LOGICAL_ERROR.
+            assert (
+                outcome.isdigit()
+                or "Injected metadata resolution failure" in outcome
+                or "metadata" in outcome
+            ), f"require={require}: {outcome}"
+            assert "LOGICAL_ERROR" not in outcome, f"require={require}: {outcome}"
+
+            ## Server is still alive (i.e. no crash from a null-storage deref).
+            assert node.query("SELECT 1").strip() == "1", f"require={require}"
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+        node.query("DROP TABLE IF EXISTS default.merge_over_datalake")
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
 
 def test_delete_on_lazy_initialized_table(started_cluster):
     """
@@ -1465,3 +1714,170 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def test_alter_database_settings_not_supported(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"iceberg_alter_settings_{uuid.uuid4().hex}"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    fake_token = f"fake_secret_token_{uuid.uuid4().hex}"
+
+    qid_alter = uuid.uuid4().hex
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other_warehouse'"
+    )
+    assert "BAD_ARGUMENTS" in error
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = '{fake_token}'",
+        query_id=qid_alter,
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING no_such_setting = 1"
+    )
+    assert "BAD_ARGUMENTS" in error or "UNKNOWN_SETTING" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "other_warehouse" not in show_result
+    assert "onelake_bearer_token" not in show_result
+    node.query(
+        f"SELECT name FROM system.tables WHERE database = '{db_name}' SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    )
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    logged_query = node.query(
+        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid_alter}'"
+    )
+    assert fake_token not in logged_query
+    assert "[HIDDEN]" in logged_query
+
+    node.query(f"DROP DATABASE {db_name}")
+
+    glue_db_name = f"glue_alter_settings_{uuid.uuid4().hex}"
+    node.query(
+        f"""
+        ATTACH DATABASE {glue_db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x'
+        """
+    )
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {glue_db_name} MODIFY SETTING region = 'eu-west-1'"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    node.query(f"DROP DATABASE {glue_db_name}")
+
+
+def test_alter_database_settings_rest_auth_header(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"rest_alter_auth_header_{uuid.uuid4().hex}"
+    old_header = f"Authorization: Bearer old_{uuid.uuid4().hex}"
+    new_header = f"Authorization: Bearer new_{uuid.uuid4().hex}"
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-rest:1/api')
+        SETTINGS catalog_type = 'rest', warehouse = 'wh', auth_header = '{old_header}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING auth_header = '{new_header}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING catalog_credential = 'id:secret'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert new_header not in show_result
+    assert "[HIDDEN]" in show_result
+
+    node.restart_clickhouse()
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_header in engine_full_with_secrets
+    assert old_header not in engine_full_with_secrets
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
+def test_alter_database_settings_onelake_persistence(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"onelake_alter_persist_{uuid.uuid4().hex}"
+    old_token = f"secret_token_{uuid.uuid4().hex}"
+    new_token = f"secret_token_{uuid.uuid4().hex}"
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-0', onelake_tenant_id = 'tenant-1', onelake_bearer_token = '{old_token}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_tenant_id = 'tenant-2', onelake_bearer_token = '{new_token}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_client_id = 'client-1'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other_warehouse'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = ''"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "tenant-2" in show_result
+    assert new_token not in show_result
+    assert old_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert "tenant-2" in engine_full_with_secrets
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    node.restart_clickhouse()
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "tenant-2" in show_result
+    assert "tenant-0" not in show_result
+    assert "tenant-1" not in show_result
+    assert new_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert "tenant-2" in engine_full
+    assert "tenant-0" not in engine_full
+    assert "tenant-1" not in engine_full
+    assert new_token not in engine_full
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    node.query(f"DROP DATABASE {db_name}")

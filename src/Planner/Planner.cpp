@@ -1161,7 +1161,8 @@ void addPreliminaryLimitStep(
     QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    bool do_not_skip_offset)
+    bool do_not_skip_offset,
+    bool is_shard_limit)
 {
     UInt64 limit_offset = query_analysis_result.limit_offset;
     UInt64 limit_length = query_analysis_result.limit_length;
@@ -1184,6 +1185,8 @@ void addPreliminaryLimitStep(
     {
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
+        if (is_shard_limit)
+            limit->markAsShardLimit();
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
@@ -1193,6 +1196,8 @@ void addPreliminaryLimitStep(
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
+        if (is_shard_limit)
+            limit->markAsShardLimit();
 
         query_plan.addStep(std::move(limit));
     }
@@ -1203,6 +1208,8 @@ void addPreliminaryLimitStep(
         query_plan.addStep(std::move(offset));
 
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
+        if (is_shard_limit)
+            limit->markAsShardLimit();
         query_plan.addStep(std::move(limit));
     }
     else // if (!is_limit_length_negative && is_limit_offset_negative)
@@ -1211,8 +1218,10 @@ void addPreliminaryLimitStep(
 
         query_plan.addStep(std::move(offset));
 
-        auto limit
-            = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, 0, settings[Setting::exact_rows_before_limit]);
+        auto limit = std::make_unique<LimitStep>(
+            query_plan.getCurrentHeader(), limit_length, 0, settings[Setting::exact_rows_before_limit]);
+        if (is_shard_limit)
+            limit->markAsShardLimit();
         query_plan.addStep(std::move(limit));
     }
 }
@@ -1221,7 +1230,8 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr planner_context,
     const PlannerQueryProcessingInfo & query_processing_info,
-    const QueryTreeNodePtr & query_tree)
+    const QueryTreeNodePtr & query_tree,
+    const SelectQueryOptions & select_query_options)
 {
     const auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
@@ -1260,7 +1270,12 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     bool apply_offset = !query_processing_info.isToAggregationState();
     if (apply_prelimit)
     {
-        addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, /* do_not_skip_offset= */!apply_offset);
+        addPreliminaryLimitStep(
+            query_plan,
+            query_analysis_result,
+            planner_context,
+            /* do_not_skip_offset= */ !apply_offset,
+            select_query_options.is_local_shard_plan);
         return true;
     }
 
@@ -1344,7 +1359,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
         && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
-        addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
+    {
+        addPreliminaryLimitStep(
+            query_plan,
+            query_analysis_result,
+            planner_context,
+            /* do_not_skip_offset= */ true,
+            select_query_options.is_local_shard_plan);
+    }
 }
 
 void addWindowSteps(QueryPlan & query_plan,
@@ -2578,7 +2600,8 @@ void Planner::buildPlanForQueryNode()
             query_analysis_result,
             planner_context,
             query_processing_info,
-            query_tree);
+            query_tree,
+            select_query_options);
 
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
         if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())

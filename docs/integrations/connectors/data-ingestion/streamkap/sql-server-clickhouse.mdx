@@ -47,11 +47,12 @@ Make sure you have:
 - ClickHouse server address, port, username, and password. IP access lists in ClickHouse determine what services can connect to your ClickHouse database.[Follow the instructions here.](https://www.google.com/url?q=https://docs.streamkap.com/docs/clickhouse&sa=D&source=editors&ust=1760992472359060&usg=AOvVaw3H1XqqwvqAso_TQPNBKEhD)
 - The tables you want to stream—start with one for now
 
-## Setting Up SQL Server as a Source {#setting-up-sql-server-as-a-source}
+<Steps>
+<Step title="Creating a SQL Server Source in Streamkap" id="step-1-creating-a-sql-server-source-in-streamkap">
+<a id="setting-up-sql-server-as-a-source"></a>
 
 Let’s get into it!
 
-### Step 1: Creating a SQL Server Source in Streamkap {#step-1-creating-a-sql-server-source-in-streamkap}
 
 We’ll start by setting up the source connection. This is how Streamkap knows where to fetch changes from.
 
@@ -74,11 +75,12 @@ Here’s how you do it:
 
 When you set this up, Streamkap will connect to your SQL Server and detect tables. For this demo, we’ll pick a table with some data already streaming in, like events or transactions.
 
-## Creating a ClickHouse Destination {#creating-a-clickhouse-destination}
+</Step>
+<Step title="Add a ClickHouse Destination in Streamkap" id="step-2-add-a-clickhouse-destination-in-streamkap">
+<a id="creating-a-clickhouse-destination"></a>
 
 Now let’s wire up the destination where we’ll send all this data.
 
-### Step 2: Add a ClickHouse Destination in Streamkap {#step-2-add-a-clickhouse-destination-in-streamkap}
 
 Similar to the source, we’ll create a destination using our ClickHouse connection details.
 
@@ -108,11 +110,12 @@ ClickHouse and SQL Server sometimes don’t have the same columns—especially w
 
 Just select “schema evolution” in your destination settings. You can always tweak this later as needed.
 
-## Building the Streaming Pipeline {#building-the-streaming-pipeline}
+</Step>
+<Step title="Set up the Pipeline in Streamkap" id="step-3-set-up-the-pipeline-in-streamkap">
+<a id="building-the-streaming-pipeline"></a>
 
 With the source and destination set, it’s time for the fun part—streaming your data!
 
-### Step 3: Set up the Pipeline in Streamkap {#step-3-set-up-the-pipeline-in-streamkap}
 
 #### Pipeline Setup {#pipeline-setup}
 
@@ -142,11 +145,12 @@ For a lot of analytics cases, you might just want to start with streaming change
 
 Just pick “don’t backfill” for now unless you have a specific need.
 
-## Streaming in Action: What to Expect {#streaming-in-action-what-to-expect}
+</Step>
+<Step title="Watch the Data Stream" id="step-4-watch-the-data-stream">
+<a id="streaming-in-action-what-to-expect"></a>
 
 Now your pipeline is set up and active!
 
-### Step 4: Watch the Data Stream {#step-4-watch-the-data-stream}
 
 Here’s what happens:
 
@@ -164,6 +168,9 @@ SELECT COUNT(*) FROM analytics.events; |
 ```
 
 Expect some lag in heavy-load scenarios, but most use cases see near-real-time streaming.
+
+</Step>
+</Steps>
 
 ## Under the Hood: What’s Streamkap Actually Doing? {#under-the-hood-whats-streamkap-actually-doing}
 

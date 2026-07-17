@@ -67,6 +67,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TYPE_MISMATCH;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -262,6 +263,20 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
     auto * union_node = node->as<UnionNode>();
 
     return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
+}
+
+bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
+{
+    if (isCorrelatedQueryOrUnionNode(node))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && containsCorrelatedSubquery(child))
+            return true;
+    }
+
+    return false;
 }
 
 bool checkCorrelatedColumn(
@@ -1390,6 +1405,71 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
 {
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
+}
+
+/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
+/// types as the storage that was created from the first reference.
+///
+/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
+/// scope of that reference. Normally all clones must produce identical projection types
+/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
+/// clones is possible when the body resolves identifiers from outer scope that take
+/// different values per call site (for example, aliases from the calling subquery's
+/// projection are inlined as different constants).
+///
+/// Without this check the planner would create the storage with one set of column types
+/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
+/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
+/// silent corruption into a clear analysis-time error.
+bool verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node,
+    bool throw_on_mismatch)
+{
+    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->getProjectionColumns()
+        : subquery->as<UnionNode>()->computeProjectionColumns();
+
+    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
+    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
+
+    if (projection_columns.size() != storage_columns.size())
+    {
+        if (!throw_on_mismatch)
+            return false;
+
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
+            "but this reference resolved to {}. In scope {}",
+            cte_name, storage_columns.size(), projection_columns.size(),
+            scope_node->formatASTForErrorMessage());
+    }
+
+    auto storage_it = storage_columns.begin();
+    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
+    {
+        if (!projection_columns[i].type->equals(*storage_it->type))
+        {
+            if (!throw_on_mismatch)
+                return false;
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
+                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
+                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
+                "Materialized CTEs cannot have such dependencies. In scope {}",
+                cte_name,
+                storage_it->name,
+                storage_it->type->getName(),
+                projection_columns[i].type->getName(),
+                scope_node->formatASTForErrorMessage());
+        }
+    }
+
+    return true;
 }
 
 }
