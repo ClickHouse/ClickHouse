@@ -2457,14 +2457,16 @@ namespace
 /// The content type alone is not sufficient: raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`)
 /// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
 /// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
-/// Some formats produce raw bytes only under certain settings (for example `CustomSeparated` with a
-/// `Raw` escaping rule), which is detected with the settings-aware `checkIfOutputFormatMayProduceRawBytes`.
+/// Some formats produce raw bytes only under certain settings or headers (for example `CustomSeparated`
+/// with a `Raw` escaping rule, or `SQLInsert` with a non-UTF-8 table or column name written verbatim),
+/// which is detected with the settings-and-header-aware `checkIfOutputFormatMayProduceRawBytes`.
 bool outputFormatProducesText(
     const String & format_name,
     const std::optional<FormatSettings> & output_format_settings,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    const Block & header)
 {
-    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings))
+    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings, header))
         return false;
     const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
     return content_type.starts_with("text/") || content_type.find("charset=") != String::npos;
@@ -2475,7 +2477,8 @@ FramingFormatPtr createFramingFormatIfApplicable(
     WriteBuffer & ostr,
     const String & format_name,
     const std::optional<FormatSettings> & output_format_settings,
-    bool carries_no_payload = false)
+    bool carries_no_payload = false,
+    const Block & header = {})
 {
     if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
         return nullptr;
@@ -2505,7 +2508,7 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// (for example a mistyped `default_format` on an `INSERT`, which formats no output).
     if (!carries_no_payload)
     {
-        binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings);
+        binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings, header);
         payload_has_carriage_returns
             = FormatFactory::instance().checkIfOutputFormatMayEmitCarriageReturn(format_name, format_settings);
     }
@@ -2561,10 +2564,13 @@ struct FramingQueues
 ///    drops them instead of capturing packets that nobody drains.
 ///
 /// The queues are wired into the framing format later, once it is created (the framing format only
-/// becomes known after the output format's header is available). A framing format enabled only by a
-/// query-level `SETTINGS` clause is not known before parsing, so its queues start capturing from
-/// query execution onwards - the parse / plan phase logs are captured only when framing is requested
-/// from the session or the URL.
+/// becomes known after the output format's header is available). Anything a query enables only through
+/// its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not
+/// known before parsing, so the corresponding queues start capturing only from query execution onwards.
+/// The parse / plan / analysis phase logs and profile events are captured only when the setting comes
+/// from the session or the URL. In particular, a query that fails during analysis (before pipeline
+/// execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its
+/// `SETTINGS` clause delivers just the framed `exception` packet, not the analysis-phase logs.
 ///
 /// Does nothing unless the query runs over HTTP.
 void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQueues & queues)
@@ -2945,14 +2951,19 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
-            if (auto framing = createFramingFormatIfApplicable(context, *out_buf, format_name, output_format_settings))
+            const Block header = pipeline.getHeader();
+
+            /// The header is passed so the framing can detect output formats that write parts of the
+            /// header verbatim (for example `SQLInsert` column names), which may not be valid UTF-8.
+            if (auto framing = createFramingFormatIfApplicable(
+                    context, *out_buf, format_name, output_format_settings, /*carries_no_payload=*/ false, header))
             {
                 /// The framing format needs to know the boundaries between the formatted packets,
                 /// so parallel formatting is not applicable.
                 output_format = FormatFactory::instance().getOutputFormat(
                     format_name,
                     framing->getPayloadBuffer(),
-                    materializeBlock(pipeline.getHeader()),
+                    materializeBlock(header),
                     context,
                     output_format_settings);
 
