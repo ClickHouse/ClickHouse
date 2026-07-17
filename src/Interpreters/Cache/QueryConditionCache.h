@@ -36,15 +36,26 @@ private:
 
     struct Entry
     {
+        /// The table id is stored in all builds: `clearTable` (SYSTEM CLEAR QUERY CONDITION CACHE
+        /// FOR TABLE) selects the entries of one table, and the key is a one-way hash of it.
+        /// It is a fixed 16 bytes, unlike the strings below.
         const UUID table_id;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Store extended information only in Debug builds.
+        /// Having them in release builds is too costly.
         const String part_name;
         const UInt64 condition_hash = 42;
         const String condition;
+#endif
 
         MatchingMarks matching_marks;
         SharedMutex mutex; /// (*)
 
+        Entry(size_t mark_count_, const UUID & table_id_); /// (**)
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
+#endif
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
         ///     ClickHouse scans ranges within the same part in parallel. The first scan creates and inserts a new Key + Entry into the cache,
