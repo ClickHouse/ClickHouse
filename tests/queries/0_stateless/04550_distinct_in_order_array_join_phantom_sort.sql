@@ -19,3 +19,27 @@ FROM
 )
 ORDER BY s
 SETTINGS optimize_distinct_in_order = 1;
+
+-- The scan over the DAG outputs must skip (not abort on) the unsupported ARRAY JOIN output:
+-- an arrayJoin result listed before a preserved sorted key must not wipe the valid sort prefix
+-- and silently disable the DISTINCT / LIMIT BY in-order optimizations for that key.
+SELECT count() > 0 AS distinct_in_order_preserved
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT DISTINCT arrayJoin([1, 2]) AS x, a
+    FROM (SELECT number AS a FROM numbers(5) ORDER BY a)
+    SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1
+)
+WHERE explain ILIKE '%DistinctSortedStreamTransform%';
+
+SELECT count() > 0 AS limit_by_in_order_preserved
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT arrayJoin([1, 2]) AS x, a
+    FROM (SELECT number AS a FROM numbers(5) ORDER BY a)
+    LIMIT 1 BY a
+    SETTINGS optimize_read_in_order = 1
+)
+WHERE explain ILIKE '%LimitBySortedStreamTransform%';

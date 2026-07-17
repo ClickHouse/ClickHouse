@@ -440,13 +440,16 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
+        /// Skip (not break) any output we cannot map to a sorted input: outputs are visited in
+        /// projection order, so an unsupported one (e.g. an ARRAY JOIN result) appearing before a
+        /// preserved key must not abort the scan and wipe the still-valid sort prefix behind it.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            break;
+            continue;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            break;
+            continue;
 
         SortColumn & sort_column = sort_columns[it->second];
 
@@ -454,14 +457,14 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            break;
+            continue;
 
         if (has_functions && !isMonotonicChain(output, chain))
-            break;
+            continue;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            break;
+            continue;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;
