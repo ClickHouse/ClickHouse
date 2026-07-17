@@ -225,6 +225,8 @@
     M(IcebergCompactionThreadsActive, "Number of threads in the IcebergCompaction thread pool running a task.") \
     M(IcebergCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergCompaction thread pool.") \
     M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
+    M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
+    M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -532,6 +534,8 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(StatelessWorkerInUse, "Number of stateless workers currently in use by running queries.") \
+    M(StatelessWorkerIdle, "Number of stateless workers currently held by the server but not used by any running query.") \
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
