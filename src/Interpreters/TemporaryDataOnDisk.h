@@ -82,9 +82,6 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag);
 class TemporaryDataOnDiskScope : boost::noncopyable, public std::enable_shared_from_this<TemporaryDataOnDiskScope>
 {
 public:
-    /// Name of the gauge profile event reporting the current size of temporary data on disk for a query.
-    static constexpr auto USAGE_EVENT_NAME = "TemporaryDataOnDiskUsage";
-
     struct StatAtomic
     {
         std::atomic<size_t> compressed_size;
@@ -108,9 +105,6 @@ public:
     TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
-
-    /// Currently used amount of temporary data on disk in bytes (compressed) for this scope.
-    size_t currentCompressedSize() const { return stat.compressed_size.load(std::memory_order_relaxed); }
 protected:
     friend class TemporaryDataBuffer;
 

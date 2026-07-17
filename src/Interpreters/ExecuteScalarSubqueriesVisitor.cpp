@@ -1,6 +1,5 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
@@ -265,9 +264,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
-
-            /// Finalize write in query cache to save scalar subquery result (no-op if no cache writers exist in the pipeline)
-            io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         block = materializeBlock(block);

@@ -3,8 +3,6 @@
 #include <Core/Field.h>
 
 #include <Common/ClickHouseVersion.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <map>
 #include <vector>
@@ -22,10 +20,10 @@ namespace SettingsChangesHistory
         String reason;
     };
 
-    using SettingsChanges = VectorWithMemoryTracking<SettingChange>;
+    using SettingsChanges = std::vector<SettingChange>;
 }
 
-using VersionToSettingsChangesMap = MapWithMemoryTracking<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>;
+using VersionToSettingsChangesMap = std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>;
 
 const VersionToSettingsChangesMap & getSettingsChangesHistory();
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory();

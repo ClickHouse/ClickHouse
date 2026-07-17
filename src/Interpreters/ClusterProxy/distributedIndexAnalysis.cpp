@@ -696,7 +696,7 @@ private:
 
         while (!readers_epoll.empty())
         {
-            epoll_event event{};
+            epoll_event event;
             event.data.fd = -1;
             readers_epoll.getManyReady(1, &event, -1);
 

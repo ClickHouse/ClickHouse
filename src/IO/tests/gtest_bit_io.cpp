@@ -30,7 +30,7 @@ template <typename T>
 std::string bin(const T & value, size_t bits = sizeof(T) * 8)
 {
     static const uint8_t MAX_BITS = sizeof(T)*8;
-    chassert(bits <= MAX_BITS);
+    assert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);
@@ -223,7 +223,7 @@ INSTANTIATE_TEST_SUITE_P(Simple,
     })
 );
 
-static TestCaseParameter primes_case(uint8_t repeat_times, UInt64 pattern)
+TestCaseParameter primes_case(uint8_t repeat_times, UInt64 pattern)
 {
     std::vector<std::pair<uint8_t, UInt64>> test_data;
 

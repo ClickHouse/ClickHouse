@@ -1,6 +1,4 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -19,7 +17,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -178,24 +175,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
         }
         else
         {
-            bool is_filter_const_after = result->is_filter_const_after_push_down;
-
-            /// After push-down, the remaining expression may produce a Const filter column
-            /// even though `is_filter_const_after_push_down` is false (that flag is only set
-            /// when ALL conjunctions are pushed down). This happens when the remaining expression
-            /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
-            /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
-            /// If uncorrected, the Const output header propagates to parent steps (e.g. UnionStep)
-            /// causing a "Block structure mismatch" exception.
-            if (!is_filter_column_const_before && !is_filter_const_after && !removes_filter)
-            {
-                auto test_header = expression.updateHeader(*filter->getInputHeaders().front());
-                const auto * filter_col = test_header.findByName(filter_column_name);
-                if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
-                    is_filter_const_after = true;
-            }
-
-            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, is_filter_const_after);
+            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, result->is_filter_const_after_push_down);
         }
     }
     return result;
@@ -369,7 +349,7 @@ struct JoinActionRefPairHash
     }
 };
 
-static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
 {
     std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
@@ -392,7 +372,7 @@ static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperat
     return joining_keys;
 }
 
-static std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
     const std::vector<QueryPlan::Node *> & child_nodes,
@@ -1018,27 +998,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
-    if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
-    {
-        /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
-        /// per-group rows (and therefore the result) are identical whether it runs above or
-        /// below the LIMIT BY. But it is only safe to push when every non-empty input group
-        /// keeps at least one output row, i.e. `OFFSET 0` and `LIMIT >= 1`. Otherwise a group
-        /// can be fully discarded by the step (OFFSET past its size, or `LIMIT 0 BY`), and a
-        /// pushed key predicate would then be evaluated on rows the original query never
-        /// reached -- changing exception semantics for throwing key expressions
-        /// (e.g. `intDiv(1, key)` on a group that OFFSET would have dropped). This mirrors
-        /// AggregatingStep, where GROUP BY likewise never empties a non-empty group.
-        /// `step_changes_the_number_of_rows = true`: LIMIT BY drops rows, so
-        /// non-deterministic key predicates must NOT be pushed.
-        const auto & keys = limit_by->getColumns();
-        if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
-            return 0;
-
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
-            return updated_steps;
-    }
-
     if (typeid_cast<CreatingSetsStep *>(child.get()))
     {
         /// CreatingSets does not change header.
@@ -1168,7 +1127,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Filter - Union - Something
         ///                - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
