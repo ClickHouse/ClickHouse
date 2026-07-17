@@ -90,35 +90,16 @@ try
                     readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
                 /// Before dropping the substreams cache, verify the reference counts of the columns
                 /// shared with the result columns; see the comment near the same check in
                 /// MergeTreeReaderWide::readRows.
-                ColumnsOwnershipValidator ownership_validator;
-                ownership_validator.add(substreams_cache);
-                for (const auto & [_, states] : deserialize_states_caches)
-                    ownership_validator.add(states);
-                ownership_validator.add(deserialize_binary_bulk_state_map);
-                ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
-                ownership_validator.validate(res_columns);
-#endif
+                validateColumnsOwnership(res_columns, nullptr, nullptr, &substreams_cache, &deserialize_states_caches);
             }
         }
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
         /// The same check for the full-column reads of this granule; see the comment near the same
         /// check in MergeTreeReaderWide::readRows.
-        ColumnsOwnershipValidator ownership_validator;
-        for (const auto & [_, cached_column] : columns_cache)
-            ownership_validator.add(cached_column);
-        for (const auto & [_, cached_column] : columns_cache_for_subcolumns)
-            ownership_validator.add(cached_column);
-        for (const auto & [_, states] : deserialize_states_caches)
-            ownership_validator.add(states);
-        ownership_validator.add(deserialize_binary_bulk_state_map);
-        ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
-        ownership_validator.validate(res_columns);
-#endif
+        validateColumnsOwnership(res_columns, &columns_cache, &columns_cache_for_subcolumns, nullptr, &deserialize_states_caches);
 
         ++from_mark;
         read_rows += rows_to_read;

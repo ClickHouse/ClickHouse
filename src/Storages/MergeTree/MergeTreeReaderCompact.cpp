@@ -537,4 +537,30 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
     return !is_offsets || columns_for_offsets[column_pos]->level < ISerialization::getArrayLevel(substream);
 }
 
+void MergeTreeReaderCompact::validateColumnsOwnership(
+    [[maybe_unused]] const Columns & res_columns,
+    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * columns_cache,
+    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+    [[maybe_unused]] const ISerialization::SubstreamsCache * substreams_cache,
+    [[maybe_unused]] const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    ColumnsOwnershipValidator ownership_validator;
+    if (substreams_cache)
+        ownership_validator.add(*substreams_cache);
+    if (columns_cache)
+        for (const auto & [_, cached_column] : *columns_cache)
+            ownership_validator.add(cached_column);
+    if (columns_cache_for_subcolumns)
+        for (const auto & [_, cached_column] : *columns_cache_for_subcolumns)
+            ownership_validator.add(cached_column);
+    if (deserialize_states_caches)
+        for (const auto & [_, states] : *deserialize_states_caches)
+            ownership_validator.add(states);
+    ownership_validator.add(deserialize_binary_bulk_state_map);
+    ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
+    ownership_validator.validate(res_columns);
+#endif
+}
+
 }
