@@ -16,6 +16,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/Logger.h>
 
@@ -45,6 +47,19 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
+}
+
+void IInterpreterUnionOrSelectQuery::removeLimitOffsetSettings(ASTSelectQuery & query)
+{
+    ASTPtr settings_ast = query.settings();
+    if (!settings_ast)
+        return;
+
+    auto & settings_query = settings_ast->as<ASTSetQuery &>();
+    settings_query.changes.removeSetting("limit");
+    settings_query.changes.removeSetting("offset");
+    if (settings_query.changes.empty())
+        query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 }
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)

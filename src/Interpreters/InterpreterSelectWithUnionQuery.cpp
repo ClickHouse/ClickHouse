@@ -15,7 +15,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -53,24 +52,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-}
-
-namespace
-{
-
-void removeLimitOffsetSettings(ASTSelectQuery & query)
-{
-    ASTPtr settings_ast = query.settings();
-    if (!settings_ast)
-        return;
-
-    auto & settings_query = settings_ast->as<ASTSetQuery &>();
-    settings_query.changes.removeSetting("limit");
-    settings_query.changes.removeSetting("offset");
-    if (settings_query.changes.empty())
-        query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-}
-
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
@@ -149,10 +130,8 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     {
         /// The `limit`/`offset` settings cap the whole UNION result. Child interpreters must not see
         /// them: normal branches would apply the cap per branch, and range branches could leak it to
-        /// remote shards before LIMIT AFTER/UNTIL is evaluated on the initiator. Keep the original
-        /// values on this interpreter so buildQueryPlan adds one final settings step after UNION.
-        settings_limit_for_range = settings[Setting::limit];
-        settings_offset_for_range = settings[Setting::offset];
+        /// remote shards before LIMIT AFTER/UNTIL is evaluated on the initiator. The union's own
+        /// context keeps the original values, and buildQueryPlan adds one final settings step there.
         context_for_children = Context::createCopy(context);
         context_for_children->setSetting("limit", Field(UInt64(0)));
         context_for_children->setSetting("offset", Field(UInt64(0)));
