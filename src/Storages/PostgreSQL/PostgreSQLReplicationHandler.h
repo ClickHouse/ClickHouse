@@ -6,6 +6,7 @@
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <optional>
 #include <unordered_set>
 
 
@@ -48,6 +49,13 @@ public:
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
     std::set<String> fetchRequiredTables();
+
+    /// For the database engine on attach: the tables the engine already replicated in the previous run
+    /// (their nested tables exist on disk). The attach-time legacy-identity ownership check compares the
+    /// legacy publication against this set - not against the live PostgreSQL schema, which may contain
+    /// tables created after `CREATE DATABASE` that are not replicated without an explicit `ATTACH TABLE`.
+    /// Must be called before fetchRequiredTables() / startup() when attaching a database.
+    void setTablesReplicatedByPreviousRun(std::set<String> tables);
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
@@ -166,6 +174,10 @@ private:
     /// `tables_list` is rewritten during startup. Used to decide whether a schema-blind legacy publication
     /// (whose name carries no schema and could belong to another engine) may be adopted on attach.
     const std::unordered_set<String> replicated_schemas;
+
+    /// See setTablesReplicatedByPreviousRun(). Only provided by the database engine on attach; the
+    /// single-table engine carries its one table in `tables_list` instead.
+    std::optional<std::set<String>> tables_replicated_by_previous_run;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;

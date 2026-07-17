@@ -9,6 +9,7 @@ from helpers.postgres_utility import (
     check_tables_are_synchronized,
     get_postgres_conn,
 )
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -278,3 +279,125 @@ def test_upgrade_adopts_presalt_identity(started_cluster):
         time.sleep(1)
     assert 0 == count_replication_slots()
     assert 0 == count_publications()
+
+
+def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
+    # Same upgrade scenario as test_upgrade_adopts_presalt_identity, but for a database replicating a
+    # WHOLE schema (no `materialized_postgresql_tables_list`), where the PostgreSQL schema has GROWN
+    # since the database was created. New PostgreSQL tables are not replicated without an explicit
+    # `ATTACH TABLE`, so the engine's own pre-salt publication legitimately publishes fewer tables than
+    # the live schema contains. The attach-time ownership check must therefore compare the publication
+    # against the tables the engine replicated in the previous run (their nested tables exist on disk),
+    # not against the live schema - otherwise the engine would reject its own publication as foreign and
+    # retry forever. The never-attached table also must not be materialized on attach: it is not in the
+    # publication (no WAL is streamed for it) and it has no nested table, so materializing it would make
+    # every attach retry fail on the missing nested table.
+    pg_db = "growth_db"
+    mat_db = "growth_database"
+    presalt_publication = f"{pg_db}_ch_publication"
+
+    server_conn = get_postgres_conn(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, database=False
+    )
+    server_cursor = server_conn.cursor()
+    server_cursor.execute(f'DROP DATABASE IF EXISTS "{pg_db}" WITH (FORCE)')
+    server_cursor.execute(f'CREATE DATABASE "{pg_db}"')
+    conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+        database_name=pg_db,
+    )
+    cursor = conn.cursor()
+    for table in ("growth_a", "growth_b"):
+        cursor.execute(f"CREATE TABLE {table} (key integer primary key, value integer)")
+        cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    node1.query(
+        f"""
+        CREATE DATABASE {mat_db}
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            '{pg_db}', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """
+    )
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_a", "30")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_b", "30")
+
+    uuid = node1.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = uuid.lower().replace("-", "_")
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE database = '{pg_db}'"
+    )
+    salted_slots = [row[0] for row in cursor.fetchall()]
+    assert len(salted_slots) == 1 and salted_slots != [presalt_slot]
+    cursor.execute("SELECT pubname FROM pg_publication")
+    salted_publications = [row[0] for row in cursor.fetchall()]
+    assert len(salted_publications) == 1 and salted_publications != [presalt_publication]
+
+    # Reconstruct the pre-salt PostgreSQL-side state while the server is down, and let the source schema
+    # grow: a new table appears (never attached on the ClickHouse side), and one replicated table
+    # receives more rows that the adopted slot must stream after the restart.
+    node1.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slots[0]}')")
+    cursor.execute(f'DROP PUBLICATION "{salted_publications[0]}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "growth_a", "growth_b"'
+    )
+    cursor.execute("CREATE TABLE growth_c (key integer primary key, value integer)")
+    cursor.execute("INSERT INTO growth_c SELECT i, i FROM generate_series(0, 9) AS i")
+    cursor.execute("INSERT INTO growth_a SELECT i, i FROM generate_series(30, 49) AS i")
+    node1.start_clickhouse()
+
+    # The pre-salt identity is adopted despite the grown schema, and the streamed rows arrive.
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM {mat_db}.growth_a",
+        "50",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert 30 == int(node1.query(f"SELECT count() FROM {mat_db}.growth_b"))
+    assert not node1.contains_in_log(
+        "publishes a different set of tables than this engine replicates"
+    )
+
+    # The never-attached table is not materialized, and the adopted publication is reused as-is: it
+    # still publishes exactly the two original tables.
+    assert "growth_a\ngrowth_b" == node1.query(f"SHOW TABLES FROM {mat_db}").strip()
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE database = '{pg_db}'"
+    )
+    assert [presalt_slot] == [row[0] for row in cursor.fetchall()]
+    cursor.execute("SELECT pubname FROM pg_publication")
+    assert [presalt_publication] == [row[0] for row in cursor.fetchall()]
+    cursor.execute(
+        f"SELECT schemaname, tablename FROM pg_publication_tables "
+        f"WHERE pubname = '{presalt_publication}' ORDER BY tablename"
+    )
+    assert [("public", "growth_a"), ("public", "growth_b")] == cursor.fetchall()
+
+    # Dropping the database removes the adopted objects.
+    node1.query(f"DROP DATABASE {mat_db} SYNC")
+    for _ in range(30):
+        cursor.execute(
+            f"SELECT count(*) FROM pg_replication_slots WHERE database = '{pg_db}'"
+        )
+        slots_left = int(cursor.fetchall()[0][0])
+        cursor.execute("SELECT count(*) FROM pg_publication")
+        publications_left = int(cursor.fetchall()[0][0])
+        if slots_left == 0 and publications_left == 0:
+            break
+        time.sleep(1)
+    assert 0 == slots_left and 0 == publications_left
+    cursor.close()
+    conn.close()
+    server_cursor.execute(f'DROP DATABASE "{pg_db}" WITH (FORCE)')

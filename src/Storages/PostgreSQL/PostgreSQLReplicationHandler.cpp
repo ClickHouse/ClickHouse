@@ -430,6 +430,12 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 }
 
 
+void PostgreSQLReplicationHandler::setTablesReplicatedByPreviousRun(std::set<String> tables)
+{
+    tables_replicated_by_previous_run = std::move(tables);
+}
+
+
 void PostgreSQLReplicationHandler::startup(bool delayed)
 {
     if (delayed)
@@ -620,10 +626,15 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     /// The set of PostgreSQL tables this engine replicates, as `(schema, table)` pairs with the default
     /// schema reported as `"public"` to match `pg_publication_tables.schemaname`. In `tables_list` mode
     /// (including the single-table engine, whose `tables_list` is the one raw remote table name) the set is
-    /// parsed from `tables_list`; otherwise every table of the replicated schema(s) is fetched from
-    /// PostgreSQL. Adoption runs before `tables_list` is rewritten into its quoted form at the end of
-    /// fetchRequiredTables() (and, for the single-table engine, on the raw name too), so the raw,
-    /// comma-separated form is parsed here, resolving each entry's schema exactly as getSchemaAndTableName().
+    /// parsed from `tables_list`; otherwise the database engine provides the tables it already replicated
+    /// in the previous run (their nested tables exist on disk). The live PostgreSQL schema must NOT be
+    /// consulted here: a table created in PostgreSQL after `CREATE DATABASE` is not replicated without an
+    /// explicit `ATTACH TABLE`, so after the source schema has grown, this engine's own publication
+    /// legitimately publishes fewer tables than the schema contains, and comparing against the live schema
+    /// would wrongly reject that publication as foreign. Adoption runs before `tables_list` is rewritten
+    /// into its quoted form at the end of fetchRequiredTables() (and, for the single-table engine, on the
+    /// raw name too), so the raw, comma-separated form is parsed here, resolving each entry's schema
+    /// exactly as getSchemaAndTableName().
     auto expected_replicated_tables = [&]() -> std::set<std::pair<String, String>>
     {
         std::set<std::pair<String, String>> tables;
@@ -656,7 +667,15 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
         }
         else
         {
-            for (const auto & name : fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list))
+            /// Whole-schema database engine: the set is the tables replicated by the previous run,
+            /// which the database engine always provides before its attach reaches this point (see
+            /// DatabaseMaterializedPostgreSQL::startSynchronization()); the single-table engine always
+            /// has a non-empty `tables_list` and never gets here.
+            if (!tables_replicated_by_previous_run)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "The set of tables replicated by the previous run was not provided on attach");
+            for (const auto & name : *tables_replicated_by_previous_run)
             {
                 auto [schema, table] = getSchemaAndTableName(name);
                 add(schema, table);
@@ -1472,9 +1491,16 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "Publication {} already exists and tables list is empty. Assuming publication is correct.",
                             doubleQuoteString(publication_name));
 
+                /// The publication is this engine's persisted table set, so on attach the tables to
+                /// materialize come from it, not from the live PostgreSQL schema. A table created in
+                /// PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
+                /// `ATTACH TABLE`: it is not in the publication, no WAL is streamed for it, and it has
+                /// no nested table on disk - materializing it here would make startSynchronization()
+                /// fail on the missing nested table on every attach retry, leaving the whole database
+                /// unable to resume replication after a restart just because the source schema grew.
                 {
-                    pqxx::nontransaction tx(connection.getRef());
-                    result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.

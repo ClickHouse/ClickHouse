@@ -115,6 +115,20 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             *settings,
             /* is_materialized_postgresql_database = */ true);
 
+    if (is_attach)
+    {
+        /// The tables this database already replicated in the previous run: their nested
+        /// ReplacingMergeTree tables exist on disk. The attach-time legacy-identity ownership check
+        /// (see PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded()) compares the
+        /// legacy publication against this set - the live PostgreSQL schema may have grown since, and
+        /// tables created in PostgreSQL after `CREATE DATABASE` are not replicated without an explicit
+        /// `ATTACH TABLE`.
+        std::set<String> tables_replicated_by_previous_run;
+        for (auto iterator = getTablesIterator(getContext(), {}, /* skip_not_loaded */ false); iterator->isValid(); iterator->next())
+            tables_replicated_by_previous_run.insert(iterator->name());
+        replication_handler->setTablesReplicatedByPreviousRun(std::move(tables_replicated_by_previous_run));
+    }
+
     std::set<String> tables_to_replicate;
     try
     {
