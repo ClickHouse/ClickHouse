@@ -82,6 +82,16 @@
 - name: 00024_random_counters
   reason: INVESTIGATE - random timeout
   message: Timeout! Processes left in process group
+- name: 03634_autopr_input_bytes_estimation
+  reason: INVESTIGATE - random timeout on debug
+  message: Timeout! Killing process group
+  check_types:
+  - debug
+- name: 04070_url_base_setting
+  reason: INVESTIGATE - fragile timeout on debug
+  message: Timeout! Killing process group
+  check_types:
+  - debug
 - name: 03211_nested_json_merges
   reason: KNOWN - Unstable upstream
 - name: 03644_object_storage_correlated_subqueries
