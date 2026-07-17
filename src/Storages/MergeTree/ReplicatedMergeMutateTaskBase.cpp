@@ -191,7 +191,17 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
                 auto res = checkExistingPart();
                 /// Depending on condition there is no need to execute a merge
                 if (res == CheckExistingPartResult::PART_EXISTS)
+                {
+                    /// The target part was already committed or fetched (e.g. by another replica),
+                    /// so prepare() will not run and cannot drain a result deposited by a survivor
+                    /// of a transient Keeper reconnection. Discard it here, otherwise its temporary
+                    /// directory would be kept on disk until the table is shut down.
+                    if (entry.type == ReplicatedMergeTreeLogEntryData::MUTATE_PART
+                        && storage.takePrecomputedMutation(entry.new_part_name))
+                        LOG_DEBUG(log, "Discarding the pre-computed result for mutation of part {}: the part already exists.",
+                            entry.new_part_name);
                     return remove_processed_entry();
+                }
             }
 
             auto prepare_result = prepare();

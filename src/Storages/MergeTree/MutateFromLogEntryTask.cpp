@@ -67,16 +67,17 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// If a previous attempt of this mutation survived a transient Keeper reconnection and deposited
     /// its finished result, take it now — before any early return in prepare() — so that whatever
-    /// happens next, the deposited temporary part is not stranded on disk. If this attempt does not
-    /// end up reusing it (it fetches the part, skips it, hands off to another replica, or the
-    /// assignment changed), this local drops its temporary directory lock on scope exit and the
+    /// happens next, the deposited temporary part is not stranded on disk. The take is not gated on
+    /// the current setting value: a deposit can only exist if the setting was enabled when it was
+    /// made, and it must be drained even if the setting has been disabled since. If this attempt
+    /// does not end up reusing it (it fetches the part, skips it, hands off to another replica, or
+    /// the assignment changed), this local drops its temporary directory lock on scope exit and the
     /// leftover directory is cleaned up as an old temporary directory. The reuse decision below is
-    /// fail-closed: the result is reused only if the source part, the table metadata version, and
-    /// the exact mutation set are all unchanged, and it still goes through the normal commit path
-    /// (which re-validates against ZooKeeper).
-    std::optional<StorageReplicatedMergeTree::PreservedMutationPart> preserved;
-    if (survival_enabled)
-        preserved = storage.takePrecomputedMutation(entry.new_part_name);
+    /// fail-closed: the result is reused only if the setting is still enabled and the source part,
+    /// the table metadata version, and the exact mutation set are all unchanged, and it still goes
+    /// through the normal commit path (which re-validates against ZooKeeper).
+    std::optional<StorageReplicatedMergeTree::PreservedMutationPart> preserved
+        = storage.takePrecomputedMutation(entry.new_part_name);
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
@@ -272,7 +273,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// re-computing the whole part, but only if the assignment is still exactly the same.
     if (preserved)
     {
-        if (preserved->source_part_name == source_part_name
+        if (survival_enabled
+            && preserved->source_part_name == source_part_name
             && preserved->metadata_version == mutation_metadata_version
             && preserved->mutation_ids == mutation_ids)
         {
@@ -293,8 +295,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             };
         }
 
-        LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the source part, the table "
-            "metadata, or the set of mutations changed after the reconnection, will re-compute it.", entry.new_part_name);
+        LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the setting was disabled, or the source "
+            "part, the table metadata, or the set of mutations changed after the reconnection, will re-compute it.", entry.new_part_name);
         /// Release the preserved temporary part now, before re-computing below into a possibly
         /// identically-named temporary directory: its lock is dropped and the leftover directory is
         /// cleaned up as an old temporary directory.
