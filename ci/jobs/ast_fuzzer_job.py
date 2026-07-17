@@ -418,6 +418,21 @@ def run_fuzz_job(check_name: str):
                 )
             )
 
+    # Checked regardless of the fuzzer outcome: a run that passes fuzzing but logged canThrow
+    # contract violations must still fail (see IExecutableFunction::validateCanThrowOnException).
+    canthrow_hits = Shell.get_output(
+        f"rg --text 'canThrow contract violation' {server_log} | head -n 100"
+    )
+    if canthrow_hits:
+        is_failed = True
+        results.append(
+            Result(
+                name="canThrow contract violations",
+                info=canthrow_hits,
+                status=Result.Status.FAIL,
+            )
+        )
+
     result = Result.create_from(
         results=extra_results + results,
         status=status if not results else None,
