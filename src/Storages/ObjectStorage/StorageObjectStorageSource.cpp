@@ -1068,6 +1068,85 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_inputs(stripped_prewhere_info->prewhere_actions);
         }
 
+        /// Prune the Parquet read to only the columns the query needs on the Iceberg
+        /// schema-evolution path. `getInitialSchemaByPath` above set `initial_header` to the
+        /// FULL underlying file schema, so without this the format reader decodes every
+        /// physical column of the old schema even when the query needs only one. The Iceberg
+        /// schema-transform DAG (built below) maps OLD-schema input names to NEW-schema output
+        /// names, so removing its unused actions yields exactly the old-schema columns to read.
+        ///
+        /// Only done when there are no equality-delete files: those are applied (by name, on
+        /// the old-schema block) before the schema transform runs, so their key columns must
+        /// stay in the read header even if the query does not select them. Pruning stays
+        /// robust: if any needed name is not a transform output, we keep the full schema
+        /// rather than fail, so unusual column shapes just fall back to current behavior.
+        std::optional<ActionsDAG> iceberg_pruned_transform;
+#if USE_AVRO
+        if (schema_changed)
+        {
+            const auto * iceberg_object_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+            if (iceberg_object_info && iceberg_object_info->info.equality_deletes_objects.empty())
+            {
+                if (auto transform = configuration->getSchemaTransformer(context_, object_info))
+                {
+                    /// New-schema names the pipeline needs after the transform: the query
+                    /// columns plus any column referenced only by a stripped filter/PREWHERE.
+                    /// Subcolumns (e.g. `t.x`) collapse to their storage column, since the
+                    /// transform's outputs are top-level field names.
+                    NameSet seen;
+                    Names needed_names;
+                    auto add_needed = [&](const String & needed_name)
+                    {
+                        if (seen.insert(needed_name).second)
+                            needed_names.push_back(needed_name);
+                    };
+                    for (const auto & column : read_from_format_info.requested_columns)
+                        add_needed(column.getNameInStorage());
+                    if (stripped_row_level_filter)
+                        for (const auto & required : stripped_row_level_filter->actions.getRequiredColumns())
+                            add_needed(required.name);
+                    if (stripped_prewhere_info)
+                        for (const auto & required : stripped_prewhere_info->prewhere_actions.getRequiredColumns())
+                            add_needed(required.name);
+
+                    ActionsDAG pruned = transform->clone();
+                    NameSet output_names;
+                    for (const auto * output : pruned.getOutputs())
+                        output_names.insert(output->result_name);
+
+                    bool all_present = true;
+                    for (const auto & needed_name : needed_names)
+                    {
+                        if (!output_names.contains(needed_name))
+                        {
+                            all_present = false;
+                            break;
+                        }
+                    }
+
+                    if (all_present)
+                    {
+                        pruned.removeUnusedActions(needed_names);
+
+                        /// Keep exactly the old-schema columns the pruned transform still reads,
+                        /// preserving the original header's column types/order.
+                        NameSet required_names;
+                        for (const auto & required : pruned.getRequiredColumns())
+                            required_names.insert(required.name);
+
+                        Block pruned_header;
+                        for (const auto & column : initial_header)
+                            if (required_names.contains(column.name))
+                                pruned_header.insert(column);
+
+                        initial_header = std::move(pruned_header);
+                        iceberg_pruned_transform = std::move(pruned);
+                    }
+                }
+            }
+        }
+#endif
+
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
@@ -1152,9 +1231,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// inputs). For non-stripped (Parquet) reads the filter columns aren't
             /// referenced after the format reader so this is a no-op.
             ///
-            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
-            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
-            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
+            /// The Iceberg `getSchemaTransformer()` case below is pruned separately (see the
+            /// `iceberg_pruned_transform` branch): its transform's inputs/outputs are field
+            /// names too, so it is pruned above where `initial_header` is narrowed to match.
             Names needed_names = read_from_format_info.requested_columns.getNames();
             auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
             {
@@ -1167,11 +1246,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
             schema_transform->removeUnusedActions(needed_names);
         }
-        if (!schema_transform)
+        else if (iceberg_pruned_transform)
         {
-            auto transform = configuration->getSchemaTransformer(context_, object_info);
-            if (transform)
-                schema_transform = transform->clone();
+            /// Iceberg schema-evolution path: reuse the transform already pruned above (where
+            /// `initial_header` was narrowed to match its required old-schema columns).
+            schema_transform = std::move(iceberg_pruned_transform);
+        }
+        else if (auto transform = configuration->getSchemaTransformer(context_, object_info))
+        {
+            schema_transform = transform->clone();
         }
 
         if (schema_transform.has_value())
