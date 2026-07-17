@@ -13,9 +13,19 @@
 #include <algorithm>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionTopKFilter.h>
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString preferred_optimize_projection_name;
+}
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -28,8 +38,21 @@ namespace DB::QueryPlanOptimizations
 ///   2. A normal (sorting) projection whose ORDER BY starts with `sort_column_name` and which
 ///      stores every column the query reads is available; when projections and read-in-order
 ///      are enabled such a projection is selected to serve the read in the second plan pass.
+///
+/// Case 2 is predictive: this optimization runs in the first plan pass, before the projection
+/// chooser (`optimizeUseNormalProjections`) runs in the second pass. The chooser applies extra
+/// gates before it actually selects a projection, so the predictor here mirrors the ones that
+/// can be evaluated from metadata alone and stays conservative (returns false when unsure) so
+/// it never disables dynamic filtering for a read that still hits the base table:
+///   - `preferred_optimize_projection_name`: if set, only that projection is considered.
+///   - projection `WHERE`: a partial projection is only chosen when the query filter implies its
+///     WHERE; that implication is not known here, so partial projections are not trusted.
+///   - read-cost comparison (`sum_marks <= parent_reading_marks`): a projection can be rejected
+///     as more expensive than the base read only when a query filter can prune the base table
+///     cheaper. Without a query filter the sorting projection is not rejected on cost, so the
+///     predictor only trusts case 2 when there is no filter below the sort.
 static bool readWouldBeInOrderForColumn(
-    const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection)
+    const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
 {
     const auto & metadata = read_step.getStorageMetadata();
 
@@ -41,14 +64,33 @@ static bool readWouldBeInOrderForColumn(
     if (!optimize_projection)
         return false;
 
+    /// With a query filter the chooser may keep the cheaper filtered base-table read and reject
+    /// the projection on cost (or need a WHERE-implication we cannot check here). Do not predict
+    /// in-order in that case; leaving dynamic filtering on for a base-table read is the safe side.
+    if (has_query_filter)
+        return false;
+
+    const auto & preferred_projection_name
+        = read_step.getContext()->getSettingsRef()[Setting::preferred_optimize_projection_name].value;
+
     const auto & read_columns = read_step.getAllColumnNames();
     for (const auto & projection : metadata->projections)
     {
         if (projection.type != ProjectionDescription::Type::Normal)
             continue;
 
+        /// If a preferred projection is pinned, the chooser only ever considers that one.
+        if (!preferred_projection_name.empty() && projection.name != preferred_projection_name)
+            continue;
+
         const auto & proj_sorting_key = projection.metadata->getSortingKey();
         if (proj_sorting_key.column_names.empty() || proj_sorting_key.column_names[0] != sort_column_name)
+            continue;
+
+        /// A projection with its own WHERE stores only a subset of rows; the chooser would need
+        /// the query filter to imply that WHERE (unknowable here). Since there is no query filter
+        /// at this point, such a projection cannot serve the full read in-order.
+        if (projection.where_clause_ast)
             continue;
 
         /// The projection can serve the read in-order only if it stores every column the read needs.
@@ -237,7 +279,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// so the guard is predictive: it disables dynamic filtering whenever the base table
     /// OR a usable sorting projection would make the read in-order for the ORDER BY prefix.
     if (use_dynamic_filtering && settings.read_in_order
-        && readWouldBeInOrderForColumn(*read_from_mergetree_step, sort_column_name, settings.optimize_projection))
+        && readWouldBeInOrderForColumn(*read_from_mergetree_step, sort_column_name, settings.optimize_projection, where_clause))
         use_dynamic_filtering = false;
 
     /// The threshold tracker is needed for dynamic mark skipping during reads

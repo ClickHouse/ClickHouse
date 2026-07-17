@@ -60,5 +60,32 @@ FROM (
 )
 WHERE explain ILIKE '%__topKFilter%';
 
+-- The predictor must not be stronger than the second-pass projection chooser. When the query
+-- has a filter, the chooser may keep the cheaper filtered base-table read and reject the
+-- sorting projection on cost, so dynamic filtering must STILL be applied to the base read
+-- (expected 1). Before the guard was tightened this reported 0.
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio WHERE k = 7 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+-- When a matching sorting projection exists but `preferred_optimize_projection_name` pins a
+-- different (non-matching) projection, the chooser only ever considers the pinned one, so the
+-- read is not made in-order by the matching projection and dynamic filtering must STILL apply
+-- (expected 1). Before the guard was tightened this reported 0.
+ALTER TABLE t_topk_proj_rio ADD PROJECTION p_other (SELECT id, k, score, payload ORDER BY (k, score));
+ALTER TABLE t_topk_proj_rio MATERIALIZE PROJECTION p_other SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'p_other'
+)
+WHERE explain ILIKE '%__topKFilter%';
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
