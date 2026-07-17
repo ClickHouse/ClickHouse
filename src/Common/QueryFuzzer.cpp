@@ -6311,27 +6311,26 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             case ASTAlterCommand::DROP_PARTITION:
             case ASTAlterCommand::ATTACH_PARTITION:
             case ASTAlterCommand::DROP_DETACHED_PARTITION:
-            case ASTAlterCommand::FORGET_PARTITION:
-                /// DROP PARTITION <-> FORGET PARTITION carry the same PARTITION <expr> payload.
-                /// Gated on !part: DROP/DETACH PART hold a string part name, which FORGET PARTITION
-                /// (no PART form) cannot reparse.
-                if (!alter_cmd->part
-                    && (alter_cmd->type == ASTAlterCommand::DROP_PARTITION || alter_cmd->type == ASTAlterCommand::FORGET_PARTITION)
-                    && fuzz_rand() % 20 == 0)
-                    alter_cmd->type = alter_cmd->type == ASTAlterCommand::DROP_PARTITION ? ASTAlterCommand::FORGET_PARTITION
-                                                                                         : ASTAlterCommand::DROP_PARTITION;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
-                /// Do not flip `part`: PARTITION holds an ASTPartition while PART holds a string
-                /// part name (parsed differently), so a plain toggle produces unreparseable text.
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
                 break;
             case ASTAlterCommand::MOVE_PARTITION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
-                /// Swap DISK<->VOLUME only: both carry move_destination_name so it round-trips. Never
-                /// switch a TABLE move or switch to TABLE — that needs a to_table we do not synthesize.
-                if (!alter_cmd->move_destination_name.empty() && fuzz_rand() % 10 == 0)
-                    alter_cmd->move_destination_type = (fuzz_rand() % 2 == 0) ? DataDestinationType::DISK : DataDestinationType::VOLUME;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
+                /// Cycle move destination type between DISK, VOLUME, TABLE
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const DataDestinationType dest_types[] = {
+                        DataDestinationType::DISK,
+                        DataDestinationType::VOLUME,
+                        DataDestinationType::TABLE,
+                    };
+                    alter_cmd->move_destination_type = dest_types[fuzz_rand() % 3];
+                }
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
             case ASTAlterCommand::MODIFY_CONSTRAINT:
