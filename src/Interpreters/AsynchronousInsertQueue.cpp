@@ -469,6 +469,10 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// to avoid buffering of huge amount of data in memory.
 
         if (const auto * insert_query = query->as<ASTInsertQuery>();
+            insert_query && insert_query->infile && query_context->getApplicationType() == Context::ApplicationType::SERVER)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
+
+        if (const auto * insert_query = query->as<ASTInsertQuery>();
             insert_query && insert_query->compression && query_context->getApplicationType() == Context::ApplicationType::SERVER)
             throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
 

@@ -78,6 +78,30 @@ ${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path --query "SELECT 
 rm -f "${CLICKHOUSE_TMP}"/04506_data4.csv "${CLICKHOUSE_TMP}"/04506_data4.csv.gz
 rm -rf "${CLICKHOUSE_TMP}"/04506_local_path
 
+# clickhouse-local regression: COMPRESSION works through the input() table function in clickhouse-local
+# too, not just through a bare FORMAT clause. clickhouse-local's input() reads via a separate
+# LocalConnection::setInputInitializer() path that does not go through ClientBase::sendDataFrom(), so it
+# needs (and has) its own handling of the COMPRESSION clause. As with the bare-FORMAT case above, the
+# INSERT fed via stdin must be the last statement in its query text, so CREATE and INSERT run in one
+# invocation with a persistent --path, and SELECT runs in a second invocation. Uses MergeTree, not
+# Memory, since Memory-engine data does not survive across clickhouse-local process restarts even with
+# the same --path.
+printf '13,M\n14,N\n' > "${CLICKHOUSE_TMP}"/04506_data5.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data5.csv
+
+rm -rf "${CLICKHOUSE_TMP}"/04506_local_path2
+mkdir -p "${CLICKHOUSE_TMP}"/04506_local_path2
+
+${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path2 --query "
+CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO test_insert_format_compression SELECT * FROM input('id UInt32, text String') FORMAT CSV COMPRESSION 'gzip'
+" < "${CLICKHOUSE_TMP}"/04506_data5.csv.gz
+
+${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path2 --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data5.csv "${CLICKHOUSE_TMP}"/04506_data5.csv.gz
+rm -rf "${CLICKHOUSE_TMP}"/04506_local_path2
+
 # Negative check: COMPRESSION is client-side-only. Sent directly to the server over HTTP (which never
 # decompresses this clause), it must be rejected with a clear error instead of falling through to the
 # format parser with still-compressed bytes.
@@ -90,6 +114,15 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 # insert's format-preparation code entirely, so it needs (and has) its own copy of this guard.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
 printf '12,L\n' | gzip | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20test_insert_format_compression%20FORMAT%20CSV%20COMPRESSION%20'gzip'&async_insert=1&wait_for_async_insert=1" --data-binary @- | grep -c -o "Query has COMPRESSION next to FORMAT and was send directly to server"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+# Negative check: FROM INFILE is likewise client-side-only (the server must never open a path from the
+# query text itself), and that ban must hold on the async_insert path too. `executeQuery` sets `tail` on
+# every INSERT before the async_insert decision, so `hasInlinedData()` is true even for a bare `FROM
+# INFILE` with no other data, and this query would otherwise reach pushQueryWithInlinedData() and open
+# the path server-side.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+printf '' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20test_insert_format_compression%20FROM%20INFILE%20'04506_nonexistent.csv'%20FORMAT%20CSV&async_insert=1&wait_for_async_insert=1" --data-binary @- | grep -c -o "Query has infile and was send directly to server"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 # Negative check: COMPRESSION with an unknown method name after bare FORMAT is rejected with a clear error.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Client/Connection.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
@@ -206,6 +207,10 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     ReadBuffer * in;
+    /// Owns the buffer created when the INSERT query carries a `COMPRESSION` clause next to a bare
+    /// `FORMAT` and reads through the `input()` table function, mirroring what
+    /// ClientBase::sendDataFrom does for the networked-client insert path.
+    std::unique_ptr<ReadBuffer> compressed_in;
 };
 
 }

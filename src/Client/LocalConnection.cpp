@@ -16,6 +16,8 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/CompressionMethod.h>
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -54,6 +56,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -271,17 +274,32 @@ void LocalConnection::sendQuery(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
 
+        /// A `COMPRESSION` clause next to a bare `FORMAT` (no `FROM INFILE`) means the data read
+        /// through `input()` is compressed, same as ClientBase::sendDataFrom handles for the
+        /// networked-client insert path.
+        ReadBuffer * in_to_read = in;
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
             if (!insert->format.empty())
                 current_format = insert->format;
+
+            if (!insert->infile && insert->compression)
+            {
+                const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
+                String compression_method_string = compression_method_node.value.safeGet<std::string>();
+                CompressionMethod compression_method = chooseCompressionMethod("", compression_method_string);
+                compressed_in = wrapReadBufferWithCompressionMethod(
+                    wrapReadBufferReference(*in), compression_method,
+                    /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
+                in_to_read = compressed_in.get();
+            }
         }
 
         chassert(in, "ReadBuffer should be initialized");
 
         auto source = context->getInputFormat(
             current_format,
-            *in,
+            *in_to_read,
             sample,
             settings[Setting::max_insert_block_size],
             std::nullopt,
