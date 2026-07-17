@@ -18,7 +18,6 @@ SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM
 (
     SELECT '{"a":5}'::JSON AS patch, 2 AS version
-    UNION ALL
 );
 
 SELECT toJSONString(mergedJSONPatchMerge(state))
