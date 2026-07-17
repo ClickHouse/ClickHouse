@@ -14,19 +14,21 @@ namespace DB
 {
 
 /// Deduplication operation stored on disk: a part was added, dropped, or an add
-/// was rolled back.
+/// or drop was rolled back.
 enum class MergeTreeDeduplicationOp : uint8_t
 {
     ADD = 1,
     DROP = 2,
-    /// Written when an insert that had already durably written its ADD record(s)
-    /// fails and must be rolled back (e.g. a rotation or fsync failure right after
-    /// the writes). On replay it cancels the matching preceding ADD record, so the
-    /// rolled-back insert consumes no deduplication-window slot and therefore does
-    /// not evict an unrelated, still-active block. Only ever produced on the rare
-    /// write-failure rollback path; an older server that does not know this op
-    /// would replay the record as an insert (best-effort deduplication only, never
-    /// an exception), which is acceptable for this internal, rotating log.
+    /// Written when an insert (or a part drop) that had already durably written
+    /// its ADD (or DROP) record(s) fails and must be rolled back (e.g. a write,
+    /// rotation or fsync failure right after the writes). On replay it cancels the
+    /// matching preceding ADD or DROP record of the same block id, so a
+    /// rolled-back insert consumes no deduplication-window slot (and therefore
+    /// does not evict an unrelated, still-active block), and a rolled-back drop
+    /// does not erase a block id that stayed published. Only ever produced on the
+    /// rare write-failure rollback path; an older server that does not know this
+    /// op would replay the record as an insert (best-effort deduplication only,
+    /// never an exception), which is acceptable for this internal, rotating log.
     CANCEL = 3,
 };
 
@@ -157,7 +159,7 @@ public:
 ///  2           77_15_15_0      77_14977227047908934259_8047656067364802772
 ///  1           77_20_20_0      77_15147918179036854170_6725063583757244937
 /// The operation is one of MergeTreeDeduplicationOp: 1 = ADD, 2 = DROP,
-/// 3 = CANCEL (rolls back a preceding ADD of a failed insert).
+/// 3 = CANCEL (rolls back a preceding ADD or DROP of a failed operation).
 /// Also stores them in memory in hash table with limited size.
 class MergeTreeDeduplicationLog
 {
@@ -240,12 +242,13 @@ private:
         std::vector<size_t> & record_log_numbers);
 
     /// Replay a chronologically ordered record stream into the in-memory map.
-    /// Each CANCEL record cancels the matching preceding ADD (both are skipped),
-    /// so an insert that failed and rolled back consumes no deduplication-window
-    /// slot; the remaining ADD/DROP records are applied exactly as they were live.
-    /// Also recomputes each log's `entries_count` from only the surviving records
-    /// (`record_log_numbers` maps each record back to its file), so retention does
-    /// not count cancelled (ADD, CANCEL) pairs as consumed deduplication-window
+    /// Each CANCEL record cancels the matching preceding ADD or DROP (both are
+    /// skipped), so an insert that failed and rolled back consumes no
+    /// deduplication-window slot and a drop that failed and rolled back erases
+    /// nothing; the remaining ADD/DROP records are applied exactly as they were
+    /// live. Also recomputes each log's `entries_count` from only the surviving
+    /// records (`record_log_numbers` maps each record back to its file), so
+    /// retention does not count cancelled pairs as consumed deduplication-window
     /// slots and drop a log that still holds live block ids.
     void applyRecords(
         const std::vector<MergeTreeDeduplicationLogRecord> & records,

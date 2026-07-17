@@ -678,3 +678,76 @@ TEST(MergeTreeDeduplicationLog, DropPartRotationSyncFailureIsAllOrNothing)
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: dropPart must stay all-or-nothing across a restart when one
+/// of its DROP records fails to write partway through a multi-block drop.
+/// writeRecord flushes every record, so when the write of the second DROP fails,
+/// the first DROP is already durable while no block id has been erased from the
+/// in-memory map (the live, all-published state) - and the caller
+/// (StorageMergeTree::dropPartNoWaitNoThrow) never retries the drop. Without a
+/// rollback, replaying that one-record prefix on startup erases only the first
+/// block id: a retry of it is then wrongly accepted (duplicating data) while the
+/// sibling block still deduplicates. The rollback must write a compensating
+/// CANCEL for the durable DROP prefix - to a fresh writer, since the failed
+/// write cancelled the current one - so a replay keeps every covered block id
+/// published, matching the live map.
+TEST(MergeTreeDeduplicationLog, DropPartWriteFailureIsAllOrNothingAfterRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_drop_write_failure/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// A large deduplication window keeps the log from rotating on its own, so
+        /// the same writer stays open across the calls below and the injected
+        /// failure hits a write into the already open file. Flushes #1 and #2 are
+        /// the ADD records of the two committed inserts; the drop below then writes
+        /// its DROP records in the map's insertion order, so flush #3 is the DROP
+        /// for "block1" (succeeds, durable) and flush #4 is the DROP for "block2"
+        /// (injected to fail, cancelling the writer mid-batch).
+        auto disk = std::make_shared<DiskThrowingOnNthFlush>("faulty", work_dir, /*fail_on_flush=*/ 4);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        log.addPart({"block2"}, part("all_2_2_0"));
+
+        /// Drop a range covering both "block1" and "block2"; the write of the
+        /// second DROP record fails after the first one is already durable.
+        EXPECT_ANY_THROW(log.dropPart(part("all_0_9_999")));
+
+        /// The drop failed as a whole, so neither block id may have been erased:
+        /// a retry of either must still be deduplicated.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_3_3_0")).empty());
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+
+        /// The log must still be usable (the rollback rotated to a fresh writer;
+        /// a canceled writer silently discards writes, so without the rotation
+        /// this record would never become durable).
+        EXPECT_NO_THROW(log.addPart({"block3"}, part("all_5_5_0")));
+
+        /// Finalize the current log as on a graceful shutdown.
+        log.shutdown();
+    }
+
+    {
+        /// "Restart" with a healthy disk: replay the logs from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+
+        /// Both covered block ids must still be deduplicated after the restart:
+        /// the durable DROP prefix for "block1" must have been cancelled out by
+        /// the rollback's compensating record rather than erase "block1" alone.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_6_6_0")).empty());
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_7_7_0")).empty());
+
+        /// The insert written after the failed drop survives the restart too.
+        EXPECT_FALSE(log.addPart({"block3"}, part("all_8_8_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}

@@ -163,42 +163,44 @@ void MergeTreeDeduplicationLog::applyRecords(
     const std::vector<MergeTreeDeduplicationLogRecord> & records,
     const std::vector<size_t> & record_log_numbers)
 {
-    /// First, cancel out the (ADD, CANCEL) pairs left behind by inserts that
-    /// failed and rolled back. Each CANCEL record cancels the most recent
-    /// preceding, not-yet-cancelled ADD of the same block id - which is exactly
-    /// the ADD the failed insert wrote, because the rollback writes the CANCEL
-    /// records immediately after the ADD records under the same lock, with no
-    /// other operation in between. Dropping both records means the transient ADD
-    /// never touches the in-memory map on replay, so it neither publishes the
-    /// rolled-back block id nor consumes a deduplication-window slot (which could
-    /// otherwise evict an unrelated, still-active block before the CANCEL is seen).
+    /// First, cancel out the (ADD, CANCEL) and (DROP, CANCEL) pairs left behind
+    /// by operations that failed and rolled back. Each CANCEL record cancels the
+    /// most recent preceding, not-yet-cancelled ADD or DROP of the same block id -
+    /// which is exactly the record the failed operation wrote, because the
+    /// rollback writes the CANCEL records immediately after the failed batch
+    /// under the same lock, with no other operation in between. Dropping both
+    /// records means the transient record never touches the in-memory map on
+    /// replay: a rolled-back ADD neither publishes its block id nor consumes a
+    /// deduplication-window slot (which could otherwise evict an unrelated,
+    /// still-active block before the CANCEL is seen), and a rolled-back DROP does
+    /// not erase a block id that stayed published in the live map.
     std::vector<bool> cancelled(records.size(), false);
-    std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_add_indices;
+    std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_indices;
     for (size_t i = 0; i < records.size(); ++i)
     {
         const auto & record = records[i];
-        if (record.operation == MergeTreeDeduplicationOp::ADD)
-        {
-            pending_add_indices[record.block_id].push_back(i);
-        }
-        else if (record.operation == MergeTreeDeduplicationOp::CANCEL)
+        if (record.operation == MergeTreeDeduplicationOp::CANCEL)
         {
             /// The CANCEL record itself is never replayed.
             cancelled[i] = true;
-            auto it = pending_add_indices.find(record.block_id);
-            if (it != pending_add_indices.end() && !it->second.empty())
+            auto it = pending_indices.find(record.block_id);
+            if (it != pending_indices.end() && !it->second.empty())
             {
                 cancelled[it->second.back()] = true;
                 it->second.pop_back();
             }
+        }
+        else
+        {
+            pending_indices[record.block_id].push_back(i);
         }
     }
 
     /// Recompute each log's `entries_count` from only the records that survive
     /// cancel-pair elimination. `dropOutdatedLogs` sums these counts from the
     /// newest log backwards to decide which older logs are redundant; a cancelled
-    /// (ADD, CANCEL) pair contributes nothing to the reconstructed map, so counting
-    /// its raw records would let a failed multi-block insert inflate the counts and
+    /// pair contributes nothing to the reconstructed map, so counting its raw
+    /// records would let a failed multi-block operation inflate the counts and
     /// wrongly drop an older log that still holds live block ids - after which a
     /// restart forgets those committed blocks. Counting only survivors keeps the
     /// retention accounting in step with what a replay actually reconstructs.
@@ -502,27 +504,74 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     if (block_ids.empty())
         return;
 
-    /// Write all the DROP records first. If a write throws partway, no block id has
-    /// been erased yet, so every covered block id stays published in memory - the
-    /// deduplicating (safe) direction - and the map still matches a replay of the
-    /// records that did reach the log.
-    for (size_t i = 0; i < block_ids.size(); ++i)
+    /// Write all the DROP records first. If a write or the rotation throws partway,
+    /// no block id has been erased yet, so every covered block id stays published in
+    /// memory - the deduplicating (safe) direction. `writeRecord` flushes every
+    /// record, though, so the records written before the failure may already be
+    /// durable, and replaying such a prefix on startup would erase some of the
+    /// covered block ids while the live map kept them all. The rollback below
+    /// therefore writes a compensating CANCEL record for each DROP record that was
+    /// written, mirroring addPart, so a replay reconstructs the same all-or-nothing
+    /// state the live map kept.
+    size_t written = 0;
+    /// All DROP records below go to the log that is current right now: no rotation
+    /// happens until the rotateAndDropIfNeeded() after the loop. Remember it so the
+    /// rollback can undo their retention count even if a failed write (which cancels
+    /// the writer) has since moved `current_log_number` on.
+    const size_t drop_log_number = current_log_number;
+    try
     {
-        MergeTreeDeduplicationLogRecord record;
-        record.operation = MergeTreeDeduplicationOp::DROP;
-        record.part_name = part_names[i];
-        record.block_id = block_ids[i];
-        /// Write it to disk
-        writeRecord(record, *current_writer);
-        /// We have one more record on disk
-        existing_logs[current_log_number].entries_count++;
-    }
+        for (size_t i = 0; i < block_ids.size(); ++i)
+        {
+            MergeTreeDeduplicationLogRecord record;
+            record.operation = MergeTreeDeduplicationOp::DROP;
+            record.part_name = part_names[i];
+            record.block_id = block_ids[i];
+            /// Write it to disk
+            writeRecord(record, *current_writer);
+            /// We have one more record on disk
+            existing_logs[current_log_number].entries_count++;
+            ++written;
+        }
 
-    /// Rotate before erasing from the in-memory map: if the rotation rethrows a
-    /// failure to finalize or fsync the previous log file, the DROP records just
-    /// written may not be durable, so leaving every block id published keeps the
-    /// map all-or-nothing and never wrongly forgets a block id whose DROP was lost.
-    rotateAndDropIfNeeded();
+        /// Rotate before erasing from the in-memory map: if the rotation rethrows a
+        /// failure to finalize or fsync the previous log file, the DROP records just
+        /// written may not be durable, so leaving every block id published keeps the
+        /// map all-or-nothing and never wrongly forgets a block id whose DROP was lost.
+        rotateAndDropIfNeeded();
+    }
+    catch (...)
+    {
+        /// Best effort: cancel out the DROP records that were durably written above,
+        /// so that a replay on server startup does not erase their block ids either -
+        /// they all stayed published in the in-memory map. See the analogous rollback
+        /// in addPart for why the writer may need rotating to a fresh one first and
+        /// why the cancelled records must not count towards log retention.
+        try
+        {
+            if (current_writer->isCanceled())
+                rotate();
+
+            for (size_t i = 0; i < written; ++i)
+            {
+                MergeTreeDeduplicationLogRecord record;
+                record.operation = MergeTreeDeduplicationOp::CANCEL;
+                record.part_name = part_names[i];
+                record.block_id = block_ids[i];
+                writeRecord(record, *current_writer);
+            }
+
+            existing_logs.at(drop_log_number).entries_count -= written;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__,
+                "Cannot write compensating records to the deduplication log after a failed drop; "
+                "some of the dropped block ids may wrongly stop deduplicating after a server restart");
+        }
+
+        throw;
+    }
 
     /// Everything is durable now; erase the dropped block ids from the map.
     for (const auto & block_id : block_ids)
