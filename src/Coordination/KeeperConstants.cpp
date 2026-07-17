@@ -409,6 +409,8 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
     M(KeeperContainerNodes) \
+    M(KeeperBlockCacheBytes) \
+    M(KeeperBlockCacheBlocks) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
