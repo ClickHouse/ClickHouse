@@ -768,7 +768,7 @@ private:
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version,
-        const DataPartsVector & patch_parts);
+        const Strings & patch_parts);
 
     /** Returns an empty string if no one has a part.
       */

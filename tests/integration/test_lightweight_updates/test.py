@@ -279,6 +279,99 @@ def test_lwu_replicated_mutation_accepts_covering_patch(started_cluster):
     node2.query("DROP TABLE IF EXISTS t_lwu_cover SYNC")
 
 
+def test_lwu_replicated_mutation_lagging_assigner_pins_full_set(started_cluster):
+    # Regression test for the lagging-assigning-replica direction of issue #100493. The MUTATE_PART
+    # entry must pin the complete set of patch parts that apply, taken from the queue virtual-parts
+    # snapshot (current_parts + queue), not from the assigning replica's locally visible active patch
+    # parts. If the assigning replica lags behind on patch replication (a patch is in its queue as a
+    # GET_PART but not yet materialized), deriving the set from local active state would pin an
+    # incomplete set, so both replicas would apply too few patches and converge on the same wrong
+    # bytes. The previous test uses one replica's contents as the oracle and cannot catch this; here we
+    # assert the logical post-update result computed independently.
+    node1.query("DROP TABLE IF EXISTS t_lwu_lag SYNC")
+    node2.query("DROP TABLE IF EXISTS t_lwu_lag SYNC")
+
+    settings = {
+        "enable_lightweight_update": 1,
+        "mutations_sync": 0,
+    }
+
+    for node, replica in [(node1, "r1"), (node2, "r2")]:
+        node.query(
+            f"""
+            CREATE TABLE t_lwu_lag (id UInt64, a UInt64, b UInt64)
+            ENGINE = ReplicatedMergeTree('/test/t_lwu_lag', '{replica}')
+            ORDER BY id
+            SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+                     apply_patches_on_merge = 0
+            """
+        )
+
+    node1.query("INSERT INTO t_lwu_lag SELECT number, number, number FROM numbers(10000)")
+    node2.query("SYSTEM SYNC REPLICA t_lwu_lag")
+
+    # Independent oracle for the final logical result: b += 1 for [1000, 2000), a += 7 for [1500, 2500).
+    def expected_value(id, col):
+        a, b = id, id
+        if 1500 <= id < 2500:
+            a = id + 7
+        if 1000 <= id < 2000:
+            b = id + 1
+        return a if col == "a" else b
+
+    # Both replicas run a merge-selecting task, and whichever one wins the log-entry race pins its own
+    # locally visible patch set. To make the lagging replica (node1) the deterministic assigner, pause
+    # node2's merge-selecting task; this only blocks assignment, node2 still executes the entry later.
+    node2.query("SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled")
+
+    # First patch is produced and materialized on node1 (the future assigner).
+    node1.query("UPDATE t_lwu_lag SET b = b + 1 WHERE id >= 1000 AND id < 2000", settings=settings)
+
+    # Second patch is produced on node2. Stop fetches on node1 so it cannot materialize this patch,
+    # but still pull the replication log so the patch's GET_PART enters node1's queue (and therefore
+    # its virtual-parts snapshot). This is the lag window: node1 is about to assign a mutation while a
+    # patch part exists only in its queue, not in its local active state.
+    node1.query("SYSTEM STOP FETCHES t_lwu_lag")
+    node2.query("UPDATE t_lwu_lag SET a = a + 7 WHERE id >= 1500 AND id < 2500", settings=settings)
+    node1.query("SYSTEM SYNC REPLICA t_lwu_lag PULL")
+
+    # Assign the mutation on the lagging node1 (the only replica selecting now). With the fix the entry
+    # pins both patch parts (from the virtual-parts snapshot); without it only node1's local patch is
+    # pinned and the second update (a += 7) is silently dropped on every replica.
+    node1.query("ALTER TABLE t_lwu_lag APPLY PATCHES IN PARTITION tuple()")
+
+    # Wait until node1 has created the MUTATE_PART log entry, so node2 cannot become the assigner.
+    for _ in range(600):
+        has_mutate = node1.query(
+            "SELECT count() FROM system.replication_queue WHERE table = 't_lwu_lag' AND type = 'MUTATE_PART'"
+        ).strip()
+        if has_mutate != "0":
+            break
+        time.sleep(0.1)
+    assert has_mutate != "0", "node1 did not assign a MUTATE_PART entry"
+
+    # Let node1 catch up its fetches and materialize the mutation, then let node2 execute it too.
+    node1.query("SYSTEM START FETCHES t_lwu_lag")
+    node1.query("SYSTEM SYNC REPLICA t_lwu_lag", settings={"receive_timeout": 60})
+    node2.query("SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled")
+    node2.query("SYSTEM SYNC REPLICA t_lwu_lag", settings={"receive_timeout": 60})
+
+    # Assert the logical result against the independent oracle, on both replicas.
+    for node in (node1, node2):
+        rows = node.query(
+            "SELECT id, a, b FROM t_lwu_lag WHERE id >= 1000 AND id < 2500 ORDER BY id"
+        ).splitlines()
+        assert len(rows) == 1500, f"{node.name}: expected 1500 rows, got {len(rows)}"
+        for row in rows:
+            id_str, a_str, b_str = row.split("\t")
+            id_val = int(id_str)
+            assert int(a_str) == expected_value(id_val, "a"), f"{node.name}: wrong a at id {id_val}"
+            assert int(b_str) == expected_value(id_val, "b"), f"{node.name}: wrong b at id {id_val}"
+
+    node1.query("DROP TABLE t_lwu_lag SYNC")
+    node2.query("DROP TABLE IF EXISTS t_lwu_lag SYNC")
+
+
 @pytest.mark.parametrize("table_engine", ["ReplicatedMergeTree"])
 def test_lwu_upgrade(started_cluster, table_engine):
     node3.query("DROP TABLE IF EXISTS lwu_table_upgrade SYNC")

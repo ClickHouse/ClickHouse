@@ -16,6 +16,13 @@ public:
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
     PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
+    /// Names of patch parts (from the queue virtual-parts snapshot, i.e. current_parts + queue) that a
+    /// mutation of `part` up to `mutation_version` must apply. Pinned into MUTATE_PART entries so every
+    /// replica materializes the identical set even when the assigning replica lags behind on patch
+    /// replication (issue #100493). Derives the set from the same snapshot as MERGE_PARTS instead of the
+    /// replica's locally visible active patch parts, which may be an incomplete subset.
+    Strings getPatchPartNamesToPinForMutation(const IMergeTreeDataPart & part, Int64 mutation_version) const;
+
 protected:
     const ReplicatedMergeTreeQueue & queue;
 
