@@ -306,3 +306,34 @@ QUERY id: 0, group_by_type: grouping_sets
             LIST id: 27, nodes: 2
               COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 3
               CONSTANT id: 28, constant_value: UInt64_3, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(number) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 6, nodes: 1
+          CONSTANT id: 7, constant_value: UInt64_1000, constant_value_type: UInt16
+  GROUP BY
+    LIST id: 8, nodes: 1
+      COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_1000, constant_value_type: UInt16
+  GROUP BY
+    LIST id: 6, nodes: 1
+      COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 3
