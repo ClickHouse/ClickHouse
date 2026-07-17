@@ -33,3 +33,7 @@ c1	Nullable(IPv4)
 c1	Nullable(IPv6)					
 13. TSV IPv4 inference
 c1	Nullable(IPv4)					
+14. Mixed IPv4 and String collapses to String
+ip	Nullable(String)					
+15. Mixed IPv4 and IPv6 collapses to String
+ip	Nullable(String)					

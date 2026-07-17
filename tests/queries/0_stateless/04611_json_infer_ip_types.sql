@@ -133,3 +133,17 @@ SELECT '13. TSV IPv4 inference';
 SET input_format_try_infer_ipv4 = 1;
 desc format(TSV, '192.168.1.1\n');
 SET input_format_try_infer_ipv4 = 0;
+
+-- 14. Mixed IPv4 and String collapses to String
+SELECT '14. Mixed IPv4 and String collapses to String';
+SET input_format_try_infer_ipv4 = 1;
+DESCRIBE format(JSONEachRow, '{"ip":"192.168.1.1"}\n{"ip":"not-an-ip"}');
+SET input_format_try_infer_ipv4 = 0;
+
+-- 15. Mixed IPv4 and IPv6 collapses to String
+SELECT '15. Mixed IPv4 and IPv6 collapses to String';
+SET input_format_try_infer_ipv4 = 1;
+SET input_format_try_infer_ipv6 = 1;
+DESCRIBE format(JSONEachRow, '{"ip":"192.168.1.1"}\n{"ip":"2001:db8::1"}');
+SET input_format_try_infer_ipv4 = 0;
+SET input_format_try_infer_ipv6 = 0;

@@ -379,6 +379,30 @@ namespace
         }
     }
 
+    /// If we have only IPv4 types, or only IPv6 types, leave them unchanged.
+    /// If we have both IPv4 and IPv6, or either mixed with any other type, convert all IP types to String.
+    void transformIPTypes(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        bool have_ipv4 = type_indexes.contains(TypeIndex::IPv4);
+        bool have_ipv6 = type_indexes.contains(TypeIndex::IPv6);
+
+        if (!have_ipv4 && !have_ipv6)
+            return;
+
+        bool all_ip = (type_indexes.size() == (static_cast<size_t>(have_ipv4) + static_cast<size_t>(have_ipv6)));
+        if (!all_ip || (have_ipv4 && have_ipv6))
+        {
+            for (auto & type : data_types)
+            {
+                if (isIPv4(type) || isIPv6(type))
+                    type = std::make_shared<DataTypeString>();
+            }
+            type_indexes.erase(TypeIndex::IPv4);
+            type_indexes.erase(TypeIndex::IPv6);
+            type_indexes.insert(TypeIndex::String);
+        }
+    }
+
     /// If we have numbers (Int64/UInt64/Float64) and String types and numbers were parsed from String,
     /// convert all numbers to String.
     void transformJSONNumbersBackToString(
@@ -707,6 +731,10 @@ namespace
             /// Transform Date to DateTime or both to String if needed.
             if (settings.try_infer_dates || settings.try_infer_datetimes)
                 transformDatesAndDateTimes(data_types, type_indexes);
+
+            /// Transform mixed IPv4/IPv6 or IP mixed with other types to String.
+            if (settings.try_infer_ipv4 || settings.try_infer_ipv6)
+                transformIPTypes(data_types, type_indexes);
 
             if constexpr (!is_json)
             {
