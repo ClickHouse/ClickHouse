@@ -2137,6 +2137,19 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     validateTextIndexColumnType(*tokenizer, index.data_types[0]);
 
+    /// The `keyValuePairs` tokenizer synthesizes its tokens from the decoded `(key, value)` pairs of a
+    /// `Map` column, so it has no String tokenization step for `preprocessor` / `postprocessor` to hook
+    /// into: a `preprocessor` would have to transform the `Map` pairwise (and mirror that on the query
+    /// side), and a `postprocessor` would corrupt the encoded key-value tokens. Reject both until such
+    /// pairwise transformation semantics are designed end-to-end.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        if (preprocessor_ast)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `keyValuePairs` tokenizer", ARGUMENT_PREPROCESSOR);
+        if (postprocessor_ast)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `keyValuePairs` tokenizer", ARGUMENT_POSTPROCESSOR);
+    }
+
     /// Create the preprocessor for validation.
     /// For very strict validation of the expression we fully parse it here.
     /// However it will be parsed again for index construction, generally immediately after this call.

@@ -91,6 +91,10 @@ CREATE TABLE t_map_kv_bad2 (id UInt64, m Map(String, UInt64), INDEX idx m TYPE t
 -- The keyValuePairs tokenizer requires a Map column.
 CREATE TABLE t_map_kv_bad (id UInt64, s String, INDEX idx s TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
+-- The keyValuePairs tokenizer does not support the preprocessor / postprocessor options.
+CREATE TABLE t_map_kv_bad3 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', preprocessor = 'toString(m)')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_map_kv_bad4 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', postprocessor = 'lower(token)')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
 -- Two literal (wildcard-free) patterns in one predicate must not be conflated (distinct query hashes).
 SELECT id FROM t_map_kv WHERE mapContainsValueLike(m, 'bar') OR mapContainsValueLike(m, 'v2') ORDER BY id;
 SELECT id FROM t_map_kv WHERE m['foo'] LIKE 'bar' OR m['foo'] LIKE 'baz' ORDER BY id;
