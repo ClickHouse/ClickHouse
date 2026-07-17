@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskType.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -234,6 +235,8 @@ namespace Setting
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsUInt64 dead_blobs_to_delay_insert;
+    extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsUInt64 parts_to_throw_insert;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -277,6 +280,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_throw_insert;
+    extern const MergeTreeSettingsUInt64 dead_blobs_to_throw_insert;
+    extern const MergeTreeSettingsUInt64 dead_blobs_to_delay_insert;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
@@ -6575,6 +6580,11 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
 
+    const auto active_parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
+    const auto active_parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
+    const auto dead_blobs_to_delay_insert = query_settings[Setting::dead_blobs_to_delay_insert] ? query_settings[Setting::dead_blobs_to_delay_insert] : (*settings)[MergeTreeSetting::dead_blobs_to_delay_insert];
+    const auto dead_blobs_to_throw_insert = query_settings[Setting::dead_blobs_to_throw_insert] ? query_settings[Setting::dead_blobs_to_throw_insert] : (*settings)[MergeTreeSetting::dead_blobs_to_throw_insert];
+
     /// Check if we have too many parts in total
     if (allow_throw && parts_count_in_total >= (*settings)[MergeTreeSetting::max_parts_in_total])
     {
@@ -6604,12 +6614,35 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             outdated_parts_over_threshold = outdated_parts_count_in_partition - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert] + 1;
     }
 
+    size_t dead_blobs_count = 0;
+    size_t dead_blobs_over_threshold = 0;
+    {
+        if (dead_blobs_to_throw_insert > 0 || dead_blobs_to_delay_insert > 0)
+        {
+            for (auto disk : getDisks())
+            {
+                if (auto delegate_disk = disk->getDelegateDiskIfExists())
+                    disk = delegate_disk;
+
+                for (auto object_storage_disk = std::dynamic_pointer_cast<const DiskObjectStorage>(disk); object_storage_disk; object_storage_disk = object_storage_disk->getWrappedDisk())
+                    dead_blobs_count += object_storage_disk->getDeadBlobsQueueEstimate();
+            }
+        }
+
+        if (allow_throw && dead_blobs_to_throw_insert > 0 && dead_blobs_count >= dead_blobs_to_throw_insert)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTS,
+                "Too many dead blobs in queue ({}) on disks of table '{}'. Blobs cleanup is processing significantly slower than inserts",
+                dead_blobs_count, getLogName());
+        }
+        if (dead_blobs_to_delay_insert > 0 && dead_blobs_count >= dead_blobs_to_delay_insert)
+            dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
+    }
+
     auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
-    const auto active_parts_to_delay_insert
-        = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
-    const auto active_parts_to_throw_insert
-        = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
     size_t active_parts_over_threshold = 0;
 
     {
@@ -6633,7 +6666,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     }
 
     /// no need for delay
-    if (!active_parts_over_threshold && !outdated_parts_over_threshold)
+    if (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold)
         return;
 
     UInt64 delay_milliseconds = 0;
@@ -6641,27 +6674,41 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         size_t parts_over_threshold = 0;
         size_t allowed_parts_over_threshold = 1;
         const bool use_active_parts_threshold = (active_parts_over_threshold >= outdated_parts_over_threshold);
-        if (use_active_parts_threshold)
+        if (active_parts_over_threshold || outdated_parts_over_threshold)
         {
-            parts_over_threshold = active_parts_over_threshold;
-            allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+            if (use_active_parts_threshold)
+            {
+                parts_over_threshold = active_parts_over_threshold;
+                allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+            }
+            else
+            {
+                parts_over_threshold = outdated_parts_over_threshold;
+                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
+                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
+                    allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
+            }
         }
-        else
+
+        size_t allowed_dead_blobs_over_threshold = 1;
+        if (dead_blobs_over_threshold)
         {
-            parts_over_threshold = outdated_parts_over_threshold;
-            allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
-            if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
-                allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
+            allowed_dead_blobs_over_threshold = dead_blobs_over_threshold; /// if throw threshold is not set, will use max delay
+            if (dead_blobs_to_throw_insert > dead_blobs_to_delay_insert)
+                allowed_dead_blobs_over_threshold = dead_blobs_to_throw_insert - dead_blobs_to_delay_insert;
         }
 
         const UInt64 max_delay_milliseconds = ((*settings)[MergeTreeSetting::max_delay_to_insert] > 0 ? (*settings)[MergeTreeSetting::max_delay_to_insert] * 1000 : 1000);
-        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold)
+        if (parts_over_threshold >= allowed_parts_over_threshold || dead_blobs_over_threshold >= allowed_dead_blobs_over_threshold)
         {
             delay_milliseconds = max_delay_milliseconds;
         }
         else
         {
-            double delay_factor = static_cast<double>(parts_over_threshold) / static_cast<double>(allowed_parts_over_threshold);
+            double delay_factor = std::max(
+                static_cast<double>(parts_over_threshold) / static_cast<double>(allowed_parts_over_threshold),
+                static_cast<double>(dead_blobs_over_threshold) / static_cast<double>(allowed_dead_blobs_over_threshold)
+            );
             const UInt64 min_delay_milliseconds = (*settings)[MergeTreeSetting::min_delay_to_insert_ms];
             delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(static_cast<double>(max_delay_milliseconds) * delay_factor));
         }
@@ -6672,8 +6719,8 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
-    LOG_INFO(log, "Delaying inserting block by {} ms. because there are {} parts and their average size is {}",
-        delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size));
+    LOG_INFO(log, "Delaying inserting block by {} ms. because there are {} parts with average size {} and {} dead blobs in queue",
+        delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size), dead_blobs_count);
 
     if (until)
         until->tryWait(delay_milliseconds);
@@ -10758,6 +10805,13 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
             {
+                /// tryCreateZeroCopyExclusiveLock, waitZeroCopyLockToDisappear, and ~ZeroCopyLock (releasing the
+                /// ephemeral lock node when the local `lock` below is destroyed) all issue ZooKeeper requests.
+                /// This runs on a background moves thread (scheduleDataMovingJob / async movePartsToSpace via
+                /// ExecutableLambdaAdapter) with no component scope set, so set one explicitly here; otherwise
+                /// zero-copy part moves abort the server under enforce_keeper_component_tracking.
+                auto component_guard = Coordination::setCurrentComponent("MergeTreeData::moveParts");
+
                 /// This loop is not endless, if shutdown called/connection failed/replica became readonly
                 /// we will return true from waitZeroCopyLock and createZeroCopyLock will return nullopt.
                 while (true)
