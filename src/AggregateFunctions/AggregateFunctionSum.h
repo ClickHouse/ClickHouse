@@ -474,7 +474,10 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    bool mergeIsEquivalentToAddingRows() const override { return true; }
+    // sumKahan exists for a compensated summation with a defined evaluation order;
+    // merging partial states changes the compensation sequence, so it keeps the
+    // recompute path.
+    bool mergeIsEquivalentToAddingRows() const override { return Type != AggregateFunctionTypeSumKahan; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

@@ -373,6 +373,25 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
+-- sumKahan exists for a compensated summation with a defined evaluation order, so it
+-- must stay on the recompute path: the tree-enabled configuration must give bitwise
+-- the same results as the forced-recompute one. The +-1e16 pattern repeating across
+-- segment boundaries diverges if partial states are merged instead.
+DROP TABLE IF EXISTS kahan_results;
+CREATE TABLE kahan_results (r UInt64) ENGINE = Memory;
+INSERT INTO kahan_results
+SELECT groupBitXor(reinterpretAsUInt64(k))
+FROM (SELECT sumKahan(multiIf(n % 64 = 15, -1e16, n % 64 = 24, 1., n % 64 = 38, 2., n % 64 = 45, 1., 0.)) OVER w AS k
+      FROM moving_aggregate_test WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW))
+SETTINGS max_block_size = 123, min_window_frame_rows_for_aggregate_tree = 32;
+INSERT INTO kahan_results
+SELECT groupBitXor(reinterpretAsUInt64(k))
+FROM (SELECT sumKahan(multiIf(n % 64 = 15, -1e16, n % 64 = 24, 1., n % 64 = 38, 2., n % 64 = 45, 1., 0.)) OVER w AS k
+      FROM moving_aggregate_test WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW))
+SETTINGS max_block_size = 123, min_window_frame_rows_for_aggregate_tree = 1000000000;
+SELECT uniqExact(r) FROM kahan_results;
+DROP TABLE kahan_results;
+
 -- groupArray through the tree against ground truth: merge must concatenate the segments
 -- in frame order, so the result must be exactly the frame rows in order.
 SELECT countIf(arrayMap(x -> toUInt64(x), ga) != range(if(n < 250, toUInt64(0), toUInt64(n - 250)), toUInt64(n) + 1)) AS mismatches
