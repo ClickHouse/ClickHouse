@@ -24,6 +24,13 @@ const std::string & MetadataStorageFromCacheObjectStorage::getPath() const
     return underlying->getPath();
 }
 
+bool MetadataStorageFromCacheObjectStorage::isPathOnLocalFilesystem() const
+{
+    /// `getPath` is forwarded to the underlying metadata storage, so whether it names a real
+    /// local directory is the underlying storage's call (e.g. `false` for a cached `web` disk).
+    return underlying->isPathOnLocalFilesystem();
+}
+
 MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
 {
     return underlying->getType();

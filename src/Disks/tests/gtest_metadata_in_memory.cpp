@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageInMemory.h>
 
 #include <Common/ObjectStorageKey.h>
@@ -187,6 +188,15 @@ TEST_F(MetadataInMemoryTest, TestNotOnLocalFilesystem)
 {
     auto metadata = getMetadataStorage();
     EXPECT_FALSE(metadata->isPathOnLocalFilesystem());
+}
+
+/// A cache layer (`DiskObjectStorage::wrapWithCache`) forwards `getPath` to the underlying
+/// metadata storage, so it must forward `isPathOnLocalFilesystem` as well; inheriting the
+/// default `true` would let the cache-wrapped disk slip past the same guards.
+TEST_F(MetadataInMemoryTest, TestCacheWrapperForwardsPathLocality)
+{
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(getMetadataStorage());
+    EXPECT_FALSE(wrapped->isPathOnLocalFilesystem());
 }
 
 /// `MergeTree` reads a part directory's mtime as the part `modification_time`

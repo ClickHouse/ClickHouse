@@ -30,6 +30,25 @@
                 <type>web</type>
                 <endpoint>http://localhost:1/</endpoint>
             </web_disk>
+            <cached_web_disk>
+                <type>cache</type>
+                <disk>web_disk</disk>
+                <path>cached_web/</path>
+                <max_size>104857600</max_size>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </cached_web_disk>
+            <!-- The `Distributed` guard fires before any S3 use, but the endpoint must be a real
+                 (minio) one: an unreachable S3 endpoint makes unrelated `MergeTree` startup
+                 probes (the orphaned-parts search over all configured disks) retry for minutes. -->
+            <plain_s3_disk>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain</metadata_type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+            </plain_s3_disk>
         </disks>
         <policies>
             <borrowed_policy>
@@ -53,6 +72,20 @@
                     </main>
                 </volumes>
             </web_policy>
+            <cached_web_policy>
+                <volumes>
+                    <main>
+                        <disk>cached_web_disk</disk>
+                    </main>
+                </volumes>
+            </cached_web_policy>
+            <plain_s3_policy>
+                <volumes>
+                    <main>
+                        <disk>plain_s3_disk</disk>
+                    </main>
+                </volumes>
+            </plain_s3_policy>
         </policies>
     </storage_configuration>
 

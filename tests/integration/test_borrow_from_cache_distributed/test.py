@@ -7,6 +7,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml"],
+    with_minio=True,
 )
 
 
@@ -71,3 +72,35 @@ def test_distributed_on_web_disk_is_rejected(started_cluster):
     assert "does not have a real filesystem path" in error
 
     assert node.query("EXISTS TABLE dist_web").strip() == "0"
+
+
+def test_distributed_on_cached_web_disk_is_rejected(started_cluster):
+    # A cache layer over the web disk forwards `getPath()` to the underlying metadata storage, so
+    # it must forward `isPathOnLocalFilesystem()` as well; otherwise the cache wrapper would
+    # inherit the default `true` and let the `Distributed` table slip past the guard even though
+    # the path is still the web backend's empty placeholder.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_cached_web (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'cached_web_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not have a real filesystem path" in error
+
+    assert node.query("EXISTS TABLE dist_cached_web").strip() == "0"
+
+
+def test_distributed_on_plain_s3_disk_is_rejected(started_cluster):
+    # For `plain` (and `plain_rewritable`) metadata over a remote object storage, `getPath()` is
+    # only an object-key prefix inside the bucket, not a local filesystem path, so the guard must
+    # reject the disk instead of running `fs::create_directories` on a path relative to the
+    # working directory. The `CREATE` itself never reaches S3 -- the guard throws first.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_plain_s3 (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'plain_s3_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not have a real filesystem path" in error
+
+    assert node.query("EXISTS TABLE dist_plain_s3").strip() == "0"

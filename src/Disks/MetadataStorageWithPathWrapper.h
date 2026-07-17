@@ -189,6 +189,9 @@ public:
         return metadata_absolute_path;
     }
 
+    /// The path above is derived from the delegate's path, so its locality is the delegate's call.
+    bool isPathOnLocalFilesystem() const override { return delegate->isPathOnLocalFilesystem(); }
+
     MetadataStorageType getType() const override { return delegate->getType(); }
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
