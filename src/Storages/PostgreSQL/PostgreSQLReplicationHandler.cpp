@@ -868,6 +868,33 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
     adoptLegacyReplicationIdentityIfNeeded(tx);
+
+    /// On attach, an existing replication slot means replication resumes from the slot's
+    /// confirmed_flush_lsn below. If the publication is gone while the slot survived, recreating the
+    /// publication and streaming through it would silently skip every change committed while the
+    /// publication did not exist: pgoutput resolves publication membership from a historic catalog
+    /// snapshot taken at each change's LSN, so a not-yet-created publication is skipped and the WAL gap
+    /// between the publication's drop and its re-creation never reaches the replica, which then falls
+    /// permanently behind without any error (the same rule adoptLegacyReplicationIdentityIfNeeded()
+    /// enforces when switching to the legacy identity). Fail closed instead of losing the gap.
+    if (is_attach)
+    {
+        String slot_lsn;
+        if (isReplicationSlotExist(tx, slot_lsn, /* temporary */false) && !isPublicationExist(tx))
+            throw Exception(
+                ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot start MaterializedPostgreSQL replication on attach: replication slot {} exists, but "
+                "publication {} does not. Resuming from the existing slot through a freshly created "
+                "publication would silently lose every change written to PostgreSQL while the publication "
+                "did not exist (pgoutput skips a publication that did not yet exist at the change's LSN), so "
+                "replication is refused. Recreate the publication with this engine's tables on the "
+                "PostgreSQL side (accepting the explicit loss of the changes written while it was absent), "
+                "or drop the replication slot as well and recreate this object for a clean re-sync: startup "
+                "keeps retrying and replication starts automatically once the conflict is resolved, without "
+                "a server restart or a manual re-attach.",
+                replication_slot, doubleQuoteString(publication_name));
+    }
+
     createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.

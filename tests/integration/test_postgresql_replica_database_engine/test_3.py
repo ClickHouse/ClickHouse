@@ -3441,6 +3441,98 @@ def test_unique_identifier_legacy_publication_not_adopted_with_wrong_table_set(
     cursor.execute(f'DROP PUBLICATION IF EXISTS "{presalt_publication}"')
 
 
+def test_attach_fails_closed_when_publication_lost_behind_slot(started_cluster):
+    # On attach, replication resumes from the existing replication slot's confirmed_flush_lsn. If the
+    # publication was lost while the slot survived, recreating the publication and resuming from the
+    # slot would silently skip every change committed while the publication did not exist: pgoutput
+    # resolves publication membership from a historic catalog snapshot at each change's LSN, so a
+    # publication created after those changes were written never delivers them, and the replica falls
+    # permanently behind without any error. The attach must fail closed instead, leaving the decision -
+    # recreate the publication and explicitly accept the loss of the gap, or rebuild the replica - to
+    # an operator, and must keep retrying so replication resumes once the conflict is resolved.
+    table = "pub_lost_table"
+    mat_db = "pub_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication disappears (the slot survives), and more rows are
+    # committed: the WAL gap that a recreated publication would silently drop.
+    instance.stop_clickhouse()
+    cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "would silently lose every change written to PostgreSQL while the publication did not exist",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the publication is not recreated behind the surviving slot, and no rows moved.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert slots == [row[0] for row in cursor.fetchall()]
+
+    # Recovery is the operator's explicit decision: once the publication is recreated, the retrying
+    # startup resumes replication from the surviving slot. The rows committed while the publication did
+    # not exist are lost by PostgreSQL semantics - exactly the loss the engine refused to take silently -
+    # while everything committed after the publication exists streams through.
+    cursor.execute(f'CREATE PUBLICATION "{publication}" FOR TABLE ONLY "{table}"')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    assert_eq_with_retry(
+        instance,
+        f"SELECT count() FROM {mat_db}.{table}",
+        "40",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert 0 == int(
+        instance.query(
+            f"SELECT countIf(key >= 30 AND key < 50) FROM {mat_db}.{table}"
+        )
+    )
+    assert 10 == int(
+        instance.query(f"SELECT countIf(key >= 50) FROM {mat_db}.{table}")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
