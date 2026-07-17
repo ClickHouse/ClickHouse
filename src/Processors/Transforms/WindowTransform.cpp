@@ -693,25 +693,36 @@ void WindowTransform::advanceFrameStartRowsOffset()
                 && current_row.row == frame_start_rows_cache_current.row + 1)
             || (current_row.block == frame_start_rows_cache_current.block + 1 && current_row.row == 0
                 && frame_start_rows_cache_current_at_block_end));
-    Int64 offset_left;
-    if (advanced_one_row
-        && (frame_start_rows_cache_offset_left < 0 || frame_start_rows_cache_row.block >= first_block_number))
+    // While clamped with a deficit of more than one row, the pinned row is not consulted
+    // (the result is clamped to partition_start below), so it may lie in a freed block;
+    // but the moment it becomes the real position — the deficit running out or a plain
+    // advance — its block must still exist, otherwise recompute from current_row.
+    bool cached = false;
+    if (advanced_one_row)
     {
-        if (frame_start_rows_cache_offset_left < 0)
+        if (frame_start_rows_cache_offset_left < -1)
+        {
             ++frame_start_rows_cache_offset_left;
-        else
-            advanceRowNumber(frame_start_rows_cache_row);
-        offset_left = frame_start_rows_cache_offset_left;
+            cached = true;
+        }
+        else if (frame_start_rows_cache_row.block >= first_block_number)
+        {
+            if (frame_start_rows_cache_offset_left == -1)
+                ++frame_start_rows_cache_offset_left;
+            else
+                advanceRowNumber(frame_start_rows_cache_row);
+            cached = true;
+        }
     }
-    else
+    if (!cached)
     {
         const auto [moved_row, walk_left] = moveRowNumber(current_row,
             window_description.frame.begin_offset.safeGet<UInt64>()
                 * (window_description.frame.begin_preceding ? -1 : 1));
         frame_start_rows_cache_row = moved_row;
         frame_start_rows_cache_offset_left = walk_left;
-        offset_left = walk_left;
     }
+    const Int64 offset_left = frame_start_rows_cache_offset_left;
     frame_start_rows_cache_valid = window_description.frame.begin_preceding;
     frame_start_rows_cache_current = current_row;
     frame_start_rows_cache_current_at_block_end = current_row.row + 1 == blockRowsNumber(current_row);
@@ -1420,8 +1431,9 @@ void WindowTransform::FrameAggregateTree::mergeFrame(AggregateDataPtr result, Ar
         // When set, the precombined trailing state to merge instead of the raw range.
         const char * state;
     };
-    // At most one trailing range per level; levels cannot exceed log_fanout(2^64) = 16.
-    // Deliberately not value-initialized: only [0, trailing_count) is ever read.
+    // At most one trailing range per level; levels cannot exceed log_fanout(2^64),
+    // i.e. 13 for fanout 32. Deliberately not value-initialized: only
+    // [0, trailing_count) is ever read.
     std::array<SegmentRange, 16> trailing;
     size_t trailing_count = 0;
 

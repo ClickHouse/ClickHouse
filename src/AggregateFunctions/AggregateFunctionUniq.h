@@ -572,6 +572,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    // Unlike the unary numeric case, the variadic add hashes several columns into a
+    // combined key per row, which is expensive enough that merging partial states wins
+    // (measured ~2.7x for two-argument uniqExact over a 10240-row sliding frame).
     bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override

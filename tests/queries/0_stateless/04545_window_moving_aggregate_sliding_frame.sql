@@ -504,6 +504,19 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 300 PRECEDING AND CURRENT ROW)
 );
 
+-- The incrementally-advanced ROWS PRECEDING frame start must survive a partition
+-- change whose rows outrun the still-clamped offset deficit of the previous partition:
+-- the cached position then points into an already-freed block and must be discarded,
+-- not consulted (would abort in debug builds). Small blocks make the early blocks
+-- actually get freed.
+SELECT countIf(c != if(n < 10000, n + 1, least(n - 10000 + 1, 15001))) AS mismatches
+FROM
+(
+    SELECT number AS n, count() OVER (PARTITION BY number >= 10000 ORDER BY number ROWS BETWEEN 15000 PRECEDING AND CURRENT ROW) AS c
+    FROM numbers(40000)
+)
+SETTINGS max_block_size = 1000;
+
 -- Float rounding over tree-sized frames may differ from sequential summation (which
 -- already depends on the block layout, on master too). Pin what is guaranteed:
 -- identical runs give identical bits, and the frame row multiset stays exact.
