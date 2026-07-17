@@ -324,7 +324,7 @@ def main():
     step(
         name="Prepare Release Info",
         command=[
-            f"python3 ./ci/jobs/create_release.py --prepare-release-info"
+            f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
             f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
             f" {dry_run_flag}".strip()
         ],
@@ -361,7 +361,7 @@ def main():
         step(
             name="Download All Release Artifacts",
             command=[
-                f"python3 ./ci/jobs/create_release.py --download-packages"
+                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -371,7 +371,7 @@ def main():
         step(
             name="Push Git Tag for the Release",
             command=[
-                f"python3 ./ci/jobs/create_release.py --push-release-tag"
+                f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -381,7 +381,7 @@ def main():
         step(
             name="Push New Release Branch",
             command=[
-                f"python3 ./ci/jobs/create_release.py --push-new-release-branch"
+                f"python3 ./ci/jobs/scripts/create_release.py --push-new-release-branch"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -400,7 +400,7 @@ def main():
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
-                f"python3 ./ci/jobs/create_release.py --create-bump-version-pr"
+                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -547,7 +547,7 @@ def main():
         step(
             name="Create GH Release",
             command=[
-                f"python3 ./ci/jobs/create_release.py --create-gh-release"
+                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -565,7 +565,7 @@ def main():
             step(
                 name=name,
                 command=[
-                    f"python3 ./ci/jobs/artifactory.py {flag}"
+                    f"python3 ./ci/jobs/scripts/artifactory.py {flag}"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -767,7 +767,7 @@ def main():
         step(
             name="Update Release Info and Merge Created PRs",
             command=[
-                f"python3 ./ci/jobs/create_release.py --merge-prs"
+                f"python3 ./ci/jobs/scripts/create_release.py --merge-prs"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -785,7 +785,7 @@ def main():
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
-                f"python3 ./ci/jobs/create_release.py --create-bump-version-pr"
+                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
@@ -802,7 +802,7 @@ def main():
             Result.from_commands_run(
                 name="Post Slack Message",
                 command=[
-                    f"python3 ./ci/jobs/create_release.py --post-status"
+                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -813,7 +813,7 @@ def main():
     # do not persist for a later job on a reused self-hosted runner.
     def cleanup_credentials():
         # Unmount the geesefs FUSE mount of the production `packages` bucket
-        # first. ci/jobs/artifactory.py mounts it at ~/mountpoint and its
+        # first. ci/jobs/scripts/artifactory.py mounts it at ~/mountpoint and its
         # teardown is not in a finally block, so an export step that fails
         # before teardown leaves the bucket mounted; on a reused runner the next
         # job could still read or mutate it even after the R2 auth files below

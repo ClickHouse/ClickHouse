@@ -5,7 +5,7 @@ from shutil import copy2, rmtree
 from typing import Optional
 
 from ci.praktika.utils import MetaClasses, Shell
-from ci.jobs.create_release import (
+from ci.jobs.scripts.create_release import (
     PackageDownloader,
     ReleaseContextManager,
     ReleaseInfo,

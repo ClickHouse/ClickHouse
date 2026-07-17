@@ -59,7 +59,7 @@ from ci.praktika.git import Git
 from ci.praktika.utils import Shell
 
 # S3Helper requires boto3 (installed on release machines); ssh has no external deps.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tests/ci"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../tests/ci"))
 from s3_helper import S3Helper  # noqa: E402
 from ssh import SSHAgent  # noqa: E402
 
