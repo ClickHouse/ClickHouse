@@ -9,6 +9,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <algorithm>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Functions/FunctionFactory.h>
@@ -17,6 +19,49 @@
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// Decide whether the read served by `read_step` would already produce rows in an order
+/// whose prefix is `sort_column_name`, making a TopK dynamic prewhere filter redundant.
+///
+/// Two sources of order are considered:
+///   1. The base table's sorting key starts with `sort_column_name`.
+///   2. A normal (sorting) projection whose ORDER BY starts with `sort_column_name` and which
+///      stores every column the query reads is available; when projections and read-in-order
+///      are enabled such a projection is selected to serve the read in the second plan pass.
+static bool readWouldBeInOrderForColumn(
+    const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection)
+{
+    const auto & metadata = read_step.getStorageMetadata();
+
+    const auto & sorting_key = metadata->getSortingKey();
+    if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
+        return true;
+
+    /// A sorting projection can only serve the read when projection optimization is enabled.
+    if (!optimize_projection)
+        return false;
+
+    const auto & read_columns = read_step.getAllColumnNames();
+    for (const auto & projection : metadata->projections)
+    {
+        if (projection.type != ProjectionDescription::Type::Normal)
+            continue;
+
+        const auto & proj_sorting_key = projection.metadata->getSortingKey();
+        if (proj_sorting_key.column_names.empty() || proj_sorting_key.column_names[0] != sort_column_name)
+            continue;
+
+        /// The projection can serve the read in-order only if it stores every column the read needs.
+        const bool stores_all_read_columns = std::ranges::all_of(
+            read_columns,
+            [&](const String & column) { return projection.sample_block.findByName(column) != nullptr; });
+
+        if (stores_all_read_columns)
+            return true;
+    }
+
+    return false;
+}
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
@@ -179,17 +224,21 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
-    /// of the storage's sorting key, the engine will read data in sorted order.
+    /// of the read's sorted order, the engine will read data in sorted order.
     /// TopK dynamic filtering is counterproductive in this case: once the threshold
     /// is established, the prewhere rejects all subsequent rows (they are beyond
     /// the threshold in sorted order), preventing the LIMIT from triggering early
     /// pipeline cancellation, and causing a full table scan instead.
-    if (use_dynamic_filtering && settings.read_in_order)
-    {
-        const auto & sorting_key = read_from_mergetree_step->getStorageMetadata()->getSortingKey();
-        if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
-            use_dynamic_filtering = false;
-    }
+    ///
+    /// The read may end up in-order either because the sort column is a prefix of the
+    /// base table's sorting key, or because a sorting projection whose ORDER BY starts
+    /// with the sort column is selected to serve the read. This optimization runs in the
+    /// first plan pass, before projection selection and read-in-order (both second pass),
+    /// so the guard is predictive: it disables dynamic filtering whenever the base table
+    /// OR a usable sorting projection would make the read in-order for the ORDER BY prefix.
+    if (use_dynamic_filtering && settings.read_in_order
+        && readWouldBeInOrderForColumn(*read_from_mergetree_step, sort_column_name, settings.optimize_projection))
+        use_dynamic_filtering = false;
 
     /// The threshold tracker is needed for dynamic mark skipping during reads
     /// (use_skip_indexes_on_data_read) or for the prewhere dynamic filter.

@@ -52,6 +52,7 @@ struct Optimization
         bool use_skip_indexes_on_data_read{};
         bool read_in_order{};
         bool read_in_order_through_join{};
+        bool optimize_projection{};
 
         /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
         /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
