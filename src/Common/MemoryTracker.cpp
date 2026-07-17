@@ -535,6 +535,8 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
         }
         catch (...)
         {
+            /// Ok to ignore: the profiler trace is best-effort, and `commitAllocation` must not throw
+            /// after the whole tracker chain has accepted the allocation.
             return false;
         }
     };
@@ -557,6 +559,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
         }
         catch (...)
         {
+            /// Ok to ignore: peak bookkeeping is best-effort, and `commitAllocation` must not throw.
             return false;
         }
     };
@@ -572,6 +575,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
             }
             catch (...)
             {
+                /// Ok to ignore: the profile events are best-effort, and `commitAllocation` must not throw.
                 return;
             }
         };
@@ -597,6 +601,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
             }
             catch (...)
             {
+                /// Ok to ignore: the peak trace is best-effort, and `commitAllocation` must not throw.
                 return;
             }
         };
