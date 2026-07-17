@@ -1,7 +1,8 @@
 <!-- Regression coverage for top-level keys that are consumed outside `ServerSettings`
      (read directly from the server config by various components). Every key here is
-     read somewhere in the codebase; if a future allowlist edit drops one of them, the
-     server will fail to start and this test will catch it. -->
+     read somewhere in the codebase (or was read by an older release and must stay
+     accepted as a no-op); if a future allowlist edit drops one of them, the server
+     will fail to start and this test will catch it. -->
 <clickhouse>
     <proto_caps>
         <send>notchunked</send>
@@ -60,4 +61,15 @@
     <hdfs_testuser>
         <hadoop_kerberos_principal>testuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
     </hdfs_testuser>
+    <!-- Legacy system log sections no longer read by the current server. A config carried over
+         an upgrade may still contain them with real content (`latency_log` was deprecated in
+         favor of `histogram_metric_log`); they must stay accepted as no-ops. -->
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+    </latency_log>
+    <query_condition_cache_log>
+        <database>system</database>
+        <table>query_condition_cache_log</table>
+    </query_condition_cache_log>
 </clickhouse>

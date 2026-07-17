@@ -2154,6 +2154,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "distributed_cache_server_log",
         "instrumentation_trace_log",
         "default_system_log_flush_policy",
+        /// Legacy system log section names that older releases (or cloud deployments) read but the
+        /// current server does not. A config carried over an upgrade may still contain them
+        /// (e.g. `latency_log`, deprecated in favor of `histogram_metric_log`); such sections are
+        /// harmless no-ops and must not turn into startup failures.
+        "latency_log",
+        "query_condition_cache_log",
 
         /// Other logging
         "query_masking_rules",
