@@ -810,9 +810,24 @@ protected:
         else
         {
             /// bigquery('project', 'dataset', 'table', 'access_token', ...)
-            String value;
-            if (function->arguments->size() >= 4 && tryGetStringFromArgument(3, &value, /* allow_identifier= */ false))
-                markSecretArgument(3);
+            /// The 4th positional argument is always the access token. It does not have to be a string
+            /// literal: `BigQueryConfiguration::fromArguments` folds arbitrary constant expressions
+            /// (e.g. `concat(...)`), so mask it unconditionally. The `key = value` arguments can be
+            /// interleaved with positional ones, so count positional arguments the same way the
+            /// configuration parser does instead of relying on the argument index.
+            size_t num_positional = 0;
+            for (size_t i = 0; i < function->arguments->size(); ++i)
+            {
+                const auto equals_func = function->arguments->at(i)->getFunction();
+                if (equals_func && equals_func->name() == "equals")
+                    continue;
+                ++num_positional;
+                if (num_positional == 4)
+                {
+                    markSecretArgument(i);
+                    break;
+                }
+            }
         }
 
         /// The key = value form of the credential arguments.

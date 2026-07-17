@@ -702,6 +702,65 @@ def test_secret_masking_in_query_log():
     assert "[HIDDEN]" in logged
 
 
+def test_secret_masking_constant_expression():
+    # The positional access token does not have to be a string literal: any constant expression
+    # (e.g. `concat(...)`) is folded during parsing. Masking must not depend on the literal form,
+    # otherwise the token pieces leak into `system.query_log` verbatim.
+    token_expr = "concat('test-static', '-token')"
+    query_id = "bigquery-masking-concat-test"
+    node.query(
+        f"SELECT count() FROM bigquery('{PROJECT}', '{DATASET}', 'test_paging', {token_expr}, base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    node.query("SYSTEM FLUSH LOGS query_log")
+    logged = node.query(
+        f"SELECT query FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+    assert logged != ""
+    assert "test-static" not in logged
+    assert "-token" not in logged
+    assert "[HIDDEN]" in logged
+
+    # The same for the engine form: the CREATE query is masked in the query log, and the token
+    # (folded to a literal during argument evaluation) is masked in SHOW CREATE TABLE.
+    node.query("DROP TABLE IF EXISTS bq_engine_concat")
+    create_query_id = "bigquery-masking-concat-create"
+    node.query(
+        f"CREATE TABLE bq_engine_concat ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"{token_expr}, base_url = '{BASE_URL}')",
+        query_id=create_query_id,
+    )
+    create = node.query("SHOW CREATE TABLE bq_engine_concat")
+    assert ACCESS_TOKEN not in create
+    assert "test-static" not in create
+    assert "[HIDDEN]" in create
+    node.query("SYSTEM FLUSH LOGS query_log")
+    logged = node.query(
+        f"SELECT query FROM system.query_log WHERE query_id = '{create_query_id}' AND type = 'QueryFinish'"
+    )
+    assert logged != ""
+    assert "test-static" not in logged
+    assert "-token" not in logged
+    assert "[HIDDEN]" in logged
+    node.query("DROP TABLE bq_engine_concat")
+
+    # `key = value` arguments can be interleaved with positional ones; the 4th *positional*
+    # argument is masked wherever it appears, and non-secret arguments stay visible.
+    query_id = "bigquery-masking-interleaved-test"
+    node.query(
+        f"SELECT count() FROM bigquery('{PROJECT}', base_url = '{BASE_URL}', '{DATASET}', 'test_paging', '{ACCESS_TOKEN}')",
+        query_id=query_id,
+    )
+    node.query("SYSTEM FLUSH LOGS query_log")
+    logged = node.query(
+        f"SELECT query FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "[HIDDEN]" in logged
+    assert BASE_URL in logged
+
+
 def test_unsupported_table_types():
     # Only native tables can be read; views, materialized views and external tables are rejected
     # up front with a clear error, matching the documented contract.
