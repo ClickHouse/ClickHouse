@@ -1230,14 +1230,12 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
-<CloudNotSupportedBadge/>
-
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family:
 
 ```sql
 CREATE TABLE tab
 (
-    a Int64 STATISTICS(TDigest, Uniq),
+    a Int64 STATISTICS(tdigest, uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1247,7 +1245,7 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements:
 
 ```sql
-ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
 ALTER TABLE tab DROP STATISTICS a;
 ```
 
@@ -1257,17 +1255,17 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
 
 ```sql
--- Create a table with MinMax statistics on the 'value' column
+-- Create a table with basic statistics on the 'value' column
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(MinMax)
+    value Int64 STATISTICS(basic)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1290,24 +1288,24 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 
-- `Basic`
+- `basic`
 
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
   - for any column: the number of rows whose stored value is the column's internal storage default — the raw-zero representation identified by `IColumn::isDefaultAt`, not the column's DDL `DEFAULT` expression. For most types this matches the familiar type default: `0` for integers and floats, `''` for `String`, `[]` for `Array`, and so on. Two notable exceptions: for `FixedString(N)` the column default is N zero bytes (a comparison `col = ''` still matches because the empty string is padded to N zeros); for `Enum` types the column default is raw integer `0`, so the fast path fires only when the compared enumerator maps to raw `0` — if no enumerator is declared with value `0` the fast path never fires. For a `Nullable` / `LowCardinality(Nullable)` column the type default is `NULL`, so this count is exactly the number of `NULL` rows and lets the optimizer discount `NULL` rows and estimate `IS NULL`; for a non-`Nullable` column it estimates equality against the default (`col = 0`, `col = ''`);
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
   - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
 
-    A single `Basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `Basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
+    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
-    Syntax: `basic`
+- `minmax` (deprecated)
 
-- `MinMax`
+    :::note
+    `minmax` statistics are deprecated and can no longer be created (`CREATE TABLE ... STATISTICS(minmax)` and `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` return an error). Existing tables and parts with `minmax` statistics keep working. Use `basic` statistics instead.
+    :::
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
-    Syntax: `minmax`
-
-- `TDigest`
+- `tdigest`
 
 :::warning
 Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
@@ -1315,15 +1313,15 @@ Statistics of type `tdigest` have high creation costs and potentially slow down 
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
-    Syntax: `tdigest`
+- `uniq`
 
-- `Uniq`
+    [BJKST](https://people.iith.ac.in/aravind/Files-CS5120/pc-lec14-BJKST.pdf) sketches which provide an estimation how many distinct values a column contains. Internally uses [`uniq`](/sql-reference/aggregate-functions/reference/uniq).
 
-    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
+- `uniq_v2`
 
-    Syntax: `uniq`
+    Similar to `uniq` but internally uses [`uniqCombined`](/sql-reference/aggregate-functions/reference/uniqcombined)`(12)` (a variant of [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). Consumes less memory than `uniq` and can be build faster.
 
-- `CountMin`
+- `countmin`
 
 :::warning
 Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
@@ -1331,37 +1329,37 @@ Statistics of type `countmin` have high creation costs and potentially slow down
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
-    Syntax `countmin`
-
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
-|-----------|----------------------------------------------------|------|-----------------------|----------------|
-| Basic     | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
-| CountMin  | ✔                                                  | ✔    | ✔                     | ✗              |
-| MinMax    | ✔                                                  | ✔    | ✗                     | ✗              |
-| TDigest   | ✔                                                  | ✗    | ✗                     | ✗              |
-| Uniq      | ✔                                                  | ✔    | ✔                     | ✗              |
+|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
+|----------|----------------------------------------------------|------|-----------------------|----------------|
+| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
+| countmin | ✔                                                  | ✔    | ✔                     | ✗              |
+| minmax   | ✔                                                  | ✔    | ✗                     | ✗              |
+| tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
+| uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
+| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
 
-All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==)          | Range filters (`>, >=, <, <=`) |
-|-----------|--------------------------------|--------------------------------|
-| Basic     | ✔ (default value only)         | ✔ (numeric columns only)       |
-| CountMin  | ✔                              | ✗                              |
-| MinMax    | ✗                              | ✔ (numeric columns only)       |
-| TDigest   | ✗                              | ✔ (numeric columns only)       |
-| Uniq      | ✔                              | ✗                              |
+|          | Equality filters (==)    | Range filters (`>, >=, <, <=`) |
+|----------|--------------------------|--------------------------------|
+| basic    | ✔ (default value only)   | ✔ (numeric columns only)       |
+| countmin | ✔                        | ✗                              |
+| minmax   | ✗                        | ✔ (numeric columns only)       |
+| tdigest  | ✗                        | ✔ (numeric columns only)       |
+| uniq     | ✔                        | ✗                              |
+| uniq_v2  | ✔                        | ✗                              |
 
-`Basic` answers an equality filter exactly only when the compared value matches the column's
+`basic` answers an equality filter exactly only when the compared value matches the column's
 internal storage default (raw integer `0` for numeric types, `''` / N zero bytes for `String` /
 `FixedString`, `NULL` for `Nullable` columns, etc.). For `Enum` types in particular, the fast path
 fires only when the enumerator literal maps to raw integer `0`; if no enumerator has raw value `0`
 the statistic contributes nothing to equality estimation. For other values the optimizer falls back
 to other statistics.
-For `Basic` on `String` / `FixedString` columns the statistic records the total non-NULL byte length
+For `basic` on `String` / `FixedString` columns the statistic records the total non-NULL byte length
 (used to estimate average string length) plus the default/`NULL` count; range filters and part
 pruning are not driven by it.
 

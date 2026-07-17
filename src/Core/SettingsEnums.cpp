@@ -179,6 +179,10 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(SnappyMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"basic",  SnappyMode::Basic},
+     {"framed", SnappyMode::Framed}})
+
 IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
     {{"async",          TransactionsWaitCSNMode::ASYNC},
      {"wait",           TransactionsWaitCSNMode::WAIT},
@@ -364,7 +368,8 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,

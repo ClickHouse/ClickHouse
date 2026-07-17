@@ -16,7 +16,8 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
-    Basic = 4, /// Min/max, average string length, and a count of the type-default value (NULLs for a Nullable column), depending on the column type.
+    Basic = 4,
+    UniqV2 = 5,
 
     Max = 63,
 };
