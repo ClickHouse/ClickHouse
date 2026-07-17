@@ -38,6 +38,19 @@ in-flight run-all single: the launched statement runs, not the draft
 in-flight run-all single: the never-run draft is not stamped run=1
 in-flight run-all single: the live draft survives in the editor
 run-one in-flight: the launch-time caret statement runs, not the moved caret
+run-selected subset: the entry is not stamped run=1
+run-selected subset: the result snapshot is the statement that ran
+run-selected subset: a reload does not auto-run the full editor
+run-selected subset: a reload restores the full editor as text
+run-selected multi subset: the entry is not stamped run=1
+run-selected multi subset: a later tab switch does not re-stamp run=1
+run-selected multi subset: a reload does not auto-run the full editor
+run-one partial: the entry is not stamped run=1
+run-one partial: the result snapshot is the statement that ran
+run-one partial: a reload does not auto-run the DROP
+run-all full: the entry keeps run=1
+run-all full: a reload re-runs the whole editor
+run-one single-statement: the full run keeps run=1
 placeholder dropped: the completed run keeps run=1
 placeholder dropped: the removed placeholder does not leak into the URL
 placeholder dropped: the stale binding is cleared from the tab

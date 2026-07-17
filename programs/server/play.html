@@ -4722,7 +4722,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart)
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial)
 {
     const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
@@ -4759,6 +4759,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 data: result.reply.length > 100000 ? null : result.reply,
                 elapsed_ns: 1e6 * (performance.now() - last_query_start),
                 params: paramValuesSnapshot,
+                partial: partial,
             });
         }
         return;
@@ -4800,6 +4801,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         data: result.reply.length > 100000 ? null : result.reply,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
+        partial: partial,
     });
 }
 
@@ -4810,7 +4812,7 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text)
+async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial)
 {
     const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
@@ -4960,9 +4962,10 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
     /// Save all queries to browser history, using the full textarea content captured when the
     /// run STARTED (`launch_query_text`), not the live `query_area.value`. Typing does not cancel
     /// an in-flight `postMulti`/`postImpl` request, so by the time every statement has finished the
-    /// editor may already hold a newer, unrun draft; recording that draft here would stamp it as a
-    /// genuine run (`saveHistory` always sets `fromRun=true`) and let a reload auto-execute text
-    /// that was never actually run.
+    /// editor may already hold a newer, unrun draft; recording that draft as the run text (with
+    /// `saveHistory` still seeing `tab.query === launch_query_text`) would let a reload auto-execute
+    /// text that was never actually run. `partial` is true for a "Run selected" subset: only some of
+    /// the editor's statements ran, so the entry must not be marked auto-runnable (see `saveHistory`).
     saveHistory({
         query: launch_query_text,
         format: null,
@@ -4971,6 +4974,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
         multi: multi,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
+        partial: partial,
     }, parsed[0].query);
 }
 
@@ -5945,8 +5949,14 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
 /// the tab is clean; a "Run selected" result stores only the selected statement, so it compares
 /// unequal to the full editor and conservatively drops the marker (its URL hash is the whole
 /// editor and could not reproduce that single-statement result anyway).
+///
+/// A `partial` run (only some of the editor's statements ran) is never reflected by the full
+/// editor: reloading its `run=1` URL would `postAll` every statement, including ones that never
+/// ran. It is dropped explicitly here — a multi-statement "Run selected" stores the full editor as
+/// `result.query` (no single `resultQuery`), so the query comparison alone would wrongly report it
+/// as reflecting the run and re-stamp `run=1` on a later tab switch / rename.
 function tabReflectsRun(tab) {
-    return !!(tab && tab.result && tab.result.ran
+    return !!(tab && tab.result && tab.result.ran && !tab.result.partial
         && tab.query === tab.result.query
         && JSON.stringify(tab.params || {}) === JSON.stringify(tab.result.params || {}));
 }
@@ -6022,12 +6032,20 @@ function saveHistory(stateData, titleForDoc) {
         /// re-applies the same coloring; a later toggle updates it via `persistColorModes`.
         color_modes: column_color_modes,
         elapsed_ns: stateData.elapsed_ns,
+        /// A partial run ("Run one"/"Run selected" of only some of the editor's statements): the
+        /// history text is the FULL editor but only a subset ran, so re-running the whole editor via
+        /// `postAll` on reload would NOT reproduce it (it would run the other statements too). Kept
+        /// on the snapshot so `tabReflectsRun` never re-stamps `run=1` for it on a later tab switch
+        /// (for a subset `postMulti` `tab.result.query` even falls back to the full editor and would
+        /// otherwise compare equal to `tab.query`), and so it survives reload/restore.
+        partial: !!stateData.partial,
     };
     /// This entry was produced by an actual run, so it may carry `run=1` (a reload/shared link
     /// re-runs it) — but only when the editor still reflects exactly what ran (`ranLiveQuery` and
-    /// `ranLiveParams`); otherwise a newer unrun draft has taken over meanwhile, and the marker
-    /// must be dropped for the same reason `syncHistory`/`refreshCurrentHistoryEntry` never set it.
-    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ ranLiveQuery && ranLiveParams);
+    /// `ranLiveParams`) AND the whole editor ran (`!partial`); otherwise a newer unrun draft has
+    /// taken over meanwhile, or the reload's `postAll` would run statements that were never
+    /// launched, so the marker must be dropped just as `syncHistory`/`refreshCurrentHistoryEntry` do.
+    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ ranLiveQuery && ranLiveParams && !stateData.partial);
 }
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
@@ -6258,10 +6276,15 @@ async function postOne()
             }
         }
 
+        /// "Run selected" runs only the intersecting statements. When that is fewer than every
+        /// statement in the editor, the run is partial: the history text is still the full editor
+        /// (so reload restores it), but a `run=1` reload would `postAll` the WHOLE editor and run
+        /// statements that were never launched, so such an entry must not be marked auto-runnable.
+        const partial = selected.length !== parsed.length;
         if (selected.length > 1) {
-            await postMulti(my_request_num, selected, params_restore_pending, all_text);
+            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial);
         } else if (selected.length === 1) {
-            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial);
         }
     } else {
         /// Snapshot the full editor at launch time, before the tokenization await: typing during
@@ -6273,7 +6296,12 @@ async function postOne()
         if (my_request_num !== request_num) return;
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart);
+        /// That makes the run partial whenever the editor holds more than the one launched
+        /// statement (`queryUnderCursorIsPartial`): its history text is the full editor, but a
+        /// `run=1` reload would `postAll` and run the other statements too. In single-query mode the
+        /// history text is the launched statement itself (`undefined` above), so it stays runnable.
+        const partial = isMultiQuery && queryUnderCursorIsPartial;
+        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -6297,7 +6325,9 @@ async function postAll()
     if (my_request_num !== request_num) return;
 
     if (parsed.length > 1) {
-        await postMulti(my_request_num, parsed, params_restore_pending, all_text);
+        /// "Run all" runs every statement, so the entry is reproducible by re-running the full
+        /// editor on reload: not partial, may carry `run=1`.
+        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false);
     } else {
         /// A single statement (or none): run the launch-time snapshot `splitAllQueries` produced
         /// from `all_text`, never a fresh `getQueryUnderCursor` read of the live editor. `postAll`
@@ -6308,7 +6338,7 @@ async function postAll()
         /// multi-query branch above and `postOne` already use.
         const query = parsed.length ? parsed[0].query : all_text;
         const queryStart = parsed.length ? parsed[0].queryStart : 0;
-        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart);
+        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -6662,6 +6692,13 @@ async function tokenize(query) {
 /// appears more than once in the editor.
 let queryUnderCursorStart = 0;
 
+/// True when the last `getQueryUnderCursor` ran only ONE of several statements in the editor, i.e.
+/// the editor holds more than the statement that was launched. `postOne` threads it into the run so
+/// a partial multi-query "Run" is never recorded as an auto-runnable (`run=1`) entry: reloading such
+/// a URL would `postAll` the WHOLE editor and execute statements that were never launched. False for
+/// a single-statement editor (running it IS reproducible by `postAll`) and when the lexer is absent.
+let queryUnderCursorIsPartial = false;
+
 /// Regression coverage for this function lives in
 /// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
 /// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
@@ -6676,11 +6713,15 @@ async function getQueryUnderCursor() {
 
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
         queryUnderCursorStart = 0;
+        /// No lexer: the whole editor runs as one query, so the run covers the full editor.
+        queryUnderCursorIsPartial = false;
         return all_queries;
     }
 
     const tokens = await tokenize(all_queries);
     const should_select_query = getQueryBoundaries(tokens, all_queries).length > 1;
+    /// More than one statement in the editor ⇒ running the one under the cursor is a partial run.
+    queryUnderCursorIsPartial = should_select_query;
 
     let current_query_start = 0;
     let current_offset = 0;

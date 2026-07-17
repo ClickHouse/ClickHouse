@@ -229,6 +229,9 @@ sandbox.postAll = async () => { sandbox.postAllCalled = true; };
 sandbox.beginFlight = () => {};
 sandbox.isMultiQuery = false;
 sandbox.queryUnderCursorStart = 0;
+/// Set by the real `getQueryUnderCursor` (whether it ran only one of several statements) and read
+/// by `postOne` to decide whether a no-selection "Run one" is a partial run; a page-level global.
+sandbox.queryUnderCursorIsPartial = false;
 sandbox.last_query_for_download = '';
 sandbox.last_params_for_download = {};
 sandbox.getQueryUnderCursor = async () => '';
@@ -676,6 +679,131 @@ async function reload()
     await drain();
     assert_eq('run-one in-flight: the launch-time caret statement runs, not the moved caret', active().result && active().result.query, 'SELECT 1;');
     sandbox.getQueryUnderCursor = async () => '';   /// restore the default stub for the later cases
+    sandbox.isMultiQuery = false;
+
+    /// A partial "Run selected" — only ONE of several statements selected and run — must NOT be
+    /// recorded as an auto-runnable (`run=1`) entry: its history text is the FULL editor, so a
+    /// reload would `postAll` the whole thing and execute statements that never ran (here a
+    /// destructive `DROP TABLE`). Drives the REAL `postOne`/`postSingle` (single selected statement)
+    /// from the launch-time selection, then reloads and asserts the tail is not auto-run.
+    reset();
+    sandbox.isMultiQuery = true;
+    sandbox.query_area.value = 'SELECT 1; DROP TABLE important';
+    active().query = 'SELECT 1; DROP TABLE important';
+    sandbox.query_area.selectionStart = 0;     /// 'SELECT 1' selected at launch
+    sandbox.query_area.selectionEnd = 8;
+    sandbox.splitAllQueries = async () => [
+        { query: 'SELECT 1', is_select: true, start: 0, end: 8, queryStart: 0 },
+        { query: 'DROP TABLE important', is_select: false, start: 10, end: 30, queryStart: 10 },
+    ];
+    const selSubsetPromise = sandbox.postOne();
+    await drain();
+    resolvePendingPostImpl();
+    await selSubsetPromise;
+    await drain();
+    assert_eq('run-selected subset: the entry is not stamped run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('run-selected subset: the result snapshot is the statement that ran', active().result && active().result.query, 'SELECT 1');
+    sandbox.isMultiQuery = false;
+    await reload();
+    assert_eq('run-selected subset: a reload does not auto-run the full editor', sandbox.postAllCalled, false);
+    assert_eq('run-selected subset: a reload restores the full editor as text', active().query, 'SELECT 1; DROP TABLE important');
+
+    /// A partial "Run selected" of SEVERAL (but not all) statements drives the REAL `postMulti`.
+    /// Its result stores the full editor as `tab.result.query` (no single `resultQuery`), so besides
+    /// dropping `run=1` at save time, a later tab switch (`syncHistory`) must NOT re-stamp `run=1`
+    /// via `tabReflectsRun` — the `partial` flag on the snapshot is what prevents that.
+    reset();
+    sandbox.isMultiQuery = true;
+    sandbox.query_area.value = 'SELECT 1; SELECT 2; DROP TABLE important';
+    active().query = 'SELECT 1; SELECT 2; DROP TABLE important';
+    sandbox.query_area.selectionStart = 0;     /// 'SELECT 1; SELECT 2' selected at launch
+    sandbox.query_area.selectionEnd = 18;
+    sandbox.splitAllQueries = async () => [
+        { query: 'SELECT 1', is_select: true, start: 0, end: 8, queryStart: 0 },
+        { query: 'SELECT 2', is_select: true, start: 10, end: 18, queryStart: 10 },
+        { query: 'DROP TABLE important', is_select: false, start: 20, end: 40, queryStart: 20 },
+    ];
+    const selMultiSubsetPromise = sandbox.postOne();
+    await drain();
+    resolvePendingPostImpl();
+    await selMultiSubsetPromise;
+    await drain();
+    assert_eq('run-selected multi subset: the entry is not stamped run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    sandbox.syncHistory();   /// a tab switch calls this; it must not re-stamp run=1 from the full editor
+    assert_eq('run-selected multi subset: a later tab switch does not re-stamp run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    sandbox.isMultiQuery = false;
+    await reload();
+    assert_eq('run-selected multi subset: a reload does not auto-run the full editor', sandbox.postAllCalled, false);
+
+    /// "Run one" (no selection) in multi-query mode runs only the statement under the cursor. When
+    /// the editor holds more than that one statement, the run is partial: a `run=1` reload would
+    /// `postAll` the whole editor and run the others. Drives the REAL `postOne` + real
+    /// `getQueryUnderCursor`; the editor's tail is a `DROP TABLE` a reload must not auto-run.
+    reset();
+    sandbox.isMultiQuery = true;
+    sandbox.query_area.value = 'SELECT 1; DROP TABLE important';
+    active().query = 'SELECT 1; DROP TABLE important';
+    sandbox.query_area.selectionStart = 3;   /// caret inside `SELECT 1`, no selection
+    sandbox.query_area.selectionEnd = 3;
+    sandbox.getQueryUnderCursor = sandbox.realGetQueryUnderCursor;
+    sandbox.tokenize = async () => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '1', significant: true }, { token: ';', significant: true },
+        { token: ' ', significant: false }, { token: 'DROP', significant: true },
+        { token: ' ', significant: false }, { token: 'TABLE', significant: true },
+        { token: ' ', significant: false }, { token: 'important', significant: true },
+    ];
+    const oneSubsetPromise = sandbox.postOne();
+    await drain();
+    resolvePendingPostImpl();
+    await oneSubsetPromise;
+    await drain();
+    assert_eq('run-one partial: the entry is not stamped run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('run-one partial: the result snapshot is the statement that ran', active().result && active().result.query, 'SELECT 1;');
+    sandbox.getQueryUnderCursor = async () => '';
+    sandbox.isMultiQuery = false;
+    await reload();
+    assert_eq('run-one partial: a reload does not auto-run the DROP', sandbox.postAllCalled, false);
+
+    /// Control: a full "Run all" of several statements (REAL `postAll` -> real `postMulti`,
+    /// `partial` false) stays auto-runnable — reloading its `run=1` URL re-runs the whole editor,
+    /// the behavior the partial cases above deliberately drop.
+    reset();
+    sandbox.query_area.value = 'SELECT 1; SELECT 2';
+    active().query = 'SELECT 1; SELECT 2';
+    sandbox.splitAllQueries = async text => text.split(';').map((q, i) => ({ query: q.trim(), is_select: true, start: i * 10, end: i * 10 + 8, queryStart: i * 10 }));
+    const allFullPromise = sandbox.realPostAll();
+    await drain();
+    resolvePendingPostImpl();
+    await allFullPromise;
+    await drain();
+    assert_eq('run-all full: the entry keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    await reload();
+    assert_eq('run-all full: a reload re-runs the whole editor', sandbox.postAllCalled, true);
+
+    /// Control: "Run one" in multi-query mode on a SINGLE-statement editor is a full run — running
+    /// it IS reproducible by `postAll` on reload — so `run=1` must be KEPT. Pins that `partial` is
+    /// derived from whether the editor holds more than one statement (`queryUnderCursorIsPartial`),
+    /// not merely from being in multi-query mode. Real `getQueryUnderCursor`, one-statement editor.
+    reset();
+    sandbox.isMultiQuery = true;
+    sandbox.query_area.value = 'SELECT 1';
+    active().query = 'SELECT 1';
+    sandbox.query_area.selectionStart = 3;
+    sandbox.query_area.selectionEnd = 3;
+    sandbox.getQueryBoundaries = () => [{}];   /// one statement ⇒ should_select_query false ⇒ not partial
+    sandbox.getQueryUnderCursor = sandbox.realGetQueryUnderCursor;
+    sandbox.tokenize = async () => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false }, { token: '1', significant: true },
+    ];
+    const oneFullPromise = sandbox.postOne();
+    await drain();
+    resolvePendingPostImpl();
+    await oneFullPromise;
+    await drain();
+    assert_eq('run-one single-statement: the full run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    sandbox.getQueryBoundaries = () => [{}, {}];   /// restore the default stub
+    sandbox.getQueryUnderCursor = async () => '';
     sandbox.isMultiQuery = false;
 
     /// A query edit that drops a parameter placeholder rebuilds the `param_*` inputs (via
