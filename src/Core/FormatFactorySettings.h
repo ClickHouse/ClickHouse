@@ -627,14 +627,12 @@ Enabled by default.
 When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not DateTime types
 )", 0) \
     DECLARE(Bool, input_format_try_infer_ipv4, false, R"(
-If enabled, ClickHouse will try to infer type `IPv4` from string fields in JSON shared data insertion.
-If the string value can be parsed as an IPv4 address, it will be stored as IPv4 instead of String.
+If enabled, ClickHouse will try to infer type `IPv4` from string fields in schema inference for text formats. If the string value can be successfully parsed as an IPv4 address, the result type will be `IPv4`, otherwise it will be `String`.
 
 Disabled by default.
 )", 0) \
     DECLARE(Bool, input_format_try_infer_ipv6, false, R"(
-If enabled, ClickHouse will try to infer type `IPv6` from string fields in JSON shared data insertion.
-If the string value can be parsed as an IPv6 address, it will be stored as IPv6 instead of String.
+If enabled, ClickHouse will try to infer type `IPv6` from string fields in schema inference for text formats. If the string value can be successfully parsed as an IPv6 address, the result type will be `IPv6`, otherwise it will be `String`.
 
 Disabled by default.
 )", 0) \
