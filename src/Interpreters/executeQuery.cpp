@@ -3094,12 +3094,30 @@ void executeQuery(
             {
                 auto progress_callback = context->getProgressCallback();
 
-                /// On the no-result path the `Null` payload carrier is not part of the pipeline, so the
-                /// pipeline's progress callback is not called anymore: forward the final progress flush
-                /// (`result_rows` / `result_bytes`) to the carrier as well, so the framed stream ends with
-                /// a `progress` packet carrying the final counters, like the native protocol does.
-                if (!pulling_pipeline)
+                /// Forward the final progress flush (`result_rows` / `result_bytes` / `memory_usage`)
+                /// to the framing format too, so the framed stream ends with a `progress` packet
+                /// carrying the final counters, like the native protocol does and as
+                /// `docs/en/interfaces/framing-formats.md` documents. These counters are known only
+                /// after the query finished, so no earlier `progress` packet carries them.
+                if (pulling_pipeline)
                 {
+                    /// The output format was finalized by the pipeline (its data is already written)
+                    /// before these counters were known, so `onProgress` would drop the update (it
+                    /// writes only while the format is not finalized). `writeFinalProgress` writes it
+                    /// straight to the framing format, which is finalized separately (deferred) below.
+                    progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
+                    {
+                        if (previous_progress_callback)
+                            previous_progress_callback(progress);
+                        captured_output_format->writeFinalProgress(progress);
+                    };
+                }
+                else
+                {
+                    /// On the no-result path the `Null` payload carrier is not part of the pipeline, so
+                    /// the pipeline's progress callback is not called anymore: forward the flush to the
+                    /// carrier via `onProgress` and let its finalize (below) write it as the final
+                    /// `progress` packet (the update may otherwise be pending because of throttling).
                     progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
                     {
                         if (previous_progress_callback)
