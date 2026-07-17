@@ -98,7 +98,7 @@ public:
         {
             const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
             ++*token_requests;
-            if (request_body.find("refresh_token=expired-refresh") != std::string::npos)
+            if (request_body.contains("refresh_token=expired-refresh"))
             {
                 writeJSON(
                     response,
@@ -532,7 +532,10 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
             /* oauth_server_uri */server.getUrl() + "/token",
             /* oauth_server_use_request_body */true,
             context);
-        FAIL() << "expected an exception for an expired refresh token";
+        /// ADD_FAILURE (rather than FAIL) does not return from the test, so the
+        /// profile event check below is reached on every path; FAIL would make
+        /// `failures_before` a dead store on the no-throw path for clang-tidy.
+        ADD_FAILURE() << "expected an exception for an expired refresh token";
     }
     catch (const DB::Exception & e)
     {
