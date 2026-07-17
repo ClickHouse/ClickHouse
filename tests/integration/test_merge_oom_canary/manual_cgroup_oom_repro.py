@@ -18,7 +18,7 @@ Mechanism:
 
 Requirements: root (to create the cgroup), cgroup v2, a built `clickhouse` binary. Verified to fire the
 kernel OOM killer reliably (cgroup `memory.events` `oom_kill` increments; `dmesg` shows
-`Memory cgroup out of memory: Killed process ... (clickhouse), oom_memcg=/ch_merge_oom`).
+`Memory cgroup out of memory: Killed process ... (clickhouse), oom_memcg=/ch_merge_oom.<pid>`).
 
 On a server built with the OOM canary enabled (oom_canary_enable=1), the canary is killed first and the
 server survives, running its OOM response (cancel all merges); without it the server itself is killed,
@@ -26,11 +26,14 @@ as the fuzzer's was.
 
 The script fails closed: it aborts before starting the memory-destructive workload unless every cgroup
 setup step is proven (the memory controller is enabled, the hard limits read back as written, and the
-server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside ch_merge_oom
-and OOM the whole host. It also refuses to run when the scratch data directory is on a memory-backed
-filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be charged to the cgroup,
-so an OOM would prove the filesystem choice rather than the merge-memory mechanism. The scratch root
-defaults to the repo `tmp` directory (disk-backed) and can be overridden with BASE_DIR.
+server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside the cgroup
+and OOM the whole host. The cgroup name and the default port are unique per run, so `cleanup` (which
+tears the cgroup down with `cgroup.kill`) can only ever kill this run's own processes, and concurrent
+invocations do not interfere with each other. It also refuses to run when the scratch data directory
+is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be
+charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
+mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
+with BASE_DIR.
 """
 
 import os
@@ -53,8 +56,15 @@ BIN = os.environ.get("CLICKHOUSE_BINARY", os.path.join(REPO, "build", "programs"
 # Override with BASE_DIR (which must also be disk-backed; the check below enforces it).
 BASE_DIR = os.environ.get("BASE_DIR", os.path.join(REPO, "tmp"))
 RUN_USER = os.environ.get("SUDO_USER") or pwd.getpwuid(os.getuid()).pw_name
-CG = "/sys/fs/cgroup/ch_merge_oom"
-PORT = int(os.environ.get("PORT", "19001"))
+# The cgroup name is unique per run: `cleanup` tears the cgroup down with `cgroup.kill`, and with a
+# fixed shared name that write would be host-destructive - it would kill a concurrent run's server, or
+# any unrelated workload someone had placed in a same-named cgroup, as if it were "stale". With a
+# per-run name, `cgroup.kill` can only ever hit processes this run started itself. The default port is
+# derived from the PID for the same reason: concurrent runs must not race for one fixed port (override
+# with PORT if the derived one happens to be taken).
+CG_NAME = f"ch_merge_oom.{os.getpid()}"
+CG = f"/sys/fs/cgroup/{CG_NAME}"
+PORT = int(os.environ.get("PORT", str(19001 + os.getpid() % 10000)))
 LIMIT_GB = int(os.environ.get("LIMIT_GB", "4"))
 LIMIT_BYTES = LIMIT_GB * 1024 * 1024 * 1024
 
@@ -187,7 +197,6 @@ def main():
     os.makedirs(BASE_DIR, exist_ok=True)
     base = tempfile.mkdtemp(prefix="ch_oom_repro.", dir=BASE_DIR)
     try:
-        cleanup(base)  # remove a stale cgroup from a previous run before re-creating it
         os.makedirs(os.path.join(base, "data"))
         os.makedirs(os.path.join(base, "cfg"))
         # Fail closed if the scratch data path turns out to be memory-backed anyway (BASE_DIR pointed at
@@ -209,7 +218,11 @@ def main():
 
         # 1) cgroup with a hard limit and no swap. Every step is verified; a failure here aborts the
         #    script before any workload runs, so the churn can never escape the cgroup onto the host.
-        os.makedirs(CG, exist_ok=True)
+        # The per-run name makes a pre-existing path a genuine anomaly (a leaked cgroup from a dead run
+        # whose PID was recycled); fail fast rather than `cgroup.kill` something this run does not own.
+        if os.path.isdir(CG):
+            die(f"cgroup {CG} already exists; remove it first (rmdir {CG})")
+        os.makedirs(CG)
         # Enabling +memory is a no-op if it is already enabled, so the write itself is tolerated, but the
         # memory controller must then actually be present in the child cgroup (memory.max appears only
         # when it is).
@@ -337,7 +350,7 @@ def main():
         print(f"cgroup oom_kill: {oom_before} -> {oom_after}")
         dmesg = subprocess.run(["dmesg"], capture_output=True, text=True).stdout
         for line in reversed(dmesg.splitlines()):
-            if "oom_memcg=/ch_merge_oom" in line:
+            if f"oom_memcg=/{CG_NAME}" in line:
                 print(line)
                 break
         if oom_after > oom_before:
