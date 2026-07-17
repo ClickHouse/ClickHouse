@@ -6426,9 +6426,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     }
 
     /// The default JSON-based format applies only when the query has no explicit `FORMAT` clause.
-    /// This is the same (imprecise) condition under which we request extremes.
-    const explicit_format_match = query.match(/\bFORMAT\s+(\w+)/i);
-    const explicit_format = explicit_format_match ? explicit_format_match[1] : null;
+    /// This is the same condition under which we request extremes. The clause is detected with the
+    /// WASM lexer (`detectExplicitFormat`), not a text match, so a `FORMAT` mention inside a string
+    /// literal or a comment - e.g. `SELECT 'FORMAT JSONCompactColumns'` - is not mistaken for a real
+    /// clause; otherwise it would wrongly set `use_framing = false` below and silently drop the
+    /// page's own `EventStream` request (losing the streamed logs and metrics).
+    const explicit_format = await detectExplicitFormat(query);
     const default_format_applies = !explicit_format;
     if (default_format_applies) url += '&extremes=1';
 
@@ -8683,6 +8686,36 @@ async function detectFramingSetting(query)
         }
     }
     return { user_framing: false, user_disables_framing: false };
+}
+
+/// Detect a real `FORMAT` clause in the query and return the format name (e.g. `JSON`), or `null`
+/// when there is none. Used by `postImpl` to decide whether the page's default format applies (and
+/// hence whether to request extremes) and whether to opt out of framing for `JSONCompactColumns`
+/// (whose charts are rendered from the whole response rather than streamed).
+///
+/// Like `detectFramingSetting`, the detection walks the lexer tokens rather than matching the raw
+/// text: `FORMAT` counts only as a real clause - a `BareWord` `format` immediately followed by the
+/// format name (another `BareWord`) - so an occurrence inside a string literal or a comment is
+/// ignored. A plain regex is fooled by e.g. `SELECT 'FORMAT JSONCompactColumns'`, which would be
+/// taken as a format clause and make `use_framing` false, silently dropping the page's own
+/// `EventStream` request and the streamed `log` / `profile_events` packets. Falls back to a text
+/// match only when WebAssembly - hence the lexer - is unavailable, mirroring `getQueryUnderCursor`.
+async function detectExplicitFormat(query)
+{
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        const m = query.match(/\bFORMAT\s+(\w+)/i);
+        return m ? m[1] : null;
+    }
+
+    const tokens = (await tokenize(query)).filter(t => t.significant);
+    for (let i = 0; i + 1 < tokens.length; ++i) {
+        if (tokens[i].type === TT.BareWord
+            && tokens[i].token.toLowerCase() === 'format'
+            && tokens[i + 1].type === TT.BareWord) {
+            return tokens[i + 1].token;
+        }
+    }
+    return null;
 }
 
 /// Absolute character offset (into the textarea) where the query most recently returned by
