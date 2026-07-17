@@ -5,11 +5,17 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 
 namespace DB::ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MergesMutationsMemoryTracking;
 }
 
 struct MemoryTrackerTestAccess
@@ -114,12 +120,19 @@ TEST(MemoryTracker, ParentLimitFailureDoesNotAdvanceProfilerLimit)
 TEST(MemoryTracker, ParentLimitFailureDoesNotUpdateMetrics)
 {
     MemoryTrackerHierarchy hierarchy;
-    const auto metric = CurrentMetrics::end();
+    const auto metric = CurrentMetrics::MergesMutationsMemoryTracking;
     const auto metric_before = CurrentMetrics::get(metric);
     MemoryTrackerTestAccess::setMetric(hierarchy.user, metric);
     hierarchy.global.setHardLimit(100);
 
     EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101), DB::Exception);
+    EXPECT_EQ(CurrentMetrics::get(metric), metric_before);
+
+    /// Prove the metric is actually wired up: a successful allocation must move it.
+    std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 32);
+    EXPECT_EQ(CurrentMetrics::get(metric), metric_before + 32);
+
+    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 32);
     EXPECT_EQ(CurrentMetrics::get(metric), metric_before);
 }
 
@@ -161,13 +174,16 @@ TEST(MemoryTracker, ParentLimitFailurePreservesExistingUsage)
 
     std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 40);
     expectUsage(hierarchy, 40);
+    EXPECT_EQ(hierarchy.global.getRSS(), 40);
 
     hierarchy.global.setHardLimit(100);
     EXPECT_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 61), DB::Exception);
     expectUsage(hierarchy, 40);
+    EXPECT_EQ(hierarchy.global.getRSS(), 40);
 
     std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 40);
     expectUsage(hierarchy, 0);
+    EXPECT_EQ(hierarchy.global.getRSS(), 0);
 }
 
 TEST(MemoryTracker, UserLimitFailureRollsBackDescendants)
@@ -190,7 +206,44 @@ TEST(MemoryTracker, SuccessfulAllocationChargesAndFreesHierarchy)
     expectUsage(hierarchy, 0);
 }
 
-TEST(MemoryTracker, ConcurrentRollbackDoesNotEraseSuccessfulAllocation)
+TEST(MemoryTracker, FaultInjectionFailureRollsBackHierarchy)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.user.setFaultProbability(1.0);
+
+    try
+    {
+        std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 64);
+        FAIL() << "Expected the injected fault to reject the allocation";
+    }
+    catch (const DB::Exception & exception)
+    {
+        EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    expectUsage(hierarchy, 0);
+    EXPECT_EQ(hierarchy.global.getRSS(), 0);
+}
+
+TEST(MemoryTracker, IgnoredLimitFailureKeepsAllocation)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.global.setHardLimit(100);
+
+    {
+        /// In no-throw scopes (e.g. destructors) the limit must be ignored and the
+        /// allocation must be accounted, not rolled back.
+        LockMemoryExceptionInThread lock(VariableContext::Global);
+        EXPECT_NO_THROW(std::ignore = MemoryTrackerTestAccess::alloc(hierarchy.thread, 101));
+    }
+
+    expectUsage(hierarchy, 101);
+
+    std::ignore = MemoryTrackerTestAccess::free(hierarchy.thread, 101);
+    expectUsage(hierarchy, 0);
+}
+
+TEST(MemoryTracker, RollbackSaturatesAtZero)
 {
     MemoryTracker global{nullptr, VariableContext::Global, false};
     MemoryTracker user{&global, VariableContext::User, false};

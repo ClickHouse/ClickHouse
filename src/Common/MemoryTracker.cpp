@@ -483,11 +483,21 @@ Int64 MemoryTracker::rollbackAllocation(Int64 size) noexcept
     Int64 rolled_back = size;
     if (level == VariableContext::Thread || level == VariableContext::Global)
     {
+        /// Thread-level amount can legitimately become negative (memory allocated in this
+        /// thread and freed in another one), and the Global level is authoritative,
+        /// so subtract without saturation, same as in `free`.
         amount.fetch_sub(rolled_back, std::memory_order_relaxed);
     }
     else
     {
         const Int64 new_amount = amount.fetch_sub(rolled_back, std::memory_order_relaxed) - rolled_back;
+
+        /** Concurrent frees of memory that was allocated outside of this query/user context
+          * (example: cache eviction) could have already driven `amount` down, so the rollback
+          * could make it negative. To avoid negative memory usage, we "saturate" the amount,
+          * same as in `free`. Memory usage will be calculated with some error.
+          * NOTE: The code is not atomic. Not worth to fix.
+          */
         if (unlikely(new_amount < 0))
         {
             amount.fetch_sub(new_amount, std::memory_order_relaxed);
