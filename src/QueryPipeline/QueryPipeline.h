@@ -129,6 +129,10 @@ public:
     void setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_);
     StepWallClockRegistry * getStepClocks() const { return step_wall_clock_registry.get(); }
 
+    void setCollectWorkIntervals(bool collect_work_intervals_) { collect_work_intervals = collect_work_intervals_; }
+    /// Moves the collected intervals out; the pipeline holds none afterwards.
+    WorkIntervals takeWorkIntervals() { return std::move(work_intervals); }
+
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
     void readFromQueryResultCache(

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <utility>
 #include <set>
 #include <string>
@@ -7,6 +8,7 @@
 #include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/StepIntervalTimings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBuffer.h>
@@ -33,7 +35,7 @@ class AnalyzeStepsStats
     using ProcessorsByStepAndGroup = std::unordered_map<StepAndGroup, std::vector<IProcessor *>, boost::hash<StepAndGroup>>;
 
 public:
-    AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
+    AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
@@ -49,6 +51,8 @@ private:
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStepAndGroup processors_by_step_group;
+
+    std::optional<StepIntervalTimings> interval_timings;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;

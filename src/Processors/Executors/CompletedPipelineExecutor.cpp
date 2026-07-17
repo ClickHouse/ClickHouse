@@ -71,6 +71,7 @@ void CompletedPipelineExecutor::execute()
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        data->executor->setCollectWorkIntervals(pipeline.collect_work_intervals);
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
@@ -98,12 +99,17 @@ void CompletedPipelineExecutor::execute()
 
         if (data->has_exception)
             std::rethrow_exception(data->exception);
+
+        pipeline.work_intervals = data->executor->takeWorkIntervals();
     }
     else
     {
         PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+        executor.setCollectWorkIntervals(pipeline.collect_work_intervals);
         executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+
+        pipeline.work_intervals = executor.takeWorkIntervals();
     }
 }
 

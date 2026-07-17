@@ -121,7 +121,7 @@ bool ExecutionThreadContext::executeTask()
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors || step_to_wall_clock_registry)
+    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
         execution_time_watch.emplace();
 #endif
 
@@ -137,7 +137,7 @@ bool ExecutionThreadContext::executeTask()
 
     UInt64 elapsed_ns = 0;
 
-    if (profile_processors || step_to_wall_clock_registry)
+    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
     {
         elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
@@ -149,9 +149,7 @@ bool ExecutionThreadContext::executeTask()
         clock->onLeave();
 
     if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), 
-                                    elapsed_ns,
-                                    node->processors_id);
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, node->processor());
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
