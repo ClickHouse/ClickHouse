@@ -297,3 +297,42 @@ response=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&fr
     -d "SELECT * FROM no_such_table_04512 FORMAT JSON")
 echo "data packets: $(echo "$response" | grep -c '"packet":"data"')"
 echo "exception packets: $(echo "$response" | grep -c '"packet":"exception"')"
+
+# Some output formats write literal setting values verbatim, so a setting that is not valid UTF-8 makes
+# the output non-textual even when the escaping rule itself escapes the data. This is knowable from the
+# settings, so the text framings reject or base64-encode the output the same way as for the always-raw
+# formats. `CustomSeparated` writes its delimiters verbatim (here `format_custom_row_after_delimiter`),
+# and `SQLInsert` writes `output_format_sql_insert_table_name` verbatim.
+echo '--- JSONEachPacketString is rejected for CustomSeparated with a non-UTF-8 delimiter'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=Escaped&format_custom_row_after_delimiter=%FF%0A" \
+    -d "SELECT 1 FORMAT CustomSeparated" \
+    | grep -o -m1 'is not compatible with the output format CustomSeparated'
+
+echo '--- EventStream base64-encodes CustomSeparated with a non-UTF-8 delimiter'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=Escaped&format_custom_row_after_delimiter=%FF%0A" \
+    -d "SELECT 1 FORMAT CustomSeparated"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=Escaped&format_custom_row_after_delimiter=%FF%0A${SINGLE_BLOCK}" \
+    -d "SELECT 1 FORMAT CustomSeparated" \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&format_custom_escaping_rule=Escaped&format_custom_row_after_delimiter=%FF%0A" -d "SELECT 1 FORMAT CustomSeparated") \
+    && echo 'CustomSeparated payload with a non-UTF-8 delimiter round-trips' || echo 'MISMATCH'
+
+# A valid multi-byte UTF-8 delimiter (here U+2713 CHECK MARK) must not be misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts CustomSeparated with a valid UTF-8 (multi-byte) delimiter'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=Escaped&format_custom_row_after_delimiter=%E2%9C%93%0A" \
+    -d "SELECT 1 FORMAT CustomSeparated" | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'CustomSeparated (valid UTF-8 delimiter) accepted: OK'
+
+echo '--- JSONEachPacketString is rejected for SQLInsert with a non-UTF-8 table name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_sql_insert_table_name=a%FFb" \
+    -d "SELECT 1 FORMAT SQLInsert" \
+    | grep -o -m1 'is not compatible with the output format SQLInsert'
+
+echo '--- EventStream base64-encodes SQLInsert with a non-UTF-8 table name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&output_format_sql_insert_table_name=a%FFb" \
+    -d "SELECT 1 FORMAT SQLInsert"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_sql_insert_table_name=a%FFb${SINGLE_BLOCK}" \
+    -d "SELECT 1 FORMAT SQLInsert" \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_sql_insert_table_name=a%FFb" -d "SELECT 1 FORMAT SQLInsert") \
+    && echo 'SQLInsert payload with a non-UTF-8 table name round-trips' || echo 'MISMATCH'

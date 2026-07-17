@@ -1,3 +1,4 @@
+#include <Common/isValidUTF8.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
@@ -111,6 +112,15 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     /// (`printLineStart`/`printColumnNames`), so a table or column name containing a carriage return
     /// cannot survive the text `EventStream` framing (see `checkIfOutputFormatMayEmitCarriageReturn`).
     factory.markOutputFormatMayEmitCarriageReturns("SQLInsert");
+
+    /// `output_format_sql_insert_table_name` is written verbatim, so a table name that is not valid
+    /// UTF-8 makes the output non-textual. This is knowable from the settings, so it is detected here
+    /// and the text framings reject or base64-encode the output accordingly.
+    factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings)
+    {
+        const std::string & table_name = settings.sql_insert.table_name;
+        return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(table_name.data()), table_name.size());
+    });
 
     factory.setDocumentation("SQLInsert", Documentation{
         .description = R"DOCS_MD(

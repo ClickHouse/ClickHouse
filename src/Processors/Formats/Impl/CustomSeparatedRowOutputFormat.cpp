@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
 
+#include <Common/isValidUTF8.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FlattenTupleForCSVHeader.h>
 #include <Formats/FormatFactory.h>
@@ -120,9 +121,25 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
 
         /// With the `Raw` escaping rule the fields are written verbatim (like `TSVRaw`), so the output
         /// is not guaranteed to be valid UTF-8 text and cannot be embedded into a text framing format.
+        /// The literal delimiters are written verbatim regardless of the escaping rule, so a delimiter
+        /// that is not valid UTF-8 (for example `format_custom_row_after_delimiter` set to a non-UTF-8
+        /// byte sequence) makes the output non-textual as well. This is knowable from the settings, so
+        /// it is detected here rather than relying on the payload being valid UTF-8.
         factory.registerOutputFormatMayProduceRawBytesChecker(format_name, [](const FormatSettings & settings)
         {
-            return settings.custom.escaping_rule == FormatSettings::EscapingRule::Raw;
+            const auto & custom = settings.custom;
+            if (custom.escaping_rule == FormatSettings::EscapingRule::Raw)
+                return true;
+            auto is_not_valid_utf8 = [](const std::string & s)
+            {
+                return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+            };
+            return is_not_valid_utf8(custom.result_before_delimiter)
+                || is_not_valid_utf8(custom.result_after_delimiter)
+                || is_not_valid_utf8(custom.row_before_delimiter)
+                || is_not_valid_utf8(custom.row_after_delimiter)
+                || is_not_valid_utf8(custom.row_between_delimiter)
+                || is_not_valid_utf8(custom.field_delimiter);
         });
 
         /// The `CSV` and `XML` escaping rules pass a carriage return in a `String` value through

@@ -135,3 +135,15 @@ exception packets: 1
 --- exception-only stream carries no data packet, only the exception (FORMAT JSON, wait_end_of_query)
 data packets: 0
 exception packets: 1
+--- JSONEachPacketString is rejected for CustomSeparated with a non-UTF-8 delimiter
+is not compatible with the output format CustomSeparated
+--- EventStream base64-encodes CustomSeparated with a non-UTF-8 delimiter
+text/event-stream; charset=UTF-8; payload=base64
+CustomSeparated payload with a non-UTF-8 delimiter round-trips
+--- JSONEachPacketString accepts CustomSeparated with a valid UTF-8 (multi-byte) delimiter
+CustomSeparated (valid UTF-8 delimiter) accepted: OK
+--- JSONEachPacketString is rejected for SQLInsert with a non-UTF-8 table name
+is not compatible with the output format SQLInsert
+--- EventStream base64-encodes SQLInsert with a non-UTF-8 table name
+text/event-stream; charset=UTF-8; payload=base64
+SQLInsert payload with a non-UTF-8 table name round-trips
