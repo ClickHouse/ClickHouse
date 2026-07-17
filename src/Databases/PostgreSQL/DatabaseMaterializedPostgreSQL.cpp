@@ -638,15 +638,17 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
         /// TLS/SSL parameters can be provided either through a named collection
         /// (`sslmode`/`sslrootcert`/... keys) or through the engine SETTINGS clause
-        /// (`materialized_postgresql_ssl_*`). A non-empty SETTINGS value takes precedence.
+        /// (`materialized_postgresql_ssl_*`). An explicitly specified SETTINGS value takes
+        /// precedence, including an explicit empty string which resets it to libpq's default
+        /// (`isChanged`, not non-empty, so an empty override can clear a collection value).
         const auto & ssl_settings = *postgresql_replica_settings;
-        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode].value.empty())
+        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode].isChanged())
             configuration.ssl_mode = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_mode];
-        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].value.empty())
+        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert].isChanged())
             configuration.ssl_root_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_root_cert];
-        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].value.empty())
+        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert].isChanged())
             configuration.ssl_cert = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_cert];
-        if (!ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].value.empty())
+        if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
             configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
 
         /// The SETTINGS clause could have introduced certificate paths on top of the already
