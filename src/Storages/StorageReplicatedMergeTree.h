@@ -397,6 +397,11 @@ public:
         HardlinkedFiles hardlinked_files;
         String source_part_name;
         Int64 metadata_version = -1;
+        /// The exact set of mutations (their ZooKeeper node names) that produced this result. The
+        /// follow-up attempt reuses the part only if the current mutation set is still identical;
+        /// otherwise (for example after a `KILL MUTATION` dropped one of the mutations in the range)
+        /// the precomputed result no longer matches the requested commands and is discarded.
+        Strings mutation_ids;
     };
 
     /// Returns true if the reservation was made; false if the part is already reserved or deposited.

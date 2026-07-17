@@ -52,6 +52,19 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_in_prepare);
 
+    /// If a previous attempt of this mutation survived a transient Keeper reconnection and deposited
+    /// its finished result, take it now — before any early return in prepare() — so that whatever
+    /// happens next, the deposited temporary part is not stranded on disk. If this attempt does not
+    /// end up reusing it (it fetches the part, skips it, hands off to another replica, or the
+    /// assignment changed), this local drops its temporary directory lock on scope exit and the
+    /// leftover directory is cleaned up as an old temporary directory. The reuse decision below is
+    /// fail-closed: the result is reused only if the source part, the table metadata version, and
+    /// the exact mutation set are all unchanged, and it still goes through the normal commit path
+    /// (which re-validates against ZooKeeper).
+    std::optional<StorageReplicatedMergeTree::PreservedMutationPart> preserved;
+    if (survival_enabled)
+        preserved = storage.takePrecomputedMutation(entry.new_part_name);
+
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
     future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
@@ -238,39 +251,37 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     mutation_metadata_version = metadata_snapshot->getMetadataVersion();
 
-    /// If a previous attempt of this exact mutation survived a transient Keeper reconnection and
-    /// deposited its finished result, reuse it instead of re-computing the whole part. This is
-    /// fail-closed: the result is only reused if the source part and table metadata are unchanged,
-    /// and it still goes through the normal commit path (which re-validates against ZooKeeper).
-    if (survival_enabled)
+    /// Reuse the result deposited by a survivor of a transient Keeper reconnection instead of
+    /// re-computing the whole part, but only if the assignment is still exactly the same.
+    if (preserved)
     {
-        if (auto preserved = storage.takePrecomputedMutation(entry.new_part_name))
+        if (preserved->source_part_name == source_part_name
+            && preserved->metadata_version == mutation_metadata_version
+            && preserved->mutation_ids == mutation_ids)
         {
-            if (preserved->source_part_name == source_part_name
-                && preserved->metadata_version == mutation_metadata_version)
-            {
-                LOG_INFO(log, "Reusing the pre-computed result for mutation of part {} that survived a ZooKeeper reconnection.",
-                    entry.new_part_name);
-                new_part = preserved->part;
-                reused_hardlinked_files = std::move(preserved->hardlinked_files);
-                reused_temporary_directory_lock = std::move(preserved->temporary_directory_lock);
-                reused_precomputed_part = true;
+            LOG_INFO(log, "Reusing the pre-computed result for mutation of part {} that survived a ZooKeeper reconnection.",
+                entry.new_part_name);
+            new_part = preserved->part;
+            reused_hardlinked_files = std::move(preserved->hardlinked_files);
+            reused_temporary_directory_lock = std::move(preserved->temporary_directory_lock);
+            reused_precomputed_part = true;
 
-                for (auto & item : future_mutated_part->parts)
-                    priority.value += item->getBytesOnDisk();
+            for (auto & item : future_mutated_part->parts)
+                priority.value += item->getBytesOnDisk();
 
-                return PrepareResult{
-                    .prepared_successfully = true,
-                    .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = part_log_writer,
-                };
-            }
-
-            LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the source part or the table "
-                "metadata changed after the reconnection, will re-compute it.", entry.new_part_name);
-            /// `preserved` goes out of scope: its temporary directory lock is released and the
-            /// leftover part directory is cleaned up as an old temporary directory.
+            return PrepareResult{
+                .prepared_successfully = true,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = part_log_writer,
+            };
         }
+
+        LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the source part, the table "
+            "metadata, or the set of mutations changed after the reconnection, will re-compute it.", entry.new_part_name);
+        /// Release the preserved temporary part now, before re-computing below into a possibly
+        /// identically-named temporary directory: its lock is dropped and the leftover directory is
+        /// cleaned up as an old temporary directory.
+        preserved.reset();
     }
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
@@ -459,6 +470,7 @@ bool MutateFromLogEntryTask::depositPrecomputedResultForReuse()
     preserved.part = new_part;
     preserved.source_part_name = entry.source_parts.at(0);
     preserved.metadata_version = mutation_metadata_version;
+    preserved.mutation_ids = mutation_ids_for_log;
 
     mutate_task->updateProfileEvents();
     mutate_task.reset();
