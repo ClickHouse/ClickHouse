@@ -4,6 +4,8 @@
 
 #include <Common/Exception.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -42,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
-            {"min_window_frame_rows_for_aggregate_tree", 2048, 2048, "New setting: the minimum sliding window frame size (in rows) to switch from re-aggregating the whole frame for every row to the incremental algorithm based on a tree of partial aggregate states."},
+            {"min_window_frame_rows_for_aggregate_tree", std::numeric_limits<UInt64>::max(), 2048, "New setting: the minimum sliding window frame size (in rows) to switch from re-aggregating the whole frame for every row to the incremental algorithm based on a tree of partial aggregate states. previous_value is the maximum UInt64 so `compatibility` with versions before 26.7 effectively disables the incremental algorithm and keeps the pre-existing recompute path (whose floating-point regrouping and argMin/argMax tie choices differ)."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},

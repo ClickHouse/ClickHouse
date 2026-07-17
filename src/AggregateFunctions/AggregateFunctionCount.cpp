@@ -40,6 +40,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         data(place).count += !assert_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
