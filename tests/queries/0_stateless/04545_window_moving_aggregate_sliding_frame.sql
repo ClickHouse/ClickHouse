@@ -359,6 +359,20 @@ FROM
 GROUP BY frame_size
 ORDER BY frame_size;
 
+-- Simple statistics moments are raw power sums, so the tree re-associates their
+-- floating-point additions like it does for sum. On exactly representable eighths the
+-- sums are order-independent, so both paths must match the sequential re-aggregation
+-- exactly (the general-rounding case is pinned by the determinism check below).
+SELECT countIf(NOT ((v = v2 OR (isNaN(v) AND isNaN(v2))) AND (cv = cv2 OR (isNaN(cv) AND isNaN(cv2))))) AS mismatches
+FROM
+(
+    SELECT
+        varSamp(value / 8) OVER w AS v, arrayReduce('varSamp', groupArray(value / 8) OVER w) AS v2,
+        covarSamp(value / 8, value2 / 8) OVER w AS cv, arrayReduce('covarSamp', groupArray(value / 8) OVER w, groupArray(value2 / 8) OVER w) AS cv2
+    FROM (SELECT n, value, (cityHash64(n, 7) % 201) - 100 AS value2 FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
+);
+
 -- groupArray through the tree against ground truth: merge must concatenate the segments
 -- in frame order, so the result must be exactly the frame rows in order.
 SELECT countIf(arrayMap(x -> toUInt64(x), ga) != range(if(n < 250, toUInt64(0), toUInt64(n - 250)), toUInt64(n) + 1)) AS mismatches
@@ -517,23 +531,26 @@ FROM
 )
 SETTINGS max_block_size = 1000;
 
--- Float rounding over tree-sized frames may differ from sequential summation (which
--- already depends on the block layout, on master too). Pin what is guaranteed:
--- identical runs give identical bits, and the frame row multiset stays exact.
+-- Float rounding over tree-sized frames may differ from sequential summation for sum
+-- and for the raw power sums of the statistics moments (both already depend on the
+-- block layout, on master too). Pin what is guaranteed: identical runs give identical
+-- bits, and the frame row multiset stays exact.
 -- This section runs at the default activation threshold to cover it end-to-end.
 DROP TABLE IF EXISTS float_order_results;
-CREATE TABLE float_order_results (r UInt64, c UInt64) ENGINE = Memory;
+CREATE TABLE float_order_results (r UInt64, rv UInt64, c UInt64) ENGINE = Memory;
 INSERT INTO float_order_results
-SELECT groupBitXor(reinterpretAsUInt64(s)), countIf(cnt != least(n, 2999) + 1)
-FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s FROM numbers(20000)
+SELECT groupBitXor(reinterpretAsUInt64(s)), groupBitXor(reinterpretAsUInt64(vs)), countIf(cnt != least(n, 2999) + 1)
+FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s,
+             varSamp(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS vs FROM numbers(20000)
       WINDOW w AS (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
 SETTINGS max_block_size = 123, min_window_frame_rows_for_aggregate_tree = DEFAULT;
 INSERT INTO float_order_results
-SELECT groupBitXor(reinterpretAsUInt64(s)), countIf(cnt != least(n, 2999) + 1)
-FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s FROM numbers(20000)
+SELECT groupBitXor(reinterpretAsUInt64(s)), groupBitXor(reinterpretAsUInt64(vs)), countIf(cnt != least(n, 2999) + 1)
+FROM (SELECT number AS n, count() OVER w AS cnt, sum(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS s,
+             varSamp(multiIf(number % 3 = 0, 1e16, number % 3 = 1, -1e16, 1.)) OVER w AS vs FROM numbers(20000)
       WINDOW w AS (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW))
 SETTINGS max_block_size = 123, min_window_frame_rows_for_aggregate_tree = DEFAULT;
-SELECT uniqExact(r), max(c) FROM float_order_results;
+SELECT uniqExact(r), uniqExact(rv), max(c) FROM float_order_results;
 DROP TABLE float_order_results;
 
 DROP TABLE moving_aggregate_test;

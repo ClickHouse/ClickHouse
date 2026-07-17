@@ -94,6 +94,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    // The moments are raw power sums, so merging partial states re-associates their
+    // floating-point additions; as for sum, no summation order is guaranteed (the
+    // row-order fold of the reset-and-readd path already depends on the block layout).
     bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
