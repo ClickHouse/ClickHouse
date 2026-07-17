@@ -207,14 +207,21 @@ void XMLRowOutputFormat::finalizeImpl()
 
 bool XMLRowOutputFormat::hasDeferredStatistics() const
 {
-    return format_settings.write_statistics && exception_message.empty();
+    /// Defer the whole trailer after <rows> whenever the query succeeded, independently of
+    /// write_statistics: rows_before_limit_at_least / rows_before_aggregation are printed
+    /// regardless of write_statistics and, like the statistics, can be updated by late
+    /// ProfileInfo/Progress packets delivered during the connection drain between the phases.
+    return exception_message.empty();
 }
 
 void XMLRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
     writeRowsBeforeLimitAtLeast();
     writeRowsBeforeAggregationAtLeast();
-    writeStatistics();
+    /// hasDeferredStatistics() only guarantees there is no exception; the statistics section is
+    /// still gated on write_statistics.
+    if (format_settings.write_statistics)
+        writeStatistics();
     writeCString("</result>\n", *ostr);
     ostr->next();
 }

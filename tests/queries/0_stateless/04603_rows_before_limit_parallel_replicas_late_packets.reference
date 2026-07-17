@@ -9,3 +9,7 @@ remote JSONColumnsWithMetadata HTTP rows_read OK
 remote JSONColumnsWithMetadata HTTP rows_before_limit_at_least OK
 remote XML HTTP rows_read OK
 remote XML HTTP rows_before_limit_at_least OK
+remote JSON HTTP no-stats rows_before_limit_at_least OK
+remote JSON TCP no-stats rows_before_limit_at_least OK
+remote JSONColumnsWithMetadata HTTP no-stats rows_before_limit_at_least OK
+remote XML HTTP no-stats rows_before_limit_at_least OK

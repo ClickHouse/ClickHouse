@@ -107,13 +107,17 @@ void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
 
 bool JSONColumnsWithMetadataBlockOutputFormat::hasDeferredStatistics() const
 {
-    return format_settings.write_statistics;
+    /// Always defer the trailer after "rows": rows_before_limit_at_least / rows_before_aggregation
+    /// are printed regardless of write_statistics and, like the statistics object, can be updated by
+    /// late ProfileInfo/Progress packets delivered during the connection drain between the phases.
+    /// This format has no exception path, so there is nothing that would force single-phase output.
+    return true;
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeDeferredStatisticsAndFinalize()
 {
-    /// hasDeferredStatistics() implies format_settings.write_statistics,
-    /// so the statistics object is written unconditionally here.
+    /// The statistics object is gated on write_statistics, while the rows-before-* fields are gated
+    /// on applied_limit / applied_aggregation inside writeRowsBeforeAndStatistics.
     JSONUtils::writeRowsBeforeAndStatistics(
         statistics.rows_before_limit,
         statistics.applied_limit,
@@ -121,7 +125,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::writeDeferredStatisticsAndFinaliz
         statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
-        /*write_statistics=*/ true,
+        format_settings.write_statistics,
         *ostr);
 
     JSONUtils::writeObjectEnd(*ostr);

@@ -153,13 +153,21 @@ void JSONRowOutputFormat::finalizeImpl()
 
 bool JSONRowOutputFormat::hasDeferredStatistics() const
 {
-    return settings.write_statistics && exception_message.empty();
+    /// Defer the whole trailer after "rows" whenever the query succeeded, independently of
+    /// write_statistics. Besides the statistics object, rows_before_limit_at_least /
+    /// rows_before_aggregation are also emitted in the trailer and are printed regardless of
+    /// write_statistics. All of them can be updated by late ProfileInfo/Progress packets that
+    /// arrive while the connections are drained between the two finalization phases; with
+    /// parallel replicas the rows-before-* counters often only apply during that drain, so we
+    /// cannot tell at phase 1 whether they will be printed and must defer unconditionally.
+    return exception_message.empty();
 }
 
 void JSONRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
-    /// hasDeferredStatistics() implies settings.write_statistics and no exception,
-    /// so the statistics object is written unconditionally here.
+    /// hasDeferredStatistics() only guarantees there is no exception; the statistics object is
+    /// still gated on write_statistics, while the rows-before-* fields are gated on
+    /// applied_limit / applied_aggregation inside writeRowsBeforeAndStatistics.
     JSONUtils::writeRowsBeforeAndStatistics(
         statistics.rows_before_limit,
         statistics.applied_limit,
@@ -167,7 +175,7 @@ void JSONRowOutputFormat::writeDeferredStatisticsAndFinalize()
         statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
-        /*write_statistics=*/ true,
+        settings.write_statistics,
         *ostr);
 
     JSONUtils::writeObjectEnd(*ostr);

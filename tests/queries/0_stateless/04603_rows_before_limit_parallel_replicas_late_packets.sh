@@ -117,4 +117,20 @@ OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REM
 check_field_xml "remote XML HTTP" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
 check_field_xml "remote XML HTTP" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
 
+# --- output_format_write_statistics=0: rows_before_limit_at_least is emitted outside the
+# "statistics" object, so it is still printed even when the statistics object is disabled. It must
+# reflect the post-drain value, which means the trailer must be deferred regardless of
+# write_statistics (the two-phase finalization must not key itself off write_statistics alone).
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSON SETTINGS output_format_write_statistics=0")
+check_field "remote JSON HTTP no-stats" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+OUTPUT=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSON SETTINGS output_format_write_statistics=0")
+check_field "remote JSON TCP no-stats" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSONColumnsWithMetadata SETTINGS output_format_write_statistics=0")
+check_field "remote JSONColumnsWithMetadata HTTP no-stats" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT XML SETTINGS output_format_write_statistics=0")
+check_field_xml "remote XML HTTP no-stats" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS ${TABLE_NAME}"
