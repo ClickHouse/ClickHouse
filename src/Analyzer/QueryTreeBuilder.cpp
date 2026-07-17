@@ -117,6 +117,7 @@ private:
         const ASTPtr & select_intersect_except_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
+        const ASTPtr & aliases,
         const ContextPtr & context) const;
 
     QueryTreeNodePtr buildSelectExpression(
@@ -172,9 +173,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(
     QueryTreeNodePtr query_node;
 
     if (select_or_union_query->as<ASTSelectWithUnionQuery>())
-        query_node = buildSelectWithUnionExpression(select_or_union_query, is_subquery, cte_data, nullptr /*aliases*/, context);
+        query_node = buildSelectWithUnionExpression(select_or_union_query, is_subquery, cte_data, aliases, context);
     else if (select_or_union_query->as<ASTSelectIntersectExceptQuery>())
-        query_node = buildSelectIntersectExceptQuery(select_or_union_query, is_subquery, cte_data, context);
+        query_node = buildSelectIntersectExceptQuery(select_or_union_query, is_subquery, cte_data, aliases, context);
     else if (select_or_union_query->as<ASTSelectQuery>())
         query_node = buildSelectExpression(select_or_union_query, is_subquery, cte_data, aliases, context);
     else
@@ -220,13 +221,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     const ASTPtr & select_intersect_except_query,
     bool is_subquery,
     const CommonTableExpressionData & cte_data,
+    const ASTPtr & aliases,
     const ContextPtr & context) const
 {
     auto & select_intersect_except_query_typed = select_intersect_except_query->as<ASTSelectIntersectExceptQuery &>();
     auto select_lists = select_intersect_except_query_typed.getListOfSelects();
 
     if (select_lists.size() == 1)
-        return buildSelectExpression(select_lists[0], is_subquery, cte_data, nullptr /*aliases*/, context);
+        return buildSelectExpression(select_lists[0], is_subquery, cte_data, aliases, context);
 
     SelectUnionMode union_mode = {};
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
@@ -252,7 +254,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
