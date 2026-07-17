@@ -248,6 +248,103 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
     show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
     assert minio_secret_key not in show_result
 
+def create_glue_table_directly(
+    started_cluster, database_name, table_name, table_type=None, columns=None
+):
+    """Create a raw (non-Iceberg) table directly in Glue via boto3.
+
+    Such a table - e.g. a Delta Lake table (table_type != 'ICEBERG') or a raw parquet
+    file registered by a crawler (no table_type at all) - is visible in the Glue catalog
+    but cannot be read by ClickHouse, whose Glue engine only supports Iceberg tables.
+    """
+    client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    if columns is None:
+        columns = [
+            {"Name": "id", "Type": "bigint"},
+            {"Name": "value", "Type": "string"},
+        ]
+    parameters = {} if table_type is None else {"table_type": table_type}
+    client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": table_name,
+            "StorageDescriptor": {
+                "Columns": columns,
+                "Location": f"s3://warehouse-glue/{table_name}/",
+            },
+            "TableType": "EXTERNAL_TABLE",
+            "Parameters": parameters,
+        },
+    )
+
+
+def test_show_tables_hides_unreadable_tables(started_cluster):
+    """
+    Regression test: SHOW TABLES and system.tables must agree for a Glue catalog that
+    mixes Iceberg tables with non-Iceberg tables (Delta Lake tables, raw parquet files,
+    ...). ClickHouse can only read Iceberg tables via the Glue catalog, so the
+    non-Iceberg tables must appear in NEITHER listing.
+
+    Before the fix, the lightweight name-only listing path (used by SHOW TABLES and by
+    SELECT name FROM system.tables) did not filter unreadable tables, while the full
+    system.tables path dropped them - so the two disagreed and SHOW TABLES listed tables
+    that could not be queried. This test fails on master and passes with the fix.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hide_unreadable_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    iceberg_table = f"{test_ref}_iceberg"
+    delta_table = f"{test_ref}_delta"
+    parquet_table = f"{test_ref}_parquet"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    # Readable Iceberg table (pyiceberg sets table_type=ICEBERG in Glue).
+    table = create_table(catalog, namespace, iceberg_table)
+    table.append(generate_arrow_data(10))
+
+    # Unreadable tables registered directly in Glue.
+    create_glue_table_directly(started_cluster, namespace, delta_table, table_type="delta")
+    create_glue_table_directly(started_cluster, namespace, parquet_table, table_type=None)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    iceberg_full = f"{namespace}.{iceberg_table}"
+    delta_full = f"{namespace}.{delta_table}"
+    parquet_full = f"{namespace}.{parquet_table}"
+
+    settings = "SETTINGS show_data_lake_catalogs_in_system_tables = true"
+
+    # SHOW TABLES (lightweight name-only path): only the Iceberg table is listed.
+    show_tables = node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{test_ref}%'"
+    ).split()
+    assert iceberg_full in show_tables, show_tables
+    assert delta_full not in show_tables, show_tables
+    assert parquet_full not in show_tables, show_tables
+
+    # system.tables name-only path (same lightweight iterator as SHOW TABLES).
+    names_only = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '%{test_ref}%' ORDER BY name {settings}"
+    ).split()
+    assert names_only == [iceberg_full], names_only
+
+    # system.tables full path (references engine -> fetches per-table metadata).
+    full = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '%{test_ref}%' AND engine != '' ORDER BY name {settings}"
+    ).split()
+    assert full == [iceberg_full], full
+
+    # The two listings agree - this is exactly the property that was broken.
+    assert sorted(show_tables) == sorted(names_only)
+
+
 def drop_clickhouse_glue_table(
     node, database_name, table_name
 ):
@@ -308,9 +405,19 @@ def clean_catalog(started_cluster):
     # created so the catalog stays bounded to the running test.
     yield
     catalog = load_catalog_impl(started_cluster)
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
     for namespace in catalog.list_namespaces():
+        # Drop Iceberg tables via pyiceberg so their data and metadata are removed too.
         for table in catalog.list_tables(namespace):
             catalog.drop_table(table)
+        # Drop any remaining tables registered directly in Glue (e.g. non-Iceberg tables
+        # such as Delta Lake tables or raw data files). pyiceberg's list_tables ignores
+        # them, and drop_namespace refuses to drop a namespace that still contains them.
+        database_name = ".".join(namespace)
+        for table in glue_client.get_tables(DatabaseName=database_name).get("TableList", []):
+            glue_client.delete_table(DatabaseName=database_name, Name=table["Name"])
         catalog.drop_namespace(namespace)
 
 
