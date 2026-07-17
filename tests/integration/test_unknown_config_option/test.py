@@ -1143,6 +1143,77 @@ def test_metrika_default_include_source_top_level_include_accepted(
         node_include_from_external.query("SYSTEM RELOAD CONFIG")
 
 
+def test_overridden_include_from_source_does_not_exempt_unknown_key(
+    start_include_from_external_cluster,
+):
+    # `ConfigProcessor` resolves a top-level server `<include incl="X"/>` against the *single merged*
+    # `<include_from>` node (the value that survives merging all `config.d` fragments), not against
+    # the union of every pre-merge `<include_from>` it ever saw. So when a later `config.d` fragment
+    # `replace`s the main config's `<include_from>`, only the replacement source is consulted at
+    # runtime. A top-level key that would be imported only from the now-overridden (stale) source must
+    # therefore still be rejected. (Before the fix, the validator collected `include_from` sources
+    # from the raw pre-merge fragments and kept the stale source in `server_include_from_paths`, so it
+    # resolved the `incl` reference against the stale source too and wrongly exempted the unknown key.)
+    #
+    # Both sources define `<shared_root>`, so the `<include incl="shared_root"/>` is always resolvable
+    # (no unresolved-include error regardless of `throw_on_bad_incl`); only the *children* differ. The
+    # active source's `shared_root` does NOT contain `my_overridden_payload`, so that top-level key
+    # stays unknown once the stale source is out of the picture.
+    stale_source_path = "/etc/clickhouse-server/stale_incl_source.xml"
+    stale_source = (
+        "<clickhouse>"
+        "<shared_root>"
+        "<my_overridden_payload>imported from the stale source</my_overridden_payload>"
+        "</shared_root>"
+        "</clickhouse>"
+    )
+    active_source_path = "/etc/clickhouse-server/active_incl_source.xml"
+    active_source = (
+        "<clickhouse>"
+        "<shared_root>"
+        "<my_active_child>imported from the active source</my_active_child>"
+        "</shared_root>"
+        "</clickhouse>"
+    )
+    # Fragment 1 (merged first): points `<include_from>` at the stale source, references `shared_root`,
+    # and carries the otherwise unknown top-level key.
+    base_config_path = "/etc/clickhouse-server/config.d/override_include_from_1_base.xml"
+    base_config = (
+        "<clickhouse>"
+        f"<include_from>{stale_source_path}</include_from>"
+        '<include incl="shared_root"/>'
+        "<my_overridden_payload>1</my_overridden_payload>"
+        "</clickhouse>"
+    )
+    # Fragment 2 (merged after fragment 1): `replace`s `<include_from>` with the active source, exactly
+    # as a later `config.d` override would. The merged config's single `<include_from>` is the active
+    # one, so `my_overridden_payload` is never imported and must be rejected as unknown.
+    replace_config_path = "/etc/clickhouse-server/config.d/override_include_from_2_replace.xml"
+    replace_config = (
+        "<clickhouse>"
+        f'<include_from replace="replace">{active_source_path}</include_from>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(stale_source_path, stale_source)
+        node_include_from_external.replace_config(active_source_path, active_source)
+        node_include_from_external.replace_config(base_config_path, base_config)
+        node_include_from_external.replace_config(replace_config_path, replace_config)
+        error = node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "my_overridden_payload" in error
+    finally:
+        node_include_from_external.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {base_config_path} {replace_config_path} "
+                f"{stale_source_path} {active_source_path}",
+            ]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
 def test_top_level_include_from_env_accepted(start_include_from_env_cluster):
     # A top-level `<include from_env="UNKNOWN_CONFIG_ENV_ROOT"/>` is expanded by `ConfigProcessor` by
     # wrapping the environment variable's value (`<my_env_imported_section>...</my_env_imported_section>`)

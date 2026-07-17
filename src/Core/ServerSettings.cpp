@@ -2474,13 +2474,17 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::XML::DOMParser dom_parser;
         std::unordered_set<std::string> include_from_paths;
 
-        /// The subset of `include_from_paths` that comes from *server*-config files (the main config
-        /// or a merged `config.d`/`conf.d` fragment), plus the server's default substitution source.
-        /// `ConfigProcessor` resolves a top-level server `<include incl="X"/>` only against the server
-        /// config's own `<include_from>`, never against the users config's — so top-level include refs
-        /// must be resolved against these sources only. Resolving them against a users-config
-        /// `<include_from>` source would let a genuinely unknown top-level server key pass validation
-        /// merely because the users source happens to define a node of the referenced name.
+        /// The server-side `<include_from>` substitution source(s): the single merged value that
+        /// `ConfigProcessor` actually uses, plus the server's default substitution source. This is
+        /// derived from the merged `config` below, *never* from the raw pre-merge fragments: a
+        /// `config.d` fragment may `replace`/`remove` the main config's `<include_from>`, so only the
+        /// merged value reflects the source `ConfigProcessor` consults (see `processConfig`, which
+        /// reads the single merged `<include_from>` node). `ConfigProcessor` resolves a top-level
+        /// server `<include incl="X"/>` only against this server source, never against the users
+        /// config's — so top-level include refs must be resolved against it only. Resolving them
+        /// against a users-config `<include_from>` source, or against a stale/overridden pre-merge
+        /// source, would let a genuinely unknown top-level server key pass validation merely because
+        /// that other source happens to define a node of the referenced name.
         std::unordered_set<std::string> server_include_from_paths;
 
         /// Reference names of *top-level* `<include incl="X"/>` elements found in the server config
@@ -2490,12 +2494,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// even when the source is external and not merged. Collected only from server-config files
         /// (never the users config, whose `<include>` targets a separate tree).
         std::unordered_set<std::string> top_level_include_refs;
-
-        /// Whether any *server*-config file declares an explicit `<include_from>` element. Mirrors
-        /// `ConfigProcessor::processConfig`, which falls back to the default `/etc/metrika.xml`
-        /// substitution source only when the processed config declares no `<include_from>` of its
-        /// own; the metrika default is then used to resolve top-level `<include incl="X"/>` refs.
-        bool server_config_has_include_from = false;
 
         /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
         /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
@@ -2553,8 +2551,18 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         continue;
                     if (child->nodeName() == "include_from")
                     {
+                        /// Server-side `<include_from>` is intentionally NOT collected from these raw
+                        /// pre-merge fragments: a `config.d`/`conf.d` fragment may `replace`/`remove`
+                        /// the main config's `<include_from>`, so only the single merged value (read
+                        /// from the merged `config` below) reflects the source `ConfigProcessor`
+                        /// actually uses. Unioning the raw pre-merge sources here would keep a
+                        /// stale/overridden source, causing both false negatives (the stale source
+                        /// whitelists an unknown key) and false positives (a removed source wrongly
+                        /// suppresses the `/etc/metrika.xml` fallback). The users config, in contrast,
+                        /// is a separate `ConfigProcessor` invocation whose merged `<include_from>` is
+                        /// not exposed on the server `config`, so it is still collected from raw XML.
                         if (is_server_file)
-                            server_config_has_include_from = true;
+                            continue;
                         String src = child->innerText();
                         if (src.empty())
                         {
@@ -2567,11 +2575,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             }
                         }
                         if (!src.empty())
-                        {
-                            if (is_server_file)
-                                server_include_from_paths.insert(src);
                             include_from_paths.insert(std::move(src));
-                        }
                     }
                     else if (is_server_file && child->nodeName() == "include")
                     {
@@ -2652,15 +2656,26 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 merge_files.insert(to_canonical(merge_file));
         }
 
-        /// The merged `config` already has `<include_from>` substitutions (from_env, from_zk)
-        /// resolved by `ConfigProcessor`. Use it as a fallback for sources we cannot resolve
-        /// from raw XML alone (e.g. ZooKeeper-backed substitutions).
+        /// The single active server `<include_from>` source is the *merged* one. `ConfigProcessor`
+        /// reads exactly one `<include_from>` node from the merged config (with `from_env`/`from_zk`
+        /// already resolved), so the merged `config` is the authoritative — not merely fallback —
+        /// source here: it is the value that survives any `config.d` `replace`/`remove` of the main
+        /// config's `<include_from>`.
         if (String resolved_include_from = config.getString("include_from", ""); !resolved_include_from.empty())
         {
             /// `config` is the merged *server* config, so this is a server-side source.
             server_include_from_paths.insert(resolved_include_from);
             include_from_paths.insert(std::move(resolved_include_from));
         }
+
+        /// Whether the merged (active) server config declares an explicit `<include_from>`. Derived
+        /// from the merged `config`, never from the raw pre-merge fragments, mirroring
+        /// `ConfigProcessor::processConfig`, which falls back to the default `/etc/metrika.xml`
+        /// substitution source only when the *processed* config declares no `<include_from>` of its
+        /// own; the metrika default is then used to resolve top-level `<include incl="X"/>` refs. A
+        /// `config.d` fragment that removes the main config's `<include_from>` therefore correctly
+        /// re-enables the metrika fallback, and one that replaces it does not spuriously suppress it.
+        const bool server_config_has_include_from = config.has("include_from");
 
         /// Resolve the *active* users config path exactly as `AccessControl::addStoragesFromMainConfig`
         /// does, so we never pull `incl`/`include_from` exemptions from an inactive users config tree
