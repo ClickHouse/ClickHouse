@@ -57,5 +57,28 @@ printf '(6)\n' | $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO t VALUES (5)" 2>&1 | g
 echo "--- no insert when external stdin data is rejected (expect: 100 5) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# EXPLAIN wrapping a plain SELECT works through the polyglot dialect: the parser recognizes an
+# EXPLAIN-wrapped statement that is not an INSERT (so it has no inline data to clear) and leaves it
+# to the normal flow.
+$CLICKHOUSE_CLIENT $POLY -q "EXPLAIN SELECT 1" > /dev/null && echo "--- EXPLAIN SELECT works (expect: ok) ---" && echo ok
+
+# EXPLAIN INSERT ... VALUES with inline data is currently rejected by the transpiler (no bundled
+# dialect transpiles it), so it fails cleanly with a syntax error and inserts nothing - never a
+# use-after-free of the transient transpiled buffer. The parser still defensively clears the
+# inline-data pointers of an EXPLAIN-wrapped INSERT (the same way the client unwraps it in
+# ClientBase::analyzeMultiQueryText), in case a future transpiler starts supporting this form.
+$CLICKHOUSE_CLIENT $POLY --multiquery -q "EXPLAIN INSERT INTO t VALUES (1)" 2>&1 | grep -om1 "SYNTAX_ERROR"
+echo "--- no insert from rejected EXPLAIN INSERT (expect: 100 5) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+# A polyglot inline INSERT is transpiled as a whole, so the inline data counts towards
+# max_query_size (unlike a native ClickHouse INSERT, whose inline data is streamed and is not bounded
+# by max_query_size). An oversized payload is rejected up front with a dedicated, actionable error
+# instead of silently changing the INSERT size contract, and nothing is inserted.
+big_values=$(seq 1 100 | sed 's/.*/(&)/' | paste -sd, -)
+$CLICKHOUSE_CLIENT $POLY --max_query_size 100 -q "INSERT INTO t VALUES $big_values" 2>&1 | grep -om1 "counts towards max_query_size"
+echo "--- no insert when payload exceeds max_query_size (expect: 100 5) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

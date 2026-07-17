@@ -13,3 +13,11 @@ SYNTAX_ERROR
 NOT_IMPLEMENTED
 --- no insert when external stdin data is rejected (expect: 100 5) ---
 100	5
+--- EXPLAIN SELECT works (expect: ok) ---
+ok
+SYNTAX_ERROR
+--- no insert from rejected EXPLAIN INSERT (expect: 100 5) ---
+100	5
+counts towards max_query_size
+--- no insert when payload exceeds max_query_size (expect: 100 5) ---
+100	5
