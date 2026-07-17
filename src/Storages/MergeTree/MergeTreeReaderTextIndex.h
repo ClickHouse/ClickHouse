@@ -55,7 +55,7 @@ public:
 private:
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
-    void createEmptyColumns(Columns & columns) const;
+    void createEmptyColumns(Columns & columns, size_t max_rows_to_read) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
@@ -140,7 +140,7 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    float lazy_density_threshold = 0.2f;
+    float lazy_intersection_density_threshold = 0.2f;
 
     /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
     /// hold mutable segment/block position, so they must not be shared across columns.

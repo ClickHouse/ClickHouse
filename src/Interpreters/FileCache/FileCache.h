@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -27,6 +28,7 @@
 
 namespace DB
 {
+
 struct ReadSettings;
 struct FilesystemCacheSettings;
 
@@ -223,6 +225,8 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
+    size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -263,17 +267,26 @@ public:
 
     void freeSpaceRatioKeepingThreadFunc();
 
+    void backgroundCleanupTaskFunc();
+
+    void evictIdleClients();
+
+    /// Cleanup-task reschedule interval; recomputed from current (reloadable) settings.
+    UInt64 backgroundCleanupIntervalMs() const;
+
     const String & getName() const { return name; }
 
-    static void onSegmentEvicted(const FileSegment & segment);
-    static void onSegmentEvictedInTheBackground(const FileSegment & segment);
-
 private:
+    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> reserve_granularity;
     std::atomic<size_t> background_download_max_file_segment_size;
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
@@ -293,11 +306,32 @@ private:
     /// Fed by `keep_up_free_space_ratio_task`, which collects candidates and frees their queue entries.
     std::unique_ptr<ThreadPool> eviction_pool;
 
+    /// Single background maintenance task: removes the priority's invalidated
+    /// queue entries and, on the same ticks, evicts idle clients.
+    BackgroundSchedulePoolTaskHolder background_cleanup_task;
+    const UInt64 invalidated_entries_cleanup_threshold;
+    const UInt64 invalidated_entries_cleanup_interval_ms;
+    const UInt64 invalidated_entries_cleanup_remove_batch;
+
+    /// Per-client last-access timestamps live in the overcommit priority's
+    /// `CacheUsage` (reached via `main_priority`). The TTL and check interval are
+    /// reloadable; a zero TTL disables purging while access tracking keeps running.
+    std::atomic<UInt64> idle_client_ttl_sec{0};
+    std::atomic<UInt64> idle_client_check_interval_sec{0};
+    const UInt64 idle_client_eviction_threads;
+    /// Last idle sweep wall-clock; touched only from the cleanup task thread.
+    std::chrono::steady_clock::time_point last_idle_eviction;
+    /// Decided in the constructor: only overcommit policies with per-user-id
+    /// directories track per-client usage, so idle eviction is possible only then.
+    bool client_tracking_possible = false;
+
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
 
     const bool skip_cache_on_disk_failure;
+    std::atomic<bool> expose_eviction_metrics;
+    std::atomic<bool> expose_eviction_metrics_per_user;
 
     String name;
     LoggerPtr log;
@@ -417,8 +451,8 @@ private:
         std::string & failure_reason);
 
     bool doEviction(
-        const EvictionInfo & main_eviction_info,
-        const EvictionInfo * query_eviction_info,
+        EvictionInfo & main_eviction_info,
+        EvictionInfo * query_eviction_info,
         FileSegment & file_segment,
         const OriginInfo & origin_info,
         const IFileCachePriority::IteratorPtr & main_priority_iterator,

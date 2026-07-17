@@ -173,8 +173,8 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
 #if defined(OS_LINUX) || defined(OS_DARWIN)
         while (!async_queue.empty() && !finished)
         {
-            auto [fd, events] = async_queue.front()->processor()->scheduleForEvent();
-            async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events);
+            auto [fd, events, timeout_ms] = async_queue.front()->processor()->scheduleForEvent();
+            async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events, timeout_ms);
             async_queue.pop();
         }
 #endif
@@ -240,8 +240,8 @@ size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     while (!async_queue.empty())
     {
-        auto [fd, events] = async_queue.front()->processor()->scheduleForEvent();
-        async_task_queue.addTask(next_thread, async_queue.front(), fd, events);
+        auto [fd, events, timeout_ms] = async_queue.front()->processor()->scheduleForEvent();
+        async_task_queue.addTask(next_thread, async_queue.front(), fd, events, timeout_ms);
         async_queue.pop();
 
         ++next_thread;

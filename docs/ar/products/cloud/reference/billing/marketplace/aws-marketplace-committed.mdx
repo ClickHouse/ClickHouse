@@ -1,0 +1,99 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-committed-contract
+title: 'عقد التزام عبر AWS Marketplace'
+description: 'اشترك في ClickHouse Cloud عبر AWS Marketplace (عقد التزام)'
+keywords: ['aws', 'Amazon', 'marketplace', 'الفوترة', 'الالتزام', 'عقد التزام']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+ابدأ استخدام ClickHouse Cloud على [AWS Marketplace](https://aws.amazon.com/marketplace) من خلال عقد التزام.
+يتيح عقد الالتزام، المعروف أيضًا باسم Private Offer، للعملاء الالتزام بإنفاق مبلغ معين على ClickHouse Cloud خلال فترة زمنية محددة.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* عرض خاص من ClickHouse يستند إلى شروط تعاقدية محددة.
+* لربط مؤسسة ClickHouse بعرض الالتزام بالإنفاق الخاص بك، يجب أن تكون مسؤولاً عن تلك المؤسسة.
+
+الأذونات المطلوبة لعرض عقد الالتزام الخاص بك وقبوله في AWS:
+
+* إذا كنت تستخدم السياسات المُدارة من AWS، فيلزم توفر الأذونات التالية:
+  * `AWSMarketplaceRead-only`, `AWSMarketplaceManageSubscriptions`
+  * أو `AWSMarketplaceFullAccess`
+* إذا لم تكن تستخدم السياسات المُدارة من AWS، فيلزم توفر الأذونات التالية:
+  * إجراء IAM ‏`aws-marketplace:ListPrivateListings` و`aws-marketplace:ViewSubscriptions`
+
+<div id="steps-to-sign-up">
+  ## خطوات التسجيل
+</div>
+
+<Steps>
+  <Step>
+    ### اقبل عرضك الخاص
+
+    يُفترض أنك تلقيت رسالة بريد إلكتروني تتضمن رابطًا لمراجعة عرضك الخاص وقبوله.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
+  </Step>
+
+  <Step>
+    ### راجع رابط العرض
+
+    انقر على رابط Review Offer في البريد الإلكتروني.
+    يُفترض أن ينقلك هذا إلى صفحة AWS Marketplace الخاصة بك التي تحتوي على تفاصيل العرض الخاص.
+  </Step>
+
+  <Step>
+    ### قم بإعداد حسابك
+
+    أكمل خطوات الاشتراك في بوابة AWS ثم انقر على **&quot;Set up your account&quot;**.
+    من الضروري في هذه المرحلة أن تتم إعادة توجيهك إلى ClickHouse Cloud، ثم إما تسجيل حساب جديد أو تسجيل الدخول باستخدام حساب حالي.
+    ومن دون إكمال هذه الخطوة، لن نتمكن من ربط عقد AWS Marketplace الخاص بك بـ ClickHouse Cloud.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
+  </Step>
+
+  <Step>
+    ### سجّل الدخول إلى ClickHouse Cloud
+
+    بمجرد إعادة توجيهك إلى ClickHouse Cloud، يمكنك إما تسجيل الدخول باستخدام حساب حالي أو تسجيل حساب جديد.
+    هذه الخطوة ضرورية حتى نتمكن من ربط مؤسسة ClickHouse Cloud الخاصة بك بالفوترة عبر AWS Marketplace.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="رسالة البريد الإلكتروني الخاصة بالعرض الخاص في AWS Marketplace" />
+  </Step>
+
+  <Step>
+    ### سجّل إذا كنت مستخدمًا جديدًا
+
+    إذا كنت مستخدمًا جديدًا في ClickHouse Cloud، فانقر على &quot;Register&quot; أسفل الصفحة.
+    سيُطلب منك إنشاء مستخدم جديد والتحقق من بريدك الإلكتروني.
+    بعد التحقق من بريدك الإلكتروني، يمكنك مغادرة صفحة تسجيل الدخول إلى ClickHouse Cloud ثم تسجيل الدخول باستخدام اسم المستخدم الجديد على [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+
+    لاحظ أنه إذا كنت مستخدمًا جديدًا، فستحتاج أيضًا إلى تقديم بعض المعلومات الأساسية عن نشاطك التجاري.
+    راجع لقطات الشاشة أدناه.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_4.png" size="md" alt="قدّم معلومات النشاط التجاري" />
+
+    <Image img="/images/cloud/reference/mp_committed_spend_5.png" size="md" alt="قدّم معلومات النشاط التجاري" />
+
+    أما إذا كنت مستخدمًا حاليًا في ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام بيانات الاعتماد الخاصة بك.
+  </Step>
+
+  <Step>
+    ### أنشئ مؤسسة للفوترة أو اختر واحدة موجودة
+
+    بعد تسجيل الدخول بنجاح، يمكنك تحديد ما إذا كنت تريد إنشاء مؤسسة جديدة لتتم فوترتها بموجب عقد marketplace هذا، أو اختيار مؤسسة حالية لتتم فوترتها بموجب هذا العقد.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="أنشئ مؤسسة أو اخترها لتتم الفوترة على هذا الاشتراك" />
+
+    بعد إكمال هذه الخطوة، سيتم ربط مؤسستك بعقد AWS committed spend الخاص بك، وستتم فوترة كل الاستخدام عبر AWS account الخاص بك.
+    يمكنك التأكد من صفحة الفوترة الخاصة بالمؤسسة في واجهة ClickHouse من أن الفوترة أصبحت الآن مرتبطة بالفعل بـ AWS Marketplace.
+
+    <Image img="/images/cloud/reference/mp_committed_spend_7.webp" size="md" alt="أكّد اكتمال الإعداد" />
+
+    إذا واجهت أي مشكلات، فلا تتردد في التواصل مع [فريق الدعم](https://clickhouse.com/support/program) لدينا.
+  </Step>
+</Steps>

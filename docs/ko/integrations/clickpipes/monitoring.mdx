@@ -1,0 +1,131 @@
+---
+sidebarTitle: '모니터링'
+description: 'Prometheus 메트릭을 사용하여 ClickPipes를 모니터링합니다.'
+slug: /integrations/clickpipes/monitoring
+title: 'ClickPipes 모니터링'
+doc_type: 'reference'
+keywords: ['ClickPipes', '모니터링', '메트릭', 'Prometheus', '관측성']
+---
+
+콘솔에서 제공하는 모니터링 외에도, ClickPipes는 스크레이핑할 수 있도록 [Prometheus 호환 엔드포인트](/ko/products/cloud/features/monitoring/prometheus)에 메트릭을 노출합니다. 이러한 메트릭은 다른 ClickHouse Cloud 서비스 메트릭과 함께 게시되며, 기존 관측성 스택(예: [Grafana](/ko/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/ko/products/cloud/features/monitoring/prometheus#integrating-with-datadog))에 ClickPipes 모니터링을 통합할 수 있습니다.
+
+<div id="metric-labels">
+  ## 메트릭 레이블
+</div>
+
+ClickPipes 메트릭은 [표준 서비스 수준 레이블](/ko/products/cloud/features/monitoring/prometheus#metric-labels) (`clickhouse_org`, `clickhouse_service`, `clickhouse_service_name`)과 함께 다음과 같은 ClickPipes 전용 레이블을 사용합니다.
+
+| 레이블                | 설명                                                     |
+| ------------------ | ------------------------------------------------------ |
+| `clickpipe_id`     | ClickPipe의 고유 식별자                                      |
+| `clickpipe_name`   | ClickPipe의 이름                                          |
+| `clickpipe_source` | 소스 유형(예: `kafka`, `postgres`, `s3`)                    |
+| `clickpipe_state`  | ClickPipe의 상태(예: `Stopped`, `Provisioning`, `Running`) |
+
+<div id="sample-response">
+  ### 응답 예시
+</div>
+
+다음은 Prometheus 스크레이프 응답에서 ClickPipes 메트릭이 어떻게 나타나는지 보여줍니다:
+
+```response
+# HELP ClickPipes_Info 항상 1입니다. 레이블 "clickpipe_state"에는 파이프의 현재 상태가 포함됩니다: Stopped/Provisioning/Running/Paused/Failed
+# TYPE ClickPipes_Info gauge
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_state="Running"} 1
+
+# HELP ClickPipes_FetchedEvents_Total 소스에서 가져온 레코드의 총 개수입니다.
+# TYPE ClickPipes_FetchedEvents_Total counter
+ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 5535376
+
+# HELP ClickPipes_SentEvents_Total ClickHouse로 전송된 레코드의 총 개수입니다.
+# TYPE ClickPipes_SentEvents_Total counter
+ClickPipes_SentEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 5534250
+
+# HELP ClickPipes_FetchedBytes_Total 소스에서 가져온 비압축 바이트의 총합입니다.
+# TYPE ClickPipes_FetchedBytes_Total counter
+ClickPipes_FetchedBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_SentBytes_Total ClickHouse로 전송된 비압축 바이트의 총합입니다.
+# TYPE ClickPipes_SentBytes_Total counter
+ClickPipes_SentBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 477187967
+
+# HELP ClickPipes_Errors_Total 데이터 수집 중 발생한 총 오류 수입니다.
+# TYPE ClickPipes_Errors_Total counter
+ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 0
+
+# HELP ClickPipes_Latency 레코드가 생성된 시점부터 ClickHouse에 기록된 시점까지의 지연 시간(밀리초)입니다.
+# TYPE ClickPipes_Latency gauge
+ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 340
+```
+
+<div id="available-metrics">
+  ## 사용 가능한 메트릭
+</div>
+
+<div id="metrics-data-transfer">
+  ### 데이터 전송
+</div>
+
+| 메트릭                                        | 유형      | 설명                                                                                  |
+| ------------------------------------------ | ------- | ----------------------------------------------------------------------------------- |
+| `ClickPipes_FetchedBytes_Total`            | Counter | 소스에서 가져온 전체 비압축 바이트 수입니다.                                                           |
+| `ClickPipes_FetchedBytesCompressed_Total`  | Counter | 소스에서 가져온 전체 압축 바이트 수입니다. 소스 데이터가 압축되지 않은 경우 `ClickPipes_FetchedBytes_Total`과 동일합니다. |
+| `ClickPipes_FetchedBytesInitialLoad_Total` | Counter | **CDC ClickPipes** 초기 적재 단계에서 가져온 전체 비압축 바이트 수입니다.                                  |
+| `ClickPipes_FetchedBytesResync_Total`      | Counter | **CDC ClickPipes** resync 작업 중 가져온 전체 비압축 바이트 수입니다.                                 |
+| `ClickPipes_SentBytes_Total`               | Counter | ClickHouse로 전송한 전체 비압축 바이트 수입니다.                                                    |
+| `ClickPipes_SentBytesCompressed_Total`     | Counter | ClickHouse로 전송한 전체 압축 바이트 수입니다.                                                     |
+
+<div id="metrics-events">
+  ### 이벤트 및 레코드
+</div>
+
+| 메트릭                                 | 유형      | 설명                                                                                                   |
+| ----------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `ClickPipes_FetchedEvents_Total`    | Counter | 소스에서 가져온 레코드의 총 개수입니다.                                                                               |
+| `ClickPipes_SentEvents_Total`       | Counter | ClickHouse로 전송한 레코드의 총 개수입니다.                                                                        |
+| `ClickPipes_FetchedEvents_PerTable` | Gauge   | **CDC ClickPipes** 대상 테이블 및 이벤트 유형별로 가져온 레코드 수입니다. 추가 `destination_table` 및 `event_type` 레이블을 사용합니다. |
+
+<div id="metrics-errors">
+  ### 오류
+</div>
+
+| 메트릭                       | 유형      | 설명                                                                   |
+| ------------------------- | ------- | -------------------------------------------------------------------- |
+| `ClickPipes_Errors_Total` | Counter | 수집 중 발생한 [오류](/ko/integrations/clickpipes/home#error-reporting)의 총수입니다. |
+
+<div id="metrics-latency">
+  ### 지연 시간
+</div>
+
+| 메트릭                                       | 유형            | 설명                                                                                                |
+| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | 레코드가 소스에서 생성된 시점부터 ClickHouse에 기록되는 시점까지의 시간(밀리초)입니다.                                             |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | **CDC ClickPipes**의 소스 측 복제 지연을 MiB 단위로 나타냅니다. Postgres ClickPipes에서는 replication slot 지연을 반영합니다. |
+
+<div id="metrics-resources">
+  ### 리소스 사용량
+</div>
+
+| 메트릭                              | 유형             | 설명                                  |
+| -------------------------------- | -------------- | ----------------------------------- |
+| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | 수집 레플리카의 평균 CPU 사용량이며, 단위는 밀리코어입니다. |
+| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | 수집 레플리카에 설정된 CPU 제한이며, 단위는 밀리코어입니다. |
+| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | 수집 레플리카의 평균 메모리 사용량이며, 단위는 바이트입니다.  |
+| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | 수집 레플리카에 설정된 메모리 제한이며, 단위는 바이트입니다.  |
+
+<div id="metrics-state">
+  ### 상태 및 진행
+</div>
+
+| 메트릭                             | 유형    | 설명                                                                     |
+| ------------------------------- | ----- | ---------------------------------------------------------------------- |
+| `ClickPipes_Info`               | Gauge | 항상 `1`입니다. 파이프 상태를 기준으로 필터링하거나 알림을 설정하려면 `clickpipe_state` 레이블을 사용합니다. |
+| `ClickPipes_LastFetchedBatchId` | Gauge | 소스에서 마지막으로 가져온 Batch의 ID입니다.                                           |
+| `ClickPipes_LastSentBatchId`    | Gauge | ClickHouse로 마지막으로 전송한 Batch의 ID입니다.                                    |
+
+<div id="related">
+  ## 관련 페이지
+</div>
+
+* [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus) — 외부 도구(예: Grafana, Datadog)를 위한 엔드포인트 참고 문서, 인증 및 설정
+* [오류 보고](/ko/integrations/clickpipes/home#error-reporting) — 레코드 및 시스템 오류가 저장되는 위치

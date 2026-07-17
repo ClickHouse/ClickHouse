@@ -185,16 +185,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 {
     checkStackSize();
 
-    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-
     /// Since we're passing a pre-analyzed query tree (not AST), the interpreter won't run
     /// query tree passes anyway. We must NOT set ignoreASTOptimizations() here because it
     /// causes isASTLevelOptimizationAllowed() to return false in PlannerContext, which changes
     /// how constant node names are generated (using source expression instead of _CAST wrapper),
     /// leading to column name mismatches with the expected header.
     auto select_query_options = SelectQueryOptions(processed_stage);
+    select_query_options.is_local_shard_plan
+        = processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Positional arguments in the outer query were already resolved by the initiator.
     /// Use a context flag instead of disabling enable_positional_arguments so that
@@ -254,6 +252,10 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         return {std::move(query_plan), false};
     }
 
+    /// Pin the snapshot replica to the initiator-local replica_num BEFORE any announcement
+    /// is sent (either locally from here or from remote replicas over the network).
+    coordinator->setSnapshotReplicaNum(replica_number);
+
     /// For the first reading step, reuse the pre-analyzed result if available.
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
     if (analyzed_read_from_merge_tree.get())
@@ -267,8 +269,9 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
-        MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)
-        { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
+        MergeTreeAllRangesCallback all_ranges_cb
+            = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
+        { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 
         MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
         {

@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "النسخ الاحتياطية لـ ClickHouse واستعادته (يدويًا)"
+sidebarTitle: "النسخ الاحتياطية والاستعادة"
+description: "نفّذ عمليات النسخ الاحتياطية والاستعادة يدويًا لبيانات ClickHouse باستخدام أوامر SQL وتخزين S3."
+---
+
+نفّذ عمليات النسخ الاحتياطية والاستعادة يدويًا لبيانات ClickHouse باستخدام أوامر SQL وتخزين S3. للاطّلاع على تفاصيل الصيغة الكاملة، راجع [وثائق النسخ الاحتياطية الأصلية لـ ClickHouse](https://clickhouse.com/docs/operations/backup).
+
+لعمليات النسخ الاحتياطية المعتمدة على API، راجع [إدارة النسخ الاحتياطية عبر API](/ar/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* حاوية S3 في نفس المنطقة لعنقودك
+* يجب أن يتمتع دور IAM المرتبط بحساب خدمة Kubernetes بصلاحيات القراءة والكتابة واستعراض محتويات الحاوية
+
+<div id="s3-path-format">
+  ## تنسيق مسار S3
+</div>
+
+تستخدم جميع أوامر النسخ الاحتياطية مسار S3 التالي:
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| المتغير              | الوصف                                                                                                       |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `$REGION`            | منطقة S3 (مثلًا، `us-west-2`)                                                                               |
+| `$S3_BUCKET`         | اسم حاوية S3 المخصّصة للنسخ الاحتياطية                                                                      |
+| `$CLUSTER_S3_PREFIX` | بادئة مفتاح S3 للعنقود، وتوجد في المورد `clickhousecluster` ضمن `spec.s3.keyPrefix` (مثلًا، `ch-s3-{uuid}`) |
+| `$BACKUP_ID`         | معرّف فريد (UUID) لهذه النسخة الاحتياطية                                                                    |
+
+<div id="perform-a-full-backup">
+  ## إجراء نسخة احتياطية كاملة
+</div>
+
+من إحدى كبسولات الخادم، نفِّذ:
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+تُنفَّذ النسخة الاحتياطية بشكل غير متزامن. تحقّق من التقدّم عبر جدول [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups):
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## النسخ الاحتياطية التزايدية
+</div>
+
+راجع [إنشاء نسخة احتياطية تزايدية](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup) في الوثائق الأصلية.
+
+<div id="restore-from-a-backup">
+  ## الاستعادة من نسخة احتياطية
+</div>
+
+نفّذ الأمر على العنقود الذي تريد الاستعادة إليه:
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` هو أي معرّف فريد تُعيّنه لعملية الاستعادة.

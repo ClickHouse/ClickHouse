@@ -1,0 +1,13 @@
+---
+description: 'EXISTS SQL 문 참고 문서'
+sidebarTitle: 'EXISTS'
+slug: /sql-reference/statements/exists
+title: 'EXISTS SQL 문'
+doc_type: 'reference'
+---
+
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+```
+
+단일 `UInt8` 유형의 컬럼을 반환하며, 테이블 또는 데이터베이스가 존재하지 않으면 값 `0`을, 지정된 데이터베이스에 테이블이 존재하면 값 `1`을 포함합니다.

@@ -213,7 +213,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = std::make_shared<StoragePostgreSQL>(
-                StorageID(database_name, table_name), pool, table_name,
+                StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
                 context_, configuration.schema, configuration.on_conflict);
 

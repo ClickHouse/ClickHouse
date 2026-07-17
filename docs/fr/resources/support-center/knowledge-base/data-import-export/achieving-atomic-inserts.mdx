@@ -1,0 +1,167 @@
+---
+title: Assurer des insertions atomiques et la cohérence entre plusieurs tables dans ClickHouse Cloud
+description: Comment charger des données de manière atomique et maintenir la cohérence entre plusieurs tables dans ClickHouse Cloud sans recourir à des transactions multi-instructions, à l'aide de tables intermédiaires et d'opérations au niveau des partitions.
+date: 2026-06-01
+tags: ['Ingestion de données', 'Bonnes pratiques']
+keywords: ['insertion atomique', 'table intermédiaire', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', 'cohérence entre plusieurs tables']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## Problème
+</div>
+
+ClickHouse Cloud ne prend pas en charge les transactions à plusieurs instructions au sens traditionnel des SGBDR.
+Cela pose deux difficultés courantes :
+
+1. Atomicité d’une seule table pour les chargements massifs : une approche courante consiste à insérer dans des clés partielles temporaires, puis à copier les enregistrements vers la clé définitive et à supprimer les enregistrements temporaires. Cette approche est peu performante, en particulier à l’étape de suppression, qui peut représenter plus de 90 % du temps total de l’opération.
+2. Cohérence entre plusieurs tables : lorsqu’un pipeline charge correctement la table A mais échoue sur la table B, la table A est déjà validée et ne peut pas être annulée. Les analystes qui interrogent les deux tables voient alors des données désynchronisées.
+
+<div id="background">
+  ## Contexte
+</div>
+
+ClickHouse garantit l’atomicité au niveau d’une seule insertion et d’une seule partition : si un `INSERT` réussit, toutes les lignes de ce bloc sont visibles ; s’il échoue, aucune ne l’est. Cependant, il n’existe pas de mécanisme intégré permettant de valider atomiquement des données réparties sur plusieurs insertions ou plusieurs tables.
+
+Les commandes de manipulation de partition ([`MOVE PARTITION TO TABLE`](/fr/reference/statements/alter/partition#move-partition-to-table), [`REPLACE PARTITION`](/fr/reference/statements/alter/partition#replace-partition), [`ATTACH PARTITION FROM`](/fr/reference/statements/alter/partition#attach-partition-from)) agissent au niveau des métadonnées lorsque les tables source et de destination partagent la même politique de stockage.
+
+Cela signifie qu’elles s’exécutent presque instantanément, quelle que soit la taille des données, ce qui en fait des briques de base idéales pour des schémas d’échange atomique.
+
+<div id="recommended-solution">
+  ## Solution recommandée
+</div>
+
+Au lieu d’insérer directement dans les tables de production et de tenter un nettoyage en cas d’échec, utilisez des tables intermédiaires dédiées comme zone de dépôt. Après validation des données, utilisez des opérations au niveau des partitions pour basculer atomiquement les données en production.
+
+<div id="step-by-step">
+  ## Étape par étape pour l’atomicité sur une seule table
+</div>
+
+<Steps>
+  <Step>
+    ### Créer une table intermédiaire
+
+    Utilisez le même schéma, la même clé de partition, le même `ORDER BY` et la même politique de stockage que la table de production.
+
+    ```sql
+    CREATE TABLE my_table_staging AS my_table_prod;
+    ```
+  </Step>
+
+  <Step>
+    ### Insérer des données dans la table intermédiaire
+
+    Exécutez votre insert sur la table intermédiaire plutôt que sur la table de production.
+
+    ```sql
+    INSERT INTO my_table_staging SELECT ... FROM source;
+    ```
+  </Step>
+
+  <Step>
+    ### Si l’insert échoue, tronquez et réessayez
+
+    Tronquez la table intermédiaire et relancez le chargement. Aucune donnée de production n’a été affectée.
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+
+  <Step>
+    ### Si l’insert réussit, déplacez les partitions en production
+
+    Pour déplacer les données en production et les supprimer de la table intermédiaire, utilisez `MOVE PARTITION`.
+
+    ```sql
+    ALTER TABLE my_table_staging MOVE PARTITION <partition_expr> TO TABLE my_table_prod;
+    ```
+
+    Vous pouvez aussi copier les données dans une partition existante en production avec `ATTACH PARTITION`.
+
+    ```sql
+    ALTER TABLE my_table_prod ATTACH PARTITION tuple() FROM my_table_staging;
+    ```
+
+    Ces deux opérations sont des modifications au niveau des métadonnées sur la même politique de stockage et s’exécutent presque instantanément.
+  </Step>
+
+  <Step>
+    ### Nettoyer la table intermédiaire
+
+    Une fois toutes les partitions déplacées, tronquez la table intermédiaire afin de la laisser vide pour le prochain chargement.
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+</Steps>
+
+<div id="multi-table-consistency">
+  ## Cohérence entre plusieurs tables
+</div>
+
+La même approche s’applique aux pipelines où deux tables ou plus doivent être entièrement chargées avant de devenir visibles pour les analystes. Chargez les données de chaque table dans sa propre table intermédiaire et validez-les toutes, puis exécutez les déplacements de partitions en une seule fois. Comme chaque déplacement est une opération sur les métadonnées quasi instantanée, la période pendant laquelle les tables sont incohérentes se réduit : elle passe de la durée du chargement complet au temps nécessaire pour permuter les partitions.
+
+<div id="requirements-and-constraints">
+  ## Exigences et contraintes
+</div>
+
+Pour `MOVE PARTITION TO TABLE`, `REPLACE PARTITION` et `ATTACH PARTITION FROM`, les tables source et de destination doivent avoir :
+
+* La même structure de colonnes
+* La même clé de partitionnement, la même clé `ORDER BY` et la même clé primaire
+* La même politique de stockage
+* La table de destination doit inclure tous les index et toutes les projections de la table source
+
+<div id="example">
+  ## Exemple
+</div>
+
+Vous pouvez exécuter l’exemple ci-dessous de façon interactive dans [fiddle](https://fiddle.clickhouse.com/7ef9ed84-ac14-4f2c-9ca5-d5913089769a) :
+
+```sql
+CREATE TABLE prod
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+CREATE TABLE staging
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+-- Initial data
+INSERT INTO prod VALUES (123, 'John', 33);
+INSERT INTO prod VALUES (456, 'Ksenia', 48);
+-- Load data
+INSERT INTO staging VALUES (8811, 'Alice', 50);
+INSERT INTO staging VALUES (8812, 'Bob', 23);
+
+-- Validate import
+SELECT 'Staging count:', COUNT() FROM staging;
+-- Move partition
+ALTER TABLE staging MOVE PARTITION tuple() TO TABLE prod; -- atomic op
+
+-- Check data
+SELECT 'Prod count:', COUNT() FROM prod;
+SELECT * FROM prod;
+```
+
+<div id="references">
+  ## Références
+</div>
+
+* [**Manipuler les partitions et les parts**](/fr/reference/statements/alter/partition)
+* Pour en savoir plus sur cette stratégie, consultez l’article de blog [**Supercharging your large ClickHouse data loads - Part 3: Making a large data load resilient**](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).

@@ -1,0 +1,297 @@
+---
+description: 'Dashboard avanzado en ClickHouse Cloud'
+keywords: ['monitorización', 'observabilidad', 'dashboard avanzado', 'dashboard', 'dashboard de
+    observabilidad']
+sidebarTitle: 'Dashboard avanzado'
+slug: /cloud/manage/monitor/advanced-dashboard
+title: 'Dashboard avanzado en ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Supervisar su sistema de bases de datos en un entorno de producción es vital para
+comprender el estado de su implementación, de modo que pueda prevenir o resolver caídas del servicio.
+
+El dashboard avanzado es una herramienta ligera diseñada para ofrecerle información detallada
+sobre su sistema ClickHouse y su entorno, lo que le ayuda a anticiparse a
+cuellos de botella de rendimiento, fallos del sistema e ineficiencias.
+
+El dashboard avanzado está disponible tanto en ClickHouse OSS (software de código abierto)
+como en Cloud. En este artículo le mostraremos cómo usar el dashboard avanzado en
+Cloud.
+
+<div id="accessing-the-advanced-dashboard">
+  ## Acceso al dashboard avanzado
+</div>
+
+Se puede acceder al dashboard avanzado desde:
+
+* Panel lateral izquierdo
+  * `Monitoring` → `Advanced dashboard`
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Dashboard avanzado" />
+
+<div id="accessing-the-native-advanced-dashboard">
+  ## Acceso al dashboard avanzado nativo
+</div>
+
+Se puede acceder al dashboard avanzado nativo navegando hasta:
+
+* Panel lateral izquierdo
+  * `Monitoring` → `Advanced dashboard`
+  * Haciendo clic en `You can still access the native advanced dashboard.`
+
+Esto abrirá el dashboard avanzado nativo en una nueva pestaña. Deberás
+autenticarte para acceder al dashboard.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Dashboard avanzado" />
+
+Cada visualización tiene una consulta SQL asociada que la genera. Puedes
+editar esta consulta haciendo clic en el icono del lápiz.
+
+<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="Dashboard avanzado" />
+
+<div id="out-of-box-visualizations">
+  ## Visualizaciones preconfiguradas
+</div>
+
+Los gráficos predeterminados del Dashboard avanzado están diseñados para ofrecer
+visibilidad en tiempo real de su sistema ClickHouse. A continuación se incluye una lista con la descripción de
+cada gráfico. Están agrupados en tres categorías para facilitar su navegación.
+
+<div id="clickhouse-specific">
+  ### Específico de ClickHouse
+</div>
+
+Estas métricas están diseñadas para supervisar el estado y el rendimiento de su
+instancia de ClickHouse.
+
+| Métrica                         | Descripción                                                                                                      |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Consultas por segundo           | Realiza un seguimiento de la tasa de consultas procesadas                                                        |
+| Filas seleccionadas/seg         | Indica el número de filas leídas por las consultas                                                               |
+| Filas insertadas/seg            | Mide la tasa de ingestión de datos                                                                               |
+| Total de partes MergeTree       | Muestra el número de partes activas en las tablas MergeTree, lo que ayuda a identificar inserciones no agrupadas |
+| Máx. de partes por partición    | Resalta el número máximo de partes en cualquier partición                                                        |
+| Consultas en ejecución          | Muestra el número de consultas que se están ejecutando actualmente                                               |
+| Bytes seleccionados por segundo | Indica el volumen de datos leídos por las consultas                                                              |
+
+<div id="system-health-specific">
+  ### Métricas específicas de salud del sistema
+</div>
+
+Supervisar el sistema subyacente es tan importante como vigilar ClickHouse.
+
+| Metric                                 | Description                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Espera de E/S                          | Hace un seguimiento de los tiempos de espera de E/S                                                           |
+| Espera de CPU                          | Mide los retrasos causados por la contención de recursos de CPU                                               |
+| Lectura desde disco                    | Hace un seguimiento de la cantidad de bytes leídos desde discos o dispositivos de bloque                      |
+| Lectura desde el sistema de archivos   | Hace un seguimiento de la cantidad de bytes leídos desde el sistema de archivos, incluida la caché de páginas |
+| Memoria (monitorizada, bytes)          | Muestra el uso de memoria de los procesos monitorizados por ClickHouse                                        |
+| Carga promedio (15 minutos)            | Informa del promedio de carga actual del sistema en 15 minutos                                                |
+| Uso de CPU del SO (espacio de usuario) | Uso de CPU al ejecutar código en espacio de usuario                                                           |
+| Uso de CPU del SO (kernel)             | Uso de CPU al ejecutar código del kernel                                                                      |
+
+<div id="clickhouse-cloud-specific">
+  ## Específico de ClickHouse Cloud
+</div>
+
+ClickHouse Cloud almacena datos mediante object storage (tipo S3). Supervisar esta
+interfaz puede ayudar a detectar problemas.
+
+| Métrica                                              | Descripción                                                                              |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Espera de lectura de S3                              | Mide la latencia de las solicitudes de lectura a S3                                      |
+| Errores de lectura de S3 por segundo                 | Realiza un seguimiento de la tasa de errores de lectura                                  |
+| Lectura desde S3 (bytes/s)                           | Realiza un seguimiento de la velocidad a la que se leen datos desde el almacenamiento S3 |
+| Solicitudes/s de escritura en disco S3               | Supervisa la frecuencia de las operaciones de escritura en el almacenamiento S3          |
+| Solicitudes/s de lectura en disco S3                 | Supervisa la frecuencia de las operaciones de lectura en el almacenamiento S3            |
+| Tasa de aciertos de la caché de páginas              | La tasa de aciertos de la caché de páginas                                               |
+| Tasa de aciertos de la caché del sistema de archivos | Tasa de aciertos de la caché del sistema de archivos                                     |
+| Tamaño de la caché del sistema de archivos           | El tamaño actual de la caché del sistema de archivos                                     |
+| Bytes enviados por red/s                             | Realiza un seguimiento de la velocidad actual del tráfico de red entrante                |
+| Bytes recibidos por red/s                            | Realiza un seguimiento de la velocidad actual del tráfico de red saliente                |
+| Conexiones de red concurrentes                       | Realiza un seguimiento del número actual de conexiones de red concurrentes               |
+
+<div id="identifying-issues-with-the-advanced-dashboard">
+  ## Identificación de problemas con el dashboard avanzado
+</div>
+
+Disponer de esta vista en tiempo real del estado de su servicio de ClickHouse resulta de gran ayuda
+para mitigar problemas antes de que afecten a su negocio o para resolverlos. A continuación, se muestran
+algunos problemas que puede detectar con el dashboard avanzado.
+
+<div id="unbatched-inserts">
+  ### Inserciones sin lotes
+</div>
+
+Como se describe en la [documentación de buenas prácticas](/es/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous), se recomienda siempre
+insertar datos en bloque en ClickHouse si es posible hacerlo de forma síncrona.
+
+Una inserción en bloque con un tamaño de lote razonable reduce el número de partes creadas
+durante la ingestión, lo que se traduce en escrituras en disco más eficientes y menos
+operaciones de merge.
+
+Las métricas clave para detectar inserciones subóptimas son **Inserted Rows/sec** y
+**Max Parts for Partition**
+
+<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Inserciones sin lotes" />
+
+El ejemplo anterior muestra dos picos en **Inserted Rows/sec** y **Max Parts for Partition**
+entre las 13 h y las 14 h. Esto indica que se están ingiriendo datos a una velocidad razonable.
+
+Luego vemos otro gran pico en **Max Parts for Partition** después de las 16 h, pero un valor de
+**Inserted Rows/sec** muy bajo. Se están creando muchas partes con
+muy pocos datos, lo que indica que el tamaño de las partes es
+subóptimo.
+
+<div id="resource-intensive-query">
+  ### Consulta con uso intensivo de recursos
+</div>
+
+Es habitual ejecutar consultas SQL que consumen una gran cantidad de recursos, como
+CPU o memoria. Sin embargo, es importante supervisar estas consultas y comprender
+su impacto en el rendimiento general de su implementación.
+
+Un cambio repentino en el consumo de recursos sin que cambie el volumen de consultas puede
+indicar que se están ejecutando consultas más costosas. Según el tipo de consultas
+que esté ejecutando, esto puede ser esperable, pero conviene detectarlas en el dashboard
+avanzado.
+
+A continuación se muestra un ejemplo de un pico en el uso de CPU sin que cambie significativamente la
+cantidad de consultas por segundo ejecutadas.
+
+<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="Consulta con uso intensivo de recursos" />
+
+<div id="bad-primary-key-design">
+  ### Mal diseño de la clave primaria
+</div>
+
+Otro problema que puedes detectar con el dashboard avanzado es un mal diseño de la clave primaria.
+Como se describe en [&quot;A practical introduction to primary indexes in ClickHouse&quot;](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key),
+elegir la clave primaria que mejor se adapte a tu caso de uso mejorará considerablemente el rendimiento
+al reducir el número de filas que ClickHouse necesita leer para ejecutar tu consulta.
+
+Una de las métricas que puedes seguir para detectar posibles mejoras en las claves primarias
+es **Selected Rows per second**. Un pico repentino en el número de filas seleccionadas puede
+indicar tanto un aumento general del volumen total de consultas como consultas que
+seleccionan una gran cantidad de filas para ejecutarse.
+
+<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="Consulta intensiva en recursos" />
+
+Usando el timestamp como filtro, puedes encontrar las consultas ejecutadas en el momento
+del pico en la tabla `system.query_log`.
+
+Por ejemplo, ejecutar una consulta que muestre todas las consultas ejecutadas entre las 11 a. m.
+y las 11 a. m. de un día determinado para entender qué consultas están leyendo demasiadas filas:
+
+```sql title="Query"
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM system.query_log
+WHERE has(databases, 'default') AND (event_time >= '2024-12-23 11:20:00') AND (event_time <= '2024-12-23 11:30:00') AND (type = 'QueryFinish')
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response title="Response"
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:22:55
+query_duration_ms: 37407
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_no_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         150957260
+tables:            ['default.amazon_reviews_no_pk']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:26:50
+query_duration_ms: 7325
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_no_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         150957260
+tables:            ['default.amazon_reviews_no_pk']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:24:10
+query_duration_ms: 3270
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         6242304
+tables:            ['default.amazon_reviews_pk']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:28:10
+query_duration_ms: 2786
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         6242304
+tables:            ['default.amazon_reviews_pk']
+```
+
+En este ejemplo, podemos ver la misma consulta ejecutada sobre dos
+tablas, `amazon_reviews_no_pk` y `amazon_reviews_pk`. Se puede concluir que
+alguien estaba probando una opción de clave primaria para la tabla `amazon_reviews`.

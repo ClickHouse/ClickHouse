@@ -1,0 +1,67 @@
+---
+slug: /faq/operations/delete-old-data
+title: '是否可以从 ClickHouse 表中删除旧记录？'
+toc_hidden: true
+toc_priority: 20
+description: '本页解答是否可以从 ClickHouse 表中删除旧记录这一问题'
+doc_type: 'reference'
+keywords: ['删除数据', '生存时间 (TTL)', '数据保留', '清理', '数据生命周期']
+---
+
+简短的回答是“可以”。ClickHouse 提供了多种可通过删除旧数据来释放磁盘空间的机制。每种机制都适用于不同的场景。
+
+<div id="ttl">
+  ## 生存时间 (TTL)
+</div>
+
+ClickHouse 允许在满足特定条件时自动删除数据。该条件通过基于任意列的表达式来配置，通常只是针对某个时间戳列设置一个固定偏移量。
+
+这种方法的主要优势在于不需要任何外部系统来触发；一旦配置了 TTL，数据删除就会在后台自动进行。
+
+<Note>
+  TTL 不仅可用于将数据移动到 [/dev/null](https://en.wikipedia.org/wiki/Null_device)，还可用于在不同存储系统之间移动数据，例如从 SSD 移动到 HDD。
+</Note>
+
+有关[配置 TTL](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)的更多信息。
+
+<div id="delete-from">
+  ## DELETE FROM
+</div>
+
+[DELETE FROM](/zh/reference/statements/delete) 允许在 ClickHouse 中执行标准的 DELETE 查询。过滤条件中命中的行会被标记为已删除，并且不会出现在后续的结果集中。行的清理会异步进行。
+
+<Note>
+  DELETE FROM 从 23.3 及以上版本起已正式可用。在较早版本中，它属于 Experimental，必须通过以下方式启用：
+
+  ```sql
+  SET allow_experimental_lightweight_delete = true;
+  ```
+</Note>
+
+<div id="alter-delete">
+  ## ALTER DELETE
+</div>
+
+ALTER DELETE 通过异步批次操作删除行。与 DELETE FROM 不同，在执行 ALTER DELETE 之后、批次操作完成之前运行的查询，仍会包含作为删除目标的行。更多详情请参阅 [ALTER DELETE](/zh/reference/statements/alter/delete) 文档。
+
+`ALTER DELETE` 可用于灵活删除旧数据。如果需要定期执行此操作，主要缺点是必须借助外部系统来提交该查询。此外还需考虑一定的性能开销，因为变更即使只删除单独一行，也会重写整个 parts。
+
+这是让基于 ClickHouse 的系统符合 [GDPR](https://gdpr-info.eu) 要求的最常见方法。
+
+有关[变更](/zh/reference/statements/alter/index#mutations)的更多信息。
+
+<div id="drop-partition">
+  ## 删除分区
+</div>
+
+`ALTER TABLE ... DROP PARTITION` 提供了一种以较低成本删除整个分区的方式。它的灵活性没有那么高，并且要求在创建表时就配置好合适的分区方案，但仍然适用于大多数常见场景。与变更一样，如需经常使用，需要从外部系统执行。
+
+更多详情请参见[分区操作](/zh/reference/statements/alter/partition)。
+
+<div id="truncate">
+  ## TRUNCATE
+</div>
+
+清空表中的所有数据算是相当激进的做法，但在某些情况下，这可能正是你需要的。
+
+更多详情，请参见[表截断](/zh/reference/statements/truncate)。

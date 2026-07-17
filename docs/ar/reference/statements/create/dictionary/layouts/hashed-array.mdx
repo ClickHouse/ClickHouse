@@ -1,0 +1,64 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed-array
+title: 'أنواع تخطيط قاموس hashed_array'
+sidebarTitle: 'hashed_array'
+description: 'تخزين قاموس في الذاكرة باستخدام جدول تجزئة مع مصفوفات للسمات.'
+doc_type: 'مرجع'
+---
+
+<div id="hashed_array">
+  ## hashed_array
+</div>
+
+يُخزَّن القاموس بالكامل في الذاكرة. وتُخزَّن كل سمة في مصفوفة. أما سمة المفتاح فتُخزَّن على شكل جدول تجزئة، بحيث تكون القيمة فهرسًا في مصفوفة السمات. ويمكن أن يحتوي القاموس على أي عدد من العناصر بأي معرّفات. وعمليًا، قد يصل عدد المفاتيح إلى عشرات الملايين من العناصر.
+
+يكون مفتاح القاموس من النوع [UInt64](/ar/reference/data-types/int-uint).
+
+جميع أنواع المصادر مدعومة. وعند التحديث، تُقرأ البيانات (من ملف أو من جدول) بالكامل.
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <hashed_array>
+      </hashed_array>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_hashed_array">
+  ## complex_key_hashed_array
+</div>
+
+يُستخدم هذا النوع من التخزين مع [المفاتيح المركبة](/ar/reference/statements/create/dictionary/attributes#composite-key). وهو مشابه لـ [hashed&#95;array](#hashed_array).
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <complex_key_hashed_array />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

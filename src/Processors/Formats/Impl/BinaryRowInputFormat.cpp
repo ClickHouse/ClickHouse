@@ -101,7 +101,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
         type_names.reserve(read_columns);
         for (size_t i = 0; i < read_columns; ++i)
         {
-            read_data_types.push_back(decodeDataType(*in));
+            read_data_types.push_back(decodeDataType(*in, format_settings.binary.max_binary_type_complexity));
             type_names.push_back(read_data_types.back()->getName());
         }
     }
@@ -491,7 +491,7 @@ The underlying `Int64` value of the `DateTime64` type can be interpreted as the 
 - `DateTime64(6)` - microseconds.
 - `DateTime64(9)` - nanoseconds.
 
-Supported range of values: `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`.
+Supported range of values: `[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999]` (for precision up to 7; precision 8 and 9 are narrower, see the note below).
 
 Sample underlying values for `DateTime64`:
 
@@ -500,7 +500,7 @@ Sample underlying values for `DateTime64`:
 - `DateTime64(9)`: value `1705314600123456789` represents `2024-01-15 10:30:00.123456789 UTC`.
 
 :::note
-The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is 2262-04-11 23:47:16 in UTC.
+Because the underlying `Int64` tick range is narrower at higher precision, the maximum supported value shrinks: at precision 8 it is `4892-10-07` and at precision 9 (nanoseconds) it is `2262-04-11 23:47:16` in UTC.
 :::
 
 ### Time {#time}
@@ -843,6 +843,7 @@ The string encoding of the tuple data type presents similar challenges as with t
 For example, in the following table, the tuple contains an enum with a tick and parenthesis in the name, which can cause parsing issues if not handled properly:
 
 ```sql
+SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
    `t` Tuple(
@@ -1437,10 +1438,10 @@ More complex functions like `uniq`, `quantile`, or `groupArray` use implementati
 Syntax:
 
 ```text
-QBit(element_type, dimension)
+QBit(element_type, dimension[, stride])
 ```
 
-Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
+Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension. The optional `stride` only controls how the bit planes are grouped into storage streams server-side; it does not affect the RowBinary wire format, which is always the full array of `dimension` elements.
 
 Wire format: identical to `Array(element_type)`:
 

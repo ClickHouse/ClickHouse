@@ -76,13 +76,25 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             if (!object_info->getObjectMetadata())
             {
-                auto meta = object_storage->tryGetObjectMetadata(path, /*with_tags=*/ false);
+                /// Probe through the `RelativePathWithMetadata` overload (mirroring `createReader`) so that
+                /// `read_source_index` is preserved. For web URL shards the same archive path can be served
+                /// from different URL options, and the schema-cache key includes that shard identity; the
+                /// plain string overload would drop it and could validate one shard using another's metadata.
+                auto metadata_object = object_info->relative_path_with_metadata;
+                metadata_object.relative_path = path;
+                auto meta = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }
 
-            return object_info->getObjectMetadata() ? std::optional<time_t>(object_info->getObjectMetadata()->last_modified.epochTime())
-                                                    : std::nullopt;
+            const auto metadata = object_info->getObjectMetadata();
+            /// An unknown modification time (e.g. a web object whose HTTP response has no `Last-Modified`
+            /// header) must be reported as unavailable, not as the epoch: the schema cache reuses a cached
+            /// entry whenever the modification time is older than the registration time, so a fake epoch-`0`
+            /// would keep a stale schema valid forever. Returning `nullopt` makes the cache skip the entry.
+            if (!metadata || !metadata->is_last_modified_known)
+                return std::nullopt;
+            return std::optional<time_t>(metadata->last_modified.epochTime());
         };
 
         if (format)

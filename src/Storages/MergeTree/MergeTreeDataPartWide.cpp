@@ -12,10 +12,16 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
 
 namespace ErrorCodes
 {
@@ -309,7 +315,8 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1));
+                /*num_columns_in_mark=*/ 1,
+                context->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
         });

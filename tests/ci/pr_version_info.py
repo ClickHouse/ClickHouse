@@ -7,9 +7,18 @@ delimited, bot-owned section into the PR body, e.g.:
 
     <!-- ch-version-info:start -->
     ### Version info
-    - Merged into: `26.6.1.1`
+    - Merged into: `26.6.1.1` (included in `26.6` and later)
     - Backported to: `25.12.1.100`, `25.8.1.200`
     <!-- ch-version-info:end -->
+
+For an original PR the `Merged into` version comes from the default branch's
+commit counter: master keeps stamping `26.6.1.<n>` where `n` counts master
+commits, so such a version is not a `release/26.6` build and is not comparable
+with release-branch build numbers. What it does mean is that the change landed
+on master before the `release/26.6` branch was cut, so it is present in `26.6`
+from the branch's first build and in every later release -- the annotation
+spells that out. Backport PRs get a bare version -- theirs is a real
+release-branch build.
 
 The version is taken from the CIDB `version_history` table, populated per build
 by `ci/jobs/scripts/workflow_hooks/version_log.py`. Each build stores the
@@ -111,11 +120,37 @@ def version_key(version: str) -> Tuple[int, ...]:
     return tuple(int(part) for part in version.split(".") if part.isdigit())
 
 
-def render_section(merged_into: Optional[str], backported_to: List[str]) -> str:
-    """Render the inner markdown of the version-info section (no delimiters)."""
+def release_series(version: str) -> Optional[str]:
+    """The release series a version belongs to: `26.6.1.1291` -> `26.6`."""
+    parts = version.split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"{parts[0]}.{parts[1]}"
+    return None
+
+
+def render_section(
+    merged_into: Optional[str],
+    backported_to: List[str],
+    from_default_branch: bool = False,
+) -> str:
+    """Render the inner markdown of the version-info section (no delimiters).
+
+    ``from_default_branch`` marks ``merged_into`` as a default-branch version:
+    its last number is the default branch's commit counter, so `26.2.1.1291`
+    is not a `release/26.2` build. It means the change landed before the
+    `release/26.2` branch was cut, so it is included in `26.2` from the
+    branch's first build and in every later release -- which is what the
+    annotation says. Backport PRs pass ``False``: their version is a real
+    release-branch build and is rendered bare.
+    """
     lines = ["### Version info"]
     if merged_into:
-        lines.append(f"- Merged into: `{merged_into}`")
+        note = ""
+        if from_default_branch:
+            series = release_series(merged_into)
+            if series:
+                note = f" (included in `{series}` and later)"
+        lines.append(f"- Merged into: `{merged_into}`{note}")
     if backported_to:
         versions = ", ".join(f"`{v}`" for v in backported_to)
         lines.append(f"- Backported to: {versions}")
@@ -151,7 +186,9 @@ def upsert_section(body: Optional[str], section_body: str) -> str:
     if body and not body.endswith("\n"):
         body += "\n"
     if body:
-        body += "\n"
+        # Two blank lines before the block to visually separate the version-info
+        # section from the preceding PR/issue description.
+        body += "\n\n"
     return body + block
 
 
@@ -336,7 +373,9 @@ def scan_backport_versions(
     )
 
 
-def apply_issue_section(gh, repo, issue_number: int, section_body: str, dry_run: bool) -> bool:
+def apply_issue_section(
+    gh, repo, issue_number: int, section_body: str, dry_run: bool
+) -> bool:
     """Upsert the version-info section into an issue's body. Returns True if it
     changed. The issue is fetched live so the body reflects the current state."""
     issue = repo.get_issue(issue_number)
@@ -401,7 +440,11 @@ def update_original_pr(
     if not merged_into and not backported:
         # Nothing known yet -- the post-merge build has likely not finished.
         return False
-    section_body = render_section(merged_into, backported)
+    # Annotate the version with the release series that first includes the
+    # change: an original PR's version is the default branch's commit counter,
+    # which is easy to mistake for a release-branch build when the version
+    # prefix matches (see render_section).
+    section_body = render_section(merged_into, backported, from_default_branch=True)
     changed = apply_section(gh, repo, info, section_body, dry_run)
     # Mirror the section into the body of the issues this PR resolved (its
     # "Development" links). Only PRs that actually close an issue pay for this.

@@ -1,0 +1,117 @@
+---
+slug: /cloud/marketplace/marketplace-billing
+title: 'Facturación del marketplace'
+description: 'Suscríbete a ClickHouse Cloud a través de los marketplaces de AWS, GCP y Azure.'
+keywords: ['aws', 'azure', 'gcp', 'google cloud', 'marketplace', 'facturación']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Puede suscribirse a ClickHouse Cloud a través de los marketplaces de AWS, GCP y Azure. Esto le permite pagar ClickHouse Cloud mediante la facturación de su proveedor de nube actual.
+
+Puede optar por pay-as-you-go (PAYG) o por un contrato por compromiso con ClickHouse Cloud a través del marketplace. La facturación correrá a cargo del proveedor de nube y recibirá una única factura por todos sus servicios en la nube.
+
+* [AWS Marketplace PAYG](/es/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Contrato por compromiso](/es/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/es/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Contrato por compromiso](/es/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/es/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Contrato por compromiso](/es/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+<div id="faqs">
+  ## Preguntas frecuentes
+</div>
+
+<div id="how-can-i-verify-that-my-organization-is-connected-to-marketplace-billing">
+  ### ¿Cómo puedo verificar que mi organización está conectada a la facturación del marketplace?​
+</div>
+
+En la consola de ClickHouse Cloud, ve a **Billing**. Allí deberías ver el nombre del marketplace y el enlace en la sección **Payment details**.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace">
+  ### Ya soy usuario de ClickHouse Cloud. ¿Qué ocurre cuando me suscribo a ClickHouse Cloud a través del marketplace de AWS / GCP / Azure?​
+</div>
+
+Suscribirse a ClickHouse Cloud desde el marketplace del proveedor de Cloud es un proceso de dos pasos:
+
+1. Primero, se &quot;suscribe&quot; a ClickHouse Cloud en el portal del marketplace del proveedor de Cloud. Una vez completada la suscripción, haga clic en &quot;Pay Now&quot; o &quot;Manage on Provider&quot; (según el marketplace). Esto lo redirigirá a ClickHouse Cloud.
+2. En ClickHouse Cloud, puede registrar una cuenta nueva o iniciar sesión con una cuenta existente. En cualquiera de los dos casos, se creará una nueva organización de ClickHouse Cloud vinculada a la facturación del marketplace.
+
+NOTA: Los servicios y organizaciones existentes de registros anteriores en ClickHouse Cloud seguirán estando disponibles y no estarán vinculados a la facturación del marketplace. ClickHouse Cloud le permite usar la misma cuenta para gestionar varias organizaciones, cada una con una facturación distinta.
+
+Puede cambiar de organización desde el menú de la esquina inferior izquierda de la consola de ClickHouse Cloud.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace">
+  ### Ya soy usuario de ClickHouse Cloud. ¿Qué debo hacer si quiero que mis servicios actuales se facturen a través del marketplace?​
+</div>
+
+Deberá suscribirse a ClickHouse Cloud a través del marketplace del proveedor de Cloud. Una vez que complete la suscripción en el marketplace y se le redirija a ClickHouse Cloud, tendrá la opción de vincular una organización existente de ClickHouse Cloud a la facturación del marketplace. A partir de ese momento, sus recursos existentes pasarán a facturarse a través del marketplace.
+
+<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size="md" alt="Registro en el marketplace y vinculación de la organización" border />
+
+Puede confirmarlo en la página de facturación de la organización para verificar que la facturación ya está vinculada al marketplace. Póngase en contacto con [soporte de ClickHouse Cloud](https://clickhouse.com/support/program) si tiene algún problema.
+
+<Note>
+  Sus servicios y organizaciones existentes de cualquier suscripción anterior a ClickHouse Cloud seguirán estando disponibles y no se conectarán a la facturación del marketplace.
+</Note>
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-how-can-i-unsubscribe">
+  ### Me suscribí a ClickHouse Cloud como usuario de Marketplace. ¿Cómo puedo cancelar la suscripción?​
+</div>
+
+Ten en cuenta que puedes dejar de usar ClickHouse Cloud y eliminar todos los servicios de ClickHouse Cloud que tengas. Aunque la suscripción seguirá activa, no pagarás nada, ya que ClickHouse Cloud no tiene cargos recurrentes.
+
+Si quieres cancelar la suscripción, ve a la consola de tu proveedor de nube y cancela allí la renovación de la suscripción.
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-and-then-unsubscribed-now-i-want-to-subscribe-back-what-is-the-process">
+  ### Me suscribí a ClickHouse Cloud como usuario de marketplace y luego cancelé la suscripción. Ahora quiero volver a suscribirme, ¿cuál es el procedimiento?​
+</div>
+
+En ese caso, suscríbase a ClickHouse Cloud como de costumbre (consulte las secciones sobre cómo suscribirse a ClickHouse Cloud a través del marketplace).
+
+* En AWS Marketplace, se creará una nueva organización de ClickHouse Cloud y se conectará al marketplace.
+* En GCP Marketplace, se reactivará su organización anterior.
+
+Si tiene algún problema para reactivar su organización del marketplace, póngase en contacto con [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="how-do-i-access-my-invoice-for-my-marketplace-subscription-to-the-clickhouse-cloud-service">
+  ### ¿Cómo accedo a la factura de mi suscripción de Marketplace para el servicio de ClickHouse Cloud?​
+</div>
+
+* [Consola de facturación de AWS](https://us-east-1.console.aws.amazon.com/billing/home)
+* [Pedidos de GCP Marketplace](https://console.cloud.google.com/marketplace/orders) (seleccione la cuenta de facturación que utilizó para la suscripción)
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### ¿Por qué las fechas de los informes de uso no coinciden con mi factura de Marketplace?​
+</div>
+
+La facturación de Marketplace sigue el ciclo del mes natural. Por ejemplo, para el uso comprendido entre el 1 de diciembre y el 1 de enero, se generará una factura entre el 3 y el 5 de enero.
+
+Los informes de uso de ClickHouse Cloud siguen un ciclo de facturación distinto, en el que el uso se mide y se informa durante 30 días a partir de la fecha de registro.
+
+Las fechas de uso y de la factura serán distintas si no coinciden. Dado que los informes de uso registran el uso por día para un servicio determinado, puede consultarlos para ver el desglose de los costos.
+
+<div id="where-can-i-find-general-billing-information">
+  ### ¿Dónde puedo encontrar información general sobre la facturación?
+</div>
+
+Consulta la [página de resumen de facturación](/es/products/cloud/reference/billing/index).
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### ¿Hay alguna diferencia en el precio de ClickHouse Cloud al pagar a través del marketplace del proveedor de nube o directamente a ClickHouse?
+</div>
+
+No hay ninguna diferencia de precio entre la facturación del marketplace y la contratación directa con ClickHouse. En ambos casos, el uso de ClickHouse Cloud se contabiliza en ClickHouse Cloud Credits (CHCs), que se miden de la misma manera y se facturan en consecuencia.
+
+<div id="multiple-organizations-to-bill-to-single-cloud-marketplace-account">
+  ### ¿Puedo configurar varias organizaciones de ClickHouse para que se facturen a una única cuenta de facturación de un marketplace en la nube (AWS, GCP o Azure)?
+</div>
+
+Sí. Se pueden configurar varias organizaciones de ClickHouse para facturar el uso a mes vencido en la misma cuenta de facturación de un marketplace en la nube (AWS, GCP o Azure). Sin embargo, los créditos prepagados no se comparten entre organizaciones de forma predeterminada. Si necesita compartir créditos entre organizaciones, póngase en contacto con [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="automatically-move-to-PAYG-when-running-out-of-credit">
+  ### Si mi organización de ClickHouse se factura a través de un acuerdo de gasto comprometido en un marketplace en la nube, ¿pasará automáticamente a la facturación PAYG cuando se quede sin créditos?
+</div>
+
+Si tu contrato de gasto comprometido en el marketplace está activo y te quedas sin créditos, cambiaremos automáticamente tu organización a la facturación PAYG. Sin embargo, cuando venza tu contrato actual, tendrás que vincular un nuevo contrato del marketplace a tu organización o pasar tu organización a facturación directa mediante tarjeta de crédito.

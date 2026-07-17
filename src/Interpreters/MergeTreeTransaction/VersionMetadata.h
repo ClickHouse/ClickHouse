@@ -163,6 +163,12 @@ public:
 
     inline static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
+    /// Temporary file written before the atomic rename to `TXN_VERSION_METADATA_FILE_NAME`.
+    /// May legitimately linger on a part (for example, hardlinked onto a mutated part from its
+    /// source during a merge/mutation race on object storage), in which case it must be cleaned
+    /// up together with the main file.
+    inline static constexpr auto TMP_TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt.tmp";
+
 protected:
     /// Loads `VersionInfo` from persistent storage with error handling.
     /// Handles cases like missing metadata file, creates default values if needed.

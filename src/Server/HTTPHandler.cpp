@@ -91,40 +91,42 @@ namespace ErrorCodes
 
 namespace
 {
-bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    if (config.has("http_options_response"))
-    {
-        Strings config_keys;
-        config.keys("http_options_response", config_keys);
-        for (const std::string & config_key : config_keys)
-        {
-            if (config_key == "header" || config_key.starts_with("header["))
-            {
-                /// If there is empty header name, it will not be processed and message about it will be in logs
-                if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                    LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
-                else
-                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                 config.getString("http_options_response." + config_key + ".value", ""));
+    if (!config.has("http_options_response"))
+        return;
 
-            }
+    Strings config_keys;
+    config.keys("http_options_response", config_keys);
+    for (const std::string & config_key : config_keys)
+    {
+        if (config_key == "header" || config_key.starts_with("header["))
+        {
+            /// If there is empty header name, it will not be processed and message about it will be in logs
+            if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+            else
+                response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                             config.getString("http_options_response." + config_key + ".value", ""));
+
         }
-        return true;
     }
-    return false;
 }
 
 /// Process options request. Useful for CORS.
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    /// If can add some headers from config
-    if (tryAddHTTPOptionHeadersFromConfig(response, config))
-    {
-        response.setKeepAlive(false);
-        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
-        response.send();
-    }
+    /// Add extra response headers (e.g. for CORS) when an `http_options_response` section is configured.
+    addHTTPOptionHeadersFromConfig(response, config);
+
+    /// Always answer an OPTIONS request, even when there is nothing to add from the config. Otherwise the
+    /// connection is closed without any HTTP response and the client sees an empty reply. The default
+    /// `clickhouse-server` config ships an `http_options_response` section, but `clickhouse-local` (which
+    /// typically runs without a config) does not, so without this the web UI (`/play`) reports the
+    /// connection as broken — its `OPTIONS` health-check fails — even though queries work.
+    response.setKeepAlive(false);
+    response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+    response.send();
 }
 }
 
@@ -773,7 +775,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
-            tryAddHTTPOptionHeadersFromConfig(response, server.config());
+            addHTTPOptionHeadersFromConfig(response, server.config());
 
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

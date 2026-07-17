@@ -437,6 +437,11 @@ public:
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
+            auto query_finish_callback = [&]()
+            {
+                getOutputStream(response).finalize();
+            };
+
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
@@ -465,7 +470,7 @@ public:
                     .step_param = step,
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params);
+                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
             else if (uri_path.ends_with("/query"))
             {
@@ -484,7 +489,7 @@ public:
                     .step_param = "",
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params);
+                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
             else if (uri_path.ends_with("/format_query"))
             {

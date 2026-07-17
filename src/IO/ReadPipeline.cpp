@@ -44,6 +44,11 @@ namespace
     };
     template <class... Ts>
     Overloaded(Ts...) -> Overloaded<Ts...>;
+
+    bool canUseFilesystemCache(const StoredObject & object)
+    {
+        return object.bytes_size != StoredObject::UnknownSize;
+    }
 }
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
@@ -157,6 +162,11 @@ void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc
         .key_finder = std::move(key_finder)});
 }
 
+void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
+{
+    long_connection_limit = std::move(limit);
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 {
     if (!source)
@@ -190,17 +200,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() const
 {
     const auto & settings = source->read_settings;
-    if (!settings.use_reader_executor)
+    if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor does not implement caches, decryption, async prefetch, or the
-    /// distributed cache, so fall back rather than silently drop a configured stage.
-    if (distributed_cache || memory_cache || !filesystem_caches.empty()
-        || !decryption_stages.empty() || async_prefetch)
+    /// The executor does not implement caches, async prefetch, or the distributed cache, so
+    /// fall back rather than silently drop a configured stage. Decryption IS supported (fed
+    /// below), so it no longer forces a fallback.
+    if (distributed_cache || memory_cache || !filesystem_caches.empty() || async_prefetch)
     {
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
-            "(caches/decryption not yet supported by the executor)");
+            "(caches not yet supported by the executor)");
         return nullptr;
     }
 
@@ -243,7 +253,21 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    auto executor = std::make_unique<ReaderExecutor>(source_reader, source->objects, block_size);
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, source->objects, ReaderExecutor::Options{
+            .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
+            .block_size = block_size,
+            .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
+            .long_connection_limit = long_connection_limit,
+            /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
+            .encryption_header_cache = encryption_header_cache});
+
+    /// Feed the decryption layers (if any): the executor owns decryption internally and serves
+    /// plaintext, so it replaces the legacy `ReadBufferFromEncryptedFile` wrapping. `initDecryption`
+    /// reads and parses the headers once, up front.
+    for (const auto & dec : decryption_stages)
+        executor->addDecryptionLayer(dec.path, dec.key_finder);
+    executor->initDecryption();
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
@@ -306,6 +330,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 bool restricted_seek, const StoredObject & object) mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            if (!canUseFilesystemCache(object))
+                return prev_creator(restricted_seek, object);
+
             auto cache_key = custom_key.value_or(FileCacheKey::fromPath(object.remote_path));
             auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
@@ -338,8 +365,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
     /// manages the working buffer. Distributed cache does NOT require it — it reads from TCP
     /// and manages its own buffer, so memory_cache/async_prefetch are the only stages that
-    /// hand external memory to the inner reader via `set()`.
-    bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value();
+    /// hand external memory to the inner reader via `set()`. `usesMemoryCache()` (not a bare
+    /// `memory_cache.has_value()`) so an unknown-size object — for which the memory cache stage is
+    /// skipped — does not leave this reader in external-buffer mode without a driver.
+    bool use_external_buffer = usesMemoryCache() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
     size_t effective_buffer_size = settings.remote_fs_settings.buffer_size;
@@ -420,7 +449,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     /// use_external_buffer for the outermost buffer: true when a downstream
     /// stage (memory cache, async prefetch) manages the working buffer.
     /// Inner cache layers always use external buffer (the outer cache calls set()).
-    bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
+    /// `usesMemoryCache()` (not a bare `memory_cache.has_value()`) so an unknown-size object — for
+    /// which the memory cache stage is skipped — does not leave this reader in external-buffer
+    /// mode without a driver.
+    bool use_ext_buf = usesMemoryCache() || async_prefetch.has_value();
 
     /// -- Stage 2.5 (non-gather): Distributed cache --
     /// When DC is active it owns the whole chain and assigns `impl` outright.
@@ -483,7 +515,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
 #endif
 
     /// -- Stages 1+2: Source + FilesystemCache(s) (single-object, no DC, no gather) --
-    if (!filesystem_caches.empty())
+    if (!filesystem_caches.empty() && canUseFilesystemCache(object))
     {
         /// The impl buffer (source reader inside the cache) must always use external buffer mode.
         /// CachedOnDiskReadBufferFromFile couples with its impl via set() — passing the working
@@ -604,10 +636,33 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     }, source->source);
 }
 
+bool ReadPipeline::usesMemoryCache() const
+{
+    if (!memory_cache || !memory_cache->page_cache_settings.cache)
+        return false;
+
+    /// The page cache addresses the file by absolute offset and needs a known size:
+    /// `CachedInMemoryReadBufferFromFile` reads `in_->getFileSize()` up front and uses it for
+    /// every range computation. An object served without `Content-Length` arrives with
+    /// `UnknownSize`, so wrapping it would throw `UNKNOWN_FILE_SIZE` before any bytes are read.
+    /// Skip the page cache for such objects and stream them directly, mirroring the
+    /// `canUseFilesystemCache` guard applied to the filesystem cache stages. The object storage
+    /// source already disables the page cache for unknown-size objects up front; this also covers
+    /// the `DiskObjectStorage` read path (e.g. a `web_index` disk entry whose origin served no
+    /// `Content-Length`), which enables the page cache without checking object size.
+    for (const auto & object : source->objects)
+    {
+        if (object.bytes_size == StoredObject::UnknownSize)
+            return false;
+    }
+
+    return true;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
     /// -- Stage 4: Memory cache --
-    if (!memory_cache || !memory_cache->page_cache_settings.cache)
+    if (!usesMemoryCache())
         return impl;
 
     PageCacheFile cache_file;
@@ -646,11 +701,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     if (total_size > 0)
         async_buffer_size = std::min(async_buffer_size, total_size);
 
+    size_t min_bytes_for_seek = settings.remote_fs_settings.min_bytes_for_seek;
+#if ENABLE_DISTRIBUTED_CACHE
     /// When distributed cache is active, use its min_bytes_for_seek
     /// (typically larger, since seeks within the cache are cheaper).
-    size_t min_bytes_for_seek = distributed_cache
-        ? settings.distributed_cache_settings.min_bytes_for_seek
-        : settings.remote_fs_settings.min_bytes_for_seek;
+    if (distributed_cache)
+        min_bytes_for_seek = settings.distributed_cache_settings.min_bytes_for_seek;
+#endif
 
     /// When the memory-cache stage is enabled, `AsynchronousBoundedReadBuffer`
     /// detects its `CachedInMemoryReadBufferFromFile` inner buffer and uses
