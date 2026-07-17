@@ -5639,6 +5639,9 @@ If the number of rows to read from the projection index is less than or equal to
     DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
 If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
 )", 0) \
+    DECLARE(Bool, use_projection_index_in_read_pools, false, R"(
+Apply the projection index (see `optimize_use_projection_filtering`) already inside MergeTree read pools: mark ranges fully filtered out by the projection index are dropped before a read task is created for them, instead of being skipped granule by granule during reading.
+)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 

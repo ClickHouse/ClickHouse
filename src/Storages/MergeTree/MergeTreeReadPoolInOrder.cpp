@@ -61,29 +61,48 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
     if (all_mark_ranges.empty())
         return nullptr;
 
-    MarkRanges mark_ranges_for_task;
-    if (read_type == MergeTreeReadType::InReverseOrder)
+    auto direction = read_type == MergeTreeReadType::InReverseOrder ? MergeTreeReadRangesRefinementDirection::Reverse
+                                                                    : MergeTreeReadRangesRefinementDirection::Forward;
+    auto refinement = createReadRangesRefinement(*per_part_infos[task_idx], direction);
+
+    /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
+    /// Reuse the same direction-aware session while walking consecutive ranges of the part.
+    while (!all_mark_ranges.empty())
     {
-        /// Read ranges from right to left.
-        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
-        all_mark_ranges.pop_back();
-    }
-    else if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
-    {
-        /// If we need to read few rows, set one range per task to reduce number of read data.
-        /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
-        /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
-        /// so apply this only to the first task: if it didn't reach the limit, the filter is
-        /// likely selective and we should continue with regular block size.
-        mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
-        all_mark_ranges.pop_front();
-    }
-    else
-    {
-        mark_ranges_for_task = std::move(all_mark_ranges);
+        MarkRanges mark_ranges_for_task;
+        if (read_type == MergeTreeReadType::InReverseOrder)
+        {
+            /// Read ranges from right to left.
+            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
+            all_mark_ranges.pop_back();
+        }
+        else if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
+        {
+            /// If we need to read few rows, set one range per task to reduce number of read data.
+            /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
+            /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
+            /// so apply this only to the first task: if it didn't reach the limit, the filter is
+            /// likely selective and we should continue with regular block size.
+            mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
+            all_mark_ranges.pop_front();
+        }
+        else
+        {
+            mark_ranges_for_task = std::move(all_mark_ranges);
+            /// Reinitialize explicitly: the loop condition reads it on the next iteration.
+            all_mark_ranges = MarkRanges{};
+        }
+
+        if (refinement)
+            mark_ranges_for_task = refineReadRanges(*per_part_infos[task_idx], *refinement, std::move(mark_ranges_for_task));
+
+        if (mark_ranges_for_task.empty())
+            continue;
+
+        return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
     }
 
-    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
+    return nullptr;
 }
 
 }

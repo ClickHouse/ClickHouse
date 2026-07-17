@@ -683,6 +683,9 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash", ValueType::Number) \
     M(ParallelReplicasReadMarks, "How many marks were read by the given replica", ValueType::Number) \
     \
+    M(ReadPoolRangeRefinerDroppedMarks, "How many marks were dropped from read tasks by a ranges refiner in MergeTree read pools (e.g. marks fully filtered out by a projection index)", ValueType::Number) \
+    M(ReadPoolRangeRefinerDroppedCuts, "How many times ranges cut from a part by a MergeTree read pool were fully dropped by a ranges refiner, so no read task was created for them", ValueType::Number) \
+    \
     M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash", ValueType::Microseconds) \
     M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts", ValueType::Microseconds) \
     M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments", ValueType::Microseconds) \

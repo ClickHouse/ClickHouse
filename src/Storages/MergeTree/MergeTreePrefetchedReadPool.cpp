@@ -84,6 +84,45 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     });
 }
 
+MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
+    ThreadPool & pool,
+    ThreadTask & task,
+    MergeTreePrefetchedReadPool & read_prefetch)
+    : is_valid(true)
+    , prefetch_runner(pool, ThreadName::PREFETCH_READER)
+{
+    /// Refinement may block (e.g. building a projection index bitmap on the first use for the
+    /// part), so the whole chain - refine, create readers, prefetch - runs as a single job in
+    /// the prefetch thread pool. Ranges dropped by the refiner are never prefetched.
+    /// Both the task and the pool outlive this job: the task owns this object through
+    /// readers_future and waits for the job in its destructor.
+    prefetch_runner.enqueueAndKeepTrack(
+        [this, &task, &read_prefetch]
+        {
+            auto refinement = read_prefetch.createReadRangesRefinement(*task.read_info, MergeTreeReadRangesRefinementDirection::Forward);
+            if (refinement)
+                task.ranges = read_prefetch.refineReadRanges(*task.read_info, *refinement, std::move(task.ranges));
+
+            if (task.ranges.empty())
+            {
+                task.pruned_by_refiner = true;
+                return;
+            }
+
+            task.patches_ranges
+                = read_prefetch.ranges_in_patch_parts.getRanges(task.read_info->data_part, task.read_info->patch_parts, task.ranges);
+
+            readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+
+            /// This is already a prefetch thread, so initiate the prefetches inline.
+            read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
+            for (const auto & reader : readers.prewhere)
+                read_prefetch.createPrefetchedTask(reader.get(), task.priority)();
+            for (const auto & patch_reader : readers.patches)
+                read_prefetch.createPrefetchedTask(patch_reader->getReader(), task.priority)();
+        });
+}
+
 void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::wait");
@@ -168,6 +207,12 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     if (task.isValidReadersFuture())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
 
+    if (ranges_refiner)
+    {
+        task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, task, *this);
+        return;
+    }
+
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
@@ -207,34 +252,69 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::getTask");
 
-    std::lock_guard lock(mutex);
-
-    if (per_thread_tasks.empty())
-        return nullptr;
-
-    if (!started_prefetches)
+    /// A task may be fully dropped by the ranges refiner; in that case take the next one.
+    while (true)
     {
-        started_prefetches = true;
-        startPrefetches();
+        ThreadTaskPtr thread_task;
+
+        {
+            std::lock_guard lock(mutex);
+
+            if (per_thread_tasks.empty())
+                return nullptr;
+
+            if (!started_prefetches)
+            {
+                started_prefetches = true;
+                startPrefetches();
+            }
+
+            auto it = per_thread_tasks.find(task_idx);
+            if (it == per_thread_tasks.end())
+            {
+                thread_task = stealTask(task_idx);
+                if (!thread_task)
+                    return nullptr;
+            }
+            else
+            {
+                auto & thread_tasks = it->second;
+                chassert(!thread_tasks.empty());
+
+                thread_task = std::move(thread_tasks.front());
+                thread_tasks.pop_front();
+
+                if (thread_tasks.empty())
+                    per_thread_tasks.erase(it);
+            }
+        }
+
+        /// Resolve the task outside of the mutex: waiting for the prefetch job and creating
+        /// readers are potentially long, and refinement of a non-prefetched task may block.
+        if (thread_task->isValidReadersFuture())
+        {
+            thread_task->readers_future->wait();
+            if (thread_task->pruned_by_refiner)
+                continue;
+        }
+        else if (ranges_refiner)
+        {
+            auto refinement = createReadRangesRefinement(*thread_task->read_info, MergeTreeReadRangesRefinementDirection::Forward);
+            if (refinement)
+                thread_task->ranges = refineReadRanges(*thread_task->read_info, *refinement, std::move(thread_task->ranges));
+
+            if (thread_task->ranges.empty())
+                continue;
+
+            thread_task->patches_ranges = ranges_in_patch_parts.getRanges(
+                thread_task->read_info->data_part, thread_task->read_info->patch_parts, thread_task->ranges);
+        }
+
+        return createTask(*thread_task, previous_task);
     }
-
-    auto it = per_thread_tasks.find(task_idx);
-    if (it == per_thread_tasks.end())
-        return stealTask(task_idx, previous_task);
-
-    auto & thread_tasks = it->second;
-    chassert(!thread_tasks.empty());
-
-    auto thread_task = std::move(thread_tasks.front());
-    thread_tasks.pop_front();
-
-    if (thread_tasks.empty())
-        per_thread_tasks.erase(it);
-
-    return createTask(*thread_task, previous_task);
 }
 
-MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, MergeTreeReadTask * previous_task)
+MergeTreePrefetchedReadPool::ThreadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread)
 {
     auto non_prefetched_tasks_to_steal = per_thread_tasks.end();
     auto prefetched_tasks_to_steal = per_thread_tasks.end();
@@ -292,7 +372,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
         if (thread_tasks.empty())
             per_thread_tasks.erase(prefetched_tasks_to_steal);
 
-        return createTask(*thread_task, previous_task);
+        return thread_task;
     }
 
     /// TODO: it also makes sense to first try to steal from the next thread if it has ranges
@@ -323,7 +403,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
         if (current_thread_tasks.empty())
             per_thread_tasks.erase(thread);
 
-        return createTask(*thread_task, previous_task);
+        return thread_task;
     }
 
     return nullptr;

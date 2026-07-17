@@ -1,4 +1,5 @@
 #pragma once
+#include <Storages/MergeTree/MergeTreeReadRangesRefiner.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
@@ -66,6 +67,10 @@ public:
     /// `ParallelReadingExtension` it constructed before passing into the pool.
     RangesInDataPartsDescription buildAnnouncementDescriptions() const;
 
+    /// Must be called before the pipeline starts to call getTask. Not every pool applies the
+    /// refiner: see refineReadRanges calls in getTask of the concrete pools.
+    void setReadRangesRefiner(MergeTreeReadRangesRefinerPtr refiner) { ranges_refiner = std::move(refiner); }
+
 protected:
     /// Initialized in constructor
     const StorageSnapshotPtr storage_snapshot;
@@ -111,6 +116,19 @@ protected:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     MergeTreeReadTask::Extras getExtras() const;
+
+    /// Creates a task-local refinement session. May block and must be called outside the pool's
+    /// scheduling mutex.
+    MergeTreeReadRangesRefinementSessionPtr
+    createReadRangesRefinement(const MergeTreeReadTaskInfo & info, MergeTreeReadRangesRefinementDirection direction) const;
+
+    /// Applies a task-local refinement session to ranges cut from a part right before creating
+    /// a read task. The session is reused while a task collects more surviving marks from the
+    /// same part.
+    MarkRanges
+    refineReadRanges(const MergeTreeReadTaskInfo & info, IMergeTreeReadRangesRefinementSession & refinement, MarkRanges ranges) const;
+
+    MergeTreeReadRangesRefinerPtr ranges_refiner;
 
     std::vector<MergeTreeReadTaskInfoPtr> per_part_infos;
     RangesInPatchParts ranges_in_patch_parts;
