@@ -887,11 +887,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "publication {} does not. Resuming from the existing slot through a freshly created "
                 "publication would silently lose every change written to PostgreSQL while the publication "
                 "did not exist (pgoutput skips a publication that did not yet exist at the change's LSN), so "
-                "replication is refused. Recreate the publication with this engine's tables on the "
-                "PostgreSQL side (accepting the explicit loss of the changes written while it was absent), "
-                "or drop the replication slot as well and recreate this object for a clean re-sync: startup "
-                "keeps retrying and replication starts automatically once the conflict is resolved, without "
-                "a server restart or a manual re-attach.",
+                "replication is refused. Recreate this object for a clean re-sync (dropping it removes the "
+                "surviving replication slot, and the fresh snapshot contains every change, so nothing is "
+                "lost), or recreate the publication with this engine's tables on the PostgreSQL side to "
+                "resume from the slot, explicitly accepting that the changes written while the publication "
+                "was absent are lost (newer PostgreSQL versions may refuse to stream past them at all): "
+                "startup keeps retrying and replication starts automatically once the conflict is resolved, "
+                "without a server restart or a manual re-attach.",
                 replication_slot, doubleQuoteString(publication_name));
     }
 

@@ -3508,27 +3508,42 @@ def test_attach_fails_closed_when_publication_lost_behind_slot(started_cluster):
     )
     assert slots == [row[0] for row in cursor.fetchall()]
 
-    # Recovery is the operator's explicit decision: once the publication is recreated, the retrying
-    # startup resumes replication from the surviving slot. The rows committed while the publication did
-    # not exist are lost by PostgreSQL semantics - exactly the loss the engine refused to take silently -
-    # while everything committed after the publication exists streams through.
-    cursor.execute(f'CREATE PUBLICATION "{publication}" FOR TABLE ONLY "{table}"')
-    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
-    assert_eq_with_retry(
-        instance,
-        f"SELECT count() FROM {mat_db}.{table}",
-        "40",
-        retry_count=60,
-        sleep_time=1,
-    )
-    assert 0 == int(
-        instance.query(
-            f"SELECT countIf(key >= 30 AND key < 50) FROM {mat_db}.{table}"
+    # Recovery is the operator's explicit decision. The always-safe path is a rebuild: dropping the
+    # database removes the surviving slot, and recreating it takes a fresh snapshot that contains every
+    # row - including the ones committed while the publication did not exist. Nothing was lost by
+    # failing closed. (Recreating the publication behind the surviving slot instead would either lose
+    # the gap silently or leave PostgreSQL itself refusing to stream past it, depending on the
+    # PostgreSQL version - which is exactly why the engine refuses to do it on its own.)
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
         )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
     )
-    assert 10 == int(
-        instance.query(f"SELECT countIf(key >= 50) FROM {mat_db}.{table}")
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
     )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # And the rebuilt replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
 
     pg_manager.drop_materialized_db(mat_db)
 
