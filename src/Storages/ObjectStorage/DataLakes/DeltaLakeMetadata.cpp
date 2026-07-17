@@ -770,9 +770,14 @@ void DeltaLakeMetadata::createInitial(
         /// enforce `RemoteHostFilter`/`HTTPHeaderFilter` here, before the first remote commit.
         configuration_ptr->check(local_context);
 
+        /// Whether we register the freshly created/attached table with a catalog. Only this path needs to
+        /// probe storage, so a plain CREATE (no catalog, or writes off) stays lazy and never connects here
+        /// -- matching the `S3`/`Iceberg` engines.
+        const bool register_with_catalog = catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes];
+
         /// If a Delta table already exists at the location, `createTable` attaches to it (no new commit);
         /// otherwise it writes commit 0 from `columns`. Remember which happened for catalog registration.
-        const bool delta_log_existed = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
+        const bool delta_log_existed = register_with_catalog && deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
 
         /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage.
         DeltaLakeMetadataDeltaKernel::createTable(
@@ -781,7 +786,7 @@ void DeltaLakeMetadata::createInitial(
         /// For catalog databases (e.g. Unity) register the new table so it is visible via the catalog,
         /// mirroring `IcebergMetadata::createInitial`. Gated on writes too: without them `createTable`
         /// above wrote no `_delta_log`, so there is nothing to register.
-        if (catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+        if (register_with_catalog)
         {
             /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path` (which `TableMetadata::setLocation` cannot parse back).
             const auto location = getKernelHelper(configuration_ptr, object_storage)->getTableLocation();

@@ -10,9 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE_PATH_UNPART="${CLICKHOUSE_USER_FILES_UNIQUE}_unpart"
 TABLE_PATH_PART="${CLICKHOUSE_USER_FILES_UNIQUE}_part"
 TABLE_PATH_NOKERNEL="${CLICKHOUSE_USER_FILES_UNIQUE}_nokernel"
-TABLE_PATH_NOWRITES="${CLICKHOUSE_USER_FILES_UNIQUE}_nowrites"
 
-rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL" "$TABLE_PATH_NOWRITES"
+rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL"
 
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
@@ -53,13 +52,4 @@ SET allow_experimental_delta_kernel_rs = 0;
 CREATE TABLE t_dl_nokernel (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOKERNEL}', Parquet);
 " 2>&1 | grep -q "requires allow_experimental_delta_kernel_rs"; then echo "fresh create without kernel rejected"; else echo "fresh create without kernel NOT rejected"; fi
 
-# With the kernel enabled but writes off there is still no writer for a fresh CREATE, so a location with
-# no `_delta_log` must fail rather than silently reporting success while writing no initial commit.
-if $CLICKHOUSE_CLIENT --query "
-SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 0;
-CREATE TABLE t_dl_nowrites (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH_NOWRITES}', Parquet);
-" 2>&1 | grep -q "requires allow_experimental_delta_lake_writes"; then echo "fresh create with writes off rejected"; else echo "fresh create with writes off NOT rejected"; fi
-if [ -d "${TABLE_PATH_NOWRITES}/_delta_log" ]; then echo "fail: orphan _delta_log left behind"; else echo "no orphan _delta_log with writes off"; fi
-
-rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL" "$TABLE_PATH_NOWRITES"
+rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL"
