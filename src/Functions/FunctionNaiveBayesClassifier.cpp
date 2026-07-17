@@ -143,6 +143,10 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !(arguments[0].is_const && arguments[1].is_const);
+    }
 };
 
 
@@ -206,11 +210,6 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context_); }
 
     String getName() const override { return name; }
-
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
-    {
-        return !(arguments[0].is_const && arguments[1].is_const);
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
