@@ -6447,7 +6447,8 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     /// `JSONEachPacket*` formats). Do not add the page's own framing to such a query: the query's
     /// framing applies alone, and the response is dispatched by its `Content-Type` - an event
     /// stream is handled as usual (the query chose `EventStream` itself), anything else is shown as
-    /// raw text, so the packets the user asked to see are displayed verbatim rather than misparsed.
+    /// raw text, so the packets the user asked to see are displayed verbatim rather than misparsed
+    /// (a trailing `exception` packet in such an NDJSON stream is still surfaced as a failure).
     ///
     /// A query that sets `framing_output_format = 'None'` disables framing rather than choosing
     /// one, so it is not "the query's own framing" - it asks to run without any of it. This page
@@ -6504,7 +6505,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         /// Only read-only queries are retried: framing is not created for a non-pulling pipeline
         /// (`INSERT`, DDL) on such a server, so the statement may already have run before returning
         /// a plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
-        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && queryIsReadOnly(query)) {
+        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
             use_framing = false;
             response = await fetch(url, fetch_options);
             content_type = response.headers.get('Content-Type') ?? '';
@@ -6521,7 +6522,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         if (!response.ok && content_type.startsWith('text/event-stream')) {
             framed_error_stream = await response.text();
             if (posted_request_num != request_num) { return { cancelled: true }; }
-            if (use_framing && queryIsReadOnly(query) && framed_error_stream.includes('is not compatible with framing formats')) {
+            if (use_framing && await queryIsReadOnly(query) && framed_error_stream.includes('is not compatible with framing formats')) {
                 framed_error_stream = null;
                 use_framing = false;
                 response = await fetch(url, fetch_options);
@@ -6659,7 +6660,35 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
-            let buffer = '';
+            /// A query that carries its own `JSONEachPacket*` framing (the NDJSON framings the page
+            /// does not render specially) streams its packet lines verbatim here. The lines are still
+            /// shown as-is, but they are scanned for a `{"packet":"exception",...}` line: a query can
+            /// fail after data was already streamed and the `200 OK` header sent, ending the stream
+            /// with an `exception` packet while the HTTP status stays `200`. Report that as a failure
+            /// so the single run shows the error state and `Run all` stops, mirroring the framed
+            /// `EventStream` path above. The exact packet form is pinned by
+            /// `04548_play_ui_framing_fallbacks.sh`. Plain raw output produced after a framing retry
+            /// (`use_framing` turned off, `user_framing` false) is not scanned - it has no packets.
+            const scan_packets = user_framing;
+            const exception_prefix = '{"packet":"exception"';
+            let saw_exception = false;
+            /// The first characters of the current line, capped at the prefix length: a line either
+            /// begins with the exception packet or not, so only the head is needed (this keeps the
+            /// scan bounded regardless of how large a single data packet line is).
+            let line_head = '';
+
+            const scanForException = (chunk) => {
+                if (!scan_packets || saw_exception) return;
+                for (let i = 0; i < chunk.length; ++i) {
+                    const c = chunk[i];
+                    if (c === '\n') { line_head = ''; continue; }
+                    if (line_head.length < exception_prefix.length) {
+                        line_head += c;
+                        if (line_head === exception_prefix) { saw_exception = true; return; }
+                    }
+                }
+            };
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -6669,6 +6698,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 
                 if (posted_request_num != request_num) { return { cancelled: true }; }
                 targetResultEl.updateRaw(new_content);
+                scanForException(new_content);
+            }
+
+            if (saw_exception) {
+                is_error = true;
+                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
             }
         }
 
@@ -8848,38 +8883,89 @@ const PARALLELIZABLE_KEYWORDS = new Set([
     'SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXISTS', 'EXPLAIN', 'WITH'
 ]);
 
+/// Statement keywords that introduce a write or DDL statement. Used to resolve the real kind of a
+/// query that begins with a `WITH` (CTE) clause: `WITH ... INSERT ...` is a write even though it
+/// starts with the read-only-looking `WITH`. These are reserved keywords that cannot be a bare CTE
+/// alias, so their presence at the statement level after a leading `WITH` unambiguously marks a
+/// write (see `queryIsReadOnly`).
+const WRITE_STATEMENT_KEYWORDS = new Set([
+    'INSERT', 'CREATE', 'ALTER', 'DROP', 'DELETE', 'TRUNCATE', 'OPTIMIZE', 'SYSTEM', 'RENAME',
+    'ATTACH', 'DETACH', 'GRANT', 'REVOKE', 'KILL', 'BACKUP', 'RESTORE'
+]);
+
 /// Whether a query is read-only and therefore safe to re-run. Used to gate the no-framing retry: a
 /// side-effecting statement (`INSERT`, DDL) may already have run on the server before returning a
-/// plain-HTTP error, so resubmitting it could duplicate its effect. Recognizes the same read-only
-/// query kinds treated as parallelizable, after skipping leading whitespace, comments and brackets.
-function queryIsReadOnly(query)
+/// plain-HTTP error, so resubmitting it could duplicate its effect.
+///
+/// The leading keyword is not enough: ClickHouse allows a query to begin with a `WITH` (CTE) clause,
+/// so `WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y` starts with the
+/// read-only-looking `WITH` yet is a write. The real statement kind is the first statement keyword
+/// that follows the CTE list, which is found by walking the lexer tokens and skipping the CTE list
+/// (its `AS`, `RECURSIVE`, aliases, commas, and parenthesized subqueries live either at the same
+/// level as ordinary identifiers or nested one level deeper). A write/DDL keyword there means the
+/// whole statement is a write; a read-only keyword means it is safe to resubmit. Falls back to a
+/// best-effort leading-keyword match only when WebAssembly - hence the lexer - is unavailable, where
+/// a leading `WITH` is conservatively treated as not read-only (the retry is a best-effort
+/// convenience, so never resubmitting a possibly-mutating `WITH ...` is the safe default).
+///
+/// Regression coverage lives in `src/Parsers/tests/gtest_play_query_is_read_only.cpp` (a port of the
+/// token-walking algorithm on top of the same `DB::Lexer`). Keep the two in sync.
+async function queryIsReadOnly(query)
 {
-    let s = query;
-    for (;;)
-    {
-        const t = s.replace(/^\s+/, '');
-        if (t.startsWith('--'))
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        let s = query;
+        for (;;)
         {
-            const nl = t.indexOf('\n');
-            s = nl < 0 ? '' : t.slice(nl + 1);
+            const t = s.replace(/^\s+/, '');
+            if (t.startsWith('--'))
+            {
+                const nl = t.indexOf('\n');
+                s = nl < 0 ? '' : t.slice(nl + 1);
+            }
+            else if (t.startsWith('/*'))
+            {
+                const end = t.indexOf('*/');
+                s = end < 0 ? '' : t.slice(end + 2);
+            }
+            else if (t.startsWith('('))
+            {
+                s = t.slice(1);
+            }
+            else
+            {
+                s = t;
+                break;
+            }
         }
-        else if (t.startsWith('/*'))
-        {
-            const end = t.indexOf('*/');
-            s = end < 0 ? '' : t.slice(end + 2);
-        }
-        else if (t.startsWith('('))
-        {
-            s = t.slice(1);
-        }
-        else
-        {
-            s = t;
-            break;
-        }
+        const keyword = s.split(/[\s(;]/)[0].toUpperCase();
+        return PARALLELIZABLE_KEYWORDS.has(keyword) && keyword !== 'WITH';
     }
-    const keyword = s.split(/[\s(;]/)[0].toUpperCase();
-    return PARALLELIZABLE_KEYWORDS.has(keyword);
+
+    const tokens = (await tokenize(query)).filter(t => t.significant);
+    let depth = 0;
+    /// Bracket depth at which the leading `WITH` sits (so the CTE list is scanned at the same level
+    /// even when the whole statement is wrapped in parentheses); -1 until the leading keyword is seen.
+    let with_depth = -1;
+    for (const t of tokens) {
+        if (OPENING_BRACKETS.has(t.type)) { ++depth; continue; }
+        if (CLOSING_BRACKETS.has(t.type)) { if (depth > 0) --depth; continue; }
+        if (t.type !== TT.BareWord) continue;
+        const keyword = t.token.toUpperCase();
+        if (with_depth < 0) {
+            /// The first significant keyword (possibly wrapped in leading brackets). If it is not a
+            /// leading `WITH`, it is the statement kind.
+            if (keyword !== 'WITH') return PARALLELIZABLE_KEYWORDS.has(keyword);
+            with_depth = depth;
+            continue;
+        }
+        /// After the leading `WITH`: the real statement keyword sits at the CTE-list level; CTE
+        /// subqueries are nested deeper and are skipped, and CTE aliases / `AS` / `RECURSIVE` are
+        /// neither write nor read-only keywords, so they are skipped too.
+        if (depth !== with_depth) continue;
+        if (WRITE_STATEMENT_KEYWORDS.has(keyword)) return false;
+        if (PARALLELIZABLE_KEYWORDS.has(keyword)) return true;
+    }
+    return false;
 }
 
 /// Split the textarea content into individual queries using the lexer.

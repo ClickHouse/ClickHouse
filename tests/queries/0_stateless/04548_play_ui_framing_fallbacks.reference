@@ -21,3 +21,8 @@ text/event-stream
 event: data
 string literal is not a framing setting: OK
 no exception: OK
+--- a user-chosen JSONEachPacketString failing after streamed data ends with an exception packet at 200 OK
+1
+application/x-ndjson
+"packet":"data"
+{"packet":"exception"

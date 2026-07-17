@@ -25,6 +25,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    (`src/Parsers/tests/gtest_play_detect_framing_setting.cpp`); here we only check that the server
 #    accepts the framed request the page sends for such a query (its string value comes back as a
 #    normal framed `data` packet), since there is no WebAssembly runtime here to run the page lexer.
+# 5. A user-chosen NDJSON framing (`JSONEachPacketString`) that fails after data was already
+#    streamed ends with a `{"packet":"exception",...}` line inside a 200 OK response. The page shows
+#    the packet lines verbatim but scans them for that exception packet to report the query as a
+#    failure ("Run all" then stops), so the exact packet prefix must appear in the response.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -87,5 +91,19 @@ grep -o -m1 'text/event-stream' "$header_file"
 grep -o -m1 '^event: data' "$result_file"
 grep -q -F 'framing_output_format = None' "$result_file" && echo 'string literal is not a framing setting: OK'
 [ "$(grep -c '^event: exception' "$result_file")" -eq 0 ] && echo 'no exception: OK'
+
+echo '--- a user-chosen JSONEachPacketString failing after streamed data ends with an exception packet at 200 OK'
+# The page shows a user-chosen NDJSON framing (`JSONEachPacketString`) verbatim, but scans the
+# packet lines for a `{"packet":"exception",...}` line: a query can fail after data was already
+# streamed and the 200 OK header sent. Pin that the server does emit that packet as a line of a
+# 200 OK `application/x-ndjson` response - the exact prefix `{"packet":"exception"` the page
+# matches - so "Run all" stops after such a failure instead of running later statements.
+${CLICKHOUSE_CURL} -sS -D "$header_file" \
+    "${URL}&default_format=${framed_default_format}&max_block_size=1&max_threads=1" \
+    -d "SELECT throwIf(number = 5) FROM numbers(10) SETTINGS framing_output_format = 'JSONEachPacketString'" > "$result_file"
+grep -c '^HTTP/1.1 200 OK' "$header_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 '"packet":"data"' "$result_file"
+grep -o -m1 -F '{"packet":"exception"' "$result_file"
 
 rm -f "$result_file" "$header_file"
