@@ -3608,10 +3608,17 @@ let last_query_start = 0;
 const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
-/// Run query instantly after page is loaded if the run parameter is present.
+/// Whether the URL carries the `run` directive. Immutable fact about the URL this page was
+/// opened from; `run_immediately` below is the live session state derived from it.
+const url_run_directive = current_url.searchParams.has("run");
+
+/// Run query instantly after page is loaded if the run parameter is present. Also gates
+/// stamping `run=1` into the history entries/URLs this session writes (`buildHistoryParams`).
 /// Mutable: a stale reload (the URL hash is older than a persisted, never-run local edit)
-/// drops this directive so the edit is not auto-run just because the old URL carried `run=1`.
-let run_immediately = current_url.searchParams.has("run");
+/// drops this directive so the edit is not auto-run just because the old URL carried `run=1`,
+/// and a later genuine full run restores it from `url_run_directive` (`saveHistory`) — the
+/// suppression protects the unrun draft, not queries the user has since explicitly executed.
+let run_immediately = url_run_directive;
 
 /// Restore per-column color coding modes from the URL, so a shared/bookmarked link keeps them.
 const color_modes_from_url = current_url.searchParams.get('color_modes');
@@ -6045,7 +6052,14 @@ function saveHistory(stateData, titleForDoc) {
     /// `ranLiveParams`) AND the whole editor ran (`!partial`); otherwise a newer unrun draft has
     /// taken over meanwhile, or the reload's `postAll` would run statements that were never
     /// launched, so the marker must be dropped just as `syncHistory`/`refreshCurrentHistoryEntry` do.
-    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ ranLiveQuery && ranLiveParams && !stateData.partial);
+    const fromRun = ranLiveQuery && ranLiveParams && !stateData.partial;
+    /// A genuine full run restores the session's `run=1` affinity that a stale reload dropped:
+    /// that suppression was scoped to the preserved, never-run draft (see `reconcileStartup`),
+    /// not to queries the user has since explicitly executed — their entries must carry `run=1`
+    /// again in a `?run=1` session, exactly as if the stale-reload path was never taken. A
+    /// session opened without the directive stays without it (`url_run_directive` is false).
+    if (fromRun) run_immediately = url_run_directive;
+    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, fromRun);
 }
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
@@ -8616,7 +8630,10 @@ async function reconcileStartup() {
                         /// the newer local edit the user never ran. Drop the stale run directive so
                         /// the edit is neither auto-run below nor re-stamped with `run=1` into the
                         /// synced URL (which would auto-run it on the next reload). A destructive
-                        /// edit (e.g. `DROP`/`INSERT`) left unrun must stay unrun.
+                        /// edit (e.g. `DROP`/`INSERT`) left unrun must stay unrun. The suppression
+                        /// covers only the restored draft: the next genuine full run restores the
+                        /// directive (`saveHistory` re-reads `url_run_directive`), so entries the
+                        /// user explicitly executes carry `run=1` again for reload/share.
                         run_immediately = false;
                     }
                 }

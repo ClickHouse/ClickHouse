@@ -25,7 +25,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     unrun draft that diverges from the URL (the onpopstate save after a preserved-draft
 #     Back/Forward, or persistColorModes over a draft), a reload restores that draft as
 #     editor text but NEVER auto-runs it (the stale-reload branch drops the URL's run=1);
-#     a clean run, by contrast, is both restored and re-run on reload;
+#     a clean run, by contrast, is both restored and re-run on reload. The dropped run=1
+#     is scoped to that draft: a later genuine full run restores the session's run
+#     affinity, so the entry it writes carries run=1 again and reloading it re-runs it;
 #   - typing does not cancel an in-flight run, so a delayed completion must not clobber a
 #     newer, unrun draft (or its live parameter edits) typed while the run was still in
 #     flight: `saveHistory` must leave the live editor/params alone and drop `run=1` on the
@@ -131,7 +133,10 @@ const sandbox = {
     controller: null, multiQueryControllers: [], multiQueryContainer: null,
     save_timer: null, column_color_modes: {}, elapsed_ns: 0, last_query_start: 0,
     /// With `run=1` propagation enabled, the test can assert that refreshing an entry
-    /// from an unrun draft drops the auto-run marker.
+    /// from an unrun draft drops the auto-run marker. `url_run_directive` is the immutable
+    /// "the URL carried `?run=1`" fact `run_immediately` is derived from (and restored from
+    /// by a genuine full run after the stale-reload branch cleared it).
+    url_run_directive: true,
     run_immediately: true,
     user_elem: { value: '' },
     /// `selectionStart`/`selectionEnd` back the `Run selected` path; `has_selection` and the
@@ -381,6 +386,7 @@ function reset()
     /// Simulate a session opened from a `run=1` URL so a genuine run stamps `run=1` into its entry
     /// and the reload cases can observe that a restored unrun draft has it dropped. A real reload
     /// starts a fresh JS context; here `reconcileStartup` mutates this global, so restore it.
+    sandbox.url_run_directive = true;
     sandbox.run_immediately = true;
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
@@ -401,7 +407,8 @@ async function reload()
     sandbox.url_query = (cur.state && cur.state.query) || '';
     sandbox.url_tab_name = sandbox.current_url.searchParams.get('tab');
     sandbox.has_url_query = sandbox.url_query.length > 0;
-    sandbox.run_immediately = sandbox.current_url.searchParams.has('run');
+    sandbox.url_run_directive = sandbox.current_url.searchParams.has('run');
+    sandbox.run_immediately = sandbox.url_run_directive;
     sandbox.defer_run_for_reconcile = sandbox.run_immediately && sandbox.has_url_query;
     sandbox.query_area.value = sandbox.url_query;
     sandbox.param_inputs = {};
@@ -840,6 +847,23 @@ async function reload()
     await reload();
     assert_eq('reload after a preserved draft: the draft is restored as editor text', active().query, 'SELECT 2');
     assert_eq('reload after a preserved draft: the draft is not auto-run', sandbox.postAllCalled, false);
+
+    /// After a stale reload preserved an unrun draft (dropping the URL's stale `run=1`), a LATER
+    /// genuine full run must restore the session's `run=1` affinity: the suppression protects
+    /// only the draft the user never ran, not queries they explicitly execute afterwards. A
+    /// regression that left the directive cleared for the whole session would write the rerun's
+    /// entry without `run=1`, so reloading (or sharing) it would no longer re-run a query the
+    /// user actually executed — unlike the clean-run reload control below.
+    reset();
+    await run('SELECT 1');
+    type('SELECT 2');
+    await reload();
+    assert_eq('stale reload then rerun: the draft is restored unrun first', active().query, 'SELECT 2');
+    assert_eq('stale reload then rerun: the draft is not auto-run', sandbox.postAllCalled, false);
+    await run('SELECT 2');
+    assert_eq('stale reload then rerun: the explicit rerun entry carries run=1 again', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    await reload();
+    assert_eq('stale reload then rerun: reloading the rerun re-runs it', sandbox.postAllCalled, true);
 
     /// Reload after a color-mode toggle over an unrun draft. persistColorModes is a result-only
     /// change, but its debounced save snapshots the live editor (`captureActiveTab`), so the draft

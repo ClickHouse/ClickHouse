@@ -56,6 +56,10 @@ placeholder dropped: the removed placeholder does not leak into the URL
 placeholder dropped: the stale binding is cleared from the tab
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
+stale reload then rerun: the draft is restored unrun first
+stale reload then rerun: the draft is not auto-run
+stale reload then rerun: the explicit rerun entry carries run=1 again
+stale reload then rerun: reloading the rerun re-runs it
 reload after a color toggle over a draft: the draft is restored as editor text
 reload after a color toggle over a draft: the draft is not auto-run
 reload of a clean run: the run query is restored
