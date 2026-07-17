@@ -1437,11 +1437,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (innerJoinKeyColumnsAreEquated(from_join_node, left_resolved_identifier, right_resolved_identifier))
+        else if (identifier_lookup.identifier.isShort()
+            && innerJoinKeyColumnsAreEquated(from_join_node, left_resolved_identifier, right_resolved_identifier))
         {
             /// The column is an equated key of an INNER JOIN, so both sides carry the same value.
             /// Resolve to the left side, exactly as `single_join_prefer_left_table` would, so that this
             /// only turns a previously-thrown ambiguity into the same result the default already gives.
+            ///
+            /// Restricted to unqualified (one-part) identifiers: this is a relaxation for a bare column
+            /// name that binds to both sides, and it must not change how qualified or subcolumn paths
+            /// (e.g. `SELECT p.q FROM t INNER JOIN u AS p ON t.p.q = p.q`, where `p.q` is both a left
+            /// subcolumn and a right column) resolve.
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
         }

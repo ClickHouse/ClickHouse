@@ -36,6 +36,24 @@ SELECT id FROM t1 LEFT JOIN t2 ON t1.id = t2.id; -- { serverError AMBIGUOUS_IDEN
 -- Explicit qualification always works.
 SELECT t1.id FROM t1 INNER JOIN t2 ON t1.id = t2.id ORDER BY t1.id;
 
+-- The relaxation is limited to unqualified (one-part) identifiers: a qualified or subcolumn path that
+-- is ambiguous must keep raising the error, even when the ON equates the two candidates. Here `p.q` is
+-- ambiguous between the left subcolumn `t_sub.p.q` and the right table `p` (aliased `pr`), and the ON
+-- equates exactly those two - but the identifier is compound, so it stays ambiguous and is not silently
+-- resolved to the left side.
+DROP TABLE IF EXISTS t_sub;
+DROP TABLE IF EXISTS p;
+
+CREATE TABLE t_sub (p Tuple(q Int64)) ENGINE = Memory;
+CREATE TABLE p (q Int32) ENGINE = Memory;
+INSERT INTO t_sub VALUES ((1)), ((2));
+INSERT INTO p VALUES (1), (2);
+
+SELECT p.q FROM t_sub INNER JOIN p AS pr ON t_sub.p.q = pr.q; -- { serverError AMBIGUOUS_IDENTIFIER }
+
+DROP TABLE t_sub;
+DROP TABLE p;
+
 -- Mixed-type equi-keys: the join compares the keys after coercion to a common type, but the
 -- unqualified reference resolves to the raw left column - the same value and type that the default
 -- single_join_prefer_left_table = 1 has always produced for a single join. It does not become
