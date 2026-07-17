@@ -270,9 +270,16 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
     IObjectStorage & object_storage_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    /// Server-side rewrite is possible only within the same GCS project/client. If the destination
-    /// is another native GCS storage sharing this client, use RewriteObject across buckets.
-    if (auto * dest_gcs = dynamic_cast<GCSObjectStorage *>(&object_storage_to))
+    /// Server-side rewrite (`RewriteObject`) copies between two buckets through a single client, so it
+    /// is valid only when the destination is a native GCS storage that targets the same endpoint with
+    /// the same credentials as this one, i.e. genuinely shares this client. Without that check the
+    /// rewrite would always run on this storage's endpoint and identity: with a different endpoint a
+    /// same-named bucket could be rewritten on the wrong backend and we would return success without
+    /// ever writing the real destination; on the same endpoint with different credentials the copy
+    /// would be authenticated as the source instead of the destination. In those cases fall back to a
+    /// buffer copy, which reads through this client and writes through the destination's own client.
+    if (auto * dest_gcs = dynamic_cast<GCSObjectStorage *>(&object_storage_to);
+        dest_gcs != nullptr && settings.describesSameClientAs(dest_gcs->settings))
     {
         auto client_ptr = getClient();
         auto result = client_ptr->RewriteObjectBlocking(

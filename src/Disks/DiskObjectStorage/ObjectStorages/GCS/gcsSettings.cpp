@@ -128,6 +128,21 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     return result;
 }
 
+bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSettings & other) const
+{
+    /// Exactly the fields consumed by `getGCSClient` to choose the endpoint and the credentials.
+    /// `bucket` / `key_prefix` are intentionally excluded: two storages sharing a client may point at
+    /// different buckets (that is precisely the cross-bucket rewrite case).
+    return endpoint_override == other.endpoint_override
+        && no_sign_request == other.no_sign_request
+        && service_account_key == other.service_account_key
+        && service_account_key_file == other.service_account_key_file
+        && access_token == other.access_token
+        && google_adc_client_id == other.google_adc_client_id
+        && google_adc_client_secret == other.google_adc_client_secret
+        && google_adc_refresh_token == other.google_adc_refresh_token;
+}
+
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
     /// Exchange a refresh-token triple for an access token eagerly, reusing the existing S3-compat helper.

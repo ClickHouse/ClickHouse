@@ -59,6 +59,12 @@ struct GCSObjectStorageSettings
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const ContextPtr & context);
+
+    /// Whether these settings resolve to the same GCS endpoint and identity as `other`, so that a
+    /// single `google::cloud::storage::Client` can serve both. Used to decide when a server-side
+    /// `RewriteObject` copy between two GCS storages is valid (it runs through one client only).
+    /// Compares exactly the fields `getGCSClient` reads to build the client.
+    bool describesSameClientAs(const GCSObjectStorageSettings & other) const;
 };
 
 /// Split a GCS endpoint into bucket, key prefix and an optional REST endpoint override.
