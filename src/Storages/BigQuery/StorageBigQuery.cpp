@@ -373,16 +373,34 @@ Pipe StorageBigQuery::read(
         if (!sample.has(name))
             checkColumnMatchesSchema(columns.getPhysical(name), all_fields);    /// throws with a proper message
 
-    /// Always send the explicit field list, even when every column is requested. An empty
-    /// `selectedFields` tells BigQuery to return all of the table's *current* columns; if the remote
-    /// table gained a column after the schema snapshot was taken (analysis time), execution would then
-    /// receive wider rows than the header expects and fail with "Malformed row". Sending the exact
-    /// analyzed field list pins execution to the same schema snapshot that analysis used.
+    /// Send the explicit field list so that execution stays pinned to the analyzed schema snapshot: an
+    /// empty `selectedFields` tells BigQuery to return all of the table's *current* columns, so if the
+    /// remote table gained a column after the schema snapshot was taken (analysis time), execution would
+    /// then receive wider rows than the header expects and fail with "Malformed row".
     Names selected_names;
     selected_names.reserve(selected.size());
     for (const auto & field : selected)
         selected_names.push_back(field.name);
     String selected_fields = fmt::format("{}", fmt::join(selected_names, ","));
+
+    /// `selectedFields` is passed in the `tabledata.list` request URL, and BigQuery tables can have up to
+    /// 10000 columns; for a very wide `SELECT *` the explicit list can exceed the URL / front-end length
+    /// limit even though the read itself is valid. When every column is requested we can safely fall back
+    /// to an empty `selectedFields` (equivalent for the current schema, only giving up the snapshot pin);
+    /// a wide projection cannot omit the list, so it is reported as an error instead of producing an
+    /// oversized request.
+    static constexpr size_t max_selected_fields_length = 8192;
+    if (selected_fields.size() > max_selected_fields_length)
+    {
+        if (selected.size() == all_fields.size())
+            selected_fields.clear();
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The list of selected BigQuery columns is too long ({} bytes) to pass in the `tabledata.list` "
+                "request URL; select fewer columns",
+                selected_fields.size());
+    }
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return Pipe(std::make_shared<BigQuerySource>(

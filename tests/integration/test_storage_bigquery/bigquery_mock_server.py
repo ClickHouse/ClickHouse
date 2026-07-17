@@ -196,6 +196,23 @@ RANGE_ROWS = [
     row("2", "[2021-01-01, UNBOUNDED)"),
 ]
 
+# A deliberately wide table. BigQuery allows up to 10000 columns with names up to 300 bytes, so the
+# comma-separated `selectedFields` list for a wide `SELECT *` can exceed the request-URL length limit.
+# The reader must then fall back to an empty `selectedFields` (which asks BigQuery for all columns).
+# The column-name generation here must match test.py::wide_column_name / WIDE_COLUMN_COUNT.
+WIDE_COLUMN_COUNT = 40
+
+
+def wide_column_name(i):
+    return "wide_column_" + str(i).zfill(4) + "_" + "x" * 280
+
+
+WIDE_SCHEMA = [f("i", "INTEGER", "REQUIRED")] + [
+    f(wide_column_name(i), "INTEGER") for i in range(WIDE_COLUMN_COUNT)
+]
+
+WIDE_ROWS = [row(*(["1"] * (WIDE_COLUMN_COUNT + 1)))]
+
 TABLES = {}
 
 
@@ -228,6 +245,11 @@ def reset_tables():
             "type": "TABLE",
             "schema": RANGE_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in RANGE_ROWS],
+        },
+        "test_wide": {
+            "type": "TABLE",
+            "schema": WIDE_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in WIDE_ROWS],
         },
     }
 

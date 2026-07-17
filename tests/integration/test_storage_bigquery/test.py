@@ -296,6 +296,39 @@ def test_no_referenced_columns():
         )
 
 
+# Must match bigquery_mock_server.py::wide_column_name / WIDE_COLUMN_COUNT.
+WIDE_COLUMN_COUNT = 40
+
+
+def wide_column_name(i):
+    return "wide_column_" + str(i).zfill(4) + "_" + "x" * 280
+
+
+def test_wide_table_selected_fields():
+    mock_reset()
+    # `SELECT *` on a very wide table would make the comma-separated `selectedFields` list longer than
+    # the request URL can hold. Because every column is requested anyway, the reader falls back to an
+    # empty `selectedFields` (BigQuery then returns all current columns) instead of building an
+    # oversized GET, so the read still succeeds.
+    result = node.query(f"SELECT * FROM {bq('test_wide')} FORMAT TSV")
+    assert result == "\t".join(["1"] * (WIDE_COLUMN_COUNT + 1)) + "\n"
+    requests = mock_stats()["data_requests"]
+    assert requests
+    assert all("selectedFields" not in r["params"] for r in requests)
+
+
+def test_wide_projection_rejected():
+    mock_reset()
+    # A wide *projection* cannot omit `selectedFields` (an empty list would read all columns, not the
+    # projected subset), so when the explicit list is too long to fit the request URL the query is
+    # rejected with a clear error instead of producing an oversized GET.
+    columns = ", ".join(f"`{wide_column_name(i)}`" for i in range(30))
+    error = node.query_and_get_error(f"SELECT {columns} FROM {bq('test_wide')}")
+    assert "too long" in error
+    # The oversized request is never sent.
+    assert mock_stats()["data_requests"] == []
+
+
 def test_insert_roundtrip():
     mock_reset()
     node.query(f"""
