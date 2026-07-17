@@ -360,3 +360,50 @@ echo '--- JSONEachPacketString accepts SQLInsert with a valid UTF-8 (multi-byte)
 data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT SQLInsert' | grep -c '"packet":"data"')
 [ "$data_packets" -ge 1 ] && echo 'SQLInsert (valid UTF-8 column name) accepted: OK'
+
+# `TSKV` always writes the column names into the header (`writeAnyEscapedString<'='>`, which escapes
+# control characters but does not validate UTF-8), so a non-UTF-8 column name is knowable before any
+# row is written and makes the output non-textual, exactly like the `*WithNames*` variants below.
+echo '--- JSONEachPacketString is rejected for TSKV with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSKV' \
+    | grep -o -m1 'is not compatible with the output format TSKV'
+
+echo '--- EventStream base64-encodes TSKV with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSKV'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSKV' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT 1 AS `a\xFFb` FORMAT TSKV') \
+    && echo 'TSKV payload with a non-UTF-8 column name round-trips' || echo 'MISMATCH'
+
+# The `*WithNames`/`*WithNamesAndTypes` variants of the line-based text formats (`TSV`, `CSV`,
+# `CustomSeparated`) write the column names (and data type names) into the header verbatim, so a
+# non-UTF-8 column name makes them non-textual as well. The plain variants write no header and are
+# unaffected: the column name is not part of the output.
+echo '--- JSONEachPacketString is rejected for TSVWithNames with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSVWithNames' \
+    | grep -o -m1 'is not compatible with the output format TSVWithNames'
+
+echo '--- EventStream base64-encodes TSVWithNames with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSVWithNames'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSVWithNames' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT 1 AS `a\xFFb` FORMAT TSVWithNames') \
+    && echo 'TSVWithNames payload with a non-UTF-8 column name round-trips' || echo 'MISMATCH'
+
+echo '--- JSONEachPacketString accepts plain TSV with a non-UTF-8 column name (no header is written)'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT TSV' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'plain TSV (non-UTF-8 column name, no header) accepted: OK'
+
+# A valid multi-byte UTF-8 column name (here `col` followed by U+2713 CHECK MARK) must not be
+# misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts TSVWithNames with a valid UTF-8 (multi-byte) column name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT TSVWithNames' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'TSVWithNames (valid UTF-8 column name) accepted: OK'

@@ -154,3 +154,17 @@ text/event-stream; charset=UTF-8; payload=base64
 SQLInsert payload with a non-UTF-8 column name round-trips
 --- JSONEachPacketString accepts SQLInsert with a valid UTF-8 (multi-byte) column name
 SQLInsert (valid UTF-8 column name) accepted: OK
+--- JSONEachPacketString is rejected for TSKV with a non-UTF-8 column name
+is not compatible with the output format TSKV
+--- EventStream base64-encodes TSKV with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+TSKV payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString is rejected for TSVWithNames with a non-UTF-8 column name
+is not compatible with the output format TSVWithNames
+--- EventStream base64-encodes TSVWithNames with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+TSVWithNames payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString accepts plain TSV with a non-UTF-8 column name (no header is written)
+plain TSV (non-UTF-8 column name, no header) accepted: OK
+--- JSONEachPacketString accepts TSVWithNames with a valid UTF-8 (multi-byte) column name
+TSVWithNames (valid UTF-8 column name) accepted: OK
