@@ -143,7 +143,7 @@ private:
     /// See HashJoin::setSharedMemoryUsageBaseline.
     std::atomic<Int64> shared_memory_usage_before_adding_blocks{0};
 
-    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool allow_zero_copy);
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
     void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };

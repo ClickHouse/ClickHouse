@@ -313,7 +313,15 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
+    /// With in-memory compression enabled, scatter the build side by copying. The zero-copy scatter
+    /// shares one full block across all slots through per-slot row selectors, so compressing stored
+    /// blocks (on insert or in `shrinkStoredBlocksToFit`) would compress the whole shared block once
+    /// per slot, keeping `slots` compressed copies of every row while `StoredBlock::allocatedBytes`
+    /// counts only a selector-sized fraction of each copy. Materialized shards hold exactly their own
+    /// rows, so compression and byte accounting apply to disjoint data. Scattering by copying
+    /// partitions rows rather than duplicating them, so it does not increase the total stored size.
+    const bool allow_zero_copy = !table_join->enableJoinInMemoryCompression();
+    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), allow_zero_copy);
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -460,7 +468,8 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
     if (hash_joins[0]->data->twoLevelMapIsUsed())
         dispatched_blocks.emplace_back(std::move(block));
     else
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+        /// Probe-side blocks are transient and never compressed, so zero-copy scatter is always fine here.
+        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block), /*allow_zero_copy=*/ true);
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
@@ -721,7 +730,7 @@ static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColum
     return result;
 }
 
-ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block, bool allow_zero_copy)
 {
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
@@ -737,8 +746,8 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
     /// This is not beneficial when the whole set of columns is e.g. a single small column.
     constexpr auto threshold = sizeof(IColumn::Selector::value_type);
     const auto & data_types = from_block.getDataTypes();
-    const bool use_zero_copy_approach
-        = std::accumulate(
+    const bool use_zero_copy_approach = allow_zero_copy
+        && std::accumulate(
               data_types.begin(),
               data_types.end(),
               0u,
