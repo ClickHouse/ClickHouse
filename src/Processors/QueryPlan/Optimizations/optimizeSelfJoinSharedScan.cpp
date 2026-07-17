@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -35,7 +36,13 @@ std::optional<ScanDescend> findReadFromMergeTree(QueryPlan::Node * node)
         if (typeid_cast<ReadFromMergeTree *>(current->step.get()))
             return ScanDescend{parent, current};
 
-        if (!typeid_cast<ExpressionStep *>(current->step.get()) || current->children.size() != 1)
+        const auto * expression_step = typeid_cast<ExpressionStep *>(current->step.get());
+        if (!expression_step || current->children.size() != 1)
+            return std::nullopt;
+
+        /// Functions like `rowNumberInAllBlocks` or `blockNumber` depend on the runtime stream,
+        /// which the rewrite replaces with a replay of the build-side scan.
+        if (dagContainsNonDeterministicFunction(expression_step->getExpression()))
             return std::nullopt;
 
         parent = current;
