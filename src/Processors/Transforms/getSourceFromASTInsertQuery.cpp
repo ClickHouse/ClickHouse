@@ -84,6 +84,11 @@ String getInsertDataSchemaMismatchDescription(
     auto inferred = inferred_columns.getAll();
     auto expected = expected_header.getNamesAndTypesList();
 
+    /// Best-effort: if inference produced no columns at all there is nothing useful to compare, so do
+    /// not risk attaching a misleading explanation to an unrelated parse error.
+    if (inferred.empty())
+        return {};
+
     /// Compare structurally with a deliberately loose notion of compatibility. Schema inference widens
     /// types on purpose — numbers become broad types such as `Int64` / `UInt64` / `Float64`, and it does
     /// not reconstruct wrappers such as `Nullable`, `LowCardinality` or `Enum` — so comparing type names
@@ -99,66 +104,70 @@ String getInsertDataSchemaMismatchDescription(
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
             return true;
 
-        /// Formats that read values from text (e.g. `JSONEachRow`) keep fields as `String` during schema
-        /// inference even when the real parser accepts them into richer scalar types — `UUID`, `IPv4` /
-        /// `IPv6`, `Enum`, `FixedString` or dates — because inference never reconstructs those from a
-        /// string. Treat a `String` inferred for such a destination as compatible, so a genuine parse
-        /// error elsewhere in the row does not pick up a misleading "structure mismatch" suffix. A numeric
-        /// destination is deliberately not included here: `String` inferred where a number is expected is
-        /// exactly the reliable "text where a number is expected" signal this diagnostic exists to surface.
+        /// Formats that read values from text (e.g. every quoted string in `JSONEachRow`) keep fields as
+        /// `String` during schema inference even when the real parser accepts them into richer scalar
+        /// types — `UUID`, `IPv4` / `IPv6`, `Enum`, `FixedString`, `Decimal`, dates and times, etc. —
+        /// because inference never reconstructs those from a string. The deserializers (`JSONExtractTree`
+        /// and the `deserializeText*` family) parse such a string into essentially any scalar destination,
+        /// so a `String` inferred there is not a reliable mismatch. Treat it as compatible for every
+        /// scalar destination, so a genuine parse error elsewhere in the row does not pick up a misleading
+        /// "structure mismatch" suffix. Two kinds of destination are deliberately kept as a mismatch: a
+        /// numeric column — `String` inferred where a number is expected is exactly the reliable "text
+        /// where a number is expected" signal this diagnostic exists to surface — and a nested/complex
+        /// column (`Array`, `Tuple`, `Map`), which genuinely cannot be built from a single scalar string.
         const auto inferred_unwrapped = removeNullable(recursiveRemoveLowCardinality(inferred_type));
         const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
         if (WhichDataType(inferred_unwrapped).isString())
         {
             const WhichDataType which_expected(expected_unwrapped);
-            if (which_expected.isUUID() || which_expected.isIPv4() || which_expected.isIPv6() || which_expected.isEnum()
-                || which_expected.isFixedString() || which_expected.isDateOrDate32() || which_expected.isDateTimeOrDateTime64())
-                return true;
+            const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
+            const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
+            return !expected_is_numeric && !expected_is_nested;
         }
 
         return false;
     };
 
-    bool corresponds = inferred.size() == expected.size();
-    if (corresponds)
+    /// Formats without a strict column order (`JSONEachRow`, `TSKV`) yield named columns whose order
+    /// may differ from the destination, so match them against the expected columns by name. Strict-
+    /// order formats (`TSV`, `CSV`, `Values`) yield positional placeholder names like `c1`, `c2`, ...
+    /// that do not line up with the destination column names, so compare those positionally.
+    std::unordered_map<std::string_view, DataTypePtr> expected_by_name;
+    for (const auto & column : expected)
+        expected_by_name.emplace(column.name, column.type);
+
+    const bool match_by_name = expected_by_name.size() == expected.size()
+        && std::all_of(
+            inferred.begin(),
+            inferred.end(),
+            [&](const NameAndTypePair & column) { return expected_by_name.contains(column.name); });
+
+    bool corresponds = true;
+    if (match_by_name)
     {
-        /// Formats without a strict column order (`JSONEachRow`, `TSKV`) yield named columns whose order
-        /// may differ from the destination, so match them against the expected columns by name. Strict-
-        /// order formats (`TSV`, `CSV`, `Values`) yield positional placeholder names like `c1`, `c2`, ...
-        /// that do not line up with the destination column names, so compare those positionally.
-        std::unordered_map<std::string_view, DataTypePtr> expected_by_name;
-        for (const auto & column : expected)
-            expected_by_name.emplace(column.name, column.type);
-
-        const bool match_by_name = expected_by_name.size() == expected.size()
-            && std::all_of(
-                inferred.begin(),
-                inferred.end(),
-                [&](const NameAndTypePair & column) { return expected_by_name.contains(column.name); });
-
-        if (match_by_name)
+        /// Named formats may legitimately omit columns — they are filled with defaults — and reorder
+        /// them, so do not require the counts to be equal: only the columns actually present in the input
+        /// have to be type-compatible with their destination. A column missing from the input is not a
+        /// structure mismatch.
+        for (const auto & column : inferred)
         {
-            for (const auto & column : inferred)
+            if (!types_are_compatible(column.type, expected_by_name.at(column.name)))
             {
-                if (!types_are_compatible(column.type, expected_by_name.at(column.name)))
-                {
-                    corresponds = false;
-                    break;
-                }
+                corresponds = false;
+                break;
             }
         }
-        else
+    }
+    else
+    {
+        /// Positional formats: the number of columns must line up and each position must be compatible.
+        corresponds = inferred.size() == expected.size();
+        for (auto it_inferred = inferred.begin(), it_expected = expected.begin();
+             corresponds && it_inferred != inferred.end();
+             ++it_inferred, ++it_expected)
         {
-            auto it_inferred = inferred.begin();
-            auto it_expected = expected.begin();
-            for (; it_inferred != inferred.end(); ++it_inferred, ++it_expected)
-            {
-                if (!types_are_compatible(it_inferred->type, it_expected->type))
-                {
-                    corresponds = false;
-                    break;
-                }
-            }
+            if (!types_are_compatible(it_inferred->type, it_expected->type))
+                corresponds = false;
         }
     }
 
