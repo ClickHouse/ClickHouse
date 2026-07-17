@@ -8,6 +8,7 @@ Puffin blob 0: offset/length out of bounds
 Puffin blob 0: offset/length out of bounds
 --- invalid_roaring_bitmap.puffin ---
 Failed to deserialize deletion vector roaring bitmap
+BAD_ARGUMENTS
 --- invalid_bitmap_key.puffin ---
 Invalid deletion vector bitmap key
 --- cardinality_mismatch_large_bitmap.puffin ---

@@ -37,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
     extern const int LZ4_DECODER_FAILED;
 }
 
@@ -473,7 +472,7 @@ roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 k
     }
     catch (const std::exception & e)
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
     }
 }
 

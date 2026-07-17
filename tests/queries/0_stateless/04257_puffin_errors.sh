@@ -19,8 +19,14 @@ expect_meta() {
 expect_puffin() {
     local file="$1"
     local needle="$2"
+    local code="${3:-}"
     echo "--- $(basename "$file") ---"
-    $CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$file', Puffin)" 2>&1 | grep -oF "$needle"
+    local err
+    err=$($CLICKHOUSE_LOCAL -q "SELECT deleted_rows FROM file('$file', Puffin)" 2>&1)
+    echo "$err" | grep -oF "$needle"
+    if [[ -n "$code" ]]; then
+        echo "$err" | grep -oF "$code"
+    fi
 }
 
 for f in overflow_offset_length negative_offset length_exceeds_file blob_overlaps_footer
@@ -28,7 +34,7 @@ do
     expect_puffin "$DATA/$f.puffin" 'Puffin blob 0: offset/length out of bounds'
 done
 
-expect_puffin "$DATA/invalid_roaring_bitmap.puffin" 'Failed to deserialize deletion vector roaring bitmap'
+expect_puffin "$DATA/invalid_roaring_bitmap.puffin" 'Failed to deserialize deletion vector roaring bitmap' 'BAD_ARGUMENTS'
 expect_puffin "$DATA/invalid_bitmap_key.puffin" 'Invalid deletion vector bitmap key'
 expect_puffin "$DATA/cardinality_mismatch_large_bitmap.puffin" 'exceeds declared cardinality'
 
