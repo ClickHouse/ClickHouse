@@ -2246,7 +2246,14 @@ void ReadFromMergeTree::buildIndexes(
             };
         }
 
-        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);
+        /// The text index registers direct-read virtual columns against its unsubstituted condition at plan
+        /// time (the virtual column name embeds the unsubstituted search-query hash) and the reader looks them
+        /// up via generateUnsubstituted(). Per-partition constant folding would build the granule analyzer from
+        /// a different (folded) set of search queries, so the reader's unsubstituted hash would be absent from
+        /// the analyzer. Keep folding off for text indexes so the granule and the reader agree.
+        const bool skip_constant_folding_for_index = skip_constant_folding || index_helper->isTextIndex();
+
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding_for_index);
 
         const auto & unsubstituted = condition_template->generateUnsubstituted();
         if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
