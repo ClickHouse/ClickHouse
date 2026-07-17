@@ -922,7 +922,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
 
                 std::vector<TokenValueMatcher> value_matchers;
-                value_matchers.push_back(TokenValueMatcher{.key = std::move(*key), .value = std::nullopt, .value_pattern = std::move(value_pattern)});
+                value_matchers.push_back(TokenValueMatcher{.key = std::move(key), .value = std::nullopt, .value_pattern = std::move(value_pattern)});
 
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
@@ -942,7 +942,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (value_field.safeGet<String>().empty())
                     return false;
 
-                TokenValueMatcher matcher{.key = std::move(*key)};
+                TokenValueMatcher matcher{.key = std::move(key)};
                 if (function_name == "startsWith")
                     matcher.value_prefix = value_field.safeGet<String>();
                 else
