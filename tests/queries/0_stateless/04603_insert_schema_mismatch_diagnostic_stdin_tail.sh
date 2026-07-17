@@ -10,6 +10,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # prefix first, then re-enters sendDataFrom for the stdin tail reusing the same ASTInsertQuery. When the
 # parse error happens in the streamed tail, the diagnostic must inspect the stdin bytes (via the prefix
 # capturing read buffer), not the already-consumed inline prefix from the AST.
+#
+# This exercises the client-side parsing flow, so it needs `send_table_structure_on_insert_with_inline_data 1`
+# (the default). With that setting at 0 (or `--inline-insert-data`) the client instead sends the inline
+# data to the server unparsed, and a query that has both inline data and external stdin data is rejected
+# up front with NOT_IMPLEMENTED, so there is no client-side parse error to diagnose. Pin the setting so the
+# test is not derailed by settings randomization.
 
 PHRASE="does not match the structure expected by the query"
 
@@ -23,11 +29,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE test_mismatch_stdin_tail (c1 Int64, c2 Int64
 
 echo "-- inline prefix parses fine, the streamed stdin tail has a type mismatch"
 printf '10\tpage_view\t/users/profile\n' > "$DATA_FILE"
-$CLICKHOUSE_CLIENT --async_insert 0 --query $'INSERT INTO test_mismatch_stdin_tail FORMAT TSV\n1\t2\t3' < "$DATA_FILE" 2>&1 | check
+$CLICKHOUSE_CLIENT --async_insert 0 --send_table_structure_on_insert_with_inline_data 1 --query $'INSERT INTO test_mismatch_stdin_tail FORMAT TSV\n1\t2\t3' < "$DATA_FILE" 2>&1 | check
 
 echo "-- inline prefix parses fine, the streamed stdin tail also matches (no false positive)"
 printf '10\t20\t30\n' > "$DATA_FILE"
-$CLICKHOUSE_CLIENT --async_insert 0 --query $'INSERT INTO test_mismatch_stdin_tail FORMAT TSV\n1\t2\t3' < "$DATA_FILE" 2>&1 | check
+$CLICKHOUSE_CLIENT --async_insert 0 --send_table_structure_on_insert_with_inline_data 1 --query $'INSERT INTO test_mismatch_stdin_tail FORMAT TSV\n1\t2\t3' < "$DATA_FILE" 2>&1 | check
 
 rm -f "$DATA_FILE"
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_mismatch_stdin_tail"
