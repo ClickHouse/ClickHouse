@@ -8,6 +8,7 @@ CREATE TABLE t (`a` Int, `d` DateTime, `v` Int) ENGINE = MergeTree ORDER BY (a, 
 CREATE TABLE t (`a` Int, `d` DateTime, `i` Int DEFAULT a + 1, `m` Int MATERIALIZED a * 2, `c` Int TTL d + toIntervalDay(1)) ENGINE = MergeTree ORDER BY a
 CREATE TABLE t (`a` Int, INDEX ix a TYPE minmax GRANULARITY 1, CONSTRAINT cc CHECK a > 0) ENGINE = MergeTree ORDER BY a
 CREATE TABLE t (`a` Int, `b` Int, PROJECTION p (SELECT a, b GROUP BY a), PROJECTION p2 (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY a
+CREATE TABLE t (`a` Int, `b` Int, PROJECTION p (SELECT a, b + 1 WHERE b > 0 ORDER BY b), PROJECTION pi INDEX a TYPE basic) ENGINE = MergeTree ORDER BY a
 ALTER TABLE t (MODIFY ORDER BY a)
 ALTER TABLE t (MODIFY SAMPLE BY a)
 ALTER TABLE t (MODIFY TTL d + toIntervalDay(1))

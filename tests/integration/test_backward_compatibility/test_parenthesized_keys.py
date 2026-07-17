@@ -34,7 +34,9 @@ CREATE_TEMPLATE = """
         d DateTime,
         i UInt32 DEFAULT (a + 1),
         INDEX ix (b * c) TYPE minmax GRANULARITY 1,
-        CONSTRAINT cc CHECK (a > 0)
+        CONSTRAINT cc CHECK (a > 0),
+        PROJECTION pr (SELECT (b), (c + 1) ORDER BY (c)),
+        PROJECTION pri INDEX (b) TYPE basic
     )
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}')
     PARTITION BY (a)

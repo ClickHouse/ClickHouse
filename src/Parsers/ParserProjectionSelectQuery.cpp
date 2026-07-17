@@ -1,6 +1,7 @@
 #include <memory>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -49,6 +50,12 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
         if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
             return false;
+
+        /// A projection is a part of the table definition: parentheses around whole expressions
+        /// are redundant and are dropped to keep the canonical form that stored table metadata
+        /// relies on. See `stripParenthesesUnlessAliased`.
+        for (const auto & element : select_expression_list->children)
+            stripParenthesesUnlessAliased(element);
     }
 
     /// WHERE expr
@@ -56,6 +63,8 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     {
         if (!exp_elem.parse(pos, where_expression, expected))
             return false;
+
+        stripParenthesesUnlessAliased(where_expression);
     }
 
     // If group by is specified, AggregatingMergeTree engine is used, and the group by keys are implied to be order by keys

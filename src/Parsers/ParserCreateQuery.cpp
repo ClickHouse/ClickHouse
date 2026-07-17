@@ -303,6 +303,11 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if (!expression_list_p.parse(pos, index, expected))
             return false;
 
+        /// Parentheses around whole index key expressions are redundant; drop them to keep the
+        /// canonical form (`PROJECTION p INDEX a TYPE basic`) that stored table metadata relies on.
+        for (const auto & element : index->children)
+            stripParenthesesUnlessAliased(element);
+
         if (!s_type.ignore(pos, expected))
             return false;
 

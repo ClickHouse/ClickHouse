@@ -13,6 +13,7 @@ SELECT formatQuerySingleLine('CREATE TABLE t (a Int, d DateTime, v Int) ENGINE =
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, d DateTime, i Int DEFAULT (a + 1), m Int MATERIALIZED (a * 2), c Int TTL (d + INTERVAL 1 DAY)) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, INDEX ix (a) TYPE minmax, CONSTRAINT cc CHECK (a > 0)) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuerySingleLine('CREATE TABLE t (a Int, b Int, PROJECTION p (SELECT a, b GROUP BY (a)), PROJECTION p2 (SELECT a ORDER BY (a))) ENGINE = MergeTree ORDER BY a');
+SELECT formatQuerySingleLine('CREATE TABLE t (a Int, b Int, PROJECTION p (SELECT (a), (b + 1) WHERE (b > 0) ORDER BY b), PROJECTION pi INDEX (a) TYPE basic) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuerySingleLine('ALTER TABLE t MODIFY ORDER BY (a)');
 SELECT formatQuerySingleLine('ALTER TABLE t MODIFY SAMPLE BY (a)');
 SELECT formatQuerySingleLine('ALTER TABLE t MODIFY TTL (d + INTERVAL 1 DAY)');
