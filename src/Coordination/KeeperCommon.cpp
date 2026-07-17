@@ -144,13 +144,15 @@ uint64_t KeeperNodeStats::calculateDigest(std::string_view path, std::string_vie
     hash.update(version);
     hash.update(cversion);
     hash.update(aversion);
-    hash.update(getEphemeralOwner());
+    hash.update(getEphemeralOwner()); // covers EPHEMERAL and CONTAINER flags
     hash.update(getNumChildren());
     hash.update(pzxid);
 
     hash.update(isTTL());
     if (isTTL())
         hash.update(getTTL());
+
+    /// TODO: Hash seq num (or replace getEphemeralOwner(), getCTime(), getTTL() above with plain ephemeral_or_seq_num_or_ttl and ctime_and_flags).
 
     uint64_t digest = hash.get64();
 
@@ -159,30 +161,6 @@ uint64_t KeeperNodeStats::calculateDigest(std::string_view path, std::string_vie
         digest = 1;
 
     return digest;
-}
-
-void KeeperNodeStats::copyStats(const Coordination::Stat & stat)
-{
-    czxid = stat.czxid;
-    mzxid = stat.mzxid;
-    pzxid = stat.pzxid;
-
-    mtime = stat.mtime;
-    ctime_and_flags = 0;
-    setCTime(stat.ctime);
-
-    version = stat.version;
-    cversion = stat.cversion;
-    aversion = stat.aversion;
-
-    data_size = stat.dataLength;
-
-    num_children = 0;
-    ephemeral_or_seq_num_or_ttl = 0;
-    if (stat.ephemeralOwner == 0)
-        setNumChildren(stat.numChildren);
-    else
-        makeEphemeral(stat.ephemeralOwner);
 }
 
 void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
@@ -202,17 +180,23 @@ void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
 
 void KeeperNodeStats::makeEphemeral(int64_t ephemeral_owner)
 {
-    chassert(ephemeral_owner != 0);
-    chassert(!isTTL() && num_children == 0);
+    chassert(ephemeral_owner != 0 && ephemeral_owner != CONTAINER_EPHEMERAL_OWNER);
+    chassert(!isTTL() && !isContainer() && num_children == 0);
     ctime_and_flags |= EPHEMERAL;
     ephemeral_or_seq_num_or_ttl = ephemeral_owner;
 }
 
 void KeeperNodeStats::makeTTL(int64_t ttl)
 {
-    chassert(!isEphemeral() && num_children == 0);
+    chassert(!isEphemeral() && !isContainer() && num_children == 0);
     ctime_and_flags |= TTL;
     ephemeral_or_seq_num_or_ttl = ttl;
+}
+
+void KeeperNodeStats::makeContainer()
+{
+    chassert(!isEphemeral() && !isTTL());
+    ctime_and_flags |= CONTAINER;
 }
 
 void KeeperNodeStats::setNumChildren(uint32_t new_num_children)
