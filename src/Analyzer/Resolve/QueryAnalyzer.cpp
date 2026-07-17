@@ -139,6 +139,22 @@ namespace ErrorCodes
 namespace
 {
 
+/// True if `scope` is the query that owns the source table expression of one of the given
+/// correlated columns, i.e. the outer query whose GROUP BY keys may wrap them as Nullable.
+/// Mirrors the source-ownership test in `checkCorrelatedColumn`: a column's source can be a
+/// registered table expression or one still being resolved (alias columns).
+bool ownsCorrelatedSource(const IdentifierResolveScope & scope, const QueryTreeNodes & correlated_columns)
+{
+    for (const auto & column : correlated_columns)
+    {
+        auto column_source = column->as<ColumnNode>()->getColumnSource();
+        if (scope.registered_table_expression_nodes.contains(column_source)
+            || scope.table_expressions_in_resolve_process.contains(column_source.get()))
+            return true;
+    }
+    return false;
+}
+
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -2366,19 +2382,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    /// When an APPLY transformer creates an aggregate function (e.g. `* APPLY x -> argMax(x, number)`
-    /// or `* APPLY x -> toString(argMax(x, number))`), the matched columns must NOT be converted to
-    /// Nullable here. Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable
-    /// wrapping is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
-    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the actual
-    /// columns in the Aggregating step are non-Nullable.
-    /// This causes a crash in AggregateFunctionNullVariadic::addBatchSinglePlace.
+    /// When an APPLY transformer creates an aggregate or `grouping` function (e.g.
+    /// `* APPLY x -> argMax(x, number)`, `* APPLY x -> toString(argMax(x, number))` or
+    /// `* APPLY x -> grouping(x)`), the matched columns must NOT be converted to Nullable here.
+    /// Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable wrapping
+    /// is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
+    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the
+    /// actual columns in the Aggregating step are non-Nullable (crash in
+    /// AggregateFunctionNullVariadic::addBatchSinglePlace). A `grouping` argument only identifies a
+    /// GROUP BY key and is matched against the keys in their original form by
+    /// GroupingFunctionsResolvePass, so wrapping it Nullable makes the rewritten argument stop
+    /// matching the key and raises a spurious "GROUPING function ... is not in GROUP BY keys" error.
+    /// This mirrors the suppression the sibling scalar path applies via
+    /// `hasAggregateOrGroupingFunction()` (see applyGroupByUseNullsToExpression).
     ///
-    /// We traverse the APPLY expression tree because the aggregate function may be nested
+    /// We traverse the APPLY expression tree because the aggregate/grouping function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
-    /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
-    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    /// We match names (not `FunctionNode::isAggregateFunction`) because APPLY expressions have not
+    /// been resolved yet at this point (`FunctionNode::kind` is still `UNKNOWN`). The grouping check
+    /// is an exact name comparison, matching ExpressionsStack::isAggregateOrGroupingFunction (the
+    /// parser always lowercases the `grouping` function name).
+    auto has_aggregate_or_grouping_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
         if (!root)
             return false;
@@ -2393,7 +2417,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * func = subtree_node->as<FunctionNode>())
             {
-                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
+                    || func->getFunctionName() == "grouping")
                     return true;
             }
 
@@ -2407,7 +2432,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         return false;
     };
 
-    bool has_aggregate_apply_transformer = false;
+    bool has_aggregate_or_grouping_apply_transformer = false;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
         if (auto * apply = transformer->as<ApplyColumnTransformerNode>())
@@ -2422,15 +2447,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 expr_to_check = apply->getExpressionNode().get();
             }
-            if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
+            if (expr_to_check && has_aggregate_or_grouping_function_in_tree(expr_to_check))
             {
-                has_aggregate_apply_transformer = true;
+                has_aggregate_or_grouping_apply_transformer = true;
                 break;
             }
         }
     }
 
-    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_or_grouping_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2581,6 +2606,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
+
+                /// An APPLY transformer builds its result through resolveFunction/resolveLambda
+                /// directly, bypassing the applyGroupByUseNullsToExpression call that
+                /// resolveExpressionNode applies to plain columns and REPLACE results. When the
+                /// APPLY result is itself a GROUP BY key under group_by_use_nulls (e.g.
+                /// `* APPLY isNull` with GROUPING SETS keyed on the first projection), it must be
+                /// wrapped Nullable to match the post-rollup runtime type. Without this the
+                /// analyzer types it non-Nullable while execution yields Nullable(...), and a
+                /// consuming aggregate bad-casts the column. Aggregate/grouping APPLYs are
+                /// excluded (their arguments use pre-aggregation types, handled post-aggregation
+                /// by the Rollup/Cube/GroupingSets transforms), mirroring the pre-transform loop.
+                if (execute_apply_transformer && !has_aggregate_or_grouping_apply_transformer)
+                    applyGroupByUseNullsToExpression(node, scope);
 
                 result_projection_names.back() = std::move(node_projection_names[0]);
                 node_to_projection_name.emplace(node, result_projection_names.back());
@@ -3028,6 +3066,135 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
+}
+
+/** Apply `group_by_use_nulls` Nullable wrapping to a just-resolved expression `node`.
+  *
+  * Under `group_by_use_nulls = 1`, a GROUP BY key produces NULL in the extra rollup/cube/
+  * grouping-sets rows, so any reference to that key outside the aggregate must become
+  * `Nullable`. The set of keys for a query is `scope.nullable_group_by_keys`.
+  *
+  * Two shapes are handled by the same scope walk:
+  *
+  * 1. Non-correlated reference. The key is owned by `scope` itself (e.g. the projection
+  *    `c0` in `SELECT max(c0), c0 ... GROUP BY c0`). `c0` inside `max(...)` must keep its
+  *    original type because the aggregate sees per-group raw rows, so the walk skips a
+  *    scope whose expression-resolve stack already contains an aggregate or `grouping`
+  *    function (the latter matches its arguments against the keys in their original form).
+  *
+  * 2. Correlated reference. A subquery references an outer query's GROUP BY key (e.g.
+  *    `SELECT (SELECT c0) ... GROUP BY c0 WITH ROLLUP`). The values fed into the subquery
+  *    are the outer query's post-rollup `Nullable`s, so the reference must be wrapped using
+  *    the OWNING outer scope's `nullable_group_by_keys`. We therefore continue the walk past
+  *    the inner `QUERY` boundary, but only for an expression that is actually correlated and
+  *    only up to the scope that owns the correlated column's source.
+  *
+  * Whether `node` is correlated relative to `scope` is a property of the columns inside it,
+  * not of its top-level node type: `c0` and `c0 % 2` are both correlated if `c0` resolves to
+  * an outer table expression. `CorrelatedColumnsCollector` answers exactly this (it descends
+  * into subqueries via `node_to_scope_map` and uses `checkCorrelatedColumn`), so we use it to
+  * drive the walk instead of inspecting `node->as<ColumnNode>()`.
+  *
+  * A correlated match wraps `node` in place rather than replacing it with a clone of the key.
+  * The same `shared_ptr` is referenced by the owning `QueryNode`'s correlated-columns list, so
+  * cloning would leave the planner's `correlated_columns_set` pointing at the original
+  * non-Nullable node and decorrelation would not recognise it.
+  */
+void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    /// Fast path: nothing to wrap unless some enclosing scope is under `group_by_use_nulls`.
+    /// `nullable_group_by_keys` is only populated when `group_by_use_nulls = 1`, so this skips
+    /// the whole walk (and the correlated-columns analysis below) for the common case.
+    bool has_nullable_group_by_keys = false;
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (!scope_ptr->nullable_group_by_keys.empty())
+        {
+            has_nullable_group_by_keys = true;
+            break;
+        }
+    }
+    if (!has_nullable_group_by_keys)
+        return;
+
+    /// Columns inside `node` whose source table expression lives in an outer scope (`node` is a
+    /// correlated expression). Computed lazily: it is only needed to decide whether to walk past
+    /// an enclosing `QUERY` boundary, which the common non-correlated query never does. Empty
+    /// optional means "not computed yet".
+    std::optional<QueryTreeNodes> correlated_columns;
+    auto is_correlated = [&]() -> bool
+    {
+        if (!correlated_columns)
+            correlated_columns = CorrelatedColumnsCollector{node, &scope, node_to_scope_map}.get();
+        return !correlated_columns->empty();
+    };
+
+    /// `is_aggregate_or_grouping_argument` is OR-accumulated across the LAMBDA scopes of a single
+    /// query: a reference inside an aggregate's arguments (including `* APPLY x -> agg(x, key)`,
+    /// where the aggregate is on the lambda's stack while the key set is on the enclosing query's
+    /// scope) must not be wrapped. The same holds for `grouping(...)` arguments, which only
+    /// identify GROUP BY keys and are matched against them in their original form. It is reset when
+    /// crossing into an outer query for a correlated expression, because the inner query's
+    /// aggregate context does not constrain how the outer query's GROUP BY keys wrap the reference.
+    bool is_aggregate_or_grouping_argument = false;
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        is_aggregate_or_grouping_argument = is_aggregate_or_grouping_argument
+            || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
+
+        /// `find(node)` computes `node`'s hash, so skip scopes with no keys (avoids the hash for
+        /// the common scope that is not under `group_by_use_nulls`).
+        if (!is_aggregate_or_grouping_argument && !scope_ptr->nullable_group_by_keys.empty())
+        {
+            auto it = scope_ptr->nullable_group_by_keys.find(node);
+            if (it != scope_ptr->nullable_group_by_keys.end())
+            {
+                /// Non-correlated reference: the matched key belongs to the same query as `node`.
+                /// That is either `scope_ptr == &scope` (resolved directly in the query) or, when
+                /// the reference sits inside a lambda body, an enclosing non-`QUERY` scope of that
+                /// same query (e.g. `arrayMap(x -> intDiv(x, key), ...)` where `key` is a GROUP BY
+                /// key of the surrounding query). In both cases the reference is not correlated, so
+                /// replace it with a clone of the key to pick up the post-rollup Nullable type.
+                /// The `scope_ptr == &scope` check short-circuits the correlated-columns analysis
+                /// for the common direct-projection match.
+                ///
+                /// `nullable_group_by_keys` maps each registered shape to the original key node
+                /// (`it->second`), so clone that to pick up the post-rollup Nullable type. For a
+                /// constant we clone the matched `node` itself instead: two constants equal in value
+                /// and type but with different source expressions share a single map entry, and the
+                /// source expression determines the action node name (hence which aggregation key
+                /// column the projection reads), so the matched node's own one must be preserved.
+                if (scope_ptr == &scope || !is_correlated())
+                {
+                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                    node->convertToNullable();
+                    break;
+                }
+
+                /// Correlated reference to an outer query's key. `nullable_group_by_keys` matches
+                /// ignoring types and column source (`IQueryTreeNode` hash/equality), so an
+                /// intermediate query with a same-named key could match a correlated reference
+                /// whose real source is further out. Only the scope that owns the correlated
+                /// source may apply its keys.
+                if (ownsCorrelatedSource(*scope_ptr, *correlated_columns))
+                {
+                    node->convertToNullable();
+                    break;
+                }
+            }
+        }
+
+        /// Within a query (LAMBDA scopes), keep walking towards the enclosing query scope.
+        if (scope_ptr->scope_node->getNodeType() != QueryTreeNodeType::QUERY)
+            continue;
+
+        /// At an enclosing query scope: only a correlated expression continues outwards, and only
+        /// until we reach the scope that owns its source. A non-correlated expression stops here.
+        if (!is_correlated() || ownsCorrelatedSource(*scope_ptr, *correlated_columns))
+            break;
+
+        is_aggregate_or_grouping_argument = false;
+    }
 }
 
 /** Resolve expression node.
@@ -3486,117 +3653,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     validateTreeSize(node, scope.context->getSettingsRef()[Setting::max_expanded_ast_elements], node_to_tree_size);
 
-    /// Lambda can be inside the aggregate function, so we should check parent scopes.
-    /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
-    bool in_aggregate_or_grouping_function_scope = false;
-    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
-    {
-        in_aggregate_or_grouping_function_scope
-            = in_aggregate_or_grouping_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
-
-        /// Check parent scopes until find current query scope.
-        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-            break;
-    }
-
-    /// For correlated column references, the relevant `nullable_group_by_keys`
-    /// live in the ancestor scope where the column is actually defined.
-    /// During decorrelation a CROSS JOIN feeds those columns from the outer
-    /// scope, where they have already been wrapped to `Nullable` due to
-    /// `group_by_use_nulls` + ROLLUP/CUBE. If we stopped the lookup at the
-    /// inner QUERY scope (the standard behavior for non-correlated references),
-    /// the inner expression DAG, function bindings, and aggregate function
-    /// bindings would all be built with the pre-Nullable type and later fail
-    /// with a type mismatch at runtime.
-    ///
-    /// The `in_aggregate_or_grouping_function_scope` guard is also bypassed for correlated
-    /// columns: a `local` aggregate computes over pre-aggregation rows, but an
-    /// aggregate inside an inner correlated subquery operates on rows produced
-    /// by the outer post-aggregation step, where the correlated column has
-    /// already become `Nullable`.
-    bool is_correlated_column_node = false;
-    QueryTreeNodePtr correlated_column_source;
-    if (auto * column_node = node->as<ColumnNode>())
-    {
-        auto column_source = column_node->getColumnSourceOrNull();
-        if (column_source)
-        {
-            auto source_type = column_source->getNodeType();
-            if (source_type != QueryTreeNodeType::LAMBDA && source_type != QueryTreeNodeType::INTERPOLATE)
-            {
-                for (const auto * sp = &scope; sp; sp = sp->parent_scope)
-                {
-                    if (sp->registered_table_expression_nodes.contains(column_source)
-                        || sp->table_expressions_in_resolve_process.contains(column_source.get()))
-                        break;
-                    if (isQueryOrUnionNode(sp->scope_node))
-                    {
-                        is_correlated_column_node = true;
-                        correlated_column_source = column_source;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!in_aggregate_or_grouping_function_scope || is_correlated_column_node)
-    {
-        for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
-        {
-            /// `nullable_group_by_keys` is keyed by query-tree structure
-            /// (`ColumnNode::isEqualImpl` compares column name and type only,
-            /// ignoring source identity), so a same-shaped key in an
-            /// intermediate ancestor scope can match a correlated column whose
-            /// real source lives further out. For correlated columns we
-            /// therefore consult `nullable_group_by_keys` only at the scope
-            /// that owns the column source: that is the only scope whose
-            /// `group_by_use_nulls` actually applied to this column.
-            const bool at_source_scope = is_correlated_column_node && correlated_column_source
-                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
-                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
-
-            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
-            {
-                auto it = scope_ptr->nullable_group_by_keys.find(node);
-                if (it != scope_ptr->nullable_group_by_keys.end())
-                {
-                    if (is_correlated_column_node)
-                    {
-                        /// Modify the correlated column in place so the same pointer
-                        /// stored in the outer `QueryNode::correlated_columns_list`
-                        /// (added by `checkCorrelatedColumn`) and the planner's
-                        /// `correlated_columns_set` (which hashes by column type)
-                        /// remains consistent with the inner expression's reference.
-                        /// Cloning here would yield a distinct ColumnNode that the
-                        /// planner would no longer recognize as correlated.
-                        /// A correlated column is always a `ColumnNode`, never a
-                        /// constant, so the constant special-casing below does not apply.
-                        node->convertToNullable();
-                    }
-                    else
-                    {
-                        /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                        /// matched node itself rather than the stored key `it->second`: two constants equal
-                        /// in value and type but with different source expressions share a single map entry,
-                        /// and the source expression determines the action node name (hence which aggregation
-                        /// key column the projection reads), so the matched node's own one must be preserved.
-                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
-                        node->convertToNullable();
-                    }
-                    break;
-                }
-            }
-
-            /// For local references stop at the first surrounding QUERY scope.
-            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY && !is_correlated_column_node)
-                break;
-
-            /// For correlated references stop once we reach the source-owning scope.
-            if (at_source_scope)
-                break;
-        }
-    }
+    applyGroupByUseNullsToExpression(node, scope);
 
     resolved_expressions.emplace(node, result_projection_names);
 
@@ -6104,6 +6161,302 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
   * 10. Remove aliases from expression and lambda nodes.
   * 11. Resolve query tree node with projection columns.
   */
+/** Rewrite `SELECT * REPLACE (expr AS col)` references in the query's non-projection clauses
+  * (WHERE / PREWHERE / HAVING / ORDER BY / GROUP BY / LIMIT BY) before those clauses are resolved.
+  *
+  * resolveMatcher performs this rewrite itself, but only as a side effect of resolving the
+  * projection matcher. On the ordinary path the projection is resolved first, so by the time the
+  * sibling clauses are resolved their `col` identifiers have already been replaced with `expr`.
+  * Under `group_by_use_nulls` projection resolution is deferred until after those clauses are
+  * resolved, so the rewrite arrives too late and every `col` reference in them stays bound to the
+  * original GROUP BY key instead of the replacement expression (#91119). Doing the identifier
+  * rewrite here restores the ordering the non-deferred path relies on; the clauses then resolve
+  * against `expr` exactly as with `group_by_use_nulls = 0`.
+  *
+  * Only unresolved IdentifierNode references are rewritten, so this is a no-op unless the query
+  * actually has a `SELECT * REPLACE (...)` matcher in its projection.
+  */
+/** Names of the SOURCE columns a projection matcher actually expands to, computed the way
+  * resolveMatcher selects them (qualifier + `buildGetColumnsOptions` column-kind filter +
+  * `isMatchingColumn`), but WITHOUT the column-node construction / function resolution side
+  * effects that full matcher resolution performs. Used only to decide which REPLACE names are
+  * real replacement targets in the deferred group_by_use_nulls path.
+  *
+  * A scope-wide union of every table expression's columns is NOT equivalent: `isMatchingColumn`
+  * ignores the matcher qualifier (`MatcherNode.cpp`, ASTERISK returns true unconditionally), and
+  * the scope-wide column cache is built from `GetColumnsOptions::All`. So a qualified matcher
+  * (`t1.* REPLACE (0 AS c)` where `c` exists only in `t2`) or a name hidden from `*` by the
+  * alias/materialized/virtual-column settings would be treated as a replacement target on the
+  * deferred path but not on the non-deferred path, an observable divergence under
+  * group_by_use_nulls (#91119).
+  */
+std::unordered_set<std::string> QueryAnalyzer::collectMatcherProducedColumnNames(
+    const QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
+{
+    auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
+    std::unordered_set<std::string> produced_names;
+
+    auto collect_from_columns = [&](const NamesAndTypes & columns)
+    {
+        for (const auto & column : columns)
+            if (matcher_node_typed.isMatchingColumn(column.name))
+                produced_names.insert(column.name);
+    };
+
+    /// Mirror resolveQualifiedMatcher / resolveUnqualifiedMatcher source selection, but collect
+    /// names only. A qualified matcher needs a non-const matcher pointer for the identifier lookup;
+    /// take a local copy of the matcher node so the lookup helpers get their `QueryTreeNodePtr &`
+    /// without mutating the projection node.
+    QueryTreeNodePtr matcher_node_copy = matcher_node;
+
+    if (matcher_node_typed.isQualified())
+    {
+        /// Qualified expression matcher: qualifier resolves to a compound expression and the
+        /// matcher expands its tuple element names (resolveQualifiedMatcher first branch).
+        auto expression_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
+        auto expression_result = tryResolveIdentifier(expression_lookup, scope);
+        if (auto expression_node = expression_result.resolved_identifier)
+        {
+            auto result_type = expression_node->getResultType();
+            while (true)
+            {
+                if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(result_type.get()))
+                    result_type = nullable_type->getNestedType();
+                else if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+                    result_type = array_type->getNestedType();
+                else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
+                    result_type = map_type->getNestedType();
+                else
+                    break;
+            }
+            if (const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get()))
+                for (const auto & element_name : tuple_data_type->getElementNames())
+                    if (matcher_node_typed.isMatchingColumn(element_name))
+                        produced_names.insert(element_name);
+            return produced_names;
+        }
+
+        /// Qualified table matcher: qualifier resolves to a single table expression; expand only
+        /// that table's columns (resolveQualifiedMatcher second branch).
+        IdentifierResolveContext identifier_resolve_settings;
+        identifier_resolve_settings.allow_to_check_cte = false;
+        identifier_resolve_settings.allow_to_check_database_catalog = false;
+        auto table_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+        auto table_expression_node = tryResolveIdentifier(table_lookup, scope, identifier_resolve_settings).resolved_identifier;
+        if (!table_expression_node)
+            return produced_names;
+
+        if (auto * query_node = table_expression_node->as<QueryNode>())
+            collect_from_columns(query_node->getProjectionColumns());
+        else if (auto * union_node = table_expression_node->as<UnionNode>())
+            collect_from_columns(union_node->computeProjectionColumns());
+        else if (auto * table_node = table_expression_node->as<TableNode>())
+        {
+            auto get_columns_options = buildGetColumnsOptions(matcher_node_copy, scope.context);
+            auto storage_columns = table_node->getStorageSnapshot()->getColumns(get_columns_options);
+            collect_from_columns(NamesAndTypes(storage_columns.begin(), storage_columns.end()));
+        }
+        else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+        {
+            auto get_columns_options = buildGetColumnsOptions(matcher_node_copy, scope.context);
+            auto storage_columns = table_function_node->getStorageSnapshot()->getColumns(get_columns_options);
+            collect_from_columns(NamesAndTypes(storage_columns.begin(), storage_columns.end()));
+        }
+        return produced_names;
+    }
+
+    /// Unqualified matcher (`*` / COLUMNS): expand every join-tree table expression, applying the
+    /// same column-kind filter storage nodes use (resolveUnqualifiedMatcher per-table branch).
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+    if (!nearest_query_node || !nearest_query_node->getJoinTree())
+        return produced_names;
+
+    for (const auto & table_expression : buildTableExpressionsStack(nearest_query_node->getJoinTree()))
+    {
+        if (auto * query_node = table_expression->as<QueryNode>())
+            collect_from_columns(query_node->getProjectionColumns());
+        else if (auto * union_node = table_expression->as<UnionNode>())
+            collect_from_columns(union_node->computeProjectionColumns());
+        else if (auto * table_node = table_expression->as<TableNode>())
+        {
+            auto get_columns_options = buildGetColumnsOptions(matcher_node_copy, scope.context);
+            auto storage_columns = table_node->getStorageSnapshot()->getColumns(get_columns_options);
+            collect_from_columns(NamesAndTypes(storage_columns.begin(), storage_columns.end()));
+        }
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+        {
+            auto get_columns_options = buildGetColumnsOptions(matcher_node_copy, scope.context);
+            auto storage_columns = table_function_node->getStorageSnapshot()->getColumns(get_columns_options);
+            collect_from_columns(NamesAndTypes(storage_columns.begin(), storage_columns.end()));
+        }
+    }
+    return produced_names;
+}
+
+void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & query_node_typed, IdentifierResolveScope & scope)
+{
+    std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
+
+    for (const auto & projection_node : query_node_typed.getProjection().getNodes())
+    {
+        auto * matcher_node = projection_node->as<MatcherNode>();
+        if (!matcher_node)
+            continue;
+
+        /// The names this matcher actually produces (qualifier- and column-kind-aware). resolveMatcher
+        /// registers a REPLACE mapping (line ~2597) only after `findReplacementExpression(column_name)`
+        /// succeeds for a matched SOURCE column; a REPLACE name that matches no produced column is never
+        /// a replacement target and stays unresolved. A scope-wide, qualifier-blind name union would
+        /// treat `t1.* REPLACE (0 AS c)` (with `c` only in `t2`) or a name hidden from `*` by
+        /// alias/materialized/virtual settings as a target on this deferred path but not on the
+        /// non-deferred path, silently changing results under group_by_use_nulls=1 (#91119).
+        const auto matcher_produced_column_names = collectMatcherProducedColumnNames(projection_node, scope);
+
+        /// Register a REPLACE mapping only for names that actually survive matcher expansion in
+        /// transformer order, mirroring resolveMatcher's per-column loop. There, a matched column
+        /// reaches (and registers) a REPLACE transformer only if the matcher produces a source
+        /// column of that name (`findReplacementExpression` succeeds) AND no earlier transformer
+        /// already consumed it: an earlier APPLY (sets `apply_transformer_was_used`) makes the
+        /// REPLACE branch `continue`, an earlier matching EXCEPT drops the column
+        /// (`node = {}; break`), and an earlier matching REPLACE claims it
+        /// (`replace_transformer_was_used`). Pre-registering every declared REPLACE name would
+        /// rewrite references that the non-deferred path leaves bound to the source column, or
+        /// leaves unresolved — e.g. `SELECT * EXCEPT c REPLACE (0 AS c) ... WITH ROLLUP
+        /// HAVING c > 0` turns into `HAVING 0 > 0`, and `SELECT * REPLACE (0 AS d)` with no
+        /// column `d` turns `HAVING d > 0` into `HAVING 0 > 0` instead of erroring — silently
+        /// changing results under group_by_use_nulls=1 (#91119).
+        const auto & transformers = matcher_node->getColumnTransformers().getNodes();
+        for (size_t replace_index = 0; replace_index < transformers.size(); ++replace_index)
+        {
+            const auto * replace_transformer = transformers[replace_index]->as<ReplaceColumnTransformerNode>();
+            if (!replace_transformer)
+                continue;
+
+            const auto & replacement_names = replace_transformer->getReplacementsNames();
+            const auto & replacement_nodes = replace_transformer->getReplacements().getNodes();
+            for (size_t i = 0; i < replacement_names.size(); ++i)
+            {
+                const auto & name = replacement_names[i];
+
+                /// The name must be one the matcher actually produces, otherwise (like the
+                /// non-deferred path) it is not a replacement target at all.
+                if (!matcher_produced_column_names.contains(name))
+                    continue;
+
+                bool consumed_before_replace = false;
+                for (size_t earlier_index = 0; earlier_index < replace_index; ++earlier_index)
+                {
+                    const auto & earlier = transformers[earlier_index];
+                    if (earlier->as<ApplyColumnTransformerNode>())
+                    {
+                        consumed_before_replace = true;
+                        break;
+                    }
+                    if (const auto * except_transformer = earlier->as<ExceptColumnTransformerNode>())
+                    {
+                        if (except_transformer->isColumnMatching(name))
+                        {
+                            consumed_before_replace = true;
+                            break;
+                        }
+                    }
+                    else if (const auto * earlier_replace = earlier->as<ReplaceColumnTransformerNode>())
+                    {
+                        const auto & earlier_names = earlier_replace->getReplacementsNames();
+                        if (std::find(earlier_names.begin(), earlier_names.end(), name) != earlier_names.end())
+                        {
+                            consumed_before_replace = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!consumed_before_replace)
+                    replace_transformer_mappings.emplace(name, replacement_nodes[i]);
+            }
+        }
+    }
+
+    if (replace_transformer_mappings.empty())
+        return;
+
+    /// Type-selective traversal, identical to the matcher-side `replace_identifiers_in_node`
+    /// (see resolveMatcher). It descends only into the node kinds that carry rewritable
+    /// identifier references in these clauses: function arguments and their window node, list
+    /// elements, a SortNode's sort EXPRESSION (not its WITH FILL FROM/TO/STEP children), and a
+    /// window node's ORDER BY / PARTITION BY. Anything else — in particular LAMBDA / QUERY /
+    /// UNION, which introduce their own name bindings, and SortNode fill bounds — is left
+    /// untouched. A generic getChildren() walk instead (a) rewrites lambda arguments and
+    /// subquery-local identifiers that collide with a REPLACE name (lambda arg -> `Expected
+    /// IDENTIFIER or COLUMN as lambda argument`; subquery-local -> changed subquery meaning),
+    /// and (b) rewrites WITH FILL FROM/TO/STEP, which the non-deferred path leaves bound to the
+    /// original key, making group_by_use_nulls observable outside nullability (#91119).
+    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
+    {
+        if (!current)
+            return;
+
+        if (const auto * identifier = current->as<IdentifierNode>())
+        {
+            auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
+            if (it != replace_transformer_mappings.end())
+            {
+                current = it->second->clone();
+                return;
+            }
+        }
+
+        if (auto * function_node = current->as<FunctionNode>())
+        {
+            for (auto & arg : function_node->getArguments().getNodes())
+                replace_recursive(arg);
+
+            if (function_node->getWindowNode())
+                replace_recursive(function_node->getWindowNode());
+        }
+        else if (auto * list_node = current->as<ListNode>())
+        {
+            for (auto & child_node : list_node->getNodes())
+                replace_recursive(child_node);
+        }
+        else if (auto * sort_node = current->as<SortNode>())
+        {
+            if (sort_node->getExpression())
+                replace_recursive(sort_node->getExpression());
+        }
+        else if (auto * window_node = current->as<WindowNode>())
+        {
+            if (window_node->hasOrderBy())
+                replace_recursive(window_node->getOrderByNode());
+            if (window_node->hasPartitionBy())
+                replace_recursive(window_node->getPartitionByNode());
+        }
+    };
+
+    auto rewrite_clause = [&](QueryTreeNodePtr & clause)
+    {
+        if (clause)
+            replace_recursive(clause);
+    };
+
+    rewrite_clause(query_node_typed.getPrewhere());
+    rewrite_clause(query_node_typed.getWhere());
+    if (query_node_typed.hasGroupBy())
+        rewrite_clause(query_node_typed.getGroupByNode());
+    rewrite_clause(query_node_typed.getHaving());
+    if (query_node_typed.hasOrderBy())
+        rewrite_clause(query_node_typed.getOrderByNode());
+    if (query_node_typed.hasLimitBy())
+        rewrite_clause(query_node_typed.getLimitByNode());
+    /// Named WINDOW definitions (e.g. `WINDOW w AS (ORDER BY col)`) are resolved by
+    /// resolveWindowNodeList after this helper runs, so their `col` references are still
+    /// unresolved identifiers here and must be rewritten too. Without this the deferred path
+    /// ranks by the original key while the non-deferred path ranks by the replacement (#91119).
+    if (query_node_typed.hasWindow())
+        rewrite_clause(query_node_typed.getWindowNode());
+}
+
 void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
 {
     size_t max_subquery_depth = scope.context->getSettingsRef()[Setting::max_subquery_depth];
@@ -6289,6 +6642,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+    }
+    else
+    {
+        /// Under group_by_use_nulls projection resolution (and therefore resolveMatcher) is
+        /// deferred until after the sibling clauses below are resolved. resolveMatcher applies
+        /// the `SELECT * REPLACE (expr AS col)` mapping to WHERE / HAVING / ORDER BY / LIMIT BY
+        /// by rewriting IdentifierNode references, but with the deferral those clauses are
+        /// already resolved to ColumnNode trees by the time it runs, so the rewrite is a no-op
+        /// and the references stay bound to the original key instead of the replacement (#91119).
+        /// Perform the identifier rewrite here, before the clauses are resolved, mirroring the
+        /// order the non-deferred path already relies on.
+        applyReplaceTransformersToUnresolvedClauses(query_node_typed, scope);
     }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())

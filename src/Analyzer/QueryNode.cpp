@@ -129,10 +129,19 @@ ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
 
 void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
 {
+    /// Deduplicate by (column name, source), not by `isEqual` (name + type). A correlated
+    /// column's identity is its name and the outer table expression it resolves to; its type is
+    /// not part of that identity. `group_by_use_nulls` may convert an already-registered node to
+    /// Nullable in place (see applyGroupByUseNullsToExpression), so a later equal reference that is
+    /// still non-Nullable would not match under `isEqual` and would be added a second time,
+    /// producing a duplicate JOIN input during decorrelation (issue #91119).
+    const auto & new_column = correlated_column->as<ColumnNode &>();
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {
-        if (column->isEqual(*correlated_column))
+        const auto & existing_column = column->as<ColumnNode &>();
+        if (existing_column.getColumnName() == new_column.getColumnName()
+            && existing_column.getColumnSourceOrNull() == new_column.getColumnSourceOrNull())
             return;
     }
     correlated_columns.push_back(correlated_column);
