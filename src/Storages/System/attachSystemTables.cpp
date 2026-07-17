@@ -350,7 +350,10 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
-            "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants.");
+            "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "
+            "This is only supported when the query log is stored locally: if `query_log.engine` delegates reads to another "
+            "server (for example, `Distributed`), reading throws an exception, because the per-user access check cannot be "
+            "enforced across a ClickHouse-protocol server boundary; in that case set `query_log.enable_user_query_log` to 0.");
     }
 
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
