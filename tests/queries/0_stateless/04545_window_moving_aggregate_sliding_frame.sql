@@ -487,19 +487,23 @@ FROM
 -- results must match a sequential re-aggregation (arrayReduce), also through
 -- combinators. The cr check skips the growing prefix, where the tail-add path reuses
 -- the state after insertResultInto finalized the compressor (pre-existing behavior).
-SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND tk = tk2 AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 250 OR cr = cr2) AND gu = gu2 AND guu = guu2)) AS mismatches
+-- The topK column has strictly distinct frequencies of its three heavy hitters in
+-- every frame once the first 32 rows established them: for tied counts topK order is
+-- unspecified, and debug builds randomize unstable-sort tie order on purpose, so two
+-- computations of tied data may differ.
+SELECT countIf(NOT (gs = gs2 AND (q = q2 OR (isNaN(q) AND isNaN(q2))) AND (n <= 32 OR tk = tk2) AND (qi = qi2 OR (isNaN(qi) AND isNaN(qi2))) AND (n <= 250 OR cr = cr2) AND gu = gu2 AND guu = guu2)) AS mismatches
 FROM
 (
     SELECT
         n,
         groupArraySample(2, 1)(value) OVER w AS gs, arrayReduce('groupArraySample(2, 1)', groupArray(value) OVER w) AS gs2,
         quantile(0.5)(value) OVER w AS q, arrayReduce('quantile(0.5)', groupArray(value) OVER w) AS q2,
-        topK(3)(value) OVER w AS tk, arrayReduce('topK(3)', groupArray(value) OVER w) AS tk2,
+        topK(3)(tkv) OVER w AS tk, arrayReduce('topK(3)', groupArray(tkv) OVER w) AS tk2,
         quantileIf(0.5)(value, value % 2 = 0) OVER w AS qi, arrayReduce('quantileIf(0.5)', groupArray(value) OVER w, groupArray(value % 2 = 0) OVER w) AS qi2,
         estimateCompressionRatio('ZSTD')(str) OVER w AS cr, arrayReduce('estimateCompressionRatio(\'ZSTD\')', groupArray(str) OVER w) AS cr2,
         groupUniqArray(2)(value) OVER w AS gu, arrayReduce('groupUniqArray(2)', groupArray(value) OVER w) AS gu2,
         groupUniqArray(value) OVER w AS guu, arrayReduce('groupUniqArray', groupArray(value) OVER w) AS guu2
-    FROM moving_aggregate_test
+    FROM (SELECT *, multiIf(n % 2 = 0, -1, n % 4 = 1, -2, n % 8 = 3, -3, toInt64(n)) AS tkv FROM moving_aggregate_test)
     WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
