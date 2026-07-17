@@ -172,6 +172,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString paimon_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -688,7 +692,8 @@ void LocalServer::startServers(const ServerType & server_type)
             /* heavy_metrics_update_period_seconds= */ 120,
             metrics_func,
             /* update_jemalloc_epoch_= */ false,
-            /* update_rss_= */ false);
+            /* update_rss_= */ false
+        );
     }
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
@@ -1320,6 +1325,9 @@ void LocalServer::processConfig()
 
     setupUsers();
 
+    /// SYSTEM ALLOCATE MEMORY is a diagnostic command, harmless to enable in clickhouse-local.
+    global_context->allowSystemAllocateMemory(true);
+
     /// Limit on total number of concurrently executing queries.
     /// Plain `clickhouse-local` runs a single query at a time, but once it is turned into a server
     /// via `SYSTEM START LISTEN` it accepts external connections and must honor the configured
@@ -1549,6 +1557,17 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+
+    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
+    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
+    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
+    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
+    if (paimon_metadata_files_cache_size > max_cache_size)
+    {
+        paimon_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
+    }
+    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
@@ -1569,6 +1588,10 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
+    /// Initialize a dummy encryption header cache (0 size disables it; still needed so
+    /// system.server_settings can report its size).
+    global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
 
     /// Initialize a dummy query result cache.
     global_context->setQueryResultCache(0, 0, 0, 0);
@@ -1808,7 +1831,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// This sets the default output format for the (global) context, which is used by connections
+    /// served by `clickhouse-local` when it acts as a server (`SYSTEM START LISTEN TCP/HTTP`), as
+    /// well as by internal usages that consult the context's default format. It must match a real
+    /// `clickhouse-server`, which defaults to `TabSeparated`.
+    ///
+    /// Do not use the interactive default (`PrettyCompact`) here: that format is only for rendering
+    /// query results in the terminal and is applied separately via `ClientBase::default_output_format`.
+    /// Otherwise a client connecting over HTTP would receive a `PrettyCompact`-formatted response and
+    /// fail to parse it (for example, the version query used during connection handshake).
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 

@@ -131,6 +131,8 @@ public:
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
+
     void sendExternalTablesData(ExternalTablesData & data) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
@@ -186,6 +188,7 @@ public:
     }
 
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
+    UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
 private:
     String host;

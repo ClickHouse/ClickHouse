@@ -1,0 +1,123 @@
+---
+title: 'Page d’état des versions'
+sidebarTitle: 'État des versions'
+keywords: ['cloud', 'état des versions', 'déploiement progressif', 'version', 'mise à jour']
+description: 'Page présentant l’état des versions pour chaque canal de publication'
+slug: /cloud/release-status
+doc_type: 'reference'
+---
+
+import ReleaseSchedule from "/snippets/fr/components/ReleaseSchedule/ReleaseSchedule.jsx";
+
+ClickHouse Cloud propose différents canaux de publication pour répondre aux divers besoins des utilisateurs en matière de stabilité, d’accès aux nouvelles fonctionnalités et de prévisibilité des mises à niveau. Chaque canal suit un calendrier de mise à niveau distinct et répond à des cas d’usage différents : certains utilisateurs souhaitent accéder immédiatement aux nouvelles versions, tandis que d’autres préfèrent reporter les mises à niveau pour s’assurer de bénéficier de la version la plus stable.
+
+<div id="release-channel-details">
+  ## Détails des canaux de publication
+</div>
+
+<Accordion title="En savoir plus sur les canaux de publication">
+  | Nom du canal             | Description                                                                                                                                                                                                                                           | Points clés                                                                                                                                                                            | Niveaux pris en charge                              |
+  | :----------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------- |
+  | **Fast (Early Release)** | Recommandé pour les environnements hors production. Il s&#39;agit du premier canal de publication pour chaque mise à niveau de version de la base de données                                                                                          | Accès aux nouvelles fonctionnalités au détriment de la stabilité.<br />Possibilité de tester les releases dans des environnements hors production avant la mise à niveau en production | Basic (par défaut)<br />Niveaux Scale et Enterprise |
+  | **Regular**              | Canal de publication par défaut pour tous les services multi-réplica.<br />Le déploiement progressif sur ce canal commence généralement deux semaines après celui du canal Fast.                                                                                 | Mises à niveau par défaut à l&#39;échelle de l&#39;ensemble du parc.<br />Les services sont mis à niveau progressivement sur plusieurs semaines                                        | Scale et Enterprise                                 |
+  | **Slow (Deferred)**      | Recommandé pour les utilisateurs les plus prudents, qui préfèrent que leurs services soient mis à niveau vers la fin du calendrier de publication.<br />Le déploiement progressif sur ce canal commence généralement deux semaines après celui du canal Regular. | Stabilité et prévisibilité maximales.<br />Conçu pour ceux qui ont besoin de tester davantage les nouvelles releases sur les canaux Fast/Regular                                       | Enterprise                                          |
+
+  <br />
+
+  <br />
+
+  <Note>
+    Tous les services à réplica unique sont automatiquement inscrits au canal de publication Fast.
+  </Note>
+</Accordion>
+
+Les fenêtres de mise à niveau planifiées sont disponibles pour tous les canaux de publication des services du niveau Enterprise. Cette fonctionnalité vous permet de configurer un créneau horaire, un jour donné de la semaine, pour les mises à niveau.
+
+<div id="release-schedule">
+  ## Calendrier de publication
+</div>
+
+<Warning>
+  **Comprendre les dates de publication**
+
+  Les dates indiquées ci-dessous correspondent au moment où ClickHouse **commence le déploiement progressif** sur chaque canal de publication, et non à la date à laquelle votre service sera effectivement mis à niveau.
+
+  * Les déploiements progressifs sont automatisés et s’étalent sur plusieurs semaines
+  * Les services pour lesquels des fenêtres de mise à niveau planifiées sont configurées sont mis à niveau pendant leur fenêtre planifiée au cours de la semaine suivant la fin du déploiement du canal (à partir du lundi à 00:00 UTC)
+  * La fin du déploiement peut être retardée en raison de pauses dans le déploiement (par exemple, un gel pendant les fêtes) ou de la surveillance de l’état de santé
+
+  Pour effectuer des tests en amont avant les mises à niveau en production, utilisez le canal Fast ou Regular pour les services hors production, et le canal Slow pour les services de production.
+</Warning>
+
+<ReleaseSchedule
+  releases={[
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: '2026-06-22',
+   fast_end_date: 'TBD',
+   regular_start_date: 'TBD',
+   regular_end_date: 'TBD',
+   slow_start_date: 'TBD',
+   slow_end_date: 'TBD',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: '2026-04-03',
+   fast_end_date: '2026-04-14',
+   regular_start_date: '2026-05-06',
+   regular_end_date: '2026-06-17',
+   slow_start_date: '2026-07-01',
+   slow_end_date: 'TBD',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   fast_delay_note: 'Les services avec des fenêtres de mise à niveau seront mis à niveau à partir du 2026-04-15.',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: '2026-02-10',
+   fast_end_date: '2026-02-11',
+   regular_start_date: '2026-03-09',
+   regular_end_date: '2026-03-18',
+   slow_start_date: '2026-04-07',
+   slow_end_date: '2026-04-09',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   regular_delay_note: 'Les services avec des fenêtres de mise à niveau planifiées recevront la version 25.12 pendant leur fenêtre planifiée au cours de la semaine suivant le 23 mars',
+   slow_delay_note: 'Les services avec des fenêtres de mise à niveau planifiées recevront la version 25.12 pendant leur fenêtre planifiée au cours de la semaine suivant le 13 avril',
+ },
+ {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
+   version: '25.10',
+   fast_start_date: '2025-12-11',
+   fast_end_date: '2025-12-15',
+   regular_start_date: '2026-01-23',
+   regular_end_date: '2026-03-10',
+   slow_start_date: '2026-03-23',
+   slow_end_date: '2026-03-23',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+ },
+ {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
+  version: '25.8',
+  fast_start_date: 'Terminé',
+  fast_end_date: 'Terminé',
+  regular_start_date: '2025-10-29',
+  regular_end_date: '2025-12-19',
+  slow_start_date: '2026-01-27',
+  slow_end_date: '2026-02-04',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+}
+]}
+/>

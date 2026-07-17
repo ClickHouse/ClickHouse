@@ -1,0 +1,170 @@
+---
+slug: /use-cases/observability/clickstack/deployment/clickhouse-embedded
+title: 'Intégré dans ClickHouse'
+description: 'Utiliser ClickStack intégré au serveur ClickHouse - la pile d’observabilité ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickStack intégré', 'ClickHouse intégré', 'ClickStack serveur ClickHouse', 'observabilité intégrée']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickStack est directement intégré au binaire du serveur ClickHouse. Cela signifie que vous pouvez accéder à l’interface ClickStack (HyperDX) depuis votre instance ClickHouse sans déployer de composants supplémentaires. Ce déploiement est similaire à la démo publique disponible sur [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), mais il s’exécute sur votre propre instance ClickHouse et avec vos propres données.
+
+<div id="suitable-for">
+  ### Convient pour
+</div>
+
+* Essayer ClickStack avec une configuration minimale
+* Explorer vos propres données ClickHouse dans une UI d&#39;observability
+* Démos et évaluations
+
+<div id="limitations">
+  ### Limitations
+</div>
+
+Cette version intégrée n’est **pas conçue pour un usage en production**. Les fonctionnalités suivantes ne sont pas disponibles par rapport aux [déploiements OSS prêts pour la production](/fr/clickstack/deployment/oss) :
+
+* [Alertes](/fr/clickstack/features/alerts)
+* Persistance des [tableaux de bord](/fr/clickstack/features/dashboards/overview) et de la [recherche](/fr/clickstack/features/search) — les tableaux de bord et les recherches enregistrées ne sont pas conservés d’une session à l’autre
+* Paramètres de requête personnalisables
+* [Event patterns](/fr/clickstack/features/event-patterns)
+
+<div id="deployment-steps">
+  ## Étapes de déploiement
+</div>
+
+<Tabs>
+  <Tab title="Docker">
+    <Steps>
+      <Step>
+        ### Démarrer ClickHouse
+
+        Téléchargez puis lancez l’image du serveur ClickHouse avec un mot de passe défini :
+
+        ```shell
+        docker run --rm -it -p 8123:8123 -e CLICKHOUSE_PASSWORD=password clickhouse/clickhouse-server:head-alpine
+        ```
+
+        <Tip>
+          **Exécution sans mot de passe**
+
+          Si vous préférez l’exécuter sans mot de passe, vous devez activer explicitement la gestion des accès par défaut :
+
+          ```shell
+          docker run --rm -it -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 clickhouse/clickhouse-server:head-alpine
+          ```
+        </Tip>
+      </Step>
+
+      <Step>
+        ### Ouvrir l’interface ClickStack
+
+        Ouvrez [http://localhost:8123](http://localhost:8123) dans votre navigateur et cliquez sur **ClickStack**.
+
+        Saisissez le nom d’utilisateur `default` et le mot de passe `password` pour vous connecter à l’instance locale.
+
+        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="S’authentifier" size="lg" />
+      </Step>
+
+      <Step>
+        ### Créer une source
+
+        Si vous avez déjà des tables OpenTelemetry, ClickStack les détectera et créera automatiquement les sources.
+
+        Sur une fresh install, vous serez invité à créer une source. Renseignez le champ **Table** avec le nom de table approprié (par ex. `otel_logs`), puis cliquez sur **Save New Source**.
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Créer une source" size="lg" />
+
+        Si vous n’avez pas encore de données, consultez [Ingesting data](/fr/clickstack/ingesting-data/index) pour connaître les options disponibles.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Binary">
+    <Steps>
+      <Step>
+        ### Démarrer ClickHouse
+
+        Téléchargez et démarrez ClickHouse :
+
+        ```shell
+        curl https://clickhouse.com/ | sh
+        ```
+
+        <Accordion title="Facultatif : activer les tables de logs système">
+          Pour explorer les logs et les métriques internes de ClickHouse, créez un extrait de configuration dans votre répertoire de travail avant de démarrer le serveur :
+
+          ```shell
+          mkdir -p config.d && cat > config.d/query_logs.xml << 'EOF'
+          <clickhouse>
+              <query_log>
+                  <database>system</database>
+                  <table>query_log</table>
+              </query_log>
+              <query_thread_log>
+                  <database>system</database>
+                  <table>query_thread_log</table>
+              </query_thread_log>
+              <query_views_log>
+                  <database>system</database>
+                  <table>query_views_log</table>
+              </query_views_log>
+              <metric_log>
+                  <database>system</database>
+                  <table>metric_log</table>
+              </metric_log>
+              <asynchronous_metric_log>
+                  <database>system</database>
+                  <table>asynchronous_metric_log</table>
+              </asynchronous_metric_log>
+          </clickhouse>
+          EOF
+          ```
+
+          Une fois cette option activée, vous pouvez créer une **Log Source** pointant vers `system.query_log` après avoir ouvert ClickStack :
+
+          | Setting              | Value                                                                                                                                   |
+          | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+          | **Name**             | `Query Logs`                                                                                                                            |
+          | **Database**         | `system`                                                                                                                                |
+          | **Table**            | `query_log`                                                                                                                             |
+          | **Timestamp Column** | `event_time`                                                                                                                            |
+          | **Default Select**   | `event_time, query_kind, query, databases, tables, initial_user, projections, memory_usage, written_rows, read_rows, query_duration_ms` |
+        </Accordion>
+
+        Démarrez le serveur :
+
+        ```shell
+        ./clickhouse server
+        ```
+      </Step>
+
+      <Step>
+        ### Ouvrir l’interface ClickStack
+
+        Ouvrez [http://localhost:8123](http://localhost:8123) dans votre navigateur et cliquez sur **ClickStack**. Une connexion à l’instance locale est créée automatiquement.
+      </Step>
+
+      <Step>
+        ### Créer une source
+
+        Si vous avez déjà des tables OpenTelemetry, ClickStack les détectera et créera automatiquement les sources.
+
+        Si vous n’avez pas encore de données, consultez [Ingesting data](/fr/clickstack/ingesting-data/index) pour connaître les options disponibles.
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Créer une source" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+Si vous êtes prêt à aller au-delà de l’évaluation, envisagez un déploiement prêt pour la mise en production :
+
+* [All-in-One](/fr/clickstack/deployment/all-in-one) — conteneur unique avec tous les composants, y compris la persistance et l’authentification
+* [Docker Compose](/fr/clickstack/deployment/docker-compose) — composants individuels pour un contrôle accru
+* [Helm](/fr/clickstack/deployment/helm) — recommandé pour les déploiements Kubernetes en production
+* [Managed ClickStack](/fr/clickstack/getting-started/managed) — entièrement géré sur ClickHouse Cloud

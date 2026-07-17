@@ -152,6 +152,9 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool use_client_time_zone;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -791,7 +794,9 @@ try
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
-                    static_cast<int>(compression_level)
+                    static_cast<int>(compression_level),
+                    /*zstd_window_log=*/ 0,
+                    client_context->getSettingsRef()[Setting::snappy_mode]
                 );
 
                 if (query_with_output->isIntoOutfileWithStdout())
@@ -832,7 +837,8 @@ try
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
 
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
-            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
+            out_file_buf = wrapWriteBufferWithCompressionMethod(
+                out_buf, default_output_compression_method, 3, 0, client_context->getSettingsRef()[Setting::snappy_mode]);
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
@@ -2319,7 +2325,9 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
     try
     {
         if (default_input_compression_method != CompressionMethod::None)
-            std_in = wrapReadBufferWithCompressionMethod(std::move(std_in), default_input_compression_method);
+            std_in = wrapReadBufferWithCompressionMethod(
+                std::move(std_in), default_input_compression_method,
+                /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
         sendDataFrom(*std_in, sample, columns_description, parsed_query);
     }
     catch (Exception & e)
@@ -2515,6 +2523,16 @@ void ClientBase::processParsedSingleQuery(
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
+        /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
+        /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
+        /// (asynchronous INSERT, SELECT) rely on `session_timezone`. Seed it with the client time zone unless
+        /// the user set `session_timezone` explicitly. This is transient (reverted with the other query
+        /// settings below), so it tracks per-query `use_client_time_zone` changes in both directions.
+        if (!client_local_timezone.empty()
+            && client_context->getSettingsRef()[Setting::use_client_time_zone]
+            && !client_context->getSettingsRef().isChanged("session_timezone"))
+            client_context->setSetting("session_timezone", client_local_timezone);
+
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
@@ -2578,8 +2596,12 @@ void ClientBase::processParsedSingleQuery(
     {
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
+            /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
+            SettingsChanges changes = set_query->changes;
+            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+
             /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
+            for (const auto & change : changes)
             {
                 if (change.name != "profile")
                     client_context->applySettingChange(change);
@@ -2779,12 +2801,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (insert_ast->format == "Values")
         {
-            // Invoke the VALUES format parser to skip the inserted data
+            // Invoke the VALUES format parser to skip the inserted data.
+            // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
+            // whitespace: a trailing comment after the last row would otherwise be scanned
+            // as row data past the terminating ';', swallowing the following queries.
             ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
             skipBOMIfExists(data_in);
             do
             {
-                skipWhitespaceIfAny(data_in);
+                skipWhitespaceAndSQLComments(data_in);
                 if (data_in.eof() || *data_in.position() == ';')
                     break;
             }
@@ -2827,6 +2852,7 @@ void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
     echo_queries = config.getBool("echo", echo_default);
     echo_query_formatted = config.getBool("echo-formatted", is_interactive);
     echo_query_id = config.getBool("echo-query-id", is_interactive);
+    echo_query_separator = config.getString("echo-query-separator", "");
     highlight_queries = config.getBool("highlight", true);
 }
 
@@ -2859,6 +2885,13 @@ void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_qu
     {
         /// Surround the formatted query with blank lines, as in interactive mode.
         writeChar('\n', *std_out);
+        /// Optionally print a separator so the formatted query is easy to tell apart from the
+        /// user-typed query that the terminal echoes directly above it in interactive mode.
+        if (!echo_query_separator.empty())
+        {
+            writeString(echo_query_separator, *std_out);
+            writeChar('\n', *std_out);
+        }
         writeString(text, *std_out);
         writeString("\n\n", *std_out);
     }
@@ -3843,6 +3876,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-query-id", po::value<bool>()->implicit_value(true), "Print the query_id before execution. Enabled by default in interactive mode, disabled in batch mode.")
+        ("echo-query-separator", po::value<std::string>(), "Print this separator before the formatted echoed query (requires --echo-formatted). Empty by default (disabled).")
 
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
@@ -3981,6 +4015,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("echo-formatted", options["echo-formatted"].as<bool>());
     if (options.contains("echo-query-id"))
         getClientConfiguration().setBool("echo-query-id", options["echo-query-id"].as<bool>());
+    if (options.contains("echo-query-separator"))
+        getClientConfiguration().setString("echo-query-separator", options["echo-query-separator"].as<std::string>());
     if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))

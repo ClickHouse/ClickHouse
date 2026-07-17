@@ -271,11 +271,31 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 combinator_name);
         }
 
-        DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
-        auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        AggregateFunctionPtr combined_function;
+        if (combinator->transformsMultipleNestedFunctions())
+        {
+            /// A combinator that wraps one nested function per argument list (e.g. -Tuple: one per
+            /// tuple element).
+            auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(argument_types);
+
+            VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
+            nested_functions.reserve(nested_arguments_list.size());
+            for (const auto & nested_arguments : nested_arguments_list)
+                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
+
+            combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
+                getAliasToOrName(nested_name), std::move(nested_functions), out_properties, argument_types, parameters);
+        }
+        else
+        {
+            DataTypes nested_types = combinator->transformArguments(argument_types);
+
+            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+            combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        }
+
         /// Same invariant as above.
         chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");

@@ -1,0 +1,56 @@
+---
+sidebar_title: '查询 API 端点'
+slug: /cloud/features/query-api-endpoints
+description: '根据已保存的查询轻松创建 REST API 端点'
+keywords: ['api', '查询 API 端点', '查询端点', 'query rest api']
+title: '查询 API 端点'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+构建交互式、数据驱动型应用，不仅需要高性能数据库、结构清晰的数据以及经过优化的查询。
+前端和微服务还需要一种便捷的方式来获取并使用这些查询返回的数据，最好是通过结构清晰的 API。
+
+**查询 API 端点** 功能允许您直接基于 ClickHouse Cloud 控制台中任意已保存的 SQL 查询创建 API 端点。
+您可以通过 HTTP 访问这些 API 端点来执行已保存的查询，而无需通过原生驱动连接到您的 ClickHouse Cloud 服务。
+
+<div id="ip-access-control">
+  ## IP 访问控制
+</div>
+
+查询 API 端点遵循 API 密钥级别的 IP 白名单限制。与 SQL 控制台类似，查询 API 端点会从 ClickHouse 的基础设施内部代理请求，因此服务级别的 IP 白名单设置不适用。
+
+要限制哪些客户端可以调用你的查询 API 端点：
+
+<Steps>
+  <Step>
+    #### 打开 API 密钥设置
+
+    1. 前往 ClickHouse Cloud 控制台 → **Organization** → **API Keys**
+
+    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API 密钥" />
+
+    2. 点击用于查询 API 端点的 API 密钥旁边的 **Edit**
+
+    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="编辑" />
+  </Step>
+
+  <Step>
+    #### 添加允许的 IP 地址
+
+    1. 在 **Allow access to this API Key** 部分，选择 **Specific locations**
+    2. 输入 IP 地址或 CIDR 范围 (例如 `203.0.113.1` 或 `203.0.113.0/24`)
+    3. 根据需要添加多条记录
+
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="特定位置" />
+
+    创建查询 API 端点需要 Admin Console Role，以及具有相应权限的 API 密钥。
+  </Step>
+</Steps>
+
+<Tip>
+  **指南**
+
+  有关如何通过几个简单步骤设置查询 API 端点，请参阅[查询 API 端点指南](/zh/products/cloud/guides/sql-console/query-endpoints)
+</Tip>

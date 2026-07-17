@@ -179,6 +179,10 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(SnappyMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"basic",  SnappyMode::Basic},
+     {"framed", SnappyMode::Framed}})
+
 IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
     {{"async",          TransactionsWaitCSNMode::ASYNC},
      {"wait",           TransactionsWaitCSNMode::WAIT},
@@ -298,6 +302,10 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENT
      {"partition", ObjectStorageQueueBucketingMode::PARTITION},
      {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
 
+IMPLEMENT_SETTING_ENUM(QueryRunnerMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"synchronous", QueryRunnerMode::SYNCHRONOUS},
+     {"asynchronous", QueryRunnerMode::ASYNCHRONOUS}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -360,7 +368,8 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -386,6 +395,13 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
+
+IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
+     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
@@ -494,11 +510,6 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
     {{"backward_compatible_choice", DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE},
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
-
-IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
-    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
-     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
-     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
 
 IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},

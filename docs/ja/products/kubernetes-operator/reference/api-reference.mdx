@@ -1,0 +1,619 @@
+---
+position: 1
+slug: /clickhouse-operator/reference/api-reference
+title: 'ClickHouse Operator API リファレンス'
+keywords: ['kubernetes']
+description: 'このドキュメントでは、ClickHouse Operator のカスタムリソースに関する詳細な API リファレンスを提供します。'
+doc_type: 'reference'
+sidebarTitle: 'API リファレンス'
+---
+
+このドキュメントでは、ClickHouse Operator のカスタムリソースに関する詳細な API リファレンスを提供します。
+
+<div id="additionalport">
+  ## AdditionalPort
+</div>
+
+AdditionalPort は、ClickHouse ポッドおよびオペレーターが管理するヘッドレス Service で公開する追加の TCP ポートを 1 つ定義します。
+
+| フィールド  | 型       | 説明                                                                                    | 必須   | デフォルト |
+| ------ | ------- | ------------------------------------------------------------------------------------- | ---- | ----- |
+| `name` | string  | リスト内でポートを一意に識別する名前です。コンテナポート名と Service ポート名の両方に使用されます。<br />DNS&#95;LABEL である必要があります。 | true |       |
+| `port` | integer | 公開する TCP ポート番号です。                                                                     | true |       |
+
+登場箇所:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
+
+CABundleSelector は、クラスターのネームスペース内の Secret から、CA バンドルを含むキーを選択します。
+
+| フィールド  | 型      | 説明                                     | 必須    | デフォルト  |
+| ------ | ------ | -------------------------------------- | ----- | ------ |
+| `name` | string | 選択元の、クラスターのネームスペース内にある Secret の名前。     | true  |        |
+| `key`  | string | 選択する Secret のキー。有効なシークレットキーである必要があります。 | false | ca.crt |
+
+以下で使用されます:
+
+* [ClusterTLSSpec](#clustertlsspec)
+
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
+
+ClickHouseCluster は `clickhouseclusters` API のスキーマです。
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### API バージョンと Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+```
+
+| フィールド    | 型                                                   | 説明 | 必須   | デフォルト |
+| -------- | --------------------------------------------------- | -- | ---- | ----- |
+| `spec`   | [ClickHouseClusterSpec](#clickhouseclusterspec)     |    | true |       |
+| `status` | [ClickHouseClusterStatus](#clickhouseclusterstatus) |    | true |       |
+
+次に含まれます:
+
+* [ClickHouseClusterList](#clickhouseclusterlist)
+
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
+
+ClickHouseClusterList には、ClickHouseCluster の一覧が含まれます。
+
+<div id="clickhouseclusterlist-api-version-and-kind">
+  ### APIバージョンと Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseClusterList
+```
+
+| フィールド   | Type                                        | 説明 | 必須   | デフォルト |
+| ------- | ------------------------------------------- | -- | ---- | ----- |
+| `items` | [ClickHouseCluster](#clickhousecluster) の配列 |    | true |       |
+
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
+
+ClickHouseClusterSpec は ClickHouseCluster の望ましい状態を定義します。
+
+| Field                            | Type                                                                                                                                | Description                                                                                                                                                                                                                               | Required | Default       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------- |
+| `replicas`                       | integer                                                                                                                             | 単一シャード内のレプリカ数。                                                                                                                                                                                                                            | false    | 3             |
+| `shards`                         | integer                                                                                                                             | クラスター内のシャード数。                                                                                                                                                                                                                             | false    | 1             |
+| `keeperClusterRef`               | [KeeperClusterReference](#keeperclusterreference)                                                                                   | ClickHouse の調整に使用される KeeperCluster への参照。<br />名前空間が省略された場合、ClickHouseCluster の名前空間が使用されます。                                                                                                                                                | true     |               |
+| `podTemplate`                    | [PodTemplateSpec](#podtemplatespec)                                                                                                 | ClickHouse ポッドスペックに渡されるパラメーター。                                                                                                                                                                                                            | false    |               |
+| `containerTemplate`              | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | ClickHouse コンテナースペックに渡されるパラメーター。                                                                                                                                                                                                           | false    |               |
+| `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | ClickHouse データ用の永続ストレージ仕様。                                                                                                                                                                                                                | false    |               |
+| `additionalVolumeClaimTemplates` | [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate) array                                                               | JBOD / マルチディスクストレージ用の追加のポッドごとの PVC テンプレート。<br />Each entry is propagated in StatefulSet volumeClaimTemplate, mounted at `/var/lib/clickhouse/disks/<name>` and<br />added to the generated JBOD storage policy.<br />ディスクのセットは作成時に固定されます。 | false    |               |
+| `labels`                         | object (keys:string, values:string)                                                                                                 | リソースに追加される追加ラベル。                                                                                                                                                                                                                          | false    |               |
+| `annotations`                    | object (keys:string, values:string)                                                                                                 | リソースに追加される追加アノテーション。                                                                                                                                                                                                                      | false    |               |
+| `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget は各シャードに作成される PDB を設定します。<br />未設定の場合、オペレーターはシングルレプリカシャードに対して maxUnavailable=1、<br />マルチレプリカシャードに対して minAvailable=1 をデフォルトとします。                                                                                        | false    |               |
+| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | ClickHouse サーバーの設定パラメーター。                                                                                                                                                                                                                 | false    |               |
+| `clusterDomain`                  | string                                                                                                                              | ClusterDomain は DNS 解決に使用される Kubernetes クラスタードメインサフィックスです。                                                                                                                                                                                | false    | cluster.local |
+| `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel はメジャーバージョンアップグレードチェックのリリースチャンネルを指定します。<br />空の場合、マイナーアップデートのみが提案されます。使用可能な値は: stable、lts、または特定の major.minor バージョン (例: 25.8) 。                                                                                              | false    |               |
+| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | VersionProbeTemplate はバージョン検出ジョブのオーバーライドです。                                                                                                                                                                                               | false    |               |
+| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret はクラスターシークレットを含む外部管理 Secret へのオプションの参照です。<br />シークレットはクラスターと同じ名前空間に存在する必要があります。                                                                                                                                             | false    |               |
+| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts は ClickHouse ポッドおよびオペレーター管理のヘッドレス Service に公開する追加の TCP ポートを宣言します。<br />オペレーターは Kubernetes リソースにポートを追加するだけで、ClickHouse サーバーがそれらをリッスンするように設定しません。                                                                           | false    |               |
+
+Appears in:
+
+* [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
+
+ClickHouseClusterStatus は、ClickHouseCluster の観測された状態を定義します。
+
+| フィールド                   | 型                                                                                                      | 説明                                                                                                             | 必須    | デフォルト |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | ----- | ----- |
+| `conditions`            | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) 配列 |                                                                                                                | false |       |
+| `readyReplicas`         | integer                                                                                                | ReadyReplicas は、リクエストを処理できる状態にあるレプリカの総数です。                                                                     | false |       |
+| `configurationRevision` | string                                                                                                 | ConfigurationRevision は、各レプリカの対象構成リビジョンを示します。                                                                  | true  |       |
+| `statefulSetRevision`   | string                                                                                                 | StatefulSetRevision は、各レプリカの対象 StatefulSet リビジョンを示します。                                                         | true  |       |
+| `currentRevision`       | string                                                                                                 | CurrentRevision は、最後に適用された ClickHouseCluster spec リビジョンを示します。                                                  | true  |       |
+| `updateRevision`        | string                                                                                                 | UpdateRevision は、最後に要求された ClickHouseCluster spec リビジョンを示します。                                                   | true  |       |
+| `observedGeneration`    | integer                                                                                                | ObservedGeneration は、コントローラーが観測した最新の generation を示します。                                                         | true  |       |
+| `version`               | string                                                                                                 | Version は、コンテナーイメージから報告されたバージョンを示します。                                                                          | false |       |
+| `versionProbeRevision`  | string                                                                                                 | VersionProbeRevision は、最後に成功したバージョンプローブのイメージハッシュです。<br />これが現在のイメージハッシュと一致する場合は、cache された Version がそのまま使用されます。 | false |       |
+
+以下に登場します:
+
+* [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
+
+ClickHouseSettings は、ClickHouse サーバーの設定オプションを定義します。
+
+| Field                 | Type                                                                                                          | Description                                                                                                              | Required | Default |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------- | ------- |
+| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | `default` ClickHouse ユーザーのパスワードの取得元と種類を指定します。                                                                            | false    |         |
+| `logger`              | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse サーバーのログ設定です。                                                                                                  | false    |         |
+| `tls`                 | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS の設定です。ClickHouse サーバーのセキュアなエンドポイントや証明書検証を構成できます。                                                                     | false    |         |
+| `enableDatabaseSync`  | boolean                                                                                                       | 新しく作成されたレプリカへの ClickHouse データベースの同期と、スケールダウン後の古いレプリカのクリーンアップを有効にします。<br />Replicated およびインテグレーションデータベースのみをサポートします。<br /> | false    | true    |
+| `extraConfig`         | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | デフォルト設定にマージされる追加の ClickHouse 設定です。                                                                                       | false    |         |
+| `extraUsersConfig`    | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | デフォルト設定にマージされる追加の ClickHouse ユーザー設定です。                                                                                   | false    |         |
+
+Appears in:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
+
+ClusterTLSSpec は、クラスターの TLS 設定を定義します。
+
+| Field              | Type                                                                                                                      | Description                                                                                                                                                                        | Required | Default |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `enabled`          | boolean                                                                                                                   | Enabled は、TLS を有効にするかどうかを示し、セキュアなポートを開くかどうかを決定します。                                                                                                                                 | false    | false   |
+| `required`         | boolean                                                                                                                   | Required は、すべての接続で TLS を必須にするかどうかを指定します。非セキュアポートは無効になります。                                                                                                                          | false    | false   |
+| `serverCertSecret` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | ServerCertSecret は、サーバー証明書を含む TLS Secret への参照です。<br />Secret は cert-manager によって生成される証明書と同じ構造であることが想定されており、<br />証明書と秘密鍵はそれぞれ &quot;tls.crt&quot; と &quot;tls.key&quot; キーに格納されます。 | false    |         |
+| `caBundle`         | [CABundleSelector](#cabundleselector)                                                                                     | CABundle は、ピア証明書の検証に使用される CA バンドルを保持する Secret キーへの参照です。<br />空の場合は、システムで信頼されている CA バンドルが使用されます。<br />指定がない場合、Key のデフォルト値は &quot;ca.crt&quot; です。                                   | false    |         |
+
+以下で使用されます:
+
+* [ClickHouseSettings](#clickhousesettings)
+* [KeeperSettings](#keepersettings)
+
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
+
+ConfigMapKeySelector は、ConfigMap のキーを選択します。
+
+| フィールド  | 型      | 説明                                    | 必須   | デフォルト |
+| ------ | ------ | ------------------------------------- | ---- | ----- |
+| `name` | string | 選択元の、クラスターのネームスペース内にある ConfigMap の名前。 | true |       |
+| `key`  | string | 選択する ConfigMap のキー。有効なキーである必要があります。   | true |       |
+
+以下に登場します:
+
+* [DefaultPasswordSelector](#defaultpasswordselector)
+
+<div id="containerimage">
+  ## ContainerImage
+</div>
+
+ContainerImage は、repository、tag、または hash を指定したコンテナーイメージを定義します。
+
+| フィールド        | 型      | 説明                                                       | 必須    | デフォルト |
+| ------------ | ------ | -------------------------------------------------------- | ----- | ----- |
+| `repository` | String | コンテナーイメージのレジストリ名<br />例: docker.io/clickhouse/clickhouse | false |       |
+| `tag`        | String | コンテナーイメージのタグ。`hash` と同時には指定できません。<br />例: 25.3           | false |       |
+| `hash`       | String | コンテナーイメージのハッシュ。`tag` と同時には指定できません。                       | false |       |
+
+以下で使用されます:
+
+* [ContainerTemplateSpec](#containertemplatespec)
+
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
+
+ContainerTemplateSpec は、クラスター内のコンテナーに対する設定のオーバーライドを定義します。
+
+| フィールド             | 型                                                                                                                         | 説明                                                                                                                                                                                                                                                                  | 必須    | デフォルト |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----- |
+| `image`           | [ContainerImage](#containerimage)                                                                                         | Image は、デプロイするコンテナーイメージです。                                                                                                                                                                                                                                          | true  |       |
+| `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core)                     | image の ImagePullPolicy です。デフォルトは IfNotPresent です。                                                                                                                                                                                                                  | false |       |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources は、サーバーコンテナーのリソース要件です。<br />全体として適用されます。すべての resource フィールドが空の場合にのみ、オペレーターのデフォルトが使用されます。                                                                                                                                                                   | false |       |
+| `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array             | VolumeMounts は、コンテナーのボリュームマウントの一覧です。<br />オペレーターが生成したマウントと連結されます。オペレーターのマウントと `mountPath` を共有するエントリは、<br />projected volume にマージされます。                                                                                                                               | false |       |
+| `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array                       | Env は、コンテナーに設定する環境変数の一覧です。<br />名前を基準にオペレーターのデフォルトとマージされます。                                                                                                                                                                                                         | false |       |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | SecurityContext は、コンテナーの実行時に使用するセキュリティオプションを定義します。<br />nil ではない SecurityContext を指定すると、オペレーターのデフォルトは完全に置き換えられます。つまり、<br />構造体全体の管理はユーザー側の責任となります。nil の場合は、オペレーターのデフォルトが保持されます。<br />詳細: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false |       |
+| `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | LivenessProbe は、オペレーターのデフォルトの liveness probe をオーバーライドします。                                                                                                                                                                                                           | false |       |
+| `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | ReadinessProbe は、オペレーターのデフォルトの readiness probe をオーバーライドします。                                                                                                                                                                                                         | false |       |
+
+次で使用されます:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
+
+DefaultPasswordSelector は、デフォルトユーザーのパスワードの参照元を選択します。
+
+| フィールド          | 型                                             | 説明                                                                                                                           | 必須    | デフォルト    |
+| -------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----- | -------- |
+| `passwordType` | string                                        | 指定したパスワードの種類です。設定可能な値については https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword のドキュメントを参照してください | true  | password |
+| `secret`       | [SecretKeySelector](#secretkeyselector)       | Secret のキーからパスワード値を選択します                                                                                                     | false |          |
+| `configMap`    | [ConfigMapKeySelector](#configmapkeyselector) | ConfigMap のキーからパスワード値を選択します                                                                                                  | false |          |
+
+次に登場します:
+
+* [ClickHouseSettings](#clickhousesettings)
+
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
+
+ExternalSecret は、同じネームスペース内の Secret への参照です。
+
+| フィールド    | 型                                             | 説明                                                                                                                                                           | 必須    | デフォルト   |
+| -------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------- |
+| `name`   | string                                        | Secret の名前。                                                                                                                                                  | true  |         |
+| `policy` | [ExternalSecretPolicy](#externalsecretpolicy) | ポリシーは、オペレーター が Secret の内容をどのように扱うかを制御します。<br />Observe (デフォルト) : 必須の key がいずれか不足している場合、reconciliation を停止します。<br />Manage: 不足している必須の key を既存の Secret に生成します。 | false | Observe |
+
+以下に登場します。
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
+
+ExternalSecretPolicy は、オペレーター が external secret の内容をどのように扱うかを制御します。
+
+| フィールド     | 説明                                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Observe` | ExternalSecretPolicyObserve はデフォルトのポリシーで、オペレーター は secret を読み取って検証します。<br />必要なキーが 1 つでも欠けている場合、reconciliation はブロックされます。<br />不足している必須キーとその想定フォーマットは、実行時に ExternalSecretValid ステータス条件を通じて報告されます。<br /> |
+| `Manage`  | ExternalSecretPolicyManage は、オペレーター が不足している必須キーを補うために、<br />その値を生成するポリシーです。secret は更新されますが、オペレーター が所有したり削除したりすることはありません。<br />                                                                         |
+
+次に登場します:
+
+* [ExternalSecret](#externalsecret)
+
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
+
+KeeperCluster は `keeperclusters` API のスキーマです。
+
+<div id="clickhouseclusterlist-api-version-and-kind">
+  ### APIバージョンと Kind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+```
+
+| フィールド    | 型                                           | 説明 | 必須   | デフォルト |
+| -------- | ------------------------------------------- | -- | ---- | ----- |
+| `spec`   | [KeeperClusterSpec](#keeperclusterspec)     |    | true |       |
+| `status` | [KeeperClusterStatus](#keeperclusterstatus) |    | true |       |
+
+以下に含まれます:
+
+* [KeeperClusterList](#keeperclusterlist)
+
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
+
+KeeperClusterList は、KeeperCluster の一覧を含みます。
+
+<div id="keeperclusterlist-api-version-and-kind">
+  ### APIバージョンとKind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperClusterList
+```
+
+| フィールド   | 型                                  | 説明 | 必須   | デフォルト |
+| ------- | ---------------------------------- | -- | ---- | ----- |
+| `items` | [KeeperCluster](#keepercluster) 配列 |    | true |       |
+
+<div id="keeperclusterreference">
+  ## KeeperClusterReference
+</div>
+
+KeeperClusterReference は、ClickHouseCluster で使用される KeeperCluster を参照します。
+
+| フィールド       | 型      | 説明                                                                          | 必須    | デフォルト |
+| ----------- | ------ | --------------------------------------------------------------------------- | ----- | ----- |
+| `name`      | string | KeeperCluster リソースの名前。                                                      | true  |       |
+| `namespace` | string | KeeperCluster リソースのネームスペース。<br />省略した場合は ClickHouseCluster のネームスペースが使用されます。 | false |       |
+
+使用箇所:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
+
+KeeperClusterSpec は、KeeperCluster の望ましい状態を定義します。
+
+| Field                  | Type                                                                                                                                | Description                                                                                                                                                                          | Required | Default       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------------- |
+| `replicas`             | integer                                                                                                                             | クラスター内のレプリカ数                                                                                                                                                                         | false    | 3             |
+| `podTemplate`          | [PodTemplateSpec](#podtemplatespec)                                                                                                 | Keeper ポッドスペックに渡されるパラメーター。                                                                                                                                                             | false    |               |
+| `containerTemplate`    | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | Keeper コンテナースペックに渡されるパラメーター。                                                                                                                                                           | false    |               |
+| `dataVolumeClaimSpec`  | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | ClickHouse Keeper データ用の永続ストレージ仕様。                                                                                                                                                    | false    |               |
+| `labels`               | object (keys:string, values:string)                                                                                                 | リソースに追加されるラベル。                                                                                                                                                                       | false    |               |
+| `annotations`          | object (keys:string, values:string)                                                                                                 | リソースに追加される annotations。                                                                                                                                                              | false    |               |
+| `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget は、Keeper クラスター用に作成される PDB を設定します。<br />未設定の場合、オペレーターは既定で maxUnavailable=replicas/2 を使用します<br />(2F+1 クラスターでクォーラムを維持するため)。単一レプリカのクラスターでは maxUnavailable=1 を使用します。 | false    |               |
+| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper サーバーの設定パラメーター。                                                                                                                                                     | false    |               |
+| `clusterDomain`        | string                                                                                                                              | ClusterDomain は、DNS 名前解決に使用される Kubernetes クラスターのドメイン接尾辞です。                                                                                                                           | false    | cluster.local |
+| `upgradeChannel`       | string                                                                                                                              | UpgradeChannel は、メジャーバージョンのアップグレード確認に使用するリリースチャネルを指定します。<br />空の場合、マイナーアップデートのみが提案されます。指定可能な値は stable、lts、または特定の major.minor バージョン (例: 25.8) です。                                     | false    |               |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | バージョン検出ジョブ用の VersionProbeTemplate を上書きします。<br />非推奨: Keeper のバージョンプローブジョブは使用されません。このフィールドは後方互換性のために保持されています。                                                                         | false    |               |
+
+以下に表示されます:
+
+* [KeeperCluster](#keepercluster)
+
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
+
+KeeperClusterStatus は、KeeperCluster の観測された状態を定義します。
+
+| フィールド                   | 型                                                                                                         | 説明                                                                                                                     | 必須    | デフォルト |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----- | ----- |
+| `conditions`            | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |                                                                                                                        | false |       |
+| `readyReplicas`         | integer                                                                                                   | ReadyReplicas は、リクエストを処理できる状態にあるレプリカの総数です。                                                                             | false |       |
+| `configurationRevision` | string                                                                                                    | ConfigurationRevision は、各レプリカの目標構成リビジョンを示します。                                                                          | true  |       |
+| `statefulSetRevision`   | string                                                                                                    | StatefulSetRevision は、各レプリカの目標 StatefulSet リビジョンを示します。                                                                 | true  |       |
+| `currentRevision`       | string                                                                                                    | CurrentRevision は、最後に適用された KeeperCluster spec リビジョンを示します。                                                              | true  |       |
+| `updateRevision`        | string                                                                                                    | UpdateRevision は、最後に要求された KeeperCluster spec リビジョンを示します。                                                               | true  |       |
+| `observedGeneration`    | integer                                                                                                   | ObservedGeneration は、コントローラーが最後に観測した generation を示します。                                                                 | true  |       |
+| `version`               | string                                                                                                    | Version は、Keeper サーバーから報告されたバージョンを示します。                                                                                | false |       |
+| `versionProbeRevision`  | string                                                                                                    | VersionProbeRevision は、最後に成功したバージョンプローブのイメージハッシュです。<br />非推奨: Keeper バージョンプローブ Job は使用されません。このフィールドは後方互換性のために保持されています。 | false |       |
+
+次に記載されています:
+
+* [KeeperCluster](#keepercluster)
+
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
+
+KeeperSettings は ClickHouse Keeper サーバーの構成を定義します。
+
+| フィールド         | 型                                                                                                             | 説明                                                        | 必須    | デフォルト |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----- | ----- |
+| `logger`      | [LoggerConfig](#loggerconfig)                                                                                 | ClickHouse Keeper サーバーのログ設定。                              | false |       |
+| `tls`         | [ClusterTLSSpec](#clustertlsspec)                                                                             | TLS 設定。ClickHouse Keeper サーバー向けに、安全なエンドポイントと証明書検証を構成できます。 | false |       |
+| `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | デフォルト設定にマージされる追加の ClickHouse Keeper 設定。                   | false |       |
+
+以下で使用されます:
+
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
+
+LoggerConfigはサーバーのログ設定を定義します。
+
+| フィールド       | 型       | 説明                              | 必須    | デフォルト |
+| ----------- | ------- | ------------------------------- | ----- | ----- |
+| `logToFile` | boolean | false の場合、ファイルへのログ出力をすべて無効にします。 | false | true  |
+| `jsonLogs`  | boolean | true の場合、JSONフォーマットでログを出力します。   | false | false |
+| `level`     | string  | サーバーロガーの詳細レベル。                  | false | trace |
+| `size`      | string  | ログファイルの最大サイズ。                   | false | 1000M |
+| `count`     | integer | 保持するログファイルの最大数。                 | false | 50    |
+
+以下に登場します:
+
+* [ClickHouseSettings](#clickhousesettings)
+* [KeeperSettings](#keepersettings)
+
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
+
+NamedTemplateMeta は、名前を必要とするテンプレートオブジェクトでサポートされるメタデータ設定を定義します。
+
+| フィールド         | 型                                   | 説明                                    | 必須    | デフォルト |
+| ------------- | ----------------------------------- | ------------------------------------- | ----- | ----- |
+| `name`        | string                              | Name はリソース識別子です。                      | true  |       |
+| `labels`      | object (keys:string, values:string) | ラベルは、テンプレートオブジェクトに適用されるラベルです。         | false |       |
+| `annotations` | object (keys:string, values:string) | アノテーションは、テンプレートオブジェクトに適用されるアノテーションです。 | false |       |
+
+以下で使用されます:
+
+* [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
+
+PDBPolicy は、PodDisruptionBudget を作成するかどうかを制御します。
+
+| フィールド      | 説明                                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------- |
+| `Enabled`  | `PDBPolicyEnabled` は、オペレーターによる PodDisruptionBudget の作成を有効にします。<br />                           |
+| `Disabled` | `PDBPolicyDisabled` は PodDisruptionBudget を無効にし、オペレーターは一致するラベルを持つリソースを削除します。<br />             |
+| `Ignored`  | `PDBPolicyIgnored` は PodDisruptionBudget を無視します。オペレーターは PDB の作成や削除を行わず、既存の PDB は変更されません。<br /> |
+
+次に登場します:
+
+* [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
+
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
+
+PersistentVolumeClaimTemplate は、レプリカごとの PersistentVolumeClaim 用の名前付きテンプレートです。
+
+| フィールド      | 型                                                                                                                                   | 説明                                                                                                                                   | 必須   | デフォルト |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---- | ----- |
+| `metadata` | [NamedTemplateMeta](#namedtemplatemeta)                                                                                             | `metadata` のフィールドについては、Kubernetes API ドキュメントを参照してください。                                                                               | true |       |
+| `spec`     | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Spec は、ポッド作成者が要求するボリュームの望ましい特性を定義します。<br />詳細: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims | true |       |
+
+次に含まれます:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
+
+PodDisruptionBudgetSpec は、クラスター用に作成される PDB を設定します。
+設定できるのは MinAvailable または MaxUnavailable のいずれか 1 つだけです。
+どちらも設定されていない場合、オペレーターはレプリカ数に基づいて安全なデフォルト値を選択します。
+
+| フィールド                        | 型                                                                                                                                               | 説明                                                                                                                                                          | 必須    | デフォルト   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- |
+| `policy`                     | [PDBPolicy](#pdbpolicy)                                                                                                                         | Policy は、オペレーターが PodDisruptionBudget を作成するかどうかを制御します。<br />未設定の場合、デフォルトは &quot;Enabled&quot; です。PDB の作成をスキップするには (たとえば開発環境では) 、&quot;Disabled&quot; に設定します。 | false | Enabled |
+| `minAvailable`               | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util)                                     | MinAvailable は、障害発生時にも利用可能な状態を維持する必要がある最小のポッド数です。                                                                                                           | false |         |
+| `maxUnavailable`             | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util)                                     | MaxUnavailable は、障害発生時に利用不可となってよいポッドの最大数です。                                                                                                                 | false |         |
+| `unhealthyPodEvictionPolicy` | [UnhealthyPodEvictionPolicyType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#unhealthypodevictionpolicytype-v1-policy) | UnhealthyPodEvictionPolicy は、異常なポッドを<br />エビクション対象と見なす条件を定義します。<br />有効な値は &quot;IfReady&quot; と &quot;AlwaysAllow&quot; です。                                | false |         |
+
+以下で使用されます:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
+
+PodTemplateSpec は、クラスター内のポッドに対する設定のオーバーライド内容を定義します。
+
+| フィールド                           | 型                                                                                                                                    | 説明                                                                                                                                                                                                                                                                                                                                              | 必須    | デフォルト |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----- |
+| `terminationGracePeriodSeconds` | 整数                                                                                                                                   | ポッドが正常に終了するまでの猶予時間を秒単位で指定する省略可能な値です。削除リクエスト時には短縮される場合があります。<br />値は 0 以上の整数である必要があります。値が 0 の場合は、kill シグナルにより<br />即座に停止することを示します (正常終了の機会はありません) 。<br />この値が nil の場合は、代わりにデフォルトの猶予期間が使用されます。<br />猶予期間とは、ポッド内で実行中のプロセスに終了シグナルが送られてから、<br />kill シグナルによってプロセスが強制終了されるまでの秒単位の時間です。<br />この値は、プロセスで想定されるクリーンアップ時間より長く設定してください。<br />デフォルトは 30 秒です。 | false |       |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) 配列 | TopologySpreadConstraints は、ポッドのグループをトポロジー<br />ドメイン全体にどのように分散すべきかを示します。スケジューラは、制約を満たすようにポッドをスケジュールします。<br />すべての topologySpreadConstraints は AND 条件で適用されます。<br />`topologyKey` によって operator のデフォルト値とマージされます。                                                                                                                                  | false |       |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) 配列         | ImagePullSecrets は、この PodSpec で使用される任意のイメージの取得に使用する、同じネームスペース内の Secret への参照のオプションのリストです。<br />指定した場合、これらの Secret は各 puller 実装に渡され、そこで使用されます。<br />詳細情報: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />名前をキーに operator のデフォルトとマージされます。                                                         | false |       |
+| `nodeSelector`                  | オブジェクト (キー:string, 値:string)                                                                                                         | NodeSelector は、ポッドをノードに配置できるようにするために満たされている必要があるセレクターです。<br />ポッドをそのノードにスケジュールするには、ノードのラベルに一致している必要があるセレクターです。<br />詳細: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                      | false |       |
+| `affinity`                      | [アフィニティ](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                      | 指定した場合、ポッドのスケジューリング制約です。<br />operator のデフォルトに追加されます。スケジューリング条件のリストは連結されます。                                                                                                                                                                                                                                                                     | false |       |
+| `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) の配列                            | 指定した場合、ポッドの Tolerations です。                                                                                                                                                                                                                                                                                                                     | false |       |
+| `schedulerName`                 | string                                                                                                                               | 指定した場合、ポッドは指定したスケジューラによってスケジューリングされます。<br />指定しない場合、ポッドはデフォルトのスケジューラによってスケジューリングされます。                                                                                                                                                                                                                                                           | false |       |
+| `serviceAccountName`            | string                                                                                                                               | ServiceAccountName は、このポッドの実行に使用する ServiceAccount の名前です。<br />詳細: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                           | false |       |
+| `priorityClassName`             | string                                                                                                                               | PriorityClassName は、ポッドで使用する PriorityClass の名前です。                                                                                                                                                                                                                                                                                               | false |       |
+| `runtimeClassName`              | 文字列                                                                                                                                  | RuntimeClassName は、ポッドで使用する RuntimeClass の名前です。                                                                                                                                                                                                                                                                                                 | false |       |
+| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) の配列                                    | Volumes は、ポッドに属するコンテナがマウントできるボリュームの一覧を定義します。<br />詳細: https://kubernetes.io/docs/concepts/storage/volumes<br />名前ごとにオペレーターのデフォルト設定とマージされます。同じ名前のオペレーターのボリュームがある場合は、ユーザー定義のボリュームで置き換えられます。                                                                                                                                                       | false |       |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                | SecurityContext は、ポッドレベルのセキュリティ属性と共通のコンテナー設定を保持します。<br />SecurityContext に nil 以外を指定すると、オペレーターのデフォルト設定は完全に置き換えられ、<br />構造体全体の管理はユーザーの責任となります。nil の場合は、オペレーターのデフォルト設定が維持されます。                                                                                                                                                                    | false |       |
+| `topologyZoneKey`               | string                                                                                                                               | TopologyZoneKey はノードラベルのキーです。<br />このキーを持ち、値が同一のラベルが設定されたノードは、同じトポロジーゾーンに属するとみなされます。<br />これを設定すると、デフォルトの TopologySpreadConstraints および Affinity ルールが有効になり、ポッドが各ゾーンに分散配置されます。<br />&quot;topology.kubernetes.io/zone&quot; に設定することを推奨します                                                                                                        | false |       |
+| `nodeHostnameKey`               | string                                                                                                                               | NodeHostnameKey はノードラベルのキーです。<br />このキーを持ち、かつその値が同じラベルを持つノードは、同一ノード上にあると見なされます。<br />これを設定すると、異なる分片のレプリカをノード間に分散配置するためのデフォルトの AntiAffinity ルールが有効になります。<br />&quot;kubernetes.io/hostname&quot; に設定することを推奨します。                                                                                                                                  | false |       |
+| `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) の配列                              | InitContainers は、メインのサーバーコンテナーが起動する前に実行される init コンテナーの一覧です。<br />名前を基準に operator のデフォルト設定とマージされます。<br />同名のもの同士が対象です。                                                                                                                                                                                                                           | false |       |
+
+次で使用されます:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
+
+SecretKeySelector は、Secret のキーを選択します。
+
+| フィールド  | 型      | 説明                                     | 必須   | デフォルト |
+| ------ | ------ | -------------------------------------- | ---- | ----- |
+| `name` | string | 選択元の、クラスターのネームスペース内にある Secret の名前。     | true |       |
+| `key`  | string | 選択する Secret のキー。有効なシークレットキーである必要があります。 | true |       |
+
+以下で使用されます:
+
+* [DefaultPasswordSelector](#defaultpasswordselector)
+
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
+
+TemplateMeta は、テンプレートオブジェクトでサポートされるメタデータ設定を定義します。
+
+| フィールド         | 型                                   | 説明                                    | 必須    | デフォルト |
+| ------------- | ----------------------------------- | ------------------------------------- | ----- | ----- |
+| `labels`      | object (keys:string, values:string) | ラベルは、テンプレートオブジェクトに適用されるラベルです。         | false |       |
+| `annotations` | object (keys:string, values:string) | アノテーションは、テンプレートオブジェクトに適用されるアノテーションです。 | false |       |
+
+以下で使用されます:
+
+* [VersionProbePodTemplate](#versionprobepodtemplate)
+* [VersionProbeTemplate](#versionprobetemplate)
+
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
+
+VersionProbeContainer は、バージョンプローブのコンテナーレベルのオーバーライドを定義します。
+フィールド名と JSON タグは corev1.Container に合わせており、SMP で名前ベースのマージができるようになっています。
+
+| Field             | Type                                                                                                                      | Description                                                                                  | Required | Default       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------- | ------------- |
+| `name`            | string                                                                                                                    | コンテナー名。空の場合、オペレーターがバージョンプローブコンテナー名を設定します。                                                    | true     | version-probe |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | バージョンプローブコンテナーに必要なコンピュートリソース要件です。<br />SMP により、オペレーターのデフォルト設定とディープマージされます。                   | false    |               |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | バージョンプローブコンテナーのセキュリティオプションを定義する SecurityContext です。<br />SMP により、オペレーターのデフォルト設定とディープマージされます。 | false    |               |
+
+以下に登場します:
+
+* [VersionProbePodSpec](#versionprobepodspec)
+
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
+
+VersionProbeJobSpec は、バージョンプローブの Job レベルのオーバーライドを定義します。
+
+| フィールド                     | 型                                                   | 説明                                              | 必須    | デフォルト |
+| ------------------------- | --------------------------------------------------- | ----------------------------------------------- | ----- | ----- |
+| `ttlSecondsAfterFinished` | integer                                             | TTLSecondsAfterFinished は、完了した Job の存続期間を制限します。 | false |       |
+| `template`                | [VersionProbePodTemplate](#versionprobepodtemplate) | Template は、バージョンプローブ Job 用に作成されるポッドを記述します。      | false |       |
+
+以下に含まれます:
+
+* [VersionProbeTemplate](#versionprobetemplate)
+
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
+
+VersionProbePodSpec は、バージョンプローブのポッドレベルのオーバーライドを定義します。
+フィールド名と JSON タグは、strategic merge patch との互換性を保つため、corev1.PodSpec と一致しています。
+
+| Field             | Type                                                                                                                  | Description                                                                                                                    | Required | Default |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------- | ------- |
+| `nodeSelector`    | object (keys:string, values:string)                                                                                   | NodeSelector は、一致するラベルを持つノードでのみバージョンプローブのポッドが実行されるよう制限します。                                                                     | false    |         |
+| `tolerations`     | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array           | バージョンプローブのポッドに対する Tolerations。                                                                                                 | false    |         |
+| `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext は、バージョンプローブのポッドに対するポッドレベルのセキュリティ属性を保持します。                                                                      | false    |         |
+| `containers`      | [VersionProbeContainer](#versionprobecontainer) array                                                                 | バージョンプローブのポッドに対する Containers のオーバーライドです。<br />name フィールドは省略可能で、オペレーターによってデフォルトのコンテナー名が補完されます。<br />別の名前を持つ追加コンテナーを指定することもできます。 | false    |         |
+
+Appears in:
+
+* [VersionProbePodTemplate](#versionprobepodtemplate)
+
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
+
+VersionProbePodTemplate は、バージョンプローブ用ポッドのオーバーライドを定義します。
+
+| フィールド      | 型                                           | 説明                                                       | 必須    | デフォルト |
+| ---------- | ------------------------------------------- | -------------------------------------------------------- | ----- | ----- |
+| `metadata` | [TemplateMeta](#templatemeta)               | `metadata` の各フィールドについては、Kubernetes API のドキュメントを参照してください。 | false |       |
+| `spec`     | [VersionProbePodSpec](#versionprobepodspec) | バージョンプローブ用ポッドの望ましい動作の仕様。                                 | false |       |
+
+次の項目で使用されます:
+
+* [VersionProbeJobSpec](#versionprobejobspec)
+
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
+
+VersionProbeTemplate は、バージョン検出 Job のオーバーライドを定義します。
+この構造は batchv1.JobTemplateSpec に対応しており、サポートされているフィールドのみを公開します。
+
+| Field      | Type                                        | Description                                             | Required | Default |
+| ---------- | ------------------------------------------- | ------------------------------------------------------- | -------- | ------- |
+| `metadata` | [TemplateMeta](#templatemeta)               | `metadata` のフィールドについては、Kubernetes API のドキュメントを参照してください。 | false    |         |
+| `spec`     | [VersionProbeJobSpec](#versionprobejobspec) | バージョンプローブ Job の期待される動作を定義する仕様。                          | false    |         |
+
+以下で使用されます:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)

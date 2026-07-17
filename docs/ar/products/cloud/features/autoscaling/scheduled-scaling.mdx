@@ -1,0 +1,80 @@
+---
+sidebarTitle: 'Scheduled scaling'
+slug: /cloud/features/autoscaling/scheduled-scaling
+description: 'مقالة تتناول ميزة Scheduled Scaling في ClickHouse Cloud'
+keywords: ['scheduled scaling']
+title: 'Scheduled scaling'
+doc_type: 'guide'
+---
+
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+تتوسع خدمات ClickHouse Cloud تلقائيًا استنادًا إلى استخدام CPU والذاكرة، لكن كثيرًا من أعباء العمل تتبع أنماطًا متوقعة — مثل ارتفاعات إدخال البيانات اليومية، أو مهام Batch التي تعمل ليلًا، أو حركة المرور التي تنخفض بشكل حاد في عطلات نهاية الأسبوع. في حالات الاستخدام هذه، تتيح لك Scheduled Scaling تحديد الوقت الذي يجب أن تتوسع فيه خدمتك أو تتقلص بدقة، بمعزل عن المقاييس الآنية.
+
+باستخدام Scheduled Scaling، يمكنك تكوين مجموعة من القواعد الزمنية مباشرةً في ClickHouse Cloud console. تحدد كل قاعدة وقتًا، ونمط تكرار (يوميًا أو أسبوعيًا أو مخصصًا)، والحجم المستهدف — إما عدد النسخ المتماثلة (أفقيًا) أو فئة الذاكرة (عموديًا). وعند الوقت المجدول، يطبّق ClickHouse Cloud هذا التغيير تلقائيًا، بحيث يكون حجم خدمتك مناسبًا قبل وصول الطلب، بدلًا من التفاعل معه بعد حدوثه.
+
+ويختلف هذا عن التحجيم التلقائي المستند إلى المقاييس، الذي يستجيب ديناميكيًا لضغط CPU والذاكرة. فميزة Scheduled Scaling حتمية: إذ تعرف بالضبط متى سيحدث التوسع وإلى أي حجم. والنهجان متكاملان — إذ يمكن للخدمة أن يكون لديها جدول scaling أساسي، مع الاستفادة في الوقت نفسه من التحجيم التلقائي ضمن تلك النافذة إذا تقلبت أعباء العمل على نحو غير متوقع.
+
+يتوفر Scheduled Scaling حاليًا ضمن **Private Preview**. لتمكينه لمؤسستك، تواصل مع فريق دعم ClickHouse.
+
+<div id="setting-up-a-scaling-schedule">
+  ## إعداد جدول زمني للتوسعة
+</div>
+
+لتهيئة جدول زمني، انتقل إلى خدمتك في ClickHouse Cloud console ثم إلى الإعدادات. ومن هناك، اختر **Schedule Override** وأضف قاعدة جديدة.
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="واجهة جداول التوسعة في ClickHouse Cloud console، تعرض قواعد التوسعة المستندة إلى الوقت" border />
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="تهيئة قاعدة توسعة مجدولة في ClickHouse Cloud console" border />
+
+تتطلب كل قاعدة ما يلي:
+
+* **Time:** وقت تنفيذ إجراء التوسعة (حسب منطقتك الزمنية المحلية)
+* **Recurrence:** مدى تكرار القاعدة (مثل: كل يوم عمل، أو كل يوم أحد)
+* **Target size:** عدد النسخ المتماثلة أو مقدار الذاكرة المطلوب التوسعة إليه
+
+يمكن الجمع بين عدة قواعد لتكوين جدول أسبوعي كامل. على سبيل المثال، قد تقوم بالتوسعة إلى 5 نسخ متماثلة في كل يوم عمل عند الساعة 6 صباحًا، ثم تعود إلى نسختين متماثلتين عند الساعة 8 مساءً.
+
+<div id="use-cases">
+  ## حالات الاستخدام
+</div>
+
+**أعباء العمل الدفعية وعمليات ETL:** قم بالتحجيم إلى الأعلى قبل تشغيل مهمة إدخال ليلية، ثم أعد التحجيم إلى الأسفل بعد اكتمالها، لتجنّب الإفراط في تخصيص الموارد خلال ساعات النهار الهادئة.
+
+**أنماط الزيارات المتوقعة:** يمكن للخدمات ذات ساعات الذروة المنتظمة (مثل حركة الاستعلامات خلال ساعات العمل) أن تُحجَّم مسبقًا لاستيعاب الحمل قبل وصوله، بدلًا من انتظار التحجيم التلقائي حتى يستجيب.
+
+**التحجيم إلى الأسفل في عطلة نهاية الأسبوع:** خفّض عدد النسخ المتماثلة أو فئة الذاكرة خلال عطلات نهاية الأسبوع عندما يكون الطلب أقل، ثم استعد السعة قبل ذروة صباح يوم الاثنين.
+
+**التحكم في التكلفة:** بالنسبة إلى الفرق التي تدير إنفاق ClickHouse Cloud، يمكن أن تؤدي عمليات Scheduled Scaling إلى الأسفل خلال فترات انخفاض الاستخدام المعروفة إلى تقليل استهلاك الموارد بشكل ملموس من دون أي تدخل يدوي.
+
+<Note>
+  قد يتداخل إجراء Scheduled Scaling مع توصية تحجيم تلقائي متزامنة — ويأخذ الجدول الزمني الأسبقية عند وقت التفعيل.
+</Note>
+
+<div id="handling-bursty-workloads">
+  ## التعامل مع الزيادات المفاجئة في عبء العمل
+</div>
+
+إذا كنت تتوقع زيادة مفاجئة في عبء العمل، فيمكنك استخدام
+[ClickHouse Cloud API](/ar/products/cloud/features/admin-features/api/api-overview) من أجل
+توسيع خدمتك استباقيًا لاستيعاب هذه الزيادة، ثم تقليصها مجددًا
+عندما ينخفض الطلب.
+
+لفهم عدد نوى CPU الحالية والذاكرة المستخدمة
+لكل نسخة متماثلة، يمكنك تشغيل الاستعلام أدناه:
+
+```sql
+SELECT *
+FROM clusterAllReplicas('default', view(
+    SELECT
+        hostname() AS server,
+        anyIf(value, metric = 'CGroupMaxCPU') AS cpu_cores,
+        formatReadableSize(anyIf(value, metric = 'CGroupMemoryTotal')) AS memory
+    FROM system.asynchronous_metrics
+))
+ORDER BY server ASC
+SETTINGS skip_unavailable_shards = 1
+```
