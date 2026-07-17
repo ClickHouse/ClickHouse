@@ -7,6 +7,7 @@
 #include <Analyzer/TableExpressionModifiers.h>
 
 #include <stack>
+#include <utility>
 
 namespace DB
 {
@@ -141,10 +142,11 @@ static void universalizePlanImpl(QueryPlan & plan)
         const bool use_parallel_replicas = read_step->isParallelReadingFromReplicas();
         const auto prewhere_info = query_info.prewhere_info;
         const auto row_level_filter = query_info.row_level_filter;
+        auto node_name_to_input_node_column = query_info.buildNodeNameToInputNodeColumn();
 
         /// `ReadFromTableStep` stores table_name + modifiers
         /// (FINAL, SAMPLE) + parallel-replicas flag + optional
-        /// explicit PREWHERE info.
+        /// explicit PREWHERE info and analyzer identifier mapping.
         ///
         /// `resolveStorages` reads these back and calls
         /// `storage->read` with `QueryProcessingStage::FetchColumns`
@@ -170,7 +172,13 @@ static void universalizePlanImpl(QueryPlan & plan)
         /// way as PREWHERE; otherwise `resolveStorages` would rebuild the read without the
         /// policy on a cache hit and return unfiltered rows.
         node->step = std::make_unique<ReadFromTableStep>(
-            output_header, table_name, modifiers, use_parallel_replicas, prewhere_info, row_level_filter);
+            output_header,
+            table_name,
+            modifiers,
+            use_parallel_replicas,
+            prewhere_info,
+            row_level_filter,
+            std::move(node_name_to_input_node_column));
     }
 }
 
@@ -180,4 +188,3 @@ void universalizePlan(QueryPlan & plan)
 }
 
 }
-
