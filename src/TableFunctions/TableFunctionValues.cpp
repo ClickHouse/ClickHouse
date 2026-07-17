@@ -42,7 +42,7 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
-            Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
+            Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get(), {}, /*convert_inexact_floats=*/true);
             res_columns[0]->insert(value);
         }
     }
@@ -65,7 +65,7 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
             const DataTypes & value_types_tuple = type_tuple->getElements();
             for (size_t j = 0; j < value_tuple.size(); ++j)
             {
-                Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
+                Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get(), {}, /*convert_inexact_floats=*/true);
                 res_columns[j]->insert(value);
             }
         }
