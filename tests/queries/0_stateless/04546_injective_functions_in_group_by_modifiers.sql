@@ -58,13 +58,13 @@ SETTINGS optimize_group_by_function_keys = 1;
 SELECT toString(number) AS v, number, count()
 FROM numbers(3)
 GROUP BY GROUPING SETS ((v, number), (number))
-ORDER BY number, v
+ORDER BY number, v, GROUPING(v)
 SETTINGS optimize_group_by_function_keys = 0;
 
 SELECT toString(number) AS v, number, count()
 FROM numbers(3)
 GROUP BY GROUPING SETS ((v, number), (number))
-ORDER BY number, v
+ORDER BY number, v, GROUPING(v)
 SETTINGS optimize_group_by_function_keys = 1;
 
 -- The optimization still applies (and results are unchanged) for plain GROUP BY.
@@ -100,7 +100,7 @@ SETTINGS enable_analyzer = 0, optimize_group_by_function_keys = 1;
 SELECT toString(number) AS v, number, count()
 FROM numbers(3)
 GROUP BY GROUPING SETS ((v, number), (number))
-ORDER BY number, v
+ORDER BY number, v, GROUPING(v)
 SETTINGS enable_analyzer = 0, optimize_group_by_function_keys = 1;
 
 -- The optimizations still apply (results unchanged) for plain GROUP BY on the legacy path.
