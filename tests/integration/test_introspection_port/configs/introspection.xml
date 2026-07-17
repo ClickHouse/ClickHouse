@@ -1,0 +1,5 @@
+<clickhouse>
+    <introspection>
+        <tcp_port>9010</tcp_port>
+    </introspection>
+</clickhouse>

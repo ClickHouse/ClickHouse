@@ -195,7 +195,6 @@ namespace Setting
 {
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
-    extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -3287,11 +3286,8 @@ try
             global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-            {
-                /// The wait must exceed the handlers' idle poll tick.
-                const size_t wait_seconds = 2 * global_context->getSettingsRef()[Setting::poll_interval];
-                current_connections = waitServersToFinish(introspection_servers, servers_lock, wait_seconds);
-            }
+                current_connections = waitServersToFinish(
+                    introspection_servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
 
             if (current_connections)
             {
