@@ -143,7 +143,7 @@ def test_total_proj_pk_ig_in_memory_fields(started_cluster):
     )
     Engine=MergeTree()
     ORDER BY a
-    -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds minmax
+    -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds basic
     -- statistics that change cost-based projection selection, so force_optimize_projection=1 throws.
     SETTINGS index_granularity=1, auto_statistics_types=''""")
 
