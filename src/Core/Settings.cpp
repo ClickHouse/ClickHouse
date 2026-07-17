@@ -3559,10 +3559,12 @@ Default value: `THROW`.
 - [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
-Changes the behaviour of join operations with `ANY` strictness.
+Changes the behaviour of join operations with `ANY` strictness when the right table has more than one matching row for a key.
 
 :::note
-This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+This setting applies to [`Join`](../../engines/table-engines/special/join.md) engine tables and hash-based join algorithms.
+
+If a join is built in parallel, the order of rows can be non-deterministic. This means that `join_any_take_last_row = 1` can return a non-deterministic row for `ANY JOIN` queries.
 :::
 
 Possible values:
