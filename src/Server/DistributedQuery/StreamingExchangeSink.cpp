@@ -236,7 +236,7 @@ void StreamingExchangeSink::work()
     }
 }
 
-std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
+std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
 {
     /// If socket is not ready yet, wait on the eventfd
     if (!socket)
@@ -254,14 +254,13 @@ std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
         /// EPOLLIN | EPOLLRDHUP wake us on peer-initiated NoMoreDataNeeded / half-close.
         return {
             socket->sockfd(),
-            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR,
-            -1};
+            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR};
     }
 
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
-    return {fd, EPOLLIN | EPOLLERR, -1};
+    return {fd, EPOLLIN | EPOLLERR};
 }
 
 void StreamingExchangeSink::consume(Chunk chunk)

@@ -14,8 +14,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/NegativeLimitTransform.h>
-#include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -161,14 +159,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
     VectorWithMemoryTracking<IProcessor *> processors;
-    MapWithMemoryTracking<IProcessor *, VectorWithMemoryTracking<size_t>> limit_candidates;
+    MapWithMemoryTracking<LimitTransform *, VectorWithMemoryTracking<size_t>> limit_candidates;
     UnorderedSetWithMemoryTracking<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        IProcessor * limit_processor;
+        LimitTransform * limit_processor;
         ssize_t limit_input_port;
     };
 
@@ -200,8 +198,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
-        if (typeid_cast<LimitTransform *>(processor) || typeid_cast<NegativeLimitTransform *>(processor)
-            || typeid_cast<FractionalLimitTransform *>(processor))
+        if (auto * limit = typeid_cast<LimitTransform *>(processor))
         {
             has_limit = true;
 
@@ -209,7 +206,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (limit_processor)
                 continue;
 
-            limit_processor = processor;
+            limit_processor = limit;
             limit_candidates[limit_processor] = {};
         }
         else if (limit_processor)
@@ -293,19 +290,12 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
     /// Case 7.
     for (auto && [limit, ports] : limit_candidates)
     {
-        /// If there are some input ports which don't have the counter, add it to the limit processor.
+        /// If there are some input ports which don't have the counter, add it to LimitTransform.
         if (ports.size() < limit->getInputs().size())
         {
             processors.push_back(limit);
             for (auto port : ports)
-            {
-                if (auto * lim = typeid_cast<LimitTransform *>(limit))
-                    lim->setInputPortHasCounter(port);
-                else if (auto * neg_lim = typeid_cast<NegativeLimitTransform *>(limit))
-                    neg_lim->setInputPortHasCounter(port);
-                else if (auto * frac_lim = typeid_cast<FractionalLimitTransform *>(limit))
-                    frac_lim->setInputPortHasCounter(port);
-            }
+                limit->setInputPortHasCounter(port);
         }
     }
 
@@ -654,7 +644,6 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
-    transform->setNormalizedQueryHash(normalized_query_hash);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
     processors->emplace_back(std::move(transform));
@@ -783,31 +772,10 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
 
-    const auto & source_header = output->getHeader();
-
-    /// Prefer matching the source columns to the target structure by name, not by position.
-    /// This is used to read external dictionaries from a local ClickHouse source: the dictionary expects its
-    /// columns in keys-first order, but the source query may return them in a different order. Matching by name
-    /// reorders the columns correctly and keeps the local source consistent with the remote one, which already
-    /// matches by name (see `adaptBlockStructure` in `RemoteQueryExecutor`).
-    ///
-    /// Matching by name is only possible when every target column is present in the source by name. When the
-    /// source query does not name its columns to match the target (e.g. `SELECT 1, 1`), keep the historical
-    /// positional matching of a local dictionary source, so that such dictionaries continue to load.
-    auto match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
-    for (const auto & column : columns)
-    {
-        if (!source_header.has(column.name))
-        {
-            match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
-            break;
-        }
-    }
-
     auto converting = ActionsDAG::makeConvertingActions(
-        source_header.getColumnsWithTypeAndName(),
+        output->getHeader().getColumnsWithTypeAndName(),
         columns,
-        match_columns_mode,
+        ActionsDAG::MatchColumnsMode::Position,
         context);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));
@@ -822,7 +790,6 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
 
     callback->setProgressCallback(progress_callback);
     callback->setQuota(quota);
-    callback->setNormalizedQueryHash(normalized_query_hash);
     callback->setProcessListElement(process_list_element);
 
     if (!update_profile_events)

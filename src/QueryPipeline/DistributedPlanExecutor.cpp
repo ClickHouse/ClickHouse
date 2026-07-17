@@ -51,7 +51,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -62,13 +61,6 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreads;
     extern const Metric TaskTrackerThreadsActive;
     extern const Metric TaskTrackerThreadsScheduled;
-}
-
-namespace ProfileEvents
-{
-    extern const Event DistributedPlanRemoteTasks;
-    extern const Event DistributedPlanLocalExecution;
-    extern const Event DistributedPlanHostsUsed;
 }
 
 
@@ -608,8 +600,7 @@ static String serializeQueryPlan(const QueryPlan & query_plan)
 static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
-    /// Trusted server-to-server plan fragment: decode types without the input complexity limit.
-    auto plan_and_sets = QueryPlan::deserialize(in, context, 0);
+    auto plan_and_sets = QueryPlan::deserialize(in, context);
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
@@ -702,7 +693,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         no_ast, pipeline,
         /*interpreter*/ nullptr,
         /*internal*/ false,
-        /*log_as_internal*/ false,
         /*database*/ "",
         /*table*/ "",
         /*async_insert*/ false);
@@ -731,11 +721,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         executor.execute();
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
-            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
+            query_span, QueryResultCacheUsage::None, false);
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, true);
         throw;
     }
 }
@@ -1052,10 +1042,6 @@ public:
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
             worker_hosts.push_back(worker.host);
         LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(worker_hosts, ", "));
-        UnorderedSetWithMemoryTracking<String> distinct_hosts;
-        for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
-            distinct_hosts.insert(host.host);
-        ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
     }
 
     void cleanup() override
@@ -1537,7 +1523,6 @@ protected:
                 throw;
             }
             running_tasks.addTask(stage_name, task_info);
-            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
         }
     }
 
@@ -1676,10 +1661,7 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
-    {
-        ProfileEvents::increment(ProfileEvents::DistributedPlanLocalExecution);
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
-    }
     else
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 

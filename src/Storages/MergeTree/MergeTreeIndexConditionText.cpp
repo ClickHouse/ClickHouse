@@ -151,8 +151,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     else
         tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
-    use_global_header_cache = settings[Setting::use_text_index_header_cache];
-    if (use_global_header_cache)
+    if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
     else
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
@@ -881,16 +880,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
-        /// Special case: Don't use the index if the needle is empty.
-        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
-        ///   is invalid.
-        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
-        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
-        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
-        ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
-            return false;
-
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1005,26 +994,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
-        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
-            return false;
-
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// Unlike hasToken, hasTokenOrNull is never rewritten on the direct-read / row-scan path, so the
+        /// pre/postprocessor is not applied to its row-level needle. Using the index here (where
+        /// stringToTokens does apply them, e.g. mapping a dropped token to the empty sentinel that prunes
+        /// every granule) would disagree with the row-level result. Bail out so the index is not used for
+        /// hasTokenOrNull when a pre/postprocessor is configured; the plain index path is unaffected.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
+        /// stringToTokens applies both preprocessor and postprocessor.
+        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
+        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
+        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
+        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
+        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
         if (function_name == "hasToken"
             && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
             return false;
@@ -1047,8 +1031,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
                     return false;
             }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
             tokens.push_back("");
         }
 
@@ -1264,17 +1246,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            /// `multiMatchAny` is executed by vectorscan, which compiles each pattern as a NUL-terminated
-            /// C-string (`hs_compile_multi` takes no length), so it stops at the first NUL byte. The regexp
-            /// analyzer below is binary-safe and keeps the NUL as a literal, so it would extract a required
-            /// substring spanning the NUL that the matcher never requires, and the index would wrongly prune
-            /// granules that the function matches. Truncate the pattern at the first NUL to analyze exactly
-            /// what vectorscan sees. (This differs from `match`, which is executed by binary-safe re2.)
-            String pattern_string = pattern.safeGet<String>();
-            if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
-                pattern_string.resize(nul_pos);
-
-            auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
+            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
 
             if (tokens_for_queries.empty())
             {

@@ -10,10 +10,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -99,7 +97,6 @@ namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
-    extern const Event QueryPlanBuildMicroseconds;
 }
 
 namespace DB
@@ -534,6 +531,13 @@ public:
             if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
         }
+
+
+        if (query_node.isLimitWithTies())
+        {
+            if (is_limit_length_negative)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
+        }
     }
 
     bool aggregate_overflow_row = false;
@@ -624,16 +628,14 @@ ALWAYS_INLINE void addFilterStep(
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const SelectQueryInfo & select_query_info,
     bool aggregate_descriptions_remove_arguments = false)
 {
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
 
-    /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
-    /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
-    /// max_size_to_preallocate is still carried here because it is consumed at runtime.
     const auto stats_collecting_params = StatsCollectingParams(
-        /*key_=*/ 0,
+        calculateCacheKey(select_query_info.query),
         settings[Setting::collect_hash_table_stats_during_aggregation],
         query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
@@ -692,10 +694,11 @@ SortDescription getSortDescriptionFromNames(const Names & names)
 void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
+    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -859,6 +862,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const QueryNode & query_node)
 {
     if (!query_node.isGroupByWithCube() && !query_node.isGroupByWithRollup())
@@ -870,6 +874,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -1492,11 +1497,7 @@ void addLimitStep(
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
-        auto limit = std::make_unique<NegativeLimitStep>(
-            query_plan.getCurrentHeader(), limit_length, limit_offset, limit_with_ties, limit_with_ties_sort_description);
-
-        if (limit_with_ties)
-            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
 
         query_plan.addStep(std::move(limit));
     }
@@ -1506,12 +1507,7 @@ void addLimitStep(
 
         query_plan.addStep(std::move(offset));
 
-        auto limit = std::make_unique<NegativeLimitStep>(
-            query_plan.getCurrentHeader(), limit_length, 0, limit_with_ties, limit_with_ties_sort_description);
-
-        if (limit_with_ties)
-            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
-
+        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
         query_plan.addStep(std::move(limit));
     }
     else if (!is_limit_length_negative && is_limit_offset_negative)
@@ -1929,17 +1925,6 @@ void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
         return;
-
-    /// Measure only the outermost plan build. buildQueryPlanIfNeeded recurses through
-    /// nested planners (union branches, subqueries, CTEs) on the same thread, so without
-    /// a guard each nested build would add its own time to the same event and double-count
-    /// subplans (the event could then exceed the real plan-build wall time).
-    static thread_local size_t query_plan_build_depth = 0;
-    std::optional<ProfileEventTimeIncrement<Microseconds>> plan_build_time_watch;
-    if (query_plan_build_depth == 0)
-        plan_build_time_watch.emplace(ProfileEvents::QueryPlanBuildMicroseconds);
-    ++query_plan_build_depth;
-    SCOPE_EXIT({ --query_plan_build_depth; });
 
     LOG_TRACE(
         log,
@@ -2376,7 +2361,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -2478,7 +2463,7 @@ void Planner::buildPlanForQueryNode()
                 having_executed = true;
             }
 
-            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);

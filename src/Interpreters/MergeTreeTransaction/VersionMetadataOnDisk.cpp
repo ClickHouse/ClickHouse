@@ -19,6 +19,7 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
+static constexpr auto TMP_TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt.tmp";
 namespace DB
 {
 

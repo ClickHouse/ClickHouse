@@ -192,31 +192,26 @@ public:
 
         if (coordinator_configuration.execute_direct)
         {
-            const bool use_function_working_directory = !configuration.command_working_directory.empty();
-            auto executable_base_path = use_function_working_directory ? configuration.command_working_directory : context->getUserScriptsPath();
-            const char * executable_base_path_description = use_function_working_directory ? "working directory" : "user scripts folder";
-            auto script_path = executable_base_path + '/' + command;
+            auto user_scripts_path = context->getUserScriptsPath();
+            auto script_path = user_scripts_path + '/' + command;
 
-            if (!fileOrSymlinkPathStartsWith(script_path, executable_base_path))
+            if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} must be inside {} {}",
+                    "Executable file {} must be inside user scripts folder {}",
                     command,
-                    executable_base_path_description,
-                    executable_base_path);
+                    user_scripts_path);
 
             if (!FS::exists(script_path))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} does not exist inside {} {}",
+                    "Executable file {} does not exist inside user scripts folder {}",
                     command,
-                    executable_base_path_description,
-                    executable_base_path);
+                    user_scripts_path);
 
             if (!FS::canExecute(script_path))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} is not executable inside {} {}",
+                    "Executable file {} is not executable inside user scripts folder {}",
                     command,
-                    executable_base_path_description,
-                    executable_base_path);
+                    user_scripts_path);
 
             command = std::move(script_path);
         }
@@ -240,6 +235,8 @@ public:
             ColumnWithTypeAndName column_to_cast = {column_with_type.column, column_with_type.type, column_with_type.name};
             column_with_type.column = castColumnAccurate(column_to_cast, argument_type);
             column_with_type.type = argument_type;
+
+            column_with_type = std::move(column_to_cast);
         }
 
         try
@@ -461,12 +458,12 @@ bool UserDefinedExecutableFunctionFactory::has(const String & function_name, Con
     return result;
 }
 
-VectorWithMemoryTracking<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
+Strings UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto loaded_objects = loader.getLoadedObjects();
 
-    VectorWithMemoryTracking<String> registered_names;
+    Strings registered_names;
     registered_names.reserve(loaded_objects.size());
 
     for (auto & loaded_object : loaded_objects)
