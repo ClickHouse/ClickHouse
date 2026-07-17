@@ -4,6 +4,7 @@
 #include <IO/LongConnectionLimit.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ICacheProvider.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <cstring>
@@ -81,6 +82,107 @@ unsigned char patternByte(size_t i)
 {
     return static_cast<unsigned char>(i % 256);
 }
+
+/// Shared state of `MockFileCacheProvider`: the stored bytes, which file ranges are resident, and a
+/// log of every range written. Shared across provider instances so a reread sees prior writes.
+struct MockCacheState
+{
+    std::vector<char> store;
+    IntervalSet resident;
+    VectorWithMemoryTracking<ByteRange> writes;
+    explicit MockCacheState(size_t file_size) : store(file_size, 0) {}
+};
+
+/// A minimal in-memory FILE-LEVEL cache, like the page cache: blocks are aligned to `block_size`, a
+/// block is a hit only when fully resident, and a whole block must be covered to be written. Unlike
+/// the real page cache it RETAINS what it stores (so a reread hits) and records write ranges, so a
+/// test can assert the executor fetched and wrote a block that straddles an object boundary.
+class MockFileCacheProvider : public ICacheProvider
+{
+public:
+    MockFileCacheProvider(size_t block_size_, std::shared_ptr<MockCacheState> state_)
+        : block_size(block_size_), state(std::move(state_)) {}
+
+    CacheTier tier() const override { return CacheTier::PageCache; }
+    bool fillsWholeCell() const override { return true; }
+    String name() const override { return "MockFileCache"; }
+
+    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range) override
+    {
+        auto view = std::make_unique<CacheView>();
+        const size_t file_size = state->store.size();
+        for (size_t off = (range.offset / block_size) * block_size; off < range.end(); off += block_size)
+        {
+            const ByteRange block{off, std::min(block_size, file_size - off)};
+            if (state->resident.subtract(block).empty())
+                view->hit_entries.push_back(HitEntry{block, std::make_unique<Reader>(block, state)});
+            else
+                view->miss_entries.push_back(MissEntry{block, nullptr});
+        }
+        return view;
+    }
+
+    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
+    {
+        for (auto & m : view.miss_entries)
+            m.writer = std::make_unique<Writer>(m.range, state);
+    }
+
+private:
+    class Reader : public CacheReader
+    {
+    public:
+        Reader(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
+        ByteRange range() const override { return r; }
+        ChainedBuffers read(ByteRange sub) override
+        {
+            const size_t lo = std::max(sub.offset, r.offset);
+            const size_t hi = std::min(sub.end(), r.end());
+            ChainedBuffers out;
+            if (lo >= hi)
+                return out;
+            auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
+            std::memcpy(buf->data(), state->store.data() + lo, hi - lo);
+            out.append(ChainedBufferNode{std::move(buf), 0, hi - lo, lo});
+            return out;
+        }
+    private:
+        ByteRange r;
+        std::shared_ptr<MockCacheState> state;
+    };
+
+    class Writer : public CacheWriter
+    {
+    public:
+        Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
+        ByteRange range() const override { return r; }
+        IntervalSet committed() const override
+        {
+            IntervalSet c;
+            if (state->resident.subtract(r).empty())  // whole block resident
+                c.add(r);
+            return c;
+        }
+        ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
+        size_t write(ChainedBuffers data) override
+        {
+            /// Whole-cell: only a fully-covered block is stored (a straddling block needs a fetch
+            /// across the object boundary to be covered).
+            if (!data.covers(r))
+                return 0;
+            data.copyTo(state->store.data() + r.offset, r);
+            state->resident.add(r);
+            state->writes.push_back(r);
+            return r.size;
+        }
+    private:
+        ByteRange r;
+        std::shared_ptr<MockCacheState> state;
+    };
+
+    size_t block_size;
+    std::shared_ptr<MockCacheState> state;
+};
 
 /// A source buffer that mimics object storage opened with `use_external_buffer=true`: it owns no
 /// read memory, and `nextImpl` fills the caller's externally `set()` buffer (`internal_buffer`).
@@ -345,24 +447,81 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     EXPECT_EQ(static_cast<unsigned char>(span2.data[0]), patternByte(10));
 }
 
-TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
+TEST_F(ReaderExecutorTest, MultiObjectWindowSpansBoundary)
 {
+    /// A window may span object boundaries (via `OffsetMap::map`): a `window_size` larger than the
+    /// first object fetches across the boundary and returns the concatenated bytes in one window.
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 200)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 256});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 512});
 
     EXPECT_EQ(ex.totalSize(), 500u);
 
-    /// A window must never straddle the object boundary at 300.
-    while (true)
+    ChainedBuffers w = ex.readNextWindow();
+    ASSERT_FALSE(w.atEnd());
+    EXPECT_EQ(w.totalBytes(), 500u);  // one window covers both objects
+
+    std::vector<char> out;
+    while (!w.atEnd())
     {
-        size_t pos = ex.getPosition();
-        ChainedBuffers w = ex.readNextWindow();
-        if (w.atEnd())
-            break;
-        if (pos < 300)
-            EXPECT_LE(w.peek().logical_offset + w.totalBytes(), 300u) << "window from " << pos << " crossed boundary";
+        auto span = w.peek();
+        out.insert(out.end(), span.data, span.data + span.size);
+        w.advance(span.size);
     }
-    EXPECT_EQ(ex.getPosition(), 500u);
+    ASSERT_EQ(out.size(), 500u);
+    for (size_t i = 0; i < 300; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(out[i]), patternByte(i)) << "object A at " << i;
+    for (size_t i = 0; i < 200; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(out[300 + i]), patternByte(i)) << "object B at " << i;
+
+    EXPECT_TRUE(ex.readNextWindow().atEnd());
+}
+
+TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
+{
+    /// A file-level page-cache block that straddles two objects must be populated whole. The executor
+    /// fetches across the object boundary (via `OffsetMap::map`) so the straddling block gets a
+    /// covering write -- otherwise warm rereads around every boundary keep missing the page cache.
+    StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 300)};  // file [0, 600)
+    const size_t block = 256;  // grid: [0,256) [256,512) [512,600); [256,512) straddles the boundary at 300
+
+    /// A file-level cache shared across both reads.
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/600);
+    auto make_chain = [&]() -> CacheChain
+    {
+        CacheChain chain;
+        chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+        return chain;
+    };
+
+    /// Cold read: one window spans both objects and populates the cache across the boundary.
+    std::vector<char> data;
+    {
+        TestThreadGroup cold_tg;
+        ReaderExecutor cold(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
+        data = drain(cold);
+        ASSERT_EQ(data.size(), 600u);
+        EXPECT_EQ(cold_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 600u) << "cold: fetched once across the boundary";
+    }
+
+    /// The straddling block [256, 512) got a covering write -- only possible if the fetch spanned
+    /// both objects (the crux of the fix). Before it, each per-object window covered only its half.
+    bool wrote_straddling = false;
+    for (const auto & w : state->writes)
+        if (w.offset <= 256 && 512 <= w.end())
+            wrote_straddling = true;
+    EXPECT_TRUE(wrote_straddling) << "no write covered the object-straddling block [256, 512)";
+    EXPECT_TRUE(state->resident.subtract(ByteRange{256, block}).empty()) << "block [256, 512) is not resident";
+
+    /// A warm read through the same cache serves entirely from it -- zero source bytes proves the
+    /// straddling block is a hit (before the cross-object fetch it would be refetched every time).
+    TestThreadGroup warm_tg;
+    ReaderExecutor warm(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
+    auto warm_data = drain(warm);
+    ASSERT_EQ(warm_data, data);
+    EXPECT_EQ(warm_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u)
+        << "warm read fetched from source -> a boundary block missed the cache";
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)

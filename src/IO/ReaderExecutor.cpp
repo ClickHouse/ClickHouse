@@ -286,7 +286,7 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
-ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t object_offset, size_t want, size_t file_base)
+ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base)
 {
     ChainedBuffers chain;
     size_t got_total = 0;
@@ -358,52 +358,80 @@ ChainedBuffers ReaderExecutor::readSource(const StoredObject & object, size_t ob
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::serveThroughCaches(
-    const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want)
+ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
+{
+    ChainedBuffers chain;
+    size_t file_pos = file_offset;
+    /// A window may span object boundaries: read each object's slice and concatenate at file offsets.
+    /// A run crossing a boundary reopens the tail object's own connection inside `readObjectSlice`.
+    for (const auto & pr : offset_map.map(ByteRange{file_offset, want}))
+    {
+        ChainedBuffers piece = readObjectSlice(pr.object, pr.object_offset, pr.size, file_pos);
+        const size_t got = piece.empty() ? 0 : piece.range().size;
+        chain.append(std::move(piece));
+        file_pos += got;
+        /// A short piece read (the long connection served up to its bound, or the object/stream
+        /// ended) leaves a hole, so stop here; `readNextWindow` advances by what we got and re-calls
+        /// to continue. Truncation of a known-size source surfaces there as a `got == 0` re-read.
+        if (got < pr.size)
+            break;
+    }
+    return chain;
+}
+
+ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t want)
 {
     chassert(!cache_chain.empty());
-    /// Cache coordinates are FILE-LEVEL; `object_file_offset` is this object's start in the file.
-    const ByteRange window{object_file_offset + object_offset, want};
+    /// All coordinates here are FILE-LEVEL.
+    const ByteRange window{window_offset, want};
+    const auto pieces = offset_map.map(window);
 
+    /// One planned view per (tier, object-piece): the filesystem cache keys per object (per-piece
+    /// object), the page cache is file-level (ignores the object, its cells are on the file grid).
     /// Kept alive for the whole window: the hit readers pin their segments.
-    VectorWithMemoryTracking<std::pair<ICacheProvider *, CacheViewPtr>> views;
+    struct Planned { ICacheProvider * cache; StoredObject object; size_t object_file_offset; CacheViewPtr view; };
+    VectorWithMemoryTracking<Planned> planned;
     for (auto & cache : cache_chain)
     {
-        stats.add(Stats::CacheGetRequests);
-        views.emplace_back(cache.get(), cache->planResidencyView(object, object_file_offset, window));
+        size_t piece_start = window.offset;
+        for (const auto & pr : pieces)
+        {
+            const size_t object_file_offset = piece_start - pr.object_offset;
+            stats.add(Stats::CacheGetRequests);
+            planned.push_back(Planned{cache.get(), pr.object, object_file_offset,
+                cache->planResidencyView(pr.object, object_file_offset, ByteRange{piece_start, pr.size})});
+            piece_start += pr.size;
+        }
     }
 
     /// On a hit at the window start, return that run (a short window is fine, next call continues).
-    for (const auto & [cache, view] : views)
-    {
-        for (const auto & hit : view->hits())
+    for (const auto & p : planned)
+        for (const auto & hit : p.view->hits())
             /// A hit is readable in full: the probe split any partial segment at its write offset.
             if (hit.reader && hit.range.offset <= window.offset && window.offset < hit.range.end())
                 return hit.reader->read(ByteRange{window.offset, std::min(hit.range.end(), window.end()) - window.offset});
-    }
 
-    /// Expand the miss to the overlapping cells' aligned edges so each cell fills whole; the head may
-    /// precede the connection frontier, where `readSource` falls back to a one-shot read.
+    /// Expand the miss to the overlapping cells' aligned edges so each cell fills whole (a page block
+    /// may straddle objects); the fetch then spans the objects it covers.
     size_t fetch_lo = window.offset;
     size_t fetch_hi = window.end();
-    for (const auto & [cache, view] : views)
-        for (const auto & m : view->misses())
+    for (const auto & p : planned)
+        for (const auto & m : p.view->misses())
             if (m.range.offset < window.end() && window.offset < m.range.end())
             {
                 fetch_lo = std::min(fetch_lo, m.range.offset);
                 fetch_hi = std::max(fetch_hi, m.range.end());
             }
-    fetch_lo = std::max(fetch_lo, object_file_offset);
     if (!offset_map.hasUnknownSize())
-        fetch_hi = std::min<size_t>(fetch_hi, object_file_offset + object.bytes_size);
+        fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
 
-    ChainedBuffers fetched = readSource(object, fetch_lo - object_file_offset, fetch_hi - fetch_lo, fetch_lo);
+    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
 
-    for (auto & [cache, view] : views)
+    for (auto & p : planned)
     {
-        cache->openWriteBuffers(object, object_file_offset, *view);
-        for (const auto & m : view->misses())
+        p.cache->openWriteBuffers(p.object, p.object_file_offset, *p.view);
+        for (const auto & m : p.view->misses())
         {
             if (!m.writer)
                 continue;
@@ -411,6 +439,9 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(
             const size_t hi = std::min(m.range.end(), fetched_end);
             if (lo >= hi)
                 continue;
+            /// Slice the covering range from the WHOLE file-level fetch: a file-level page block that
+            /// straddles two objects is covered here from both objects at once. A duplicate page block
+            /// planned across pieces is deduped by first-writer-wins in `PageCacheWriter::write`.
             const ByteRange write_range{lo, hi - lo};
             if (!fetched.covers(write_range))
                 continue;
@@ -563,53 +594,41 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (atEnd())
         return {};
 
-    /// The offset map and object sizes are physical; `toPhys` crosses logical `position` into it.
+    /// FILE (physical) coordinates; `toPhys` crosses logical `position` into them. The window may
+    /// span object boundaries -- `readSource`/`serveThroughCaches` fetch across objects.
     const size_t position_physical = toPhys(position);
-    const auto * segment = offset_map.findObjectAt(position_physical);
-    if (!segment)
+
+    /// A full window, capped at the file end (known size) and the logical `read_until` bound.
+    /// Unknown size streams a full window and lets a short read mark EOF.
+    size_t want = window_size;
+    if (!offset_map.hasUnknownSize())
+        want = std::min(want, offset_map.totalSize() - position_physical);
+    /// `atEnd` already returned at the bound, so `position < *read_until` here.
+    chassert(!read_until || *read_until >= position);
+    if (read_until && *read_until - position < want)
+        want = *read_until - position;
+    if (want == 0)
     {
         reached_eof = true;
         return {};
     }
 
-    const StoredObject & object = segment->object;
-    const size_t object_offset = position_physical - segment->file_offset;
-
-    /// Clamp the block to the object boundary so a window never straddles two
-    /// objects; the next call continues in the next object. Unknown total size
-    /// means stream a full block and let a short read mark EOF.
-    size_t want = window_size;
-    if (!offset_map.hasUnknownSize())
-    {
-        const size_t remaining_in_object = object.bytes_size - object_offset;
-        want = std::min(window_size, remaining_in_object);
-        if (want == 0)
-        {
-            reached_eof = true;
-            return {};
-        }
-    }
-
-    /// `atEnd` already returned at the bound, so `position < *read_until` here.
-    chassert(!read_until || *read_until >= position);
-    if (read_until && *read_until - position < want)
-        want = *read_until - position;
-
     /// Served at FILE (physical) offsets; a short window is fine, the next call continues.
+    /// A known-size source ending short is caught as truncation inside `readSource`.
     ChainedBuffers chain = cache_chain.empty()
-        ? readSource(object, object_offset, want, /*file_base=*/position_physical)
-        : serveThroughCaches(object, segment->file_offset, object_offset, want);
+        ? readSource(position_physical, want)
+        : serveThroughCaches(position_physical, want);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
     {
         reached_eof = true;
         long_conn.reset();   /// done at EOF, not an incomplete drop
-        /// A known-size source that ends before its declared total is truncated/corrupt.
+        /// Nothing read below the declared end of a known-size source = truncation/corruption.
         if (!offset_map.hasUnknownSize() && position < totalSize())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "ReaderExecutor: source ended at {} of {} bytes for {}",
-                position, totalSize(), object.remote_path);
+                position, totalSize(), getFileName());
         return {};
     }
     stats.add(Stats::RequestedBytes, got);

@@ -86,3 +86,70 @@ TEST(OffsetMap, UnknownSize)
     ASSERT_NE(o, nullptr);
     EXPECT_EQ(o->object.remote_path, "obj");
 }
+
+TEST(OffsetMap, MapWithinOneObject)
+{
+    StoredObjects objects;
+    objects.emplace_back("a", "", 300);
+    objects.emplace_back("b", "", 300);
+
+    OffsetMap map;
+    map.build(objects);
+
+    /// A range wholly inside the first object maps to one piece, object-local.
+    auto pieces = map.map(ByteRange{50, 100});
+    ASSERT_EQ(pieces.size(), 1u);
+    EXPECT_EQ(pieces[0].object.remote_path, "a");
+    EXPECT_EQ(pieces[0].object_offset, 50u);
+    EXPECT_EQ(pieces[0].size, 100u);
+}
+
+TEST(OffsetMap, MapSpansObjectBoundary)
+{
+    StoredObjects objects;
+    objects.emplace_back("a", "", 300);
+    objects.emplace_back("b", "", 300);
+    objects.emplace_back("c", "", 300);
+
+    OffsetMap map;
+    map.build(objects);
+
+    /// [250, 650) spans the tail of `a`, all of `b`, and the head of `c`.
+    auto pieces = map.map(ByteRange{250, 400});
+    ASSERT_EQ(pieces.size(), 3u);
+
+    EXPECT_EQ(pieces[0].object.remote_path, "a");
+    EXPECT_EQ(pieces[0].object_offset, 250u);
+    EXPECT_EQ(pieces[0].size, 50u);       // [250, 300)
+
+    EXPECT_EQ(pieces[1].object.remote_path, "b");
+    EXPECT_EQ(pieces[1].object_offset, 0u);
+    EXPECT_EQ(pieces[1].size, 300u);      // [300, 600)
+
+    EXPECT_EQ(pieces[2].object.remote_path, "c");
+    EXPECT_EQ(pieces[2].object_offset, 0u);
+    EXPECT_EQ(pieces[2].size, 50u);       // [600, 650)
+
+    /// The sizes reconstruct the requested length exactly.
+    EXPECT_EQ(pieces[0].size + pieces[1].size + pieces[2].size, 400u);
+}
+
+TEST(OffsetMap, MapClampsToTotalSize)
+{
+    StoredObjects objects;
+    objects.emplace_back("a", "", 100);
+    objects.emplace_back("b", "", 100);
+
+    OffsetMap map;
+    map.build(objects);
+
+    /// A range extending past the file end is clipped to the last object's end.
+    auto pieces = map.map(ByteRange{150, 500});
+    ASSERT_EQ(pieces.size(), 1u);
+    EXPECT_EQ(pieces[0].object.remote_path, "b");
+    EXPECT_EQ(pieces[0].object_offset, 50u);
+    EXPECT_EQ(pieces[0].size, 50u);       // [150, 200), not past 200
+
+    /// A range at/after the end maps to nothing.
+    EXPECT_TRUE(map.map(ByteRange{200, 100}).empty());
+}

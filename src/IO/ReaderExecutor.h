@@ -213,19 +213,23 @@ private:
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Read up to `want` bytes at object-local `object_offset` from the source into `block_size`
-    /// chunks, returning them as a `ChainedBuffers` at file offsets `file_base + k`. Reuses the held
-    /// long connection when it can continue, else opens a fresh one (or a one-shot read); feeds the
-    /// fetched range to `fetch_tracker`. The single source-read entry point for both the direct path
-    /// and the cache miss path. A short return is fine (EOF / the object's end).
-    ChainedBuffers readSource(const StoredObject & object, size_t object_offset, size_t want, size_t file_base);
-    /// Serve the window through the cache chain: if it starts on a cache hit, return that contiguous
-    /// hit run (zero-copy, populating nothing); else fetch the remainder (expanded to the overlapping
-    /// miss cells' aligned edges) from the source, populate those cells, and return the requested
-    /// slice. A short return is fine -- the next call resolves the rest. `object_file_offset` is this
-    /// object's start in the file (cache coordinates are file-level). Precondition: `!cache_chain.empty()`.
-    ChainedBuffers serveThroughCaches(
-        const StoredObject & object, size_t object_file_offset, size_t object_offset, size_t want);
+    /// Read up to `want` bytes of ONE object at object-local `object_offset` into `block_size` chunks,
+    /// as a `ChainedBuffers` at file offsets `file_base + k`. Reuses the held long connection when it
+    /// can continue, else opens a fresh one (or a one-shot read); feeds the fetched range to
+    /// `fetch_tracker`. A short return is fine (EOF / the object's end).
+    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base);
+    /// Read `[file_offset, file_offset + want)` from the source, spanning object boundaries: each
+    /// overlapping object's slice (via `OffsetMap::map`) is read through `readObjectSlice` and
+    /// concatenated at file offsets. The single source-read entry point for the direct path and the
+    /// cache miss path. A short return is fine (EOF); a known-size short read is truncation and throws.
+    ChainedBuffers readSource(size_t file_offset, size_t want);
+    /// Serve the file-level window `[window_offset, window_offset + want)` through the cache chain:
+    /// return the contiguous cached prefix at `window_offset` (zero-copy, populating nothing), else
+    /// fetch the miss (expanded to the tiers' aligned cells, across objects) once and populate every
+    /// tier's cells -- the per-object filesystem cache from each object's slice, the file-level page
+    /// cache from whole blocks that may straddle objects. A short return is fine -- the next call
+    /// resolves the rest. Precondition: `!cache_chain.empty()`.
+    ChainedBuffers serveThroughCaches(size_t window_offset, size_t want);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 

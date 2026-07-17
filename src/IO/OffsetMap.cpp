@@ -52,4 +52,26 @@ const OffsetMap::Segment * OffsetMap::findObjectAt(size_t file_offset) const
     return nullptr;
 }
 
+VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_range) const
+{
+    VectorWithMemoryTracking<ObjectRange> result;
+    const size_t req_end = file_range.end();
+    for (const auto & seg : segments)
+    {
+        const size_t seg_end = seg.file_offset + seg.size;
+        if (seg_end <= file_range.offset || seg.file_offset >= req_end)
+            continue;
+
+        const size_t overlap_start = std::max(seg.file_offset, file_range.offset);
+        const size_t overlap_end = std::min(seg_end, req_end);
+        /// Objects start at their own offset 0, so the object-local start is measured from `file_offset`.
+        result.push_back(ObjectRange{
+            .object = seg.object,
+            .object_offset = overlap_start - seg.file_offset,
+            .size = overlap_end - overlap_start,
+        });
+    }
+    return result;
+}
+
 }
