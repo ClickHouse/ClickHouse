@@ -7,6 +7,7 @@
 #include <Common/FailPoint.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
@@ -29,6 +30,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace FailPoints
@@ -363,6 +365,13 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     const std::vector<ConnectionPoolPtr> & connection_pools,
     std::optional<size_t> exclude_pool_index)
 {
+    /// Serialize now, while the fragment's prepared sets still own their subquery plans. The fragment
+    /// shares FutureSetFromSubquery objects with the local plan; once the local pipeline runs, the
+    /// deferred set build moves each set's source plan out, and lazy send-time serialization would then
+    /// fail. Caching the serialization here freezes the intact plans up front.
+    if (context->getSettingsRef()[Setting::serialize_query_plan])
+        plan_fragment->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
     auto read_from_remote = std::make_unique<ReadFromParallelReplicasStep>(
         std::move(plan_fragment), cluster, coordinator, context, connection_pools, exclude_pool_index, cluster->getShardsInfo().at(0).pool);
 

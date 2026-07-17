@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
+#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -97,8 +98,12 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto * node = frame.node;
 
         if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
-            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
+            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get())
+            || typeid_cast<ParallelReplicasSplitStep *>(node->step.get()))
         {
+            /// Transient single-child pass-through markers: skip the marker, serialize its child.
+            /// A ParallelReplicasSplitStep must not be re-split on the remote replica (it also has no
+            /// serialization), so the fragment below it is shipped as a plain single-node read.
             frame.node = node->children.front();
             continue;
         }
