@@ -2399,6 +2399,16 @@ Sets the level of data compression in the response to an HTTP request if [enable
 
 Possible values: Numbers from 1 to 12. Levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels 1 to 9.
 )", 0) \
+    DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
+Controls the wire format used for snappy compression for generic file I/O paths such as `file` and `url`. HTTP `Content-Encoding: snappy` always uses the framing format and ignores this setting.
+
+Note that the raw snappy block format produced by a single `snappy::Compress` call (for example, the Prometheus remote protocol payloads handled by `SnappyBasicReadBuffer`) is a separate, protocol-specific wire format and is not controlled by this setting.
+
+Possible values:
+
+- `basic` — Hadoop snappy block format. Compatible with files read and written by Hadoop. Supports both reading and writing.
+- `framed` — Snappy framing format, the standard streaming format defined by Google. Supports both reading and writing.
+)", 0) \
     \
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
