@@ -1,4 +1,3 @@
-#include <cstring>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -28,6 +27,7 @@
 #include <IO/ReadBuffer.h>
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
+#include <base/unaligned.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -485,8 +485,8 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, UIn
     const char * ptr = bytes.data();
     size_t remaining = bytes.size();
 
-    Int64 bitmap_count = 0;
-    std::memcpy(&bitmap_count, ptr, sizeof(Int64));
+    /// Iceberg deletion-vector roaring layout stores count and keys as little-endian.
+    const Int64 bitmap_count = unalignedLoadLittleEndian<Int64>(ptr);
     ptr += sizeof(Int64);
     remaining -= sizeof(Int64);
 
@@ -503,8 +503,7 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes, UIn
         if (remaining < sizeof(Int32))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is truncated while reading key");
 
-        Int32 key = 0;
-        std::memcpy(&key, ptr, sizeof(Int32));
+        const Int32 key = unalignedLoadLittleEndian<Int32>(ptr);
         ptr += sizeof(Int32);
         remaining -= sizeof(Int32);
 
