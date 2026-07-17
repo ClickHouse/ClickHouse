@@ -3513,10 +3513,12 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 new_child = makeFuzzedAsteriskLikeMatcher();
             }
-            else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && fuzz_rand() % 250 == 0)
+            else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && !ident->isParam() && fuzz_rand() % 250 == 0)
             {
                 /// Rewrite a column reference into one of its potential subcolumn accessors
                 /// (typeid_cast is exact, so ASTTableIdentifier / ASTQueryParameter are left alone).
+                /// Parameterized identifiers (e.g. `{db:Identifier}.t`) carry empty placeholder
+                /// name parts, so rebuilding them via the non-param ctor trips chassert(!part.empty()).
                 static const Strings subcolumn_names = {"keys", "null", "size0", "values"};
                 const String subcolumn = pickRandomly(fuzz_rand, subcolumn_names);
                 switch (fuzz_rand() % 5)
@@ -3695,9 +3697,11 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             ASTIdentifier * id = nullptr;
             const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
+            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty() && !id->isParam())
             {
-                /// Move alias to the end of the identifier (most of the time) or somewhere else
+                /// Move alias to the end of the identifier (most of the time) or somewhere else.
+                /// Skip parameterized identifiers: their empty placeholder parts would trip
+                /// chassert(!part.empty()) when rebuilt via the non-param ctor below.
                 Strings clone_parts = id->name_parts;
                 int name_parts_size = static_cast<int>(id->name_parts.size());
                 const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
@@ -6307,27 +6311,26 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             case ASTAlterCommand::DROP_PARTITION:
             case ASTAlterCommand::ATTACH_PARTITION:
             case ASTAlterCommand::DROP_DETACHED_PARTITION:
-            case ASTAlterCommand::FORGET_PARTITION:
-                /// DROP PARTITION <-> FORGET PARTITION carry the same PARTITION <expr> payload.
-                /// Gated on !part: DROP/DETACH PART hold a string part name, which FORGET PARTITION
-                /// (no PART form) cannot reparse.
-                if (!alter_cmd->part
-                    && (alter_cmd->type == ASTAlterCommand::DROP_PARTITION || alter_cmd->type == ASTAlterCommand::FORGET_PARTITION)
-                    && fuzz_rand() % 20 == 0)
-                    alter_cmd->type = alter_cmd->type == ASTAlterCommand::DROP_PARTITION ? ASTAlterCommand::FORGET_PARTITION
-                                                                                         : ASTAlterCommand::DROP_PARTITION;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
-                /// Do not flip `part`: PARTITION holds an ASTPartition while PART holds a string
-                /// part name (parsed differently), so a plain toggle produces unreparseable text.
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
                 break;
             case ASTAlterCommand::MOVE_PARTITION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
-                /// Swap DISK<->VOLUME only: both carry move_destination_name so it round-trips. Never
-                /// switch a TABLE move or switch to TABLE — that needs a to_table we do not synthesize.
-                if (!alter_cmd->move_destination_name.empty() && fuzz_rand() % 10 == 0)
-                    alter_cmd->move_destination_type = (fuzz_rand() % 2 == 0) ? DataDestinationType::DISK : DataDestinationType::VOLUME;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
+                /// Cycle move destination type between DISK, VOLUME, TABLE
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const DataDestinationType dest_types[] = {
+                        DataDestinationType::DISK,
+                        DataDestinationType::VOLUME,
+                        DataDestinationType::TABLE,
+                    };
+                    alter_cmd->move_destination_type = dest_types[fuzz_rand() % 3];
+                }
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
             case ASTAlterCommand::MODIFY_CONSTRAINT:
