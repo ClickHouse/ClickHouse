@@ -17,6 +17,9 @@ exception packet: OK
 --- planning-phase logs are framed with wait_end_of_query when the query fails before producing output
 wait_end_of_query planning-phase log packets: OK
 wait_end_of_query exception packet: OK
+--- a query-level send_logs_level does not capture analysis-phase logs when the query fails early
+query-level send_logs_level early-failure exception packet: OK
+query-level send_logs_level early-failure has no query-text log packet: OK
 --- profile events packets when framing is enabled by the query SETTINGS clause
 query SETTINGS profile_events packets: OK
 --- log packets when framing and logs are enabled by the query SETTINGS clause
