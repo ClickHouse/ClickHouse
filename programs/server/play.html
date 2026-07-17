@@ -655,8 +655,9 @@
         {
             grid-area: terminal-icon;
             margin-bottom: 0.25rem;
-            /* Rendered as an <a> so middle-click and Ctrl/Shift+click open the terminal in a
-               new browser tab natively. color: inherit keeps the currentColor strokes from
+            /* Rendered as an <a> so middle-click, Shift+click, and the platform's new-tab
+               modifier click (Cmd+click on macOS, Ctrl+click elsewhere) open the terminal in
+               a new browser tab natively. color: inherit keeps the currentColor strokes from
                picking up the default link color, and display: block matches #databases-icon. */
             text-decoration: none;
             display: block;
@@ -866,9 +867,112 @@
             margin-right: 0.25em;
             flex-shrink: 0;
             opacity: 0.5;
+            /* The icon toggles the list of columns, so it reads as an interactive
+               disclosure control: brighten it on hover and while expanded. */
+            cursor: pointer;
+            transition: opacity 0.1s;
         }
 
-        .table-addendum
+        .table-icon:hover,
+        .table-icon.expanded
+        {
+            opacity: 1;
+        }
+
+        /* The list of columns shown under an expanded table. Its own opaque background
+           covers the table's size bar (drawn on the whole `.table` box) so the bar does
+           not bleed vertically behind the columns; each column then draws its own bar. */
+        .table-columns
+        {
+            background-color: var(--table-header-color);
+        }
+
+        .table-column
+        {
+            background-repeat: no-repeat;
+        }
+
+        .table-column button
+        {
+            display: flex;
+            align-items: baseline;
+            width: 100%;
+            /* Align columns with the table rows: the type icon sits at the same left edge as
+               the table icon, so the two lists share a left margin. */
+            padding: 0 0.25em 0 0;
+            text-align: left;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            font-size: 100%;
+            user-select: none;
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        .table-column button:hover,
+        .table-column button:focus
+        {
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+        }
+
+        .column-name
+        {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        /* The data type is shown to the right, dimmed; it may be truncated when long,
+           the full type (with sizes) is available in the hover balloon. */
+        .column-type
+        {
+            flex: 0 1 auto;
+            min-width: 0;
+            max-width: 55%;
+            margin-left: 0.5em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--misc-text-color);
+            font-size: 90%;
+        }
+
+        /* Type icon to the left of the column name. Every icon is an SVG in the same 24x24
+           viewBox and the same box here, so they all render at identical dimensions (both the
+           line drawings for Date/DateTime and the text labels 09, Aa, [], {}, (,), T), which
+           also keeps the column names aligned. */
+        .column-type-icon
+        {
+            width: 1.4em;
+            height: 1em;
+            vertical-align: -0.15em;
+            /* Same icon-to-name gap as the table rows (`.table-icon`). */
+            margin-right: 0.25em;
+            flex-shrink: 0;
+            opacity: 0.5;
+        }
+
+        /* The text-label icons are SVG <text>; size them here (font-size is in viewBox units). */
+        .column-type-badge text
+        {
+            font-family: 'Liberation Mono', 'DejaVu Sans Mono', monospace;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .columns-loading
+        {
+            padding: 0 0.25em 0 0;
+            color: var(--misc-text-color);
+            animation: hourglass-animation 2s linear infinite;
+        }
+
+        .table-addendum,
+        .column-addendum
         {
             position: fixed;
             z-index: 999;
@@ -885,7 +989,8 @@
             transition: opacity 0s 0.1s;
         }
 
-        .table-addendum::before {
+        .table-addendum::before,
+        .column-addendum::before {
             content: " ";
             position: absolute;
             top: 50%;
@@ -897,16 +1002,25 @@
         }
 
         .table-name:hover ~ .table-addendum,
-        .table .table-addendum:hover
+        .table > button .table-addendum:hover,
+        .column-name:hover ~ .column-addendum,
+        .column-type:hover ~ .column-addendum,
+        .table-column .column-addendum:hover
         {
             opacity: 1;
             pointer-events: auto;
             transition: opacity 0s 0.1s;
         }
 
-        /* Show the balloon when the row (or one of its links) is focused via
-           keyboard navigation, mirroring the hover behaviour above. */
-        .table:focus-within .table-addendum
+        /* Show the balloon when the row (or one of its balloon links) is focused via the
+           keyboard, mirroring the hover behaviour above. Uses `:focus-visible` (not `:focus`
+           / `:focus-within`) so a mouse click - which focuses the button but not "visibly" -
+           does not leave the balloon stuck open after the pointer moves away; only keyboard
+           focus reveals it. `:has(:focus-visible)` covers a focused balloon link inside the
+           button; the bare `:focus-visible` covers the button itself. Scoped to the row's own
+           button so a focused nested column does not also reveal the table balloon. */
+        .table > button:is(:focus-visible, :has(:focus-visible)) .table-addendum,
+        .table-column > button:is(:focus-visible, :has(:focus-visible)) .column-addendum
         {
             opacity: 1;
             pointer-events: auto;
@@ -918,7 +1032,10 @@
            a different table button from scrolling under a stationary cursor and
            revealing its balloon without `mouseenter` having fired to position it. */
         body.suppress-balloons .table-name:hover ~ .table-addendum,
-        body.suppress-balloons .table .table-addendum:hover
+        body.suppress-balloons .table > button .table-addendum:hover,
+        body.suppress-balloons .column-name:hover ~ .column-addendum,
+        body.suppress-balloons .column-type:hover ~ .column-addendum,
+        body.suppress-balloons .table-column .column-addendum:hover
         {
             opacity: 0;
             pointer-events: none;
@@ -929,7 +1046,8 @@
            balloons (e.g. when the stationary cursor also happens to be over the
            focused row). Placed after the suppress rule so it wins the specificity
            tie. */
-        body.suppress-balloons .table:focus-within .table-addendum
+        body.suppress-balloons .table > button:is(:focus-visible, :has(:focus-visible)) .table-addendum,
+        body.suppress-balloons .table-column > button:is(:focus-visible, :has(:focus-visible)) .column-addendum
         {
             opacity: 1;
             pointer-events: auto;
@@ -1518,7 +1636,7 @@
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
         <div id="databases"></div>
-        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click or Ctrl/Shift+click to open in a new tab">
+        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) to open in a new tab">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </a>
         <a id="docs-icon" class="menu-icon" href="/docs" target="_blank" rel="noopener noreferrer" title="Documentation">
@@ -2418,6 +2536,24 @@ class QueryResultElement extends HTMLElement
         td.appendChild(btn);
     }
 
+    /// Peel transparent scalar wrappers down to the underlying value type, so that columns such as
+    /// `LowCardinality(Nullable(BFloat16))` or `SimpleAggregateFunction(sum, Float64)` are still
+    /// recognized as numeric/date. `AggregateFunction(...)` is intentionally left alone: its values
+    /// are opaque serialized states, not scalars, so they should stay left-aligned and uncolorized.
+    _unwrapScalarType(type)
+    {
+        let prev;
+        do
+        {
+            prev = type;
+            type = type
+                .replace(/^(?:Nullable|LowCardinality)\(([\s\S]*)\)$/, '$1')
+                .replace(/^SimpleAggregateFunction\([^,]+,\s*([\s\S]*)\)$/, '$1');
+        }
+        while (type !== prev);
+        return type;
+    }
+
     appendHeader(meta)
     {
         if (meta.length == 0) { return; }
@@ -2434,6 +2570,8 @@ class QueryResultElement extends HTMLElement
 
         meta.forEach(elem => {
             let th = document.createElement('th');
+            /// Full name and type in the tooltip, so a truncated header can be read in full on hover.
+            th.title = `${elem.name}\n${elem.type}`;
             const name = document.createTextNode(elem.name);
             const nameSpan = document.createElement('span');
             nameSpan.className = 'name';
@@ -2444,8 +2582,9 @@ class QueryResultElement extends HTMLElement
             type_hint.appendChild(document.createTextNode(elem.type));
             th.appendChild(type_hint);
 
-            this._column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
-            this._column_is_date[elem.name] = !!elem.type.match(/^(Nullable\()?Date/);
+            const unwrapped_type = this._unwrapScalarType(elem.type);
+            this._column_is_number[elem.name] = !!unwrapped_type.match(/^(U?Int|Decimal|Float|BFloat)/);
+            this._column_is_date[elem.name] = !!unwrapped_type.match(/^Date/);
             this._appendColorizeToggle(th, elem.name);
 
             this._appendHeaderResizer(th);
@@ -3580,6 +3719,7 @@ let tabs = [];           /// array of tab objects; display order == array order
 let activeTabId = null;
 let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
 let tabTitleSeq = 0;     /// counter for default titles "Query A", "Query B", ...
+let activeTitleCommit = null;  /// commit fn of the open inline title editor, or null; lets other paths flush a pending rename
 let dbReady = null;      /// Promise<IDBDatabase|null>; null result means persistence is unavailable
 
 /// The page is interactive from first paint (the bootstrap tab holds the URL query, if any),
@@ -3719,7 +3859,11 @@ checkURL();
 /// result pane with a response from the previous connection, so the result-pane side effects are
 /// skipped once the generation no longer matches. Pass `null` for requests that are not
 /// connection-scoped and should always report.
-async function auxiliaryQuery(server_address, user, password, query, url_params = '', quiet = false, generation = null) {
+/// `quiet` suppresses touching the shared result pane (used by background panel-maintenance
+/// queries). `on_error`, when provided, still receives the real server error text in that case,
+/// so a quiet caller can surface actionable diagnostics in its own inline UI instead of dropping
+/// them - a quiet query hides the error from the result pane, not from the user.
+async function auxiliaryQuery(server_address, user, password, query, url_params = '', quiet = false, generation = null, on_error = null) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         'add_http_cors_header=1&default_format=JSON' + url_params;
@@ -3740,14 +3884,17 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
             resultEl.renderError("Network error");
             logoEl.style.display = 'none';
         }
+        if (on_error) on_error("Network error");
         return false;
     }
     if (!response.ok) {
+        let error_text = await response.text();
         if (!quiet && belongs_to_active_connection()) {
             clear();
-            resultEl.renderError(await response.text());
+            resultEl.renderError(error_text);
             logoEl.style.display = 'none';
         }
+        if (on_error) on_error(error_text);
         return false;
     }
     if (!quiet && belongs_to_active_connection()) {
@@ -4063,6 +4210,284 @@ function getTableIcon(engine)
     return svg;
 }
 
+/// Set the query editor to `value` (or run it, if it already holds exactly that query - i.e. on
+/// a second click, or open it in a new Web UI tab on a new-tab gesture), then scroll the editor
+/// into view. Shared by the table rows and the column rows. Stops the click so it does not
+/// bubble to an enclosing row's handler.
+function setQueryOrRun(e, value) {
+    if (isMac && e.button !== 1 && e.ctrlKey) {
+        /// On macOS `Ctrl+Click` is the secondary (context-menu) click, not a query
+        /// activation or new-tab gesture. Leave it entirely to the browser (so the native
+        /// context menu can appear) and never activate, replace, or run the query - not
+        /// even the second-click `postOne` path below. The macOS new-tab modifier is Cmd
+        /// (`metaKey`), handled in the new-tab branch. A middle click (button 1) is a
+        /// genuine new-tab gesture even with Ctrl held, so it is excluded here.
+        return;
+    }
+    if (query_area.value == value) {
+        /// A second click on an already-loaded query runs it - regardless of whether it
+        /// was a plain, middle, or modifier click (opening yet another identical tab
+        /// would be pointless).
+        postOne();
+    } else if (e.button === 1 || e.shiftKey || (isMac ? e.metaKey : e.ctrlKey)) {
+        /// Middle click, Shift+click, or the platform's new-tab modifier click (Cmd on
+        /// macOS, Ctrl elsewhere) - the gestures that open a link in a new tab - open the
+        /// query in a new Web UI tab instead of replacing the current one. Only a genuine
+        /// middle click (button 1) needs the X11 PRIMARY paste guard.
+        openQueryInNewTab(value, e.button === 1);
+    } else {
+        query_area.value = value;
+        query_area.dispatchEvent(new Event('input'));
+    }
+    /// #main is the scroll container (overflow: auto), so scroll it to bring the query area into view.
+    document.getElementById('main').scrollTo(0, 0);
+    e.stopPropagation();
+}
+
+/// Every data-type icon is an SVG in the same 24x24 viewBox, so they all render at exactly the
+/// same dimensions - whether the glyph is a line drawing (Date/DateTime) or a short text label
+/// (`09`, `Aa`, `[]`, `{}`, `(,)`, `T`).
+function makeColumnSVG() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.classList.add('column-type-icon');
+    return svg;
+}
+
+/// A line-drawing data-type icon (no fill, stroked with the current text color).
+function makeColumnIcon(...paths) {
+    const svg = makeColumnSVG();
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    for (const d of paths)
+    {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+    }
+    return svg;
+}
+
+/// A short text label rendered as an SVG glyph, centered in the same box as the line icons.
+/// `textLength` pins every label to the same width so 1-, 2- and 3-character labels line up.
+function makeColumnBadge(text) {
+    const svg = makeColumnSVG();
+    svg.classList.add('column-type-badge');
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', '12');
+    t.setAttribute('y', '12.5');
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('dominant-baseline', 'central');
+    t.setAttribute('fill', 'currentColor');
+    t.setAttribute('textLength', text.length > 1 ? '17' : '9');
+    t.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+    t.textContent = text;
+    svg.appendChild(t);
+    return svg;
+}
+
+/// Pick an icon for a column from its data type. Modifier wrappers (`Nullable`, `LowCardinality`)
+/// are peeled off first so that e.g. `Nullable(Int64)` still reads as numeric, while container
+/// types (`Array`, `Map`, `Tuple`) are recognised at the outer level.
+function getColumnTypeIcon(type) {
+    let t = String(type).trim();
+    for (let m; (m = /^(?:Nullable|LowCardinality)\((.*)\)$/.exec(t)); )
+        t = m[1].trim();
+
+    if (/^Array\s*\(/.test(t)) return makeColumnBadge('[]');
+    if (/^(?:Map\s*\(|JSON\b|Object\b)/.test(t)) return makeColumnBadge('{}');
+    if (/^(?:Tuple|Nested)\s*\(/.test(t)) return makeColumnBadge('(,)');
+
+    /// Date - calendar. Drawn within a central region so its visual size matches the text glyphs.
+    if (/^Date(?:32)?$/.test(t))
+        return makeColumnIcon(
+            'M5 7 h14 v12 h-14 z',       // body
+            'M5 10.5 h14',                // header separator
+            'M9 5 v3', 'M15 5 v3');       // binding rings
+    /// DateTime - clock.
+    if (/^DateTime/.test(t))
+        return makeColumnIcon(
+            'M12 6 a6 6 0 1 0 0 12 a6 6 0 1 0 0 -12', // dial
+            'M12 9 v3.5 l2.5 1.5');                    // hands
+
+    if (/^(?:U?Int|Float|BFloat|Decimal|Bool)/.test(t)) return makeColumnBadge('09');
+    if (/^(?:String|FixedString|Enum|UUID|IPv[46])/.test(t)) return makeColumnBadge('Aa');
+
+    /// Fallback for everything else (e.g. `AggregateFunction`, geo types, `Nothing`).
+    return makeColumnBadge('T');
+}
+
+/// Anchor a column's balloon to the end of its name, mirroring `positionTableBalloon`, and
+/// remember it as the currently visible balloon so `hideTableBalloons` can dismiss it on scroll.
+function positionColumnBalloon(column) {
+    const name = column.querySelector('.column-name');
+    const button = column.querySelector('button');
+    const addendum = column.querySelector('.column-addendum');
+    if (!name || !button || !addendum) return;
+    const rect = name.getBoundingClientRect();
+    const btn = button.getBoundingClientRect();
+    addendum.style.left = Math.min(rect.right, btn.right) + 'px';
+    addendum.style.top = (rect.top + rect.height / 2) + 'px';
+    addendum.style.visibility = '';
+    visible_balloon = addendum;
+}
+
+/// Quote an identifier (database, table, or column name) for safe embedding in a query.
+/// ClickHouse's double-quoted identifiers accept both C-style backslash escapes and SQL-style
+/// doubling, so escape any backslash and double any embedded quote. A name such as `a"b` or
+/// `a\b` then round-trips as a valid `SELECT` instead of producing broken SQL.
+function quoteIdentifier(name) {
+    return '"' + String(name).replace(/\\/g, '\\\\').replace(/"/g, '""') + '"';
+}
+
+/// Quote a string literal for the same reason (used where a name is matched as a value, e.g.
+/// `WHERE database = '...'`): escape any backslash and double any embedded single quote.
+function quoteString(value) {
+    return "'" + String(value).replace(/\\/g, '\\\\').replace(/'/g, "''") + "'";
+}
+
+/// Build the column rows (name + type + size bar + hover balloon) into `columns_elem`.
+function renderColumns(columns_elem, data, database, table_name_str) {
+    if (data.length == 0) {
+        let none = document.createElement('div');
+        none.className = 'columns-loading';
+        none.style.animation = 'none';
+        none.textContent = 'no columns';
+        columns_elem.appendChild(none);
+        return;
+    }
+
+    /// The size bar of each column is drawn proportionally to the largest compressed column.
+    let max_compressed = Math.max(0, ...data.map(c => +c.compressed || 0));
+
+    for (let col of data) {
+        let column = document.createElement('div');
+        column.className = 'table-column';
+
+        const compressed = +col.compressed || 0;
+        const uncompressed = +col.uncompressed || 0;
+
+        if (max_compressed && compressed) {
+            const percent = Number(100 * compressed / max_compressed).toFixed(2);
+            column.style.backgroundImage = `linear-gradient(to right,
+                var(--table-size-bar-color) 0%,
+                var(--table-size-bar-color) ${percent}%,
+                transparent ${percent}%)`;
+        }
+
+        let button = document.createElement('button');
+
+        let name_elem = document.createElement('span');
+        name_elem.className = 'column-name';
+        name_elem.append(getColumnTypeIcon(col.type), col.name);
+
+        let type_elem = document.createElement('span');
+        type_elem.className = 'column-type';
+        type_elem.textContent = col.type;
+
+        button.append(name_elem, type_elem);
+
+        /// Hover balloon. Always shows the full (untruncated) data type, and adds the compressed
+        /// and uncompressed size and the compression ratio when they are known. Per-column sizes
+        /// are unavailable for some tables (e.g. small tables stored in compact parts, such as
+        /// `default.actors`, report zero), so the size lines are simply omitted there rather
+        /// than showing a misleading `0 B`.
+        let addendum = document.createElement('span');
+        addendum.className = 'column-addendum';
+        let lines = [col.type];
+        if (compressed || uncompressed) {
+            lines.push(`Compressed: ${formatReadableBytes(compressed)}`);
+            lines.push(`Uncompressed: ${formatReadableBytes(uncompressed)}`);
+            if (compressed) lines.push(`Ratio: ${Number(uncompressed / compressed).toFixed(2)}×`);
+        }
+        addendum.textContent = lines.join('\n');
+        button.appendChild(addendum);
+
+        /// Position the balloon whenever the pointer enters the row button, so it opens from both
+        /// the name and the (often truncated) type text - which is exactly the element a user hovers
+        /// to read a long type - not only from the name span.
+        button.addEventListener('mouseenter', () => positionColumnBalloon(column));
+        /// Show the balloon when the row is focused via keyboard navigation, too.
+        button.addEventListener('focus', () => positionColumnBalloon(column));
+
+        column.appendChild(button);
+        /// Activate the column row through the same helper as table rows and their addenda, so a
+        /// column shares the full click-like contract: a middle click (`auxclick`) opens the
+        /// generated `SELECT` in a new Web UI tab (with autoscroll and the X11 PRIMARY paste
+        /// suppressed), and Shift/new-tab-modifier clicks open a new tab too, instead of the row
+        /// silently losing those gestures because it only listened for a plain `click`.
+        onTableActivate(column, e => setQueryOrRun(e, `SELECT ${quoteIdentifier(col.name)} FROM ${quoteIdentifier(database)}.${quoteIdentifier(table_name_str)} LIMIT 100`));
+        columns_elem.appendChild(column);
+    }
+}
+
+/// Per-table staleness token for column loads, guarding against a stale in-flight load
+/// repopulating a list that was collapsed and reopened while the query was in flight.
+let toggle_columns_generation = new WeakMap();
+
+/// Toggle the list of columns shown under a table row. Columns are loaded lazily from
+/// `system.columns` on first expand and kept in the DOM; collapsing removes them. A late load is
+/// dropped if the row was collapsed/reopened, detached, or the connection changed meanwhile.
+async function toggleColumns(table, table_icon, database, table_name_str, server_address, user, password) {
+    /// The column list is a secondary control, reached by clicking the icon (or pressing Left on
+    /// the focused row). The icon carries the visual caret (`expanded` class). The row `<button>`
+    /// deliberately does not advertise `aria-expanded`: its normal activation runs `SELECT *`
+    /// rather than toggling the list, so announcing it as a disclosure widget would be a false
+    /// promise to assistive technology.
+    let columns_elem = table.querySelector(':scope > .table-columns');
+    if (columns_elem) {
+        /// Collapse.
+        columns_elem.remove();
+        delete table.dataset['columnsOpen'];
+        table_icon.classList.remove('expanded');
+        return;
+    }
+
+    table.dataset['columnsOpen'] = 1;
+    table_icon.classList.add('expanded');
+    columns_elem = document.createElement('div');
+    columns_elem.className = 'table-columns';
+    let loading = document.createElement('div');
+    loading.className = 'columns-loading';
+    loading.textContent = '⧗';
+    columns_elem.appendChild(loading);
+    table.appendChild(columns_elem);
+
+    const generation = (toggle_columns_generation.get(table) || 0) + 1;
+    toggle_columns_generation.set(table, generation);
+    const connection_generation = connectionGeneration;
+
+    /// Expanding columns is an explicit user action, so its failures must surface the real
+    /// server error (a missing privilege on `system.columns`, a version mismatch, ...) the way
+    /// the other user-triggered panel queries do, rather than being swallowed behind a generic
+    /// placeholder. The query still runs quietly so it does not clobber the main result pane;
+    /// `on_error` captures the error text and we render it here, inline in the side panel.
+    let error_text = null;
+    let json = await auxiliaryQuery(server_address, user, password,
+        `SELECT name, type, data_compressed_bytes AS compressed, data_uncompressed_bytes AS uncompressed
+            FROM system.columns WHERE database = {database:String} AND table = {table:String} ORDER BY position`,
+        '&param_database=' + encodeURIComponent(database) + '&param_table=' + encodeURIComponent(table_name_str),
+        true, connection_generation, (e) => { error_text = e; });
+
+    /// Drop the result if this load is no longer the relevant one for the row.
+    if (generation != toggle_columns_generation.get(table)) return;
+    if (!columns_elem.isConnected || connection_generation !== connectionGeneration) return;
+
+    loading.remove();
+    if (!json) {
+        let error_elem = document.createElement('div');
+        error_elem.className = 'columns-loading';
+        error_elem.style.animation = 'none';
+        error_elem.textContent = error_text ? ('unable to load columns: ' + error_text.trim()) : 'unable to load columns';
+        columns_elem.appendChild(error_elem);
+        return;
+    }
+    renderColumns(columns_elem, json.data, database, table_name_str);
+}
+
 /// Per-container staleness token. Several databases can be loading their tables
 /// at the same time (e.g. when restoring previously expanded databases), so the
 /// guard must be scoped to each container: a load is only superseded by a newer
@@ -4073,6 +4498,57 @@ let load_tables_request_nums = new WeakMap();
 /// `a` and then `b` before `a` finishes loading, the highlight must end up on `b` regardless
 /// of which load's query returns first - otherwise a slower earlier open would steal it back.
 let current_selection_num = 0;
+
+/// Wire up a click-like activation on a table row or its addendum. Besides an ordinary left
+/// click, we also honor the gestures that conventionally open a link in a new tab: a middle
+/// click (which fires `auxclick`, not `click`), a Shift+click, or the platform's new-tab
+/// modifier click - Cmd on macOS, Ctrl elsewhere (on macOS `Ctrl+Click` is the secondary
+/// context-menu click, so it is not a new-tab gesture). The handler inspects the event to
+/// decide between replacing the current query and opening a new Web UI tab.
+///
+/// There is no browser-level test harness for `play.html`, so this gesture-routing and its
+/// paste guard are verified by hand. The committed manual matrix below is the behavior
+/// contract; re-run it when touching `set_query_or_run`, `openQueryInNewTab`/`activateTab`,
+/// or the `suppress_middleclick_paste` guard. Every case applies to a databases-panel table
+/// row, its bytes/rows/engine addenda, and the column rows of an expanded table alike, since
+/// they all route through the same `set_query_or_run` (below):
+///
+///   1. Plain left click on a not-yet-loaded query -> replaces the current tab's query
+///      (`query_area.value = value`); no new tab is created.
+///   2. Click the same row again while its query is already in the editor -> runs it
+///      (`postOne`), no new tab - and likewise for a second middle/modifier click, since
+///      opening an identical tab would be pointless.
+///   3. Middle click (button 1) -> opens the query in a new Web UI tab; on Linux/X11 the
+///      synthetic PRIMARY paste into the freshly focused editor is swallowed (the guard is
+///      armed around `query_area.focus()` in `activateTab`).
+///   4. Shift+click -> opens a new tab on every platform.
+///   5. Ctrl+click on Linux/Windows, or Cmd+click on macOS -> opens a new tab.
+///   6. Ctrl+click on macOS (the secondary/context-menu click) -> a no-op for query activation:
+///      it neither opens a new tab, replaces the editor, nor runs the query (not even the
+///      second-click `postOne`). The gesture is left entirely to the browser so the native
+///      context menu can appear. (Cmd+click is the macOS new-tab gesture; see case 5.)
+///   7. A real keyboard paste (Ctrl+V, Cmd+V, or Shift+Insert) into the editor immediately
+///      after a middle-click new-tab open -> the pasted text is kept: the paste-shortcut
+///      `keydown` disarms the guard before its `paste` fires, so only the mouse-driven
+///      PRIMARY paste (which carries no keystroke) is ever swallowed.
+///   8. Two middle clicks in quick succession (open table A, then table B within the guard's
+///      fallback window) -> B's PRIMARY paste is still swallowed: re-arming cancels A's pending
+///      fallback timer (`middleclick_paste_timeout`), so A's stale timeout cannot clear B's guard.
+function onTableActivate(elem, handler) {
+    elem.addEventListener('click', handler);
+    elem.addEventListener('auxclick', e => {
+        if (e.button !== 1) return;
+        /// Cancel the middle click's native paste at the click site. The X11 PRIMARY paste that
+        /// would otherwise land in the query editor is guarded separately, around the actual
+        /// `query_area.focus()` in the new-tab path (see `activateTab`), so the guard cannot
+        /// expire before a slow activation focuses the editor.
+        e.preventDefault();
+        handler(e);
+    });
+    /// Suppress the browser's middle-click autoscroll so the gesture only opens a new tab.
+    elem.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+}
+
 async function loadTables(server_address, user, password, database, container, set_current = true, is_current = null) {
     const request_num = (load_tables_request_nums.get(container) || 0) + 1;
     load_tables_request_nums.set(container, request_num);
@@ -4138,8 +4614,45 @@ async function loadTables(server_address, user, password, database, container, s
         /// empty right part of the full-width button.
         let table_name = document.createElement('span');
         table_name.className = 'table-name';
-        table_name.append(getTableIcon(elem.engine), elem.table);
+        let table_icon = getTableIcon(elem.engine);
+        table_icon.setAttribute('title', 'Show columns');
+        /// The row `<button>`'s primary action is `SELECT *`, so it must not advertise
+        /// `aria-expanded`: that would promise a disclosure widget whose normal activation
+        /// (click / Enter / Space) never toggles the column list. Toggling is a secondary
+        /// action, reached by clicking the icon or pressing Left on the focused row; the icon
+        /// carries the visual caret (its `expanded` class).
+        table_name.append(table_icon, elem.table);
         table_link.appendChild(table_name);
+
+        /// Clicking the icon (to the left of the name) toggles the list of columns of this
+        /// table, instead of running the default `SELECT *`. Stop the event so it neither
+        /// bubbles to the row's click handler nor triggers a hover balloon reposition.
+        const toggle_columns = () => toggleColumns(table, table_icon, database, elem.table, server_address, user, password);
+        table_icon.addEventListener('click', e => {
+            if (isMac && e.ctrlKey && e.button !== 1) {
+                /// On macOS `Ctrl+Click` is the secondary (context-menu) click, same as the
+                /// guard in `setQueryOrRun`; leave it entirely to the browser instead of
+                /// toggling the column list, so the native context menu still appears.
+                return;
+            }
+            e.stopPropagation();
+            toggle_columns();
+        });
+        /// A middle click fires `auxclick`, not `click`, so the handler above never sees it.
+        /// Without consuming it here, the middle-click `auxclick` would bubble to the row's
+        /// `onTableActivate` and open `SELECT *` in a new tab - a completely different action
+        /// from this icon's `Show columns` purpose. Toggle the column list for a middle click
+        /// too (a middle click is a genuine gesture even with Ctrl held, so there is no macOS
+        /// guard here), and cancel the middle-button defaults at the icon - the X11 PRIMARY
+        /// paste on `auxclick` and the autoscroll on `mousedown` - so the disclosure control
+        /// behaves consistently for every click type.
+        table_icon.addEventListener('auxclick', e => {
+            if (e.button !== 1) return;
+            e.preventDefault();
+            e.stopPropagation();
+            toggle_columns();
+        });
+        table_icon.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 
         if (max_total_bytes && +elem.total_bytes) {
             const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
@@ -4152,39 +4665,28 @@ async function loadTables(server_address, user, password, database, container, s
         let table_addendum = document.createElement('span');
         table_addendum.className = 'table-addendum';
 
-        const set_query_or_run = (e, value) => {
-            if (query_area.value == value) {
-                /// Double click will run the query.
-                postOne();
-            } else {
-                query_area.value = value;
-                query_area.dispatchEvent(new Event('input'));
-            }
-            /// #main is the scroll container (overflow: auto), so scroll it to bring the query area into view.
-            document.getElementById('main').scrollTo(0, 0);
-            e.stopPropagation();
-        }
+        const set_query_or_run = setQueryOrRun;
 
-        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = '${database}' AND table = '${elem.table}'`);
+        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = ${quoteString(database)} AND table = ${quoteString(elem.table)}`);
 
         if (+elem.total_bytes) {
             let bytes_elem = document.createElement('span');
             bytes_elem.className = 'table-addendum-elem';
             bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
-            bytes_elem.addEventListener('click', show_table_properties);
+            onTableActivate(bytes_elem, show_table_properties);
             table_addendum.append(bytes_elem);
         }
         if (+elem.total_rows) {
             let rows_elem = document.createElement('span');
             rows_elem.className = 'table-addendum-elem';
             rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
-            rows_elem.addEventListener('click', show_table_properties);
+            onTableActivate(rows_elem, show_table_properties);
             table_addendum.append(rows_elem);
         }
         let engine_elem = document.createElement('span');
         engine_elem.textContent = elem.engine;
         engine_elem.className = 'table-addendum-elem';
-        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        onTableActivate(engine_elem, e => set_query_or_run(e, `SHOW TABLE ${quoteIdentifier(database)}.${quoteIdentifier(elem.table)}`));
         table_addendum.append(engine_elem);
 
         /// Make the balloon links reachable from the keyboard (Right arrow from the row).
@@ -4198,7 +4700,7 @@ async function loadTables(server_address, user, password, database, container, s
         /// selector works; it is position:fixed, so it is not clipped by the button overflow.
         table_link.appendChild(table_addendum);
         table.appendChild(table_link);
-        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        onTableActivate(table, e => set_query_or_run(e, `SELECT * FROM ${quoteIdentifier(database)}.${quoteIdentifier(elem.table)} LIMIT 100`));
         tables_elem.appendChild(table);
     }
 
@@ -4252,15 +4754,18 @@ function positionTableBalloon(table) {
 document.addEventListener('scroll', () => {
     /// When a table row (or one of its balloon links) is focused via the keyboard,
     /// keep its balloon glued to the row across the scroll instead of hiding it.
-    const focused_table = document.activeElement?.closest?.('.table');
-    if (focused_table && document.getElementById('databases').contains(focused_table)) {
+    /// A column row is nested inside its `.table`, so match it first: `closest` returns the
+    /// nearest ancestor, i.e. the `.table-column` when a column is focused, the `.table` otherwise.
+    const focused_row = document.activeElement?.closest?.('.table-column, .table');
+    if (focused_row && document.getElementById('databases').contains(focused_row)) {
         /// Still suppress hover-opened balloons on *other* rows: a different table
         /// button scrolled under a stationary cursor would otherwise reveal its
         /// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
         /// not fire without mouse movement). The focused row's balloon is exempted
         /// from `suppress-balloons` in CSS, so it stays glued to the row.
         document.body.classList.add('suppress-balloons');
-        positionTableBalloon(focused_table);
+        if (focused_row.classList.contains('table-column')) positionColumnBalloon(focused_row);
+        else positionTableBalloon(focused_row);
     } else {
         hideTableBalloons();
     }
@@ -4336,6 +4841,8 @@ document.getElementById('databases-hide').addEventListener('click', e => {
 ///   - Right enters the focused table's balloon (its size/rows/engine links);
 ///     inside the balloon Up/Down move between links, Left returns to the row,
 ///     and Enter/Space activate the focused link.
+///   - Left on a table row toggles its column list (the disclosure the table icon
+///     opens on click), so the columns are reachable from the keyboard.
 document.getElementById('databases').addEventListener('keydown', e => {
     const active = document.activeElement;
 
@@ -4354,6 +4861,22 @@ document.getElementById('databases').addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') {
         const link = active.querySelector && active.querySelector('.table-addendum-elem');
         if (link) { e.preventDefault(); link.focus({ preventScroll: true }); }
+        return;
+    }
+
+    /// Left arrow on a table row toggles its list of columns, so keyboard users can expand it
+    /// (`Enter` already runs the default `SELECT *`, so it can't double as the toggle). It routes
+    /// through the icon's own click handler to reuse its wiring; the guard restricts this to the
+    /// table's own row button (not a database row or a nested column button).
+    if (e.key === 'ArrowLeft') {
+        const table = active.closest && active.closest('.table');
+        if (table && active === table.querySelector(':scope > button')) {
+            const table_icon = table.querySelector(':scope > button .table-icon');
+            if (table_icon) {
+                e.preventDefault();
+                table_icon.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
+        }
         return;
     }
 
@@ -5221,6 +5744,49 @@ async function restoreFromHistory(state, token) {
 
 let query_area = document.getElementById('query');
 
+/// A middle click that focuses the query editor - duplicating a tab, or opening a table in a new
+/// tab - additionally pastes the X11 PRIMARY selection on Linux, appending clipboard junk after the
+/// query we just set. The new-tab activation (`activateTab` with `guard_paste`) arms this flag
+/// right around that `query_area.focus()`, so we swallow exactly that one paste.
+///
+/// The guard must never eat a real keyboard paste. The X11 PRIMARY paste is mouse-driven and
+/// carries no keystroke, whereas a real keyboard paste - Ctrl+V / Cmd+V, or Shift+Insert on
+/// Linux/Windows - is always preceded by its own paste-shortcut `keydown`; disarming on that
+/// `keydown` (which fires before the resulting `paste`) keeps the discrimination independent of
+/// timing. So even if the user middle-clicks and immediately presses a paste shortcut on a platform
+/// where no PRIMARY paste ever arrives, their paste is preserved; the short post-focus fallback in
+/// `activateTab` only bounds how long a never-consumed guard can linger.
+///
+/// The guard is a single shared bit, so we keep the handle of its one fallback timer and cancel
+/// it whenever the guard is re-armed or consumed. Otherwise two overlapping middle-click opens
+/// (open A, then open B within the fallback window) would share the bit but leave two pending
+/// timeouts: A's stale timeout could clear the bit that B re-armed, before B's PRIMARY paste
+/// arrives, letting that paste land in the editor. Cancelling the previous timer on re-arm means
+/// an older open's timeout can never clear a newer open's guard.
+let suppress_middleclick_paste = false;
+let middleclick_paste_timeout = null;
+function disarmMiddleclickPaste() {
+    suppress_middleclick_paste = false;
+    clearTimeout(middleclick_paste_timeout);
+    middleclick_paste_timeout = null;
+}
+query_area.addEventListener('keydown', e => {
+    /// Match the physical `V` key via `e.code` rather than the printed character `e.key`: on a
+    /// non-Latin layout (e.g. Russian) `Ctrl`/`Cmd`+paste reports a non-'v' `e.key`, so keying off
+    /// the character would leave the guard armed and swallow the genuine paste. `e.code === 'KeyV'`
+    /// is layout-independent, matching how the OS binds the paste shortcut on such layouts.
+    /// `Shift+Insert` already keys off the layout-independent named key `'Insert'`.
+    const keyboard_paste = ((e.ctrlKey || e.metaKey) && e.code === 'KeyV')
+        || (e.shiftKey && e.key === 'Insert');
+    if (keyboard_paste) disarmMiddleclickPaste();
+});
+query_area.addEventListener('paste', e => {
+    if (suppress_middleclick_paste) {
+        e.preventDefault();
+        disarmMiddleclickPaste();
+    }
+});
+
 appendTextareaResizer();
 
 /// ===== Tabs =====================================================================
@@ -5382,6 +5948,24 @@ function uniqueTitle(desired, excludeId) {
     }
 }
 
+/// Title for a duplicated tab: the whole source title is the family base, and the copy gets a
+/// " N" suffix, N starting at 1 and incrementing until the result is free (titles must stay
+/// unique — see `uniqueTitle`). Duplicating "Query A" yields "Query A 1", "Query A 2", …
+///
+/// The full source title is always used as the base — a trailing " N" is never stripped — so a
+/// user-authored numeric ending is preserved and the duplicate lineage stays unambiguous:
+/// duplicating "Incident 2025" yields "Incident 2025 1" (not "Incident 1"), and "Release 24 7"
+/// yields "Release 24 7 1". A title-only heuristic cannot tell a user's trailing digits from a
+/// duplicate counter — e.g. with both "Incident" and "Incident 2025" open, stripping " 2025"
+/// would wrongly collapse the copy into the unrelated "Incident" family — so we do not strip.
+function duplicateTitle(title) {
+    const taken = new Set(tabs.map(t => t.title));
+    for (let i = 1; ; ++i) {
+        const candidate = title + ' ' + i;
+        if (!taken.has(candidate)) return candidate;
+    }
+}
+
 function makeTab(title, query) {
     return {
         id: 't' + (++tabSeq),
@@ -5428,7 +6012,7 @@ function invalidateInFlight() {
 /// Load a tab's content into the editor and re-render its stored result.
 /// Routed through `restoreFromHistory` so the syntax backdrop, params and run
 /// buttons resync (it dispatches an 'input' event), exactly like history navigation.
-async function activateTab(id) {
+async function activateTab(id, guard_paste = false) {
     const tab = tabs.find(t => t.id === id);
     if (!tab) return;
     activeTabId = id;
@@ -5443,7 +6027,20 @@ async function activateTab(id) {
     /// even when there is no result to render (restoreFromHistory skips this otherwise).
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
     renderTabBar();
+    /// A middle-click duplicate or new-tab open arms the X11 PRIMARY paste guard right around this
+    /// focus, so the paste Linux delivers to the freshly-focused editor is swallowed - and only that
+    /// one. Anchoring the guard here, rather than at the original `auxclick`, means a slow activation
+    /// can never let it expire before focus. It is cleared by the swallowed paste, by a real
+    /// paste-shortcut keydown (which must never be eaten - see `suppress_middleclick_paste`), or by
+    /// the short fallback below in case no paste fires at all (non-Linux, empty selection), so the
+    /// flag can never linger. Re-arming here cancels any previous open's pending fallback timer, so
+    /// an overlapping middle-click open cannot have its guard cleared by an earlier open's timeout.
+    if (guard_paste) {
+        clearTimeout(middleclick_paste_timeout);
+        suppress_middleclick_paste = true;
+    }
     query_area.focus();
+    if (guard_paste) middleclick_paste_timeout = setTimeout(disarmMiddleclickPaste, 250);
 }
 
 /// Switch tabs in response to a user click: capture the current tab, activate the
@@ -5470,6 +6067,51 @@ function addTab() {
     activateTab(tab.id).then(syncHistory);
     scheduleSave();
 }
+
+/// Duplicate a tab: copy its query and parameters into a new tab inserted right after the
+/// source, then switch to the copy. Triggered by a middle-click or Ctrl/Shift/Cmd+click on
+/// the title — the browser gesture for "open in a new tab". `guard_paste` is set for a genuine
+/// middle click, so the activation swallows the X11 PRIMARY paste that follows focusing the editor.
+function duplicateTab(id, guard_paste = false) {
+    const src = tabs.find(t => t.id === id);
+    if (!src) return;
+    /// Flush any in-progress inline title rename here, before `duplicateTitle(src.title)` reads the
+    /// title below, so a copy of the tab being renamed reflects the new name rather than the stale
+    /// one. `renderTabBar` also flushes on every rebuild, but that runs later (via `activateTab`),
+    /// after the title has already been read. The editor is always the active tab.
+    if (activeTitleCommit) activeTitleCommit(true);
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
+    /// Fold live editor edits into the (possibly source) tab first, so the copy reflects them.
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
+
+    const tab = makeTab(duplicateTitle(src.title), src.query);
+    tab.params = { ...src.params };
+    const idx = tabs.findIndex(t => t.id === id);
+    tabs.splice(idx + 1, 0, tab);
+    activeTabId = tab.id;
+    activateTab(tab.id, guard_paste).then(syncHistory);
+    scheduleSave();
+}
+
+/// Like `addTab`, but the new tab starts pre-filled with `query` and becomes active.
+/// Used by the databases panel when a table is opened with a new-tab gesture: middle
+/// click, Shift+click, or the platform's new-tab modifier click - Cmd+click on macOS,
+/// Ctrl+click elsewhere (on macOS `Ctrl+Click` is the context-menu click, not a new-tab
+/// gesture; see the manual matrix above `onTableActivate`). `guard_paste` is set for a
+/// genuine middle click, so the activation swallows the X11 PRIMARY paste that follows
+/// focusing the editor.
+function openQueryInNewTab(query, guard_paste = false) {
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
+    const tab = makeTab(undefined, query);
+    tabs.push(tab);
+    activeTabId = tab.id;
+    activateTab(tab.id, guard_paste).then(syncHistory);
+    scheduleSave();
+}
+
 
 function closeTab(id) {
     const idx = tabs.findIndex(t => t.id === id);
@@ -5500,6 +6142,8 @@ function startTitleEdit(tab, titleEl) {
     titleEl.contentEditable = 'true';
     titleEl.spellcheck = false;
     titleEl.classList.add('editing');
+    /// Drop the hover tooltip while typing so it does not linger with the old title.
+    titleEl.removeAttribute('title');
     /// Mark the tab so it drops its max-width and flexes to fit the title being typed.
     titleEl.closest('.tab').classList.add('editing');
 
@@ -5515,6 +6159,7 @@ function startTitleEdit(tab, titleEl) {
     const commit = (save) => {
         if (done) return;
         done = true;
+        if (activeTitleCommit === commit) activeTitleCommit = null;
         if (save) {
             /// Collapse any pasted newlines/runs of whitespace into single spaces.
             const v = titleEl.textContent.replace(/\s+/g, ' ').trim();
@@ -5526,6 +6171,9 @@ function startTitleEdit(tab, titleEl) {
         syncHistory();
         scheduleSave();
     };
+    /// Expose the commit so paths that rerender the tab bar (e.g. duplicating another tab)
+    /// can flush this pending rename first — the editor otherwise only writes back on `blur`.
+    activeTitleCommit = commit;
     titleEl.addEventListener('keydown', (e) => {
         /// Keep keys (Space/Enter) from reaching the tab-level switch handler.
         e.stopPropagation();
@@ -5537,6 +6185,14 @@ function startTitleEdit(tab, titleEl) {
 
 /// Rebuild the whole tab bar. Cheap (few nodes) so we never diff.
 function renderTabBar() {
+    /// Flush any in-progress inline title rename before we rebuild and destroy its editable span.
+    /// The editor writes back to `tab.title` only on `blur`, but many paths rerender the bar without
+    /// a blur first — a slow query completing calls `writeHistoryEntry` -> `renderTabBar`, closing a
+    /// tab or navigating rerenders too, and a middle click suppresses the blur — each of which would
+    /// otherwise silently drop the pending rename. Committing here, the single rerender chokepoint,
+    /// covers every path (not just `duplicateTab`). Safe against re-entry: `commit` clears
+    /// `activeTitleCommit` before it calls back into `renderTabBar`, so this becomes a no-op.
+    if (activeTitleCommit) activeTitleCommit(true);
     const active = getActiveTab();
     /// Hidden when there is a single tab that has never produced a result from a genuine
     /// run, so the page looks exactly as before tabs existed. Keying off `result.ran`
@@ -5557,6 +6213,8 @@ function renderTabBar() {
         const titleEl = document.createElement('span');
         titleEl.className = 'tab-title';
         titleEl.textContent = tab.title;
+        /// Native tooltip so a title truncated by the width cap can still be read in full on hover.
+        titleEl.title = tab.title;
         el.appendChild(titleEl);
 
         const closeEl = document.createElement('span');
@@ -5567,11 +6225,31 @@ function renderTabBar() {
 
         el.addEventListener('click', (e) => {
             if (e.target === closeEl) { e.stopPropagation(); closeTab(tab.id); return; }
+            /// On macOS `Ctrl+Click` is the secondary (context-menu) click, not a new-tab
+            /// gesture - leave it entirely to the browser (see `set_query_or_run`). The macOS
+            /// duplicate modifier is Cmd (`metaKey`), checked below.
+            if (isMac && e.ctrlKey) return;
+            /// While the title is being edited inline, let clicks act on the editor (cursor placement,
+            /// selection) rather than duplicating from the not-yet-committed title.
+            if (e.target === titleEl && titleEl.isContentEditable) return;
+            /// Shift+click or the platform's new-tab modifier click (Cmd on macOS, Ctrl elsewhere)
+            /// on the title duplicates the tab (browser "open in new tab" gesture).
+            if (e.target === titleEl && (e.shiftKey || (isMac ? e.metaKey : e.ctrlKey))) { e.preventDefault(); duplicateTab(tab.id); return; }
             if (tab.id === activeTabId) {
                 if (e.target === titleEl) startTitleEdit(tab, titleEl);
             } else {
                 switchToTab(tab.id);
             }
+        });
+        /// Middle-click does not raise a `click` event; it comes through as `auxclick` (button 1).
+        /// A genuine middle click needs the X11 PRIMARY paste guard (see `suppress_middleclick_paste`).
+        el.addEventListener('auxclick', (e) => {
+            /// Skip while editing so a middle click pastes the X11 PRIMARY selection into the title instead.
+            if (e.button === 1 && e.target === titleEl && !titleEl.isContentEditable) { e.preventDefault(); duplicateTab(tab.id, true); }
+        });
+        /// Suppress the middle-click autoscroll cursor over the title (but not while editing, so PRIMARY paste works).
+        el.addEventListener('mousedown', (e) => {
+            if (e.button === 1 && e.target === titleEl && !titleEl.isContentEditable) e.preventDefault();
         });
         el.addEventListener('keydown', (e) => {
             /// Ignore keys coming from the inline title editor (so Space/Enter type normally).
@@ -8659,7 +9337,8 @@ document.getElementById('download-button').addEventListener('click', async funct
     }
 
     /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
-    /// middle-click or Ctrl/Shift+click opens the right address even after the user edits the
+    /// middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on
+    /// macOS, Ctrl+click elsewhere) opens the right address even after the user edits the
     /// server URL. The `href` is removed when the URL is currently unparsable: an empty `href`
     /// would resolve to the current page, so a modifier/middle-click would open Play itself
     /// instead of doing nothing.
