@@ -50,26 +50,25 @@ void MergeTreeBoundsSubscription::disable()
     wake.notify();
 }
 
-void MergeTreeBoundsSubscription::onEnrichmentRound()
+void MergeTreeBoundsSubscription::onEnrichmentRound(bool pending)
 {
     {
         std::lock_guard guard(mutex);
         if (is_disabled)
             return;
-        enrichment_done = true;
+        safe_segment_determined = !pending;
     }
 
-    /// A bounded stream may be parked on the wakeup fd waiting to learn the first safe
-    /// segment. Wake it after every round - even one that advanced nothing - so it can
-    /// read the first snapshot or finish (e.g. over an empty table).
-    if (bounded)
+    /// Wake a bounded source only on a resolved round, so it can finish an empty snapshot. While a
+    /// partition is still blocked there is nothing to do; `advance` wakes it when the gap closes.
+    if (bounded && !pending)
         wake.notify();
 }
 
-bool MergeTreeBoundsSubscription::enrichmentDone() const
+bool MergeTreeBoundsSubscription::safeSegmentDetermined() const
 {
     std::lock_guard guard(mutex);
-    return enrichment_done;
+    return safe_segment_determined;
 }
 
 }

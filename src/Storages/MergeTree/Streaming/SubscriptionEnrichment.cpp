@@ -8,13 +8,13 @@ static bool partitionBelongsToSubscription(const String & partition_id, size_t s
     return std::hash<String>{}(partition_id) % subscriptions_count == subscription_index;
 }
 
-bool enrichSubscription(
+EnrichmentResult enrichSubscription(
     MergeTreeBoundsSubscription & subscription,
     const LocalPartsByPartition & local_parts,
     const CursorPromotersMap & promoters)
 {
     auto snapshot = subscription.snapshot();
-    bool enriched = false;
+    EnrichmentResult result;
 
     for (const auto & [partition_id, parts] : local_parts)
     {
@@ -48,7 +48,13 @@ bool enrichSubscription(
 
             /// Ask the promoter whether anything in that gap (cursor, part.min_block) is still in flight.
             if (!promoter.canPromote(cursor, part.min_block))
+            {
+                /// A block is still in flight in the gap (being committed, or not yet fetched): this
+                /// partition's data becomes readable once it closes, so the safe segment is not
+                /// determined yet.
+                result.pending = true;
                 break;
+            }
 
             cursor = part.max_block;
         }
@@ -56,11 +62,11 @@ bool enrichSubscription(
         if (cursor > starting_cursor)
         {
             subscription.advance(partition_id, cursor);
-            enriched = true;
+            result.enriched = true;
         }
     }
 
-    return enriched;
+    return result;
 }
 
 }

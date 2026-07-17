@@ -375,10 +375,10 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     if (!current_sub_pipeline.empty())
         return Status::UpdatePipeline;
 
-    /// Bounded stream with nothing to read: finish once the first enrichment round has
-    /// established the safe segment (this also covers an empty first snapshot). Keep
-    /// waiting on the fd only until that first enrichment happens.
-    if (subscription->isBounded() && subscription->enrichmentDone())
+    /// Bounded stream with nothing to read: finish only once the safe segment is fully determined.
+    /// While a block is still in flight in the gap we keep waiting, so its rows are read rather
+    /// than dropped once the gap closes.
+    if (subscription->isBounded() && subscription->safeSegmentDetermined())
     {
         output.finish();
         return Status::Finished;

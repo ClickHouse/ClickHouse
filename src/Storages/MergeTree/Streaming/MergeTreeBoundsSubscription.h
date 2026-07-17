@@ -29,13 +29,14 @@ public:
     /// Whether this subscription backs a bounded stream (read the first snapshot, then finish).
     bool isBounded() const { return bounded; }
 
-    /// Record that an enrichment round has completed for this subscription. For bounded
-    /// subscriptions this also wakes the pipeline so it can finish even when the round
-    /// advanced nothing (e.g. an empty table).
-    void onEnrichmentRound();
+    /// Record an enrichment round; `pending` means a block is still in flight in some partition's
+    /// gap, so the safe segment is not fully determined. A resolved round (`pending == false`) also
+    /// wakes a bounded source so it can finish even when nothing was advanced (e.g. an empty table).
+    void onEnrichmentRound(bool pending);
 
-    /// Whether at least one enrichment round has completed for this subscription.
-    bool enrichmentDone() const;
+    /// Whether the safe segment is fully determined: an enrichment round has completed and left no
+    /// partition blocked by an in-flight block in the gap. A bounded stream may finish once this holds.
+    bool safeSegmentDetermined() const;
 
     /// Read end of the wakeup pipe;
     int fd() const { return wake.fd(); }
@@ -50,7 +51,9 @@ private:
     mutable std::mutex mutex;
     std::map<String, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
     bool is_disabled TSA_GUARDED_BY(mutex) = false;
-    bool enrichment_done TSA_GUARDED_BY(mutex) = false;
+    /// Set by the latest enrichment round: true once the safe segment is fully determined
+    /// (a round completed with no partition still blocked by an in-flight block in the gap).
+    bool safe_segment_determined TSA_GUARDED_BY(mutex) = false;
 
     WakeupFd wake;
 };
