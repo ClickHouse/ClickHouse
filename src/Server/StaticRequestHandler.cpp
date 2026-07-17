@@ -5,6 +5,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Core/ServerSettings.h>
+#include <IO/CompressionMethod.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -75,7 +76,8 @@ static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HT
         return result;
 
     response.set("Content-Encoding", toContentEncodingName(http_response_compression_method));
-    result.setCompressedOut(wrapWriteBufferWithCompressionMethod(result.get(), http_response_compression_method, 1, 0));
+    /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format.
+    result.setCompressedOut(wrapWriteBufferWithCompressionMethod(result.get(), http_response_compression_method, 1, 0, SnappyMode::Framed));
 
     return result;
 }
