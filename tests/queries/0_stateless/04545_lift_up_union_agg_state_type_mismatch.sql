@@ -1,11 +1,43 @@
--- Regression: rewrites that push a step through a UnionStep by cloning it into each branch
--- (Expression/Distinct lift-up in liftUpUnion, filter push-down in filterPushDown) must not
--- fire when a union branch type only matches the union output loosely (same aggregate state
--- representation, different type name, e.g. quantileExactTuple vs quantilesExactTuple(0.9)).
--- Previously the cloned step produced branch headers that no longer matched, tripping the
--- post-optimization "Block structure mismatch" LOGICAL_ERROR.
+-- Regression: a UNION ALL whose branches produce aggregate-state columns that share the same
+-- state representation but differ by type name (e.g. quantileExactTuple vs quantilesExactTuple(0.9))
+-- must homogenize the branch types to the common union type. buildCommonHeaderForUnion picks one
+-- branch's type as the common header, but the branch-conversion check (blocksHaveEqualStructure)
+-- and CAST insertion (type equals()) are tolerant of that divergence, so a branch used to keep
+-- emitting its own type. A step above the union that wraps the column (e.g. tuple(s)) then built a
+-- column whose name embeds the branch aggregate function name, tripping the strict per-stream
+-- "Block structure mismatch" check at pipeline build. This reproduces with optimizations OFF too,
+-- so the base planner (addConvertingToCommonHeaderActionsIfNeeded) must force the conversion; the
+-- liftUpUnion / tryPushDownFilter guards cover the sibling optimization rewrites.
 
 SET enable_analyzer = 1;
+
+-- Base planner variant with optimizations OFF: exercises the forced conversion before UNION,
+-- independent of liftUpUnion / filterPushDown.
+SELECT count() FROM
+(
+    SELECT tuple(s) AS ts FROM
+    (
+        SELECT quantileExactTupleState((toUInt32(number), toFloat64(number))) AS s FROM numbers(100, 1)
+        UNION ALL
+        SELECT quantilesExactTupleState(0.9)((toUInt32(number), toFloat64(number))) AS s FROM numbers(101, 257)
+    )
+)
+SETTINGS query_plan_enable_optimizations = 0;
+
+-- The exact AST-fuzzer-reduced query (DISTINCT + tuple() + WHERE above a divergent UNION ALL).
+SELECT count() FROM
+(
+    SELECT ts FROM
+    (
+        SELECT DISTINCT tuple(s) AS ts, c FROM
+        (
+            SELECT count() AS c, quantileExactTupleState((toUInt32(number), toFloat64(number))) AS s FROM numbers(100, 5) GROUP BY number % 2
+            UNION ALL
+            SELECT count() AS c, quantilesExactTupleStateOrNull(toDecimal64(0.9, 12))((toUInt32(number), toFloat64(number))) AS s FROM numbers(7) GROUP BY ALL
+        )
+    )
+    WHERE 0 > c
+);
 
 -- Expression lift-up variant (the fuzzer-found crash).
 SELECT count() FROM

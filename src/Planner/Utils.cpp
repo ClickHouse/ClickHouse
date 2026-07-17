@@ -153,7 +153,29 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     for (size_t i = 0; i < queries_size; ++i)
     {
         auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
+        const auto & plan_header = *query_node_plan->getCurrentHeader();
+
+        /// blocksHaveEqualStructure is tolerant of aggregate-state columns that share the same
+        /// state representation but differ by type name (e.g. quantileExactTuple vs
+        /// quantilesExactTuple). Left unconverted, such a branch keeps emitting its own type while
+        /// the union output header advertises the common type; a later step that wraps the column
+        /// (e.g. tuple(s)) then builds a column whose name embeds the branch aggregate function
+        /// name, and the strict per-stream block-structure check aborts at pipeline build. Force
+        /// the conversion when any column type name diverges from the common header.
+        bool needs_conversion = !blocksHaveEqualStructure(plan_header, union_common_header);
+        if (!needs_conversion && plan_header.columns() == union_common_header.columns())
+        {
+            for (size_t column = 0; column < union_common_header.columns(); ++column)
+            {
+                if (plan_header.getByPosition(column).type->getName()
+                    != union_common_header.getByPosition(column).type->getName())
+                {
+                    needs_conversion = true;
+                    break;
+                }
+            }
+        }
+        if (!needs_conversion)
             continue;
 
         auto actions_dag = ActionsDAG::makeConvertingActions(
@@ -164,6 +186,23 @@ void addConvertingToCommonHeaderActionsIfNeeded(
             false /*ignore_constant_values*/,
             false /*add_cast_columns*/,
             nullptr /*new_names*/);
+
+        /// makeConvertingActions only inserts a CAST when the types are not equal(), but the
+        /// aggregate-state comparison is tolerant of a differing type name (see above). Force an
+        /// explicit CAST for any output column whose type name still diverges from the common
+        /// header, so the branch physically emits the common type instead of only relabelling it.
+        auto & outputs = actions_dag.getOutputs();
+        for (size_t column = 0; column < outputs.size() && column < union_common_header.columns(); ++column)
+        {
+            const auto & target = union_common_header.getByPosition(column);
+            const auto * output = outputs[column];
+            if (output->result_type->getName() != target.type->getName())
+            {
+                const auto & cast_node = actions_dag.addCast(*output, target.type, {}, context);
+                outputs[column] = &actions_dag.addAlias(cast_node, target.name);
+            }
+        }
+
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
