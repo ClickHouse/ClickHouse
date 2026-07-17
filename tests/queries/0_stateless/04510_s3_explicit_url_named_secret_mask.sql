@@ -81,8 +81,8 @@ SELECT * FROM s3('url_dup', 'ak', 'sk',
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- A nested map with a malformed child (not `key = value`) must fail closed in formatting.
--- The new analyzer rejects `extra_credentials` as an unknown function; the old analyzer reaches
--- the S3 URI validation first.
+-- The analyzer rejects `extra_credentials` as an unknown function; with `enable_analyzer = 0`
+-- the S3 URI validation is reached first.
 SELECT * FROM s3('url_badmap', 'ak', 'SEKRIT_SAK',
                  extra_credentials('SEKRIT_RAWCRED'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION, BAD_ARGUMENTS }
