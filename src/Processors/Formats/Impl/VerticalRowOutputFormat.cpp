@@ -5,6 +5,7 @@
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -217,6 +218,15 @@ void registerOutputFormatVertical(FormatFactory & factory)
     /// verbatim, including carriage returns. Those cannot survive the text `EventStream` framing, so
     /// the output is base64-encoded there (see `checkIfOutputFormatMayEmitCarriageReturn`).
     factory.markOutputFormatMayEmitCarriageReturns("Vertical");
+
+    /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
+    /// makes the output not valid UTF-8 either. The text framings reject or base64-encode the output in
+    /// that case (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data type
+    /// names.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "Vertical",
+        [](const FormatSettings &, const Block & header)
+        { return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false); });
 
     factory.setDocumentation("Vertical", Documentation{
         .description = R"DOCS_MD(

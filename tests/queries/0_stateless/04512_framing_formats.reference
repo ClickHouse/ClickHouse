@@ -168,3 +168,20 @@ TSVWithNames payload with a non-UTF-8 column name round-trips
 plain TSV (non-UTF-8 column name, no header) accepted: OK
 --- JSONEachPacketString accepts TSVWithNames with a valid UTF-8 (multi-byte) column name
 TSVWithNames (valid UTF-8 column name) accepted: OK
+--- JSONEachPacketString is rejected for Markdown with a non-UTF-8 column name
+is not compatible with the output format Markdown
+--- EventStream base64-encodes Markdown with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+Markdown payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString is rejected for Pretty with a non-UTF-8 column name
+is not compatible with the output format Pretty
+--- EventStream base64-encodes Pretty with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+Pretty payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString is rejected for Vertical with a non-UTF-8 column name
+is not compatible with the output format Vertical
+--- EventStream base64-encodes Vertical with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+Vertical payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString accepts Markdown with a valid UTF-8 (multi-byte) column name
+Markdown (valid UTF-8 column name) accepted: OK

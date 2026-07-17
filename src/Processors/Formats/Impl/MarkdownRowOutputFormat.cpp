@@ -2,6 +2,7 @@
 #include <IO/WriteHelpers.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -86,6 +87,16 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     for (const auto * name : {"Markdown", "MD"})
         factory.registerOutputFormatMayEmitCarriageReturnChecker(
             name, [](const FormatSettings & settings) { return settings.markdown.escape_special_characters; });
+
+    /// The header column names are written verbatim (through `writeEscapedString`, which escapes the
+    /// control characters but does not validate UTF-8), so a name that is not valid UTF-8 makes the
+    /// output not valid UTF-8 either. The text framings reject or base64-encode the output in that case
+    /// (see `checkIfOutputFormatMayProduceRawBytes`). `Markdown` does not write the data type names.
+    for (const auto * name : {"Markdown", "MD"})
+        factory.registerOutputFormatMayProduceRawBytesChecker(
+            name,
+            [](const FormatSettings &, const Block & header)
+            { return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false); });
 
     factory.setDocumentation("MD", Documentation{
         .description = "An alias for the `Markdown` format. See the `Markdown` entry for the full documentation.",
