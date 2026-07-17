@@ -195,19 +195,24 @@ def test_fixed_user_handler_with_anonymous_logins_disabled():
     assert exc_info.value.code == 403
 
 
-def grpc_query(query, user_name=None):
-    channel = grpc.insecure_channel(f"{node1.ip_address}:9100")
+def grpc_execute(query, node=node1, user_name=None):
+    """Run a query over gRPC and return the raw result, which may carry an exception."""
+    channel = grpc.insecure_channel(f"{node.ip_address}:9100")
     try:
         grpc.channel_ready_future(channel).result(timeout=10)
         stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
         query_info = clickhouse_grpc_pb2.QueryInfo(query=query)
         if user_name is not None:
             query_info.user_name = user_name
-        result = stub.ExecuteQuery(query_info)
-        assert not result.HasField("exception"), result.exception.display_text
-        return result.output.decode("utf-8")
+        return stub.ExecuteQuery(query_info)
     finally:
         channel.close()
+
+
+def grpc_query(query, user_name=None, node=node1):
+    result = grpc_execute(query, node=node, user_name=user_name)
+    assert not result.HasField("exception"), result.exception.display_text
+    return result.output.decode("utf-8")
 
 
 def test_grpc_default_session_user():
@@ -219,6 +224,16 @@ def test_grpc_default_session_user():
     # An explicitly specified user is not affected.
     with assert_login_success("explicit_user", "gRPC"):
         assert grpc_query("SELECT currentUser()", user_name="explicit_user") == "explicit_user\n"
+
+
+def test_grpc_anonymous_logins_disabled():
+    # An empty global default session user prohibits gRPC queries without a user name.
+    result = grpc_execute("SELECT 1", node=node_reject)
+    assert result.HasField("exception")
+    assert "default_session_user" in result.exception.display_text
+
+    # An explicitly specified user works as usual.
+    assert grpc_query("SELECT currentUser()", user_name="explicit_user", node=node_reject) == "explicit_user\n"
 
 
 def arrowflight_query(node, query, authorization=None):
