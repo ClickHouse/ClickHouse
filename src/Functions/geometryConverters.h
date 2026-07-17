@@ -386,6 +386,14 @@ public:
 
     void add(const Polygon<Point> & polygon)
     {
+        /// An empty polygon (no outer ring, no holes) is stored with zero rings, so that a WKB/WKT
+        /// round-trip stays canonical (numRings = 0) instead of gaining a spurious empty outer ring.
+        if (polygon.outer().empty() && polygon.inners().empty())
+        {
+            offsets->insertValue(size);
+            return;
+        }
+
         /// Outer ring + all inner rings (holes).
         size += 1 + polygon.inners().size();
         offsets->insertValue(size);
