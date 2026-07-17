@@ -83,7 +83,10 @@ MIN_SUCCESSFUL_READERS=$(( READERS / 2 + 1 ))
 SUCCESS_MARKER="$CLICKHOUSE_TMP/03151_reader_success_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -f "$SUCCESS_MARKER"
 
-thread_alter_settings $TIMEOUT &
+# Drop the churn thread's stderr at the job level (not per-command): if its client is
+# SIGKILLed, bash's job-control "Killed" line goes to stderr and fails this test. The
+# churn thread asserts nothing; readers keep stderr so real read-path errors surface.
+thread_alter_settings $TIMEOUT 2>/dev/null &
 for reader_id in $(seq 1 $READERS);
 do
   thread_query_table $TIMEOUT "$SUCCESS_MARKER" "$reader_id" &
