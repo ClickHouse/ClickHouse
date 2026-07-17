@@ -62,7 +62,11 @@ private:
     size_t num_finished_port_pairs = 0;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    bool is_limit_for_settings = false;
+
+    /// This limit is the global result cap produced from the `limit`/`offset` settings, applied above
+    /// the query's own limiting operations. It must not take over the rows_before_limit_at_least
+    /// counter from a LimitRangeTransform below it.
+    bool is_result_cap = false;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
@@ -77,8 +81,7 @@ public:
         bool always_read_till_end_ = false,
         bool with_ties_ = false,
         SortDescription description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
-        bool is_limit_for_settings_ = false);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "Limit"; }
 
@@ -90,7 +93,8 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
 
-    bool isLimitForSettings() const { return is_limit_for_settings; }
+    void markAsResultCap() { is_result_cap = true; }
+    bool isResultCap() const { return is_result_cap; }
 
     void markAsShardLimit() { is_shard_limit = true; }
     bool isShardLimit() const { return is_shard_limit; }

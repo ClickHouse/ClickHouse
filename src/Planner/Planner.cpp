@@ -2214,7 +2214,8 @@ void Planner::buildPlanForUnionNode()
         }
 
         auto step = std::make_unique<LimitStep>(
-            query_plan.getCurrentHeader(), union_settings_limit, union_settings_offset, always_read_till_end, false, SortDescription{}, true);
+            query_plan.getCurrentHeader(), union_settings_limit, union_settings_offset, always_read_till_end, false, SortDescription{});
+        step->markAsResultCap();
         step->setStepDescription("LIMIT OFFSET for SETTINGS (UNION)");
         query_plan.addStep(std::move(step));
     }
@@ -2841,7 +2842,8 @@ void Planner::buildPlanForQueryNode()
                     settings_always_read_till_end = true;
 
                 auto step = std::make_unique<LimitStep>(
-                    query_plan.getCurrentHeader(), settings_limit, settings_offset, settings_always_read_till_end, false, SortDescription{}, true);
+                    query_plan.getCurrentHeader(), settings_limit, settings_offset, settings_always_read_till_end, false, SortDescription{});
+                step->markAsResultCap();
                 step->setStepDescription("LIMIT OFFSET for SETTINGS");
                 query_plan.addStep(std::move(step));
             }

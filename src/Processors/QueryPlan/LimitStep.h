@@ -14,8 +14,7 @@ public:
         size_t limit_, size_t offset_,
         bool always_read_till_end_ = false, /// Read all data even if limit is reached. Needed for totals.
         bool with_ties_ = false, /// Limit with ties.
-        SortDescription description_ = {},
-        bool is_limit_for_settings_ = false);
+        SortDescription description_ = {});
 
     String getName() const override { return "Limit"; }
 
@@ -37,7 +36,12 @@ public:
 
     bool withTies() const { return with_ties; }
     bool alwaysReadTillEnd() const { return always_read_till_end; }
-    bool isLimitForSettings() const { return is_limit_for_settings; }
+    bool isResultCap() const { return is_result_cap; }
+
+    /// Mark this limit as the global result cap produced from the `limit`/`offset` settings. Such a
+    /// step is applied above the query's own limiting operations and must not take over the
+    /// rows_before_limit_at_least counter from a LimitRangeTransform below it.
+    void markAsResultCap() { is_result_cap = true; }
 
     void markAsShardLimit() { is_shard_limit = true; }
 
@@ -64,7 +68,7 @@ private:
 
     bool with_ties;
     const SortDescription description;
-    bool is_limit_for_settings = false;
+    bool is_result_cap = false;
     bool is_shard_limit = false;
 };
 

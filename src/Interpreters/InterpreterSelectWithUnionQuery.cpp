@@ -469,7 +469,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             }
 
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), effective_limit, effective_offset, always_read_till_end, false, SortDescription{}, true);
+                query_plan.getCurrentHeader(), effective_limit, effective_offset, always_read_till_end, false, SortDescription{});
+            limit->markAsResultCap();
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }

@@ -228,11 +228,11 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             has_limit = true;
             /// LimitRangeTransform is a single-input simple transform that keeps its own counter
             /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). It must
-            /// own the counter even when a settings LimitStep sits downstream (LIMIT ... AFTER ...
-            /// SETTINGS limit = N); otherwise that outer limit would shadow it and report rows after
+            /// own the counter even when a result-cap LimitStep sits downstream (LIMIT ... AFTER ...
+            /// SETTINGS limit = N); otherwise that outer cap would shadow it and report rows after
             /// the range instead of the total scanned, diverging from normal LIMIT semantics.
             auto * downstream_limit = typeid_cast<LimitTransform *>(limit_being_counted);
-            if (!limit_being_counted || (downstream_limit && downstream_limit->isLimitForSettings()))
+            if (!limit_being_counted || (downstream_limit && downstream_limit->isResultCap()))
             {
                 processors.emplace(processor);
                 if (limit_being_counted)

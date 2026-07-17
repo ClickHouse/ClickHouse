@@ -216,7 +216,8 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         if (limit_length)
         {
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), limit_length, limit_offset, always_read_till_end, false, SortDescription{}, true);
+                query_plan.getCurrentHeader(), limit_length, limit_offset, always_read_till_end, false, SortDescription{});
+            limit->markAsResultCap();
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }
