@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <memory>
 #include <stack>
+#include <unordered_map>
 
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
@@ -14,6 +16,7 @@
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -1129,41 +1132,7 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 
 void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 {
-    if (!subplan_root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
-
-    struct Frame
-    {
-        Node * node;
-        Node * clone;
-        std::vector<Node *> children = {};
-    };
-
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
-
-    while (!nodes_to_process.empty())
-    {
-        auto & frame = nodes_to_process.back();
-        if (frame.children.size() == frame.node->children.size())
-        {
-            frame.clone->step = frame.node->step->clone();
-            frame.clone->children = std::move(frame.children);
-            nodes_to_process.pop_back();
-        }
-        else
-        {
-            size_t next_child = frame.children.size();
-            auto * child = frame.node->children[next_child];
-
-            nodes.emplace_back(Node{ .step = {} });
-            nodes.back().children.reserve(child->children.size());
-            auto * child_clone = &nodes.back();
-
-            frame.children.push_back(child_clone);
-
-            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
-        }
-    }
+    cloneSubplanAndReplace(node_to_replace, subplan_root, nodes);
 }
 
 QueryPlan QueryPlan::clone() const
@@ -1202,6 +1171,9 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         std::vector<Node *> children = {};
     };
 
+    std::unordered_map<const Node *, Node *> original_to_clone;
+    std::vector<CommonSubplanReferenceStep *> cloned_references;
+
     std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
@@ -1211,6 +1183,11 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         {
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
+
+            original_to_clone[frame.node] = frame.clone;
+            if (auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(frame.clone->step.get()))
+                cloned_references.push_back(subplan_reference);
+
             nodes_to_process.pop_back();
         }
         else
@@ -1226,6 +1203,19 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
 
             nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
         }
+    }
+
+    /// A cloned CommonSubplanReferenceStep must reference the clone of its subplan root whenever the root
+    /// belongs to the cloned subplan. Keeping the original pointer would tie the two plans together:
+    /// the in-memory buffer optimization rewrites the *referenced* node's step
+    /// (see useMemoryBufferForCommonSubplanResult), so optimizing one plan would mutate the other one,
+    /// and the consumer would end up in a different pipeline than its producer.
+    /// A reference to a node outside of the cloned subplan is left as is.
+    for (auto * subplan_reference : cloned_references)
+    {
+        auto it = original_to_clone.find(subplan_reference->getSubplanReferenceRoot());
+        if (it != original_to_clone.end())
+            subplan_reference->setSubplanReferenceRoot(it->second);
     }
 }
 
