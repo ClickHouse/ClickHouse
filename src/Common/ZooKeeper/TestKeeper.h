@@ -51,6 +51,7 @@ public:
             const String & data,
             bool is_ephemeral,
             bool is_sequential,
+            std::optional<int64_t> initial_sequential_counter,
             const ACLs & acls,
             CreateCallback callback) override;
 
@@ -130,7 +131,7 @@ public:
         bool is_ttl = false;
         int64_t ttl = 0;
         Stat stat{};
-        int32_t seq_num = 0;
+        int64_t seq_num = 0;
     };
 
     using Container = std::map<std::string, Node>;

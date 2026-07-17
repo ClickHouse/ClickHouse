@@ -249,6 +249,8 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     OpNum getOpNum() const override
     {
+        if (initial_sequential_counter)
+            return OpNum::CreateWithSequentialCounter;
         if (include_ttl)
             return OpNum::CreateTTL;
         if (include_stats)
@@ -301,6 +303,12 @@ struct ZooKeeperCreate2Response : ZooKeeperCreateResponse
 struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
 {
     OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
+    using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
+};
+
+struct ZooKeeperCreateWithSequentialCounterResponse : ZooKeeperCreateResponse
+{
+    OpNum getOpNum() const override { return OpNum::CreateWithSequentialCounter; }
     using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
 };
 

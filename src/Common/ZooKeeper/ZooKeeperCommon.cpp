@@ -239,6 +239,9 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(data, out);
     Coordination::write(acls, out);
 
+    chassert(
+        !initial_sequential_counter
+        || (!is_ephemeral && !is_sequential && !include_stats && !include_ttl && !not_exists));
     CreateMode flags = CreateMode::PERSISTENT;
     if (include_ttl)
     {
@@ -258,6 +261,8 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 
     if (include_ttl)
         Coordination::write(ttl, out);
+    if (initial_sequential_counter)
+        Coordination::write(*initial_sequential_counter, out);
 }
 
 size_t ZooKeeperCreateRequest::sizeImpl() const
@@ -266,6 +271,8 @@ size_t ZooKeeperCreateRequest::sizeImpl() const
     auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
     if (include_ttl)
         size += Coordination::size(ttl);
+    if (initial_sequential_counter)
+        size += Coordination::size(*initial_sequential_counter);
     return size;
 }
 
@@ -283,9 +290,11 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     /// that disagree with the wire create-mode (e.g. Create2 carrying a TTL flag would
     /// otherwise pass feature-gating as Create2 yet create a TTL node here).
     const bool from_create_ttl_opnum = include_ttl;
+    const bool from_create_with_sequential_counter_opnum = initial_sequential_counter.has_value();
     is_ephemeral = false;
     is_sequential = false;
     include_ttl = false;
+    initial_sequential_counter.reset();
 
     /// org.apache.zookeeper.CreateMode.fromFlag — reject unknown flags rather than
     /// silently treating them as PERSISTENT.
@@ -330,6 +339,18 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     if (include_stats && include_ttl)
         throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
             "Create2 must not carry a TTL create-mode flag");
+
+    if (from_create_with_sequential_counter_opnum)
+    {
+        if (flags != CreateMode::PERSISTENT || include_stats || include_ttl || not_exists)
+            throw Coordination::Exception(
+                Coordination::Error::ZBADARGUMENTS,
+                "`CreateWithSequentialCounter` only supports persistent nodes");
+
+        int64_t counter = 0;
+        Coordination::read(counter, in);
+        initial_sequential_counter = counter;
+    }
 
     if (include_ttl)
         Coordination::read(ttl, in);
@@ -1440,6 +1461,9 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
     if (op_num == OpNum::Create2)
         return std::make_shared<ZooKeeperCreate2Response>();
 
+    if (op_num == OpNum::CreateWithSequentialCounter)
+        return std::make_shared<ZooKeeperCreateWithSequentialCounterResponse>();
+
     if (op_num == OpNum::CreateIfNotExists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
 
@@ -1765,6 +1789,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->include_stats = true;
         else if constexpr (num == OpNum::CreateTTL)
             res->include_ttl = true;
+        else if constexpr (num == OpNum::CreateWithSequentialCounter)
+            res->initial_sequential_counter.emplace();
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
         else if constexpr (num == OpNum::TryRemove)
@@ -1791,6 +1817,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateWithSequentialCounter, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);

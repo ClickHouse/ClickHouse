@@ -75,3 +75,28 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, false);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
 }
+
+TEST(ZooKeeperTest, CreateWithSequentialCounterWireRoundTrip)
+{
+    constexpr int64_t initial_sequential_counter = 123456789;
+    auto request_ptr = zkutil::makeCreateRequestWithSequentialCounter(
+        "/round/trip", "data", initial_sequential_counter);
+    auto & request = dynamic_cast<ZooKeeperCreateRequest &>(*request_ptr);
+    ASSERT_EQ(request.getOpNum(), OpNum::CreateWithSequentialCounter);
+
+    WriteBufferFromOwnString out;
+    request.writeImpl(out);
+
+    auto decoded = ZooKeeperRequestFactory::instance().get(OpNum::CreateWithSequentialCounter);
+    auto & decoded_create = dynamic_cast<ZooKeeperCreateRequest &>(*decoded);
+    ReadBufferFromString in(out.str());
+    decoded_create.readImpl(in);
+
+    EXPECT_TRUE(in.eof());
+    EXPECT_EQ(decoded_create.getOpNum(), OpNum::CreateWithSequentialCounter);
+    EXPECT_EQ(decoded_create.path, request.path);
+    EXPECT_EQ(decoded_create.data, request.data);
+    EXPECT_FALSE(decoded_create.is_ephemeral);
+    EXPECT_FALSE(decoded_create.is_sequential);
+    EXPECT_EQ(decoded_create.initial_sequential_counter, initial_sequential_counter);
+}

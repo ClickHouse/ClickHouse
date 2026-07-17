@@ -27,7 +27,7 @@ void create(TestKeeper & keeper, const String & path, const String & data, bool 
 {
     std::promise<CreateResponse> sink;
     std::future<CreateResponse> future = sink.get_future();
-    keeper.create(path, data, is_ephemeral, /* is_sequential */ false, {},
+    keeper.create(path, data, is_ephemeral, /* is_sequential */ false, std::nullopt, {},
         [&](const auto & response) { sink.set_value(std::move(response)); });
 
     CreateResponse response = future.get();

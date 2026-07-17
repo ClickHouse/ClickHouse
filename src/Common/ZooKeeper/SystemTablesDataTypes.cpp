@@ -67,6 +67,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"Multi",               static_cast<Int16>(OpNum::Multi)},
             {"Create2",             static_cast<Int16>(OpNum::Create2)},
             {"CreateTTL",           static_cast<Int16>(OpNum::CreateTTL)},
+            {"CreateWithSequentialCounter", static_cast<Int16>(OpNum::CreateWithSequentialCounter)},
             {"CheckWatch",          static_cast<Int16>(OpNum::CheckWatch)},
             {"RemoveWatch",         static_cast<Int16>(OpNum::RemoveWatch)},
             {"MultiRead",           static_cast<Int16>(OpNum::MultiRead)},

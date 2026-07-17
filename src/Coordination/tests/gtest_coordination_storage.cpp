@@ -2277,4 +2277,64 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     EXPECT_EQ(uncommitted->stats.destroyTime(), original_destroy_time);
 }
 
+TYPED_TEST(CoordinationTest, TestCreateWithSequentialCounter)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+
+    const auto create = [&](const String & path, bool sequential, std::optional<int64_t> initial_counter = std::nullopt)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->is_sequential = sequential;
+        request->initial_sequential_counter = initial_counter;
+
+        storage.preprocessRequest(request, session_id, /*time=*/0, ++zxid);
+        auto responses = storage.processRequest(request, session_id, zxid);
+        const auto & response = dynamic_cast<const ZooKeeperCreateResponse &>(*responses[0].response);
+        return std::pair{response.error, response.path_created};
+    };
+
+    const auto remove = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+
+        storage.preprocessRequest(request, session_id, /*time=*/0, ++zxid);
+        auto responses = storage.processRequest(request, session_id, zxid);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+
+    EXPECT_EQ(create("/parent", false, 100).first, Error::ZOK);
+    EXPECT_EQ(create("/parent/config", false).second, "/parent/config");
+    EXPECT_EQ(create("/parent/foo-", true).second, "/parent/foo-0000000101");
+    EXPECT_EQ(create("/parent/bar-", true).second, "/parent/bar-0000000102");
+
+    remove("/parent/config");
+    remove("/parent/foo-0000000101");
+    remove("/parent/bar-0000000102");
+    remove("/parent");
+
+    EXPECT_EQ(create("/parent", false, 500).first, Error::ZOK);
+    EXPECT_EQ(create("/parent/foo-", true).second, "/parent/foo-0000000500");
+
+    EXPECT_EQ(create("/negative", false, -1).first, Error::ZBADARGUMENTS);
+    EXPECT_EQ(
+        create("/overflow", false, std::numeric_limits<int64_t>::max()).first,
+        Error::ZBADARGUMENTS);
+
+    auto ephemeral_request = std::make_shared<ZooKeeperCreateRequest>();
+    ephemeral_request->path = "/ephemeral";
+    ephemeral_request->is_ephemeral = true;
+    ephemeral_request->initial_sequential_counter = 1;
+    storage.preprocessRequest(ephemeral_request, session_id, /*time=*/0, ++zxid);
+    auto responses = storage.processRequest(ephemeral_request, session_id, zxid);
+    EXPECT_EQ(responses[0].response->error, Error::ZBADARGUMENTS);
+}
+
 #endif

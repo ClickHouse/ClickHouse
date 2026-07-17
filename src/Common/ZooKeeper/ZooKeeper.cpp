@@ -492,7 +492,8 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(
     return code;
 }
 
-Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
+Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created,
+    std::optional<int64_t> initial_sequential_counter)
 {
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
@@ -509,7 +510,9 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
-    auto future_result = asyncTryCreateNoThrow(path, data, mode);
+    auto future_result = initial_sequential_counter
+        ? asyncTryCreateWithSequentialCounterNoThrow(path, data, *initial_sequential_counter)
+        : asyncTryCreateNoThrow(path, data, mode);
 
     if (!waitForFutureWithProgress(future_result))
     {
@@ -550,6 +553,33 @@ Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::st
 
     return code;
 }
+
+std::string ZooKeeper::createWithSequentialCounter(
+    const std::string & path, const std::string & data, int64_t initial_sequential_counter)
+{
+    std::string path_created;
+    check(tryCreateWithSequentialCounter(path, data, initial_sequential_counter, path_created), path);
+    return path_created;
+}
+
+Coordination::Error ZooKeeper::tryCreateWithSequentialCounter(
+    const std::string & path, const std::string & data, int64_t initial_sequential_counter, std::string & path_created)
+{
+    Coordination::Error code = createImpl(
+        path, data, CreateMode::Persistent, path_created, initial_sequential_counter);
+
+    if (code == Coordination::Error::ZNOTREADONLY && exists(path))
+        return Coordination::Error::ZNODEEXISTS;
+
+    if (!(code == Coordination::Error::ZOK
+        || code == Coordination::Error::ZNONODE
+        || code == Coordination::Error::ZNODEEXISTS
+        || code == Coordination::Error::ZNOCHILDRENFOREPHEMERALS))
+        throw KeeperException::fromPath(code, path);
+
+    return code;
+}
+
 
 Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode)
 {
@@ -1606,7 +1636,7 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncCreate(const std::stri
             promise->set_value(response);
     };
 
-    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+    impl->create(path, data, mode & 1, mode & 2, std::nullopt, {}, std::move(callback));
     return future;
 }
 
@@ -1620,7 +1650,26 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateNoThrow(const
         promise->set_value(response);
     };
 
-    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+    impl->create(path, data, mode & 1, mode & 2, std::nullopt, {}, std::move(callback));
+    return future;
+}
+
+std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateWithSequentialCounterNoThrow(
+    const std::string & path, const std::string & data, int64_t initial_sequential_counter)
+{
+    if (!isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_WITH_SEQUENTIAL_COUNTER))
+        throw KeeperException(
+            Coordination::Error::ZUNIMPLEMENTED, "Keeper does not support `CreateWithSequentialCounter`");
+
+    auto promise = std::make_shared<std::promise<Coordination::CreateResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::CreateResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    impl->create(path, data, false, false, initial_sequential_counter, {}, std::move(callback));
     return future;
 }
 
@@ -2064,6 +2113,17 @@ Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::
     request->not_exists = ignore_if_exists;
     return request;
 }
+
+Coordination::RequestPtr makeCreateRequestWithSequentialCounter(
+    const std::string & path, const std::string & data, int64_t initial_sequential_counter)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = path;
+    request->data = data;
+    request->initial_sequential_counter = initial_sequential_counter;
+    return request;
+}
+
 
 Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version, bool try_remove)
 {

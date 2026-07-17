@@ -928,6 +928,7 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_SEQUENTIAL_COUNTER));
 }
 
 #endif

@@ -76,6 +76,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::CHECK_STAT,
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
+        KeeperFeatureFlag::CREATE_WITH_SEQUENTIAL_COUNTER,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
     };
 
@@ -621,6 +622,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
         case Coordination::OpNum::CreateTTL:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL);
+        case Coordination::OpNum::CreateWithSequentialCounter:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_SEQUENTIAL_COUNTER);
         case Coordination::OpNum::TryRemove:
             return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
         case Coordination::OpNum::SetWatch:

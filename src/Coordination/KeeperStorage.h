@@ -596,7 +596,8 @@ public:
         const Coordination::Stat & stat,
         ACLId acl_id,
         bool update_digest,
-        std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        std::optional<int64_t> ttl,
+        std::optional<int64_t> initial_sequential_counter) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
@@ -695,7 +696,8 @@ public:
         std::string_view parent_path, UncommittedNodeRef parent,
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,
         std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt);
+        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt,
+        std::optional<int64_t> initial_sequential_counter = std::nullopt);
     void prepareRemoveNode(
         std::string_view parent_path, UncommittedNodeRef parent,
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,

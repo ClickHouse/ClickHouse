@@ -429,6 +429,7 @@ struct CreateRequest : virtual Request
     bool include_stats = false;
     bool include_ttl = false;
     int64_t ttl = 0;
+    std::optional<int64_t> initial_sequential_counter;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -442,6 +443,8 @@ struct CreateRequest : virtual Request
             + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
         if (include_ttl)
             base_size += sizeof(ttl);
+        if (initial_sequential_counter)
+            base_size += sizeof(*initial_sequential_counter);
         return base_size;
     }
 };
@@ -826,6 +829,7 @@ public:
         const String & data,
         bool is_ephemeral,
         bool is_sequential,
+        std::optional<int64_t> initial_sequential_counter,
         const ACLs & acls,
         CreateCallback callback) = 0;
 

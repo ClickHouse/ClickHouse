@@ -8,6 +8,7 @@
 #include <base/types.h>
 
 #include <functional>
+#include <limits>
 
 #ifdef ZOOKEEPER_IMPL
 #  error "TestKeeper must not use ZooKeeper implementation"
@@ -305,6 +306,15 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
     response.zxid = zxid;
     Undo undo;
 
+    if (initial_sequential_counter
+        && (is_ephemeral || is_sequential || include_stats || include_ttl || not_exists
+            || *initial_sequential_counter < 0
+            || *initial_sequential_counter == std::numeric_limits<int64_t>::max()))
+    {
+        response.error = Error::ZBADARGUMENTS;
+        return { std::make_shared<CreateResponse>(response), undo };
+    }
+
     if (container.contains(path))
     {
         if (not_exists)
@@ -327,7 +337,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         else
         {
             TestKeeper::Node created_node;
-            created_node.seq_num = 0;
+            created_node.seq_num = initial_sequential_counter.value_or(0);
             created_node.stat.czxid = zxid;
             created_node.stat.mzxid = zxid;
             created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -824,6 +834,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_WITH_SEQUENTIAL_COUNTER);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -1059,6 +1070,7 @@ void TestKeeper::create(
     const String & data,
     bool is_ephemeral,
     bool is_sequential,
+    std::optional<int64_t> initial_sequential_counter,
     const ACLs &,
     CreateCallback callback)
 {
@@ -1067,6 +1079,7 @@ void TestKeeper::create(
     request.data = data;
     request.is_ephemeral = is_ephemeral;
     request.is_sequential = is_sequential;
+    request.initial_sequential_counter = initial_sequential_counter;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCreateRequest>(std::move(request));

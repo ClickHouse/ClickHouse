@@ -522,6 +522,7 @@ struct CreateNodeDelta
     ACLId acl_id;
     String data;
     std::optional<int64_t> ttl;
+    std::optional<int64_t> initial_sequential_counter;
 };
 
 struct RemoveNodeDelta
@@ -1145,7 +1146,9 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acl_id, digest_on_commit, operation.ttl))
+                    if (!createNode(
+                            path, operation.data, operation.stat, operation.acl_id, digest_on_commit,
+                            operation.ttl, operation.initial_sequential_counter))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1251,7 +1254,8 @@ bool KeeperStorage::createNode(
     const Coordination::Stat & stat,
     ACLId acl_id,
     bool update_digest,
-    std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS
+    std::optional<int64_t> ttl,
+    std::optional<int64_t> initial_sequential_counter) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto parent_path = Coordination::parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1276,6 +1280,8 @@ bool KeeperStorage::createNode(
         ttl_paths.insert(path);
         committed_ttl_nodes.fetch_add(1);
     }
+    if (initial_sequential_counter)
+        created_node.stats.setSeqNum(*initial_sequential_counter);
 
     auto [map_key, _] = container.insert(path, std::move(created_node));
     /// Take child path from key owned by map.
@@ -1359,6 +1365,7 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
         case Coordination::OpNum::Create2:
         case Coordination::OpNum::CreateIfNotExists:
         case Coordination::OpNum::CreateTTL:
+        case Coordination::OpNum::CreateWithSequentialCounter:
             return function(static_cast<Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
             return function(static_cast<Coordination::ZooKeeperRemoveRequest &>(zk_request));
@@ -1605,6 +1612,16 @@ static Coordination::Error preprocess(
         if (zk_request.ttl <= 0 || zk_request.ttl > MAX_KEEPER_TTL_MS)
             return Coordination::Error::ZBADARGUMENTS;
     }
+    if (zk_request.initial_sequential_counter)
+    {
+        if (zk_request.is_ephemeral || zk_request.is_sequential || zk_request.include_stats || zk_request.include_ttl
+            || zk_request.not_exists || *zk_request.initial_sequential_counter < 0
+            || *zk_request.initial_sequential_counter == std::numeric_limits<int64_t>::max())
+            return Coordination::Error::ZBADARGUMENTS;
+    }
+
+    if (parent_node->stats.seqNum() == std::numeric_limits<int64_t>::max())
+        return Coordination::Error::ZBADARGUMENTS;
 
     if (zk_request.is_ephemeral)
         storage.uncommitted_state.ephemerals[session_id].emplace(path_created);
@@ -1640,7 +1657,8 @@ static Coordination::Error preprocess(
     storage.prepareCreateNode(
         parent_path, parent_node_ref, new_parent_stats, new_parent_num_children,
         path_created, child_node_ref, stat, acl_id, zk_request.data,
-        zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt);
+        zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt,
+        zk_request.initial_sequential_counter);
 
     return Coordination::Error::ZOK;
 }
@@ -4238,7 +4256,8 @@ void KeeperStorage::prepareCreateNode(
     std::string_view parent_path, UncommittedNodeRef parent,
     const NodeStats & new_parent_stats, int32_t new_parent_num_children,
     std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-    ACLId acl_id, std::string_view data, std::optional<int64_t> ttl)
+    ACLId acl_id, std::string_view data, std::optional<int64_t> ttl,
+    std::optional<int64_t> initial_sequential_counter)
 {
     /// (prepareCreateNode combines parent node update and new node creation. Currently these
     ///  operations are independent here, and we could equally well remove the parent update from
@@ -4257,7 +4276,7 @@ void KeeperStorage::prepareCreateNode(
     staging_deltas.emplace_back(
         std::string{path},
         staging_zxid,
-        CreateNodeDelta{stat, acl_id, std::string{data}, ttl});
+        CreateNodeDelta{stat, acl_id, std::string{data}, ttl, initial_sequential_counter});
 
     auto node_it = *node.it;
     chassert(!node_it->second.node);
@@ -4268,6 +4287,8 @@ void KeeperStorage::prepareCreateNode(
     node_ptr->acl_id = acl_id;
     if (ttl)
         node_ptr->stats.setTTL(*ttl);
+    if (initial_sequential_counter)
+        node_ptr->stats.setSeqNum(*initial_sequential_counter);
 }
 
 void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
