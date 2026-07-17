@@ -1969,7 +1969,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 /// is expected to come from the first layer only, so splitting into layers would only add work-ahead
                 /// that is thrown away once the limit is reached, and would delay the first block. Keep a single
                 /// lazy merging stream instead.
-                if (split_intersecting_parts_ranges_into_layers && reader_settings.read_in_order && query_task_size_limit)
+                /// Use the hard read limit, which is set only when nothing filters the stream above the reading.
+                /// With a filter the query consumes limit / selectivity rows, and the selectivity is unknown here:
+                /// for a rare-value filter the single merging stream would process most of the table sequentially,
+                /// many times slower than the parallel layered merge.
+                const UInt64 hard_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
+                if (split_intersecting_parts_ranges_into_layers && reader_settings.read_in_order && hard_limit)
                 {
                     /// The limit counts rows after the FINAL collapse, while source rows may contain multiple
                     /// versions of the same key. A merge collapses them, so a part of non-zero level contains a
@@ -1991,13 +1996,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
                     const size_t rows_per_layer = std::max<size_t>(
                         merged_parts_rows / max_layers / new_parts.size() / max_collapsed_rows_per_key_in_merged_part, 1);
-                    if (query_task_size_limit < rows_per_layer)
+                    if (hard_limit < rows_per_layer)
                     {
                         LOG_TRACE(
                             log,
                             "Skipping split of intersecting ranges into layers for FINAL: reading in order with limit {} "
                             "is expected to consume less than one layer of at least {} rows",
-                            query_task_size_limit,
+                            hard_limit,
                             rows_per_layer);
                         split_intersecting_parts_ranges_into_layers = false;
                     }

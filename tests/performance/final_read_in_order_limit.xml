@@ -1,12 +1,15 @@
 <test>
     <!--
-        FINAL with read-in-order and a small LIMIT over fully intersecting parts.
+        FINAL with read-in-order and a small LIMIT over intersecting parts.
         Under read-in-order all layer streams produced by splitting intersecting
         ranges into layers are consumed by a single downstream merging transform,
         so with a small limit the split only adds a planning-time primary key
         index sweep, a first-block latency barrier, and speculative work that is
-        thrown away once the limit is reached. The last query consumes most of
-        the ordered stream and is a control: it must keep the layer split.
+        thrown away once the limit is reached. Only the first query (a hard limit,
+        no filtering) skips the split. The others are controls that must keep the
+        layer split: with a filter the query consumes limit / selectivity rows,
+        which is unknown at planning time (for the rare-value filter it is the
+        whole table), and the last query consumes most of the ordered stream.
     -->
     <create_query>
         CREATE TABLE final_inorder_limit (k UInt64, v UInt64, payload String)
@@ -24,6 +27,7 @@
 
     <query>SELECT k, payload FROM final_inorder_limit FINAL ORDER BY k LIMIT 100 FORMAT Null</query>
     <query>SELECT k, payload FROM final_inorder_limit FINAL WHERE v = 7 ORDER BY k LIMIT 100 FORMAT Null</query>
+    <query>SELECT k, payload FROM final_inorder_limit FINAL WHERE v = 1000 ORDER BY k LIMIT 100 FORMAT Null</query>
     <query>SELECT k, payload FROM final_inorder_limit FINAL ORDER BY k LIMIT 4000000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS final_inorder_limit</drop_query>
