@@ -934,7 +934,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  "Update heavy metrics. "
                  "Update period {} sec. "
                  "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {} sec.",
+                 "Heavy metrics calculation elapsed: {:.3f} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),
                  watch.elapsedSeconds());
