@@ -3028,7 +3028,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Save query without trailing comment
                 auto query_to_execute = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
                 size_t insert_query_without_data_length = 0;
-                if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+                /// `insert->data` is null for a foreign-dialect INSERT (the polyglot parser clears it,
+                /// because the query is sent verbatim and the server reads the data from its own
+                /// transpiled buffer). Guard the subtraction: `nullptr - query_to_execute.data()` is
+                /// undefined behavior, and the length is unused on the verbatim path anyway.
+                if (const auto * insert = parsed_query->as<ASTInsertQuery>(); insert && insert->data)
                     insert_query_without_data_length = insert->data - query_to_execute.data();
 
                 // Try to include the trailing comment with test hints. It is just
