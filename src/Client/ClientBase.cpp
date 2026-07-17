@@ -2097,6 +2097,21 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+    /// Arm the cancellation hook on `std_out` as well, even though an INSERT streams no result set
+    /// through it: the interactive `Cancelling query.` / `Query was cancelled.` diagnostics are
+    /// written best-effort through `std_out` (see printCancellationMessage), and on a terminal that
+    /// bounded write is only guaranteed not to block when `std_out` holds its private non-blocking
+    /// descriptor - which is created the first time a cancellation hook is installed on it (see
+    /// WriteBufferFromFileDescriptor::setCancellationHook). Without arming it here, the very first
+    /// interactive INSERT into a terminal that stopped draining would have no such descriptor yet,
+    /// so the diagnostic would fall back to the blocking tty path and could re-hang the first
+    /// Ctrl+C - exactly the stuck-terminal case the PR fixes for SELECT. The hook shares the same
+    /// lifetime discipline as in processOrdinaryQuery: it goes inert once query_interrupt_handler is
+    /// stopped and is finally cleared by the next resetOutput().
+    if (std_out)
+        std_out->setCancellationHook(
+            [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+
     /// Progress for an INSERT (e.g. reading an INFILE) is rendered through `tty_buf` as well -
     /// keep it responsive to cancellation, for the same reason as in processOrdinaryQuery.
     if (tty_buf)
