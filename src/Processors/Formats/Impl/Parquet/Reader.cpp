@@ -178,6 +178,9 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         std::move(mem_buf),
         method,
         /*zstd_window_log_max*/ 0,
+        /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+        /// this dispatch never sees it, so the snappy mode here is irrelevant.
+        SnappyMode::Basic,
         uncompressed_size,
         out);
     size_t pos = 0;

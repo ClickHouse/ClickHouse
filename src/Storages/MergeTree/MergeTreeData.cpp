@@ -1243,10 +1243,22 @@ void MergeTreeData::checkProperties(
             validate_complex_projection(projection.name, {"_block_offset"});
     }
 
+    /// On CREATE, `old_metadata` and `new_metadata` are the same object; on ALTER they differ.
+    const bool is_alter = &old_metadata != &new_metadata;
+
     for (const auto & col : new_metadata.columns)
     {
-        if (!col.statistics.empty())
-            MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type);
+        if (col.statistics.empty())
+            continue;
+
+        /// Allow deprecated `minmax` only when loading an existing table (attach/startup) or when
+        /// the column already carried `minmax` before an unrelated ALTER — never for a fresh introduction.
+        bool allow_deprecated_minmax = attach
+            || (is_alter
+                && old_metadata.columns.has(col.name)
+                && old_metadata.columns.get(col.name).statistics.contains("minmax"));
+
+        MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type, allow_deprecated_minmax);
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
@@ -4727,6 +4739,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             disk->getName(), desc.toString());
                 }
             }
+        }
+    }
+
+    /// Reject deprecated statistics types (currently `minmax`) when they are introduced through
+    /// `ALTER TABLE ... MODIFY SETTING auto_statistics_types = ...`. This is a shared check reached by
+    /// both ordinary and replicated tables. Only an explicit change to the setting in this statement is
+    /// inspected, so loading or otherwise altering an existing table that already carries `minmax` in the
+    /// setting is unaffected.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            Field value;
+            if (command.settings_changes.tryGet("auto_statistics_types", value))
+                validateAutoStatisticsTypes(value.safeGet<String>());
         }
     }
 
@@ -10817,9 +10844,16 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto alter = mutation_command.ast();
+                /// The predicate and assignment expressions were re-parsed from the serialized mutation
+                /// command, so their set operations (UNION/INTERSECT/EXCEPT) are not normalized yet.
+                /// Normalize them before building the query tree, as `executeQuery` does, otherwise the
+                /// analyzer rejects an in-progress mutation that legitimately contains such a subquery.
                 if (alter && alter->predicate)
                 {
-                    auto query_tree = buildQueryTree(ASTPtr(alter->predicate), local_context);
+                    ASTPtr predicate(alter->predicate);
+                    normalizeSetOperations(predicate, local_context);
+
+                    auto query_tree = buildQueryTree(predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
@@ -10834,7 +10868,10 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                         if (assignment.column_name == command.column_name)
                             throw_exception(mutation_name, action, "column", command.column_name);
 
-                        auto query_tree = buildQueryTree(assignment.expression(), local_context);
+                        ASTPtr assignment_expression = assignment.expression();
+                        normalizeSetOperations(assignment_expression, local_context);
+
+                        auto query_tree = buildQueryTree(assignment_expression, local_context);
                         auto identifiers = collectIdentifiersFullNames(query_tree);
                         if (identifiers.contains(command.column_name))
                             throw_exception(mutation_name, action, "column", command.column_name);
