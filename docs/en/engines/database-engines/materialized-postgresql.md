@@ -227,6 +227,26 @@ If set to `0`, the narrower `Date` and `DateTime` types are used instead (values
 
 This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
 
+### `materialized_postgresql_table_engine` {#materialized-postgresql-table-engine}
+
+Engine used for the nested tables that the engine creates. One of `ReplacingMergeTree` (default), `ReplicatedReplacingMergeTree`, `SharedReplacingMergeTree`. The replicated and shared variants require [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path) to be set, which enables cross-replica coordination of the replication slot. `SharedReplacingMergeTree` is only available in ClickHouse Cloud.
+
+It must be specified at `CREATE` time (it determines how the nested tables are created and cannot be changed afterwards).
+
+### `materialized_postgresql_keeper_path` {#materialized-postgresql-keeper-path}
+
+Keeper (or ZooKeeper) path used to coordinate the PostgreSQL logical replication slot across ClickHouse replicas. Default: empty (coordination disabled).
+
+When set, coordination is enabled: exactly one replica (the "active worker") consumes the replication slot at a time, and the others stand by and take over automatically when it becomes unavailable. This is what makes it safe to use a replicated/shared nested table engine for high availability - a PostgreSQL logical replication slot allows only one active consumer, so without coordination two replicas would race and lose changes. The active worker is elected with an ephemeral node in Keeper (similar to `S3Queue`, the Keeper-coordinated `Kafka` engine, and refreshable materialized views), so failover happens once the previous worker's Keeper session ends.
+
+The path supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to the same value on every participating replica** (so do not use `{replica}` in it, and only use `{uuid}` when the database UUID is identical across the replicas, e.g. inside a `Replicated` database). It cannot be combined with [`materialized_postgresql_use_unique_replication_consumer_identifier`](#materialized_postgresql_use_unique_replication_consumer_identifier), because coordination relies on a single shared replication slot.
+
+Only the active worker loads the initial snapshot; the other replicas receive the data (both the snapshot and ongoing changes) through ClickHouse replication of the shared replicated nested tables.
+
+### `materialized_postgresql_replica_name` {#materialized-postgresql-replica-name}
+
+Replica identity used for the coordination node and for the nested replicated table engine. Default: `{replica}`. Supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to a distinct value on every replica**.
+
 ## Notes {#notes}
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
@@ -236,6 +256,8 @@ So if there is a failover, new primary (the old physical standby) won't be aware
 A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via `materialized_postgresql_replication_slot` setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via `materialized_postgresql_snapshot` setting.
 
 Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then it is better to allow the table engine to create and manage its own replication slot.
+
+Alternatively, for high availability across ClickHouse replicas, set [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path) together with a replicated nested table engine ([`materialized_postgresql_table_engine`](#materialized-postgresql-table-engine)). Several ClickHouse replicas then share one replication slot: exactly one of them consumes it at a time and the others take over automatically on failure, while the nested tables are kept in sync as ClickHouse replicas.
 
 **Example (from [@bchrobot](https://github.com/bchrobot))**
 

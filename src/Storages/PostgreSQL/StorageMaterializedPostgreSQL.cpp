@@ -208,14 +208,14 @@ StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 }
 
 
-void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
+void StorageMaterializedPostgreSQL::createNestedIfNeeded(const NestedTableEngineSpec & engine_spec, PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
     if (tryGetNested())
         return;
 
     try
     {
-        const auto ast_create = getCreateNestedTableQuery(std::move(table_structure), table_override);
+        const auto ast_create = getCreateNestedTableQuery(engine_spec, std::move(table_structure), table_override);
         auto table_id = getStorageID();
         auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
         LOG_DEBUG(log, "Creating clickhouse table for postgresql table {} (ast: {})",
@@ -414,7 +414,7 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
 /// For database engine MaterializedPostgreSQL get columns and primary key columns by fetching from PostgreSQL, also using the same
 /// transaction with snapshot, which is used for initial tables dump.
 ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
-    PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
+    const NestedTableEngineSpec & engine_spec, PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
     auto create_table_query = make_intrusive<ASTCreateQuery>();
 
@@ -425,7 +425,22 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         create_table_query->uuid = table_id.uuid;
 
     auto storage = make_intrusive<ASTStorage>();
-    storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", make_intrusive<ASTIdentifier>("_version")));
+    if (engine_spec.replicated)
+    {
+        /// Replicated/Shared ReplacingMergeTree: the first two arguments are the (already fully
+        /// macro-expanded) zookeeper path and replica name, followed by the `_version` column. The path
+        /// is passed as an explicit literal so that ReplicatedMergeTree does not re-resolve {uuid} per
+        /// nested table, which would put each replica's table on a different path.
+        storage->set(storage->engine, makeASTFunction(
+            engine_spec.engine_name,
+            make_intrusive<ASTLiteral>(engine_spec.zookeeper_path),
+            make_intrusive<ASTLiteral>(engine_spec.replica_name),
+            make_intrusive<ASTIdentifier>("_version")));
+    }
+    else
+    {
+        storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", make_intrusive<ASTIdentifier>("_version")));
+    }
 
     auto columns_declare_list = make_intrusive<ASTColumns>();
     auto order_by_expression = make_intrusive<ASTFunction>();
@@ -650,6 +665,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
+
+        if (args.mode <= LoadingStrictnessLevel::CREATE)
+            validateMaterializedPostgreSQLCoordinationSettings(*postgresql_replication_settings);
 
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,

@@ -6,6 +6,17 @@
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <atomic>
+#include <memory>
+
+
+namespace zkutil
+{
+    class EphemeralNodeHolder;
+    using EphemeralNodeHolderPtr = std::shared_ptr<EphemeralNodeHolder>;
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 namespace DB
 {
@@ -13,6 +24,26 @@ namespace DB
 struct MaterializedPostgreSQLSettings;
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
+
+/// Describes the engine used for the nested tables created by a MaterializedPostgreSQL engine.
+/// By default it is a plain ReplacingMergeTree. When Keeper coordination is configured
+/// (materialized_postgresql_keeper_path is set) it can be a Replicated/Shared ReplacingMergeTree,
+/// in which case `zookeeper_path` and `replica_name` are already fully macro-expanded and are
+/// passed as the first two engine arguments.
+struct NestedTableEngineSpec
+{
+    String engine_name = "ReplacingMergeTree";
+    bool replicated = false;
+    String zookeeper_path;
+    String replica_name;
+};
+
+/// Validate the coordination-related settings of a MaterializedPostgreSQL engine at CREATE time.
+/// Throws BAD_ARGUMENTS on an unsupported nested engine name, on a replicated/shared nested engine
+/// without materialized_postgresql_keeper_path, or on coordination combined with a unique
+/// replication consumer identifier (which would give every replica its own slot instead of the
+/// single shared slot that coordination relies on).
+void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings);
 
 class PostgreSQLReplicationHandler : WithContext
 {
@@ -95,6 +126,24 @@ private:
 
     void consumerFunc();
 
+    /// Build the nested-table engine spec for a given (PostgreSQL) table name, applying the
+    /// coordination settings (macros are already expanded once, in the constructor).
+    NestedTableEngineSpec makeNestedEngineSpec(const String & table_name) const;
+
+    /// Create the nested tables on every replica (as replicas of the shared replicated tree) without
+    /// loading the initial snapshot. Used when coordination is enabled: only the active worker loads
+    /// the snapshot, and it propagates to the standbys through ClickHouse replication.
+    void ensureNestedTablesExist();
+
+    /// Background task (only used when coordination is enabled): try to acquire/keep the ephemeral
+    /// leader node in Keeper and start synchronization once leadership is held; otherwise stay a
+    /// standby and watch for the leader to disappear.
+    void coordinationFunc();
+
+    /// True when coordination is enabled and this handler currently holds the leader node with a live
+    /// Keeper session.
+    bool isLeader() const;
+
     ConsumerPtr getConsumer();
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
@@ -161,6 +210,8 @@ private:
     BackgroundSchedulePoolTaskHolder startup_task;
     BackgroundSchedulePoolTaskHolder consumer_task;
     BackgroundSchedulePoolTaskHolder cleanup_task;
+    /// Only activated when coordination is enabled (see coordination_enabled below).
+    BackgroundSchedulePoolTaskHolder coordination_task;
 
     const UInt64 reschedule_backoff_min_ms;
     const UInt64 reschedule_backoff_max_ms;
@@ -175,6 +226,28 @@ private:
     bool replication_handler_initialized = false;
 
     float fault_injection_probability = 0.;
+
+    /// Cross-replica coordination of the (single) PostgreSQL replication slot. Enabled when
+    /// `materialized_postgresql_keeper_path` is set. When enabled, exactly one replica (the holder of
+    /// `leader_node`) consumes the slot; the others create the nested tables as replicas of the same
+    /// shared replicated tree and wait to take over.
+    bool coordination_enabled = false;
+    /// Fully macro-expanded values (computed once in the constructor).
+    String coordination_keeper_path;
+    String coordination_replica_name;
+    /// One of "ReplacingMergeTree" / "ReplicatedReplacingMergeTree" / "SharedReplacingMergeTree".
+    String nested_engine_name;
+    /// The ephemeral Keeper node marking this replica as the active worker. Non-null only while leader.
+    /// Together with `coordination_zookeeper` (which keeps the referenced session alive), these are
+    /// only ever mutated from `coordination_task`, so they need no extra locking. The `/leader` node is
+    /// ephemeral, so Keeper removes it automatically once the leader's session ends - a peer then wins
+    /// the next `tryCreate`. PostgreSQL's own single-active-session rule on the slot is the ultimate
+    /// backstop that prevents two consumers from advancing the slot at once during a handover.
+    zkutil::EphemeralNodeHolderPtr leader_node;
+    zkutil::ZooKeeperPtr coordination_zookeeper;
+    /// Mirror of "this handler currently holds the leader node", read by `consumerFunc` (which runs on a
+    /// different task) to decide whether it may consume. Only written by `coordination_task`.
+    std::atomic<bool> is_active_worker = false;
 };
 
 }

@@ -35,6 +35,18 @@ namespace ErrorCodes
     DECLARE(Bool, materialized_postgresql_use_extended_date_and_time_types, true, \
         "Map PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64` " \
         "(which cover the wider PostgreSQL value range). When disabled, the narrower `Date` and `DateTime` types are used.", 0) \
+    DECLARE(String, materialized_postgresql_table_engine, "ReplacingMergeTree", \
+        "Engine for the nested tables created by the engine. One of `ReplacingMergeTree`, " \
+        "`ReplicatedReplacingMergeTree`, `SharedReplacingMergeTree`. The replicated/shared variants require " \
+        "`materialized_postgresql_keeper_path` to be set (which enables single-active-worker coordination).", 0) \
+    DECLARE(String, materialized_postgresql_keeper_path, "", \
+        "Keeper path used to coordinate the PostgreSQL logical replication slot across ClickHouse replicas. " \
+        "When non-empty, exactly one replica consumes the slot at a time (the others take over on its failure), " \
+        "which makes it safe to use a replicated/shared nested table engine. Supports the {uuid}, {shard} and " \
+        "{replica} macros. It must resolve to the same value on every replica.", 0) \
+    DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
+        "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
+        "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)

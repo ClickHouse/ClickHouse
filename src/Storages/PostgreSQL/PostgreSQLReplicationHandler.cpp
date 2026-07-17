@@ -3,8 +3,13 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
 #include <Common/SipHash.h>
+#include <Common/Macros.h>
+#include <Common/escapeForFileName.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -50,6 +55,9 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_table_engine;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_keeper_path;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replica_name;
 }
 
 namespace Setting
@@ -247,6 +255,33 @@ namespace
     }
 }
 
+void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings)
+{
+    const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
+    const bool is_plain = engine == "ReplacingMergeTree";
+    const bool is_replicated = engine == "ReplicatedReplacingMergeTree" || engine == "SharedReplacingMergeTree";
+
+    if (!is_plain && !is_replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported value '{}' for setting materialized_postgresql_table_engine. Allowed values: "
+            "ReplacingMergeTree, ReplicatedReplacingMergeTree, SharedReplacingMergeTree", engine);
+
+    const bool coordination_enabled = !settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
+
+    if (is_replicated && !coordination_enabled)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_table_engine = '{}' requires materialized_postgresql_keeper_path to be set. "
+            "It enables single-active-worker coordination of the PostgreSQL replication slot across ClickHouse "
+            "replicas, which is what makes a replicated/shared nested table engine safe to use", engine);
+
+    if (coordination_enabled && settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with "
+            "materialized_postgresql_use_unique_replication_consumer_identifier: coordination requires a single "
+            "shared replication slot, but the unique consumer identifier gives every replica its own slot");
+}
+
+
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & postgres_database_,
     const String & postgres_table_,
@@ -293,9 +328,44 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
+    nested_engine_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
+    coordination_enabled = !replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
+
+    if (coordination_enabled)
+    {
+        if (!getContext()->hasZooKeeper())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path is set, but no ZooKeeper/Keeper is configured for this server");
+
+        /// Resolve the {uuid}/{shard}/{replica} macros in the coordination path and replica name once.
+        /// {uuid} resolves to the ClickHouse database (or single-table) UUID passed to the handler.
+        StorageID macro_table_id = StorageID::createEmpty();
+        macro_table_id.database_name = current_database_name;
+        macro_table_id.uuid = parse<UUID>(clickhouse_uuid_);
+
+        const String raw_keeper_path = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
+        const String raw_replica_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name];
+        const auto macros = getContext()->getMacros();
+        {
+            Macros::MacroExpansionInfo info;
+            info.table_id = macro_table_id;
+            coordination_keeper_path = macros->expand(raw_keeper_path, info);
+        }
+        {
+            Macros::MacroExpansionInfo info;
+            info.table_id = macro_table_id;
+            coordination_replica_name = macros->expand(raw_replica_name, info);
+        }
+
+        LOG_INFO(log, "Replica coordination enabled: keeper path '{}', replica name '{}', nested table engine '{}'",
+                 coordination_keeper_path, coordination_replica_name, nested_engine_name);
+    }
+
     startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
     consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
     cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    if (coordination_enabled)
+        coordination_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCoordination", [this]{ coordinationFunc(); });
 }
 
 
@@ -307,6 +377,23 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 
 void PostgreSQLReplicationHandler::startup(bool delayed)
 {
+    if (coordination_enabled)
+    {
+        /// Every replica creates the nested tables (as replicas of the shared replicated tree) so reads
+        /// work everywhere and a standby can take over without reloading. Only the elected active worker
+        /// consumes the slot and loads the initial snapshot; that is driven by `coordination_task`.
+        if (delayed)
+        {
+            startup_task->activateAndSchedule();
+        }
+        else
+        {
+            ensureNestedTablesExist();
+            coordination_task->activateAndSchedule();
+        }
+        return;
+    }
+
     if (delayed)
     {
         startup_task->activateAndSchedule();
@@ -353,7 +440,15 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     {
         postgres::Connection connection(connection_info);
         connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
-        startSynchronization(is_attach);
+        if (coordination_enabled)
+        {
+            ensureNestedTablesExist();
+            coordination_task->activateAndSchedule();
+        }
+        else
+        {
+            startSynchronization(is_attach);
+        }
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
@@ -382,6 +477,13 @@ void PostgreSQLReplicationHandler::shutdown()
     LOG_TRACE(log, "Deactivating startup task");
     startup_task->deactivate();
 
+    /// Deactivate coordination before touching the leader node, so `coordinationFunc` is not mid-mutation.
+    if (coordination_task)
+    {
+        LOG_TRACE(log, "Deactivating coordination task");
+        coordination_task->deactivate();
+    }
+
     LOG_TRACE(log, "Deactivating consumer task");
     consumer_task->deactivate();
 
@@ -390,6 +492,12 @@ void PostgreSQLReplicationHandler::shutdown()
 
     LOG_TRACE(log, "Resetting consumer");
     consumer.reset(); /// Clear shared pointers to inner storages.
+
+    /// Release the ephemeral leader node so a peer can take over promptly (rather than waiting for the
+    /// Keeper session to expire). Reset the node before its backing session.
+    is_active_worker.store(false);
+    leader_node.reset();
+    coordination_zookeeper.reset();
 }
 
 
@@ -554,7 +662,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         initial_sync();
     }
     /// Always drop replication slot if it is CREATE query and not ATTACH.
-    else if (!is_attach)
+    /// When coordination is enabled the slot is shared across replicas and an existing slot means another
+    /// replica (or this one before a restart/handover) already created it and its nested tables; a new
+    /// active worker must resume from `confirmed_flush_lsn` instead of dropping the slot and reloading.
+    else if (!is_attach && !coordination_enabled)
     {
         if (!user_managed_slot)
             dropReplicationSlot(tx);
@@ -612,7 +723,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     cleanup_task->activateAndSchedule();
 
     /// Do not rely anymore on saved storage pointers.
-    materialized_storages.clear();
+    /// Exception: when coordination is enabled this handler may be re-elected as the active worker after a
+    /// handover and has to rebuild the consumer from these pointers, so keep them.
+    if (!coordination_enabled)
+        materialized_storages.clear();
 }
 
 
@@ -623,7 +737,7 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 
     auto table_structure = fetchTableStructure(tx, table_name);
     auto table_override = tryGetTableOverride(current_database_name, table_name);
-    return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
+    return storage->getCreateNestedTableQuery(makeNestedEngineSpec(table_name), std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
 }
 
 
@@ -669,7 +783,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
     auto table_override = tryGetTableOverride(current_database_name, table_name);
-    materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
+    materialized_storage->createNestedIfNeeded(makeNestedEngineSpec(table_name), std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -741,6 +855,16 @@ void PostgreSQLReplicationHandler::consumerFunc()
 {
     assertInitialized();
 
+    /// When coordination is enabled, only the active worker may consume (peek/advance) the shared slot.
+    /// If we are no longer the active worker, go dormant without rescheduling; `coordination_task` owns
+    /// tearing down the consumer and will re-arm this task if we become the active worker again. This
+    /// must happen before consume() so a demoted worker never advances the slot's confirmed LSN.
+    if (coordination_enabled && !isLeader())
+    {
+        LOG_DEBUG(log, "Not the active worker anymore, pausing consumption");
+        return;
+    }
+
     bool schedule_now = true;
     try
     {
@@ -772,6 +896,129 @@ void PostgreSQLReplicationHandler::consumerFunc()
         LOG_DEBUG(log, "Scheduling replication thread: after {} ms", milliseconds_to_wait);
         consumer_task->scheduleAfter(milliseconds_to_wait);
     }
+}
+
+
+bool PostgreSQLReplicationHandler::isLeader() const
+{
+    return is_active_worker.load();
+}
+
+
+NestedTableEngineSpec PostgreSQLReplicationHandler::makeNestedEngineSpec(const String & table_name) const
+{
+    NestedTableEngineSpec spec;
+    if (!coordination_enabled)
+        return spec; /// default: plain ReplacingMergeTree
+
+    spec.engine_name = nested_engine_name;
+    spec.replicated = nested_engine_name != "ReplacingMergeTree";
+    spec.replica_name = coordination_replica_name;
+    /// A deterministic, node-identical per-table path, so each replica's nested table joins the same
+    /// replicated tree. Table names may contain a schema-qualifying dot, so escape them for the path.
+    spec.zookeeper_path = coordination_keeper_path + "/tables/" + escapeForFileName(table_name);
+    return spec;
+}
+
+
+void PostgreSQLReplicationHandler::ensureNestedTablesExist()
+{
+    /// Create the nested tables on this replica without loading a snapshot. When coordination is enabled
+    /// they are replicas of a shared replicated tree, so the data (including the initial snapshot that the
+    /// active worker loads) propagates to this replica through ClickHouse replication.
+    postgres::Connection connection(connection_info);
+    pqxx::nontransaction tx(connection.getRef());
+
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    {
+        if (!materialized_storage->tryGetNested())
+        {
+            /// The single-table engine derives the nested structure from its own declared metadata, so it
+            /// does not need the PostgreSQL structure here; the database engine does.
+            PostgreSQLTableStructurePtr table_structure;
+            if (is_materialized_postgresql_database)
+                table_structure = fetchTableStructure(tx, table_name);
+
+            auto table_override = tryGetTableOverride(current_database_name, table_name);
+            materialized_storage->createNestedIfNeeded(
+                makeNestedEngineSpec(table_name),
+                std::move(table_structure),
+                table_override ? table_override->as<ASTTableOverride>() : nullptr);
+        }
+
+        /// Mark the nested table as available so the wrapper becomes queryable on this replica (the
+        /// database engine only exposes a table once its nested table exists). Data arrives through
+        /// ClickHouse replication of the shared replicated tree, even on replicas that never consume.
+        if (auto nested = materialized_storage->tryGetNested(); nested && !materialized_storage->hasNested())
+            materialized_storage->set(nested);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::coordinationFunc()
+{
+    if (stop_synchronization)
+        return;
+
+    static constexpr UInt64 healthy_poll_ms = 10000;
+    static constexpr UInt64 retry_poll_ms = 5000;
+    UInt64 reschedule_ms = healthy_poll_ms;
+
+    try
+    {
+        /// If the Keeper session backing our leadership expired, we are no longer the active worker. Stop
+        /// consuming and drop the (dead) session before trying to re-acquire leadership. The consumer must
+        /// be stopped so its PostgreSQL replication connection is closed, letting the new active worker
+        /// connect to the shared slot.
+        if (coordination_zookeeper && coordination_zookeeper->expired())
+        {
+            LOG_WARNING(log, "Keeper session expired, releasing replication leadership");
+            is_active_worker.store(false);
+            consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
+            consumer.reset();
+            leader_node.reset();
+            coordination_zookeeper.reset();
+        }
+
+        if (leader_node)
+        {
+            /// Still the active worker. Make sure the consumer is running (retry if a previous
+            /// startSynchronization attempt failed).
+            if (!consumer)
+                startSynchronization(/* throw_on_error */ false);
+        }
+        else
+        {
+            /// Try to become the active worker by creating the ephemeral leader node. Only its holder
+            /// consumes the shared slot; peers stay on standby and take over when it disappears.
+            auto zookeeper = getContext()->getZooKeeper();
+            const String leader_path = coordination_keeper_path + "/leader";
+            zookeeper->createAncestors(leader_path);
+            leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
+            if (leader_node)
+            {
+                /// Keep the session that the ephemeral node references alive for as long as the node.
+                coordination_zookeeper = zookeeper;
+                is_active_worker.store(true);
+                LOG_INFO(log, "Acquired replication leadership as '{}' at {}", coordination_replica_name, leader_path);
+                startSynchronization(/* throw_on_error */ false);
+            }
+            else
+            {
+                LOG_TRACE(log, "Another replica is the active worker, staying on standby");
+                reschedule_ms = retry_poll_ms;
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        reschedule_ms = retry_poll_ms;
+    }
+
+    if (!stop_synchronization)
+        coordination_task->scheduleAfter(reschedule_ms);
 }
 
 
