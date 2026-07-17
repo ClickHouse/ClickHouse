@@ -3,5 +3,7 @@ unsafe intermediate	1
 constant string conversion	1
 incompatible endpoint	1
 date datetime timezone	1
+datetime64 mixed scales	1
 safe domains remain optimized	1	1
 date domains remain optimized	1	1
+same tick scale remains optimized	1	1

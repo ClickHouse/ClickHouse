@@ -8,6 +8,7 @@
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -38,41 +39,53 @@ using namespace std::literals;
 /// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
 size_t & getTreeHashWorkCounter();
 
-enum class TransitiveComparisonDomain
+struct TransitiveComparisonDomain
 {
-    None,
-    NativeNumber,
-    String,
-    Date,
-    DateTime,
-    DateTime64,
+    enum class Kind
+    {
+        None,
+        NativeNumber,
+        String,
+        Date,
+        TimePoint,
+    };
+
+    Kind kind = Kind::None;
+    /// Tick scale for TimePoint members: `DateTime` counts seconds, `DateTime64(s)` counts
+    /// 10^-s seconds. Equal scales compare underlying whole values directly, while rescaling
+    /// can throw `DECIMAL_OVERFLOW` near the range ends.
+    UInt32 scale = 0;
+
+    bool operator==(const TransitiveComparisonDomain &) const = default;
 };
 
 /// Pairwise ClickHouse comparisons do not form one global transitive order because some
 /// type combinations use conversions specific to the compared pair. Only build chains
-/// inside domains whose comparison semantics are shared by all member types.
-/// Date and DateTime are separate domains: converting Date to DateTime uses the timezone
-/// of the DateTime operand, so mixed comparisons are pair-specific.
+/// inside domains whose comparison semantics are shared by all member types: native numbers
+/// (compared exactly for every pair), strings (bytewise), day numbers, and time points with
+/// the same tick scale. Date and TimePoint stay separate: converting Date to DateTime uses
+/// the timezone of the DateTime operand, so mixed comparisons are pair-specific.
 static TransitiveComparisonDomain getTransitiveComparisonDomain(const DataTypePtr & type)
 {
+    using Kind = TransitiveComparisonDomain::Kind;
     const auto nested_type = removeLowCardinalityAndNullable(type);
     if (isNativeNumber(nested_type))
-        return TransitiveComparisonDomain::NativeNumber;
+        return {.kind = Kind::NativeNumber};
     if (isString(nested_type))
-        return TransitiveComparisonDomain::String;
+        return {.kind = Kind::String};
     if (isDateOrDate32(nested_type))
-        return TransitiveComparisonDomain::Date;
+        return {.kind = Kind::Date};
     if (isDateTime(nested_type))
-        return TransitiveComparisonDomain::DateTime;
-    if (isDateTime64(nested_type))
-        return TransitiveComparisonDomain::DateTime64;
-    return TransitiveComparisonDomain::None;
+        return {.kind = Kind::TimePoint, .scale = 0};
+    if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
+        return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+    return {};
 }
 
 static bool haveSameTransitiveComparisonDomain(const DataTypePtr & lhs, const DataTypePtr & rhs)
 {
     const auto lhs_domain = getTransitiveComparisonDomain(lhs);
-    return lhs_domain != TransitiveComparisonDomain::None && lhs_domain == getTransitiveComparisonDomain(rhs);
+    return lhs_domain.kind != TransitiveComparisonDomain::Kind::None && lhs_domain == getTransitiveComparisonDomain(rhs);
 }
 
 static constexpr std::array boolean_functions{

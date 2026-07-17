@@ -44,6 +44,14 @@ FROM values(
     ('2020-01-01', '2020-01-01 00:30:00'))
 WHERE d <= dt AND dt <= toDateTime('2019-12-31 11:00:00', 'UTC');
 
+-- Comparing `DateTime64` of different scales rescales the values and can throw
+-- `DECIMAL_OVERFLOW`, so an inferred mixed-scale comparison may fail on valid data.
+SELECT 'datetime64 mixed scales', count()
+FROM values(
+    'a DateTime64(0, \'UTC\'), b DateTime64(0, \'UTC\')',
+    ('2299-12-31 23:59:59', '2000-01-02 00:00:00'))
+WHERE a > b AND b > toDateTime64('2000-01-01 00:00:00.000000001', 9, 'UTC');
+
 -- Keep deriving conditions inside the two explicitly supported domains.
 SELECT
     'safe domains remain optimized',
@@ -102,5 +110,36 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a DateTime(\'UTC\'), b DateTime(\'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
            WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- Equal tick scales never rescale: `DateTime` chains with `DateTime64(0)`, and
+-- `DateTime64` chains with `DateTime64` of the same scale.
+SELECT
+    'same tick scale remains optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a DateTime(\'UTC\'), b DateTime64(0, \'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
+           WHERE a < b AND b < toDateTime64('2020-01-01 00:00:02', 0, 'UTC')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a DateTime(\'UTC\'), b DateTime64(0, \'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
+           WHERE a < b AND b < toDateTime64('2020-01-01 00:00:02', 0, 'UTC')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a DateTime64(3, \'UTC\'), b DateTime64(3, \'UTC\')', ('2020-01-01 00:00:00.1', '2020-01-01 00:00:00.2'))
+           WHERE a < b AND b < toDateTime64('2020-01-01 00:00:00.3', 3, 'UTC')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a DateTime64(3, \'UTC\'), b DateTime64(3, \'UTC\')', ('2020-01-01 00:00:00.1', '2020-01-01 00:00:00.2'))
+           WHERE a < b AND b < toDateTime64('2020-01-01 00:00:00.3', 3, 'UTC')
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
