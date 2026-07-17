@@ -1455,8 +1455,11 @@ The method byte also encodes the [column-level codecs](/sql-reference/statements
 | `0x9a` | `GCD`             |
 | `0x9c` | `ALP`             |
 | `0x9d` | `SZ3`             |
+| `0x9e` | `Quantized`       |
 
 `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+
+`0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
 
 ### Checksum {#checksum}
 
