@@ -2246,17 +2246,36 @@ void ReadFromMergeTree::buildIndexes(
             };
         }
 
-        /// The text index registers direct-read virtual columns against its unsubstituted condition at plan
-        /// time (the virtual column name embeds the unsubstituted search-query hash) and the reader looks them
-        /// up via generateUnsubstituted(). Per-partition constant folding would build the granule analyzer from
-        /// a different (folded) set of search queries, so the reader's unsubstituted hash would be absent from
-        /// the analyzer. Keep folding off for text indexes so the granule and the reader agree.
-        const bool skip_constant_folding_for_index = skip_constant_folding || index_helper->isTextIndex();
-
-        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding_for_index);
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, factory, metadata_snapshot, query_context, skip_constant_folding);
 
         const auto & unsubstituted = condition_template->generateUnsubstituted();
-        if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
+
+        /// A text index registers direct-read virtual columns against its unsubstituted condition at plan time
+        /// (the virtual column name embeds the unsubstituted search-query hash) and the reader looks them up via
+        /// generateUnsubstituted(). Per-partition constant folding would build the granule analyzer from a
+        /// different (folded) set of search queries, so the reader's unsubstituted hash would be absent from the
+        /// analyzer and it would throw. This only affects conditions that actually emit a direct-read virtual
+        /// column, i.e. that contain a non-None direct-read query. Conditions whose queries are all None-mode
+        /// (match, multiSearchAny*, multiMatchAny, hasAny on non-array tokenizers, LIKE with
+        /// query_plan_text_index_add_hint = 0) are dropped before the virtual-column rewrite and are never looked
+        /// up via generateUnsubstituted(), so they keep their per-partition constant-folding specialization.
+        if (!skip_constant_folding && unsubstituted)
+        {
+            if (const auto * text_condition = typeid_cast<const MergeTreeIndexConditionText *>(unsubstituted.get()))
+            {
+                const auto & search_queries = text_condition->getAllSearchQueries();
+                const bool has_direct_read_query = std::ranges::any_of(
+                    search_queries,
+                    [](const auto & entry) { return entry.second->getDirectReadMode() != TextIndexDirectReadMode::None; });
+
+                if (has_direct_read_query)
+                    condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(
+                        filter_dag_ptr, factory, metadata_snapshot, query_context, /*skip_folding=*/true);
+            }
+        }
+
+        const auto & unsubstituted_final = condition_template->generateUnsubstituted();
+        if (unsubstituted_final && !unsubstituted_final->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)

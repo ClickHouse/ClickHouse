@@ -9,6 +9,12 @@
 
 SET allow_experimental_full_text_index = 1;
 SET use_constant_folding_in_index_analysis = 1;
+-- Pin the direct-read toggles: CI randomization can set them false, and then the text-index
+-- virtual-column rewrite never runs, routing the query through ordinary skip-index analysis and
+-- silently bypassing the failing lookup this test guards. query_plan_text_index_add_hint = 1 keeps
+-- the LIKE query in Hint (non-None) mode so it emits a direct-read virtual column.
+SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS tab;
 
