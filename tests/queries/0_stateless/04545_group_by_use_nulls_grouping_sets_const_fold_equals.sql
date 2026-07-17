@@ -1,7 +1,9 @@
+-- Tags: no-old-analyzer
 -- Regression for https://github.com/ClickHouse/ClickHouse/issues/110551
 -- group_by_use_nulls=1 promotes a constant-folded comparison to Nullable via
--- FunctionNode::wrap_with_nullable, while the un-wrapped base folded a Const(UInt8).
--- The ActionsDAG node result-type check aborted debug/sanitizer builds. Must run.
+-- FunctionNode::wrap_with_nullable (a QueryTree/analyzer-only mechanism), while the
+-- un-wrapped base folded a Const(UInt8). The ActionsDAG node result-type check aborted
+-- debug/sanitizer builds. no-old-analyzer: the fold path is analyzer-era only.
 SELECT * FROM
 (
     SELECT DISTINCT
