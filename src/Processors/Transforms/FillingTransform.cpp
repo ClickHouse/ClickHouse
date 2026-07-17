@@ -1,6 +1,7 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ProcessList.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
@@ -198,13 +199,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         return false;
 
     if (!descr.fill_from.isNull())
-        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
+        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_to.isNull())
-        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
+        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_step.isNull())
-        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
+        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
     if (!descr.fill_staleness.isNull())
-        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type);
+        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
 
     descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
@@ -233,7 +234,8 @@ FillingTransform::FillingTransform(
     const SortDescription & sort_description_,
     const SortDescription & fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
-    const bool use_with_fill_by_sorting_prefix_)
+    const bool use_with_fill_by_sorting_prefix_,
+    QueryStatusPtr process_list_element_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, fill_description_)), true)
     , sort_description(deduplicateSortDescription(sort_description_, *header_))
     , fill_description(fill_description_)
@@ -241,6 +243,7 @@ FillingTransform::FillingTransform(
     , filling_row(fill_description_)
     , next_row(fill_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
+    , process_list_element(std::move(process_list_element_))
 {
     if (interpolate_description)
     {
@@ -345,6 +348,21 @@ FillingTransform::FillingTransform(
                     (header_->begin() + sort_prefix_pos)->name);
         }
     }
+
+    /// A column that is both a fill column and an interpolate target gets two inserts per gap-fill
+    /// row (one from filling, one from interpolate), yielding a chunk with inconsistent row counts.
+    if (!interpolate_column_positions.empty())
+    {
+        std::unordered_set<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
+        for (auto interpolate_pos : interpolate_column_positions)
+        {
+            if (fill_positions.contains(interpolate_pos))
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "The same column in WITH FILL and INTERPOLATE is not allowed. Column: {}",
+                    (header_->begin() + interpolate_pos)->name);
+        }
+    }
 }
 
 /// prepare() is overrididen to call transform() after all chunks are processed
@@ -368,6 +386,30 @@ IProcessor::Status FillingTransform::prepare()
     }
 
     return ISimpleTransform::prepare();
+}
+
+bool FillingTransform::isCancelledOrTimeLimitExceeded()
+{
+    if (isCancelled())
+        return true;
+
+    /// In `timeout_overflow_mode = 'break'` the soft timeout is sticky: once it fires,
+    /// `checkTimeLimit` keeps returning false. Latch it so all loops (including the outer ones)
+    /// stop immediately without reading the clock again.
+    if (time_limit_exceeded)
+        return true;
+
+    /// A single WITH FILL range can expand into billions of rows inside one transform() call, so the
+    /// executor never gets a chance to enforce limits (max_execution_time) between work() calls.
+    /// Enforce it here too: in `throw` mode this throws TIMEOUT_EXCEEDED / QUERY_WAS_CANCELLED, and in
+    /// `break` mode it returns false, which we latch to stop generating rows and return a partial result.
+    if (process_list_element && !process_list_element->checkTimeLimit())
+    {
+        time_limit_exceeded = true;
+        return true;
+    }
+
+    return false;
 }
 
 void FillingTransform::interpolate(const MutableColumns & result_columns, Block & interpolate_block)
@@ -567,7 +609,7 @@ bool FillingTransform::generateSuffixIfNeeded(
         if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
         {
             rows_since_last_cancel_check = 0;
-            if (isCancelled())
+            if (isCancelledOrTimeLimitExceeded())
                 break;
         }
 
@@ -661,6 +703,17 @@ void FillingTransform::transformRange(
     const size_t range_begin = range.first;
     const size_t range_end = range.second;
 
+    /// Hard stop before touching any state once the query is cancelled or the time limit is exceeded.
+    /// The per-row loop below already checks this, but only after the `new_sorting_prefix` preamble.
+    /// In `timeout_overflow_mode = 'break'` the outer loop in `transform` runs its own guard before
+    /// calling `generateSuffixIfNeeded` for the previous range, and the soft timeout can flip inside
+    /// that suffix generation. Without this early return, the preamble below could still emit the
+    /// initial `fill_from` row for this range, and the code at the end of the function would rewrite
+    /// `last_range_sort_prefix` to a range whose original rows were never consumed - leaking rows from
+    /// a group that should not appear in the partial result after the deadline.
+    if (isCancelledOrTimeLimitExceeded())
+        return;
+
     Block interpolate_block;
     if (new_sorting_prefix)
     {
@@ -694,6 +747,15 @@ void FillingTransform::transformRange(
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
+        /// Stop promptly once the query is cancelled or the time limit is exceeded. The inner
+        /// generation loops below already check this, but a break there only ends the current gap;
+        /// without this check the outer loop would keep regenerating up to DEFAULT_BLOCK_SIZE rows for
+        /// every remaining input row (a slow drain, effectively a hang for expensive per-row work like
+        /// INTERPOLATE). It also matters in `timeout_overflow_mode = 'break'`, where the soft timeout
+        /// never sets `isCancelled`, so only the inner loops would stop otherwise.
+        if (isCancelledOrTimeLimitExceeded())
+            break;
+
         logDebug("row", row_ind);
         logDebug("filling_row", filling_row);
         logDebug("next_row", next_row);
@@ -726,7 +788,7 @@ void FillingTransform::transformRange(
             if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
             {
                 rows_since_last_cancel_check = 0;
-                if (isCancelled())
+                if (isCancelledOrTimeLimitExceeded())
                     break;
             }
 
@@ -753,7 +815,7 @@ void FillingTransform::transformRange(
                     if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
                     {
                         rows_since_last_cancel_check = 0;
-                        if (isCancelled())
+                        if (isCancelledOrTimeLimitExceeded())
                             break;
                     }
 
@@ -764,7 +826,7 @@ void FillingTransform::transformRange(
 
                 } while (filling_row.next(next_row, filling_row_changed));
 
-                if (isCancelled())
+                if (isCancelledOrTimeLimitExceeded())
                     break;
             }
         }
@@ -889,6 +951,10 @@ void FillingTransform::transform(Chunk & chunk)
 
     for (size_t row_ind = 0; row_ind < num_rows;)
     {
+        /// Stop promptly on cancellation or timeout instead of processing every remaining range.
+        if (isCancelledOrTimeLimitExceeded())
+            break;
+
         /// find next range
         auto current_sort_prefix_end_pos = getRangeEnd(
             row_ind,
