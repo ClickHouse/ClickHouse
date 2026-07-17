@@ -452,15 +452,19 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     {
         /// When these rows are already accounted by an outer pipeline (e.g. a distributed INSERT
         /// counting the block before dispatching it to local shards), suppress this nested
-        /// accounting: no WRITTEN_BYTES quota, no progress update. The context's process-list
-        /// element is intentionally left untouched so the storage sinks still honor
-        /// KILL QUERY / max_execution_time. Use the captured one-shot flag, not the context
-        /// (which was already cleared above so child inserts still count).
+        /// accounting: no WRITTEN_BYTES quota, no progress update, no InsertedRows/InsertedBytes
+        /// profile events. The context's process-list element is intentionally left untouched so
+        /// the storage sinks still honor KILL QUERY / max_execution_time. Use the captured
+        /// one-shot flag, not the context (which was already cleared above so child inserts count).
         auto counting = std::make_shared<CountingTransform>(
             in_header,
             skip_insert_counting ? nullptr : context->getQuota(),
             context->getNormalizedQueryHash());
-        if (!skip_insert_counting)
+        if (skip_insert_counting)
+        {
+            counting->disableProfileEventsCounting();
+        }
+        else
         {
             counting->setProcessListElement(context->getProcessListElement());
             counting->setProgressCallback(context->getProgressCallback());
@@ -869,16 +873,21 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 chain.getInputSharedHeader()));
     }
 
-    /// See the note at the other CountingTransform site: suppress nested accounting (quota and
-    /// progress) when the rows are already counted by an outer pipeline, but keep the process-list
-    /// element on the context so storage sinks still honor KILL QUERY / max_execution_time.
-    /// Use the captured one-shot flag, not the context (which was already cleared above so the
-    /// dependent-view / delegating-storage chains built above still count their own writes).
+    /// See the note at the other CountingTransform site: suppress nested accounting (quota,
+    /// progress, and InsertedRows/InsertedBytes profile events) when the rows are already counted
+    /// by an outer pipeline, but keep the process-list element on the context so storage sinks
+    /// still honor KILL QUERY / max_execution_time. Use the captured one-shot flag, not the context
+    /// (which was already cleared above so the dependent-view / delegating-storage chains built
+    /// above still count their own writes).
     auto counting = std::make_shared<CountingTransform>(
         chain.getInputSharedHeader(),
         skip_insert_counting ? nullptr : context->getQuota(),
         context->getNormalizedQueryHash());
-    if (!skip_insert_counting)
+    if (skip_insert_counting)
+    {
+        counting->disableProfileEventsCounting();
+    }
+    else
     {
         counting->setProcessListElement(context->getProcessListElement());
         counting->setProgressCallback(context->getProgressCallback());

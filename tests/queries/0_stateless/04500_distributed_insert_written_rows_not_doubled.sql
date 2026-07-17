@@ -26,7 +26,7 @@ CREATE TABLE dist_04500 AS local_04500
 -- shards (issue #106361). Rows pushed into local shards are already accounted by the
 -- top-level CountingTransform of the distributed INSERT.
 INSERT INTO dist_04500 SELECT number FROM numbers(1000)
-    SETTINGS log_comment = '04500_dist_insert';
+    SETTINGS log_comment = '04500_dist_insert', log_profile_events = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -34,6 +34,20 @@ SYSTEM FLUSH LOGS query_log;
 -- written_bytes comes from the same nested CountingTransform accounting that also drives the
 -- WRITTEN_BYTES quota, so a correct value here confirms the quota is not double-charged either.
 SELECT written_rows, written_bytes
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query
+  AND query_kind = 'Insert'
+  AND current_database = currentDatabase()
+  AND log_comment = '04500_dist_insert'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- The nested per-shard CountingTransform also increments the global InsertedRows / InsertedBytes
+-- profile events, so ProfileEvent_InsertedRows / ProfileEvent_InsertedBytes in system.query_log
+-- must not be doubled either (1000 / 8000, not 2000 / 16000). Otherwise dashboards built on those
+-- counters stay inflated even after written_rows / written_bytes are fixed.
+SELECT ProfileEvents['InsertedRows'], ProfileEvents['InsertedBytes']
 FROM system.query_log
 WHERE type = 'QueryFinish'
   AND is_initial_query
