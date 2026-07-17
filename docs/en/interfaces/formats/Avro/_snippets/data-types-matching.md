@@ -17,6 +17,8 @@ The table below shows all data types supported by the Apache Avro format, and th
 | `int (date)` \**\*                          | [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md)                       | `int (date)` \**\*              |
 | `long (timestamp-millis)` \**\*             | [DateTime64(3)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \**\* |
 | `long (timestamp-micros)` \**\*             | [DateTime64(6)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \**\* |
+| `int (time-millis)` \**\*                   | [Time64(3)](/sql-reference/data-types/time64.md)                                                                      |                                 |
+| `long (time-micros)` \**\*                  | [Time64(6)](/sql-reference/data-types/time64.md)                                                                      |                                 |
 | `bytes (decimal)`  \**\*                    | [DateTime64(N)](/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**\*        |
 | `int`                                       | [IPv4](/sql-reference/data-types/ipv4.md)                                                                             | `int`                           |
 | `fixed(16)`                                 | [IPv6](/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                     |
@@ -34,6 +36,4 @@ As a result, when producing Avro from ClickHouse, we have to always include the 
 \**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Unsupported Avro logical data types:
-- `time-millis`
-- `time-micros`
 - `duration`
