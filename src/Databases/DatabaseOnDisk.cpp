@@ -123,12 +123,18 @@ std::pair<String, StoragePtr> createTableFromAST(
         /// - the code is simpler, since the query is already brought to a suitable form.
         if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         {
-            if (!ast_create_query.storage || !ast_create_query.storage->engine)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
-                                                           "it's a bug or result of manual intervention in metadata files");
+            /// A view never has a storage engine (StorageFactory forbids one for ordinary views),
+            /// and its column list may legitimately be absent. Do not abort the whole server here:
+            /// leaving columns empty is valid and StorageFactory/StorageView handle engineless views.
+            if (!ast_create_query.isView())
+            {
+                if (!ast_create_query.storage || !ast_create_query.storage->engine)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
+                                                               "it's a bug or result of manual intervention in metadata files");
 
-            if (!StorageFactory::instance().getStorageFeatures(ast_create_query.storage->engine->name).supports_schema_inference)
-                throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
+                if (!StorageFactory::instance().getStorageFeatures(ast_create_query.storage->engine->name).supports_schema_inference)
+                    throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
+            }
             /// Leave columns empty.
         }
         else
