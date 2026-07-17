@@ -39,14 +39,18 @@ DROP TABLE t_log_nested_ownership;
 DROP TABLE IF EXISTS t_json_shared_data_ownership;
 
 -- A JSON column with a tiny `max_dynamic_paths` so most paths overflow into the shared-data
--- stream, stored in a Compact part (the shared-data ADVANCED serialization is the default).
+-- stream, stored in a Compact part. `object_shared_data_serialization_version_for_zero_level_parts`
+-- is forced to `advanced` so the inserted parts use the ADVANCED shared-data serialization whose
+-- read path (`deserializePathsData`) is the one instrumented here (it is `map_with_buckets` by
+-- default for zero-level parts, which would not exercise this destruction point).
 CREATE TABLE t_json_shared_data_ownership
 (
     id UInt64,
     json JSON(max_dynamic_paths = 2)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 10000000000;
+SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 10000000000,
+    object_shared_data_serialization_version_for_zero_level_parts = 'advanced';
 
 INSERT INTO t_json_shared_data_ownership
 SELECT
