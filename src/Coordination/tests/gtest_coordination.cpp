@@ -24,6 +24,44 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
+
+#include <Poco/Util/XMLConfiguration.h>
+
+#include <sstream>
+
+TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+    };
+
+    /// A zero max_requests_batch_size caused an infinite append-entries loop in a multi-node
+    /// setup, because it defaults max_requests_append_size to zero too. See issue #84099.
+    EXPECT_THROW(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<max_requests_batch_size>0</max_requests_batch_size>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        DB::Exception);
+
+    /// max_requests_append_size feeds NuRaft's max_append_size_ directly and must not be zero either.
+    EXPECT_THROW(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<max_requests_append_size>0</max_requests_append_size>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        DB::Exception);
+
+    /// Non-zero values are accepted.
+    EXPECT_NO_THROW(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<max_requests_batch_size>1</max_requests_batch_size>"
+             "<max_requests_append_size>1</max_requests_append_size>"
+             "</coordination_settings></keeper_server></clickhouse>"));
+}
 
 TYPED_TEST(CoordinationTest, RaftServerConfigParse)
 {
