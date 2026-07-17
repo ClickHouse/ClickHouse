@@ -52,6 +52,16 @@ public:
     /// Passed values are deltas, that must be summarized.
     virtual void onProgress(const Progress & progress);
 
+    /// Emit a final `progress` packet through the framing format (see `setFraming`), carrying the
+    /// final counters (`result_rows` / `result_bytes` / `memory_usage`) computed after the query
+    /// finished. For a pulling query the output format is finalized by the pipeline before those
+    /// counters are known, so `onProgress` would drop the update (it writes only while the format is
+    /// not finalized); this writes it straight to the framing format, which is finalized separately
+    /// (its own guard makes a repeated call a no-op). No-op when there is no framing. The passed
+    /// value is a delta, added to the accumulated progress. Must be called before the framing format
+    /// is finalized (`getFraming()->finalize()`).
+    void writeFinalProgress(const Progress & progress);
+
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
 

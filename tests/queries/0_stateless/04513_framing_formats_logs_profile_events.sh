@@ -193,6 +193,19 @@ grep '"packet":"progress"' "$result_file" | tail -1 | grep -q '"result_rows":"10
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE framing_no_result_04513"
 rm "$result_file"
 
+# The final progress flush must reach the framed stream for ordinary pulling (`SELECT`) queries too.
+# The output format is finalized by the pipeline before the final counters (`result_rows` /
+# `result_bytes`) are known, so they are routed to the framing format explicitly
+# (`IOutputFormat::writeFinalProgress`): the last `progress` packet carries them, like the final
+# progress packet of the native protocol. Without this the counters would only reach the
+# `X-ClickHouse-Summary` HTTP header, not the stream.
+echo '--- a framed SELECT ends with a final progress packet carrying the final counters'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(1000000) FORMAT JSONEachRow" > "$result_file"
+[ "$(grep -c '"packet":"progress"' "$result_file")" -ge 1 ] && echo 'SELECT progress packets: OK'
+grep '"packet":"progress"' "$result_file" | tail -1 | grep -q '"result_rows":"1000000"' && echo 'SELECT final progress result_rows: OK'
+rm "$result_file"
+
 # The output format is irrelevant for a no-result query (no payload is formatted), so the framing must
 # not depend on it: a mistyped `default_format` must not fail the query, and a binary `default_format`
 # (`Native`) must not flip the `EventStream` content type to `payload=base64`.

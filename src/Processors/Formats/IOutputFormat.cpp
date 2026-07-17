@@ -294,6 +294,25 @@ void IOutputFormat::onProgress(const Progress & progress)
     }
 }
 
+void IOutputFormat::writeFinalProgress(const Progress & progress)
+{
+    std::lock_guard lock(writing_mutex);
+
+    if (!framing)
+        return;
+
+    statistics.progress.incrementPiecewiseAtomically(progress);
+    statistics.progress.elapsed_ns = statistics.watch.elapsedNanoseconds();
+
+    /// The output format itself is already finalized here (for a pulling query the pipeline finalized
+    /// it before the final counters were known), so its own `finalized` guard would drop the update.
+    /// Write straight to the framing format, which is finalized separately (its own guard makes this a
+    /// no-op once finalized). This emits the final `progress` packet carrying `result_rows` /
+    /// `result_bytes` / `memory_usage`, like the native protocol's final progress packet.
+    framing->onProgress(statistics.progress);
+    has_progress_update_to_write = false;
+}
+
 void IOutputFormat::setProgress(Progress progress)
 {
     statistics.progress = std::move(progress);
