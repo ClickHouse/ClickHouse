@@ -6,7 +6,6 @@ keywords: ['CSVWithNamesAndTypes']
 output_format: true
 slug: /interfaces/formats/CSVWithNamesAndTypes
 title: 'CSVWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

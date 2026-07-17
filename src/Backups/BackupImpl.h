@@ -5,7 +5,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
-#include <Common/Logger_fwd.h>
 #include <map>
 #include <mutex>
 
@@ -33,7 +32,6 @@ public:
         String compression_method;
         int compression_level = 0;
         size_t max_volume_size = 0;
-        size_t adaptive_buffer_max_size = 8 * DBMS_DEFAULT_BUFFER_SIZE;
     };
 
     using SnapshotReaderCreator = std::function<std::shared_ptr<IBackupReader>(const String &, const String &)>;
@@ -90,7 +88,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    void removeAllFilesUnderDirectory(const String & directory) const override;
+    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
 
 private:
     void open();
@@ -145,8 +143,6 @@ private:
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
 
-    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
-    size_t data_file_name_prefix_length = 3;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -172,6 +168,8 @@ private:
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
+    /// Whether metadata has a marker to copy `S3` credentials from this backup locator to the base backup locator.
+    bool base_backup_copy_s3_credentials_from_backup = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;

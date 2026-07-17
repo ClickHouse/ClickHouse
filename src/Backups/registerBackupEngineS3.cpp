@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #if USE_AWS_S3
@@ -18,6 +17,7 @@ namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
 }
 
 #endif
@@ -30,11 +30,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 #if USE_AWS_S3
@@ -67,6 +62,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         String secret_access_key;
         String role_arn;
         String role_session_name;
+        String external_id;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -75,6 +71,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
+            external_id = collection->getOrDefault<String>("external_id", "");
 
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
@@ -107,6 +104,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
+                external_id = std::move(auth_settings[S3AuthSetting::external_id]);
             }
         }
 
@@ -120,7 +118,6 @@ void registerBackupEngineS3(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {
@@ -136,6 +133,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -151,6 +149,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,
@@ -172,6 +171,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                external_id,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -191,6 +191,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                     secret_access_key,
                     role_arn,
                     role_session_name,
+                    external_id,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -208,6 +209,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 std::move(role_arn),
                 std::move(role_session_name),
+                std::move(external_id),
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,

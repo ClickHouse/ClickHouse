@@ -87,7 +87,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void WindowStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << "Window: (";
     if (!window_description.partition_by.empty())
     {

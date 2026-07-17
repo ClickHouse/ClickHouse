@@ -11,7 +11,6 @@
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#include <Databases/DataLake/StorageCredentials.h>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -129,29 +128,6 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
             }
             break;
         }
-        case StorageType::Azure:
-        {
-            auto callback = [table_id] (std::ostream & os)
-            {
-                Poco::JSON::Object obj;
-                obj.set("table_id", table_id);
-                obj.set("operation", "READ");
-                obj.stringify(os);
-            };
-
-            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-            if (hasValueAndItsNotNone("azure_user_delegation_sas", object))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = object->getObject("azure_user_delegation_sas");
-                std::string sas_token = creds_object->get("sas_token").extract<String>();
-
-                auto creds = std::make_shared<AzureCredentials>(sas_token);
-                metadata.setStorageCredentials(creds);
-            }
-            break;
-        }
         default:
             break;
     }
@@ -241,7 +217,6 @@ bool UnityCatalog::tryGetTableMetadata(
                         }
                         schema.push_back({name, data_type});
                     }
-                    LOG_TEST(log, "Parsed schema: {}", schema.toString());
                 }
                 catch (...)
                 {
@@ -440,30 +415,6 @@ UnityCatalog::UnityCatalog(
     , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
 }
-
-ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID &)
-{
-    return [this] () -> std::shared_ptr<IStorageCredentials>
-    {
-        LOG_DEBUG(log, "Update credentials in the catalog");
-
-        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-        if (hasValueAndItsNotNone("aws_temp_credentials", object))
-        {
-            const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
-            std::string access_key_id = creds_object->get("access_key_id").extract<String>();
-            std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
-            std::string session_token = creds_object->get("session_token").extract<String>();
-
-            auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
-            return creds;
-        }
-        return nullptr;
-    };
-}
-
 
 }
 

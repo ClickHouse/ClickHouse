@@ -1,7 +1,7 @@
 import os
 
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Utils
 
 if __name__ == "__main__":
 
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=["yarn check-markdown"],
+            command=[f"yarn check-markdown"],
             workdir="/opt/clickhouse-docs",
         )
     )
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=["yarn generate-changelog"],
+            command=[f"yarn generate-changelog"],
             workdir="/opt/clickhouse-docs",
         )
     )
@@ -67,15 +67,9 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=["yarn autogenerate-table-of-contents"],
+            command=[f"yarn autogenerate-table-of-contents"],
             workdir="/opt/clickhouse-docs",
         )
-    )
-
-    # The /opt/clickhouse-docs is a git directory owned by user 999
-    # We must add it to the trusted directories to avoid git warnings during the build
-    Shell.check(
-        "git config --global --add safe.directory /opt/clickhouse-docs", strict=True
     )
 
     testname = "Build docusaurus"

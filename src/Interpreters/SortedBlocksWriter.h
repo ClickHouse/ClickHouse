@@ -5,6 +5,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>

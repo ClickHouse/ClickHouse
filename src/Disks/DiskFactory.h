@@ -15,7 +15,7 @@
 namespace DB
 {
 
-using DisksMap = std::map<String, DiskPtr, std::less<>>;
+using DisksMap = std::map<String, DiskPtr>;
 /**
  * Disk factory. Responsible for creating new disk objects.
  */
@@ -44,8 +44,6 @@ public:
         bool attach = false,
         bool custom_disk = false,
         const std::unordered_set<String> & skip_types = {}) const;
-
-    void clearRegistry();
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

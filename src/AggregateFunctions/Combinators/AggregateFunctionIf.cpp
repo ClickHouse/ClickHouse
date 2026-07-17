@@ -2,8 +2,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 #include <absl/container/inlined_vector.h>
 
 namespace DB
@@ -386,7 +384,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        VectorWithMemoryTracking<llvm::Value * > is_null_values;
+        std::vector<llvm::Value * > is_null_values;
 
         for (size_t i = 0; i < arguments_size; ++i)
         {

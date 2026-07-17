@@ -4,7 +4,6 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/SharedMutex.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
@@ -43,7 +42,6 @@ public:
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
-        WITH_OPTIONAL_TRACING_CONTEXT = 4,
     };
 
     /// lifetime of a parsed request is:
@@ -98,7 +96,7 @@ public:
     virtual KeeperDigest getNodesDigest() const = 0;
 
     /// Introspection functions for 4lw commands
-    virtual int64_t getLastProcessedZxid() const = 0;
+    virtual uint64_t getLastProcessedZxid() const = 0;
 
     virtual const KeeperStorageStats & getStorageStats() const = 0;
 
@@ -128,13 +126,6 @@ protected:
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
     std::shared_ptr<SnapshotFileInfo> latest_snapshot_info TSA_GUARDED_BY(snapshots_lock);
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf TSA_GUARDED_BY(snapshots_lock) = nullptr;
-
-    /// Cached size of the latest snapshot file, updated atomically after each snapshot
-    /// creation/save while snapshots_lock is held. Read lock-free by `getLatestSnapshotSize`
-    /// (called from `mntr`) to avoid blocking on `snapshots_lock` during long-running
-    /// snapshot serialization. On `getFileSize` failure the previous value is retained
-    /// and a warning is logged; the value self-corrects on the next successful snapshot.
-    std::atomic<uint64_t> latest_snapshot_size{0};
 
     CoordinationSettingsPtr coordination_settings;
 
@@ -243,7 +234,7 @@ public:
     KeeperDigest getNodesDigest() const override;
 
     /// Introspection functions for 4lw commands
-    int64_t getLastProcessedZxid() const override;
+    uint64_t getLastProcessedZxid() const override;
 
     const KeeperStorageStats & getStorageStats() const override;
 

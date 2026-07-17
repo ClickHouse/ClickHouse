@@ -2,10 +2,9 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
@@ -43,7 +42,6 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
@@ -56,7 +54,6 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
-#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/InterpreterFactory.h>
@@ -77,7 +74,6 @@ namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event InitialQuery;
-    extern const Event InitialSelectQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -114,11 +110,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 {
     ProfileEvents::increment(ProfileEvents::Query);
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
         ProfileEvents::increment(ProfileEvents::InitialQuery);
-         if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::InitialSelectQuery);
-    }
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
@@ -291,10 +283,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateRowPolicyQuery";
     }
-    else if (query->as<ASTCreateMaskingPolicyQuery>())
-    {
-        interpreter_name = "InterpreterCreateMaskingPolicyQuery";
-    }
     else if (query->as<ASTCreateSettingsProfileQuery>())
     {
         interpreter_name = "InterpreterCreateSettingsProfileQuery";
@@ -343,7 +331,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterTransactionControlQuery";
     }
-    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>())
+    else if (query->as<ASTCreateFunctionQuery>())
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }
@@ -394,10 +382,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
-    }
-    else if (query->as<ASTExecuteAsQuery>())
-    {
-        interpreter_name = "InterpreterExecuteAsQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

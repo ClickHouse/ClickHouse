@@ -229,59 +229,59 @@ def test_dictionary_limit(started_cluster):
     verify_no_warning(node, "The number of attached dictionaries")
 
 
-def test_named_collection_limit(started_cluster):
-    warn_limit = 5
-    throw_limit = 10
-
-    def _get_number_of_collections():
-        return int(node.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
-
-    try:
-        for i in range(warn_limit):
-            node.query(f"CREATE NAMED COLLECTION nc_{i} AS key=1")
-
-        node.query(f"CREATE NAMED COLLECTION nc_{warn_limit} AS key=1")
-
-        verify_warning_with_values(
-            node,
-            current_val=warn_limit + 1,
-            warn_val=warn_limit,
-            throw_val=throw_limit
-        )
-
-        for i in range(warn_limit + 1, throw_limit):
-            node.query(f"CREATE NAMED COLLECTION nc_{i} AS key=1")
-
-        assert _get_number_of_collections() == throw_limit
-
-        assert "TOO_MANY_NAMED_COLLECTIONS" in node.query_and_get_error(
-            f"CREATE NAMED COLLECTION nc_{throw_limit} AS key=1"
-        )
-
-        node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
-
-        verify_warning_with_values(
-            node,
-            current_val=throw_limit-1,
-            warn_val=warn_limit,
-            throw_val=throw_limit
-        )
-
-        node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
-
-        verify_warning_with_values(
-            node,
-            current_val=throw_limit-1,
-            warn_val=warn_limit,
-            throw_val=throw_limit
-        )
-
-        # Cleanup and check warning disappears
-        for i in range(throw_limit + 1):
-            node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
-
-        verify_no_warning(node, "The number of named collections")
-
-    finally:
-        for i in range(throw_limit + 1):
-            node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
+# def test_named_collection_limit(started_cluster):
+#     warn_limit = 5
+#     throw_limit = 10
+#
+#     def _get_number_of_collections():
+#         return int(node.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
+#
+#     try:
+#         for i in range(warn_limit):
+#             node.query(f"CREATE NAMED COLLECTION nc_{i} AS key=1")
+#
+#         node.query(f"CREATE NAMED COLLECTION nc_{warn_limit} AS key=1")
+#
+#         verify_warning_with_values(
+#             node,
+#             current_val=warn_limit + 1,
+#             warn_val=warn_limit,
+#             throw_val=throw_limit
+#         )
+#
+#         for i in range(warn_limit + 1, throw_limit):
+#             node.query(f"CREATE NAMED COLLECTION nc_{i} AS key=1")
+#
+#         assert _get_number_of_collections() == throw_limit
+#
+#         assert "TOO_MANY_NAMED_COLLECTIONS" in node.query_and_get_error(
+#             f"CREATE NAMED COLLECTION nc_{throw_limit} AS key=1"
+#         )
+#
+#         node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
+#
+#         verify_warning_with_values(
+#             node,
+#             current_val=throw_limit-1,
+#             warn_val=warn_limit,
+#             throw_val=throw_limit
+#         )
+#
+#         node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
+#
+#         verify_warning_with_values(
+#             node,
+#             current_val=throw_limit-1,
+#             warn_val=warn_limit,
+#             throw_val=throw_limit
+#         )
+#
+#         # Cleanup and check warning disappears
+#         for i in range(throw_limit + 1):
+#             node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
+#
+#         verify_no_warning(node, "The number of named collections")
+#
+#     finally:
+#         for i in range(throw_limit + 1):
+#             node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")

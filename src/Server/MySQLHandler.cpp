@@ -1,6 +1,7 @@
 #include <Server/MySQLHandler.h>
 
 #include <optional>
+#include <Access/Common/AccessFlags.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -23,7 +24,6 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/config_version.h>
@@ -238,7 +238,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    DB::setThreadName(ThreadName::MYSQL_HANDLER);
+    setThreadName("MySQLHandler");
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -449,6 +449,8 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
+    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
+    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
@@ -459,6 +461,9 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
+    /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
+    /// Check before getTable() so this command does not become a table-existence oracle.
+    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
@@ -533,7 +538,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        CurrentThread::QueryScope query_scope{query_context};
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -565,10 +570,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)

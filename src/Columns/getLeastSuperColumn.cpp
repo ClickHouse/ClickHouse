@@ -1,6 +1,5 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -11,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 static bool sameConstants(const IColumn & a, const IColumn & b)
@@ -19,7 +18,7 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
     return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
 }
 
-ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns, bool use_variant_as_common_type)
+ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No src columns for supercolumn");
@@ -37,7 +36,7 @@ ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithType
             ++num_const;
     }
 
-    result.type = use_variant_as_common_type ? getLeastSupertypeOrVariant(types) : getLeastSupertype(types);
+    result.type = getLeastSupertype(types);
 
     /// Create supertype column saving constness if possible.
 

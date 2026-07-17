@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-BackupInMemory::BackupInMemory(const String & backup_name_, std::weak_ptr<BackupsInMemoryHolder> holder_)
+BackupInMemory::BackupInMemory(const String & backup_name_, BackupsInMemoryHolder & holder_)
     : backup_name(backup_name_), holder(holder_)
 {
 }
@@ -124,8 +124,7 @@ void BackupInMemory::copyFile(const String & from, const String & to)
 
 void BackupInMemory::drop()
 {
-    if (auto holder_ptr = holder.lock())
-        holder_ptr->dropBackup(backup_name);
+    holder.dropBackup(backup_name);
 }
 
 }

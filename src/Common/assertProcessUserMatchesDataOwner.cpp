@@ -1,6 +1,5 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <pwd.h>

@@ -66,8 +66,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override = 0;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override = 0;
-
     /// This is a volume.
     bool isVolume() const override { return true; }
 

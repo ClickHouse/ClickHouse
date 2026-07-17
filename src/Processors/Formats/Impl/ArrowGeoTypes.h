@@ -32,10 +32,7 @@ enum class GeoType : uint8_t
     LineString,
     Polygon,
     MultiLineString,
-    MultiPolygon,
-    /// Mixed means the column has multiple or unknown geometry types.
-    /// It maps to the Geometry type (Variant of all geo types).
-    Mixed,
+    MultiPolygon
 };
 
 struct GeoColumnMetadata

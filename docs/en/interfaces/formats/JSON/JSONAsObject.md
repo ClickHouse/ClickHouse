@@ -6,7 +6,6 @@ keywords: ['JSONAsObject']
 output_format: false
 slug: /interfaces/formats/JSONAsObject
 title: 'JSONAsObject'
-doc_type: 'reference'
 ---
 
 ## Description {#description}

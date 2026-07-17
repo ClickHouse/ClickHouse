@@ -3,7 +3,6 @@ description: 'System table containing information about trace spans for executed
 keywords: ['system table', 'opentelemetry_span_log']
 slug: /operations/system-tables/opentelemetry_span_log
 title: 'system.opentelemetry_span_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -29,8 +28,6 @@ Columns:
 - `start_time_us` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The start time of the `trace span` (in microseconds).
 - `finish_time_us` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The finish time of the `trace span` (in microseconds).
 - `finish_date` ([Date](../../sql-reference/data-types/date.md)) — The finish date of the `trace span`.
-- `status_code` ([Enum8](../../sql-reference/data-types/enum.md)) — The status code of the span.
-- `status_message` ([String](../../sql-reference/data-types/string.md)) — Error message associated with the span, if any. Empty when status_code is not ERROR.
 - `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — [Attribute](https://opentelemetry.io/docs/go/instrumentation/#attributes) names depending on the `trace span`. They are filled in according to the recommendations in the [OpenTelemetry](https://opentelemetry.io/) standard.
 - `attribute.values` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Attribute values depending on the `trace span`. They are filled in according to the recommendations in the `OpenTelemetry` standard.
 

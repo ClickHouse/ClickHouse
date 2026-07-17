@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Logger.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackData.h>

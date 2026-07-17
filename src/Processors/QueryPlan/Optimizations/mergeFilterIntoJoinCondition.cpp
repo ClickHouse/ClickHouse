@@ -7,7 +7,7 @@
 #include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinInfo.h>
 
 #include <Planner/Utils.h>
 
@@ -124,7 +124,21 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-using JoinConditionParts = std::vector<ActionsDAG>;
+struct JoinConditionPart
+{
+    ActionsDAG left;
+    ActionsDAG right;
+};
+
+using JoinConditionParts = std::vector<JoinConditionPart>;
+
+JoinConditionPart createConditionPart(const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+{
+    auto lhs_dag = ActionsDAG::cloneSubDAG({ lhs }, true);
+    auto rhs_dag = ActionsDAG::cloneSubDAG({ rhs }, true);
+
+    return JoinConditionPart{ .left = std::move(lhs_dag), .right = std::move(rhs_dag) };
+};
 
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
@@ -133,7 +147,7 @@ const ActionsDAG::Node & createResultPredicate(
 {
     if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
     {
-        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
+        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name);
     }
     else
     {
@@ -188,10 +202,15 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
             auto rhs_side = getExpressionSide(rhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
 
-            if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
-             || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
+            if (lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
             {
-                result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
+                result.emplace_back(createConditionPart(lhs, rhs));
+                conjuncts_to_replace.insert(conjunct);
+                continue;
+            }
+            else if (rhs_side == ExpressionSide::LEFT && lhs_side == ExpressionSide::RIGHT)
+            {
+                result.emplace_back(createConditionPart(rhs, lhs));
                 conjuncts_to_replace.insert(conjunct);
                 continue;
             }
@@ -199,7 +218,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         rejected_conjuncts.push_back(conjunct);
     }
 
-    const auto trivial_filter = rejected_conjuncts.empty();
+    bool trivial_filter = rejected_conjuncts.empty();
     if (!result.empty())
     {
         /// There's a non-empty list of extracted condition parts.
@@ -253,16 +272,17 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (!filter_step || !join_step)
         return 0;
 
-    auto & join_operator = join_step->getJoinOperator();
+    const auto & join_expressions = join_step->getExpressionActions();
+    auto & join_info = join_step->getJoinInfo();
 
-    auto kind = join_operator.kind;
+    auto kind = join_info.kind;
     if (kind != JoinKind::Inner && kind != JoinKind::Cross && kind != JoinKind::Comma)
         return 0;
 
     /// Pushing filter condition into the JOIN can affect the result in case of ANY join.
     /// In ClickHouse all JOINs return columns of both tables, but for SEMI, ANTI joins
     /// it works as ANY join.
-    auto strictness = join_operator.strictness;
+    auto strictness = join_info.strictness;
     if (strictness != JoinStrictness::Unspecified && strictness != JoinStrictness::All)
         return 0;
 
@@ -303,13 +323,23 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (equality_predicates.empty())
         return 0;
 
-    for (auto && predicate : equality_predicates)
+    for (auto & predicate : equality_predicates)
     {
-        join_step->addConditions(std::move(predicate));
+        auto lhs_node_name = predicate.left.getOutputs()[0]->result_name;
+        auto rhs_node_name = predicate.right.getOutputs()[0]->result_name;
+
+        join_expressions.left_pre_join_actions->mergeInplace(std::move(predicate.left));
+        join_expressions.right_pre_join_actions->mergeInplace(std::move(predicate.right));
+
+        join_info.expression.condition.predicates.emplace_back(JoinPredicate{
+            .left_node = JoinActionRef(&join_expressions.left_pre_join_actions->findInOutputs(lhs_node_name), join_expressions.left_pre_join_actions.get()),
+            .right_node = JoinActionRef(&join_expressions.right_pre_join_actions->findInOutputs(rhs_node_name), join_expressions.right_pre_join_actions.get()),
+            .op = PredicateOperator::Equals
+        });
     }
 
     if (kind == JoinKind::Cross || kind == JoinKind::Comma)
-        join_operator.kind = JoinKind::Inner;
+        join_info.kind = JoinKind::Inner;
 
     /// Remove FilterStep if filter expression is always true
     if (trivial_filter)

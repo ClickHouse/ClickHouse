@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -80,8 +79,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeString>()), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        {std::make_shared<DB::DataTypeTuple>(
-                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
+        {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
     };
 
     DB::MutableColumns columns;
@@ -89,22 +87,20 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
     for (const auto & [_, type, name] : names_and_types)
         columns.push_back(type->createColumn());
 
-    for (const auto & [path, size_bytes, size_rows, partition_values] : files)
+    for (const auto & [path, size, partition_values] : files)
     {
         if (path.empty())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Commit file path cannot be empty");
 
         LOG_TEST(
-            log, "Committing file: {}, bytes: {}, rows: {}, partition values: {}",
-            path, size_bytes, size_rows, partition_values.size());
+            log, "Committing file: {}, size: {}, partition values: {}",
+            path, size, partition_values.size());
 
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
-        columns[2]->insert(size_bytes);
+        columns[2]->insert(size);
         columns[3]->insert(getCurrentTime());
-        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
-        DB::Tuple stats{stats_json};
-        columns[4]->insert(stats);
+        columns[4]->insert(true);
     }
 
     DB::FormatSettings format_settings;
@@ -243,7 +239,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     {
         /// Takes ownership of `array` (but not`schema`) if successfully called.
         engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+            ffi::get_engine_data(array, &schema, engine.get()),
             "get_engine_data");
     }
     catch (...)

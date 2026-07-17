@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>

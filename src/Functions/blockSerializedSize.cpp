@@ -70,32 +70,7 @@ public:
 
 REGISTER_FUNCTION(BlockSerializedSize)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the uncompressed size in bytes of a block of values on disk.
-)";
-    FunctionDocumentation::Syntax syntax = "blockSerializedSize(x1[, x2[, ...]])";
-    FunctionDocumentation::Arguments arguments = {
-        {"x1[, x2, ...]", "Any number of values for which to get the uncompressed size of the block.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of bytes that will be written to disk for a block of values without compression.", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT blockSerializedSize(maxState(1)) AS x;
-        )",
-        R"(
-┌─x─┐
-│ 2 │
-└───┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionBlockSerializedSize>(documentation);
+    factory.registerFunction<FunctionBlockSerializedSize>();
 }
 
 }

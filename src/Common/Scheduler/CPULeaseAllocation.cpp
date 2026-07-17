@@ -52,7 +52,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_SCHEDULER_NODE;
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
@@ -202,6 +201,13 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
+    // Capture query-level counters (ThreadGroup) that outlive all worker threads.
+    // Cannot use CurrentThread::getProfileEvents() in schedule() — it returns the calling
+    // thread's counters, which may be destroyed before the timer is flushed (UAF).
+    wait_thread_group = CurrentThread::getGroup();
+    if (wait_thread_group)
+        wait_counters = &wait_thread_group->performance_counters;
+
     std::unique_lock lock{mutex};
     if (!schedule(lock))
         grantImpl(lock);
@@ -221,6 +227,7 @@ void CPULeaseAllocation::free()
 
     shutdown = true;
     acquirable.store(false, std::memory_order_relaxed);
+    wait_timer.reset();
 
     // Wake up all preempted threads
     while (true)
@@ -300,10 +307,9 @@ size_t CPULeaseAllocation::upscale()
     return max_threads;
 }
 
-void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
+void CPULeaseAllocation::downscale(size_t thread_num)
 {
-    if (!shutdown_)
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+    ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
 
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
@@ -463,7 +469,7 @@ bool CPULeaseAllocation::renew(Lease & lease)
 
     if (shutdown) // Allocation is being destroyed, worker thread should stop
     {
-        downscale(lease.slot_id, /* shutdown = */ true);
+        downscale(lease.slot_id);
         lease.reset();
         return false;
     }
@@ -505,12 +511,10 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            bool wait_succeeded = waitForGrant(lock, thread_num);
-            if (!wait_succeeded || shutdown)
+            if (!waitForGrant(lock, thread_num) || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
-                // Only count as downscale if actually timed out, not just shutdown
-                downscale(thread_num, /* shutdown = */ wait_succeeded);
+                downscale(thread_num);
                 lease.reset();
                 return false;
             }
@@ -597,7 +601,7 @@ bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
     if (requests.enqueue(cost, requested_ns))
     {
         scheduled_increment.add();
-        wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
+        wait_timer.emplace(wait_counters->timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
         LOG_EVENT(E);
         return true;
     }
@@ -613,18 +617,7 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Report the last chunk of consumed resource
     std::unique_lock lock{mutex};
-    try
-    {
-        consume(lock, delta_ns);
-    }
-    catch (const Exception & e)
-    {
-        // `consume` may call `schedule` which may call `enqueueRequest` on a scheduler queue
-        // that is being destructed (e.g. when a workload is dropped while queries are still running).
-        // Since `release` is called from Lease destructor, we must not throw.
-        if (e.code() != ErrorCodes::INVALID_SCHEDULER_NODE)
-            throw;
-    }
+    consume(lock, delta_ns);
 
     // Release the slot
     downscale(lease.slot_id);

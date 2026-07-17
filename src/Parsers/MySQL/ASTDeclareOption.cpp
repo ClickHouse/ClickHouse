@@ -62,7 +62,7 @@ bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Exp
 
     if (!changes.empty())
     {
-        auto options_declare = make_intrusive<ASTDeclareOptions>();
+        auto options_declare = std::make_shared<ASTDeclareOptions>();
         options_declare->changes = changes;
 
         node = options_declare;
@@ -73,7 +73,7 @@ bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Exp
 
 ASTPtr ASTDeclareOptions::clone() const
 {
-    auto res = make_intrusive<ASTDeclareOptions>(*this);
+    auto res = std::make_shared<ASTDeclareOptions>(*this);
     res->children.clear();
     res->changes.clear();
 
@@ -85,13 +85,13 @@ ASTPtr ASTDeclareOptions::clone() const
 
 bool ParserAlwaysTrue::parseImpl(IParser::Pos & /*pos*/, ASTPtr & node, Expected & /*expected*/)
 {
-    node = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1)));
+    node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
     return true;
 }
 
 bool ParserAlwaysFalse::parseImpl(IParser::Pos & /*pos*/, ASTPtr & node, Expected & /*expected*/)
 {
-    node = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
+    node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     return true;
 }
 
@@ -106,7 +106,7 @@ bool ParserCharsetOrCollateName::parseImpl(IParser::Pos & pos, ASTPtr & node, Ex
     if (p_string_literal.parse(pos, node, expected))
     {
         const auto & string_value = node->as<ASTLiteral>()->value.safeGet<String>();
-        node = make_intrusive<ASTIdentifier>(string_value);
+        node = std::make_shared<ASTIdentifier>(string_value);
         return true;
     }
 

@@ -22,9 +22,6 @@ cargo generate-lockfile
 # Clean the vendor repo
 rm -rf "${CH_TOP_DIR:?}"/contrib/rust_vendor/*
 
-cd "$CH_TOP_DIR"/rust/chcache || exit 1
-cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
-
 cd "$CH_TOP_DIR"/rust/workspace || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
@@ -38,10 +35,6 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 
 # chdig
 cd "$CH_TOP_DIR"/contrib/chdig || exit 1
-cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
-
-# wasmtime
-cd "$CH_TOP_DIR"/contrib/wasmtime/crates/c-api || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Just in case

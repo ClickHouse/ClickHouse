@@ -1,5 +1,6 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -154,7 +155,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     if (!original_checksums_content)
     {
-        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
+        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
         original_checksums_content.emplace();
         readStringUntilEOF(*original_checksums_content, *in);
     }
@@ -164,7 +165,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     String detached_checksums_content;
     {
-        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
+        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
         readStringUntilEOF(detached_checksums_content, *in);
     }
 
@@ -234,7 +235,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return volume->getDisk()->getDataSourceDescription().name();
+    return volume->getDisk()->getDataSourceDescription().toString();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -307,7 +308,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         file_desc.file_size = file_size;
         file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
         };
     }
 
@@ -746,17 +747,12 @@ void DataPartStorageOnDiskBase::remove(
 
         if (!disk->existsDirectory(from))
         {
-            LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
             /// We will never touch this part again, so unlocking it from zero-copy
             if (!can_remove_description)
                 can_remove_description.emplace(can_remove_callback());
             return;
         }
-
-        /// Evaluate can_remove_callback before moving the directory so zero-copy reference checks
-        /// use the current (existing) path. We intentionally don't update part_dir to avoid races.
-        if (!can_remove_description)
-            can_remove_description.emplace(can_remove_callback());
 
         try
         {
@@ -769,7 +765,10 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
-                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
                 return;
             }
             throw;
@@ -778,8 +777,12 @@ void DataPartStorageOnDiskBase::remove(
         {
             if (e.code() == std::errc::no_such_file_or_directory)
             {
-                LOG_WARNING(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
+
                 return;
             }
             throw;
@@ -833,7 +836,7 @@ void DataPartStorageOnDiskBase::remove(
                 try
                 {
                     MergeTreeDataPartChecksums tmp_checksums;
-                    auto in = projection_storage->readFile(checksums_name, {}, {});
+                    auto in = projection_storage->readFile(checksums_name, {}, {}, {});
                     tmp_checksums.read(*in);
 
                     clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
@@ -895,7 +898,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
+        {
+            if (isGinFile(file) && (!disk->existsFile(fs::path(dir) / file)))
+                continue;
+
             request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
@@ -980,11 +988,6 @@ void DataPartStorageOnDiskBase::createDirectories()
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 {
     return transaction != nullptr;
-}
-
-bool DataPartStorageOnDiskBase::isCaseInsensitive() const
-{
-    return getDisk()->isCaseInsensitive();
 }
 
 }

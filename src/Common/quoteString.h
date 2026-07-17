@@ -1,14 +1,15 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/StringRef.h>
 
 
 namespace DB
 {
 [[nodiscard]] String quoteString(std::string_view x);
 
-// Prefer string_view over std::string_view for implicit conversions
-[[nodiscard]] inline String quoteString(std::same_as<std::string_view> auto x)
+// Prefer string_view over StringRef for implicit conversions
+[[nodiscard]] inline String quoteString(std::same_as<StringRef> auto x)
 {
     return quoteString(std::string_view{x.data, x.size});
 }
@@ -26,15 +27,15 @@ namespace DB
 }
 
 /// Double quote the string.
-String doubleQuoteString(std::string_view x);
+String doubleQuoteString(StringRef x);
 
 /// Quote the identifier with backquotes.
-String backQuote(std::string_view x);
+String backQuote(StringRef x);
 
 /// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(std::string_view x);
+String backQuoteIfNeed(StringRef x);
 
 /// Quote the identifier with backquotes, for use in MySQL queries.
-String backQuoteMySQL(std::string_view x);
+String backQuoteMySQL(StringRef x);
 
 }

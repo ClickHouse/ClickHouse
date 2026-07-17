@@ -4,7 +4,6 @@ description: 'System table containing information about detached parts of MergeT
 keywords: ['system table', 'detached_parts']
 slug: /operations/system-tables/detached_parts
 title: 'system.detached_parts'
-doc_type: 'reference'
 ---
 
 Contains information about detached parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. The `reason` column specifies why the part was detached.

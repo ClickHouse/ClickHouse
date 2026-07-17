@@ -8,13 +8,13 @@ ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_func_to_subcolumns VALUES (1, [1, 2, 3], 'abc', map('foo', 1, 'bar', 2)) (2, [], NULL, map());
 
-SELECT id IS NULL, n IS NULL, n IS NOT NULL FROM t_func_to_subcolumns ORDER BY id;
+SELECT id IS NULL, n IS NULL, n IS NOT NULL FROM t_func_to_subcolumns;
 EXPLAIN QUERY TREE dump_tree = 1, dump_ast = 1 SELECT id IS NULL, n IS NULL, n IS NOT NULL FROM t_func_to_subcolumns;
 
-SELECT length(arr), empty(arr), notEmpty(arr), empty(n) FROM t_func_to_subcolumns ORDER BY id;
+SELECT length(arr), empty(arr), notEmpty(arr), empty(n) FROM t_func_to_subcolumns;
 EXPLAIN QUERY TREE dump_tree = 1, dump_ast = 1 SELECT length(arr), empty(arr), notEmpty(arr), empty(n) FROM t_func_to_subcolumns;
 
-SELECT mapKeys(m), mapValues(m) FROM t_func_to_subcolumns ORDER BY id;
+SELECT mapKeys(m), mapValues(m) FROM t_func_to_subcolumns;
 EXPLAIN QUERY TREE dump_tree = 1, dump_ast = 1 SELECT mapKeys(m), mapValues(m) FROM t_func_to_subcolumns;
 
 SELECT count(n) FROM t_func_to_subcolumns;
@@ -24,8 +24,7 @@ SELECT count(id) FROM t_func_to_subcolumns;
 EXPLAIN QUERY TREE dump_tree = 1, dump_ast = 1 SELECT count(id) FROM t_func_to_subcolumns;
 
 SELECT id, left.n IS NULL, right.n IS NULL FROM t_func_to_subcolumns AS left
-FULL JOIN (SELECT 1 AS id, 'qqq' AS n UNION ALL SELECT 3 AS id, 'www') AS right USING(id)
-ORDER BY id;
+FULL JOIN (SELECT 1 AS id, 'qqq' AS n UNION ALL SELECT 3 AS id, 'www') AS right USING(id);
 
 EXPLAIN QUERY TREE dump_tree = 1, dump_ast = 1 SELECT id, left.n IS NULL, right.n IS NULL FROM t_func_to_subcolumns AS left
 FULL JOIN (SELECT 1 AS id, 'qqq' AS n UNION ALL SELECT 3 AS id, 'www') AS right USING(id);

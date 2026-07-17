@@ -6,7 +6,6 @@ keywords: ['TabSeparatedRawWithNamesAndTypes', 'TSVRawWithNamesAndTypes', 'RawWi
 output_format: true
 slug: /interfaces/formats/TabSeparatedRawWithNamesAndTypes
 title: 'TabSeparatedRawWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias                                             |

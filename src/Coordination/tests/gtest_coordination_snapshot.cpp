@@ -5,6 +5,7 @@
 
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/SnapshotableHashTable.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage.h>
 
 #include <Common/SipHash.h>
@@ -160,13 +161,13 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     n1.setData("1234");
     Node n2;
     n2.setData("123456");
-    n2.addChild("c");
+    n2.addChild("");
 
     /// Note: Below, we check in many cases only that getApproximateDataSize() > 0. This is because
-    ///       the SnapshotableHashTable's approximate data size includes Node's `sizeInBytes`, which
-    ///       includes `CompactChildrenSet::heapSizeInBytes` (0 for nodes with 0-1 children,
-    ///       approximate for nodes with 2+ children). The approximate size is only used for
-    ///       statistics accounting, so this should be okay.
+    ///       the SnapshotableHashTable's approximate data size includes Node's sizeInBytes(). The
+    ///       latter includes sizeof(absl::flat_hash_set) which is surprisingly not constant across
+    ///       different runs. The approximate size is only used for statistics accounting, so this
+    ///       should be okay.
 
     world.disableSnapshotMode();
     world.insert("world", n1);
@@ -538,6 +539,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
 {
+
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
@@ -549,7 +551,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
 
     Storage storage(500, "", this->keeper_context);
-    static constexpr std::string_view path = "/hello";
+    static constexpr StringRef path = "/hello";
     static constexpr uint64_t acl_id = 42;
     addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
     DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);

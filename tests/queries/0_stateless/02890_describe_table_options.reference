@@ -16,7 +16,6 @@ arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
 t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
 arr.size0	UInt64						1
 t.a	String				ZSTD(1)		1
-t.a.size	UInt64				ZSTD(1)		1
 t.b	UInt64				ZSTD(1)		1
 DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
 id	UInt64			index column			0
@@ -24,7 +23,6 @@ arr	Array(UInt64)	DEFAULT	[10, 20]		ZSTD(1)		0
 t	Tuple(a String, b UInt64)	DEFAULT	(\'foo\', 0)		ZSTD(1)		0
 arr.size0	UInt64						1
 t.a	String				ZSTD(1)		1
-t.a.size	UInt64				ZSTD(1)		1
 t.b	UInt64				ZSTD(1)		1
 SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 0;
 DESCRIBE TABLE t_describe_options;
@@ -89,7 +87,6 @@ _block_offset	UInt64			Persisted original number of row in block that was assign
 _table	LowCardinality(String)			The name of table which the row comes from			0	1
 arr.size0	UInt64						1	0
 t.a	String				ZSTD(1)		1	0
-t.a.size	UInt64				ZSTD(1)		1	0
 t.b	UInt64				ZSTD(1)		1	0
 DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
 id	UInt64			index column			0	0
@@ -114,7 +111,6 @@ _database	LowCardinality(String)			The name of database which the row comes from
 _table	LowCardinality(String)			The name of table which the row comes from			0	1
 arr.size0	UInt64						1	0
 t.a	String				ZSTD(1)		1	0
-t.a.size	UInt64				ZSTD(1)		1	0
 t.b	UInt64				ZSTD(1)		1	0
 SET describe_compact_output = 1, describe_include_virtual_columns = 0, describe_include_subcolumns = 0;
 DESCRIBE TABLE t_describe_options;
@@ -132,7 +128,6 @@ arr	Array(UInt64)	0
 t	Tuple(a String, b UInt64)	0
 arr.size0	UInt64	1
 t.a	String	1
-t.a.size	UInt64	1
 t.b	UInt64	1
 DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
 id	UInt64	0
@@ -140,7 +135,6 @@ arr	Array(UInt64)	0
 t	Tuple(a String, b UInt64)	0
 arr.size0	UInt64	1
 t.a	String	1
-t.a.size	UInt64	1
 t.b	UInt64	1
 SET describe_compact_output = 1, describe_include_virtual_columns = 1, describe_include_subcolumns = 0;
 DESCRIBE TABLE t_describe_options;
@@ -205,7 +199,6 @@ _block_offset	UInt64	0	1
 _table	LowCardinality(String)	0	1
 arr.size0	UInt64	1	0
 t.a	String	1	0
-t.a.size	UInt64	1	0
 t.b	UInt64	1	0
 DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options);
 id	UInt64	0	0
@@ -230,5 +223,4 @@ _database	LowCardinality(String)	0	1
 _table	LowCardinality(String)	0	1
 arr.size0	UInt64	1	0
 t.a	String	1	0
-t.a.size	UInt64	1	0
 t.b	UInt64	1	0

@@ -38,7 +38,7 @@ TEST(ColumnObject, GetName)
 Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
-    ReadBufferFromMemory buf(data);
+    ReadBufferFromMemory buf(data.data, data.size);
     Field res;
     std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
     return res;
@@ -319,7 +319,7 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
     col_object2.deserializeAndInsertFromArena(in, nullptr);
     col_object2.deserializeAndInsertFromArena(in, nullptr);
     col_object2.deserializeAndInsertFromArena(in, nullptr);
@@ -346,7 +346,7 @@ TEST(ColumnObject, SkipSerializedInArena)
     col_object.serializeValueIntoArena(2, arena, pos, nullptr);
 
     auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
     col2->skipSerializedInArena(in);
     col2->skipSerializedInArena(in);
     col2->skipSerializedInArena(in);
@@ -443,4 +443,51 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     ASSERT_EQ((*column_object)[1], (Object{{"a", Field(1u)}, {"b", Field(1u)}, {"c", Field(1u)}}));
     ASSERT_EQ((*column_object)[2], (Object{{"b", Field(1u)}, {"c", Field(1u)}, {"d", Field(1u)}}));
     ASSERT_EQ((*column_object)[3], (Object{{"d", Field(1u)}}));
+}
+
+TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
+{
+    /// "b" is a typed UInt32 path; everything else becomes a dynamic path.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10, b UInt32)");
+    auto col = type->createColumn();
+    auto & col_object = assert_cast<ColumnObject &>(*col);
+    const auto & dynamic_paths = col_object.getDynamicPaths();
+
+    /// One valid row so we have something to serialize later.
+    col_object.insert(Object{{"b", Field{5u}}});
+    ASSERT_EQ(col_object.size(), 1u);
+    ASSERT_EQ(dynamic_paths.size(), 0u);
+
+    /// tryInsert with Object{"a_new": 1, "b": "not_a_number"}.
+    /// Fields are processed in alphabetical order ("a_new" before "b"), so:
+    ///   1. "a_new" is new → tryToAddNewDynamicPath succeeds, "a_new" is added to all
+    ///      three structures including sorted_dynamic_paths.
+    ///   2. ColumnDynamic::tryInsert(1u) for "a_new" succeeds.
+    ///   3. ColumnUInt32::tryInsert(String) for "b" returns false.
+    ///   4. restore_sizes() is called.
+    ///      BUG 1: new_dynamic_paths was never populated, so the loop that removes
+    ///             newly-added paths is a no-op — "a_new" is left in dynamic_paths,
+    ///             dynamic_paths_ptrs, and sorted_dynamic_paths with a rolled-back size.
+    ///      BUG 2: even after populating new_dynamic_paths, the old code erased from
+    ///             dynamic_paths before sorted_dynamic_paths, leaving a dangling view.
+    ///      FIX:   record the path in new_dynamic_paths immediately after
+    ///             tryToAddNewDynamicPath succeeds, and erase sorted_dynamic_paths
+    ///             before dynamic_paths.
+    bool result = col_object.tryInsert(Object{{"a_new", Field{1u}}, {"b", Field{String("not_a_number")}}});
+    ASSERT_FALSE(result);
+
+    ASSERT_EQ(col_object.size(), 1u);
+    ASSERT_EQ(dynamic_paths.size(), 0u);   /// "a_new" must be fully rolled back
+
+    /// serializeValueIntoArena iterates sorted_dynamic_paths.
+    /// Without the fix the stale "a_new" entry causes undefined behavior here (see comment above).
+    Arena arena;
+    const char * begin = nullptr;
+    auto ref = col_object.serializeValueIntoArena(0, arena, begin, nullptr);
+
+    /// Round-trip sanity check.
+    ReadBufferFromMemory buf(ref.data, ref.size);
+    col_object.deserializeAndInsertFromArena(buf, nullptr);
+    ASSERT_EQ(col_object.size(), 2u);
+    ASSERT_EQ(col_object[1], col_object[0]);
 }

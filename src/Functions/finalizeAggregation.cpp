@@ -73,52 +73,7 @@ public:
 
 REGISTER_FUNCTION(FinalizeAggregation)
 {
-    FunctionDocumentation::Description description = R"(
-Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
-)";
-    FunctionDocumentation::Syntax syntax = "finalizeAggregation(state)";
-    FunctionDocumentation::Arguments arguments = {
-        {"state", "State of aggregation.", {"AggregateFunction"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the finalized result of aggregation.", {"Any"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
-        )",
-        R"(
-┌─finalizeAggregation(arrayReduce('maxState', [1, 2, 3]))─┐
-│                                                       3 │
-└─────────────────────────────────────────────────────────┘
-        )"
-    },
-    {
-        "Combined with initializeAggregation",
-        R"(
-WITH initializeAggregation('sumState', number) AS one_row_sum_state
-SELECT
-    number,
-    finalizeAggregation(one_row_sum_state) AS one_row_sum,
-    runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(5);
-        )",
-        R"(
-┌─number─┬─one_row_sum─┬─cumulative_sum─┐
-│      0 │           0 │              0 │
-│      1 │           1 │              1 │
-│      2 │           2 │              3 │
-│      3 │           3 │              6 │
-│      4 │           4 │             10 │
-└────────┴─────────────┴────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionFinalizeAggregation>(documentation);
+    factory.registerFunction<FunctionFinalizeAggregation>();
 }
 
 }

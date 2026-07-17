@@ -1,3 +1,4 @@
+#include "config.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>

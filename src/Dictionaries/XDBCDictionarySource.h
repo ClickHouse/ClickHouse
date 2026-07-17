@@ -7,6 +7,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 
 namespace Poco
@@ -49,13 +50,13 @@ public:
     XDBCDictionarySource(const XDBCDictionarySource & other);
     XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -83,7 +84,7 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
 
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;

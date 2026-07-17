@@ -4,7 +4,6 @@ sidebar_label: 'External disks for storing data'
 sidebar_position: 68
 slug: /operations/storing-data
 title: 'External disks for storing data'
-doc_type: 'guide'
 ---
 
 Data processed in ClickHouse is usually stored in the local file system of the 
@@ -174,26 +173,6 @@ CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
-
-## refresh_parts_interval and table_disk {#refresh-parts-interval-and-table-disk}
-
-This setting is intended for non-Replicated MergeTree tables where parts may be written externally and metadata discovery must be refreshed from storage.
-
-The MergeTree setting `refresh_parts_interval` enables periodic refresh of the list of data parts from the underlying storage (e.g. to pick up parts written externally). The important distinction is **shared metadata across replicas** vs **replica-local metadata** (e.g. S3 with local metadata per replica): only when metadata is shared will new parts be visible to all replicas. Using object storage alone does not imply shared metadata.
-
-- **Object storage (e.g. `disk = 's3'`) does not imply shared metadata.** When metadata is stored locally per replica (the default), each replica independently manages its pointers to blobs in object storage. Changes made on one replica are not visible to others. In that case, `refresh_parts_interval` does not make new parts visible across replicas, because the metadata each replica reads is replica-local.
-
-- **Automatic part refreshing requires that the filesystem metadata be shared** (or that the table use table-owned, readonly metadata so that refresh is applicable). Setting `table_disk = true` together with a table-local disk (e.g. `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) is one way to get the correct semantics: the table owns the metadata life cycle and the storage is treated as readonly, so `refresh_parts_interval` runs and externally added parts can be discovered.
-
-- **With a globally defined disk** (e.g. `disk = 's3'` in `storage_configuration`) and default local metadata, each replica has its own metadata state. Even though blobs may be in S3, the storage is not considered shared for the purpose of `refresh_parts_interval`, and new parts created outside ClickHouse or on another replica will not be detected.
-
-For automatic part refreshing, ensure the metadata is shared or use a table-level disk with `table_disk = true` as above. Relying only on `refresh_parts_interval` with replica-local metadata will not refresh parts as expected.
-
-:::note
-`refresh_parts_interval` is not used for ReplicatedMergeTree tables.
-Replicated tables already synchronize parts through the replication mechanism.
-This setting is only applicable to non-replicated MergeTree tables where parts are written externally and metadata refresh is required.
-:::
 
 ## Dynamic Configuration {#dynamic-configuration}
 
@@ -366,7 +345,7 @@ where `web` is from the server configuration file:
 | `write_resource`                                | Resource name for [scheduling](/operations/workload-scheduling.md) write requests.                                                                                                                                                            | Empty string (disabled)                  |
 | `key_template`                                  | Defines object key generation format using [re2](https://github.com/google/re2/wiki/Syntax) syntax. Requires `storage_metadata_write_full_object_key` flag. Incompatible with `root path` in `endpoint`. Requires `key_compatibility_prefix`. | -                                        |
 | `key_compatibility_prefix`                      | Required with `key_template`. Specifies the previous `root path` from `endpoint` for reading older metadata versions.                                                                                                                         | -                                        |
-| `read_only`                                      | Only allowing reading from the disk.                                                                                                                                                                                                          | -                                        |
+
 :::note
 Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/integrations/gcs).
 :::
@@ -705,8 +684,6 @@ These settings should be defined in the disk configuration section.
 | `max_file_segment_size`               | Size    | `8Mi`      | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
 | `max_elements`                        | Integer | `10000000` | Maximum number of cache files.                                                                                                                                                               |
 | `load_metadata_threads`               | Integer | `16`       | Number of threads for loading cache metadata at startup.                                                                                                                                     |
-| `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data.                                                                                                                                     |
-| `split_cache_ratio`                   | Double | `0.1`    | Ratio of system segment to total size of cache for split_cache.                                                                                                                                     |
 
 > **Note**: Size values support units like `ki`, `Mi`, `Gi`, etc. (e.g., `10Gi`).
 
@@ -718,9 +695,8 @@ These settings should be defined in the disk configuration section.
 | `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` | Boolean | `false`                 | When enabled, uses cache only if data exists; new data won't be cached.                                                                                        |
 | `enable_filesystem_cache_on_write_operations`                 | Boolean | `false` (Cloud: `true`) | Enables write-through cache. Requires `cache_on_write_operations` in cache config.                                                                             |
 | `enable_filesystem_cache_log`                                 | Boolean | `false`                 | Enables detailed cache usage logging to `system.filesystem_cache_log`.                                                                                         |
-| `filesystem_cache_allow_background_download`                  | Boolean | `true`                  | Allows partially downloaded segments to be finished in the background. Disable to keep downloads in the foreground for the current query/session.             |
 | `max_query_cache_size`                                        | Size    | `false`                 | Maximum cache size per query. Requires `enable_filesystem_query_cache_limit` in cache config.                                                                  |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`          | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
+| `skip_download_if_exceeds_query_cache`                        | Boolean | `true`                  | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
 
 :::warning
 Cache configuration settings and cache query settings correspond to the latest ClickHouse version, 
@@ -736,7 +712,7 @@ for earlier versions something might not be supported.
 
 #### Cache commands {#cache-commands-file-cache}
 
-##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
+##### `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-drop-filesystem-cache-on-cluster}
 
 This command is only supported when no `<cache_name>` is provided
 

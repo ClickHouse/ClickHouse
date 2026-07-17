@@ -1,6 +1,8 @@
+#include <limits>
 #include <IO/LimitReadBuffer.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
