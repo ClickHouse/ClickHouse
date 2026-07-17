@@ -23,11 +23,13 @@ DateTime64(precision, [timezone])
 
 Internally, stores data as a number of 'ticks' since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed ('2020-01-01 05:00:01.000'). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](../../sql-reference/data-types/datetime.md).
 
-Supported range of values: \[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999\]
+Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\]
 
 The number of digits after the decimal point depends on the precision parameter.
 
-Note: The full range above is available for precisions up to 7. Because ticks are stored in an `Int64`, higher precisions cover a narrower range: with precision 8 the maximum value is around `4892-10-07`, and with the maximum precision of 9 digits (nanoseconds) the supported range is `1677-09-21 00:12:44` to `2262-04-11 23:47:16` in UTC.
+Although the `DateTime64` value is internally stored as an `Int64` number of ticks since the Unix epoch, the calendar/timezone lookup table used to render values as calendar dates only covers the years `[1900, 2299]`. Values outside that range are clamped to the boundaries of the lookup table on insert. For example, inserting `'0000-01-01 00:00:00'` or `'1850-03-15 12:34:56'` is silently clamped to `1900-01-01`, and `'9999-12-31 23:59:59.999'` is clamped to `2299-12-31 23:59:59.999`.
+
+Additionally, because ticks are stored in an `Int64`, higher precisions cover an even narrower range regardless of the calendar limit above: with precision 8 the maximum value is around `4892-10-07` (further clipped to `2299-12-31` in practice), and with the maximum precision of 9 digits (nanoseconds) the tick range corresponds to `1677-09-21 00:12:44` to `2262-04-11 23:47:16` in UTC.
 
 ## Examples {#examples}
 
