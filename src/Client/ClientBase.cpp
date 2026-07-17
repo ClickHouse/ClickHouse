@@ -1873,6 +1873,33 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    /// When resetOutput() runs as the outer teardown in processParsedSingleQuery(), the interrupt
+    /// handler is already stopped (its SCOPE_EXIT in processOrdinaryQuery()/processInsertQuery()
+    /// fires when those return, before this call) and the per-query cancellation hook on tty_buf has
+    /// already been cleared by the inner resetOutput(). The decorative progress writes to tty_buf
+    /// below (the clearTableOutput() here and the progress-clearing callback reached from
+    /// std_out_wrapper->finalize()) would then use a plain blocking write and could hang the client
+    /// on a stuck terminal, with the first Ctrl+C no longer honored (it can only force an abrupt
+    /// exit once the handler is stopped). These writes are purely decorative, so bound them with a
+    /// best-effort budget - as cancelQuery() does for its clears: they still erase the progress
+    /// indication on a live terminal and are dropped after a short wait on a stuck one. Only tty_buf
+    /// is budgeted; the real output through std_out (including the format footer) keeps its
+    /// responsive cancellation hook, so nothing already produced is lost. The armed in-query path
+    /// (the inner resetOutput()) keeps its responsive hook and is left unchanged.
+    const bool bound_teardown_tty_writes = tty_buf && !query_interrupt_handler.isRunning();
+    if (bound_teardown_tty_writes)
+    {
+        std::unique_lock lock(tty_mutex);
+        tty_buf->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (bound_teardown_tty_writes)
+        {
+            std::unique_lock lock(tty_mutex);
+            tty_buf->setBestEffortFlushBudget(std::nullopt);
+        }
+    });
+
     if (need_render_progress_table && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -2767,6 +2794,24 @@ void ClientBase::processParsedSingleQuery(
             connection->setDefaultDatabase(new_database);
         }
     }
+
+    /// The trailing progress/profile-events rendering below runs after the interrupt handler has
+    /// been stopped by the settings-block teardown above, so tty_buf no longer has a live
+    /// cancellation hook. Bound its decorative writes (clearing the progress indication/table and
+    /// the final progress table) with a best-effort budget so a stuck terminal cannot hang the
+    /// client here - the same discipline resetOutput() and cancelQuery() use.
+    if (tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        tty_buf->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            tty_buf->setBestEffortFlushBudget(std::nullopt);
+        }
+    });
 
     /// Always print last block (if it was not printed already)
     if (!profile_events.last_block.empty())
