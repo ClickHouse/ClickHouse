@@ -6,6 +6,8 @@
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -158,6 +160,12 @@ private:
     /// identifier, or a user-managed slot for the slot's part).
     const String legacy_replication_slot;
     const String legacy_publication_name;
+
+    /// The set of PostgreSQL schemas this engine replicates, normalizing the default schema to `"public"`
+    /// (as `pg_publication_tables.schemaname` reports it). Computed once from the raw settings, before
+    /// `tables_list` is rewritten during startup. Used to decide whether a schema-blind legacy publication
+    /// (whose name carries no schema and could belong to another engine) may be adopted on attach.
+    const std::unordered_set<String> replicated_schemas;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;

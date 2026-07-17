@@ -282,6 +282,71 @@ namespace
         }
         return slot_name;
     }
+
+    /// The set of PostgreSQL schemas an engine with these settings replicates. A schema-blind legacy
+    /// publication (whose name carries no schema) is adopted on attach only when every table it publishes
+    /// belongs to one of these schemas — otherwise it may belong to a different engine replicating other
+    /// schemas of the same PostgreSQL database. `pg_publication_tables.schemaname` reports the unqualified
+    /// default schema as `"public"`, so the default schema is normalized to `"public"` here to match.
+    /// Covers every configuration, not just the single-common-schema one: a `materialized_postgresql_schema`
+    /// (a single non-default schema), a `materialized_postgresql_schema_list` (several schemas), and
+    /// `materialized_postgresql_tables_list_with_schema` (schemas embedded per table in `tables_list`) all
+    /// need their own schema set — the first two leave `postgres_schema` empty while still replicating
+    /// non-default schemas.
+    std::unordered_set<String> computeReplicatedSchemas(
+        const String & postgres_schema,
+        const String & schema_list,
+        const String & tables_list,
+        bool schema_as_a_part_of_table_name)
+    {
+        std::unordered_set<String> schemas;
+        if (!schema_list.empty())
+        {
+            /// `materialized_postgresql_schema_list`: a comma-separated list of schemas whose tables are all replicated.
+            Strings parts;
+            splitInto<','>(parts, schema_list);
+            for (auto & part : parts)
+            {
+                boost::trim(part);
+                if (!part.empty())
+                    schemas.insert(part);
+            }
+        }
+        else if (schema_as_a_part_of_table_name && !tables_list.empty())
+        {
+            /// `materialized_postgresql_tables_list_with_schema`: each entry of `tables_list` is `schema.table`
+            /// (an optional column list in parentheses may follow). Take the schema of each; an entry with no
+            /// schema targets the default `"public"` schema (see getSchemaAndTableName()).
+            String cleared = tables_list;
+            while (true)
+            {
+                size_t open_bracket_pos = cleared.find('(');
+                size_t close_bracket_pos = cleared.find(')');
+                if (open_bracket_pos == std::string::npos || close_bracket_pos == std::string::npos)
+                    break;
+                cleared = cleared.substr(0, open_bracket_pos) + cleared.substr(close_bracket_pos + 1);
+            }
+            Strings parts;
+            splitInto<','>(parts, cleared);
+            for (auto & part : parts)
+            {
+                boost::trim(part);
+                if (part.empty())
+                    continue;
+                if (auto pos = part.find('.'); pos != std::string::npos)
+                    schemas.insert(part.substr(0, pos));
+                else
+                    schemas.insert("public");
+            }
+        }
+        else if (!isDefaultPostgreSQLSchema(postgres_schema))
+            /// A single non-default common schema (`materialized_postgresql_schema`).
+            schemas.insert(postgres_schema);
+        else
+            /// The default PostgreSQL schema.
+            schemas.insert("public");
+        return schemas;
+    }
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
@@ -315,6 +380,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , publication_name(getPublicationName(postgres_database_, postgres_schema, postgres_table_, clickhouse_uuid_, replication_settings, /* salted_unique_identifier */ true))
     , legacy_replication_slot(getReplicationSlotName(postgres_database_, /* postgres_schema */ "", postgres_table_, clickhouse_uuid_, replication_settings, /* salted_unique_identifier */ false))
     , legacy_publication_name(getPublicationName(postgres_database_, /* postgres_schema */ "", postgres_table_, clickhouse_uuid_, replication_settings, /* salted_unique_identifier */ false))
+    , replicated_schemas(computeReplicatedSchemas(postgres_schema, schema_list, tables_list, schema_as_a_part_of_table_name))
     , reschedule_backoff_min_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_min_ms])
     , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
     , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])
@@ -484,11 +550,15 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 /// object's own ClickHouse UUID, so its existence is itself proof of ownership: nothing else generates that
 /// name — except `ON CLUSTER` replicas, which shared the object UUID and therefore fought over that slot
 /// already; adopting keeps such a deployment exactly as broken as it was (never worse), and recreating the
-/// object moves it to the fixed, per-server identity. The pre-salt publication name carries no such proof
-/// of its own — for a non-default schema it is the same schema-blind name another engine's default-schema
-/// deployment could own — so, exactly as rename 2's schema check below, it is adopted only once every table
-/// it publishes is confirmed to belong to this engine's schema; otherwise it is left alone and a fresh
-/// salted publication is created instead.
+/// object moves it to the fixed, per-server identity. Once the pre-salt slot is adopted, its pre-salt
+/// publication must be adopted too: replication streams through it, and creating a fresh publication under
+/// the salted name would silently drop every change written to WAL before that publication existed, because
+/// pgoutput resolves publication membership from a historic catalog snapshot at each change's LSN and skips
+/// a not-yet-created publication. The pre-salt publication name carries no proof of its own — for a
+/// non-default schema it is the same schema-blind name another engine's default-schema deployment could
+/// own — so, exactly as rename 2's schema check below, it is adopted only once every table it publishes is
+/// confirmed to belong to a schema this engine replicates. If it is missing or foreign, the attach fails
+/// closed with an exception (never a fresh publication that would lose the WAL gap, never a hijacked one).
 ///
 /// 2. The generated publication and default replication-slot names became schema-aware. Deployments
 /// created before that own the legacy, schema-blind objects. The legacy names are schema-blind and
@@ -526,21 +596,20 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
         return !result.empty();
     };
     /// `legacy_publication_name` is always the schema-blind name (see its construction in the constructor),
-    /// while this engine may replicate a non-default schema. A schema-blind name alone does not prove that
-    /// the publication belongs to this engine: some other engine replicating the default schema (or a
-    /// different schema targeting the same bare table) may already own an identically-named publication.
-    /// Require every table it publishes to belong to this engine's schema, exactly as the schema-aware
-    /// adoption below does — `pg_publication_tables.schemaname` reports the unqualified default schema as
-    /// `"public"`, so normalize `postgres_schema` the same way isDefaultPostgreSQLSchema() treats it.
-    auto publication_owned_by_schema = [&](const String & name)
+    /// while this engine may replicate one or more non-default schemas. A schema-blind name alone does not
+    /// prove that the publication belongs to this engine: some other engine replicating the default schema
+    /// (or a different schema targeting the same bare table) may already own an identically-named publication.
+    /// Require every table it publishes to belong to a schema this engine replicates — deriving that set
+    /// (see computeReplicatedSchemas()) from the single common schema, the schema list, or the per-table
+    /// schemas of `tables_list`, not just from `postgres_schema` (which is empty for the multi-schema modes).
+    auto publication_owned_by_this_engine = [&](const String & name)
     {
-        const String schema = isDefaultPostgreSQLSchema(postgres_schema) ? "public" : postgres_schema;
         pqxx::result result{tx.exec(fmt::format(
             "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", name))};
         if (result.empty())
             return false;
         for (const auto & row : result)
-            if (row[0].as<std::string>() != schema)
+            if (!replicated_schemas.contains(row[0].as<std::string>()))
                 return false;
         return true;
     };
@@ -564,37 +633,53 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 
             replication_slot = legacy_replication_slot;
             tmp_replication_slot = replication_slot + "_tmp";
-
-            /// Unlike the slot, the publication holds no replication position — it is only a named list of
-            /// tables — so it is safe to create it under the salted name if neither exists. Prefer the
-            /// pre-salt publication when it is the one that exists and is confirmed to belong to this
-            /// engine's schema, both to keep the deployment's identity in one piece and not to leave it
-            /// orphaned on the PostgreSQL side.
-            if (!publication_exists(publication_name) && publication_exists(legacy_publication_name)
-                && publication_owned_by_schema(legacy_publication_name))
-            {
-                LOG_INFO(
-                    log, "Adopting the legacy publication {} (instead of {})",
-                    doubleQuoteString(legacy_publication_name), doubleQuoteString(publication_name));
-                publication_name = legacy_publication_name;
-            }
         }
         else
         {
-            /// A user-managed slot: the publication is the only renamed object. Adopt the pre-salt
-            /// publication when it is the one that exists and is confirmed to belong to this engine's schema.
-            if (publication_exists(publication_name) || !publication_exists(legacy_publication_name)
-                || !publication_owned_by_schema(legacy_publication_name))
+            /// A user-managed slot keeps its user-provided name; the publication is the only renamed object.
+            /// If the salted publication already exists, this deployment is already on the salted identity
+            /// and there is nothing to adopt.
+            if (publication_exists(publication_name))
                 return;
+        }
 
+        /// The pre-salt slot has been adopted (or the slot is user-managed): replication now streams through
+        /// the pre-salt publication, so that publication must be reused. Creating a fresh publication under
+        /// the salted name and streaming through it instead would silently drop every change committed to
+        /// WAL before the fresh publication existed: pgoutput resolves publication membership from a historic
+        /// catalog snapshot taken at each change's LSN, so a not-yet-created publication is skipped
+        /// (`WARNING: skipped loading publication`) and its rows never reach the replica, which then falls
+        /// permanently behind without any error. The pre-salt publication name is schema-blind, so it may
+        /// instead belong to another engine; adopt it only when it exists and every table it publishes
+        /// belongs to a schema this engine replicates. Otherwise fail closed below: never hijack another
+        /// engine's publication, and never fall back to a fresh publication that would lose the WAL gap.
+        if (publication_exists(legacy_publication_name) && publication_owned_by_this_engine(legacy_publication_name))
+        {
             LOG_INFO(
-                log,
-                "Adopting the legacy publication {} (instead of {}) of a deployment created before the unique "
-                "replication consumer identifier became salted with the server UUID",
+                log, "Adopting the legacy publication {} (instead of {})",
                 doubleQuoteString(legacy_publication_name), doubleQuoteString(publication_name));
             publication_name = legacy_publication_name;
+            return;
         }
-        return;
+
+        const String reason = publication_exists(legacy_publication_name)
+            ? fmt::format(
+                "the pre-salt publication {} publishes tables from a schema this engine does not replicate, so "
+                "it belongs to another engine",
+                doubleQuoteString(legacy_publication_name))
+            : fmt::format("the pre-salt publication {} does not exist", doubleQuoteString(legacy_publication_name));
+
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: replication is bound to the pre-salt "
+            "replication slot {}, but {}. Streaming through a freshly created publication instead would silently "
+            "lose every change written to PostgreSQL before it is (re)created (pgoutput skips a publication that "
+            "did not yet exist at the change's LSN), and adopting a publication that belongs to another engine "
+            "would consume the wrong tables, so replication is refused. Recreate this engine's own publication "
+            "{} on the PostgreSQL side (or drop the conflicting one), or recreate this table: startup keeps "
+            "retrying and replication starts automatically once the conflict is resolved, without a server "
+            "restart or a manual re-attach.",
+            replication_slot, reason, doubleQuoteString(legacy_publication_name));
     }
 
     if (replication_slot != legacy_replication_slot)
