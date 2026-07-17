@@ -15,7 +15,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Common/quoteString.h>
@@ -66,9 +66,18 @@ String getInsertDataSchemaMismatchDescription(
     auto inferred = inferred_columns.getAll();
     auto expected = expected_header.getNamesAndTypesList();
 
-    /// Compare structurally, ignoring the artificial Nullable wrapper that schema inference adds by
-    /// default, so that inserting valid data into non-nullable columns is not flagged as a mismatch.
-    auto core_type_name = [](const DataTypePtr & type) { return removeNullable(type)->getName(); };
+    /// Compare structurally with a deliberately loose notion of compatibility. Schema inference widens
+    /// types on purpose — numbers become broad types such as `Int64` / `UInt64` / `Float64`, and it does
+    /// not reconstruct wrappers such as `Nullable`, `LowCardinality` or `Enum` — so comparing type names
+    /// exactly would report a "mismatch" for many inputs that are in fact perfectly insertable (e.g. into
+    /// `UInt8`, `Float32` or `LowCardinality(String)` columns). To avoid attaching a misleading
+    /// explanation to an unrelated parse error, we treat a column as mismatched only when the inferred
+    /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
+    /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
+    auto types_are_compatible = [](const DataTypePtr & inferred_type, const DataTypePtr & expected_type)
+    {
+        return inferred_type->equals(*expected_type) || tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr;
+    };
 
     bool corresponds = inferred.size() == expected.size();
     if (corresponds)
@@ -77,7 +86,7 @@ String getInsertDataSchemaMismatchDescription(
         auto it_expected = expected.begin();
         for (; it_inferred != inferred.end(); ++it_inferred, ++it_expected)
         {
-            if (core_type_name(it_inferred->type) != core_type_name(it_expected->type))
+            if (!types_are_compatible(it_inferred->type, it_expected->type))
             {
                 corresponds = false;
                 break;
