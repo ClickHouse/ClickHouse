@@ -407,9 +407,13 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
             col->insert(false);
             break;
         case '1':
+            /// Advance the position like every other branch, otherwise the container reader
+            /// re-reads the same digit and fails with CANNOT_READ_ARRAY_FROM_TEXT.
+            ++istr.position();
             col->insert(true);
             break;
         case '0':
+            ++istr.position();
             col->insert(false);
             break;
         case '\'':
