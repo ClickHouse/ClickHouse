@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
-#include <IO/SnappyReadBuffer.h>
+#include <IO/SnappyBasicReadBuffer.h>
 
 namespace DB
 {
@@ -22,12 +22,12 @@ namespace ErrorCodes
 }
 
 
-SnappyReadBuffer::SnappyReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
+SnappyBasicReadBuffer::SnappyBasicReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
 {
 }
 
-bool SnappyReadBuffer::nextImpl()
+bool SnappyBasicReadBuffer::nextImpl()
 {
     if (compress_buffer.empty() && uncompress_buffer.empty())
     {
@@ -47,9 +47,9 @@ bool SnappyReadBuffer::nextImpl()
     return false;
 }
 
-SnappyReadBuffer::~SnappyReadBuffer() = default;
+SnappyBasicReadBuffer::~SnappyBasicReadBuffer() = default;
 
-off_t SnappyReadBuffer::seek(off_t off, int whence)
+off_t SnappyBasicReadBuffer::seek(off_t off, int whence)
 {
     off_t new_pos = 0;
     if (whence == SEEK_SET)
@@ -68,7 +68,7 @@ off_t SnappyReadBuffer::seek(off_t off, int whence)
     return new_pos;
 }
 
-off_t SnappyReadBuffer::getPosition()
+off_t SnappyBasicReadBuffer::getPosition()
 {
     return count();
 }
