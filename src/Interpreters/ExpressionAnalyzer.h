@@ -136,14 +136,6 @@ public:
     ActionsDAG getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
-    /// Build ActionsDAG for a boolean filter expression over given columns (e.g. for LIMIT AFTER/UNTIL).
-    /// Returns the DAG and the result column name.
-    static std::pair<ActionsDAG, String> buildFilterActionsDAG(
-        ContextPtr context_,
-        const Block & header,
-        const ASTPtr & expr,
-        PreparedSetsPtr prepared_sets_ = nullptr);
-
     /** Sets that require a subquery to be create.
       * Only the sets needed to perform actions returned from already executed `append*` or `getActions`.
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`

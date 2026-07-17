@@ -244,7 +244,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -372,23 +371,6 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 namespace
 {
-
-/// Whether the AST subtree contains an `arrayJoin` function call, without descending into
-/// nested subqueries (their `arrayJoin` belongs to a different scope). Used to disable the
-/// trivial-LIMIT source optimization, since `arrayJoin` changes row cardinality after the
-/// source has run. Mirrors `numbersLikeUtils::astContainsArrayJoinFunction`.
-bool selectListHasArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunction(child))
-            return true;
-    return false;
-}
 
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
@@ -2660,7 +2642,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
     /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
     /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+    if (astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
         return 0;
 
     if (!query.distinct
@@ -3520,26 +3502,6 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
 }
 
 
-static std::optional<std::pair<ActionsDAG, String>> buildLimitConditionDAG(
-    const Block & header,
-    const ASTPtr & expr,
-    ContextPtr context,
-    PreparedSetsPtr prepared_sets,
-    const String & description)
-{
-    if (!expr)
-        return std::nullopt;
-    auto result = ExpressionAnalyzer::buildFilterActionsDAG(context, header, expr, prepared_sets);
-    const auto * output = result.first.getOutputs().at(0);
-    if (!output->result_type->canBeUsedInBooleanContext())
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "{} expression must be boolean, got {}",
-            description,
-            output->result_type->getName());
-    return std::make_optional(std::move(result));
-}
-
 void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
@@ -3570,10 +3532,9 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         const auto & header = query_plan.getCurrentHeader();
 
-        std::optional<std::pair<ActionsDAG, String>> start_condition;
-        std::optional<std::pair<ActionsDAG, String>> end_condition;
-
-        auto buildIdentityCondition = [&](const String & column_name) -> std::optional<std::pair<ActionsDAG, String>>
+        /// The boundary conditions were computed as columns by the `appendLimitRange` chain step,
+        /// so here they are read from the header by name.
+        auto build_identity_condition = [&](const String & column_name) -> std::optional<std::pair<ActionsDAG, String>>
         {
             if (column_name.empty())
                 return std::nullopt;
@@ -3584,16 +3545,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             return std::make_pair(std::move(dag), column_name);
         };
 
-        if (analysis_result.before_limit_range)
-        {
-            start_condition = buildIdentityCondition(analysis_result.limit_range_start_column_name);
-            end_condition = buildIdentityCondition(analysis_result.limit_range_end_column_name);
-        }
-        else
-        {
-            start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets, "LIMIT AFTER");
-            end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets, "LIMIT UNTIL");
-        }
+        auto start_condition = build_identity_condition(analysis_result.limit_range_start_column_name);
+        auto end_condition = build_identity_condition(analysis_result.limit_range_end_column_name);
         auto limit_range_step = std::make_unique<LimitRangeStep>(
             header,
             std::move(start_condition),
@@ -3849,10 +3802,7 @@ void InterpreterSelectQuery::initSettings()
             context->setSetting("limit", Field(UInt64(0)));
             context->setSetting("offset", Field(UInt64(0)));
 
-            set_query.changes.removeSetting("limit");
-            set_query.changes.removeSetting("offset");
-            if (set_query.changes.empty())
-                query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            removeLimitOffsetSettings(query);
         }
     }
 

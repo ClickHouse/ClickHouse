@@ -134,24 +134,6 @@ namespace ErrorCodes
 namespace
 {
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
-}
-
-namespace
-{
-
 /// Check if there is an ignore function. It's used for disabling constant folding in query
 ///  predicates because some performance tests use ignore function as a non-optimize guard.
 bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & settings)
@@ -2027,28 +2009,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
 {
     auto actions = getConstActionsDAG(constant_inputs);
     return std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(getContext()));
-}
-
-std::pair<ActionsDAG, String> ExpressionAnalyzer::buildFilterActionsDAG(
-    ContextPtr context_,
-    const Block & header,
-    const ASTPtr & expr,
-    PreparedSetsPtr prepared_sets_)
-{
-    ASTPtr expr_copy = expr->clone();
-    NamesAndTypesList source_columns;
-    for (const auto & col : header)
-        source_columns.emplace_back(col.name, col.type);
-    auto syntax_result = TreeRewriter(context_).analyze(expr_copy, source_columns);
-    ExpressionAnalyzer analyzer(expr_copy, syntax_result, context_, 0, false, false, prepared_sets_);
-    ActionsDAG dag(header.getColumnsWithTypeAndName());
-    analyzer.getRootActions(expr_copy, false, dag);
-    String column_name = expr_copy->getColumnName();
-    const auto & node = dag.findInOutputs(column_name);
-    if (!node.result_type->canBeUsedInBooleanContext())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "LIMIT AFTER/UNTIL expression must be boolean, got {}", node.result_type->getName());
-    return {std::move(dag), std::move(column_name)};
 }
 
 std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
