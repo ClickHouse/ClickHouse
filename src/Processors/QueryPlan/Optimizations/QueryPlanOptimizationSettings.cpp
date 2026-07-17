@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ServerSetting
@@ -350,5 +351,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
     }
 #endif
+
+    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
 }
 }
