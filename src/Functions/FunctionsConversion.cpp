@@ -2978,8 +2978,8 @@ bool hasNonStrictlyEqualAggregateSubtype(const DataTypePtr & from_type, const Da
         return !DataTypeAggregateFunction::strictEquals(from_type, to_type);
 
     /// The two types are equal() (same structure), so their children line up positionally.
-    std::vector<DataTypePtr> from_children;
-    std::vector<DataTypePtr> to_children;
+    DataTypes from_children;
+    DataTypes to_children;
     from_type->forEachChild([&](const IDataType & child) { from_children.push_back(child.getPtr()); });
     to_type->forEachChild([&](const IDataType & child) { to_children.push_back(child.getPtr()); });
 
