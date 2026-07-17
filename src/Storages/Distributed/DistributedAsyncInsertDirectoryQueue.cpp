@@ -494,8 +494,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
-        return std::tie(settings, query, client_info.query_kind, client_info.client_agent) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent) &&
+        return std::tie(settings, query, client_info.query_kind, client_info.client_agent, client_info.is_internal) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent, other.client_info.is_internal) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -506,6 +506,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
             hash_state.update(batch_header.client_info.client_agent.data(), batch_header.client_info.client_agent.size());
+            hash_state.update(batch_header.client_info.is_internal);
             batch_header.header.updateHash(hash_state);
             return hash_state.get64();
         }

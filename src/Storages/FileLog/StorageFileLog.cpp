@@ -455,7 +455,7 @@ void StorageFileLog::drop()
 {
     try
     {
-        (void)std::filesystem::remove_all(metadata_base_path);
+        disk->removeRecursive(metadata_base_path);
     }
     catch (...)
     {
@@ -1143,8 +1143,12 @@ bool StorageFileLog::updateFileInfos()
                     {
                         auto old_name = it->second.file_name;
                         it->second.file_name = file_name;
-                        if (std::filesystem::exists(getFullMetaPath(old_name)))
-                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
+                        /// Meta paths are relative to the disk root, so go through the disk abstraction:
+                        /// std::filesystem would resolve them against the process CWD and silently skip
+                        /// the rename, leaving a stale meta file that collides when the name is reused
+                        /// (e.g. a logrotate rename chain processed in one batch).
+                        if (disk->existsFile(getFullMetaPath(old_name)))
+                            disk->replaceFile(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
                     /// May move from other place, adding new meta info
                     else

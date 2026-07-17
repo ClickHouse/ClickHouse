@@ -121,7 +121,8 @@ export const quickStartsData = [
       "data-warehousing"
     ],
     "products": [
-      "cloud"
+      "cloud",
+      "self-managed"
     ]
   },
   {

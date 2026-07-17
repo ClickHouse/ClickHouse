@@ -15,6 +15,7 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -390,6 +391,13 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
         }
 
         index_file_hashing_stream = nullptr;
+
+        /// Release the primary index (`primary.cidx` / `primary.idx`) file descriptor now that the data
+        /// has been flushed and synced, so it is not held open across the part-directory rename. See the
+        /// detailed rationale in MergeTreeDataPartWriterCompact::finishDataSerialization and
+        /// https://github.com/ClickHouse/ClickHouse/issues/56288. The wrapper streams above were reset
+        /// first, so no live buffer references index_file_stream.
+        index_file_stream = nullptr;
     }
 }
 
@@ -442,6 +450,15 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
                 /// finalize hands them to skip_indices_packed_writer. No per-file checksum
                 /// entry -- the archive's single checksum covers it.
                 stream->finalize();
+
+                /// Record uncompressed size in the archive index so the size accounting doesn't
+                /// have to read the payload back. Virtual name matches the one passed above.
+                if (MergeTreeIndexSubstream::isCompressed(type))
+                {
+                    PackedFilesWriter * packed_writer =
+                        skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+                    packed_writer->setUncompressedSize(logical_key + index_substreams[substream_idx].extension, stream->getDataUncompressedSize());
+                }
             }
             else
             {
@@ -460,7 +477,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         skip_indices_packed_file = getDataPartStorage().writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         HashingWriteBuffer packed_hashing(*skip_indices_packed_file);
 
-        auto [packed_index, _] = skip_indices_packed_writer->finalize(packed_hashing);
+        auto [packed_index, _] = skip_indices_packed_writer->finalize(packed_hashing, {}, PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE);
         packed_hashing.finalize();
 
         auto & checksum = checksums.files[packed_filename];
@@ -708,6 +725,26 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
+{
+    if (codec->needsVectorDimensionUpfront())
+    {
+        Field sample_field;
+        column->get(0, sample_field);
+        /// Only arrays carry a vector dimension here. A `Tuple` is serialized as one stream per element,
+        /// so each element stream is scalar; using the tuple arity as the dimension would make the codec
+        /// read several values from a single-value stream.
+        if (sample_field.getType() == Field::Types::Array)
+        {
+            for (size_t j = 0; j < column->size(); ++j)
+            {
+                column->get(j, sample_field);
+                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
+            }
+        }
     }
 }
 

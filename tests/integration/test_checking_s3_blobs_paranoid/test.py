@@ -1072,3 +1072,75 @@ def test_exception_in_MV(cluster, broken_s3):
 
     assert 'ExceptionName: ExpectedError Message: mock s3 injected unretryable error' in query_view_log
     assert 'ExceptionWhileProcessing' in query_view_log
+
+
+def test_insert_to_s3_cancel_reports_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    # Keep uploads failing with a retryable error so the query sits in the S3 retry loop when killed.
+    broken_s3.setup_at_object_upload(action="connection_reset_by_peer", count=10000)
+    broken_s3.setup_at_part_upload(action="connection_reset_by_peer", count=10000)
+
+    query_id = randomize_query_id("insert_to_s3_cancel")
+    request = node.get_query_request(
+        f"""
+        INSERT INTO TABLE FUNCTION s3(
+            'http://resolver:8083/root/data/insert_to_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        SELECT number, toString(number) FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+        """,
+        query_id=query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+    )
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+    error = request.get_error()
+    assert "QUERY_WAS_CANCELLED" in error, error
+    assert "S3_ERROR" not in error, error
+
+
+def test_select_from_s3_cancel_reports_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    node.query(
+        f"""
+        INSERT INTO TABLE FUNCTION s3(
+            'http://resolver:8083/root/data/select_from_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        SELECT number, toString(number) FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+        """
+    )
+
+    # Make reads hang so the query is inside an in-flight S3 request when killed.
+    broken_s3.setup_slow_get_answers(timeout=30)
+
+    query_id = randomize_query_id("select_from_s3_cancel")
+    request = node.get_query_request(
+        f"""
+        SELECT count() FROM s3(
+            'http://resolver:8083/root/data/select_from_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        """,
+        query_id=query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+    )
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+    error = request.get_error()
+    assert "QUERY_WAS_CANCELLED" in error, error
+    assert "S3_ERROR" not in error, error
