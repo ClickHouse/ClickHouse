@@ -39,13 +39,7 @@ void encodeBlock(
     if (num_rows == 0)
         return;
 
-    /// Materialize ColumnConst so batchSerializeAsComparable sees concrete column types.
-    Columns materialized;
-    materialized.reserve(columns.size());
-    for (const auto & col : columns)
-        materialized.push_back(col->convertToFullColumnIfConst());
-
-    for (const auto & col_ptr : materialized)
+    for (const auto & col_ptr : columns)
     {
         col_ptr->batchSerializeAsComparable(num_rows, out, permutation);
 

@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -850,6 +851,51 @@ TEST(UniqueKeyEncoding, NullableOrdering)
 }
 
 /// ---------------------------------------------------------------------------
+/// Nullable batch path (ColumnNullable::batchSerializeAsComparable delegating to
+/// the nested column's batch). Encode a multi-row block with interleaved NULL /
+/// non-NULL rows and assert the batch-encoded memcmp order agrees with compareAt
+/// across all pairs. Pins the nested-batch delegation so it does not regress to
+/// a per-row virtual in the hot loop.
+/// ---------------------------------------------------------------------------
+TEST(UniqueKeyEncoding, NullableBatchMultiRowOrdering)
+{
+    auto nested = ColumnUInt64::create();
+    nested->insert(Field(UInt64(0)));     /// 0 non-null 0
+    nested->insert(Field(UInt64(0)));     /// 1 null (placeholder)
+    nested->insert(Field(UInt64(50)));    /// 2 non-null 50
+    nested->insert(Field(UInt64(0)));     /// 3 null (placeholder)
+    nested->insert(Field(UInt64(100)));   /// 4 non-null 100
+
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols{std::move(col)};
+
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 4096, encoded);
+    ASSERT_EQ(encoded.size(), 5u);
+
+    for (size_t a = 0; a < encoded.size(); ++a)
+        for (size_t b = 0; b < encoded.size(); ++b)
+        {
+            int mem = std::memcmp(encoded[a].data(), encoded[b].data(),
+                                  std::min(encoded[a].size(), encoded[b].size()));
+            if (mem == 0 && encoded[a].size() != encoded[b].size())
+                mem = encoded[a].size() > encoded[b].size() ? 1 : -1;
+            int expected = columnCompareRows(cols, a, b);
+            int expected_sign = (expected > 0) - (expected < 0);
+            int actual_sign = (mem > 0) - (mem < 0);
+            EXPECT_EQ(expected_sign, actual_sign)
+                << "nullable batch pair a=" << a << " b=" << b;
+        }
+}
+
+/// ---------------------------------------------------------------------------
 /// Compound keys — concatenation preserves order when each component is
 /// prefix-free and individually order-preserving.
 /// Shuffle-and-sort: encode a bunch of random rows, sort by encoding, and
@@ -973,6 +1019,39 @@ TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
     VectorWithMemoryTracking<String> out;
     EXPECT_NO_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out));
     ASSERT_EQ(out.size(), 3u);
+}
+
+/// ColumnConst must be accepted directly by encodeBlock (no NOT_IMPLEMENTED,
+/// no external materialization) and produce the same encoding as the equivalent
+/// full column. Pins the ColumnConst::serializeAsComparable /
+/// batchSerializeAsComparable delegates.
+TEST(UniqueKeyEncoding, ColumnConstEncodeBlockMatchesFullColumn)
+{
+    auto data = ColumnUInt64::create();
+    data->insert(Field(UInt64(42)));
+    auto const_col = ColumnConst::create(std::move(data), 4);
+
+    auto full = ColumnUInt64::create();
+    for (int i = 0; i < 4; ++i)
+        full->insert(Field(UInt64(42)));
+
+    Columns const_cols{const_col};
+    Columns full_cols{std::move(full)};
+
+    VectorWithMemoryTracking<String> const_out;
+    VectorWithMemoryTracking<String> full_out;
+    UniqueKeyEncoding::encodeBlock(const_cols, /*permutation=*/nullptr, 4096, const_out);
+    UniqueKeyEncoding::encodeBlock(full_cols, /*permutation=*/nullptr, 4096, full_out);
+
+    ASSERT_EQ(const_out.size(), 4u);
+    ASSERT_EQ(full_out.size(), 4u);
+    for (size_t r = 0; r < 4u; ++r)
+    {
+        EXPECT_EQ(const_out[r], full_out[r])
+            << "ColumnConst row " << r << " must match full-column encoding";
+        EXPECT_EQ(const_out[r], const_out[0])
+            << "ColumnConst row " << r << " must be identical across rows";
+    }
 }
 
 /// Empty-block: must produce an empty output vector without touching max_size.

@@ -18,6 +18,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -188,7 +189,7 @@ TEST_F(SSTFixture, RoundTrip10K)
     auto status = reader.Open(finalPath());
     ASSERT_TRUE(status.ok()) << status.ToString();
 
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/256, encoded);
     for (size_t i = 0; i < N; ++i)
     {
@@ -246,7 +247,7 @@ TEST_F(SSTFixture, CorruptionRebuild)
     rocksdb::SstFileReader reader(makeReaderOptions());
     ASSERT_TRUE(reader.Open(finalPath()).ok());
     auto one_col = makeUInt64Columns({keys[42]});
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(one_col, /*permutation=*/nullptr, 256, encoded);
     EXPECT_TRUE(sstIteratorContains(reader, encoded[0]));
 }

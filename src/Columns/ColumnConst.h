@@ -183,6 +183,24 @@ public:
         return data->serializeValueIntoMemory(0, memory, settings);
     }
 
+    void serializeAsComparable(size_t, String & out) const override
+    {
+        data->serializeAsComparable(0, out);
+    }
+
+    /// All rows are identical: encode row 0 once and append to every output row.
+    /// Permutation is irrelevant for a constant column.
+    void batchSerializeAsComparable(
+        size_t num_rows,
+        VectorWithMemoryTracking<String> & out,
+        const IColumn::Permutation * /*permutation*/) const override
+    {
+        String encoded;
+        data->serializeAsComparable(0, encoded);
+        for (size_t r = 0; r < num_rows; ++r)
+            out[r].append(encoded);
+    }
+
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
         data->deserializeAndInsertFromArena(in, settings);

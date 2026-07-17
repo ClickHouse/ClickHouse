@@ -1064,36 +1064,31 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-namespace
+/// Leading flag byte of a Nullable row's comparable encoding. `\x00` (non-NULL)
+/// sorts before `\x01` (NULL), so NULLs compare greater, matching compareAt with
+/// null_direction_hint = 1. A non-NULL row is `\x00` followed by the nested value's
+/// encoding; a NULL row is just `\x01`.
+void ColumnNullable::validateNestedComparable() const
 {
-    /// Encode one Nullable row: a leading NULL flag plus the nested encoding for
-    /// non-NULL values. `\x00` (non-NULL) sorts before `\x01` (NULL), so NULLs
-    /// compare greater, matching compareAt with null_direction_hint = 1.
-    /// Assumes the nested type has already been validated by the caller.
-    void serializeNullableRow(const IColumn & nested_column, const NullMap & null_map_data, size_t n, String & out)
-    {
-        if (null_map_data[n])
-        {
-            out.push_back('\x01');
-            return;
-        }
-        out.push_back('\x00');
-        nested_column.serializeAsComparable(n, out);
-    }
+    /// A NULL row emits only the flag byte and never touches the nested column, so an
+    /// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
+    /// Probe row 0 once so every row rejects the same types a non-NULL row would, even
+    /// in an all-NULL block. Not on the hot path.
+    String probe;
+    nested_column->serializeAsComparable(0, probe);
 }
 
 void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 {
     const auto & null_map_data = getNullMapData();
-    /// A NULL row would otherwise skip the nested column entirely, silently accepting
-    /// unsupported nested types (e.g. LowCardinality, Array). Probe the nested column
-    /// on NULL rows so they reject the same types a non-NULL row would.
     if (null_map_data[n])
     {
-        String probe;
-        nested_column->serializeAsComparable(0, probe);
+        validateNestedComparable();
+        out.push_back('\x01');
+        return;
     }
-    serializeNullableRow(*nested_column, null_map_data, n, out);
+    out.push_back('\x00');
+    nested_column->serializeAsComparable(n, out);
 }
 
 void ColumnNullable::batchSerializeAsComparable(
@@ -1104,16 +1099,30 @@ void ColumnNullable::batchSerializeAsComparable(
     if (num_rows == 0)
         return;
 
-    /// Validate the nested type once here rather than per row, so an all-NULL block
-    /// still rejects unsupported nested types without repeating the probe.
-    String probe;
-    nested_column->serializeAsComparable(0, probe);
+    validateNestedComparable();
+
+    /// Encode the nested values in one shot: a single virtual dispatch into the nested
+    /// concrete type, then its own monomorphic row loop (e.g. ColumnVector<UInt64>).
+    /// This is what keeps Nullable(UInt64) / Nullable(DateTime64) UNIQUE KEY batches
+    /// off the per-row single-row virtual. `nested_out` is a scratch buffer because the
+    /// nested column knows nothing about the NULL flag: we splice the flag in below.
+    VectorWithMemoryTracking<String> nested_out;
+    nested_out.resize(num_rows);
+    nested_column->batchSerializeAsComparable(num_rows, nested_out, permutation);
 
     const auto & null_map_data = getNullMapData();
     for (size_t r = 0; r < num_rows; ++r)
     {
         const size_t src = permutation ? (*permutation)[r] : r;
-        serializeNullableRow(*nested_column, null_map_data, src, out[r]);
+        if (null_map_data[src])
+        {
+            out[r].push_back('\x01');
+        }
+        else
+        {
+            out[r].push_back('\x00');
+            out[r].append(nested_out[r]);
+        }
     }
 }
 
