@@ -5,7 +5,7 @@
 #cmakedefine01 USE_ARROWFLIGHT
 #cmakedefine01 CLICKHOUSE_CLOUD
 #cmakedefine01 USE_CPUID
-#cmakedefine01 USE_BASE64
+#cmakedefine01 USE_SIMDUTF
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 USE_SSH
@@ -15,6 +15,7 @@
 #cmakedefine01 USE_GOOGLE_CLOUD_KMS
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
 #cmakedefine01 USE_BROTLI
+#cmakedefine01 USE_LIBDEFLATE
 #cmakedefine01 USE_CASSANDRA
 #cmakedefine01 USE_GRPC
 #cmakedefine01 USE_SIMDJSON
@@ -59,6 +60,7 @@
 #cmakedefine01 USE_SQLITE
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_KRB5
+#cmakedefine01 USE_SZ3
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_SIMDCOMP
