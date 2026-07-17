@@ -462,3 +462,97 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureRollsBackAfterRestart)
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test (after-restart variant of RotationFailureDoesNotEvictUnrelatedBlockIds):
+/// a failed insert must not evict an unrelated, already-active block ID after a
+/// server restart either. The compensating record for the rolled-back insert
+/// replays before the ADD it undoes, so if it were a plain DROP the transient ADD
+/// would still evict the oldest committed block from the bounded map on replay,
+/// even though the failed insert never took effect in memory. It is written as a
+/// CANCEL instead, so replay drops the (ADD, CANCEL) pair and never consumes a
+/// deduplication-window slot for it.
+TEST(MergeTreeDeduplicationLog, RotationFailureDoesNotEvictUnrelatedBlockIdsAfterRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_no_evict_restart/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// writeFile #1 happens while creating the very first log during load().
+        /// A window of 1 means the map holds a single entry and rotate_interval == 2,
+        /// so the ADD record for "block2" reaches the rotation that writeFile #2 is
+        /// injected to fail.
+        auto disk = std::make_shared<DiskThrowingOnNthWrite>("faulty", work_dir, /*fail_on_write=*/ 2);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// Publishes "block1" into the (now full) map and durably logs its ADD.
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// The ADD record for "block2" is written successfully, but the rotation
+        /// that follows it is injected to fail, so the insert is rolled back.
+        EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+
+        /// Finalize the current log as on a graceful shutdown.
+        log.shutdown();
+    }
+
+    {
+        /// "Restart" with a healthy disk: replay the log from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// "block1" must still be deduplicated after the restart: replaying the
+        /// rolled-back "block2" must not have evicted it from the one-slot map.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_3_3_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test (after-restart variant for the sync-failure rollback path):
+/// when the ADD records of a failed insert did reach the disk (only the fsync of
+/// the previous log file during rotation failed), replaying them on restart must
+/// still not evict an unrelated, already-active block ID from the bounded map.
+TEST(MergeTreeDeduplicationLog, RotationSyncFailureDoesNotEvictUnrelatedBlockIdsAfterRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_no_evict_sync_restart/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// The ADD record for "block2" is written and flushed, but syncing the old
+        /// log file during the rotation fails, so the insert is rolled back with a
+        /// CANCEL record written into the newly opened log file.
+        EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+
+        log.shutdown();
+    }
+
+    {
+        /// "Restart" with a healthy disk: replay the logs from disk.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// "block1" must still be deduplicated: the rolled-back "block2" ADD (which
+        /// did reach the disk) must be cancelled out on replay rather than evicting
+        /// "block1" from the one-slot map.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_3_3_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}

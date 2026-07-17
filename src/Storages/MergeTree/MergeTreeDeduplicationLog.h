@@ -8,9 +8,35 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
+
+/// Deduplication operation stored on disk: a part was added, dropped, or an add
+/// was rolled back.
+enum class MergeTreeDeduplicationOp : uint8_t
+{
+    ADD = 1,
+    DROP = 2,
+    /// Written when an insert that had already durably written its ADD record(s)
+    /// fails and must be rolled back (e.g. a rotation or fsync failure right after
+    /// the writes). On replay it cancels the matching preceding ADD record, so the
+    /// rolled-back insert consumes no deduplication-window slot and therefore does
+    /// not evict an unrelated, still-active block. Only ever produced on the rare
+    /// write-failure rollback path; an older server that does not know this op
+    /// would replay the record as an insert (best-effort deduplication only, never
+    /// an exception), which is acceptable for this internal, rotating log.
+    CANCEL = 3,
+};
+
+/// Record for deduplication on disk
+struct MergeTreeDeduplicationLogRecord
+{
+    MergeTreeDeduplicationOp operation{};
+    std::string part_name;
+    std::string block_id;
+};
 
 /// Description of dedupliction log
 struct MergeTreeDeduplicationLogNameDescription
@@ -130,6 +156,8 @@ public:
 ///  2           77_14_14_0      77_15147918179036854170_6725063583757244937
 ///  2           77_15_15_0      77_14977227047908934259_8047656067364802772
 ///  1           77_20_20_0      77_15147918179036854170_6725063583757244937
+/// The operation is one of MergeTreeDeduplicationOp: 1 = ADD, 2 = DROP,
+/// 3 = CANCEL (rolls back a preceding ADD of a failed insert).
 /// Also stores them in memory in hash table with limited size.
 class MergeTreeDeduplicationLog
 {
@@ -201,8 +229,16 @@ private:
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
 
-    /// Load single log from disk. In case of corruption throws exceptions
-    size_t loadSingleLog(const std::string & path);
+    /// Read all records of a single log from disk in order, appending them to
+    /// `records`. Returns how many records were read. In case of corruption
+    /// throws exceptions.
+    size_t loadSingleLog(const std::string & path, std::vector<MergeTreeDeduplicationLogRecord> & records);
+
+    /// Replay a chronologically ordered record stream into the in-memory map.
+    /// Each CANCEL record cancels the matching preceding ADD (both are skipped),
+    /// so an insert that failed and rolled back consumes no deduplication-window
+    /// slot; the remaining ADD/DROP records are applied exactly as they were live.
+    void applyRecords(const std::vector<MergeTreeDeduplicationLogRecord> & records);
 };
 
 }
