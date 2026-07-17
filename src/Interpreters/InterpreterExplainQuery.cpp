@@ -37,13 +37,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Substrait/SubstraitSerializer.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/Sources/DelayedSource.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
