@@ -10758,6 +10758,13 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
             {
+                /// tryCreateZeroCopyExclusiveLock, waitZeroCopyLockToDisappear, and ~ZeroCopyLock (releasing the
+                /// ephemeral lock node when the local `lock` below is destroyed) all issue ZooKeeper requests.
+                /// This runs on a background moves thread (scheduleDataMovingJob / async movePartsToSpace via
+                /// ExecutableLambdaAdapter) with no component scope set, so set one explicitly here; otherwise
+                /// zero-copy part moves abort the server under enforce_keeper_component_tracking.
+                auto component_guard = Coordination::setCurrentComponent("MergeTreeData::moveParts");
+
                 /// This loop is not endless, if shutdown called/connection failed/replica became readonly
                 /// we will return true from waitZeroCopyLock and createZeroCopyLock will return nullopt.
                 while (true)
