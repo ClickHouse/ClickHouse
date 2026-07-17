@@ -30,7 +30,15 @@ public:
     String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        ColumnsWithTypeAndName build_args;
+        build_args.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            build_args.push_back({nullptr, argument.type, ""});
+        return op->build(build_args)->canThrow(arguments);
+    }
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

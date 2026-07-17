@@ -40,7 +40,11 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// nullIf(a, b) executes equals(a, b), which can throw for Dynamic/Variant comparisons.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return containsDynamicOrVariant(*arguments[0].type) || containsDynamicOrVariant(*arguments[1].type);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

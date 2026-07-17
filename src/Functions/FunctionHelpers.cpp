@@ -526,4 +526,17 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 current_size);
     }
 }
+
+bool containsDynamicOrVariant(const IDataType & type)
+{
+    if (isDynamic(type) || isVariant(type))
+        return true;
+
+    bool contains = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        contains = contains || isDynamic(child) || isVariant(child);
+    });
+    return contains;
+}
 }

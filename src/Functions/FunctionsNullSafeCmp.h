@@ -69,7 +69,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return containsDynamicOrVariant(*arguments[0].type) || containsDynamicOrVariant(*arguments[1].type);
+    }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
