@@ -208,7 +208,8 @@ private:
         bool need_only_count,
         const std::optional<UInt64> & max_block_size_bytes,
         const std::optional<UInt64> & min_block_size_rows,
-        const std::optional<UInt64> & min_block_size_bytes) const;
+        const std::optional<UInt64> & min_block_size_bytes,
+        std::optional<SnappyMode> snappy_mode_override) const;
 public:
     static FormatFactory & instance();
 
@@ -235,7 +236,10 @@ public:
         bool need_only_count = false,
         const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
-        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt,
+        // Overrides the `snappy_mode` setting when the compression method comes from an HTTP
+        // `Content-Encoding` header, where snappy always means the framing format.
+        std::optional<SnappyMode> snappy_mode_override = std::nullopt) const;
 
     /// much the same as getInput but allows for passing metadata from object storage
     InputFormatPtr getInputWithMetadata(
@@ -393,7 +397,8 @@ private:
         const FormatSettings & format_settings,
         const Settings & settings,
         bool is_remote_fs,
-        const FormatParserSharedResourcesPtr & parser_shared_resources) const;
+        const FormatParserSharedResourcesPtr & parser_shared_resources,
+        std::optional<SnappyMode> snappy_mode_override) const;
 };
 
 }

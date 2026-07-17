@@ -59,6 +59,13 @@ std::string toContentEncodingName(CompressionMethod method)
     }
 }
 
+SnappyMode chooseSnappyModeForHTTP(const std::string & http_content_encoding, SnappyMode setting_mode)
+{
+    /// A non-empty HTTP content-encoding means the compression method was carried by an HTTP
+    /// header, where `snappy` is always the standardized framing format.
+    return http_content_encoding.empty() ? setting_mode : SnappyMode::Framed;
+}
+
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 {
     /// The compression methods are ordered from most to least preferred.

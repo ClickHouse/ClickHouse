@@ -446,6 +446,19 @@ StorageURLSource::StorageURLSource(
         }
         else
         {
+            /// `Content-Encoding: snappy` on the HTTP response always means the snappy framing
+            /// format, regardless of the `snappy_mode` setting (which applies only when snappy
+            /// compression is inferred from the URL path).
+            std::optional<SnappyMode> snappy_mode_override;
+            if (auto * http_buf = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()))
+            {
+                /// The request may be delayed for a single URL, so force reading the response
+                /// headers to make `Content-Encoding` available before choosing the wire format.
+                http_buf->eof();
+                snappy_mode_override = chooseSnappyModeForHTTP(
+                    http_buf->getCompressionMethod(), getContext()->getSettingsRef()[Setting::snappy_mode]);
+            }
+
             // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
             input_format = FormatFactory::instance().getInput(
                 format,
@@ -458,7 +471,11 @@ StorageURLSource::StorageURLSource(
                 format_filter_info,
                 /* is_remote_ fs */ true,
                 compression_method,
-                need_only_count);
+                need_only_count,
+                /*max_block_size_bytes=*/std::nullopt,
+                /*min_block_size_rows=*/std::nullopt,
+                /*min_block_size_bytes=*/std::nullopt,
+                snappy_mode_override);
 
             input_format->setSerializationHints(info.serialization_hints);
 
@@ -722,12 +739,14 @@ void StorageURLSink::initBuffers()
         .create();
 
     const auto & settings = context->getSettingsRef();
+    /// The sink always advertises the compression via the `Content-Encoding` header, so a snappy
+    /// body must use the standardized snappy framing format regardless of the `snappy_mode` setting.
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(write_buffer),
         compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
-        settings[Setting::snappy_mode]);
+        chooseSnappyModeForHTTP(content_encoding, settings[Setting::snappy_mode]));
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, getHeader(), context, format_settings);
 }
 
@@ -964,11 +983,14 @@ namespace
             } while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
 
             current_url_option = uri_and_buf.first.toString();
+            /// `Content-Encoding: snappy` on the HTTP response always means the snappy framing format.
+            auto snappy_mode = chooseSnappyModeForHTTP(
+                uri_and_buf.second->getCompressionMethod(), getContext()->getSettingsRef()[Setting::snappy_mode]);
             return {wrapReadBufferWithCompressionMethod(
                 std::move(uri_and_buf.second),
                 compression_method,
                 static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]),
-                getContext()->getSettingsRef()[Setting::snappy_mode]), std::nullopt, format};
+                snappy_mode), std::nullopt, format};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1015,9 +1037,12 @@ namespace
                 false,
                 false);
 
+            /// `Content-Encoding: snappy` on the HTTP response always means the snappy framing format.
+            auto snappy_mode = chooseSnappyModeForHTTP(
+                uri_and_buf.second->getCompressionMethod(), getContext()->getSettingsRef()[Setting::snappy_mode]);
             return wrapReadBufferWithCompressionMethod(
                 std::move(uri_and_buf.second), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]),
-                getContext()->getSettingsRef()[Setting::snappy_mode]);
+                snappy_mode);
         }
 
     private:

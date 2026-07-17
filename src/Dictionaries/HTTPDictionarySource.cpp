@@ -91,9 +91,7 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
     /// from the URL path (for example `http://.../data.snappy`), respect the user's
     /// `snappy_mode` setting like `StorageURL` does, so dictionary sources stay consistent
     /// with generic file/url reads.
-    SnappyMode snappy_mode = !http_request_compression_method_str.empty()
-        ? SnappyMode::Framed
-        : context->getSettingsRef()[Setting::snappy_mode];
+    SnappyMode snappy_mode = chooseSnappyModeForHTTP(http_request_compression_method_str, context->getSettingsRef()[Setting::snappy_mode]);
     auto in_ptr_wrapped
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);

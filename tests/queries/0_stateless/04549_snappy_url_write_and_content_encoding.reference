@@ -1,0 +1,13 @@
+-- read with Content-Encoding: snappy under default snappy_mode:
+0
+1
+2
+3
+4
+-- read path-inferred snappy with snappy_mode='framed':
+0
+1
+2
+3
+4
+OK: written body is framed snappy (rejected by basic reader)

@@ -40,6 +40,13 @@ enum class CompressionMethod : uint8_t
 /// How the compression method is named in HTTP.
 std::string toContentEncodingName(CompressionMethod method);
 
+/// For HTTP transfers, `Content-Encoding: snappy` always denotes the standardized snappy
+/// framing format, independent of the user-tunable `snappy_mode` setting (which applies only
+/// when snappy compression is inferred from a file path). `http_content_encoding` is the
+/// content-encoding carried on the HTTP wire (empty when the compression method was not taken
+/// from an HTTP header); when it is non-empty, the snappy framing format is used.
+SnappyMode chooseSnappyModeForHTTP(const std::string & http_content_encoding, SnappyMode setting_mode);
+
 /** Choose compression method from path and hint.
   * if hint is "auto" or empty string, then path is analyzed,
   *  otherwise path parameter is ignored and hint is used as compression method name.

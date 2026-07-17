@@ -500,7 +500,8 @@ InputFormatPtr FormatFactory::getInputImpl(
     bool need_only_count,
     const std::optional<UInt64> & max_block_size_bytes,
     const std::optional<UInt64> & min_block_size_rows,
-    const std::optional<UInt64> & min_block_size_bytes) const
+    const std::optional<UInt64> & min_block_size_bytes,
+    std::optional<SnappyMode> snappy_mode_override) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator && !creators.random_access_input_creator_with_metadata)
@@ -546,7 +547,7 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     // Add ParallelReadBuffer and decompression if needed.
 
-    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
+    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources, snappy_mode_override);
     auto & buf = owned_buf ? *owned_buf : _buf;
 
     // Decide whether to use ParallelParsingInputFormat.
@@ -657,12 +658,13 @@ InputFormatPtr FormatFactory::getInput(
     bool need_only_count,
     const std::optional<UInt64> & max_block_size_bytes,
     const std::optional<UInt64> & min_block_size_rows,
-    const std::optional<UInt64> & min_block_size_bytes) const
+    const std::optional<UInt64> & min_block_size_bytes,
+    std::optional<SnappyMode> snappy_mode_override) const
 {
     return getInputImpl(name, buf, sample, context, max_block_size, std::nullopt,
                        format_settings, parser_shared_resources, format_filter_info,
                        is_remote_fs, compression, need_only_count,
-                       max_block_size_bytes, min_block_size_rows, min_block_size_bytes);
+                       max_block_size_bytes, min_block_size_rows, min_block_size_bytes, snappy_mode_override);
 }
 
 // Overload with metadata
@@ -687,7 +689,7 @@ InputFormatPtr FormatFactory::getInputWithMetadata(
     return getInputImpl(name, buf, sample, context, max_block_size, object_with_metadata,
                        format_settings, parser_shared_resources, format_filter_info,
                        is_remote_fs, compression, need_only_count,
-                       max_block_size_bytes, min_block_size_rows, min_block_size_bytes);
+                       max_block_size_bytes, min_block_size_rows, min_block_size_bytes, /*snappy_mode_override=*/std::nullopt);
 }
 
 std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
@@ -697,7 +699,8 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     const FormatSettings & format_settings,
     const Settings & settings,
     bool is_remote_fs,
-    const FormatParserSharedResourcesPtr & parser_shared_resources) const
+    const FormatParserSharedResourcesPtr & parser_shared_resources,
+    std::optional<SnappyMode> snappy_mode_override) const
 {
     std::unique_ptr<ReadBuffer> res;
 
@@ -749,7 +752,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             std::move(res),
             compression,
             static_cast<int>(settings[Setting::zstd_window_log_max]),
-            settings[Setting::snappy_mode]);
+            snappy_mode_override.value_or(settings[Setting::snappy_mode]));
     }
 
     return res;
