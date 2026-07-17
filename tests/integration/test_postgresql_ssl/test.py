@@ -216,6 +216,19 @@ def test_postgresql_table_engine_over_ssl(started_cluster):
     node.query("DROP TABLE ch_pg_ssl")
 
 
+def test_postgresql_database_engine_over_ssl(started_cluster):
+    # The `PostgreSQL` database engine has its own registration and
+    # named-collection parsing path in `DatabasePostgreSQL.cpp`, separate from the
+    # table engine and table function that go through `StoragePostgreSQL`. Prove the
+    # TLS parameters are honored there too by creating the database over a
+    # verify-full connection and reading through one of its tables.
+    node.query("DROP DATABASE IF EXISTS pg_db_ssl")
+    node.query(f"CREATE DATABASE pg_db_ssl ENGINE = PostgreSQL(pg_ssl, sslmode='verify-full', sslrootcert='{CA_CERT_PATH}')")
+    assert node.query("SELECT count() FROM pg_db_ssl.test_table").strip() == "10"
+    assert node.query("SELECT sum(value) FROM pg_db_ssl.test_table").strip() == str(sum(i * 10 for i in range(10)))
+    node.query("DROP DATABASE pg_db_ssl")
+
+
 def test_postgresql_dictionary_over_ssl(started_cluster):
     # The dictionary source used to accept `sslmode` and then silently ignore it;
     # this checks the whole chain (sslmode + sslrootcert) is now honored.
