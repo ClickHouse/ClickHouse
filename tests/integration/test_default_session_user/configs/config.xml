@@ -42,6 +42,23 @@
         <defaults/>
     </http_handlers_fixed_user>
 
+    <!-- A prometheus `remote_write` handler with a fixed user (`handler.user`): like the
+         other authenticating prometheus handlers (`read`/`query`/`api_v1`), it authenticates
+         as the configured user regardless of the request, so it must keep working on an
+         endpoint that prohibits anonymous logins with an empty `default_session_user`. The
+         default handlers are also included to check that the prohibition still applies. -->
+    <http_handlers_prometheus_write>
+        <rule>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>default.prometheus_ts</table>
+                <user>fixed_write_user</user>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers_prometheus_write>
+
     <session_log>
         <database>system</database>
         <table>session_log</table>
@@ -147,6 +164,14 @@
             <handlers>http_handlers_fixed_user</handlers>
             <description>http protocol with a fixed-user handler and anonymous logins prohibited</description>
         </http_fixed_no_anonymous>
+        <http_prometheus_write_fixed_no_anonymous>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8130</port>
+            <default_session_user></default_session_user>
+            <handlers>http_handlers_prometheus_write</handlers>
+            <description>http protocol with a fixed-user prometheus remote_write handler and anonymous logins prohibited</description>
+        </http_prometheus_write_fixed_no_anonymous>
         <prometheus_no_anonymous>
             <type>prometheus</type>
             <host>0.0.0.0</host>

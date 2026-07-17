@@ -88,6 +88,14 @@
             <profile>default</profile>
             <quota>default</quota>
         </fixed_handler_user>
+        <fixed_write_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </fixed_write_user>
         <reload_effective_before>
             <password></password>
             <networks>

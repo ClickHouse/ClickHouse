@@ -462,6 +462,35 @@ def scrape_prometheus_status(port):
         return e.code
 
 
+def prometheus_write(port, headers=None):
+    """POST to a prometheus `remote_write` handler at /write and return the HTTP
+    status code. The body is left empty on purpose: authentication happens before
+    the request body is parsed, so the authenticated user is recorded in
+    `system.session_log` regardless of whether the (empty) payload is accepted."""
+    url = f"http://{node1.ip_address}:{port}/write"
+    request = urllib.request.Request(url, data=b"", method="POST", headers=headers or {})
+    try:
+        return urllib.request.urlopen(request, timeout=10).getcode()
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def test_prometheus_write_fixed_user_with_anonymous_logins_disabled():
+    # A prometheus `write` (`remote_write`) handler configured with a fixed `<user>`
+    # authenticates as that user regardless of the request, exactly like the
+    # `read`/`query`/`api_v1` handlers. An empty `default_session_user`, which prohibits
+    # anonymous logins on the endpoint, must not reject such a fixed-user write handler:
+    # the request logs in as the configured user, not through the (empty) default session
+    # user. This is a regression test for the write handler not parsing `<user>`.
+    with assert_login_success("fixed_write_user", "Prometheus"):
+        prometheus_write(8130)
+
+    # The prohibition still applies to the default handlers on the same endpoint.
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        execute_query_http(8130, "SELECT currentUser()")
+    assert exc_info.value.code == 403
+
+
 def test_prometheus_keeper_metrics_default_session_user():
     # A composable `type = prometheus` listener served through the keeper-metrics-only
     # factory (`prometheus_keeper_metrics_only`) exposes only the `Metrics` protocol,
