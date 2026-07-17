@@ -8,10 +8,12 @@
 #include <Coordination/KeeperContext.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 
@@ -20,6 +22,20 @@
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperLSMTListScannedBlocks;
+    extern const Event KeeperLSMTListScannedEntries;
+    extern const Event KeeperLSMTListFilterSkipped;
+    extern const Event KeeperLSMTListFilterFalsePositives;
+    extern const Event KeeperLSMTListFilterTruePositives;
+    extern const Event KeeperLSMTGetBlockFromWeakPtr;
+    extern const Event KeeperLSMTGetBlockFromCache;
+    extern const Event KeeperLSMTGetBlockLoadedGroup;
+    extern const Event KeeperLSMTLoadedBlocks;
+    extern const Event KeeperLSMTLoadedUncompressedBytes;
 }
 
 namespace DB::CoordinationSetting
@@ -43,11 +59,15 @@ BlockPtr SortedFile::getOrLoadBlock(uint32_t block_idx, BlockCache * block_cache
 
     BlockPtr block = info.data.load();
     if (block)
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTGetBlockFromWeakPtr);
         return block;
+    }
 
     chassert(block_cache); // in memory-only mode load() above succeeds because all blocks are pinned
 
     BlockCacheKey key{.file_id = file_id, .block_idx = block_idx};
+    bool loaded_group = false;
     block = block_cache->get(key);
     if (!block)
     {
@@ -59,10 +79,13 @@ BlockPtr SortedFile::getOrLoadBlock(uint32_t block_idx, BlockCache * block_cache
             --group_start_block_idx;
         }
 
+        /// (Another thread may load the group concurrently, in which case our load_func is not
+        ///  called and we effectively got the block from cache.)
         block = block_cache->getBlockOrLoadGroup(
             key, group_start_block_idx,
-            [&] { return loadBlockGroup(group_start_block_idx); });
+            [&] { loaded_group = true; return loadBlockGroup(group_start_block_idx); });
     }
+    ProfileEvents::increment(loaded_group ? ProfileEvents::KeeperLSMTGetBlockLoadedGroup : ProfileEvents::KeeperLSMTGetBlockFromCache);
 
     /// Note: we update blocks[i].data only for the one requested block, even if we loaded multiple
     /// blocks (loadBlockGroup above). This is intentional. We want the next access to those
@@ -94,7 +117,21 @@ void SortedFile::listChildrenNames(
 {
     if (parent_paths_filter && !parent_paths_filter->findHashPair(
             DB::BloomFilterHashPair {parent_path_hash.items[0], parent_path_hash.items[1]}))
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTListFilterSkipped);
         return;
+    }
+
+    size_t scanned_blocks = 0;
+    size_t scanned_entries = 0;
+    size_t names_found = 0;
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTListScannedBlocks, scanned_blocks);
+        ProfileEvents::increment(ProfileEvents::KeeperLSMTListScannedEntries, scanned_entries);
+        if (parent_paths_filter)
+            ProfileEvents::increment(
+                names_found != 0 ? ProfileEvents::KeeperLSMTListFilterTruePositives : ProfileEvents::KeeperLSMTListFilterFalsePositives);
+    });
 
     auto block_it = std::ranges::partition_point(
         blocks,
@@ -108,6 +145,7 @@ void SortedFile::listChildrenNames(
 
         const uint32_t block_idx = static_cast<uint32_t>(block_it - blocks.begin());
         BlockPtr block = getOrLoadBlock(block_idx, block_cache);
+        scanned_blocks += 1;
 
         NodeRef ref{.block = block};
         NodePath node_path;
@@ -118,12 +156,14 @@ void SortedFile::listChildrenNames(
             ref.offset = offset;
             ref.readPath(node_path, path_buf, serialized_size, action);
             offset += serialized_size;
+            scanned_entries += 1;
 
             if (node_path.compare(range_start) <= 0)
                 continue; /// before the range (range_start is exclusive)
             if (node_path.compare(range_end) >= 0)
                 return; /// past the range (range_end is exclusive)
 
+            names_found += 1;
             out.insert(node_path.baseName(), action, arena_);
         }
     }
@@ -172,6 +212,7 @@ std::vector<BlockPtr> SortedFile::loadBlockGroup(uint32_t start_block_idx) const
         std::move(compressed_reader), DB::CompressionMethod::Zstd);
 
     std::vector<BlockPtr> res;
+    size_t uncompressed_bytes = 0;
     for (uint32_t block_idx = start_block_idx;
          block_idx < blocks.size() && blocks[block_idx].group_offset_in_file == group_info.group_offset_in_file;
          ++block_idx)
@@ -186,8 +227,12 @@ std::vector<BlockPtr> SortedFile::loadBlockGroup(uint32_t start_block_idx) const
 
         block->parseHeader();
 
+        uncompressed_bytes += block->size;
         res.push_back(std::move(block));
     }
+
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTLoadedBlocks, res.size());
+    ProfileEvents::increment(ProfileEvents::KeeperLSMTLoadedUncompressedBytes, uncompressed_bytes);
 
     return res;
 }
