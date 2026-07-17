@@ -10,9 +10,11 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -62,33 +64,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Cosine similarity of two equal-length vectors, in the `[-1, 1]` range. `1` means identical
-/// direction, `0` orthogonal, `-1` opposite. Sets `is_null` and returns `0` when a vector has zero
-/// magnitude (cosine undefined).
-Float32 cosineSimilarity(
-    const VectorWithMemoryTracking<Float32> & a, const VectorWithMemoryTracking<Float32> & b, UInt8 & is_null)
-{
-    Float64 dot = 0;
-    Float64 norm_a = 0;
-    Float64 norm_b = 0;
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        dot += static_cast<Float64>(a[i]) * static_cast<Float64>(b[i]);
-        norm_a += static_cast<Float64>(a[i]) * static_cast<Float64>(a[i]);
-        norm_b += static_cast<Float64>(b[i]) * static_cast<Float64>(b[i]);
-    }
-
-    if (norm_a == 0.0 || norm_b == 0.0)
-    {
-        is_null = 1;
-        return 0;
-    }
-
-    Float64 cosine = dot / (std::sqrt(norm_a) * std::sqrt(norm_b));
-    cosine = std::clamp(cosine, -1.0, 1.0); /// Guard against floating-point drift outside the valid range.
-    return static_cast<Float32>(cosine);
-}
 
 class FunctionAiSimilarity final : public IFunction
 {
@@ -243,6 +218,48 @@ public:
 
         const auto & embeddings = embedding_result.embeddings;
 
+        /// Assemble each row's two operand vectors into `Array(Float32)` columns and compute with
+        /// `cosineDistance` (`aiSimilarity = 1 - cosineDistance`). A row is comparable only when
+        /// both operands were embedded into equal-length vectors. A non-comparable row gets an
+        /// empty pair (its distance is ignored) and scores NULL.
+        auto left_vectors = ColumnFloat32::create();
+        auto right_vectors = ColumnFloat32::create();
+        auto left_offsets = ColumnArray::ColumnOffsets::create();
+        auto right_offsets = ColumnArray::ColumnOffsets::create();
+        auto & left_data = left_vectors->getData();
+        auto & right_data = right_vectors->getData();
+        auto & left_offsets_data = left_offsets->getData();
+        auto & right_offsets_data = right_offsets->getData();
+        left_offsets_data.resize(input_rows_count);
+        right_offsets_data.resize(input_rows_count);
+
+        VectorWithMemoryTracking<UInt8> comparable(input_rows_count, 0);
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            size_t a = left[i];
+            size_t b = right[i];
+            /// Not comparable when either operand had no text, its embedding was skipped (quota/error), or
+            /// the two vectors differ in size.
+            if (a != no_input && b != no_input && !embeddings[a].empty() && !embeddings[b].empty()
+                && embeddings[a].size() == embeddings[b].size())
+            {
+                left_data.insert(left_data.end(), embeddings[a].begin(), embeddings[a].end());
+                right_data.insert(right_data.end(), embeddings[b].begin(), embeddings[b].end());
+                comparable[i] = 1;
+            }
+            left_offsets_data[i] = left_data.size();
+            right_offsets_data[i] = right_data.size();
+        }
+
+        auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
+        ColumnsWithTypeAndName distance_args{
+            {ColumnArray::create(std::move(left_vectors), std::move(left_offsets)), array_type, "a"},
+            {ColumnArray::create(std::move(right_vectors), std::move(right_offsets)), array_type, "b"},
+        };
+        auto cosine_distance = FunctionFactory::instance().get("cosineDistance", getContext())->build(distance_args);
+        auto distances = cosine_distance->execute(distance_args, cosine_distance->getResultType(), input_rows_count, /*dry_run=*/false)
+                             ->convertToFullColumnIfConst();
+
         auto score_col = ColumnFloat32::create();
         auto null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         auto & scores = score_col->getData();
@@ -251,19 +268,15 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t a = left[i];
-            size_t b = right[i];
-            /// NULL when either operand had no text, its embedding was skipped (quota/error), or the two
-            /// vectors are not comparable (same model should always yield equal sizes, guarded regardless).
-            if (a == no_input || b == no_input || embeddings[a].empty() || embeddings[b].empty()
-                || embeddings[a].size() != embeddings[b].size())
+            Float64 similarity = 1.0 - distances->getFloat64(i);
+            /// NULL for non-comparable rows, and for a zero-magnitude vector (cosine undefined).
+            if (!comparable[i] || std::isnan(similarity))
             {
                 scores[i] = 0;
                 null_map[i] = 1;
                 continue;
             }
-
-            scores[i] = cosineSimilarity(embeddings[a], embeddings[b], null_map[i]);
+            scores[i] = static_cast<Float32>(std::clamp(similarity, -1.0, 1.0)); /// Guard against float drift outside `[-1, 1]`.
         }
 
         return ColumnNullable::create(std::move(score_col), std::move(null_map_col));
