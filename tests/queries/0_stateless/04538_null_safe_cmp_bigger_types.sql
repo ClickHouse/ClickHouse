@@ -48,6 +48,16 @@ SELECT [NULL]::Array(Nullable(UInt64)) IS NOT DISTINCT FROM [NULL]::Array(Nullab
 SELECT [NULL]::Array(Nullable(UInt64)) IS DISTINCT FROM [1]::Array(Nullable(Int64));
 SELECT materialize([1]::Array(Nullable(UInt64))) IS DISTINCT FROM materialize([-1]::Array(Nullable(Int64)));
 
+-- Array/Map vs top-level NULL: a non-NULL Array/Map value and a NULL are always distinct
+SELECT [1]::Array(UInt64) IS DISTINCT FROM NULL;
+SELECT NULL IS DISTINCT FROM [1]::Array(UInt64);
+SELECT [1]::Array(UInt64) IS NOT DISTINCT FROM NULL;
+SELECT NULL IS NOT DISTINCT FROM [1]::Array(UInt64);
+SELECT materialize([1]::Array(UInt64)) IS DISTINCT FROM NULL;
+SELECT materialize([1]::Array(UInt64)) IS NOT DISTINCT FROM NULL;
+SELECT map(1, 2)::Map(UInt64, UInt64) IS DISTINCT FROM NULL;
+SELECT NULL IS NOT DISTINCT FROM map(1, 2)::Map(UInt64, UInt64);
+
 -- Nullable wrapped string vs nullable number (no least common supertype, const-string path)
 SELECT CAST('1', 'Nullable(String)') IS DISTINCT FROM CAST(1, 'Nullable(Int64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT CAST('1', 'Nullable(String)') IS NOT DISTINCT FROM CAST(1, 'Nullable(Int64)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

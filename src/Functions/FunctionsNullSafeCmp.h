@@ -211,13 +211,13 @@ public:
         // To address:
         //   1. Map vs null or
         //   2. Array vs null
-        // The results will be always set to 0
+        // The results will be always set to 0 if is_equals_mode is true
         if (((isMap(type_and_name_left_col.type) || isArray(type_and_name_left_col.type))
                 && type_and_name_right_col.type->onlyNull())
             || ((isMap(type_and_name_right_col.type) || isArray(type_and_name_right_col.type))
                 && type_and_name_left_col.type->onlyNull()))
         {
-            return result_type->createColumnConst(input_rows_count, UInt8(0));
+            return result_type->createColumnConst(input_rows_count, UInt8(is_equal_mode ? 0 : 1));
         }
 
         // To address:
