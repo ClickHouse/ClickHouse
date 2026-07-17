@@ -1,0 +1,11 @@
+-- limit 4 as expression, cap 5: all 4 rows
+0
+1
+2
+3
+-- limit 4 as expression, cap 3: first 3 of 4 rows
+0
+1
+2
+-- offset 3 over 4 rows: 1 row
+3
