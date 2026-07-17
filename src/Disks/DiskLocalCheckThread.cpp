@@ -42,9 +42,6 @@ DiskLocalCheckThread::~DiskLocalCheckThread()
 
 void DiskLocalCheckThread::startup()
 {
-    /// Read the delay for the log message before scheduling the task: `check_period` is a `DynamicDelay`, which is not
-    /// thread safe, and once the task is scheduled `run` may start writing it (`rotateToMin`/`up`) on a schedule pool
-    /// thread concurrently with this read. Reading first orders it before the task can run.
     LOG_INFO(log, "Disk check for disk {} started with period {}", disk->getName(), formatReadableTime(static_cast<double>(check_period.getCurrentDelay()) * 1e6));
     task->activateAndSchedule();
 }
