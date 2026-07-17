@@ -14,6 +14,7 @@
 #include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
@@ -1153,6 +1154,9 @@ namespace
         if (auto type = tryInferDateOrDateTimeFromString(field, settings))
             return type;
 
+        if (auto type = tryInferIPv4OrIPv6FromString(field, settings))
+            return type;
+
         if constexpr (is_json)
         {
             if (settings.json.try_infer_numbers_from_strings)
@@ -1620,6 +1624,27 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
     {
         if (auto type = tryInferDateTimeOrDateTime64(field, settings))
             return type;
+    }
+
+    return nullptr;
+}
+
+DataTypePtr tryInferIPv4OrIPv6FromString(std::string_view field, const FormatSettings & settings)
+{
+    if (settings.try_infer_ipv4)
+    {
+        IPv4 value;
+        ReadBufferFromString buf(field);
+        if (tryReadIPv4Text(value, buf) && buf.eof())
+            return std::make_shared<DataTypeIPv4>();
+    }
+
+    if (settings.try_infer_ipv6 && field.find(':') != std::string_view::npos)
+    {
+        IPv6 value;
+        ReadBufferFromString buf(field);
+        if (tryReadIPv6Text(value, buf) && buf.eof())
+            return std::make_shared<DataTypeIPv6>();
     }
 
     return nullptr;
