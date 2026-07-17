@@ -577,27 +577,29 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         Int32 rows_count = 0;
         while (executor->pull(block))
         {
-            output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate moved vector
-            format_ptr->write(materializeBlock(block));
-            format_ptr->flush();
-            output_buffer.finalize();
-            rows_count += static_cast<Int32>(block.rows());
-
-            /// PostgreSQL's COPY protocol expects one CopyData message per row, and libpq/pqxx rely on this
-            /// (they do not re-split a message into rows). The TSV output of a block holds rows separated by
-            /// newlines - and newlines inside values are escaped - so split on '\n' and emit each row,
-            /// including its terminating newline, as its own CopyData message.
-            size_t line_start = 0;
-            for (size_t i = 0; i < result_buf.size(); ++i)
+            /// PostgreSQL's COPY protocol expects one CopyData message per row, and libpq/pqxx rely on
+            /// this (they do not re-split a message into rows). Serialize each row on its own instead of
+            /// formatting the whole block and splitting the result on '\n': the latter only works for the
+            /// text/TSV path (where newlines inside values are escaped) and corrupts formats where a single
+            /// row is not one physical line - e.g. a quoted CSV field containing a newline, or the binary
+            /// format, which is not newline-delimited at all and would otherwise emit nothing.
+            Block materialized = materializeBlock(block);
+            for (size_t row = 0, num_rows = materialized.rows(); row < num_rows; ++row)
             {
-                if (result_buf[i] == '\n')
-                {
-                    VectorWithMemoryTracking<char> line(result_buf.begin() + line_start, result_buf.begin() + i + 1);
-                    message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(std::move(line)));
-                    line_start = i + 1;
-                }
+                output_buffer.restart(DBMS_DEFAULT_BUFFER_SIZE); // This will recreate the moved-out vector.
+
+                Columns row_columns;
+                row_columns.reserve(materialized.columns());
+                for (const auto & elem : materialized)
+                    row_columns.push_back(elem.column->cut(row, 1));
+
+                format_ptr->write(materialized.cloneWithColumns(row_columns));
+                format_ptr->flush();
+                output_buffer.finalize();
+
+                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
             }
-            result_buf.clear();
+            rows_count += static_cast<Int32>(materialized.rows());
         }
         /// A COPY TO STDOUT must be terminated by CopyDone, then CommandComplete ("COPY n"), then
         /// ReadyForQuery (sent by the caller). libpq/pqxx report an error if CommandComplete is missing.
@@ -1195,27 +1197,43 @@ SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull,
 )
 UNION ALL
 SELECT
+    /// PostgreSQL has neither unsigned nor >64-bit integers, so the integer types that do not fit into a
+    /// signed 64-bit `bigint` (`UInt64` and the 128/256-bit types) are advertised as `numeric` and carry a
+    /// precision in `atttypmod` (see below) large enough to hold every value; the counterpart mapping in
+    /// `convertPostgreSQLDataType` turns such a `numeric(p, 0)` back into a Decimal (or `Int256`) that
+    /// preserves the range. Only `UInt32`/`Int64`, which fit into `bigint`, keep OID 20.
     multiIf(base IN ('Bool', 'Boolean'), 16,
             base IN ('Int8', 'UInt8', 'Int16'), 21,
             base IN ('UInt16', 'Int32'), 23,
-            base IN ('UInt32', 'Int64', 'UInt64', 'Int128', 'UInt128', 'Int256', 'UInt256'), 20,
+            base IN ('UInt32', 'Int64'), 20,
+            base IN ('UInt64', 'Int128', 'UInt128', 'Int256', 'UInt256',
+                     'Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'), 1700,
             base = 'Float32', 700,
             base = 'Float64', 701,
             base = 'UUID', 2950,
             base IN ('Date', 'Date32'), 1082,
             base IN ('DateTime', 'DateTime64'), 1114,
-            base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'), 1700,
             base IN ('String', 'FixedString'), 25,
             25) AS atttypid,
     toUInt32(cityHash64('cls', database, table) % 1000000000 + 2000000000) AS attrelid,
     name AS attname,
     toInt32(position) AS attnum,
     0 AS attisdropped,
-    -1 AS atttypmod,
+    /// For the types advertised as `numeric`, encode precision and scale the way PostgreSQL does -
+    /// `((precision << 16) | scale) + 4` - so that `format_type` renders `numeric(p, s)` and schema
+    /// inference recovers the exact type. `Decimal` uses its own precision/scale; the wide integer types
+    /// use a scale of 0 and a precision that spans their whole value range. Everything else uses -1
+    /// ("no modifier").
+    multiIf(base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256'),
+                toInt32(assumeNotNull(numeric_precision) * 65536 + assumeNotNull(numeric_scale) + 4),
+            base = 'UInt64', toInt32(20 * 65536 + 4),
+            base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
+            base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
+            -1) AS atttypmod,
     if (startsWith(type, 'Nullable(') OR startsWith(type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
     0 AS attndims,
     '' AS attgenerated
-FROM (SELECT database, table, name, position, type, extract(type, '^(?:Nullable\(|LowCardinality\()*([A-Za-z0-9]+)') AS base FROM system.columns))");
+FROM (SELECT database, table, name, position, type, numeric_precision, numeric_scale, extract(type, '^(?:Nullable\(|LowCardinality\()*([A-Za-z0-9]+)') AS base FROM system.columns))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum AS
 SELECT * FROM VALUES(

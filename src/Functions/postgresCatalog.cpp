@@ -13,6 +13,8 @@
 
 #include <Poco/String.h>
 
+#include <fmt/format.h>
+
 
 namespace DB
 {
@@ -28,11 +30,18 @@ namespace ErrorCodes
 namespace
 {
 
+/// PostgreSQL encodes the length of a variable-length header in the low bytes of a type modifier and
+/// offsets the whole modifier by `VARHDRSZ` (4). A modifier of -1 means "unspecified".
+constexpr Int64 VARHDRSZ = 4;
+
 /// PostgreSQL type OID -> human readable name, in the spelling produced by PostgreSQL's `format_type`.
 /// The set mirrors the built-in types advertised by ClickHouse's `pg_type` emulation (see PostgreSQLHandler).
 /// Unknown OIDs are rendered as `text`, matching how the counterpart mapping in
 /// `convertPostgreSQLDataType` treats unrecognised type names (they become `String`).
-String pgFormatType(Int64 oid)
+/// The type modifier is honoured for `numeric`, where it carries the precision and scale: this is what
+/// lets a self-connected `Decimal(p, s)` (and wide integer types encoded as `numeric(p, 0)`) round-trip
+/// through schema inference in `fetchPostgreSQLTableStructure` instead of collapsing to bare `numeric`.
+String pgFormatType(Int64 oid, Int64 typmod)
 {
     switch (oid)
     {
@@ -52,7 +61,19 @@ String pgFormatType(Int64 oid)
         case 1082: return "date";
         case 1114: return "timestamp without time zone";
         case 1184: return "timestamp with time zone";
-        case 1700: return "numeric";
+        case 1700:
+            /// `numeric` carries its precision and scale in the type modifier, encoded exactly as
+            /// PostgreSQL does: `((precision << 16) | scale) + VARHDRSZ`. A modifier below `VARHDRSZ`
+            /// (in particular the default -1) means no precision was specified, so the bare name is used.
+            if (typmod < VARHDRSZ)
+                return "numeric";
+            else
+            {
+                const Int64 tm = typmod - VARHDRSZ;
+                const Int64 precision = (tm >> 16) & 0xFFFF;
+                const Int64 scale = tm & 0xFFFF;
+                return fmt::format("numeric({},{})", precision, scale);
+            }
         case 2950: return "uuid";
         default: return "text";
     }
@@ -83,18 +104,25 @@ public:
                 "First argument of function {} must be an integer type OID, got {}",
                 getName(), arguments[0]->getName());
 
+        if (!isInteger(removeNullable(arguments[1])))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of function {} must be an integer type modifier, got {}",
+                getName(), arguments[1]->getName());
+
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn & oid_column = *arguments[0].column;
+        const IColumn & typmod_column = *arguments[1].column;
 
         auto result = ColumnString::create();
         result->reserve(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const String type_name = pgFormatType(oid_column.getInt(i));
+            const String type_name = pgFormatType(oid_column.getInt(i), typmod_column.getInt(i));
             result->insertData(type_name.data(), type_name.size());
         }
 
@@ -193,9 +221,10 @@ REGISTER_FUNCTION(PostgresCatalog)
 {
     factory.registerFunction<FunctionFormatType>(FunctionDocumentation{
         .description = "PostgreSQL compatibility function. Returns the SQL name of a type given its OID. "
-                       "The type modifier argument is accepted for compatibility but ignored.",
+                       "For `numeric` the type modifier is decoded into the precision and scale "
+                       "(`numeric(p, s)`); for every other type the modifier is ignored.",
         .syntax = "format_type(type_oid, typemod)",
-        .arguments = {{"type_oid", "The type OID.", {"(U)Int*"}}, {"typemod", "The type modifier (ignored).", {"(U)Int*"}}},
+        .arguments = {{"type_oid", "The type OID.", {"(U)Int*"}}, {"typemod", "The type modifier.", {"(U)Int*"}}},
         .returned_value = {"The SQL name of the type.", {"String"}},
         .examples = {{"Example", "SELECT format_type(23, -1)", "integer"}},
         .introduced_in = {26, 8},
