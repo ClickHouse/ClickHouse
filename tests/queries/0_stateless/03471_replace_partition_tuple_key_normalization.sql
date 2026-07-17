@@ -34,3 +34,14 @@ ALTER TABLE t_bare REPLACE PARTITION 2 FROM t_other; -- { serverError BAD_ARGUME
 
 DROP TABLE t_bare;
 DROP TABLE t_other;
+
+-- Reverse sorting key: `ORDER BY a` and `ORDER BY a DESC` describe different layouts and must stay
+-- rejected. The normalization only unwraps tuple(...); it must not drop the sort direction.
+CREATE TABLE t_asc (a UInt32, v UInt32) ENGINE = MergeTree PARTITION BY tuple() ORDER BY a;
+CREATE TABLE t_desc (a UInt32, v UInt32) ENGINE = MergeTree PARTITION BY tuple() ORDER BY a DESC;
+INSERT INTO t_desc VALUES (1, 10);
+ALTER TABLE t_asc REPLACE PARTITION tuple() FROM t_desc; -- { serverError BAD_ARGUMENTS }
+SELECT 'ordering asc<-desc rejected', count() FROM t_asc;
+
+DROP TABLE t_asc;
+DROP TABLE t_desc;
