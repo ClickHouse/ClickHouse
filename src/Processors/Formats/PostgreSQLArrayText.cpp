@@ -1,6 +1,7 @@
 #include <Processors/Formats/PostgreSQLArrayText.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/WriteBuffer.h>
@@ -31,6 +32,14 @@ void writeQuotedElement(const String & value, WriteBuffer & out)
 void writePostgreSQLArrayText(
     const IColumn & column, const IDataType & type, size_t row, WriteBuffer & out, const FormatSettings & settings)
 {
+    /// A constant expression (e.g. `SELECT [1, 2]`) may reach here as a `ColumnConst` if the caller
+    /// does not materialize its input; unwrap it instead of copying the whole column per row.
+    if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))
+    {
+        writePostgreSQLArrayText(const_column->getDataColumn(), type, 0, out, settings);
+        return;
+    }
+
     const auto & array_column = assert_cast<const ColumnArray &>(column);
     const auto & nested_type = assert_cast<const DataTypeArray &>(type).getNestedType();
     const IColumn & nested_column = array_column.getData();
