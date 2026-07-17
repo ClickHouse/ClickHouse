@@ -53,3 +53,21 @@ def test_distributed_on_read_only_wrapped_borrow_from_cache_disk_is_rejected(sta
     assert "does not have a real filesystem path" in error
 
     assert node.query("EXISTS TABLE dist_ro").strip() == "0"
+
+
+def test_distributed_on_web_disk_is_rejected(started_cluster):
+    # The same guard must cover the sibling `web` metadata backend: its `getPath()` is an empty
+    # placeholder root with no real directory behind it, so `MetadataStorageFromStaticFilesWebServer`
+    # reports `isPathOnLocalFilesystem() == false` too. Without that, a `Distributed` table on a web
+    # object-storage disk would `fs::create_directories` under a relative path from the working
+    # directory instead of failing closed. The web endpoint is never contacted -- the guard throws
+    # before any web access.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_web (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'web_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not have a real filesystem path" in error
+
+    assert node.query("EXISTS TABLE dist_web").strip() == "0"

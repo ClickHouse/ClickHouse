@@ -24,6 +24,12 @@
                 <cache_name>borrowed_cache</cache_name>
                 <read_only>1</read_only>
             </borrowed_disk_ro>
+            <!-- The endpoint is never contacted: the `Distributed` guard fires before any web
+                 access, so no server needs to be running behind it. -->
+            <web_disk>
+                <type>web</type>
+                <endpoint>http://localhost:1/</endpoint>
+            </web_disk>
         </disks>
         <policies>
             <borrowed_policy>
@@ -40,6 +46,13 @@
                     </main>
                 </volumes>
             </borrowed_policy_ro>
+            <web_policy>
+                <volumes>
+                    <main>
+                        <disk>web_disk</disk>
+                    </main>
+                </volumes>
+            </web_policy>
         </policies>
     </storage_configuration>
 
