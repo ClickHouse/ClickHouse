@@ -87,6 +87,14 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (!expression_step)
         return no_layers_updated;
 
+    /// A stateful function (e.g. `logTrace`, `neighbor`, `runningAccumulate`) below the sort must observe every
+    /// source block. Vector search shortlists a handful of granules and only feeds the surviving candidate rows to
+    /// this `ExpressionStep`, so the stateful function would run on the reduced stream instead of every pre-sort
+    /// block. This mirrors the `hasStatefulFunctions` guards in `optimizeTopK`, `liftUpFunctions`, lazy
+    /// materialization, `splitFilter`, and filter push-down.
+    if (expression_step->getExpression().hasStatefulFunctions())
+        return no_layers_updated;
+
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
@@ -97,6 +105,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         /// Do we have a FilterStep on top of ReadFromMergeTree?
         filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
+            return no_layers_updated;
+        /// Same reasoning as above: a stateful function inside a `FilterStep` below the sort must see every source
+        /// block, but vector search prunes rows before it.
+        if (filter_step->getExpression().hasStatefulFunctions())
             return no_layers_updated;
         if (node->children.size() != 1)
             return no_layers_updated;

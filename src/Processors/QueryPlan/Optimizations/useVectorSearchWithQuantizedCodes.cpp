@@ -124,7 +124,17 @@ bool optimizeVectorSearchWithQuantizedCodes(
         read_step = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
         if (read_step)
             break;
-        if (!typeid_cast<ExpressionStep *>(read_node->step.get()) && !typeid_cast<FilterStep *>(read_node->step.get()))
+        auto * chain_expression_step = typeid_cast<ExpressionStep *>(read_node->step.get());
+        auto * chain_filter_step = typeid_cast<FilterStep *>(read_node->step.get());
+        if (!chain_expression_step && !chain_filter_step)
+            return false;
+        /// A stateful function in an intervening Expression/Filter step below the sort must observe every source block.
+        /// The shortlist limit is spliced above this whole chain, so the stateful function would run on the reduced
+        /// candidate stream; bail out to keep the pre-sort semantics (same invariant as the rescore-expression guard
+        /// below and the `hasStatefulFunctions` guards in `optimizeTopK` and the other plan optimizations).
+        if (chain_expression_step && chain_expression_step->getExpression().hasStatefulFunctions())
+            return false;
+        if (chain_filter_step && chain_filter_step->getExpression().hasStatefulFunctions())
             return false;
         if (read_node->children.size() != 1)
             return false;
@@ -172,6 +182,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// A row-changing action (e.g. arrayJoin) in this expression expands rows before the sort/limit. Splicing the inner
     /// shortlist limit below it would cut rows before the expansion and change the result cardinality, so bail out.
     if (expression.hasArrayJoin())
+        return false;
+    /// A stateful function (e.g. `logTrace`, `neighbor`, `runningAccumulate`) below the sort must observe every source
+    /// block. The shortlist limit is spliced below this rescore expression, so the stateful function would run on the
+    /// reduced candidate stream instead of every pre-sort block. This mirrors the `hasStatefulFunctions` guards in
+    /// `optimizeTopK`, `liftUpFunctions`, lazy materialization, `splitFilter`, and filter push-down.
+    if (expression.hasStatefulFunctions())
         return false;
     const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column);
     if (sort_column_node == nullptr || sort_column_node->type != ActionsDAG::ActionType::FUNCTION)
