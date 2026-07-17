@@ -163,6 +163,10 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     -e /timeSeriesStoreTags.cpp
     -e /FunctionsTransactionCounters.cpp
     -e /FunctionNaiveBayesClassifier.cpp
+    # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the
+    # context is alive); executeImpl uses builders precomputed at construction time and never reaches
+    # getContext(), so a stored expression stays evaluable after its query context is gone. See #54890.
+    -e /FunctionBinaryArithmetic.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
 
