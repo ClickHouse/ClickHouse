@@ -91,6 +91,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
+            {"allow_experimental_scann_index", false, false, "New setting. Gates creation of `vector_similarity('scann', ...)` indexes while the ScaNN backend is experimental."},
+            {"scann_num_leaves_to_search", 0, 0, "New setting. Number of IVF partitions to probe at query time for a `vector_similarity('scann', ...)` index. `0` means a balanced automatic value."},
+            {"scann_candidate_pool_size", 0, 0, "New setting. AH candidate pool size for a `vector_similarity('scann', ...)` index before exact reranking. `0` means a balanced automatic value."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -112,9 +115,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},
             {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
-            {"allow_experimental_scann_index", false, false, "New setting. Gates creation of vector_similarity('scann', ...) indexes while the ScaNN backend is experimental."},
-            {"scann_num_leaves_to_search", 0, 0, "New setting. Number of IVF partitions to probe at query time for vector_similarity('scann', ...) index. 0 means a balanced automatic value."},
-            {"scann_candidate_pool_size", 0, 0, "New setting. AH candidate pool size for vector_similarity('scann', ...) index before exact reranking. 0 means a balanced automatic value."},
             {"optimize_limit_by_function_keys", false, true, "New setting that eliminates LIMIT BY keys that are functions of other LIMIT BY keys."},
             {"optimize_injective_functions_in_limit_by", false, true, "New setting that replaces injective functions by their arguments in the LIMIT BY keys."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
