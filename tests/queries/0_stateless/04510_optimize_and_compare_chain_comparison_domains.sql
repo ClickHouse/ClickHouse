@@ -36,6 +36,14 @@ FROM values(
     ('01:00:00', '1970-01-01 02:00:00'))
 WHERE t < dt AND dt < toDate('1970-01-02');
 
+-- `Date` to `DateTime` conversion uses the timezone of the `DateTime` operand, so the
+-- inferred endpoint comparison may convert differently than the original ones.
+SELECT 'date datetime timezone', count()
+FROM values(
+    'd Date, dt DateTime(\'Pacific/Kiritimati\')',
+    ('2020-01-01', '2020-01-01 00:30:00'))
+WHERE d <= dt AND dt <= toDateTime('2019-12-31 11:00:00', 'UTC');
+
 -- Keep deriving conditions inside the two explicitly supported domains.
 SELECT
     'safe domains remain optimized',
@@ -63,5 +71,36 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a String, b String', ('a', 'b'))
            WHERE a < b AND b < 'z'
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- `Date` and `DateTime` comparisons are timezone-independent within their own domain,
+-- so chains inside each domain stay optimized (this is what SSB relies on).
+SELECT
+    'date domains remain optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Date, b Date', ('2020-01-01', '2020-01-02'))
+           WHERE a < b AND b < toDate('2020-01-03')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Date, b Date', ('2020-01-01', '2020-01-02'))
+           WHERE a < b AND b < toDate('2020-01-03')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a DateTime(\'UTC\'), b DateTime(\'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
+           WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a DateTime(\'UTC\'), b DateTime(\'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
+           WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC')
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');

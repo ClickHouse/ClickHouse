@@ -43,11 +43,16 @@ enum class TransitiveComparisonDomain
     None,
     NativeNumber,
     String,
+    Date,
+    DateTime,
+    DateTime64,
 };
 
 /// Pairwise ClickHouse comparisons do not form one global transitive order because some
 /// type combinations use conversions specific to the compared pair. Only build chains
 /// inside domains whose comparison semantics are shared by all member types.
+/// Date and DateTime are separate domains: converting Date to DateTime uses the timezone
+/// of the DateTime operand, so mixed comparisons are pair-specific.
 static TransitiveComparisonDomain getTransitiveComparisonDomain(const DataTypePtr & type)
 {
     const auto nested_type = removeLowCardinalityAndNullable(type);
@@ -55,6 +60,12 @@ static TransitiveComparisonDomain getTransitiveComparisonDomain(const DataTypePt
         return TransitiveComparisonDomain::NativeNumber;
     if (isString(nested_type))
         return TransitiveComparisonDomain::String;
+    if (isDateOrDate32(nested_type))
+        return TransitiveComparisonDomain::Date;
+    if (isDateTime(nested_type))
+        return TransitiveComparisonDomain::DateTime;
+    if (isDateTime64(nested_type))
+        return TransitiveComparisonDomain::DateTime64;
     return TransitiveComparisonDomain::None;
 }
 
