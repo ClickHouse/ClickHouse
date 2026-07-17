@@ -1,4 +1,5 @@
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -17,6 +18,11 @@ namespace DB::ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
 }
 
 namespace DB::FailPoints
@@ -386,6 +392,43 @@ bool ICatalog::updateSchema(
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
+}
+
+ICatalog::PreparedSettingsChangesPtr ICatalog::prepareSettingsChanges(const DB::SettingsChanges & /*changes*/)
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Settings of a catalog of this type cannot be altered");
+}
+
+void ICatalog::commitSettingsChanges(PreparedSettingsChangesPtr /*prepared*/)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Settings changes were prepared for a catalog that cannot commit them");
+}
+
+CatalogSettingsAlterValidatorFactory & CatalogSettingsAlterValidatorFactory::instance()
+{
+    static CatalogSettingsAlterValidatorFactory factory;
+    return factory;
+}
+
+void CatalogSettingsAlterValidatorFactory::registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator)
+{
+    if (!validators.emplace(catalog_type, std::move(validator)).second)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Settings alter validator for catalog type '{}' is already registered",
+            DB::SettingFieldDatabaseDataLakeCatalogType(catalog_type).toString());
+}
+
+void CatalogSettingsAlterValidatorFactory::validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const
+{
+    const auto it = validators.find(current_settings[DB::DatabaseDataLakeSetting::catalog_type].value);
+    if (it == validators.end())
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER MODIFY SETTING is not supported for catalog type '{}'",
+            current_settings[DB::DatabaseDataLakeSetting::catalog_type].toString());
+
+    it->second(current_settings, changes);
 }
 
 }

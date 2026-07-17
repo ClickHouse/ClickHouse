@@ -231,7 +231,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv────────────────┐
-│ {'abc':'5'}  │
+│ {'abc':'5'}       │
 └───────────────────┘
 ```
 
@@ -297,9 +297,9 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
 Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-┌─kv────────────────────┐
+┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
-└───────────────────────┘
+└────────────────────────┘
 ```)",
             .syntax = "extractKeyValuePairs(input)",
             .introduced_in = {23, 4},
@@ -330,9 +330,9 @@ SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
 Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-┌─kv───────────────┐
+┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
-└──────────────────┘
+└───────────────────┘
 ```)",
             .syntax = "extractKeyValuePairsWithEscaping(input)",
             .introduced_in = {23, 4},
