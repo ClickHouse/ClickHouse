@@ -1616,6 +1616,11 @@ private:
         return num_buckets <= 1 || (bucket % num_buckets) == bucket_idx;
     }
 
+    bool isBlockInRange(size_t block_no) const
+    {
+        return num_buckets <= 1 || (block_no % num_buckets) == bucket_idx;
+    }
+
     size_t fillColumnsFromData(const HashJoin::StoredBlocksList & columns, MutableColumns & columns_right)
     {
         if (!position.has_value())
@@ -1687,12 +1692,8 @@ private:
 
         if (flag_per_row)
         {
-            /// for parallel iteration with flag_per_row mode, only stream 0 processes the columns data
-            /// the data in parent.data->columns is not partitioned by hash buckets, so we can't
-            /// distribute it across streams without additional per-row bucket lookups
-            if (bucket_idx != 0)
-                return row_nums.size();
-
+            /// parent.data->columns is not partitioned by hash bucket, so distribute the stored
+            /// right blocks across streams by their globally unique block_no instead
             if (!used_position.has_value())
                 used_position = parent.data->columns.begin();
 
@@ -1701,6 +1702,9 @@ private:
             for (auto & it = *used_position; it != end && row_nums.size() < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
+                if (!isBlockInRange(mapped_block.block_no))
+                    continue;
+
                 size_t rows = mapped_block.columns.at(0)->size();
 
                 for (size_t row = 0; row < rows; ++row)
