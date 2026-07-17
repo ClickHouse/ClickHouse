@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later
-        release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
+        release_branch_base_sha = CHVersion.get_release_version().githash
         print(f"Release branch base sha: {release_branch_base_sha}")
         assert release_branch_base_sha
         release_branch_base_sha_with_predecessors = [
