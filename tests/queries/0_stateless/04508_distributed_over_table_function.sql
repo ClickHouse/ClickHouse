@@ -166,6 +166,23 @@ SET check_referential_table_dependencies = 0;
 DROP TABLE dist_over_tf;
 DROP DICTIONARY shard_dict;
 
+-- A regexp target is different from a concrete-name target: the `merge` table function matches its regexp
+-- against the catalog anew on every read, so the set of matched tables is dynamic by design and no referential
+-- dependency is registered for them. Dropping a matched table does not break the definition - later reads
+-- simply match the remaining tables (and tables created later join the set). This mirrors the `Merge` table
+-- engine, which has never registered dependencies on the tables matched by its regexp: with both dependents
+-- below still existing, the drop of the matched table succeeds even with
+-- `check_referential_table_dependencies = 1`.
+DROP TABLE IF EXISTS merge_src;
+CREATE TABLE merge_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+CREATE TABLE merge_classic (n UInt64) ENGINE = Merge(currentDatabase(), '^merge_src$');
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, merge(currentDatabase(), '^merge_src$'));
+SET check_referential_table_dependencies = 1;
+DROP TABLE merge_src;
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+DROP TABLE merge_classic;
+
 -- Restart safety: when the column list is omitted, the inferred structure is persisted in the table metadata
 -- (like the classic named-table form), so at startup the table is re-created from that stored structure and
 -- does not re-instantiate the target table function. `StorageDistributed`'s constructor calls

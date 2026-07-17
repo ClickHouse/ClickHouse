@@ -385,6 +385,14 @@ namespace
                 /// extracted here and the generic walk descends into the inner function instead.
                 addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 1);
             }
+            /// The `merge` table function is deliberately absent here: its argument is a regular expression,
+            /// not a table name, and the set of matching tables is resolved anew on every read. Dropping or
+            /// renaming a matched table does not break the definition - later reads simply match the remaining
+            /// tables - and tables created afterwards join the set without ever appearing in any recorded
+            /// dependency. A snapshot of the currently matching tables would therefore be wrong in both
+            /// directions, and this analysis is re-run from metadata at server startup, when the catalog is not
+            /// fully loaded yet, so a regexp cannot be reliably evaluated at all. This mirrors the `Merge` table
+            /// engine, which has never registered dependencies on the tables matched by its regexp.
             else if (function.name == "remote" || function.name == "remoteSecure")
             {
                 visitRemoteFunction(function, /* is_cluster_function= */ false);
