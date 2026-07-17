@@ -60,8 +60,9 @@ struct SortedFile
     uint32_t min_compatible_version = 0;
     DB::KeeperDigestVersion digest_version = DB::KeeperDigestVersion::NO_DIGEST;
 
-    size_t total_block_size = 0;
-    size_t file_size = 0;
+    size_t total_block_size = 0; // uncompressed
+    size_t file_size = 0; // compressed
+    size_t num_entries = 0; // number of nodes/tombstones
 
     /// Number of Create-d nodes minus number of Remove-d nodes.
     int64_t node_count_delta = 0;

@@ -301,6 +301,8 @@ void BackgroundWork::mergeThread()
 
                 for (uint32_t seqno : seqnos_to_lock)
                     merges_in_progress.insert(seqno);
+
+                merges_running.fetch_add(1);
             }
         }
 
@@ -318,6 +320,7 @@ void BackgroundWork::mergeThread()
                 size_t erased = merges_in_progress.erase(seqno);
                 chassert(erased);
             }
+            merges_running.fetch_sub(1);
         };
 
         Stopwatch stopwatch;

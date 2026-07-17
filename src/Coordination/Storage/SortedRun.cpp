@@ -161,6 +161,7 @@ void SortedRunWriter::appendNode(FullNode & node)
     }
 
     file->node_count_delta += nodeCountDelta(node.action);
+    file->num_entries += 1;
 
     if (node.action != NodeAction::Update && node.path.depth != 0)
     {
@@ -303,6 +304,7 @@ void SortedRunWriter::finishFile()
     chassert(!file->blocks.empty()); // a file is created only when a node is appended
     sorted_run->total_block_size += file->total_block_size;
     sorted_run->total_file_size += file->file_size;
+    sorted_run->total_entries += file->num_entries;
     sorted_run->files.push_back(std::move(file));
 }
 

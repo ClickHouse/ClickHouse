@@ -325,6 +325,22 @@ TEST(KeeperStorage, BackgroundFlushAndMerge)
         total_node_count_delta += storage.mutable_memtable->node_count_delta;
     EXPECT_EQ(total_node_count_delta, int64_t(2 + (num_k - num_removed) + num_c));
 
+    /// The run's total_entries must stay equal to the sum of per-file num_entries through merges
+    /// and trims.
+    size_t run_entries = 0;
+    for (const SortedFilePtr & file : storage.sorted_runs[0]->files)
+        run_entries += file->num_entries;
+    EXPECT_EQ(storage.sorted_runs[0]->total_entries, run_entries);
+
+    /// Each surviving node contributes one entry to the run or the remaining memtable; a removed
+    /// node contributes zero, one, or two entries (Create and Remove tombstone), depending on
+    /// which of them got combined away.
+    size_t total_entries = run_entries;
+    if (storage.mutable_memtable)
+        total_entries += storage.mutable_memtable->num_entries;
+    EXPECT_GE(total_entries, size_t(2 + (num_k - num_removed) + num_c));
+    EXPECT_LE(total_entries, size_t(2 + num_k + num_removed + num_c));
+
     std::string buf;
     for (int i = 0; i < num_removed; ++i)
         EXPECT_FALSE(bool(storage.getCommittedNode(NodePath(numbered("/a/k", i)).withCalculatedHash())))
