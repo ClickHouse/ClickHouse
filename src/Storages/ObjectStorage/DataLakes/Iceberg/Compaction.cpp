@@ -62,11 +62,6 @@ namespace DB::Setting
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
 }
 
-namespace DB::DataLakeStorageSetting
-{
-    extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
-}
-
 namespace DB::Iceberg
 {
 
