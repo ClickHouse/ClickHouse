@@ -313,6 +313,11 @@ private:
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatusUnlocked(Int64 mutation_version, std::unique_lock<std::mutex> & lock,
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
+    /// The data parts a mutation entry may touch, restricted to its transaction's snapshot for a
+    /// transactional mutation (its live transaction while running, otherwise the snapshot recorded
+    /// in the entry's transaction id). Non-transactional mutations see all data parts.
+    DataPartsVector getVisibleDataPartsVectorForMutationStatus(const MergeTreeMutationEntry & entry) const;
+
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 

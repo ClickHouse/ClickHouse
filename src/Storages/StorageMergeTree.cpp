@@ -1189,6 +1189,16 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
     return f.version < s.version;
 }
 
+std::vector<PartVersionWithName> getSortedPartVersions(const MergeTreeData::DataPartsVector & data_parts)
+{
+    std::vector<PartVersionWithName> part_versions_with_names;
+    part_versions_with_names.reserve(data_parts.size());
+    for (const auto & part : data_parts)
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+    return part_versions_with_names;
+}
+
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
@@ -1212,7 +1222,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
 
     auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
     bool committed_without_txn = false;
-    if (!txn && !mutation_entry.tid.isNonTransactional() && !from_another_mutation)
+    if (!txn && !mutation_entry.tid.isNonTransactional())
     {
         /// The transaction that started this mutation reached a terminal state.
         /// If it committed, the mutation is still valid and its status is reported
@@ -1222,6 +1232,10 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
         /// `KILL TRANSACTION` (see the failpoint in `startMutation`) that
         /// `selectPartsToMutate` removes when it encounters it.
         /// Either way the mutation will never be executed, so report it as killed.
+        /// This must run for `from_another_mutation` too: a barrier `ALTER` waits on the
+        /// previous mutation via `waitForMutation(..., /* from_another_mutation */ true)`,
+        /// and reporting a committed mutation against the latest active parts instead of
+        /// its snapshot would count parts it never had to touch and hang the waiter.
         CSN mutation_csn = mutation_entry.csn;
         if (mutation_csn == Tx::UnknownCSN)
             mutation_csn = TransactionLog::getCSN(mutation_entry.tid);
@@ -1318,25 +1332,49 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     return result;
 }
 
+StorageMergeTree::DataPartsVector StorageMergeTree::getVisibleDataPartsVectorForMutationStatus(const MergeTreeMutationEntry & entry) const
+{
+    /// Non-transactional mutations apply to all data parts.
+    if (entry.tid.isNonTransactional())
+        return getDataPartsVectorForInternalUsage();
+
+    /// A transactional mutation only ever touches the parts visible to its snapshot, exactly as
+    /// the visibility gate in `selectPartsToMutate` applies. Counting parts outside that snapshot
+    /// (for example a part with a smaller data version committed by another transaction after this
+    /// mutation's snapshot) would keep the mutation reported as unfinished forever even though it
+    /// has processed every part it can touch. Use the live transaction's snapshot while it runs,
+    /// and the snapshot recorded in the entry's transaction id once the transaction is gone.
+    if (auto txn = tryGetTransactionForMutation(entry, log.load()))
+        return getVisibleDataPartsVector(txn);
+
+    return getVisibleDataPartsVector(entry.tid.start_csn, entry.tid);
+}
+
 std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommands() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-    std::vector<PartVersionWithName> part_versions_with_names;
-    auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
-    for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+
+    /// The visible-parts snapshot is the same for every non-transactional mutation (the common
+    /// case), so compute it once; each transactional mutation uses its own snapshot instead.
+    auto all_parts_versions = getSortedPartVersions(getDataPartsVectorForInternalUsage());
 
     std::map<std::string, MutationCommands> result;
 
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
+        std::vector<PartVersionWithName> snapshot_parts_versions;
+        const std::vector<PartVersionWithName> * part_versions_with_names = &all_parts_versions;
+        if (!entry.tid.isNonTransactional())
+        {
+            snapshot_parts_versions = getSortedPartVersions(getVisibleDataPartsVectorForMutationStatus(entry));
+            part_versions_with_names = &snapshot_parts_versions;
+        }
+
         const PartVersionWithName needle{static_cast<Int64>(mutation_version), ""};
         auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+            part_versions_with_names->begin(), part_versions_with_names->end(), needle, comparator);
 
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        size_t parts_to_do = versions_it - part_versions_with_names->begin();
         if (parts_to_do > 0)
             result.emplace(entry.file_name, *entry.commands);
     }
@@ -1347,27 +1385,33 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    std::vector<PartVersionWithName> part_versions_with_names;
-    auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
-    for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+    /// The visible-parts snapshot is the same for every non-transactional mutation (the common
+    /// case), so compute it once; each transactional mutation uses its own snapshot instead.
+    auto all_parts_versions = getSortedPartVersions(getDataPartsVectorForInternalUsage());
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
+
+        std::vector<PartVersionWithName> snapshot_parts_versions;
+        const std::vector<PartVersionWithName> * part_versions_with_names = &all_parts_versions;
+        if (!entry.tid.isNonTransactional())
+        {
+            snapshot_parts_versions = getSortedPartVersions(getVisibleDataPartsVectorForMutationStatus(entry));
+            part_versions_with_names = &snapshot_parts_versions;
+        }
+
         const PartVersionWithName needle{mutation_version, ""};
         auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+            part_versions_with_names->begin(), part_versions_with_names->end(), needle, comparator);
 
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        size_t parts_to_do = versions_it - part_versions_with_names->begin();
         Names parts_to_do_names;
         parts_to_do_names.reserve(parts_to_do);
         for (size_t i = 0; i < parts_to_do; ++i)
-            parts_to_do_names.push_back(part_versions_with_names[i].name);
+            parts_to_do_names.push_back((*part_versions_with_names)[i].name);
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
