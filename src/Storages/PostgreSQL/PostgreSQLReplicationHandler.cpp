@@ -870,17 +870,41 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     adoptLegacyReplicationIdentityIfNeeded(tx);
 
     /// On attach, an existing replication slot means replication resumes from the slot's
-    /// confirmed_flush_lsn below. If the publication is gone while the slot survived, recreating the
-    /// publication and streaming through it would silently skip every change committed while the
-    /// publication did not exist: pgoutput resolves publication membership from a historic catalog
-    /// snapshot taken at each change's LSN, so a not-yet-created publication is skipped and the WAL gap
-    /// between the publication's drop and its re-creation never reaches the replica, which then falls
-    /// permanently behind without any error (the same rule adoptLegacyReplicationIdentityIfNeeded()
-    /// enforces when switching to the legacy identity). Fail closed instead of losing the gap.
+    /// confirmed_flush_lsn below. Two attach-time states must fail closed instead of silently corrupting an
+    /// already-populated replica:
+    ///
+    ///  1. The slot survived but the publication is gone. Recreating the publication and streaming through
+    ///     it would silently skip every change committed while the publication did not exist: pgoutput
+    ///     resolves publication membership from a historic catalog snapshot taken at each change's LSN, so a
+    ///     not-yet-created publication is skipped and the WAL gap between the publication's drop and its
+    ///     re-creation never reaches the replica, which then falls permanently behind without any error (the
+    ///     same rule adoptLegacyReplicationIdentityIfNeeded() enforces when switching to the legacy
+    ///     identity).
+    ///
+    ///  2. The publication survived but the slot is gone (for example after a PostgreSQL major upgrade,
+    ///     which does not preserve replication slots but keeps publications in the catalog, or after an
+    ///     operator dropped the slot). There is no confirmed_flush_lsn left to resume from, so the code
+    ///     below would fall through to initial_sync() and reload the current snapshot into the
+    ///     already-populated nested tables. Snapshot rows are materialized with _sign = 1 and _version = 1
+    ///     (StorageMaterializedPostgreSQL), so a re-snapshot cannot delete rows that disappeared from
+    ///     PostgreSQL while the slot was gone (it produces no _sign = -1 tombstones) and cannot override
+    ///     rows whose last replicated version is already greater than 1 (ReplacingMergeTree keeps the higher
+    ///     version), silently leaving the replica stale while a fresh slot is created. A user-managed slot
+    ///     is excluded: a missing user-managed slot is a configuration error reported below with its own
+    ///     message, and that path never re-snapshots. When both the slot and the publication are gone there
+    ///     is no surviving replication object to resume from and a full rebuild is the only recovery, so
+    ///     that state is left to the re-snapshot path unchanged.
+    ///
+    /// Recreate the object for a clean rebuild in both fail-closed cases: dropping it removes the surviving
+    /// slot or publication, and the fresh snapshot repopulates every row into empty nested tables, so
+    /// nothing is lost.
     if (is_attach)
     {
         String slot_lsn;
-        if (isReplicationSlotExist(tx, slot_lsn, /* temporary */false) && !isPublicationExist(tx))
+        const bool slot_exists = isReplicationSlotExist(tx, slot_lsn, /* temporary */false);
+        const bool publication_exists = isPublicationExist(tx);
+
+        if (slot_exists && !publication_exists)
             throw Exception(
                 ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                 "Cannot start MaterializedPostgreSQL replication on attach: replication slot {} exists, but "
@@ -895,6 +919,22 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "startup keeps retrying and replication starts automatically once the conflict is resolved, "
                 "without a server restart or a manual re-attach.",
                 replication_slot, doubleQuoteString(publication_name));
+
+        if (!user_managed_slot && !slot_exists && publication_exists)
+            throw Exception(
+                ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot start MaterializedPostgreSQL replication on attach: publication {} exists, but "
+                "replication slot {} does not. The slot holds the position replication resumes from, so "
+                "without it there is nothing to resume: re-snapshotting the current PostgreSQL state into "
+                "the already-populated nested tables would silently leave the replica stale, because the "
+                "snapshot rows are materialized with _sign = 1 and _version = 1 - they neither delete rows "
+                "that disappeared from PostgreSQL while the slot was gone nor override rows whose last "
+                "replicated version is already greater than 1. Replication is refused instead. Recreate this "
+                "object for a clean rebuild: dropping it removes the leftover publication, and the fresh "
+                "snapshot repopulates every row into empty nested tables, so nothing is lost. Startup keeps "
+                "retrying and replication starts automatically once the conflict is resolved, without a "
+                "server restart or a manual re-attach.",
+                doubleQuoteString(publication_name), replication_slot);
     }
 
     createPublicationIfNeeded(tx);

@@ -3548,6 +3548,112 @@ def test_attach_fails_closed_when_publication_lost_behind_slot(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_fails_closed_when_slot_lost_behind_publication(started_cluster):
+    # The mirror of the case above: on attach the publication survives, but the replication slot is gone
+    # (for example after a PostgreSQL major upgrade, which does not preserve replication slots but keeps
+    # publications in the catalog, or after an operator dropped the slot). The slot holds the position
+    # replication resumes from, so without it there is nothing to resume. Re-snapshotting the current
+    # PostgreSQL state into the already-populated nested tables would silently leave the replica stale:
+    # snapshot rows are materialized with _sign = 1 and _version = 1, so they neither delete rows that
+    # disappeared from PostgreSQL while the slot was gone nor override rows whose last replicated version
+    # is already greater than 1. The attach must fail closed instead and keep retrying, leaving a clean
+    # rebuild as the operator's explicit recovery.
+    table = "slot_lost_table"
+    mat_db = "slot_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+
+    # While the server is down, the replication slot disappears (the publication survives), and more rows
+    # are committed. A re-snapshot on attach would silently miss deletions and stale updates; a clean
+    # rebuild would not.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "would silently leave the replica stale",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: no fresh slot is created behind the surviving publication, and no rows moved.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 1 == int(cursor.fetchall()[0][0])
+
+    # Recovery is a clean rebuild: dropping the database removes the leftover publication, and recreating
+    # it takes a fresh snapshot that contains every row - including the ones committed while the slot was
+    # gone. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # And the rebuilt replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
