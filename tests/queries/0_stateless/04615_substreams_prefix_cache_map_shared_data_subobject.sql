@@ -18,12 +18,14 @@ ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
+    index_granularity = 128,
     object_serialization_version = 'v3',
     object_shared_data_serialization_version = 'map',
     object_shared_data_serialization_version_for_zero_level_parts = 'map';
 
 -- Five distinct paths per row with only two dynamic slots, so at least one `a.*` path (read by `json.^a`)
--- always lands in shared data and goes through the `MAP` sub-object read path.
+-- always lands in shared data and goes through the `MAP` sub-object read path. A small `index_granularity`
+-- gives many granules so several threads read the same part concurrently through the shared prefix state.
 INSERT INTO t_json_map_prefix_cache_wide
 SELECT
     number,
@@ -33,7 +35,7 @@ SELECT
         'a.k3', number % 13,
         'b', number % 3,
         'c', number % 11))
-FROM numbers(40000);
+FROM numbers(4000);
 
 -- All active parts must be Wide so the local read uses the deserialization prefixes cache.
 SELECT count() > 0, countIf(part_type = 'Wide') = count()
@@ -86,6 +88,7 @@ ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
+    index_granularity = 128,
     object_serialization_version = 'v3',
     object_shared_data_serialization_version = 'map',
     object_shared_data_serialization_version_for_zero_level_parts = 'map';
@@ -99,7 +102,7 @@ SELECT
         'a.k3', number % 13,
         'b', number % 3,
         'c', number % 11)))
-FROM numbers(40000);
+FROM numbers(4000);
 
 WITH
 (
