@@ -878,6 +878,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          true)},
+    {"explain_syntax_single_record", CHSetting(trueOrFalse, {}, true)},
     {"extremes", trueOrFalseSettingNoOracle},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
     {"file_like_engine_default_partition_strategy",

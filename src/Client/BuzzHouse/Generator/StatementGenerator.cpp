@@ -3480,7 +3480,8 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_column_structure, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_empirical, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_single_record, trueOrFalseInt)};
 
 void StatementGenerator::generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi)
 {
@@ -3513,7 +3514,9 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             switch (val.value())
             {
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST: this->ids.insert(this->ids.end(), {0, 1}); break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX: this->ids.insert(this->ids.end(), {2, 17, 18}); break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
+                    this->ids.insert(this->ids.end(), {2, 17, 18, 25});
+                    break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
                     this->ids.insert(this->ids.end(), {3, 4, 5, 6, 7});
                     break;

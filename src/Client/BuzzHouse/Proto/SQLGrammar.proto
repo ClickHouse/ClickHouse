@@ -2715,6 +2715,7 @@ message ExplainOption {
         pretty = 23;
         empirical = 24;
         compact_repeated_processor_chains = 25;
+        single_record = 26;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
