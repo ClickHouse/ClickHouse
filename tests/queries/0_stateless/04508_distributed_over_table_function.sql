@@ -540,3 +540,16 @@ SET check_referential_table_dependencies = 0;
 DROP TABLE dist_over_tf;
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.loop_src;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- A table function that cannot be evaluated on the local replica (its backing object is missing) is no
+-- longer fatal at the shard level: the failed probe is treated like an absent local table, so the shard
+-- is skipped under `skip_unavailable_shards` (the query then reports no shards to query), exactly like the
+-- classic named-table form. This is the shard-level probe in `SelectStreamFactory`; the modern analyzer
+-- resolves the target structure on the initiator (a separate pre-existing behavior shared with the
+-- `cluster` / `remote` table functions), so the shard-level probe is exercised on the legacy analyzer.
+CREATE TABLE dist_probe_missing (n UInt64) ENGINE = Distributed(test_shard_localhost, loop(probe_missing_src));
+CREATE TABLE dist_probe_missing_named (n UInt64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), probe_missing_src);
+SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+DROP TABLE dist_probe_missing;
+DROP TABLE dist_probe_missing_named;

@@ -272,8 +272,22 @@ void SelectStreamFactory::createForShardImpl(
 
         if (table_func_ptr)
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+            /// Probe the local replica by evaluating the table function. If it throws (e.g. the local
+            /// replica is missing the backing object for `loop(...)`, `dictionary(...)`, `view(...)`,
+            /// ...), treat it like an absent local table so the query can still fall back to a healthy
+            /// remote replica (or honor `skip_unavailable_shards`), matching the named-table branch below.
+            try
+            {
+                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+                main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+            }
+            catch (...)
+            {
+                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
+                    "Table function could not be evaluated on local replica of shard {}: {}",
+                    shard_info.shard_num, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+                main_table_storage = nullptr;
+            }
         }
         else
         {
@@ -284,19 +298,22 @@ void SelectStreamFactory::createForShardImpl(
 
         if (!main_table_storage) /// Table is absent on a local server.
         {
+            /// `main_table` is empty for the table-function form, so describe the source safely for logs.
+            const String local_source_for_logs = table_func_ptr ? table_func_ptr->formatForLogging() : main_table.getNameForLogs();
+
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
-                    main_table.getNameForLogs(), shard_info.shard_num);
+                    local_source_for_logs, shard_info.shard_num);
                 emplace_remote_stream();
             }
             else if (settings[Setting::skip_unavailable_shards])
             {
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
-                    main_table.getNameForLogs(), shard_info.shard_num);
+                    local_source_for_logs, shard_info.shard_num);
                 ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
                 if (unavailable_shard_tracker)
                     unavailable_shard_tracker->onShardSkipped();
