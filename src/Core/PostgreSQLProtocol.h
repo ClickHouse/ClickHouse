@@ -149,6 +149,7 @@ enum class ColumnType : Int32
     FLOAT8 = 701,
     VARCHAR = 1043,
     DATE = 1082,
+    TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
 };

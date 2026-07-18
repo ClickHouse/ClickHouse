@@ -77,6 +77,14 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
         case TypeIndex::Date32:
             return {ColumnType::DATE, 4};
 
+        /// `DateTime` and `DateTime64` map to PostgreSQL `timestamp` (without time zone), consistent with the
+        /// table-name path in the `pg_attribute` emulation (see PostgreSQLHandler). The value is rendered as
+        /// text - ClickHouse's `YYYY-MM-DD hh:mm:ss[.ffffff]` form is exactly PostgreSQL's timestamp text
+        /// format - so no type modifier is carried (the fractional-second precision is not encoded).
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+            return {ColumnType::TIMESTAMP, 8};
+
         /// Carry the actual precision and scale so that a self-connected `Decimal(p, s)` round-trips through
         /// schema inference instead of collapsing to a bare `numeric` (which `convertPostgreSQLDataType`
         /// would map to `Decimal128`).

@@ -302,6 +302,35 @@ def test_wire_types_for_wide_and_decimal(started_cluster):
         conn.close()
 
 
+def test_wire_types_for_datetime(started_cluster):
+    # A direct PostgreSQL client reading `DateTime` / `DateTime64` columns over the wire must see the
+    # PostgreSQL `timestamp` OID (1114) in the `RowDescription`, consistent with the table-name path that
+    # advertises them as `timestamp` in `pg_attribute` - not the `varchar` fallback (OID 1043).
+    node.query("DROP TABLE IF EXISTS test_wire_datetime SYNC")
+    node.query(
+        "CREATE TABLE test_wire_datetime (dt DateTime, dt64 DateTime64(3)) "
+        "ENGINE = MergeTree ORDER BY dt"
+    )
+    node.query(
+        "INSERT INTO test_wire_datetime VALUES ('2023-01-02 03:04:05', '2023-01-02 03:04:05.123')"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT dt, dt64 FROM test_wire_datetime")
+        # 1114 = timestamp (without time zone).
+        assert [c.type_code for c in cur.description] == [1114, 1114]
+        # The text value is PostgreSQL's timestamp format, so psycopg2 parses it into a Python datetime.
+        row = cur.fetchone()
+        assert str(row[0]) == "2023-01-02 03:04:05"
+        assert str(row[1]) == "2023-01-02 03:04:05.123000"
+    finally:
+        conn.close()
+
+
 def test_copy_to_stdout_csv_multiline_value(started_cluster):
     # `COPY (query) TO STDOUT WITH FORMAT csv` must stream a value that itself contains a newline intact:
     # each row is serialized into its own CopyData message, so a quoted CSV field spanning several physical
