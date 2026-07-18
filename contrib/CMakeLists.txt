@@ -88,7 +88,6 @@ add_contrib (lz4-cmake lz4)
 add_contrib (libdeflate-cmake libdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
-add_contrib (libpng-cmake libpng) # requires: zlib
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
