@@ -658,7 +658,7 @@ struct AggregateFunctionMergedJSONPatchData
         /// The set stores owned Strings — not string_views — to avoid dangling references after
         /// the String is moved into seen_keys.
         std::vector<String> seen_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_set<String> seen_set; // STYLE_CHECK_ALLOW_STD_STRING_CONTAINERS
+        std::unordered_set<String> seen_set; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (const auto & entry : entries)
         {
             std::string_view p = entry.pathView();
