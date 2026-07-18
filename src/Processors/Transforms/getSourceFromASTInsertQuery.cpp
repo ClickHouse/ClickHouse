@@ -416,6 +416,10 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
     }
 
+    /// Note whether the insert has a streamed tail *before* building the read buffer:
+    /// `getReadBufferFromASTInsertQuery` consumes and resets `ASTInsertQuery::tail`.
+    const bool has_streamed_tail = ast_insert_query->tail != nullptr;
+
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
         ? getReadBufferFromASTInsertQuery(ast, context->getSettingsRef()[Setting::snappy_mode])
         : std::make_unique<EmptyReadBuffer>();
@@ -423,12 +427,18 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     const Settings & settings = context->getSettingsRef();
 
     /// The parse-error diagnostic re-reads the inline data of the query (`ASTInsertQuery::data`) to infer
-    /// its structure. On the tail-only path that inline data is null and cannot be re-read: this is the
-    /// synchronous fallback of an async insert whose payload exceeded `async_insert_max_data_size`
-    /// (`executeQuery` moves the payload out of `ASTInsertQuery::data` into `tail` and nulls `data`), as
-    /// well as any other insert whose data arrives purely as a streamed tail. Capture a bounded prefix of
-    /// the bytes as they stream through instead, mirroring the client stdin path.
-    const bool capture_prefix_for_diagnostic = with_buffers && !input_function && !ast_insert_query->data;
+    /// its structure. That is only possible, and only sufficient, when all of the data is inline: as soon
+    /// as any of it arrives as a streamed tail (network / HTTP body), those bytes are consumed while
+    /// parsing and cannot be inspected a second time, and re-reading only the inline prefix would infer
+    /// the structure from an incomplete sample. This covers the tail-only path — the synchronous fallback
+    /// of an async insert whose payload exceeded `async_insert_max_data_size` (`executeQuery` moves the
+    /// payload out of `ASTInsertQuery::data` into `tail` and nulls `data`) — as well as the mixed path
+    /// where the HTTP `query` parameter carries an inline prefix (so `data` is non-null) and the failing
+    /// row arrives in the request body (the `tail`). Whenever a tail is present (or there is no inline
+    /// data at all), capture a bounded prefix of the bytes as they stream through instead, mirroring the
+    /// client stdin path.
+    const bool capture_prefix_for_diagnostic
+        = with_buffers && !input_function && (has_streamed_tail || !ast_insert_query->data);
     std::unique_ptr<PrefixCapturingReadBuffer> capturing_buffer;
     if (capture_prefix_for_diagnostic)
         capturing_buffer = std::make_unique<PrefixCapturingReadBuffer>(
