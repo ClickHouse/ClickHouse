@@ -500,6 +500,9 @@ std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::p
 void ObjectStorageParallelListingIterator::advanceLocked(std::unique_lock<std::mutex> & lock)
 {
     ensureStarted(lock);
+    /// We are (re)filling `current_batch` now, so the lazy refill scheduled by
+    /// `getCurrentBatchAndScheduleNext` is being satisfied here.
+    advance_pending = false;
     auto batch = popBatch(lock);
     if (batch)
     {
@@ -518,7 +521,7 @@ void ObjectStorageParallelListingIterator::advanceLocked(std::unique_lock<std::m
 void ObjectStorageParallelListingIterator::next()
 {
     std::unique_lock lock(mutex);
-    if (!is_initialized)
+    if (!is_initialized || advance_pending)
     {
         advanceLocked(lock);
         return;
@@ -539,7 +542,7 @@ void ObjectStorageParallelListingIterator::nextBatch()
 bool ObjectStorageParallelListingIterator::isValid()
 {
     std::unique_lock lock(mutex);
-    if (!is_initialized)
+    if (!is_initialized || advance_pending)
         advanceLocked(lock);
     return !consumer_finished;
 }
@@ -547,7 +550,7 @@ bool ObjectStorageParallelListingIterator::isValid()
 RelativePathWithMetadataPtr ObjectStorageParallelListingIterator::current()
 {
     std::unique_lock lock(mutex);
-    if (!is_initialized)
+    if (!is_initialized || advance_pending)
         advanceLocked(lock);
     if (consumer_finished || current_batch_iterator == current_batch.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");
@@ -557,7 +560,7 @@ RelativePathWithMetadataPtr ObjectStorageParallelListingIterator::current()
 RelativePathsWithMetadata ObjectStorageParallelListingIterator::currentBatch()
 {
     std::unique_lock lock(mutex);
-    if (!is_initialized)
+    if (!is_initialized || advance_pending)
         advanceLocked(lock);
     return current_batch;
 }
@@ -565,14 +568,23 @@ RelativePathsWithMetadata ObjectStorageParallelListingIterator::currentBatch()
 std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::getCurrentBatchAndScheduleNext()
 {
     std::unique_lock lock(mutex);
-    if (!is_initialized)
+    if (!is_initialized || advance_pending)
         advanceLocked(lock);
 
     if (current_batch_iterator == current_batch.end())
         return std::nullopt;
 
     auto batch = std::move(current_batch);
-    advanceLocked(lock);
+    /// Return the current batch immediately and let the worker pool keep filling `ready_batches` in the
+    /// background — the workers are the "schedule next" of this API, they run continuously. Do NOT block on
+    /// the next batch here (the old behaviour): that would make the consumer wait for the *next* batch —
+    /// which may require walking a whole pruned subtree that produces no keys for a long time — before it
+    /// could start reading the files of the batch we just produced, re-serializing listing with reading and
+    /// erasing the parallel-listing speedup. Instead, defer fetching the next batch until the consumer
+    /// actually asks for it.
+    current_batch.clear();
+    current_batch_iterator = current_batch.begin();
+    advance_pending = true;
     return batch;
 }
 

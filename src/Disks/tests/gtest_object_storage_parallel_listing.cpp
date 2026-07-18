@@ -705,3 +705,68 @@ TEST(ObjectStorageParallelListing, CancellationUnblocksBlockedConsumer)
     /// Let the stalled request return so the iterator can be destroyed without blocking on the worker.
     release_listing.set_value();
 }
+
+TEST(ObjectStorageParallelListing, GetCurrentBatchReturnsWithoutWaitingForNextBatch)
+{
+    /// Regression test: `getCurrentBatchAndScheduleNext` must return the current batch immediately and let
+    /// the workers keep filling the next one in the background, rather than blocking on the next batch
+    /// before returning the current one. The batching API is how the consumer
+    /// (`StorageObjectStorageSource::GlobIterator`) overlaps listing with reading files; if the first batch
+    /// were withheld until the next batch is produced, a glob whose first page is followed by a large pruned
+    /// subtree would make the first file read wait for the whole remaining walk, re-serializing listing and
+    /// reading and erasing the speedup this iterator adds.
+    ///
+    /// Here `root/` yields a first batch of leaf objects plus one sub-directory `root/sub/` whose listing
+    /// stalls until released. The first `getCurrentBatchAndScheduleNext` must return the `root/` leaves
+    /// while `root/sub/` is still stalled; the old eager code blocked here until `root/sub/` produced a
+    /// batch (i.e. until the stall was released).
+    FakeS3 s3;
+    s3.add("root/a.dat");
+    s3.add("root/b.dat");
+    s3.add("root/sub/c.dat");
+    s3.finalize();
+
+    std::promise<void> release_sub;         /// fulfilled to let the sub-directory listing return
+    auto release_sub_future = release_sub.get_future().share();
+
+    auto list_level = [&](const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token) -> ObjectStorageListResult
+    {
+        /// Only the sub-directory listing stalls; the root listing (which produces the first batch) does not.
+        if (prefix == "root/sub/")
+            release_sub_future.wait();
+        return s3.list(prefix, delimiter, start_after, token);
+    };
+
+    ObjectStorageParallelListingIterator iterator(
+        "root/", /* num_threads */ 4, /* max_buffered_keys */ 256, list_level, list_level, descendAll);
+
+    /// Ask for the first batch on a separate thread so the main thread can observe whether it returns before
+    /// the (stalled) sub-directory listing is released.
+    auto first_batch_future = std::async(std::launch::async, [&] { return iterator.getCurrentBatchAndScheduleNext(); });
+
+    /// The first batch must become available without waiting for the release. A bounded wait that succeeds
+    /// proves it was returned early; the old eager behavior would keep this pending until `release_sub`. The
+    /// timeout only ever elapses if the regression is present, and it is generous enough to never trip on a
+    /// loaded CI machine for an in-memory listing that normally completes in microseconds.
+    const bool returned_early = first_batch_future.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+
+    /// Always release the stalled listing so the worker (and the async task) can finish, regardless of the
+    /// outcome, then join before asserting so a failure never leaks a blocked thread.
+    release_sub.set_value();
+    auto first_batch = first_batch_future.get();
+
+    ASSERT_TRUE(returned_early) << "the current batch was withheld until the next (stalled) batch was produced";
+    ASSERT_TRUE(first_batch.has_value());
+    std::vector<std::string> first_paths;
+    for (const auto & object : *first_batch)
+        first_paths.push_back(object->relative_path);
+    std::sort(first_paths.begin(), first_paths.end());
+    EXPECT_EQ(first_paths, (std::vector<std::string>{"root/a.dat", "root/b.dat"}));
+
+    /// The remainder (the sub-directory's key) is produced once released, and the whole listing completes.
+    std::vector<std::string> rest;
+    while (auto batch = iterator.getCurrentBatchAndScheduleNext())
+        for (const auto & object : *batch)
+            rest.push_back(object->relative_path);
+    EXPECT_EQ(rest, (std::vector<std::string>{"root/sub/c.dat"}));
+}

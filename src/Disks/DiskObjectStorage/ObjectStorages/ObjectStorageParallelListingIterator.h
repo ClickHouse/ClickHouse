@@ -215,6 +215,11 @@ private:
 
     bool is_initialized = false;
     bool consumer_finished = false;
+    /// Set once `getCurrentBatchAndScheduleNext` has handed the current batch to the caller: the next batch
+    /// is fetched lazily, only when the consumer actually asks for it, rather than eagerly before the
+    /// current one is returned. The workers keep filling `ready_batches` in the background regardless, so
+    /// this preserves the batching API's overlap of listing with reading (see `getCurrentBatchAndScheduleNext`).
+    bool advance_pending = false;
     RelativePathsWithMetadata current_batch;
     RelativePathsWithMetadata::iterator current_batch_iterator;
     std::atomic<size_t> accumulated_size = 0;
