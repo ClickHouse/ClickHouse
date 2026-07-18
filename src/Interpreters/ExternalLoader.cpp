@@ -823,6 +823,7 @@ private:
                 result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
+                result.blocked = blocked;
                 return result;
             }
             else
@@ -936,15 +937,20 @@ private:
             if (!min_id)
                 min_id = getMinIDToFinishLoading(forced_to_reload);
 
-            /// If reload is blocked the call to startLoading is still needed to obtain values
-            /// that have already been loaded
             bool reload_blocked = reload_blocker.isCancelled();
 
-            if (info->loading_id < min_id)
-                startLoading(*info, forced_to_reload, reload_blocked, *min_id);
-
+            /// Stop immediately once a previous attempt within this wait already determined reload
+            /// is blocked, instead of re-triggering startLoading() below: a blocked attempt resets
+            /// loading_id back down to state_id (so retrying is possible once unblocked), which would
+            /// otherwise make this predicate see loading_id < min_id again on every wake-up and spawn
+            /// another doomed loading attempt forever.
             if (reload_blocked && info->blocked)
                 return true; /// Stop if blocked
+
+            /// If reload is blocked the call to startLoading is still needed to obtain values
+            /// that have already been loaded
+            if (info->loading_id < min_id)
+                startLoading(*info, forced_to_reload, reload_blocked, *min_id);
 
             /// Wait for the next event if loading wasn't completed, or stop otherwise.
             return (info->state_id >= min_id);

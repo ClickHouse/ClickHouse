@@ -115,8 +115,11 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
                 dictionary = std::static_pointer_cast<const IDictionary>(std::move(result.object));
                 break;
             }
-            /// If loading has terminally failed, call load() to throw the proper error
-            if (result.status != Status::LOADING && result.status != Status::NOT_LOADED)
+            /// If loading has terminally failed, or gave up because reload is blocked, call load() to
+            /// throw the proper error. A blocked attempt alone leaves status as NOT_LOADED (it doesn't
+            /// count as tried, so a plain SELECT can retry once reload is unblocked), so it needs its
+            /// own check here rather than just looking at status.
+            if (result.blocked || (result.status != Status::LOADING && result.status != Status::NOT_LOADED))
             {
                 dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
                 break;

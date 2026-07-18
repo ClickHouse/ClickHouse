@@ -80,6 +80,10 @@ public:
         Duration loading_duration{};
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;
+        /// Whether the last loading attempt gave up because reload was blocked (SYSTEM STOP RELOAD DICTIONARIES),
+        /// as opposed to still being in progress. Callers that poll for a terminal state should treat this the
+        /// same as a failure, since it will otherwise never resolve on its own while reload stays blocked.
+        bool blocked = false;
     };
 
     using LoadResults = std::vector<LoadResult>;
