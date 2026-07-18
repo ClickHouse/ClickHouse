@@ -1519,7 +1519,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions,
-    bool user_initiated)
+    bool user_initiated,
+    bool deduplicate,
+    bool cleanup)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1718,7 +1720,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             merge_context->makeQueryContextForMerge(*getSettings());
 
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, merge_context, *getSettings(), output_on_remote_disk);
+                *future_part, metadata_snapshot, merge_context, *getSettings(), output_on_remote_disk,
+                /*remote_write_buffer_ceiling=*/ std::nullopt, deduplicate, cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1767,7 +1770,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
                     CompactionStatistics::estimateNeededMemoryForMerge(
                         *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk,
-                        CompactionStatistics::getDiskWriteBufferMemoryCeiling(actual_disk))));
+                        CompactionStatistics::getDiskWriteBufferMemoryCeiling(actual_disk), deduplicate, cleanup)));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);
@@ -1826,7 +1829,9 @@ bool StorageMergeTree::merge(
             lock,
             txn,
             optimize_skip_merged_partitions,
-            /*user_initiated=*/true);
+            /*user_initiated=*/true,
+            deduplicate,
+            cleanup);
     }();
 
     if (merge_select_result.has_value())

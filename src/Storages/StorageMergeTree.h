@@ -252,6 +252,9 @@ private:
 
     /// `user_initiated` means the merge was explicitly requested by a user query (OPTIMIZE): such a merge
     /// reserves its memory unconditionally instead of being rejected by the merge memory reservation gate.
+    /// `deduplicate` / `cleanup` are the corresponding OPTIMIZE flags: they do not affect which parts are
+    /// selected, but a deduplicating / cleanup merge rebuilds projections even when some source parts are
+    /// missing them, and the merge memory reservation must price those rebuilds.
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -261,7 +264,9 @@ private:
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
         bool optimize_skip_merged_partitions = false,
-        bool user_initiated = false);
+        bool user_initiated = false,
+        bool deduplicate = false,
+        bool cleanup = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,

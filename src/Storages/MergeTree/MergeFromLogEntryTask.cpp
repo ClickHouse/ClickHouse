@@ -360,7 +360,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
         CompactionStatistics::estimateNeededMemoryForMerge(
             *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, output_disk->isRemote(),
-            CompactionStatistics::getDiskWriteBufferMemoryCeiling(output_disk))));
+            CompactionStatistics::getDiskWriteBufferMemoryCeiling(output_disk), entry.deduplicate, entry.cleanup)));
 
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))

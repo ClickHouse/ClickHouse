@@ -41,9 +41,15 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
   * capped by the data volume of the merge (see the implementation for details).
   * Projection IO is included as well: a projection whose parts are present in every source part is merged
   * by a nested MergeTask over those parts, priced by applying this same estimate recursively, and a
-  * projection the merge rebuilds from scratch (a commit-order projection, or
+  * projection the merge rebuilds from scratch (a row-reducing merge, a commit-order projection, or
   * materialize_projections_on_merge) is priced as one set of temp-part writer streams plus the read-back
-  * of the temporary parts, both bounded by the merge's input data volume.
+  * of the temporary parts, at the per-stream worst case (a projection expression is not size-monotone,
+  * so the merge's input data volume is not a valid cap there).
+  * Pass deduplicate / cleanup when the merge was requested with them (OPTIMIZE ... DEDUPLICATE / CLEANUP,
+  * or the corresponding flags of a replication log entry): together with the TTL state of the source
+  * parts and their lightweight-delete masks they decide, exactly as the merge itself will
+  * (merge_may_reduce_rows in MergeTask), whether projections are rebuilt from the merged rows even when
+  * some source parts do not have them - a rebuild that would otherwise be priced as "dropped".
   * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
   * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
   */
@@ -53,7 +59,9 @@ UInt64 estimateNeededMemoryForMerge(
     const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk,
-    std::optional<UInt64> remote_write_buffer_ceiling = std::nullopt);
+    std::optional<UInt64> remote_write_buffer_ceiling = std::nullopt,
+    bool deduplicate = false,
+    bool cleanup = false);
 
 /** The per-stream multipart write buffer memory ceiling of a merge's destination disk, or 0 for disks
   * whose writer has no multipart upload buffers (a plain local disk, or a remote disk such as HDFS that

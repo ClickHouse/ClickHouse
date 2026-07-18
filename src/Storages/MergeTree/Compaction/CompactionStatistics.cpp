@@ -10,7 +10,10 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/typeid_cast.h>
 #include <IO/S3Defines.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -210,29 +213,57 @@ size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const Merg
     return streams;
 }
 
+/// Worst-case number of on-disk data streams the dynamic structure of a type can materialize when a column
+/// of it is written, bounded by the type's own write-time capacity limits - the limits ColumnDynamic /
+/// ColumnObject enforce whatever the data looks like (types beyond max_dynamic_types go to the shared
+/// variant, paths beyond max_dynamic_paths go to the shared data, both of which are statically enumerable
+/// streams). A Dynamic column can materialize up to max_dynamic_types variants (plus the shared variant),
+/// each with its discriminator-driven data streams; a JSON column up to max_dynamic_paths dynamic paths,
+/// each stored as a Dynamic value of its own. Each potential variant / path is priced at a couple of
+/// streams: a variant is one data stream (two cover a level of nesting such as Array or Nullable), a path
+/// is a structure stream plus the data streams of its - overwhelmingly single - resolved type per part;
+/// a path that materializes many concrete types inside one part can exceed this, but the dominant,
+/// capacity-bounded term is the number of paths. Composite types are walked recursively, so
+/// Tuple(UInt64, JSON) or Array(Dynamic) are priced by their nested semi-structured components. Zero for
+/// types without dynamic structure.
+size_t countDynamicCapacityStreams(const IDataType & type)
+{
+    const auto node_capacity = [](const IDataType & node) -> size_t
+    {
+        if (const auto * dynamic = typeid_cast<const DataTypeDynamic *>(&node))
+            return 2 + 2 * (dynamic->getMaxDynamicTypes() + 1);
+        if (const auto * object = typeid_cast<const DataTypeObject *>(&node))
+            return 4 * object->getMaxDynamicPaths();
+        return 0;
+    };
+
+    size_t streams = node_capacity(type);
+    type.forEachChild([&](const IDataType & child) { streams += node_capacity(child); });
+    return streams;
+}
+
 /// Number of on-disk streams the temporary part of a REBUILT projection writes. A rebuild recalculates the
-/// projection from the merged base rows, so a semi-structured (JSON / Dynamic) projection column carries the
-/// dynamic substreams of the base data it is derived from, and writeTempProjectionPart writes one stream per
-/// substream. When the projection output column shares its name with a base column (a bare-identifier
-/// projection, SELECT json ORDER BY ...) it is priced precisely from that column's recorded substreams. But a
-/// projection may materialize a semi-structured value through an expression under a name no base part records
-/// (SELECT identity(json) ..., a CAST to JSON, ...); its real substream count cannot be enumerated from the
-/// default serialization (which collapses it to one stream) nor traced to a base column by name. Bound such a
-/// column by source_dynamic_substreams - the total dynamic substreams present in the source parts - on top of
-/// its statically enumerable skeleton: a value recomputed from the merged rows cannot contain more dynamic
-/// paths than the input holds. For simple projection columns this equals the default serialization count.
-size_t countRebuiltProjectionStreams(
-    const NamesAndTypesList & projection_columns, const MergeTreeDataPartsVector & source_parts, size_t source_dynamic_substreams)
+/// projection from the merged base rows, so a semi-structured (JSON / Dynamic) projection column carries
+/// real dynamic substreams, and writeTempProjectionPart writes one stream per substream. When the
+/// projection output column shares its name with a base column (a bare-identifier projection, SELECT json
+/// ORDER BY ...) it is priced precisely from that column's recorded substreams. But a projection may
+/// materialize a semi-structured value through an expression under a name no base part records
+/// (SELECT identity(json) ..., a CAST to JSON or Dynamic, ...); its real substream count cannot be
+/// enumerated from the default serialization (SerializationDynamic / SerializationObject without data stop
+/// at the structure streams) nor traced to a base column by name - and the value does not have to be
+/// derived from semi-structured input at all (number::Dynamic synthesizes variants from a plain column),
+/// so no bound taken from the source parts' dynamic substreams is sound. Bound such a column by its type's
+/// own write-time capacity instead (countDynamicCapacityStreams), which no written column can exceed. For
+/// simple projection columns this equals the default serialization count.
+size_t countRebuiltProjectionStreams(const NamesAndTypesList & projection_columns, const MergeTreeDataPartsVector & source_parts)
 {
     size_t streams = 0;
     for (const auto & column : projection_columns)
     {
         if (auto recorded = tryCountColumnSubstreamsFromParts(column.name, source_parts))
             streams += *recorded;
-        else if (column.type->hasDynamicStructure())
-            streams += countColumnStreams({column}) + source_dynamic_substreams;
         else
-            streams += countColumnStreams({column});
+            streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type);
     }
     return streams;
 }
@@ -318,7 +349,9 @@ UInt64 estimateNeededMemoryForMerge(
     const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk,
-    std::optional<UInt64> remote_write_buffer_ceiling)
+    std::optional<UInt64> remote_write_buffer_ceiling,
+    bool deduplicate,
+    bool cleanup)
 {
     /// Per-stream read buffer size, from the effective server settings (merges read through the global
     /// context). A read buffer is later shrunk to the granule size, and it is smaller for the local
@@ -459,6 +492,8 @@ UInt64 estimateNeededMemoryForMerge(
     ///    merge_may_reduce_rows branch of prepareProjectionsToMergeAndRebuild, so a patch part that adds a
     ///    new JSON path or expands a projection expression is priced as a rebuild, not as a merge of the
     ///    stale source projection parts;
+    ///  - a projection that requires an expired column (absent from every source part with no default
+    ///    expression) is likewise rebuilt regardless of whether the source parts have it;
     ///  - otherwise, when every source part has the projection, the projection parts are merged by a
     ///    nested MergeTask over exactly those parts with the projection's own metadata
     ///    (MergeProjectionsStage::prepareProjections builds the very same FutureMergedMutatedPart), so
@@ -480,34 +515,69 @@ UInt64 estimateNeededMemoryForMerge(
             || (projection_mode != DeduplicateMergeProjectionMode::THROW && projection_mode != DeduplicateMergeProjectionMode::DROP));
     if (merge_processes_projections)
     {
-        /// merge_may_reduce_rows as far as it is knowable at selection time: a merge that applies patch
-        /// parts (apply_patches_on_merge), or a non-Ordinary merging mode. The remaining triggers (TTL
-        /// removal, cleanup, deduplication, lightweight deletes) are only decided later during merge
-        /// preparation and can only turn more projections into rebuilds; a rebuild is priced here at least
-        /// as high as the nested merge it replaces, so leaving them out keeps the common no-op case exact
-        /// without under-reserving.
-        const bool merge_may_reduce_rows = !future_part.patch_parts.empty()
+        /// merge_may_reduce_rows exactly as the merge itself will compute it
+        /// (MergeTask::ExecuteAndFinalizeHorizontalPart::prepare): a deduplicating or cleanup merge, a
+        /// merge that removes expired TTL values, one that applies lightweight-delete masks or patch
+        /// parts, or a non-Ordinary merging mode. All of these are knowable at selection time: deduplicate
+        /// and cleanup come from the caller (an OPTIMIZE query or a replication log entry - background
+        /// selection never sets them), the TTL state and delete masks from the source parts themselves.
+        /// The merge evaluates the TTL threshold slightly later than this estimate and skips TTL removal
+        /// while a ttl_merges_blocker is held; both can only make the merge rebuild fewer projections than
+        /// priced here, which is the safe direction for a reservation.
+        bool need_remove_expired_values = false;
+        if (metadata_snapshot->hasAnyTTL())
+        {
+            IMergeTreeDataPart::TTLInfos merged_ttl_infos;
+            for (const auto & part : future_part.parts)
+            {
+                merged_ttl_infos.update(part->ttl_infos);
+                if (!part->checkAllTTLCalculated(metadata_snapshot))
+                    need_remove_expired_values = true;
+            }
+            if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= std::time(nullptr))
+                need_remove_expired_values = true;
+        }
+
+        const bool has_lightweight_delete = std::any_of(
+            source_and_patch_parts.begin(), source_and_patch_parts.end(),
+            [](const auto & part) { return part->hasLightweightDelete(); });
+
+        const bool merge_may_reduce_rows = deduplicate
+            || cleanup
+            || need_remove_expired_values
+            || has_lightweight_delete
+            || !future_part.patch_parts.empty()
             || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
-        /// Upper bound on the dynamic (JSON / Dynamic) substreams a rebuilt projection column can materialize
-        /// when it is produced through an expression rather than a bare source identifier: the total dynamic
-        /// substreams present in the source parts (their merged stream count minus the statically enumerable
-        /// skeleton), since a value recomputed from the merged rows cannot hold more dynamic paths than the
-        /// input does. Zero for a merge of only simple columns.
-        const size_t source_static_streams = countColumnStreams(output_columns);
-        const size_t source_all_streams = countOutputStreams(output_columns, source_and_patch_parts, settings);
-        const size_t source_dynamic_substreams
-            = source_all_streams > source_static_streams ? source_all_streams - source_static_streams : 0;
+        /// A storage column absent from every source part and without a default expression is expired: the
+        /// merge marks it so (new_data_part->expired_columns) and rebuilds every projection that requires
+        /// it, again before checking whether the source parts have the projection.
+        NameSet columns_present_in_parts;
+        for (const auto & part : future_part.parts)
+            for (const auto & part_column : part->getColumns())
+                columns_present_in_parts.insert(part_column.name);
+
+        NameSet expired_columns;
+        const auto & columns_description = metadata_snapshot->getColumns();
+        for (const auto & storage_column : output_columns)
+            if (!columns_present_in_parts.contains(storage_column.name) && !columns_description.getDefault(storage_column.name))
+                expired_columns.insert(storage_column.name);
 
         for (const auto & projection : metadata_snapshot->getProjections())
         {
             /// A special (parent-offset / block-number / block-offset) projection is rebuilt by a
             /// row-reducing merge even under the IGNORE mode; a plain one is rebuilt only when the mode is
-            /// not IGNORE - mirroring prepareProjectionsToMergeAndRebuild exactly.
+            /// not IGNORE. A projection requiring an expired column is likewise rebuilt before the source
+            /// parts are checked for it - mirroring prepareProjectionsToMergeAndRebuild exactly.
             const bool is_special_projection
                 = projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset;
-            const bool rebuild_regardless_of_presence = merge_may_reduce_rows
-                && (projection_mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection);
+            const auto & required_columns = projection.getRequiredColumns();
+            const bool some_source_column_expired = std::any_of(
+                required_columns.begin(), required_columns.end(),
+                [&](const String & name) { return expired_columns.contains(name); });
+            const bool rebuild_regardless_of_presence
+                = (merge_may_reduce_rows && (projection_mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
+                || (some_source_column_expired && projection_mode != DeduplicateMergeProjectionMode::IGNORE);
 
             MergeTreeData::DataPartsVector projection_parts;
             for (const auto & part : future_part.parts)
@@ -540,12 +610,12 @@ UInt64 estimateNeededMemoryForMerge(
                 /// The temporary parts are written into the result part's own storage, so they share the
                 /// destination disk's write buffer sizing and are read back from that same disk. The rebuilt
                 /// projection is recalculated from the merged base rows, so a semi-structured (JSON / Dynamic)
-                /// projection column carries the dynamic substreams of the base data it is derived from
-                /// (writeTempProjectionPart writes one stream per substream); count them with
-                /// countRebuiltProjectionStreams rather than the default serialization, which would collapse
-                /// such a column to a single stream and undersize the reservation.
+                /// projection column materializes real dynamic substreams (writeTempProjectionPart writes one
+                /// stream per substream); count them with countRebuiltProjectionStreams rather than the default
+                /// serialization, which would collapse such a column to a single stream and undersize the
+                /// reservation.
                 const size_t projection_streams = countRebuiltProjectionStreams(
-                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, source_dynamic_substreams);
+                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts);
 
                 /// Unlike the base output above, a rebuilt projection is NOT size-bounded by the merge input:
                 /// a projection expression is not size-monotone (repeat(...), JSON / array construction can
