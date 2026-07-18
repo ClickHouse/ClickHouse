@@ -28,10 +28,34 @@ namespace DuckLake
 /// cannot be parsed unambiguously for the type (caller must not prune on it).
 std::optional<Field> parseStatsValue(const String & value, const DataTypePtr & type);
 
+/// Closed interval of calendar bucket numbers (year, month 1-12 or day 1-31); unbounded
+/// sides are nullopt.
+struct BucketRange
+{
+    std::optional<int32_t> lo;
+    std::optional<int32_t> hi;
+
+    bool contains(int64_t value) const
+    {
+        return (!lo.has_value() || value >= *lo) && (!hi.has_value() || value <= *hi);
+    }
+};
+
+/// Per-column pruning constraints on the calendar buckets of the partition transforms.
+struct CalendarConstraints
+{
+    BucketRange year;
+    BucketRange month;
+    BucketRange day;
+};
+
 /// Prunes DuckLake data files with the query filter DAG using
 ///  - ducklake_file_column_stats (min/max per column), and
-///  - ducklake_file_partition_value + the partition spec of the file
-///    (identity/year/month/day/hour transforms; bucket transforms cannot be pruned).
+///  - ducklake_file_partition_value + the partition spec of the file:
+///    * identity transforms via a single-point KeyCondition,
+///    * year/month/day transforms via exact calendar bucket constraints, computed from
+///      source-column ranges (KeyCondition::extractPlainRanges) and from function-form
+///      predicates (`toYear(col) = 2025` etc.); bucket transforms cannot be pruned.
 /// The filter DAG pointer must stay valid for the lifetime of the pruner.
 class FilePruner
 {
@@ -72,13 +96,26 @@ private:
     std::unordered_map<Int64, NameAndTypePair> column_types_by_id;
     ContextPtr context;
 
-    /// Partition key conditions depend on the partition spec of each file; they are built
-    /// on first use per spec (files of one table almost always share one spec).
+    /// Identity partition key conditions depend on the partition spec of each file; they
+    /// are built on first use per spec (files of one table almost always share one spec).
     mutable std::optional<std::vector<DuckLakePartitionField>> cached_spec;
     mutable std::optional<PartitionKeyCondition> cached_partition_condition;
 
-    /// Null when the spec contains unsupported transforms (bucket) or unknown columns.
-    const PartitionKeyCondition * getPartitionCondition(const std::vector<DuckLakePartitionField> & spec) const;
+    /// Null when the spec has no identity fields or unknown columns.
+    const PartitionKeyCondition * getIdentityCondition(const std::vector<DuckLakePartitionField> & spec) const;
+
+    /// Calendar constraints from function-form predicates (`toYear(col) = 2025` and
+    /// range comparisons on `toYear`/`toMonth`/`toDayOfMonth`), per source column name.
+    /// Computed once from the filter DAG.
+    std::unordered_map<String, CalendarConstraints> function_form_constraints;
+    void collectFunctionFormConstraints();
+
+    /// Calendar constraints from source-column ranges (`col >= a AND col < b`), per
+    /// column; built lazily because extracting plain ranges needs a KeyCondition per
+    /// column. Columns whose type cannot produce unambiguous buckets (timestamps
+    /// without an explicit timezone) yield no constraints.
+    mutable std::unordered_map<String, CalendarConstraints> source_range_constraints;
+    const CalendarConstraints & getCalendarConstraints(const String & column_name, const DataTypePtr & column_type) const;
 };
 
 }
