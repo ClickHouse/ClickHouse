@@ -425,7 +425,14 @@ FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, documentation, properties });
+    /// groupArrayMovingAvg promotes non-Decimal input to a Float64 accumulator (its result is Array(Float64)), so a
+    /// numeric-mix Variant argument with no lossless common supertype can safely fall back to Float64 -- exactly what
+    /// plain avg does. groupArrayMovingSum keeps the input's arithmetic type, so it is intentionally left out of the
+    /// float-promoting classification. See AggregateFunctionProperties::is_float_promoting and tryGetVariantAdapter.
+    AggregateFunctionProperties properties_avg = properties;
+    properties_avg.is_float_promoting = true;
+
+    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, documentation, properties_avg });
 }
 
 }
