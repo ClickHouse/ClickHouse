@@ -234,29 +234,55 @@ private:
 /// A BigQuery NULLABLE RECORD is inferred as `Nullable(Tuple(...))` so NULL records round-trip
 /// losslessly. When declaring columns explicitly, a user may still prefer a plain `Tuple(...)` (which
 /// coerces a whole-record NULL to a default tuple and avoids the `enable_nullable_tuple_type` setting),
-/// or the exact `Nullable(Tuple(...))`. To accept both, treat a declared type that differs from the
-/// inferred type only by `Nullable` wrappers placed directly around a `Tuple` as a match: this function
-/// removes exactly those wrappers, and it is applied to both types before they are compared.
-DataTypePtr stripNullableAroundTuple(const DataTypePtr & type)
+/// or keep the exact `Nullable(Tuple(...))`. This function decides whether a declared type is
+/// compatible with an inferred one: types must be structurally identical, with a single relaxation -
+/// at a RECORD node, the declared side may drop the `Nullable` that the inferred side has directly
+/// around the `Tuple`. The relaxation is applied per node and only in that direction, so it can never
+/// move nullability to a different nesting level (e.g. accept a declared `Tuple(inner Nullable(Tuple))`
+/// for an inferred `Nullable(Tuple(inner Tuple))`), which would silently change NULL semantics.
+bool declaredTypeMatchesInferred(const DataTypePtr & declared, const DataTypePtr & inferred)
 {
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    if (declared->equals(*inferred))
+        return true;
+
+    DataTypePtr declared_core = declared;
+    DataTypePtr inferred_core = inferred;
+
+    /// If the inferred type is a `Nullable(Tuple(...))` (a NULLABLE RECORD), the declared side may keep
+    /// that `Nullable` (handled by the exact-match fast path above) or drop it (plain `Tuple(...)`).
+    /// Peel a single record-`Nullable` from the inferred side and, when present, the matching one from
+    /// the declared side. A `Nullable` on the declared side that the inferred side lacks is not peeled,
+    /// so it will fail the comparison below - the source is not nullable at this node.
+    if (const auto * inferred_nullable = typeid_cast<const DataTypeNullable *>(inferred.get());
+        inferred_nullable && typeid_cast<const DataTypeTuple *>(inferred_nullable->getNestedType().get()))
     {
-        const auto & nested = nullable->getNestedType();
-        if (typeid_cast<const DataTypeTuple *>(nested.get()))
-            return stripNullableAroundTuple(nested);
-        return std::make_shared<DataTypeNullable>(stripNullableAroundTuple(nested));
+        inferred_core = inferred_nullable->getNestedType();
+        if (const auto * declared_nullable = typeid_cast<const DataTypeNullable *>(declared.get());
+            declared_nullable && typeid_cast<const DataTypeTuple *>(declared_nullable->getNestedType().get()))
+            declared_core = declared_nullable->getNestedType();
     }
-    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(stripNullableAroundTuple(array->getNestedType()));
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+
+    /// Recurse structurally: arrays element-wise, tuples field-wise (arity and names must match).
+    if (const auto * declared_array = typeid_cast<const DataTypeArray *>(declared_core.get()))
     {
-        DataTypes elements;
-        elements.reserve(tuple->getElements().size());
-        for (const auto & element : tuple->getElements())
-            elements.push_back(stripNullableAroundTuple(element));
-        return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        const auto * inferred_array = typeid_cast<const DataTypeArray *>(inferred_core.get());
+        return inferred_array && declaredTypeMatchesInferred(declared_array->getNestedType(), inferred_array->getNestedType());
     }
-    return type;
+    if (const auto * declared_tuple = typeid_cast<const DataTypeTuple *>(declared_core.get()))
+    {
+        const auto * inferred_tuple = typeid_cast<const DataTypeTuple *>(inferred_core.get());
+        if (!inferred_tuple
+            || declared_tuple->getElements().size() != inferred_tuple->getElements().size()
+            || declared_tuple->getElementNames() != inferred_tuple->getElementNames())
+            return false;
+        for (size_t i = 0; i < declared_tuple->getElements().size(); ++i)
+            if (!declaredTypeMatchesInferred(declared_tuple->getElements()[i], inferred_tuple->getElements()[i]))
+                return false;
+        return true;
+    }
+
+    /// Not a RECORD relaxation and not structurally recursible: require exact equality (already failed).
+    return declared_core->equals(*inferred_core);
 }
 
 /// The columns a user declared (in CREATE TABLE) or requested must match the BigQuery schema.
@@ -270,10 +296,9 @@ void checkColumnMatchesSchema(const NameAndTypePair & column, const BigQueryFiel
             column.name,
             fmt::join(std::ranges::views::transform(fields, [](const auto & f) { return f.name; }), ", "));
 
-    /// Accept the exact inferred type, or one that differs only by Nullable-around-Tuple wrappers
-    /// (see stripNullableAroundTuple) - e.g. a plain `Tuple` declared for an inferred `Nullable(Tuple)`.
-    if (!column.type->equals(*field->data_type)
-        && !stripNullableAroundTuple(column.type)->equals(*stripNullableAroundTuple(field->data_type)))
+    /// Accept the exact inferred type, or one that differs only by a Nullable dropped directly around a
+    /// RECORD's Tuple (see declaredTypeMatchesInferred) - e.g. a plain `Tuple` for an inferred `Nullable(Tuple)`.
+    if (!declaredTypeMatchesInferred(column.type, field->data_type))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Column '{}' is declared as {}, but the BigQuery table schema maps it to {}. "

@@ -249,6 +249,63 @@ def test_nullable_record_opt_in():
     node.query("DROP TABLE bq_wrong_null")
 
 
+def test_nested_record_nullability_not_moved():
+    # The `test_nested_rec` table has a NULLABLE outer RECORD (`parent`) whose inner RECORD (`child`)
+    # is REQUIRED, so it is inferred as Nullable(Tuple(child Tuple(x Int64))). The Nullable-around-Tuple
+    # relaxation must apply only at the same record node: a declaration that moves the Nullable to the
+    # inner record encodes different NULL states and must be rejected, even though both trees have the
+    # same shape once nullable-tuple wrappers are ignored.
+    settings = {"enable_nullable_tuple_type": 1}
+
+    # Moved nullability: outer plain, inner Nullable - rejected.
+    node.query("DROP TABLE IF EXISTS bq_nested_moved")
+    node.query(
+        "CREATE TABLE bq_nested_moved "
+        "(i Int64, parent Tuple(child Nullable(Tuple(x Int64)))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_nested_rec', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings=settings,
+    )
+    error = node.query_and_get_error(
+        "SELECT parent FROM bq_nested_moved", settings=settings
+    )
+    assert "declared as" in error and "maps it to" in error
+    node.query("DROP TABLE bq_nested_moved")
+
+    # The exact inferred type is accepted and NULL outer records round-trip losslessly.
+    node.query("DROP TABLE IF EXISTS bq_nested_exact")
+    node.query(
+        "CREATE TABLE bq_nested_exact "
+        "(i Int64, parent Nullable(Tuple(child Tuple(x Int64)))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_nested_rec', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings=settings,
+    )
+    assert (
+        node.query(
+            "SELECT i, parent FROM bq_nested_exact ORDER BY i FORMAT TSV",
+            settings=settings,
+        )
+        == "1\t((5))\n2\t\\N\n"
+    )
+    node.query("DROP TABLE bq_nested_exact")
+
+    # Dropping the outer record's Nullable (a plain Tuple at the same node) stays accepted and needs no
+    # setting; a whole-record NULL then coerces to a default tuple.
+    node.query("DROP TABLE IF EXISTS bq_nested_drop")
+    node.query(
+        "CREATE TABLE bq_nested_drop "
+        "(i Int64, parent Tuple(child Tuple(x Int64))) "
+        f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_nested_rec', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    assert (
+        node.query("SELECT i, parent FROM bq_nested_drop ORDER BY i FORMAT TSV")
+        == "1\t((5))\n2\t((0))\n"
+    )
+    node.query("DROP TABLE bq_nested_drop")
+
+
 def test_count_and_paging():
     mock_reset()
     assert node.query(f"SELECT count(), sum(i) FROM {bq('test_paging')}") == "10\t45\n"

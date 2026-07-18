@@ -185,6 +185,33 @@ ARR_NULLS_ROWS = [
     row("1", [v("1"), v(None), v("2")], [v("a"), v(None)]),
 ]
 
+# Nested RECORDs with different nullability at the outer and inner levels: the outer record is
+# NULLABLE (inferred as Nullable(Tuple(...))) and the inner record is REQUIRED (inferred as a plain
+# Tuple(...)). This guards the schema-compatibility check against accepting a declaration that moves
+# the Nullable to the inner record - Tuple(child Nullable(Tuple(x Int64))) - which encodes different
+# NULL states than the inferred Nullable(Tuple(child Tuple(x Int64))).
+NESTED_REC_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f(
+        "parent",
+        "RECORD",
+        "NULLABLE",
+        fields=[
+            f(
+                "child",
+                "RECORD",
+                "REQUIRED",
+                fields=[f("x", "INTEGER", "REQUIRED")],
+            ),
+        ],
+    ),
+]
+
+NESTED_REC_ROWS = [
+    row("1", {"f": [v({"f": [v("5")]})]}),
+    row("2", None),
+]
+
 # A RANGE column is exposed as a read-only String; tabledata.list serves it as the formatted range text.
 RANGE_SCHEMA = [
     f("i", "INTEGER", "REQUIRED"),
@@ -240,6 +267,11 @@ def reset_tables():
             "type": "TABLE",
             "schema": ARR_NULLS_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in ARR_NULLS_ROWS],
+        },
+        "test_nested_rec": {
+            "type": "TABLE",
+            "schema": NESTED_REC_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in NESTED_REC_ROWS],
         },
         "test_range": {
             "type": "TABLE",
