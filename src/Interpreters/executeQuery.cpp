@@ -1239,8 +1239,15 @@ AccessFlags requiredAccessForTableQuery(const IAST & ast)
     /// extra source/destination tables (`from_*`/`to_*`) are folded into the collection in `collectTablesInQuery`.
     if (ast.as<ASTAlterQuery>())
         return AccessFlags::allFlagsGrantableOnTableLevel();
+    /// `InterpreterUpdateQuery::execute` governs the `UPDATE ... SET _row_exists = 0` lightweight-delete form by
+    /// `ALTER_DELETE` (and by `ALTER_DELETE | ALTER_UPDATE` when it also assigns other columns) on
+    /// MergeTree-family tables, where `_row_exists` is the hidden virtual marker. Whether that shortcut applies
+    /// depends on execution-time details (the resolved storage's virtual columns), which are not available here,
+    /// so requiring only `ALTER_UPDATE` would under-approximate and let a user who has `ALTER_UPDATE` but not
+    /// `ALTER_DELETE` get a real `DETACH`/`ATTACH` before the outer `UPDATE` fails with `ACCESS_DENIED`.
+    /// Over-approximate with all table-level flags, exactly as for `ALTER` above.
     if (ast.as<ASTUpdateQuery>())
-        return AccessType::ALTER_UPDATE;
+        return AccessFlags::allFlagsGrantableOnTableLevel();
     if (ast.as<ASTDeleteQuery>())
         return AccessType::ALTER_DELETE;
     if (ast.as<ASTWatchQuery>())

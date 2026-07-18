@@ -319,3 +319,36 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_alter_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_alter_src"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ALTER_USER}"
+
+# The required access can also depend on execution-time details of the same statement. `InterpreterUpdateQuery`
+# governs the lightweight-delete form `UPDATE ... SET _row_exists = 0` (where `_row_exists` is the MergeTree
+# virtual marker) by `ALTER_DELETE`, not `ALTER_UPDATE`. A user granted `ALTER_UPDATE` plus the internal
+# `DETACH`/`ATTACH` grants but not `ALTER_DELETE` must fail with `ACCESS_DENIED` without the table being
+# detached — so the preflight over-requires all table-level flags for `UPDATE`, matching `ALTER`.
+UPDATE_USER="user_reattach_update_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${UPDATE_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${UPDATE_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${UPDATE_USER}"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_update"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_update (a UInt64) ENGINE = MergeTree ORDER BY a"
+# Everything except `ALTER DELETE`: the detach/attach grants, plus `ALTER UPDATE` so the query would pass a
+# preflight that only checked `ALTER_UPDATE`.
+${CLICKHOUSE_CLIENT} -q "GRANT DROP TABLE, CREATE TABLE, ALTER UPDATE ON ${CLICKHOUSE_DATABASE}.t_reattach_update TO ${UPDATE_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${UPDATE_USER}" \
+    --reattach_tables_before_query_execution=1 --enable_lightweight_update=1 \
+    --query "UPDATE t_reattach_update SET _row_exists = 0 WHERE a = 1" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_update"; then
+    echo "FAIL (table detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_update"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${UPDATE_USER}"
