@@ -126,6 +126,54 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return parseOptions(pos, copy_element, expected);
 }
 
+namespace
+{
+
+/// Set the output format from a `COPY` option value. PostgreSQL keywords are case-insensitive, so match
+/// against a normalized (lower-cased) spelling. `binary` is parsed but not supported: PostgreSQL binary
+/// `COPY` has its own wire format and is rejected in the handler (see `PostgreSQLHandler::processCopyQuery`);
+/// parsing it here yields a clear error there instead of the query silently falling through to the regular
+/// query path.
+void setCopyFormat(boost::intrusive_ptr<ASTCopyQuery> node, const String & raw_format)
+{
+    String format_name = raw_format;
+    std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](unsigned char c){ return std::tolower(c); });
+    if (format_name == "csv")
+        node->format = ASTCopyQuery::Formats::CSV;
+    else if (format_name == "tsv" || format_name == "text")
+        node->format = ASTCopyQuery::Formats::TSV;
+    else if (format_name == "binary")
+        node->format = ASTCopyQuery::Formats::Binary;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format in PostgreSQL COPY command: {}", raw_format);
+}
+
+/// Parse a single `COPY` option. The only option we honour is the output format, spelled either as the
+/// explicit `FORMAT <name>` (both PostgreSQL's `WITH (FORMAT csv)` and our own `WITH FORMAT csv`) or, in
+/// the legacy grammar, as a bare keyword (`CSV`, `TEXT`, `BINARY`). Any other option (`HEADER`, `DELIMITER`,
+/// ...) is rejected rather than silently ignored, which would otherwise run the command with the wrong
+/// (default `TSV`) format.
+void parseCopyOption(IParser::Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
+{
+    ParserKeyword s_format(Keyword::FORMAT);
+    ParserIdentifier s_identifier;
+    ASTPtr name;
+
+    if (s_format.ignore(pos, expected))
+    {
+        if (!s_identifier.parse(pos, name, expected))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a format name after FORMAT in the PostgreSQL COPY command");
+        setCopyFormat(node, name->as<ASTIdentifier>()->full_name);
+        return;
+    }
+
+    if (!s_identifier.parse(pos, name, expected))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an option in the PostgreSQL COPY command");
+    setCopyFormat(node, name->as<ASTIdentifier>()->full_name);
+}
+
+}
+
 bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
 {
     ParserIdentifier s_output_identifier;
@@ -133,36 +181,44 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     if (!s_output_identifier.parse(pos, output_name, expected))
         return false;
 
-    ParserKeyword s_with(Keyword::WITH);
-    ParserKeyword s_format(Keyword::FORMAT);
+    /// No options at all: PostgreSQL defaults to the text format, which we map to TSV. This is also the
+    /// shape that libpq/pqxx use to read a result set (`COPY (query) TO STDOUT`).
+    if (pos->isEnd())
+        return true;
 
+    /// An optional leading WITH is shared by both the modern parenthesized option list
+    /// (`WITH (FORMAT csv, ...)`) and the legacy space-separated options (`WITH CSV`, `WITH BINARY`).
+    ParserKeyword s_with(Keyword::WITH);
     s_with.ignore(pos, expected);
 
-    if (s_format.ignore(pos, expected))
-    {
-        ParserIdentifier s_format_identifier;
-        ASTPtr format;
-        if (!s_format_identifier.parse(pos, format, expected))
-            return false;
+    ParserToken open_bracket(TokenType::OpeningRoundBracket);
+    ParserToken close_bracket(TokenType::ClosingRoundBracket);
+    ParserToken comma(TokenType::Comma);
 
-        /// PostgreSQL keywords are case-insensitive, so match against a normalized (lower-cased) spelling.
-        String format_name = format->as<ASTIdentifier>()->full_name;
-        std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](unsigned char c){ return std::tolower(c); });
-        if (format_name == "csv")
-            node->format = ASTCopyQuery::Formats::CSV;
-        else if (format_name == "tsv" || format_name == "text")
-            node->format = ASTCopyQuery::Formats::TSV;
-        else if (format_name == "binary")
-            /// Parsed but not supported: PostgreSQL binary `COPY` has its own wire format, rejected in the
-            /// handler (see `PostgreSQLHandler::processCopyQuery`). Parsing it here yields a clear error
-            /// there instead of the query silently falling through to the regular query path.
-            node->format = ASTCopyQuery::Formats::Binary;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format in PostgreSQL COPY command: {}", format->as<ASTIdentifier>()->full_name);
+    if (open_bracket.ignore(pos, expected))
+    {
+        /// Modern PostgreSQL syntax: `[WITH] (option [, option ...])`.
+        bool first = true;
+        while (!close_bracket.ignore(pos, expected))
+        {
+            if (!first && !comma.ignore(pos, expected))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ',' or ')' in the PostgreSQL COPY options list");
+            first = false;
+            parseCopyOption(pos, node, expected);
+        }
+    }
+    else
+    {
+        /// Legacy PostgreSQL syntax: `[WITH] option ...` (e.g. `WITH CSV`, `BINARY`, `FORMAT csv`).
+        do
+            parseCopyOption(pos, node, expected);
+        while (!pos->isEnd());
     }
 
-    while (!pos->isEnd())
-        ++pos;
+    /// Reject anything we did not consume instead of silently ignoring it (which used to drop the requested
+    /// format and fall back to TSV).
+    if (!pos->isEnd())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected trailing tokens in the PostgreSQL COPY command");
 
     return true;
 }
