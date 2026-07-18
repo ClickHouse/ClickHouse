@@ -241,6 +241,13 @@ private:
                             if (identifier->compound())
                                 continue;
 
+                            /// There is a temporary/external table with such name, should not be rewritten:
+                            /// `Context::resolveStorageID` looks up temporary/external tables before the
+                            /// current database, so qualifying would shadow the session-local `Join` table
+                            /// (same exemption as `visit(ASTIdentifier)` below).
+                            if (external_tables.contains(identifier->shortName()))
+                                continue;
+
                             child->children[i] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
@@ -251,6 +258,9 @@ private:
                                 continue;
 
                             auto qualified_table_name = QualifiedTableName::parseFromString(literal_value.safeGet<String>());
+                            /// There is a temporary/external table with such name, should not be rewritten (see above).
+                            if (qualified_table_name.database.empty() && external_tables.contains(qualified_table_name.table))
+                                continue;
                             if (qualified_table_name.database.empty())
                                 qualified_table_name.database = database_name;
                             literal_value = qualified_table_name.getFullName();
