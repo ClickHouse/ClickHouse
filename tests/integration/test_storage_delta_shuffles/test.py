@@ -299,8 +299,12 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     # (OSS) build and fails outright rather than silently falling back to a
     # single local stage. Pin that today's behaviour is a clean error, not a
     # silent no-op, so implementing distributed `DeltaLake` reads in OSS is a
-    # deliberate, visible change to this test.
-    with pytest.raises(QueryRuntimeException, match="is not serializable for remote execution"):
+    # deliberate, visible change to this test. Which gate fires first depends
+    # on the plan shape, so match the failure class, not one message.
+    with pytest.raises(
+        QueryRuntimeException,
+        match="is not serializable for remote execution|make_distributed_plan",
+    ):
         instance.query(
             f"SELECT count() FROM {TABLE_NAME}",
             settings={
