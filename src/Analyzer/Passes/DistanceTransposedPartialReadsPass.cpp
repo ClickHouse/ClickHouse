@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -217,7 +218,14 @@ public:
             auto cast_function_builder = FunctionFactory::instance().get("_CAST", getContext());
             cast_function->resolveAsFunction(cast_function_builder->build(cast_function->getArgumentColumns()));
 
-            new_args.push_back(cast_function);
+            /// If the reference vector is a constant (a literal or a `WITH`-bound constant), fold the `_CAST` here,
+            /// exactly as `resolveFunction` would. Otherwise the initiator keeps a live `_CAST(<constant>, <type>)`
+            /// named after its source expression, while a remote replica receives the constant serialized as a
+            /// plain literal (`FunctionNode::toASTImpl` drops the source expression for `_CAST`), folds it, and
+            /// names it by value -- so the initiator cannot find the column in blocks received from the replica
+            /// (NOT_FOUND_COLUMN_IN_BLOCK, issue #110719). A non-constant reference (e.g. `__getScalar(...)` from a
+            /// scalar subquery) is not folded and is handled by `ConstantNode::receivedFromInitiatorServer`.
+            new_args.push_back(foldConstantCast(cast_function));
         }
 
         /// Re-resolve function with new arguments
