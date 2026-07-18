@@ -455,6 +455,16 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         ProfileEvents::increment(ProfileEvents::MutationsReusedPrecomputedParts);
 
         storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
+
+        /// Release the preserved temporary-part guard here, mirroring the `mutate_task.reset()` on
+        /// the recompute path below. If `checkPartChecksumsAndCommit` fails with a checksum mismatch,
+        /// `finalize()` returns `false` and `ReplicatedMergeMutateTaskBase::executeImpl` falls back to
+        /// fetching the part from another replica. That fetch may use `cloneAndLoadDataPart` with the
+        /// same "tmp_clone_" prefix, which would try to register the same temporary part name in
+        /// `TemporaryParts` — causing a `LOGICAL_ERROR` if this guard is still alive. Dropping it here
+        /// (before the commit, and therefore before any fallback fetch can start) keeps the reuse path
+        /// consistent with the recompute path.
+        reused_temporary_directory_lock.reset();
     }
     else
     {
