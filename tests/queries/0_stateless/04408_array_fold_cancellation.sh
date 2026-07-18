@@ -10,11 +10,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # in-function check this PR adds, such a fold ignores max_execution_time (the original report saw a fold
 # run for 2709s after cancellation). The check stops it within max_execution_time instead.
 #
-# The signal is latency: WITH the fix every query below stops in ~1s; WITHOUT it the fold runs for tens of
+# The signal is latency: WITH the fix every query below stops in ~1s; WITHOUT it the fold runs for many
 # seconds (a result-growing arrayPushFront is O(N^2)), the `timeout` wrapper kills the client, and the
-# output differs from the reference. range(120000) over numbers(4) keeps the whole fold in one block while
-# holding only four growing accumulators, so the run stays well under 30 MiB (a single huge array would
-# scatter into N shards and use multiple GiB, which is too heavy for the parallel flaky check).
+# output differs from the reference. range(60000) over numbers(4) keeps the whole fold in one block while
+# holding only four growing accumulators (peak < 20 MiB, parallel-safe).
+#
+# Keep the array short. The per-element setup before the fold's first cancellation check is
+# uninterruptible; a longer array makes that setup rival max_execution_time, so under sanitizers the query
+# can be killed by the outer `timeout` before the in-function check fires. A short array reaches the
+# interruptible fold quickly while the O(N^2) work still runs far longer than the 1s limit.
 FOLD="arrayFold((acc, x) -> arrayPushFront(acc, x), arr, emptyArrayUInt64())"
 
 run() {
@@ -37,11 +41,11 @@ run() {
 }
 
 # A materialized array forces the runtime (non-const) path.
-run throw "range(materialize(toUInt64(120000)))" "runtime"
-run break "range(materialize(toUInt64(120000)))" "runtime"
+run throw "range(materialize(toUInt64(60000)))" "runtime"
+run break "range(materialize(toUInt64(60000)))" "runtime"
 
 # A constant array argument. arrayFold is not subject to constant folding (it stays a runtime function
 # node regardless of input size), so break does not diverge between analysis and execution: it is the same
 # clean stop as the materialized path, not a surfaced error.
-run throw "range(120000)" "const"
-run break "range(120000)" "const"
+run throw "range(60000)" "const"
+run break "range(60000)" "const"
