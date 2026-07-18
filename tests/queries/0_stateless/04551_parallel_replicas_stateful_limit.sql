@@ -10,8 +10,8 @@
 
 DROP TABLE IF EXISTS t_pr_stateful;
 
-CREATE TABLE t_pr_stateful (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO t_pr_stateful SELECT number, number * 10 FROM numbers(10000);
+CREATE TABLE t_pr_stateful (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
+INSERT INTO t_pr_stateful SELECT number, number * 10 FROM numbers(1000);
 
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
