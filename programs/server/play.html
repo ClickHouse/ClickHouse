@@ -2362,6 +2362,14 @@ class QueryResultElement extends HTMLElement
             if (!e.target.closest('td') || e.target.closest('.row-number')) this.clearSelection();
         });
 
+        /// Dismiss the floating image preview when a result surface inside this shadow tree
+        /// scrolls (see `attachImagePreview`). An expanded `.td-selected .cell-content` is
+        /// scrollable (max-height + overflow-y:auto), so a long image URL can scroll out from
+        /// under a stationary cursor without firing `mouseleave`. Its `scroll` event does not
+        /// compose out of the shadow root, so the global `document` scroll handler never sees
+        /// it; catch it here in the capture phase (scroll events do not bubble).
+        this.shadowRoot.addEventListener('scroll', () => hideImagePreview(), true);
+
         new ResizeObserver(() => this._resizeChart()).observe(this._chart);
     }
 
