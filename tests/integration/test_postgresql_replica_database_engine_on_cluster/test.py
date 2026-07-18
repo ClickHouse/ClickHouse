@@ -137,6 +137,82 @@ def test_on_cluster_unique_replication_consumer(started_cluster):
     assert 0 == count_publications()
 
 
+def test_on_cluster_table_engine_unique_replication_consumer(started_cluster):
+    # The same collision as test_on_cluster_unique_replication_consumer, but for the standalone
+    # `MaterializedPostgreSQL` TABLE engine instead of the database engine. The table engine has its own
+    # DDL/UUID plumbing, but derives its replication slot and publication names from the ClickHouse table
+    # UUID through the same shared `PostgreSQLReplicationHandler`. A `CREATE TABLE ... ON CLUSTER` assigns
+    # the same UUID to the table on every replica, so before the fix all replicas derived the same slot and
+    # publication names and fought over a single PostgreSQL slot/publication (the table-engine mirror of
+    # https://github.com/ClickHouse/ClickHouse/issues/58726) - and because the table engine runs the initial
+    # sync synchronously during `CREATE`, all but one replica's `CREATE` would fail outright. With
+    # `materialized_postgresql_use_unique_replication_consumer_identifier`, the per-server `ServerUUID` is
+    # mixed in, so each replica gets its own slot and publication and creates its table independently.
+    table = "test_table_engine_on_cluster"
+    pg_manager.create_postgres_table(table)
+    node1.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 50)"
+    )
+
+    slots_before = count_replication_slots()
+    publications_before = count_publications()
+
+    node1.query(
+        f"""
+        CREATE TABLE default.{table} (key Int32, value Int32)
+        ON CLUSTER test_cluster
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """
+    )
+
+    # `ON CLUSTER` really did assign one shared table UUID on both replicas - the collision precondition
+    # that the fix has to make survivable.
+    uuid1 = node1.query(
+        f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table}'"
+    ).strip()
+    uuid2 = node2.query(
+        f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table}'"
+    ).strip()
+    assert uuid1 == uuid2 and uuid1 != "00000000-0000-0000-0000-000000000000"
+
+    # Both replicas must catch up independently.
+    check_tables_are_synchronized(node1, table, materialized_database="default")
+    check_tables_are_synchronized(node2, table, materialized_database="default")
+    assert 50 == int(node1.query(f"SELECT count() FROM default.{table}"))
+    assert 50 == int(node2.query(f"SELECT count() FROM default.{table}"))
+
+    # Each replica owns its own replication slot and publication.
+    assert slots_before + 2 == count_replication_slots()
+    assert publications_before + 2 == count_publications()
+
+    # New changes reach both replicas.
+    node1.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(1000, 1000)"
+    )
+    check_tables_are_synchronized(node1, table, materialized_database="default")
+    check_tables_are_synchronized(node2, table, materialized_database="default")
+    assert 1050 == int(node1.query(f"SELECT count() FROM default.{table}"))
+    assert 1050 == int(node2.query(f"SELECT count() FROM default.{table}"))
+
+    # Dropping the table on the cluster removes both per-replica slots and publications.
+    node1.query(f"DROP TABLE default.{table} ON CLUSTER test_cluster SYNC")
+    for _ in range(30):
+        if (
+            count_replication_slots() == slots_before
+            and count_publications() == publications_before
+        ):
+            break
+        time.sleep(1)
+    assert slots_before == count_replication_slots()
+    assert publications_before == count_publications()
+
+
 def test_on_cluster_user_managed_slot_rejected(started_cluster):
     # A user-managed replication slot (`materialized_postgresql_replication_slot`) has a single fixed name that
     # every `ON CLUSTER` replica shares, so it cannot be made unique per server. Combining it with
