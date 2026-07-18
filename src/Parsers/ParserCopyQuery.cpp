@@ -145,16 +145,20 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         if (!s_format_identifier.parse(pos, format, expected))
             return false;
 
+        /// PostgreSQL keywords are case-insensitive, so match against a normalized (lower-cased) spelling.
         String format_name = format->as<ASTIdentifier>()->full_name;
-        std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](char c){ return std::tolower(c); });
-        if (format->as<ASTIdentifier>()->full_name == "csv")
+        std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](unsigned char c){ return std::tolower(c); });
+        if (format_name == "csv")
             node->format = ASTCopyQuery::Formats::CSV;
-        else if (format->as<ASTIdentifier>()->full_name == "tsv")
-            node->format = ASTCopyQuery::Formats::CSV;
-        else if (format->as<ASTIdentifier>()->full_name == "binary")
+        else if (format_name == "tsv" || format_name == "text")
+            node->format = ASTCopyQuery::Formats::TSV;
+        else if (format_name == "binary")
+            /// Parsed but not supported: PostgreSQL binary `COPY` has its own wire format, rejected in the
+            /// handler (see `PostgreSQLHandler::processCopyQuery`). Parsing it here yields a clear error
+            /// there instead of the query silently falling through to the regular query path.
             node->format = ASTCopyQuery::Formats::Binary;
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format from postgresql copy command {}", format->as<ASTIdentifier>()->full_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format in PostgreSQL COPY command: {}", format->as<ASTIdentifier>()->full_name);
     }
 
     while (!pos->isEnd())

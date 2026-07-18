@@ -446,6 +446,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     }
 
 
+    /// PostgreSQL binary `COPY` uses its own wire format (a `PGCOPY\n\377\r\n\0` header, per-tuple field
+    /// counts and per-field length framing). We do not implement it, and `CopyInResponse` / `CopyOutResponse`
+    /// always advertise the text format code, so emitting ClickHouse's `RowBinary` for `WITH FORMAT binary`
+    /// would hand a real PostgreSQL client a payload it cannot parse. Reject it explicitly instead - the text
+    /// and CSV formats cover the self-connect use case (ClickHouse reads the result with `pqxx`, which uses
+    /// text `COPY`). This throws before any COPY response is sent, so the client gets a clean error.
+    if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->format == ASTCopyQuery::Formats::Binary)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL binary COPY format is not supported; use the text or CSV format");
+
     /* The Postgres protocol for a copy query is different from simple queries such as SELECT.
      * In the case of a COPY FROM request, the server sends CopyInResponse - a sign of readiness to receive data from the client.
      * The client then sends CopyInData until all data has been sent.
@@ -561,23 +570,20 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
 
-        /// In the text COPY formats, `Array(...)` columns must be streamed in PostgreSQL array-literal
-        /// form (`{...}`) rather than ClickHouse's `[...]`, because libpq/pqxx (and ClickHouse's own
-        /// `postgresql(...)` source, which reads the result back with `pqxx::array_parser`) expect the
-        /// PostgreSQL spelling. The text COPY output formats (TSV/CSV) have no notion of that, so array
-        /// columns are pre-rendered here into a `String` column holding the PostgreSQL literal; the header
-        /// used for the output format carries `String` for those columns accordingly. Elements use the
-        /// `t`/`f` boolean spelling like the rest of the PostgreSQL wire path. The binary COPY format is
-        /// left alone: it serializes the original `Array(...)` value in ClickHouse's `Binary` format, and
-        /// wrapping a PostgreSQL text literal into it would only corrupt the payload.
-        const bool render_arrays_as_text = copy_query->format != ASTCopyQuery::Formats::Binary;
+        /// `Array(...)` columns must be streamed in PostgreSQL array-literal form (`{...}`) rather than
+        /// ClickHouse's `[...]`, because libpq/pqxx (and ClickHouse's own `postgresql(...)` source, which
+        /// reads the result back with `pqxx::array_parser`) expect the PostgreSQL spelling. The text COPY
+        /// output formats (TSV/CSV) have no notion of that, so array columns are pre-rendered here into a
+        /// `String` column holding the PostgreSQL literal; the header used for the output format carries
+        /// `String` for those columns accordingly. Elements use the `t`/`f` boolean spelling like the rest
+        /// of the PostgreSQL wire path. (The binary format is rejected earlier, so this path is text-only.)
         const Block source_header = io.pipeline.getHeader();
         std::vector<UInt8> is_array_column(source_header.columns(), 0);
         Block output_header;
         for (size_t col = 0; col < source_header.columns(); ++col)
         {
             const auto & src = source_header.getByPosition(col);
-            if (render_arrays_as_text && isArray(src.type))
+            if (isArray(src.type))
             {
                 is_array_column[col] = 1;
                 auto str_type = std::make_shared<DataTypeString>();

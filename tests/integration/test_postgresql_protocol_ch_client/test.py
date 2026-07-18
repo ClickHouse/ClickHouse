@@ -182,19 +182,45 @@ def test_select_constant_array_over_wire(started_cluster):
         conn.close()
 
 
-def test_copy_to_stdout_binary_array(started_cluster):
-    # `COPY (query) TO STDOUT WITH FORMAT binary` streams rows in ClickHouse's `RowBinary` format. An
-    # array column must keep its binary serialization (varint length + elements) - the PostgreSQL
-    # array-literal pre-rendering applies only to the text COPY formats.
+def test_copy_to_stdout_binary_is_rejected(started_cluster):
+    # PostgreSQL binary `COPY` has its own wire format (a `PGCOPY` header and per-field length framing)
+    # that ClickHouse does not implement, and the wire path always advertises the text format code.
+    # `WITH FORMAT binary` must be rejected with a clear error rather than returning an incompatible
+    # payload. The check is case-insensitive, so the upper-case spelling is rejected too.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        with pytest.raises(py_psql.Error, match="binary COPY format is not supported"):
+            cur = conn.cursor()
+            out = io.BytesIO()
+            cur.copy_expert("COPY (SELECT [1, 2, 3] AS a, 7 AS n) TO STDOUT WITH FORMAT BINARY", out)
+    finally:
+        conn.close()
+
+
+def test_copy_to_stdout_format_is_case_insensitive(started_cluster):
+    # PostgreSQL keywords are case-insensitive, so the `COPY ... WITH FORMAT <name>` format name must be
+    # matched irrespective of case. `FORMAT TSV` must produce tab-separated output (not CSV): a previous
+    # bug compared the original spelling - so upper-case `FORMAT CSV` was rejected - and mapped `tsv` to
+    # the CSV format.
     conn = py_psql.connect(
         host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
     )
     try:
         cur = conn.cursor()
-        out = io.BytesIO()
-        cur.copy_expert("COPY (SELECT [1, 2, 3] AS a, 7 AS n) TO STDOUT WITH FORMAT binary", out)
-        # Array(UInt8) [1, 2, 3] -> varint length 3 + the elements; UInt8 7 -> one byte.
-        assert out.getvalue() == b"\x03\x01\x02\x03\x07"
+
+        out = io.StringIO()
+        cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH FORMAT CSV", out)
+        assert out.getvalue() == "1,2\n"
+
+        out = io.StringIO()
+        cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH FORMAT TSV", out)
+        assert out.getvalue() == "1\t2\n"
+
+        out = io.StringIO()
+        cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH FORMAT tsv", out)
+        assert out.getvalue() == "1\t2\n"
     finally:
         conn.close()
 
