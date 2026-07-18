@@ -56,28 +56,32 @@ TEST(ValidUntilAttachEncoding, PostEpochDeadlinesRoundTripExactly)
         EXPECT_EQ(roundTrip(deadline), deadline);
 }
 
-TEST(ValidUntilAttachEncoding, Pre1970DeadlinesRoundTripDownToYear1900)
+TEST(ValidUntilAttachEncoding, Pre1970DeadlinesAreStoredFailClosedAsExpired)
 {
+    /// A pre-1970 (negative) deadline cannot be stored in a form that every supported reader interprets
+    /// fail-closed: an older or downgraded server resolves a pre-1970 datetime to `0`, which is the
+    /// "no expiration" sentinel, turning an already-expired credential into a non-expiring one. Every
+    /// deadline in the past is equivalent (the credential is expired), so such a deadline is normalized
+    /// to the smallest expired instant (`1`) before serialization - the same way the `VALID FOR` path
+    /// clamps a pre-epoch deadline - and stored as a plain Unix timestamp that reads back as `1` (expired)
+    /// on every reader.
     const std::vector<time_t> deadlines =
     {
         -1,
         -12345,
         -2208988800, /// 1900-01-01 00:00:00 UTC
+        -62135596800, /// 0001-01-01 00:00:00 UTC
     };
     for (time_t deadline : deadlines)
-        EXPECT_EQ(roundTrip(deadline), deadline);
-
-    /// Deadlines before 1900 cannot be represented in a form that every supported reader of the
-    /// stored format parses. All deadlines in the past are equivalent (the credential is expired),
-    /// so they are clamped to the 1900 floor.
-    EXPECT_EQ(roundTrip(-62135596800 /* 0001-01-01 00:00:00 UTC */), -2208988800);
+        EXPECT_EQ(roundTrip(deadline), 1) << deadline;
 }
 
 TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
 {
-    /// A post-epoch deadline is stored as an all-digit Unix timestamp of at least 5 digits:
-    /// shorter numeric strings are rejected as ambiguous by `readDateTimeText`, which older
-    /// versions (and the current no-context reader) use for this form.
+    /// Every deadline is stored as an all-digit Unix timestamp of at least 5 digits: shorter numeric
+    /// strings are rejected as ambiguous by `readDateTimeText`, which older versions (and the current
+    /// no-context reader) use for this form. A Unix timestamp denotes the same instant regardless of the
+    /// time zone and is read the same way by every supported version, unlike a datetime string.
     for (time_t deadline : {static_cast<time_t>(1), static_cast<time_t>(9999), static_cast<time_t>(253402300799)})
     {
         const String stored = serializedValidUntil(deadline);
@@ -86,12 +90,12 @@ TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
     }
     EXPECT_EQ(serializedValidUntil(1), "0000000001");
 
-    /// A pre-1970 deadline is stored in the datetime form older versions have always written and
-    /// read themselves (a leading '-' would fail to parse there), with an explicit `UTC` suffix
-    /// that pins the instant for current versions.
-    EXPECT_EQ(serializedValidUntil(-1), "1969-12-31 23:59:59 UTC");
-    EXPECT_EQ(serializedValidUntil(-2208988800), "1900-01-01 00:00:00 UTC");
-    EXPECT_EQ(serializedValidUntil(-62135596800), "1900-01-01 00:00:00 UTC");
+    /// A pre-1970 (negative) deadline is normalized to the smallest expired instant (`1`) before
+    /// serialization, so it is stored as the same fail-closed all-digit timestamp - never as a datetime
+    /// string that an older reader would resolve to the `0` "no expiration" sentinel.
+    EXPECT_EQ(serializedValidUntil(-1), "0000000001");
+    EXPECT_EQ(serializedValidUntil(-2208988800), "0000000001");
+    EXPECT_EQ(serializedValidUntil(-62135596800), "0000000001");
 }
 
 TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
@@ -119,12 +123,14 @@ TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
         }
     }
 
-    /// The earliest representable deadline itself still loads, exactly.
+    /// The earliest accepted deadline (`MIN_VALID_UNTIL_TIME`) itself still loads: being pre-epoch, it is
+    /// normalized to the smallest expired instant (`1`), which is the fail-closed value stored for any
+    /// negative deadline (see `Pre1970DeadlinesAreStoredFailClosedAsExpired`).
     const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1900-01-01 00:00:00 UTC';");
     const auto * user = typeid_cast<const User *>(entity.get());
     ASSERT_NE(user, nullptr);
     ASSERT_EQ(user->authentication_methods.size(), 1u);
-    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), -2208988800);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1);
 }
 
 TEST(ValidUntilAttachEncoding, EpochZeroDeadlineIsNotConfusedWithNoExpiration)

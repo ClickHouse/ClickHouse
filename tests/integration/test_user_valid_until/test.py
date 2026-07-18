@@ -236,13 +236,23 @@ def test_valid_until_small_timestamp_restart(started_cluster):
 
 
 def test_valid_until_pre_epoch_deadline_restart(started_cluster):
-    # A pre-1970 deadline is a negative time_t and is stored on disk in the datetime form with an
-    # explicit UTC suffix: a raw negative Unix timestamp string would fail to parse on reload.
+    # A pre-1970 deadline is already in the past, so the credential is expired. It is normalized to the
+    # smallest expired instant (1, `1970-01-01 00:00:01`) and stored on disk as a plain Unix timestamp,
+    # not as a datetime string: an older or downgraded server resolves a pre-1970 datetime to 0 (the
+    # "no expiration" sentinel), which would turn the expired credential into a non-expiring one on
+    # reload. Normalizing to the smallest expired instant keeps it fail-closed on every reader and
+    # byte-identical across a restart.
     node.query("DROP USER IF EXISTS user_pre_epoch")
     node.query("CREATE USER user_pre_epoch VALID UNTIL '1900-01-01 00:00:00 UTC'")
 
     show_create = node.query("SHOW CREATE USER user_pre_epoch")
-    assert "VALID UNTIL \\'1900-01-01 00:00:00\\'" in show_create
+    assert "VALID UNTIL \\'1970-01-01 00:00:01\\'" in show_create
+    assert (
+        node.query(
+            "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'user_pre_epoch'"
+        )
+        == "1\n"
+    )
 
     node.restart_clickhouse()
 

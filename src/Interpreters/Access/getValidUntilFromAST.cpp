@@ -190,18 +190,27 @@ namespace DB
                 ErrorCodes::BAD_ARGUMENTS,
                 "VALID UNTIL deadline is too far in the future, the latest supported deadline is 9999-12-31 23:59:59 UTC");
 
-        /// A non-`infinity` deadline that parses to exactly the Unix epoch (`time == 0`) collides with the
-        /// sentinel value `0`, which means "no expiration": `AuthenticationData::toAST` serializes the
-        /// deadline only when it is non-zero, and the authentication check skips the expiration test when
-        /// `valid_until` is `0` (see `IAccessStorage::areCredentialsValid`). Only the literal `infinity`
-        /// (handled above) is meant to disable expiration; `VALID UNTIL '1970-01-01 00:00:00'` is a real
-        /// deadline in the past, so it is normalized to the smallest expired instant, `1970-01-01 00:00:01`,
-        /// the same way the `VALID FOR` path clamps a pre-epoch deadline. A deadline strictly before the
-        /// epoch is negative, stays as is (stored in datetime form), and remains distinct from `0`. This
-        /// also covers a hand-edited `ATTACH USER ... VALID UNTIL '0'` (or `'0000000000'`), which the
-        /// numeric branch above reads as `0`: it becomes an already-expired credential rather than a
-        /// non-expiring one.
-        if (time == 0)
+        /// Every deadline in the past means the same thing - the credential is already expired - so any
+        /// pre-epoch deadline (`time <= 0`) is normalized to the smallest expired instant,
+        /// `1970-01-01 00:00:01`, the same way the `VALID FOR` path clamps a pre-epoch deadline. This is
+        /// required for correctness, not just for canonicalization:
+        ///   - `time == 0` collides with the sentinel value `0`, which means "no expiration":
+        ///     `AuthenticationData::toAST` serializes the deadline only when it is non-zero, and the
+        ///     authentication check skips the expiration test when `valid_until` is `0` (see
+        ///     `IAccessStorage::areCredentialsValid`). Only the literal `infinity` (handled above) is meant
+        ///     to disable expiration; `VALID UNTIL '1970-01-01 00:00:00'` is a real, already-expired deadline.
+        ///   - A negative (pre-1970) deadline cannot be stored in a form that every reader interprets
+        ///     fail-closed: serializing it as a `YYYY-MM-DD hh:mm:ss UTC` string lets an older or downgraded
+        ///     server - which stops before the `UTC` suffix and resolves a pre-1970 datetime to `0` - read it
+        ///     back as the "no expiration" sentinel, turning an expired credential into a non-expiring one.
+        ///     Normalizing to `1` here (and serializing it as a plain Unix timestamp, see
+        ///     `AuthenticationData::toAST`) keeps the credential expired on every reader.
+        /// Normalizing at query time (rather than only before serialization) also keeps `SHOW CREATE USER`
+        /// stable across a restart or replication round-trip, instead of showing the originally specified
+        /// deadline until the entity is reloaded and the normalized one afterwards.
+        /// This also covers a hand-edited `ATTACH USER ... VALID UNTIL '0'` (or `'0000000000'`), which the
+        /// numeric branch above reads as `0`.
+        if (time <= 0)
             return 1;
 
         return time;
