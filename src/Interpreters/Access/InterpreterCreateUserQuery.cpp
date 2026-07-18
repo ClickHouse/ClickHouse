@@ -107,11 +107,31 @@ namespace
 
         bool has_no_password_authentication_method = false;
 
-        for (auto & authentication_method : user.authentication_methods)
+        /// The methods added in this statement were just appended at the end of the list, so the first
+        /// `num_pre_existing_methods` entries are the methods the user already had before this statement.
+        chassert(user.authentication_methods.size() >= authentication_methods.size());
+        const size_t num_pre_existing_methods = user.authentication_methods.size() - authentication_methods.size();
+
+        for (size_t i = 0; i < user.authentication_methods.size(); ++i)
         {
+            auto & authentication_method = user.authentication_methods[i];
+
             if (global_valid_until)
             {
-                authentication_method.setValidUntil(*global_valid_until);
+                /// A user-level `VALID UNTIL` / `VALID FOR` clause applies to every authentication method,
+                /// except a method added in the same statement that carries its own explicit clause - its
+                /// more specific deadline must be preserved. Pre-existing methods (e.g. the ones already on
+                /// the user during `ALTER USER ... VALID FOR ... ADD IDENTIFIED ...`) always take the
+                /// user-level deadline.
+                bool method_has_explicit_valid_until = false;
+                if (i >= num_pre_existing_methods)
+                {
+                    const auto & method_ast = query.authentication_methods[i - num_pre_existing_methods];
+                    method_has_explicit_valid_until = method_ast->valid_until != nullptr;
+                }
+
+                if (!method_has_explicit_valid_until)
+                    authentication_method.setValidUntil(*global_valid_until);
             }
 
             if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
