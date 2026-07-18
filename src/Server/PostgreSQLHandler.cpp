@@ -1460,8 +1460,8 @@ SELECT
     /// neither unsigned nor >64-bit integers, so the integer types that do not fit into a signed 64-bit
     /// `bigint` (`UInt64` and the 128/256-bit types) are advertised as `numeric` and carry a precision in
     /// `atttypmod` (see below) large enough to hold every value; the counterpart mapping in
-    /// `convertPostgreSQLDataType` turns such a `numeric(p, 0)` back into a Decimal (or `Int256`) that
-    /// preserves the range. Only `UInt32`/`Int64`, which fit into `bigint`, keep OID 20.
+    /// `convertPostgreSQLDataType` turns such a `numeric(p, 0)` back into a Decimal (or `Int256`/`UInt256`)
+    /// that preserves the range. Only `UInt32`/`Int64`, which fit into `bigint`, keep OID 20.
     multiIf(cols.ndims > 0,
                 multiIf(cols.base IN ('Bool', 'Boolean'), 1000,
                         cols.base IN ('Int8', 'UInt8', 'Int16'), 1005,
@@ -1497,13 +1497,17 @@ SELECT
     /// `((precision << 16) | scale) + 4` - so that `format_type` renders `numeric(p, s)` and schema
     /// inference recovers the exact type. For an array column the modifier applies to the element type, as in
     /// PostgreSQL. `Decimal` uses its own precision/scale; the wide integer types use a scale of 0 and a
-    /// precision that spans their whole value range. Everything else uses -1 ("no modifier").
+    /// precision that spans their whole value range. `Int256` needs 77 decimal digits and `UInt256` needs
+    /// 78, so they carry distinct precisions: this is what lets `convertPostgreSQLDataType` recover a
+    /// self-connected `UInt256` (values above the `Int256` maximum) losslessly instead of collapsing both
+    /// to `Int256`. Everything else uses -1 ("no modifier").
     multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256')
                 AND cols.decimal_precision IS NOT NULL AND cols.decimal_scale IS NOT NULL,
                 toInt32(assumeNotNull(cols.decimal_precision) * 65536 + assumeNotNull(cols.decimal_scale) + 4),
             cols.base = 'UInt64', toInt32(20 * 65536 + 4),
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
-            cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
+            cols.base = 'Int256', toInt32(77 * 65536 + 4),
+            cols.base = 'UInt256', toInt32(78 * 65536 + 4),
             -1) AS atttypmod,
     /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
     /// materializes can be NULL: a `Nullable`/`LowCardinality(Nullable(...))` scalar, or an array whose

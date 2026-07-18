@@ -89,6 +89,19 @@ try
             assert_cast<ColumnInt256 &>(column).insertValue(v);
             break;
         }
+        case ExternalResultDescription::ValueType::vtUInt256:
+        {
+            /// Used for PostgreSQL `numeric(78, 0)`, which the self-connect catalog uses for a `UInt256`
+            /// column (its range needs 78 decimal digits, one more than `Int256`).
+            UInt256 v = parse<UInt256>(value.data(), value.size());
+            /// Wide-integer text parsing does not detect overflow (and does not reject a leading minus),
+            /// so verify by round-tripping the parsed value back to text to avoid silently storing a
+            /// wrapped-around value.
+            if (toString(v) != value)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of UInt256", String(value));
+            assert_cast<ColumnUInt256 &>(column).insertValue(v);
+            break;
+        }
         case ExternalResultDescription::ValueType::vtFloat32:
             assert_cast<ColumnFloat32 &>(column).insertValue(pqxx::from_string<float>(value));
             break;

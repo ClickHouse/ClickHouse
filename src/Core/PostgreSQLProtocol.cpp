@@ -53,7 +53,9 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
         /// PostgreSQL has neither unsigned integers nor integers wider than a signed 64-bit `bigint`, so the
         /// integer types that do not fit into `bigint` are advertised as `numeric` with a scale of 0 and a
         /// precision large enough to hold every value. The counterpart mapping in `convertPostgreSQLDataType`
-        /// turns such a `numeric(p, 0)` back into a Decimal (or `Int256`) that preserves the range. This
+        /// turns such a `numeric(p, 0)` back into a Decimal (or `Int256`/`UInt256`) that preserves the range.
+        /// `Int256` needs 77 decimal digits and `UInt256` needs 78, so they carry distinct precisions; that
+        /// is what lets the recovery restore `UInt256` (values above the `Int256` maximum) losslessly. This
         /// mirrors the table-name path in the `pg_attribute` emulation (see PostgreSQLHandler).
         case TypeIndex::UInt64:
             return {ColumnType::NUMERIC, -1, encodeNumericTypeModifier(20, 0)};
@@ -61,6 +63,7 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
         case TypeIndex::UInt128:
             return {ColumnType::NUMERIC, -1, encodeNumericTypeModifier(39, 0)};
         case TypeIndex::Int256:
+            return {ColumnType::NUMERIC, -1, encodeNumericTypeModifier(77, 0)};
         case TypeIndex::UInt256:
             return {ColumnType::NUMERIC, -1, encodeNumericTypeModifier(78, 0)};
 

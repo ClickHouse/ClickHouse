@@ -107,6 +107,29 @@ def test_wide_and_decimal_type_roundtrip(started_cluster):
     )
 
 
+def test_uint256_max_roundtrip(started_cluster):
+    # UInt256 needs 78 decimal digits, one more than Int256 (77). Both are advertised as `numeric`, so the
+    # catalog carries distinct precisions - numeric(77, 0) for Int256, numeric(78, 0) for UInt256 - and the
+    # counterpart recovery in `convertPostgreSQLDataType` restores UInt256 for a precision of 78. Without
+    # that distinction a UInt256 value above the Int256 maximum was recovered as Int256 and rejected. The
+    # value below is the UInt256 maximum.
+    node.query("DROP TABLE IF EXISTS test_u256 SYNC")
+    node.query("CREATE TABLE test_u256 (x UInt256) ENGINE = MergeTree ORDER BY x")
+    node.query(
+        "INSERT INTO test_u256 VALUES "
+        "(115792089237316195423570985008687907853269984665640564039457584007913129639935)"
+    )
+
+    assert node.query(f"SELECT x FROM {pg_source('default', 'test_u256')}") == (
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935\n"
+    )
+
+    # The recovered column type is UInt256, not Int256 (which cannot hold this value).
+    assert (
+        node.query(f"SELECT toTypeName(x) FROM {pg_source('default', 'test_u256')}") == "UInt256\n"
+    )
+
+
 def test_array_type_roundtrip(started_cluster):
     # `postgresql(..., 'arr_table')` against a ClickHouse table with array columns must infer the array
     # element types and dimensions (not fall back to String) and read the values back. The emulated

@@ -22,6 +22,7 @@ struct ExternalResultDescription
         vtInt32,
         vtInt64,
         vtInt256,
+        vtUInt256,
         vtFloat32,
         vtFloat64,
         vtEnum8,
