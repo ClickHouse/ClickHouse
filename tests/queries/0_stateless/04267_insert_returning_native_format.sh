@@ -22,6 +22,10 @@ twice=$(echo "$once" | ${CLICKHOUSE_FORMAT})
 
 echo -e '2\tbar' | $CLICKHOUSE_CLIENT --async_insert=0 --query "$query_with_input"
 
+echo "source settings restored before delayed returning"
+query_with_input_source_settings="INSERT INTO t_insert_returning_native (id, name) SELECT id + toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x') * 100, name FROM input('id UInt64, name String') FORMAT TabSeparated RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset')) SETTINGS custom_insert_source = 'x'"
+echo -e '3\tbaz' | $CLICKHOUSE_CLIENT --async_insert=0 --query "$query_with_input_source_settings"
+
 $CLICKHOUSE_CLIENT --async_insert=0 --query "SELECT id, name FROM t_insert_returning_native ORDER BY id"
 
 $CLICKHOUSE_CLIENT --async_insert=0 --query "DROP TABLE t_insert_returning_native"

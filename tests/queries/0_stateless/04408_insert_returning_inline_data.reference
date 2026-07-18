@@ -1,7 +1,10 @@
 inline returning result
 1	foo
+inline format returning result
+3	baz
 inline returning planning error
 UNKNOWN_IDENTIFIER
 rows after failed returning
 1	foo
 2	bar
+3	baz

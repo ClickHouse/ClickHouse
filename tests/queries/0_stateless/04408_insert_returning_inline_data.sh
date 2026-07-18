@@ -18,6 +18,10 @@ $CLIENT --query "CREATE TABLE t_insert_returning_inline (id UInt64, name String)
 echo 'inline returning result'
 $CLIENT --query "INSERT INTO t_insert_returning_inline (id, name) RETURNING (SELECT id, name FROM t_insert_returning_inline WHERE id = 1 ORDER BY id) VALUES (1, 'foo')"
 
+# Explicit inline FORMAT payload over the same delayed-RETURNING path.
+echo 'inline format returning result'
+$CLIENT --query "INSERT INTO t_insert_returning_inline (id, name) RETURNING (SELECT id, name FROM t_insert_returning_inline WHERE id = 3 ORDER BY id) FORMAT Values (3, 'baz')"
+
 # A RETURNING planning exception (unknown column) must still leave the inserted row in place:
 # the INSERT runs first, then the subquery fails. Proves "insert first, then fail" for inlined data.
 echo 'inline returning planning error'
