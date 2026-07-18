@@ -154,9 +154,23 @@ void MergeTreeDeduplicationLog::loadSingleLog(
         MergeTreeDeduplicationLogRecord record;
         readRecord(record, *read_buf);
         records.push_back(std::move(record));
-        /// Kept in lockstep with `records` (pushed together even if a later read
-        /// throws) so every record can be attributed back to this log file.
-        record_log_numbers.push_back(log_number);
+        /// Kept in lockstep with `records` so `applyRecords`, which indexes the two
+        /// in parallel, can attribute every record back to this log file. The two
+        /// appends must be atomic: if this second one throws (e.g. std::bad_alloc
+        /// while loading a large log) after the first succeeded, the vectors would
+        /// go out of sync and `applyRecords` would read past the end of
+        /// `record_log_numbers`. `load` catches the exception and still replays what
+        /// was read, so undo the just-pushed record here to keep the sizes equal.
+        /// `pop_back` on a non-empty vector never throws.
+        try
+        {
+            record_log_numbers.push_back(log_number);
+        }
+        catch (...)
+        {
+            records.pop_back();
+            throw;
+        }
     }
 }
 
