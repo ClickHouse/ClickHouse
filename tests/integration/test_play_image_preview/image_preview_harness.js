@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 /// Executable regression harness for the Web UI image-preview hover gesture (`attachImagePreview`,
-/// `showImagePreview`, `hideImagePreview`, `setImagePreviewModifierHeld`).
+/// `showImagePreview`, `hideImagePreview`, `setImagePreviewModifierHeld`) and the URL-qualification
+/// gate that decides which result cells become previewable (`QueryResultElement._renderCell`).
 ///
 /// The preview fetches a URL taken from untrusted query results, so its contract is
 /// security-sensitive:
+///   * only URLs whose parsed `pathname` ends in an image extension may preview - a query string or
+///     fragment ending in `.png` (e.g. `https://host/restart#x.png`) or a non-`http`/`https` scheme
+///     must NOT, because the browser requests the non-image path;
 ///   * plain hover (no modifier) must NEVER assign `src`, i.e. must never issue an outbound request;
 ///   * only `Ctrl` (or `Cmd` on Mac) + hover may assign `src`;
-///   * `scroll`, `clear`, `blur` and modifier-release must tear the preview down - clear `src` and
-///     suppress a load that finishes after the preview was dismissed.
+///   * `scroll` (including a scroll INSIDE the `query-result` shadow tree), `clear`, `blur` and
+///     modifier-release must tear the preview down - clear `src` and suppress a load that finishes
+///     after the preview was dismissed.
+///
+/// So that the suite proves the production wiring rather than a re-statement of it, the security
+/// scenarios drive the real code paths: the gate cases run `QueryResultElement._renderCell` and the
+/// shadow-scroll case builds a real `query-result` shadow root and fires `scroll` from an inner
+/// scroller, exercising the capture-phase `this.shadowRoot` listener through actual event routing.
 ///
 /// The stateless suite has no JavaScript runtime, so the contract is driven by a Node.js harness
 /// executed inside the `clickhouse/mysql-js-client` container (node:22-alpine): it fetches `/play`
@@ -56,138 +66,204 @@ function makeClassList() {
     };
 }
 
-function makeElement(tag) {
+/// Fire the listeners registered on `node` for `ev.type` in a given DOM propagation phase:
+///   * 'capture' - only capturing listeners (registered with a truthy third argument);
+///   * 'bubble'  - only bubbling listeners;
+///   * 'target'  - both, plus the legacy `on<type>` handler (the element is AT_TARGET).
+/// This is what lets a capture-phase listener on an ancestor (e.g. the shadow root) see a `scroll`
+/// dispatched on a descendant, exactly as a browser routes it.
+function firePhaseListeners(node, ev, phase) {
+    const listeners = node.__listeners;
+    if (listeners) {
+        for (const entry of (listeners.get(ev.type) || []).slice()) {
+            if (phase === 'capture' && !entry.capture) continue;
+            if (phase === 'bubble' && entry.capture) continue;
+            try { Object.defineProperty(ev, 'currentTarget', { value: node, configurable: true }); } catch (e) { /* set */ }
+            entry.fn.call(node, ev);
+        }
+    }
+    if (phase !== 'capture') {
+        const handler = node['on' + ev.type];
+        if (typeof handler === 'function') {
+            try { Object.defineProperty(ev, 'currentTarget', { value: node, configurable: true }); } catch (e) { /* set */ }
+            handler.call(node, ev);
+        }
+    }
+}
+
+/// Install element behavior onto `el`. Used both for plain stub elements (`makeElement`) and as the
+/// body of the `HTMLElement` base class, so a real `QueryResultElement` can be constructed and its
+/// production methods (`_renderCell`, the constructor's shadow-root listeners) actually run.
+function installElementBehavior(el, tag) {
     const listeners = new Map();
     const attributes = new Map();
+    const byId = new Map();
     /// A real `<img>` reflects the `src` attribute in the `src` property and aborts the load when
     /// `src` is removed. Track every non-empty assignment (each is one outbound request) so a
     /// scenario can assert whether hovering fetched, and clear the property on `removeAttribute`.
     let src_value = '';
     const src_assignments = [];
-    const el = {
-        tagName: String(tag || 'div').toUpperCase(),
-        nodeType: 1,
-        id: '',
-        style: makeStyle(),
-        classList: makeClassList(),
-        dataset: {},
-        children: [],
-        childNodes: [],
-        parentNode: null,
-        parentElement: null,
-        firstChild: null,
-        lastChild: null,
-        value: '',
-        textContent: '',
-        innerHTML: '',
-        innerText: '',
-        title: '',
-        placeholder: '',
-        className: '',
-        name: '',
-        type: '',
-        href: '',
-        alt: '',
-        hidden: false,
-        /// An <img> that has not finished loading: keeps `showImagePreview` on the fetch-then-reveal
-        /// path rather than the already-loaded fast path until a scenario marks it complete.
-        complete: false,
-        naturalWidth: 0,
-        onload: null,
-        onerror: null,
-        /// The number of times `src` was assigned a non-empty URL, i.e. outbound requests issued.
-        src_assignments,
 
-        addEventListener(type, fn) {
-            if (!listeners.has(type)) listeners.set(type, []);
-            listeners.get(type).push(fn);
-        },
-        removeEventListener(type, fn) {
-            const l = listeners.get(type);
-            if (l) {
-                const i = l.indexOf(fn);
-                if (i !== -1) l.splice(i, 1);
-            }
-        },
-        dispatchEvent(ev) {
-            try {
-                Object.defineProperty(ev, 'target', { value: el, configurable: true });
-                Object.defineProperty(ev, 'currentTarget', { value: el, configurable: true });
-            } catch (e) { /* already defined */ }
-            for (const fn of (listeners.get(ev.type) || []).slice()) fn.call(el, ev);
-            const handler = el['on' + ev.type];
-            if (typeof handler === 'function') handler.call(el, ev);
-            return true;
-        },
-        appendChild(c) {
-            el.children.push(c);
-            el.childNodes.push(c);
-            c.parentNode = el;
-            c.parentElement = el;
-            el.firstChild = el.children[0];
-            el.lastChild = c;
-            return c;
-        },
-        removeChild(c) {
-            el.children = el.children.filter(x => x !== c);
-            el.childNodes = el.childNodes.filter(x => x !== c);
-            el.firstChild = el.children[0] || null;
-            el.lastChild = el.children[el.children.length - 1] || null;
-            return c;
-        },
-        insertBefore(c, ref) {
-            const i = el.children.indexOf(ref);
-            if (i === -1) return el.appendChild(c);
-            el.children.splice(i, 0, c);
-            el.childNodes.splice(i, 0, c);
-            c.parentNode = el;
-            c.parentElement = el;
-            el.firstChild = el.children[0];
-            return c;
-        },
-        replaceChildren(...cs) {
-            el.children = [...cs];
-            el.childNodes = [...cs];
-            for (const c of cs) { c.parentNode = el; c.parentElement = el; }
-            el.firstChild = el.children[0] || null;
-            el.lastChild = el.children[el.children.length - 1] || null;
-        },
-        remove() { if (el.parentNode) el.parentNode.removeChild(el); },
-        setAttribute(k, v) {
-            attributes.set(k, String(v));
-            if (k === 'id') el.id = String(v);
-            if (k === 'src') { src_value = String(v); if (src_value) src_assignments.push(src_value); }
-        },
-        getAttribute(k) { return attributes.has(k) ? attributes.get(k) : null; },
-        removeAttribute(k) {
-            attributes.delete(k);
-            /// Removing `src` aborts the in-flight load and empties the property, exactly as a
-            /// browser does; this is what `hideImagePreview` relies on to stop a background fetch.
-            if (k === 'src') { src_value = ''; }
-        },
-        hasAttribute(k) { return attributes.has(k); },
-        focus() {},
-        blur() {},
-        click() { el.dispatchEvent({ type: 'click' }); },
-        select() {},
-        setSelectionRange() {},
-        getBoundingClientRect() { return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; },
-        getClientRects() { return []; },
-        querySelector() { return null; },
-        querySelectorAll() { return []; },
-        closest() { return null; },
-        matches() { return false; },
-        contains() { return false; },
-        scrollIntoView() {},
-        scrollTo() {},
-        scroll() {},
-        cloneNode() { return makeElement(el.tagName); },
-        insertAdjacentElement() {},
-        insertAdjacentHTML() {},
-        insertAdjacentText() {},
-        getContext() { return null; },
-        /// Inert versions of the custom-element methods the page script calls (the custom-element
-        /// upgrade never runs in this stub DOM).
+    el.tagName = String(tag || 'div').toUpperCase();
+    el.nodeType = 1;
+    el.id = '';
+    el.style = makeStyle();
+    el.classList = makeClassList();
+    el.dataset = {};
+    el.children = [];
+    el.childNodes = [];
+    el.parentNode = null;
+    el.parentElement = null;
+    el.firstChild = null;
+    el.lastChild = null;
+    el.shadowRoot = null;
+    el.value = '';
+    el.textContent = '';
+    el.innerHTML = '';
+    el.innerText = '';
+    el.title = '';
+    el.placeholder = '';
+    el.className = '';
+    el.name = '';
+    el.type = '';
+    el.href = '';
+    el.alt = '';
+    el.hidden = false;
+    /// An <img> that has not finished loading: keeps `showImagePreview` on the fetch-then-reveal
+    /// path rather than the already-loaded fast path until a scenario marks it complete.
+    el.complete = false;
+    el.naturalWidth = 0;
+    el.onload = null;
+    el.onerror = null;
+    /// The URLs `src` was assigned a non-empty value, i.e. the outbound requests issued.
+    el.src_assignments = src_assignments;
+    /// Registered event listeners, exposed so the propagation dispatcher can fire ancestor listeners.
+    el.__listeners = listeners;
+
+    el.addEventListener = function (type, fn, opts) {
+        const capture = opts === true || (opts && opts.capture) || false;
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push({ fn, capture });
+    };
+    el.removeEventListener = function (type, fn, opts) {
+        const capture = opts === true || (opts && opts.capture) || false;
+        const l = listeners.get(type);
+        if (l) {
+            const i = l.findIndex(x => x.fn === fn && x.capture === capture);
+            if (i !== -1) l.splice(i, 1);
+        }
+    };
+    /// Dispatch with real capture -> target -> bubble propagation up the `parentNode` chain, so a
+    /// capture-phase listener on an ancestor (the shadow root) sees a non-bubbling `scroll` fired on
+    /// a descendant. `scroll`/`mouseenter` do not bubble, so bubble phase runs only for `bubbles`.
+    el.dispatchEvent = function (ev) {
+        try { Object.defineProperty(ev, 'target', { value: el, configurable: true }); } catch (e) { /* set */ }
+        const path = [];
+        for (let n = el; n; n = n.parentNode) path.push(n);
+        for (let i = path.length - 1; i >= 1; i--) firePhaseListeners(path[i], ev, 'capture');
+        firePhaseListeners(el, ev, 'target');
+        if (ev.bubbles) for (let i = 1; i < path.length; i++) firePhaseListeners(path[i], ev, 'bubble');
+        return true;
+    };
+    el.appendChild = function (c) {
+        el.children.push(c);
+        el.childNodes.push(c);
+        c.parentNode = el;
+        c.parentElement = el;
+        el.firstChild = el.children[0];
+        el.lastChild = c;
+        return c;
+    };
+    el.removeChild = function (c) {
+        el.children = el.children.filter(x => x !== c);
+        el.childNodes = el.childNodes.filter(x => x !== c);
+        el.firstChild = el.children[0] || null;
+        el.lastChild = el.children[el.children.length - 1] || null;
+        return c;
+    };
+    el.insertBefore = function (c, ref) {
+        const i = el.children.indexOf(ref);
+        if (i === -1) return el.appendChild(c);
+        el.children.splice(i, 0, c);
+        el.childNodes.splice(i, 0, c);
+        c.parentNode = el;
+        c.parentElement = el;
+        el.firstChild = el.children[0];
+        return c;
+    };
+    el.replaceChildren = function (...cs) {
+        el.children = [...cs];
+        el.childNodes = [...cs];
+        for (const c of cs) { c.parentNode = el; c.parentElement = el; }
+        el.firstChild = el.children[0] || null;
+        el.lastChild = el.children[el.children.length - 1] || null;
+    };
+    el.remove = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+    el.setAttribute = function (k, v) {
+        attributes.set(k, String(v));
+        if (k === 'id') el.id = String(v);
+        if (k === 'src') { src_value = String(v); if (src_value) src_assignments.push(src_value); }
+    };
+    el.getAttribute = function (k) { return attributes.has(k) ? attributes.get(k) : null; };
+    el.removeAttribute = function (k) {
+        attributes.delete(k);
+        /// Removing `src` aborts the in-flight load and empties the property, exactly as a
+        /// browser does; this is what `hideImagePreview` relies on to stop a background fetch.
+        if (k === 'src') { src_value = ''; }
+    };
+    el.hasAttribute = function (k) { return attributes.has(k); };
+    el.focus = function () {};
+    el.blur = function () {};
+    el.click = function () { el.dispatchEvent({ type: 'click' }); };
+    el.select = function () {};
+    el.setSelectionRange = function () {};
+    el.getBoundingClientRect = function () { return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; };
+    el.getClientRects = function () { return []; };
+    el.querySelector = function () { return null; };
+    el.querySelectorAll = function () { return []; };
+    el.closest = function () { return null; };
+    el.matches = function () { return false; };
+    el.contains = function () { return false; };
+    el.scrollIntoView = function () {};
+    el.scrollTo = function () {};
+    el.scroll = function () {};
+    el.cloneNode = function () { return makeElement(el.tagName); };
+    el.insertAdjacentElement = function () {};
+    el.insertAdjacentHTML = function () {};
+    el.insertAdjacentText = function () {};
+    el.getContext = function () { return null; };
+    el.getElementById = function (id) {
+        if (!byId.has(id)) { const c = makeElement('div'); c.id = id; byId.set(id, c); }
+        return byId.get(id);
+    };
+    /// A real `attachShadow` sets `el.shadowRoot`; the `query-result` constructor relies on it to
+    /// register its capture-phase scroll/click listeners on the shadow root.
+    el.attachShadow = function () {
+        const sr = makeElement('#shadow-root');
+        sr.nodeType = 11;
+        sr.host = el;
+        sr.parentNode = null;
+        el.shadowRoot = sr;
+        return sr;
+    };
+
+    /// `src` reflects the attribute both ways: assigning the property is an outbound request, and
+    /// `removeAttribute('src')` empties it.
+    Object.defineProperty(el, 'src', {
+        get() { return src_value; },
+        set(v) { src_value = String(v); if (src_value) src_assignments.push(src_value); },
+        configurable: true,
+        enumerable: true,
+    });
+    return el;
+}
+
+function makeElement(tag) {
+    const el = installElementBehavior({}, tag);
+    /// Inert versions of the custom-element methods the page script calls on plain stub elements (the
+    /// custom-element upgrade never runs for stubs). NOT installed on the real `HTMLElement` base, so
+    /// they do not shadow the genuine `QueryResultElement` methods when one is constructed.
+    Object.assign(el, {
         clear() {},
         update() { return true; },
         updateRaw() {},
@@ -207,15 +283,6 @@ function makeElement(tag) {
         finish() {},
         updateProgress() {},
         updateText() {},
-        attachShadow() { return makeElement('shadow-root'); },
-    };
-    /// `src` reflects the attribute both ways: assigning the property is an outbound request, and
-    /// `removeAttribute('src')` empties it.
-    Object.defineProperty(el, 'src', {
-        get() { return src_value; },
-        set(v) { src_value = String(v); if (src_value) src_assignments.push(src_value); },
-        configurable: true,
-        enumerable: true,
     });
     return el;
 }
@@ -426,7 +493,9 @@ function makeContext() {
         Event, CustomEvent,
         AbortController,
         structuredClone,
-        HTMLElement: class HTMLElement {},
+        /// A functional element base so `new QueryResultElement()` runs the real constructor
+        /// (`attachShadow`, the shadow-root scroll/click listeners) and its `_renderCell`.
+        HTMLElement: class HTMLElement { constructor() { installElementBehavior(this, 'html-element'); } },
         customElements: { define() {}, get() { return undefined; }, whenDefined() { return Promise.resolve(); } },
         ResizeObserver: class ResizeObserver { observe() {} unobserve() {} disconnect() {} },
         MutationObserver: class MutationObserver { observe() {} disconnect() {} takeRecords() { return []; } },
@@ -459,27 +528,31 @@ function extractScript(html) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/// Boot a fresh page and install a single image link that would preview `url`, exactly as the
-/// result renderer does (`attachImagePreview`). Returns helpers to drive the gesture and read state.
-async function boot(js, url) {
+/// Boot a fresh page: run the extracted script and let its async startup settle so nothing races the
+/// scenario. Returns the sandbox, a `run(code)` helper, and the network counter.
+async function bootPage(js) {
     const { sandbox, fetch_count } = makeContext();
     vm.runInContext(js, sandbox, { filename: 'play.html.js' });
     /// The image-preview functions and window listeners are defined synchronously at top level; let
     /// the async startup (IndexedDB open, reconciliation) settle so nothing races the scenario.
     await sleep(20);
+    return { sandbox, fetchCount: fetch_count, run: (code) => vm.runInContext(code, sandbox) };
+}
 
-    /// Build the link the same way the result renderer does, then wire the preview onto it.
-    vm.runInContext(
-        `globalThis.__link = document.createElement('a');
+/// Boot a page and install a single image link that would preview `url`, wired exactly as the
+/// result renderer does (`attachImagePreview`). Returns helpers to drive the gesture and read state.
+async function boot(js, url) {
+    const page = await bootPage(js);
+    const { run } = page;
+
+    /// Build the link and wire the preview onto it, the same call the result renderer makes.
+    run(`globalThis.__link = document.createElement('a');
          globalThis.__link.href = ${JSON.stringify(url)};
-         attachImagePreview(__link, ${JSON.stringify(url)});`,
-        sandbox);
-
-    const run = (code) => vm.runInContext(code, sandbox);
+         attachImagePreview(__link, ${JSON.stringify(url)});`);
 
     return {
-        sandbox,
-        fetchCount: fetch_count,
+        sandbox: page.sandbox,
+        fetchCount: page.fetchCount,
         /// Fire a pointer event on the link (mouseenter / mousemove / mouseleave).
         pointer: (type, x = 10, y = 10) =>
             run(`__link.dispatchEvent({ type: ${JSON.stringify(type)}, clientX: ${x}, clientY: ${y} });`),
@@ -539,6 +612,55 @@ async function main() {
     }
     const js = extractScript(html);
     const url = 'http://example.test/cat.png';
+
+    /// Contract 0: the URL-qualification gate. Which cells become previewable is decided in the
+    /// production cell renderer `QueryResultElement._renderCell` (`^https?://\S+$`, then the image
+    /// extension tested against `new URL(text).pathname`), so drive that path - not a hand-built
+    /// link - and assert whether hovering with the modifier held issues a request. This catches a
+    /// regression that reintroduced the fragment/query bypass or previewed a non-`http(s)` URL.
+    {
+        const cases = [
+            { v: 'http://example.test/cat.png', link: true, preview: true, why: 'plain image URL' },
+            { v: 'https://example.test/pic.jpeg?w=64', link: true, preview: true, why: 'query string after an image path' },
+            { v: 'https://example.test/pic.webp#top', link: true, preview: true, why: 'fragment after an image path' },
+            { v: 'https://host/restart#x.png', link: true, preview: false, why: 'image extension only in the fragment' },
+            { v: 'https://host/restart?x.png', link: true, preview: false, why: 'image extension only in the query' },
+            { v: 'ftp://host/image.png', link: false, preview: false, why: 'a non-http(s) scheme' },
+            { v: 'not a url at all', link: false, preview: false, why: 'plain text' },
+        ];
+        const previewTitle = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
+        for (const c of cases) {
+            const page = await bootPage(js);
+            const res = JSON.parse(page.run(`
+              (function () {
+                  const qr = new QueryResultElement();
+                  const td = qr._renderCell('c', ${JSON.stringify(c.v)});
+                  function findLink(n) {
+                      if (!n || !n.tagName) return null;
+                      if (n.tagName === 'A') return n;
+                      for (const ch of (n.children || [])) { const r = findLink(ch); if (r) return r; }
+                      return null;
+                  }
+                  const a = findLink(td);
+                  let fetched = false;
+                  if (a) {
+                      setImagePreviewModifierHeld(true);          // hold Ctrl before hovering
+                      a.dispatchEvent({ type: 'mouseenter', clientX: 10, clientY: 10 });
+                      a.dispatchEvent({ type: 'mousemove', clientX: 12, clientY: 12 });
+                      fetched = !!(image_preview && image_preview.src_assignments.length > 0);
+                      setImagePreviewModifierHeld(false);
+                  }
+                  return JSON.stringify({ link: !!a, title: a ? a.title : null, fetched });
+              })()`));
+            check('url-gate', `${c.why} is ${c.link ? '' : 'not '}linkified`, res.link === c.link, res);
+            check('url-gate', `${c.why} ${c.preview ? 'previews' : 'does not preview'} on Ctrl+hover`,
+                res.fetched === c.preview, res);
+            if (c.preview) {
+                check('url-gate', `${c.why} advertises the gesture in its title`,
+                    res.title === previewTitle, res);
+            }
+        }
+    }
 
     /// Contract 1: plain hover (no modifier) must never fetch. Moving the cursor over an image link
     /// - even lingering on it - must not create the preview element or assign `src`.
@@ -643,6 +765,44 @@ async function main() {
         const s = h.state();
         check('modifier-release', 'releasing the modifier clears src and hides the preview',
             s && s.src === '' && s.display === 'none', s);
+    }
+
+    /// Contract 3d: a scroll INSIDE the `query-result` shadow tree also dismisses the preview. An
+    /// expanded `.td-selected .cell-content` is a scrollable surface, and its `scroll` event does not
+    /// compose out of the shadow root, so the global `document` handler never sees it - the
+    /// constructor's capture-phase `this.shadowRoot` listener must. Build a real shadow root, put the
+    /// rendered cell inside it, then fire `scroll` from the inner `.cell-content` scroller so the
+    /// event actually routes through the capture phase (not the handler called directly). This fails
+    /// if the shadow-root listener is deleted or loses its capture phase.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(page.run(`
+          (function () {
+              const qr = new QueryResultElement();
+              const td = qr._renderCell('c', ${JSON.stringify(url)});
+              qr.shadowRoot.appendChild(td);          // attach into the shadow tree so scroll routes to it
+              function find(n, pred) {
+                  if (!n) return null;
+                  if (pred(n)) return n;
+                  for (const ch of (n.children || [])) { const r = find(ch, pred); if (r) return r; }
+                  return null;
+              }
+              const scroller = find(td, n => typeof n.className === 'string' && n.className.split(/\\s+/).includes('cell-content'));
+              const link = find(td, n => n.tagName === 'A');
+              setImagePreviewModifierHeld(true);
+              link.dispatchEvent({ type: 'mouseenter', clientX: 5, clientY: 5 });
+              if (image_preview && typeof image_preview.onload === 'function') image_preview.onload();
+              const before = image_preview && { src: image_preview.src, display: image_preview.style.display };
+              scroller.dispatchEvent({ type: 'scroll' });   // capture phase must reach the shadow root
+              const after = image_preview && { src: image_preview.src, display: image_preview.style.display };
+              return JSON.stringify({ hasScroller: !!scroller, hasLink: !!link, before, after });
+          })()`));
+        check('shadow-scroll', 'the rendered cell has an inner .cell-content scroller in the shadow root',
+            res.hasScroller && res.hasLink, res);
+        check('shadow-scroll', 'the preview is shown before the inner scroll',
+            res.before && res.before.display === 'block' && res.before.src === url, res);
+        check('shadow-scroll', 'scrolling the inner shadow-tree scroller dismisses the preview',
+            res.after && res.after.display === 'none' && res.after.src === '', res);
     }
 
     /// Contract 4: pressing the modifier while the cursor already rests on a link must not fetch by
