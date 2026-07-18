@@ -40,6 +40,15 @@ public:
     /// comparison mirrors the parser and a loose (supertype-based) one would be wrong.
     virtual bool hasExactTypesFromData() const { return false; }
 
+    /// True when the schema returned by `readSchema` describes the structure the parser actually reads
+    /// and validates. It is false for the metadata-based `JSON*` formats (`JSON`, `JSONCompact`,
+    /// `JSONColumnsWithMetadata`) when `input_format_json_validate_types_from_metadata` = 0: schema
+    /// inference reads the types declared in the `meta` section, but the parser then ignores those
+    /// types entirely and reads the data by value (and, for `JSONCompact`, positionally). The inferred
+    /// schema therefore does not correspond to what is parsed, and a caller comparing an inferred schema
+    /// against an expected one must not draw any conclusion from it.
+    virtual bool schemaDescribesParsedData() const { return true; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 

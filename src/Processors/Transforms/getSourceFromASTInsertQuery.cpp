@@ -62,21 +62,46 @@ String getInsertDataSchemaMismatchDescription(
 
     /// Ask the format's own schema reader how the real parser identifies columns and validates types,
     /// so the comparison below follows the parser instead of a fixed heuristic. The defaults describe a
-    /// positional, value-inferred format (the safe, low-false-positive interpretation) and are used only
-    /// if the schema reader cannot be created.
+    /// positional, value-inferred format whose inferred schema describes what is parsed (the safe,
+    /// low-false-positive interpretation) and are used only if the schema reader cannot be created.
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
+    bool format_schema_describes_parsed_data = true;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
         auto schema_reader = FormatFactory::instance().getSchemaReader(format_name, *probe_buffer, context, format_settings);
+
+        /// Some formats decide these properties from the data itself — most importantly the
+        /// metadata-based `JSON*` formats, which behave differently depending on whether a `meta`
+        /// section is present and on `input_format_json_validate_types_from_metadata` — so let the
+        /// reader inspect the data first.
+        try
+        {
+            schema_reader->readSchema();
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// For every other format the three properties below are constant, so it is Ok to read
+            /// them even if this best-effort inspection of the data failed.
+        }
+
         format_has_strict_order_of_columns = schema_reader->hasStrictOrderOfColumns();
         format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
+        format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Best-effort: keep the conservative defaults above; it is Ok to ignore the exception.
     }
+
+    /// Some formats read a schema during inference that the real parser then ignores — the
+    /// metadata-based `JSON*` formats with `input_format_json_validate_types_from_metadata` = 0 read a
+    /// `meta` section that the parser discards, reading the data by value (and positionally for
+    /// `JSONCompact`). The inferred structure does not describe what is parsed there, so comparing
+    /// against it would attach a misleading explanation to an unrelated value-level parse error.
+    if (!format_schema_describes_parsed_data)
+        return {};
 
     ColumnsDescription inferred_columns;
     try
