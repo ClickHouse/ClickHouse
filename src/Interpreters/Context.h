@@ -404,7 +404,10 @@ protected:
     /// When `dialect` is a foreign SQL dialect (e.g. polyglot), the query is transpiled to
     /// ClickHouse SQL up front and the result is kept here for the lifetime of the query, so
     /// that the AST's inline `INSERT ... VALUES`/`FORMAT` data pointers reference a live buffer.
-    String transpiled_query;
+    /// Held by shared_ptr because `Context::createCopy` copies `ContextData`: child contexts
+    /// (async/distributed insert paths) must share the buffer, not clone a potentially large
+    /// inline `INSERT` payload.
+    std::shared_ptr<const String> transpiled_query;
 
     TemporaryTablesMapping external_tables_mapping;
     mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
@@ -1161,8 +1164,12 @@ public:
     /// Store/read the ClickHouse SQL produced by transpiling a foreign-dialect query.
     /// The buffer lives as long as the query context, so AST pointers into it (inline
     /// INSERT data) stay valid throughout query execution.
-    void setTranspiledQuery(String query_) { transpiled_query = std::move(query_); }
-    const String & getTranspiledQuery() const { return transpiled_query; }
+    void setTranspiledQuery(String query_) { transpiled_query = std::make_shared<const String>(std::move(query_)); }
+    const String & getTranspiledQuery() const
+    {
+        static const String empty;
+        return transpiled_query ? *transpiled_query : empty;
+    }
 
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
