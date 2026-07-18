@@ -1190,6 +1190,60 @@ def test_mysql_geometry(started_cluster):
     conn.close()
 
 
+def test_mysql_nullable_geometry(started_cluster):
+    # A MySQL spatial column is nullable unless declared `NOT NULL`. With the `geometry` mapping on by
+    # default, `convertMySQLDataType` wraps the `Array`/`Variant`-based geometric type in `Nullable`,
+    # which those types cannot be inside, so schema inference throws `ILLEGAL_TYPE_OF_ARGUMENT`. A
+    # correct conversion must succeed and preserve a real MySQL `NULL`.
+    table_name = "test_mysql_nullable_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring,
+            `pg` polygon,
+            `mls` multilinestring,
+            `mpg` multipolygon,
+            `geo` geometry,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        # A row whose spatial columns are all NULL (the MySQL default when a value is omitted).
+        cursor.execute(f"INSERT INTO `clickhouse`.`{table_name}` (id) VALUES (1)")
+        cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+        assert cursor.fetchone()[0] == 1
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # `node1.query` raises if the server throws, so a successful `DESCRIBE` is the primary assertion:
+    # on buggy master it throws `ILLEGAL_TYPE_OF_ARGUMENT`.
+    described = node1.query(f"DESCRIBE {table_function}")
+    inferred_columns = [line.split("\t")[0] for line in described.strip().split("\n")]
+    assert inferred_columns == ["id", "ls", "pg", "mls", "mpg", "geo"], described
+
+    # The stored spatial values are all NULL; a correct conversion must preserve `NULL` rather than
+    # coerce it to the default (empty) geometry. This holds for any null-preserving representation
+    # without pinning a specific type.
+    nulls = node1.query(
+        "SELECT ls IS NULL, pg IS NULL, mls IS NULL, mpg IS NULL, geo IS NULL "
+        f"FROM {table_function} WHERE id = 1"
+    ).strip()
+    assert nulls == "1\t1\t1\t1\t1", nulls
+
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_joins(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "test_joins_mysql_users")
