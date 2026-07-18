@@ -159,8 +159,7 @@ def test_on_cluster_table_engine_unique_replication_consumer(started_cluster):
 
     node1.query(
         f"""
-        CREATE TABLE default.{table} (key Int32, value Int32)
-        ON CLUSTER test_cluster
+        CREATE TABLE default.{table} ON CLUSTER test_cluster (key Int32, value Int32)
         ENGINE = MaterializedPostgreSQL(
             '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
             'postgres_database', '{table}', 'postgres', '{pg_pass}')
