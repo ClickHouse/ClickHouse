@@ -504,6 +504,22 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR",
             "ALTER USER user1 VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// The global (user-level) clause must be formatted before the IDENTIFIED list: the parser
+            /// treats VALID UNTIL/VALID FOR as global only while no authentication method has been parsed
+            /// yet, so a clause printed after the list would re-parse as belonging to the last method.
+            /// The round-trip matters for the query text sent to the replicas of an ON CLUSTER DDL query.
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'",
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'"
         }
 })));
 

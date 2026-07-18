@@ -151,6 +151,46 @@ def test_valid_for_on_cluster():
     ch1.query("DROP USER valid_for_user ON CLUSTER 'cluster'")
 
 
+def test_valid_for_on_cluster_multiple_auth_methods():
+    # A user-level (global) `VALID FOR`/`VALID UNTIL` clause applies to every authentication method.
+    # The query text distributed `ON CLUSTER` is formatted and re-parsed on every replica, and the
+    # parser recognizes a global clause only before the `IDENTIFIED` list, so the formatter must print
+    # the global clause first; otherwise the replicas would attach the deadline to the last method only.
+    def stored_deadlines(node):
+        # methods count, distinct deadlines count, and whether the first deadline is set at all
+        return node.query(
+            "SELECT length(valid_until), length(arrayDistinct(valid_until)), toUInt32(valid_until[1]) != 0 "
+            "FROM system.users WHERE name = 'valid_for_multi_user'"
+        ).strip()
+
+    ch1.query("DROP USER IF EXISTS valid_for_multi_user ON CLUSTER 'cluster'")
+
+    ch1.query_with_retry(
+        "CREATE USER valid_for_multi_user ON CLUSTER 'cluster' "
+        "VALID FOR INTERVAL 1 YEAR "
+        "IDENTIFIED WITH plaintext_password BY 'a', plaintext_password BY 'b'",
+        retry_count=5,
+    )
+    # Two methods, a single distinct non-zero deadline: the global deadline reached both methods.
+    for node in (ch1, ch2, ch3):
+        assert stored_deadlines(node) == "2\t1\t1"
+    show = ch1.query("SHOW CREATE USER valid_for_multi_user")
+    assert ch2.query("SHOW CREATE USER valid_for_multi_user") == show
+    assert ch3.query("SHOW CREATE USER valid_for_multi_user") == show
+
+    # The global deadline of an `ALTER ... ADD IDENTIFIED` must also apply to the methods that already
+    # existed on the replica before the query.
+    ch1.query_with_retry(
+        "ALTER USER valid_for_multi_user ON CLUSTER 'cluster' "
+        "VALID FOR INTERVAL 2 YEAR ADD IDENTIFIED WITH plaintext_password BY 'c'",
+        retry_count=5,
+    )
+    for node in (ch1, ch2, ch3):
+        assert stored_deadlines(node) == "3\t1\t1"
+
+    ch1.query("DROP USER valid_for_multi_user ON CLUSTER 'cluster'")
+
+
 def test_valid_for_on_cluster_mixed_timezone():
     # `cluster_tz` spans `ch1` and `ch4`, which run in different server time zones. The initiator
     # resolves `VALID FOR <interval>` to an absolute deadline and must serialize it with an explicit
