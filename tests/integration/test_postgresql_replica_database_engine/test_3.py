@@ -3771,6 +3771,276 @@ def test_attach_fails_closed_when_slot_lost_behind_publication(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_fails_closed_when_publication_drifts_from_tables_list(started_cluster):
+    # On attach the existing publication is reused as-is (it is this engine's persisted table set) and the
+    # replication slot resumes from its confirmed_flush_lsn. If the publication has drifted and no longer
+    # publishes a table this engine replicates - here materialized_postgresql_tables_list = 'a, b' but an
+    # operator ran ALTER PUBLICATION ... DROP TABLE b - resuming would stream WAL filtered through the
+    # drifted publication, so table b silently stops receiving changes, and re-adding it to the publication
+    # afterwards cannot recover the changes committed while it was unpublished (pgoutput resolves publication
+    # membership from a historic catalog snapshot at each change's LSN). The attach must fail closed instead.
+    table_a = "drift_tables_list_a"
+    table_b = "drift_tables_list_b"
+    mat_db = "drift_tables_list_database"
+    pg_manager.create_postgres_table(table_a)
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}, {table_b}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication drifts (table_b is dropped from it), and more rows are
+    # committed to both tables: the changes to table_b that resuming through the drifted publication would
+    # silently never deliver.
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" DROP TABLE {table_b}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "no longer publishes the following table(s) this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: neither table advances (the engine does not resume through the drifted publication).
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the database removes the drifted publication and its slot, and
+    # recreating it takes a fresh snapshot with a full publication, so every row - including the ones
+    # committed while table_b was unpublished - is restored. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}, {table_b}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_whole_schema_publication_drifts(started_cluster):
+    # The whole-schema database engine (no materialized_postgresql_tables_list) treats its publication as
+    # its persisted table set on attach. Its current-identity drift check lives in fetchRequiredTables()
+    # and compares the publication against the tables it already replicated in the previous run (their
+    # nested tables exist on disk), not against the live schema - a table created in PostgreSQL after
+    # CREATE DATABASE is legitimately absent from both. Here a table that WAS replicated is dropped from the
+    # publication, which would silently stop streaming its changes, so the attach must fail closed.
+    table_a = "drift_whole_schema_a"
+    table_b = "drift_whole_schema_b"
+    mat_db = "drift_whole_schema_database"
+    pg_manager.create_postgres_table(table_a)
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, a table that was already replicated is dropped from the publication.
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" DROP TABLE {table_b}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "no longer publishes the following table(s) this database already replicated",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: neither table advances.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_both_slot_and_publication_lost(started_cluster):
+    # On attach, if BOTH the replication slot and the publication are gone while the replica already holds
+    # data from a previous run (its nested tables exist on disk), the code would otherwise fall through to an
+    # in-place re-snapshot into those already-populated nested tables. The slot being gone too does not make
+    # that re-snapshot any less destructive: snapshot rows are materialized with _sign = 1 and _version = 1,
+    # so rows deleted from PostgreSQL while replication was down remain visible and rows whose last WAL
+    # version was already higher are not repaired, silently leaving the replica stale. The attach must fail
+    # closed, leaving a clean rebuild as the operator's recovery. (A never-yet-synchronized database, with no
+    # nested tables on disk, is exempted and is allowed to run its initial snapshot.)
+    table = "both_lost_table"
+    mat_db = "both_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, both the slot and the publication disappear, and more rows are committed.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "this replica already holds data from a previous run",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: no rows moved, and neither a fresh slot nor a fresh publication is created.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    # Recovery is a clean rebuild: dropping the database (a no-op cleanup, since both objects are already
+    # gone) and recreating it takes a fresh snapshot that contains every row, including the ones committed
+    # while replication was down. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # And the rebuilt replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

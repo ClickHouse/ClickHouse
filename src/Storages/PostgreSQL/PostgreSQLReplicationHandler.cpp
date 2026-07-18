@@ -908,13 +908,31 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     ///     rows whose last replicated version is already greater than 1 (ReplacingMergeTree keeps the higher
     ///     version), silently leaving the replica stale while a fresh slot is created. A user-managed slot
     ///     is excluded: a missing user-managed slot is a configuration error reported below with its own
-    ///     message, and that path never re-snapshots. When both the slot and the publication are gone there
-    ///     is no surviving replication object to resume from and a full rebuild is the only recovery, so
-    ///     that state is left to the re-snapshot path unchanged.
+    ///     message, and that path never re-snapshots.
     ///
-    /// Recreate the object for a clean rebuild in both fail-closed cases: dropping it removes the surviving
-    /// slot or publication, and the fresh snapshot repopulates every row into empty nested tables, so
-    /// nothing is lost.
+    ///  3. Both the slot and the publication are gone while this replica already holds data from a previous
+    ///     run (a database engine's nested tables exist on disk, or - for the single-table engine - the
+    ///     table exists in metadata, which it only does once its initial sync has succeeded). The slot being
+    ///     gone too does not make the re-snapshot any less destructive: it is still the same in-place reload
+    ///     into already-populated nested tables as case 2, with the same _sign = 1 / _version = 1 staleness,
+    ///     so it fails closed for the same reason. The never-yet-synchronized state is exempted: a database
+    ///     engine that has not created a single nested table yet (for example the server restarted before the
+    ///     initial background synchronization created the slot and the publication) has nothing to be made
+    ///     stale and must be allowed to run its initial snapshot.
+    ///
+    ///  4. The slot and the publication both survive, but the publication has drifted and no longer publishes
+    ///     a table this engine replicates (for example an operator ran ALTER PUBLICATION ... DROP TABLE).
+    ///     Resuming from the slot streams WAL filtered through the drifted publication, so the missing tables
+    ///     silently stop receiving changes, and re-adding them to the publication now cannot recover the
+    ///     changes committed while they were unpublished (the same historic-catalog-snapshot rule as case 1).
+    ///     This is the current-identity counterpart of the exact-table-set ownership proof
+    ///     adoptLegacyReplicationIdentityIfNeeded() enforces when adopting a legacy publication. (A whole-
+    ///     schema database engine detects the same drift against its on-disk table set already in
+    ///     fetchRequiredTables().)
+    ///
+    /// Recreate the object for a clean rebuild in the re-snapshot cases: dropping it removes any surviving
+    /// slot or publication, and the fresh snapshot repopulates every row into empty nested tables, so nothing
+    /// is lost.
     if (is_attach)
     {
         String slot_lsn;
@@ -952,6 +970,74 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "retrying and replication starts automatically once the conflict is resolved, without a "
                 "server restart or a manual re-attach.",
                 doubleQuoteString(publication_name), replication_slot);
+
+        /// This replica already holds data from a previous run if the database engine kept nested tables on
+        /// disk, or - for the single-table engine, which has no such set - if the table exists in metadata at
+        /// all (a MaterializedPostgreSQL table is only left in metadata once its initial sync has succeeded,
+        /// so an attach implies a completed previous run). A database engine that has not created a single
+        /// nested table yet has nothing to be made stale and is allowed to run its initial snapshot.
+        const bool has_previously_replicated_data
+            = !is_materialized_postgresql_database
+            || (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty());
+
+        if (!user_managed_slot && !slot_exists && !publication_exists && has_previously_replicated_data)
+            throw Exception(
+                ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot start MaterializedPostgreSQL replication on attach: neither the replication slot {} "
+                "nor the publication {} exists, but this replica already holds data from a previous run. "
+                "Re-snapshotting the current PostgreSQL state into the already-populated nested tables would "
+                "silently leave the replica stale, because the snapshot rows are materialized with _sign = 1 "
+                "and _version = 1 - they neither delete rows that disappeared from PostgreSQL while "
+                "replication was down nor override rows whose last replicated version is already greater than "
+                "1. Replication is refused instead. Recreate this object for a clean rebuild: dropping it "
+                "discards the stale nested data, and the fresh snapshot repopulates every row, so nothing is "
+                "lost. Startup keeps retrying and replication starts automatically once the conflict is "
+                "resolved, without a server restart or a manual re-attach.",
+                replication_slot, doubleQuoteString(publication_name));
+
+        /// The existing publication is reused as-is on attach (createPublicationIfNeeded() below is a no-op
+        /// when it exists), and the slot resumes from its confirmed_flush_lsn with WAL filtered through
+        /// whatever the publication currently publishes. If it has drifted and no longer publishes a table
+        /// this engine replicates, that table silently stops receiving changes - fail closed instead. Extra
+        /// tables the publication publishes but this engine does not replicate are harmless (their changes are
+        /// simply ignored) and are left to the redundant-work path in fetchRequiredTables().
+        if (publication_exists)
+        {
+            pqxx::result published_rows{tx.exec(fmt::format(
+                "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name))};
+            std::set<String> published;
+            for (const auto & row : published_rows)
+                published.insert(
+                    schema_as_a_part_of_table_name
+                        ? row[0].as<std::string>() + '.' + row[1].as<std::string>()
+                        : row[1].as<std::string>());
+
+            String missing;
+            for (const auto & entry : materialized_storages)
+            {
+                const auto & table_name = entry.first;
+                if (published.contains(table_name))
+                    continue;
+                if (!missing.empty())
+                    missing += ", ";
+                missing += table_name;
+            }
+
+            if (!missing.empty())
+                throw Exception(
+                    ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot start MaterializedPostgreSQL replication on attach: the existing publication {} no "
+                    "longer publishes the following table(s) this engine replicates: {}. Resuming from the "
+                    "existing replication slot through this drifted publication would silently stop streaming "
+                    "changes for those tables, and re-adding them to the publication now would not recover the "
+                    "changes committed while they were unpublished (pgoutput skips a table that was not "
+                    "published at the change's LSN), so replication is refused. Recreate this object for a "
+                    "clean rebuild, or add the missing tables back to the publication on the PostgreSQL side "
+                    "and rebuild the affected tables: startup keeps retrying and replication starts "
+                    "automatically once the conflict is resolved, without a server restart or a manual "
+                    "re-attach.",
+                    doubleQuoteString(publication_name), missing);
+        }
     }
 
     createPublicationIfNeeded(tx);
@@ -1587,6 +1673,44 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 {
                     pqxx::work tx(connection.getRef());
                     result_tables = fetchTablesFromPublication(tx);
+                }
+
+                /// The reverse of the grown-schema case above is a real drift: a table this database already
+                /// replicated in the previous run (its nested table exists on disk) is missing from the
+                /// publication - for example an operator ran ALTER PUBLICATION ... DROP TABLE. Resuming from
+                /// the slot then silently stops streaming changes for that table, and re-adding it to the
+                /// publication cannot recover the changes committed while it was unpublished (pgoutput skips a
+                /// table that was not published at the change's LSN). Fail closed instead - the current-
+                /// identity counterpart of the exact-table-set proof in adoptLegacyReplicationIdentityIfNeeded()
+                /// for the whole-schema database engine, whose expected set is the on-disk table set rather
+                /// than a `tables_list`. (The single-table and `tables_list` engines are checked against
+                /// their configured set in startSynchronization().)
+                if (tables_replicated_by_previous_run)
+                {
+                    String missing;
+                    for (const auto & table_name : *tables_replicated_by_previous_run)
+                    {
+                        if (result_tables.contains(table_name))
+                            continue;
+                        if (!missing.empty())
+                            missing += ", ";
+                        missing += table_name;
+                    }
+
+                    if (!missing.empty())
+                        throw Exception(
+                            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                            "Cannot start MaterializedPostgreSQL replication on attach: the existing publication "
+                            "{} no longer publishes the following table(s) this database already replicated: {}. "
+                            "Resuming from the existing replication slot through this drifted publication would "
+                            "silently stop streaming changes for those tables, and re-adding them to the "
+                            "publication now would not recover the changes committed while they were unpublished "
+                            "(pgoutput skips a table that was not published at the change's LSN), so replication "
+                            "is refused. Recreate this database for a clean rebuild, or add the missing tables "
+                            "back to the publication on the PostgreSQL side and rebuild the affected tables: "
+                            "startup keeps retrying and replication starts automatically once the conflict is "
+                            "resolved, without a server restart or a manual re-attach.",
+                            doubleQuoteString(publication_name), missing);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
