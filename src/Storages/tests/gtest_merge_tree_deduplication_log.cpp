@@ -872,3 +872,102 @@ TEST(MergeTreeDeduplicationLog, RollbackRecordsReplaySafelyOnOlderServers)
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Unit test for the LimitedOrderedHashMap primitive addPart relies on to publish
+/// block IDs exception-safely. `insertWithoutEviction` must add an entry without
+/// dropping any existing one - so a rollback needs only the non-allocating `erase` -
+/// and `trimToMaxSize` must then evict the oldest entries down to the limit, together
+/// reproducing exactly what a plain evicting `insert` does but with every allocation
+/// moved to the first, still-rollback-able step. The index keys are string_views into
+/// the queue nodes, so the test also checks that lookups keep working across all of
+/// these operations.
+TEST(MergeTreeDeduplicationLog, LimitedOrderedHashMapInsertWithoutEvictionThenTrim)
+{
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    LimitedOrderedHashMap<MergeTreePartInfo> map(/*max_size=*/ 2);
+
+    /// Fill to capacity with an evicting insert.
+    EXPECT_TRUE(map.insert("block1", part("all_1_1_0")));
+    EXPECT_TRUE(map.insert("block2", part("all_2_2_0")));
+    EXPECT_EQ(map.size(), 2u);
+
+    /// insertWithoutEviction adds a third entry WITHOUT dropping the oldest, so the
+    /// map temporarily exceeds its limit and every key - including the oldest - is
+    /// still present and looked up correctly.
+    EXPECT_TRUE(map.insertWithoutEviction("block3", part("all_3_3_0")));
+    EXPECT_EQ(map.size(), 3u);
+    EXPECT_TRUE(map.contains("block1"));
+    EXPECT_TRUE(map.contains("block2"));
+    EXPECT_TRUE(map.contains("block3"));
+    EXPECT_EQ(map.get("block1"), part("all_1_1_0"));
+
+    /// A key already present is not inserted again.
+    EXPECT_FALSE(map.insertWithoutEviction("block3", part("all_9_9_0")));
+    EXPECT_EQ(map.size(), 3u);
+
+    /// trimToMaxSize drops the oldest entries (FIFO) down to the limit.
+    map.trimToMaxSize();
+    EXPECT_EQ(map.size(), 2u);
+    EXPECT_FALSE(map.contains("block1"));
+    EXPECT_TRUE(map.contains("block2"));
+    EXPECT_TRUE(map.contains("block3"));
+
+    /// Erasing a published entry cannot fail and leaves the rest intact.
+    EXPECT_TRUE(map.erase("block2"));
+    EXPECT_FALSE(map.erase("block2"));
+    EXPECT_EQ(map.size(), 1u);
+    EXPECT_TRUE(map.contains("block3"));
+
+    /// A plain insert still evicts to keep within the limit.
+    EXPECT_TRUE(map.insert("block4", part("all_4_4_0")));
+    EXPECT_EQ(map.size(), 2u);
+    EXPECT_TRUE(map.insert("block5", part("all_5_5_0")));
+    EXPECT_EQ(map.size(), 2u);
+    EXPECT_FALSE(map.contains("block3"));
+    EXPECT_TRUE(map.contains("block4"));
+    EXPECT_TRUE(map.contains("block5"));
+    EXPECT_EQ(map.get("block5"), part("all_5_5_0"));
+}
+
+/// Regression test for the success path of the exception-safe publication: after the
+/// durable writes succeed, addPart must still enforce the deduplication window by
+/// evicting the oldest block IDs, exactly as the old evicting insert did. A block
+/// pushed out of the window stops deduplicating, while the ones still within it keep
+/// doing so - so splitting publication into insertWithoutEviction + trimToMaxSize
+/// must not change the observable windowing behavior.
+TEST(MergeTreeDeduplicationLog, AddPartEnforcesWindowOnSuccess)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_window_success/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    log.addPart({"block1"}, part("all_1_1_0"));
+    log.addPart({"block2"}, part("all_2_2_0"));
+
+    /// Both are within the two-slot window, so their retries deduplicate (and, being
+    /// deduplicated, do not change the window).
+    EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+    EXPECT_FALSE(log.addPart({"block2"}, part("all_9_9_0")).empty());
+
+    /// A third distinct block pushes the oldest ("block1") out of the window.
+    log.addPart({"block3"}, part("all_3_3_0"));
+
+    /// "block2" and "block3" are still within the window and deduplicate.
+    EXPECT_FALSE(log.addPart({"block2"}, part("all_9_9_0")).empty());
+    EXPECT_FALSE(log.addPart({"block3"}, part("all_9_9_0")).empty());
+
+    /// "block1" was evicted by the trim after "block3" committed, so its retry is
+    /// accepted again rather than deduplicated.
+    EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+
+    std::filesystem::remove_all(work_dir);
+}

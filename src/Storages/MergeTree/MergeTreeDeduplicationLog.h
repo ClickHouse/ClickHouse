@@ -112,6 +112,15 @@ public:
     void setMaxSize(size_t max_size_)
     {
         max_size = max_size_;
+        trimToMaxSize();
+    }
+
+    /// Evict the oldest entries (in FIFO insertion order) until the size is within
+    /// the limit. Only pops entries, so it never allocates and never throws: a caller
+    /// that has already made a change durable relies on this to enforce the window
+    /// without a failure that could no longer be rolled back.
+    void trimToMaxSize() noexcept
+    {
         while (size() > max_size)
         {
             map.erase(queue.front().key);
@@ -132,21 +141,36 @@ public:
         return true;
     }
 
-    bool insert(const std::string & key, const V & value)
+    /// Insert a new entry without enforcing the size limit. This is the only part of
+    /// an insertion that allocates - and so can throw - but it is strongly
+    /// exception-safe (on failure the map is left exactly as it was) and, crucially,
+    /// it never evicts. A caller that must be able to undo the insert can therefore
+    /// roll it back with `erase` alone, which never allocates (so it cannot throw) and
+    /// never drops an unrelated entry. Call `trimToMaxSize` to enforce the limit once
+    /// the insert is known to succeed. Returns false if the key is already present.
+    bool insertWithoutEviction(const std::string & key, const V & value)
     {
-        auto it = map.find(key);
-        if (it != map.end())
+        if (map.find(key) != map.end())
             return false;
 
-        if (size() == max_size)
+        auto itr = queue.insert(queue.end(), ListNode{key, value});
+        try
         {
-            map.erase(queue.front().key);
-            queue.pop_front();
+            map.emplace(itr->key, itr);
         }
+        catch (...)
+        {
+            queue.erase(itr);
+            throw;
+        }
+        return true;
+    }
 
-        ListNode elem{key, value};
-        auto itr = queue.insert(queue.end(), elem);
-        map.emplace(itr->key, itr);
+    bool insert(const std::string & key, const V & value)
+    {
+        if (!insertWithoutEviction(key, value))
+            return false;
+        trimToMaxSize();
         return true;
     }
 

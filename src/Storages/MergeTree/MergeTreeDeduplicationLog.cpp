@@ -384,17 +384,25 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
     chassert(current_writer != nullptr);
 
-    /// Writing the ADD records must be all-or-nothing. If anything below throws,
-    /// the caller aborts the insert before the part is committed (MergeTreeSink
-    /// commits the part only after addPart returns), so a block ID left published
-    /// in `deduplication_map` here would wrongly deduplicate - and silently drop -
-    /// a client retry of the same insert, even though the original part never
-    /// became active. `deduplication_map.insert` is therefore deferred below,
-    /// until the durable writes and the rotation both succeeded: it also evicts
-    /// the oldest entry once the map is at capacity, and that eviction cannot be
-    /// undone by erasing only the block IDs this call published, so mutating the
-    /// map on a path that might still fail would silently narrow the
-    /// deduplication window for unrelated, already-active parts.
+    /// Adding a part must be all-or-nothing: both the durable ADD records and the
+    /// in-memory publication either all take effect or none do. If anything below
+    /// throws, the caller aborts the insert before the part is committed
+    /// (MergeTreeSink commits the part only after addPart returns), so a block ID
+    /// left published in `deduplication_map` here would wrongly deduplicate - and
+    /// silently drop - a client retry of the same insert, even though the part never
+    /// became active.
+    ///
+    /// Publication is split so that nothing which can throw runs after the records are
+    /// durable. The block IDs are inserted into the map up front but WITHOUT evicting
+    /// the oldest entries (`insertWithoutEviction`): that insertion is the only part
+    /// of publishing that allocates - and so can throw - so doing it before the
+    /// durable writes means a failure aborts with nothing on disk and a rollback that
+    /// only has to `erase` what it published, which never allocates (so it cannot
+    /// throw) and never drops an unrelated, still-active block ID (nothing was
+    /// evicted). Once the writes and the rotation have both succeeded, `trimToMaxSize`
+    /// enforces the deduplication window; it only pops the oldest entries, so it
+    /// cannot throw at a point where the insert could no longer be rolled back.
+    size_t published = 0;
     size_t written = 0;
     /// All ADD records below go to the log that is current right now: no rotation
     /// happens until the rotateAndDropIfNeeded() after the loop. Remember it so the
@@ -403,6 +411,13 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     const size_t add_log_number = current_log_number;
     try
     {
+        /// Publish into the in-memory map first, without eviction (see above).
+        for (const auto & block_id : block_ids)
+        {
+            deduplication_map.insertWithoutEviction(block_id, part_info);
+            ++published;
+        }
+
         for (const auto & block_id : block_ids)
         {
             /// Create new record
@@ -421,6 +436,12 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     }
     catch (...)
     {
+        /// Undo the in-memory publication. `erase` never allocates, so this cannot
+        /// throw, and because the entries were inserted without eviction it restores
+        /// the map exactly - it never drops an unrelated, still-active block ID.
+        for (size_t i = 0; i < published; ++i)
+            deduplication_map.erase(block_ids[i]);
+
         /// Best effort: write compensating records for the block IDs that were
         /// durably written above, so that replaying the log on server startup does
         /// not publish the rolled back block IDs either. The compensation is a
@@ -480,9 +501,11 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw;
     }
 
-    /// Everything is durable now; publish into the in-memory map.
-    for (const auto & block_id : block_ids)
-        deduplication_map.insert(block_id, part_info);
+    /// Everything is durable now; enforce the deduplication window. Trimming only
+    /// pops the oldest entries, so - unlike a plain insert, which allocates - it
+    /// cannot throw here, where the durably recorded insert could no longer be rolled
+    /// back.
+    deduplication_map.trimToMaxSize();
 
     return {};
 }
