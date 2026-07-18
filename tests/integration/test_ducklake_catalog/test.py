@@ -10,6 +10,11 @@ from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_
 # (ATTACH 'ducklake:sqlite:catalog.db' with DATA_INLINING_ROW_LIMIT 0), then data_path
 # was rewritten to the user_files location. No DuckDB dependency is needed at test time.
 # catalog.sql is a PostgreSQL dump of the same catalog (catalog.db is used for sqlite).
+#
+# catalog2.db / catalog2.sql (loaded into a separate postgres database "ducklake2") were
+# generated the same way with DATA_INLINING_ROW_LIMIT 10 and cover data inlining
+# (inserts, deletes, updates, schema evolution, nested types) and partitioning;
+# ducklake_data2/ holds the data files for both.
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
@@ -43,6 +48,26 @@ def create_postgres_db():
     )
 
 
+def create_sqlite2_db():
+    node.query("DROP DATABASE IF EXISTS ducklake_sqlite2 SYNC")
+    node.query(
+        "CREATE DATABASE ducklake_sqlite2 ENGINE = DataLakeCatalog('ducklake')"
+        " SETTINGS catalog_type = 'ducklake', ducklake_backend = 'sqlite',"
+        " ducklake_connection_string = 'catalog2.db';",
+        settings={"allow_experimental_database_ducklake_catalog": 1},
+    )
+
+
+def create_postgres2_db():
+    node.query("DROP DATABASE IF EXISTS ducklake_pg2 SYNC")
+    node.query(
+        "CREATE DATABASE ducklake_pg2 ENGINE = DataLakeCatalog('ducklake')"
+        " SETTINGS catalog_type = 'ducklake', ducklake_backend = 'postgres',"
+        " ducklake_connection_string = 'host=postgres1 port=5432 dbname=ducklake2 user=postgres';",
+        settings={"allow_experimental_database_ducklake_catalog": 1},
+    )
+
+
 def copy_dir_to_container(instance, src_dir, dest_dir):
     """copy_file_to_container handles files only; ship a tarball instead."""
     tar_path = os.path.join(
@@ -61,21 +86,17 @@ def copy_dir_to_container(instance, src_dir, dest_dir):
 def started_cluster():
     cluster.start()
     try:
-        copy_dir_to_container(
-            node,
-            os.path.join(FIXTURES_DIR, "ducklake_data"),
-            "/var/lib/clickhouse/user_files/ducklake_data",
-        )
-        copy_dir_to_container(
-            node,
-            os.path.join(FIXTURES_DIR, "ducklake_fail_data"),
-            "/var/lib/clickhouse/user_files/ducklake_fail_data",
-        )
+        for data_dir in ("ducklake_data", "ducklake_fail_data", "ducklake_data2"):
+            copy_dir_to_container(
+                node,
+                os.path.join(FIXTURES_DIR, data_dir),
+                f"/var/lib/clickhouse/user_files/{data_dir}",
+            )
         # the .db files are too large for copy_file_to_container (argv limit), tar them
         tar_path = os.path.join(cluster.instances_dir, node.name, "catalogs.tar.gz")
         os.makedirs(os.path.dirname(tar_path), exist_ok=True)
         with tarfile.open(tar_path, "w:gz") as tar:
-            for db_file in ("catalog.db", "catalog_inlined.db", "catalog_badversion.db"):
+            for db_file in ("catalog.db", "catalog2.db", "catalog_inlined.db", "catalog_badversion.db"):
                 tar.add(os.path.join(FIXTURES_DIR, db_file), arcname=db_file)
         node.copy_file_to_container(tar_path, "/tmp/catalogs.tar.gz")
         node.exec_in_container(
@@ -91,6 +112,30 @@ def started_cluster():
         run_and_check(
             [
                 f"docker exec {postgres_container_id} psql -U postgres -d postgres -f /tmp/catalog.sql"
+            ],
+            shell=True,
+        )
+        # the second catalog lives in its own database (same ducklake_* table names)
+        cluster.copy_file_to_container(
+            postgres_container_id,
+            os.path.join(FIXTURES_DIR, "catalog2.sql"),
+            "/tmp/catalog2.sql",
+        )
+        run_and_check(
+            [
+                f"docker exec {postgres_container_id} psql -U postgres -c 'DROP DATABASE IF EXISTS ducklake2'"
+            ],
+            shell=True,
+        )
+        run_and_check(
+            [
+                f"docker exec {postgres_container_id} psql -U postgres -c 'CREATE DATABASE ducklake2'"
+            ],
+            shell=True,
+        )
+        run_and_check(
+            [
+                f"docker exec {postgres_container_id} psql -U postgres -d ducklake2 -f /tmp/catalog2.sql"
             ],
             shell=True,
         )
@@ -147,6 +192,95 @@ def run_checks(database):
     )
 
 
+def run_checks2(database):
+    assert node.query("SHOW TABLES", database=database) == (
+        "main.inlined_evolved\n"
+        "main.inlined_mixed\n"
+        "main.inlined_nested\n"
+        "main.inlined_types\n"
+        "main.partitioned\n"
+    )
+
+    # file with 100 rows minus 3 inlined deletions, plus 5 inlined inserts of which
+    # one deleted and two updated
+    assert (
+        node.query("SELECT count() FROM `main.inlined_mixed`", database=database) == "101\n"
+    )
+    assert (
+        node.query(
+            "SELECT * FROM `main.inlined_mixed` WHERE id >= 1000 ORDER BY id",
+            database=database,
+        )
+        == "1000\tinl0\n1001\tupdated\n1003\tupdated\n1004\tinl4\n"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM `main.inlined_mixed` WHERE id IN (3, 17, 42)",
+            database=database,
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT * FROM `main.inlined_mixed` WHERE v = 'updated' ORDER BY id",
+            database=database,
+        )
+        == "1001\tupdated\n1003\tupdated\n"
+    )
+
+    assert (
+        node.query(
+            "SELECT b, i8, i16, i32, i64, h, u8, u16, u32, u64, f32, f64, d, vc, bl, dt, tm, ts, tstz, u "
+            "FROM `main.inlined_types` ORDER BY i32",
+            database=database,
+        )
+        == "1\t-1\t-2\t-3\t-4\t12345\t1\t2\t3\t4\t1.5\t2.5\t12.34\tstr\tblobdata\t"
+        "2024-01-15\t10:30:00\t2024-01-15 10:30:00.000000\t2024-01-15 10:30:00.000000\t"
+        "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\n"
+        "0\t1\t2\t3\t4\t-12345\t5\t6\t7\t8\t-1.5\t-2.5\t-12.34\tweird \\'quote\t\\0ff\t"
+        "2025-02-16\t11:31:01\t2025-02-16 11:31:01.123456\t2025-02-16 11:31:01.123456\t"
+        "b1ffbc99-9c0b-4ef8-bb6d-6bb9bd380a22\n"
+    )
+
+    # NULL nested values become default tuples/arrays/maps, like in the Parquet reader
+    assert (
+        node.query("SELECT * FROM `main.inlined_nested` ORDER BY id", database=database)
+        == "1\t(1,'u')\t[1,2]\t{'a':1}\n2\t(2,'v w')\t[3]\t{'b':2,'c':3}\n3\t(NULL,NULL)\t[]\t{}\n"
+    )
+    assert (
+        node.query("SELECT s.x, s.y FROM `main.inlined_nested` WHERE id = 1", database=database)
+        == "1\tu\n"
+    )
+    assert (
+        node.query("SELECT m['b'] FROM `main.inlined_nested` WHERE id = 2", database=database)
+        == "2\n"
+    )
+
+    # inlined rows from before an ADD COLUMN get defaults; rows from before a RENAME
+    # are tracked via the column history
+    assert (
+        node.query("SELECT * FROM `main.inlined_evolved` ORDER BY id", database=database)
+        == "1\tone\t\\N\n2\ttwo\t\\N\n3\tthree\t3.5\n4\tfour\t4.5\n5\tfive\t5.5\n"
+    )
+
+    # partitioned table: correctness of filtered reads
+    assert node.query("SELECT count() FROM `main.partitioned`", database=database) == "120\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned` WHERE region = 'a'", database=database
+    ) == "40\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned` WHERE id < 10", database=database
+    ) == "10\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned` WHERE dt >= '2024-01-01' AND dt < '2024-06-01'",
+        database=database,
+    ) == "60\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned` WHERE region = 'b' AND year(dt) = 2024",
+        database=database,
+    ) == "20\n"
+
+
 def test_ducklake_sqlite(started_cluster):
     create_sqlite_db()
     run_checks("ducklake_sqlite")
@@ -155,6 +289,27 @@ def test_ducklake_sqlite(started_cluster):
 def test_ducklake_postgres(started_cluster):
     create_postgres_db()
     run_checks("ducklake_pg")
+
+
+def test_ducklake_sqlite2(started_cluster):
+    create_sqlite2_db()
+    run_checks2("ducklake_sqlite2")
+
+
+def test_ducklake_postgres2(started_cluster):
+    create_postgres2_db()
+    run_checks2("ducklake_pg2")
+
+
+def test_pruning(started_cluster):
+    create_sqlite2_db()
+    # effectiveness of file pruning is observable in the server log
+    node.query("SELECT count() FROM `main.partitioned` WHERE id < 10", database="ducklake_sqlite2")
+    assert node.grep_in_log("DuckLake: pruned 5 of 6 files")
+    node.query("SELECT count() FROM `main.partitioned` WHERE region = 'a'", database="ducklake_sqlite2")
+    assert node.grep_in_log("DuckLake: pruned 4 of 6 files")
+    node.query("SELECT count() FROM `main.partitioned` WHERE region = 'zzz'", database="ducklake_sqlite2")
+    assert node.grep_in_log("DuckLake: pruned 6 of 6 files")
 
 
 def test_requires_experimental_setting(started_cluster):
@@ -177,7 +332,7 @@ def test_requires_connection_string(started_cluster):
         )
 
 
-def test_inlined_data_rejected(started_cluster):
+def test_inlined_data(started_cluster):
     node.query("DROP DATABASE IF EXISTS ducklake_inlined SYNC")
     node.query(
         "CREATE DATABASE ducklake_inlined ENGINE = DataLakeCatalog('ducklake')"
@@ -185,8 +340,9 @@ def test_inlined_data_rejected(started_cluster):
         " ducklake_connection_string = 'catalog_inlined.db';",
         settings={"allow_experimental_database_ducklake_catalog": 1},
     )
-    with pytest.raises(QueryRuntimeException, match="inlined data"):
-        node.query("SELECT * FROM `main.inl`", database="ducklake_inlined")
+    # the whole table lives in the catalog (no data files at all)
+    assert node.query("SELECT * FROM `main.inl`", database="ducklake_inlined") == "1\ta\n"
+    assert node.query("SELECT * FROM `main.inl` WHERE id = 2", database="ducklake_inlined") == ""
 
 
 def test_unsupported_catalog_version(started_cluster):

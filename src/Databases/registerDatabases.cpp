@@ -81,7 +81,7 @@ void registerDatabases()
     registerDatabaseHDFS(factory);
 #endif
 
-#if USE_AVRO && USE_PARQUET
+#if USE_PARQUET
     registerDatabaseDataLake(factory);
 #endif
 

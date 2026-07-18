@@ -4,11 +4,13 @@
 
 #if USE_PARQUET
 
+#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakeDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -31,6 +33,7 @@ public:
         Int64 table_id_,
         NamesAndTypesList schema_,
         ColumnMapperPtr column_mapper_,
+        std::unordered_map<Int64, NameAndTypePair> column_types_by_id_,
         String catalog_table_path_,
         String storage_table_path_);
 
@@ -73,6 +76,15 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context) const override;
 
+    /// Rows inlined in the catalog database (DuckLake data inlining) are not files; produce
+    /// them as an additional pipe united with the file-reading pipes. Returns an empty pipe
+    /// when the table has no inlined rows visible at the pinned snapshot.
+    Pipe getAdditionalReadPipe(
+        const ReadFromFormatInfo & info,
+        StorageMetadataPtr storage_metadata_snapshot,
+        ContextPtr context,
+        size_t max_block_size) const override;
+
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationWeakPtr configuration;
@@ -81,6 +93,8 @@ private:
     Int64 table_id;
     NamesAndTypesList schema;
     ColumnMapperPtr column_mapper;
+    /// column_id -> name+type of visible columns, used for stats/partition pruning.
+    std::unordered_map<Int64, NameAndTypePair> column_types_by_id;
     /// Catalog-side table data path (scheme stripped, no trailing slash), used to verify
     /// absolute file paths from the catalog belong to this table.
     String catalog_table_path;
@@ -88,6 +102,8 @@ private:
     /// path for local storage or a key prefix for remote storage. Object paths are composed
     /// as storage_table_path + '/' + <catalog-relative path>.
     String storage_table_path;
+
+    LoggerPtr log = getLogger("DuckLakeMetadata");
 
     String toObjectPath(const String & path, bool path_is_relative) const;
 };
