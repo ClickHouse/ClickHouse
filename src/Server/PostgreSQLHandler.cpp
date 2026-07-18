@@ -631,6 +631,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+        /// Initialize the emulated `pg_catalog` views before the copy, mirroring `processQuery`, so that the
+        /// `COPY` path sees the same catalog surface as ordinary queries on a fresh connection.
+        if (should_init_system_tables)
+        {
+            initializeSystemTables(query_context);
+            should_init_system_tables = false;
+        }
+
         QueryScope query_scope = QueryScope::create(query_context);
 
         String columns_to_insert;
@@ -714,6 +723,16 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+        /// Lazily create the emulated `pg_catalog` views before running the copied query, exactly as
+        /// `processQuery` does for ordinary queries. Otherwise `COPY (SELECT * FROM pg_namespace) TO STDOUT`
+        /// on a fresh connection would fail with `UNKNOWN_TABLE` while a plain `SELECT * FROM pg_namespace`
+        /// succeeds.
+        if (should_init_system_tables)
+        {
+            initializeSystemTables(query_context);
+            should_init_system_tables = false;
+        }
 
         QueryScope query_scope = QueryScope::create(query_context);
 

@@ -251,6 +251,26 @@ def test_copy_to_stdout_format_is_case_insensitive(started_cluster):
         conn.close()
 
 
+def test_copy_query_initializes_catalog_on_fresh_connection(started_cluster):
+    # `COPY (query) TO STDOUT` must create the emulated `pg_catalog` views before it runs the copied query,
+    # exactly as an ordinary query does. Previously the COPY path skipped that lazy initialization, so a
+    # catalog query run as the very first command on a fresh connection failed with `UNKNOWN_TABLE` even
+    # though a plain `SELECT` from the same view worked.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        # The very first command on this connection is a COPY of a catalog query.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT nspname FROM pg_namespace WHERE nspname = 'pg_catalog') TO STDOUT", out
+        )
+        assert out.getvalue() == "pg_catalog\n"
+    finally:
+        conn.close()
+
+
 def test_copy_honours_format_and_ignores_other_options(started_cluster):
     # Real PostgreSQL clients append data-formatting options to `COPY`. psycopg2's `copy_to`/`copy_from`
     # always send `WITH DELIMITER AS '\t' NULL AS '\N'`, and a client may spell the format together with
