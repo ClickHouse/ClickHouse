@@ -165,6 +165,32 @@ def test_array_of_decimal_roundtrip(started_cluster):
     ) == "[1.25,-3.57]\t[1234567890123456789012345678.1234567891]\n"
 
 
+def test_array_of_nullable_roundtrip(started_cluster):
+    # An `Array(Nullable(T))` column must be inferred with a nullable element type so that a NULL element is
+    # read back as NULL instead of being rewritten to the element type's default. The column type does not
+    # start with `Nullable(`, so the emulated `pg_attribute` has to detect the nullable element from the
+    # `Nullable(` wrapper inside the leading `Array(` chain and advertise `attnotnull = 'f'`.
+    node.query("DROP TABLE IF EXISTS test_nullable_arrays SYNC")
+    node.query(
+        "CREATE TABLE test_nullable_arrays "
+        "(id UInt32, an Array(Nullable(Int32)), asn Array(Nullable(String))) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_nullable_arrays VALUES (1, [1, NULL, 3], ['a', NULL, 'c'])"
+    )
+
+    assert node.query(
+        "SELECT toTypeName(an), toTypeName(asn) "
+        f"FROM {pg_source('default', 'test_nullable_arrays')} LIMIT 1"
+    ) == "Array(Nullable(Int32))\tArray(Nullable(String))\n"
+
+    # The NULL elements survive the round-trip (they are not turned into 0 / '').
+    assert node.query(
+        f"SELECT id, an, asn FROM {pg_source('default', 'test_nullable_arrays')} ORDER BY id"
+    ) == "1\t[1,NULL,3]\t['a',NULL,'c']\n"
+
+
 def test_select_constant_array_over_wire(started_cluster):
     # A constant array expression must be streamed in PostgreSQL array-literal form like a table-backed
     # one: the array serializer has to cope with a `ColumnConst` input (`SELECT [1, 2]` produces one when

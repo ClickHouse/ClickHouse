@@ -1321,7 +1321,12 @@ SELECT
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
             -1) AS atttypmod,
-    if (startsWith(cols.type, 'Nullable(') OR startsWith(cols.type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
+    /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
+    /// materializes can be NULL: a `Nullable`/`LowCardinality(Nullable(...))` scalar, or an array whose
+    /// element type is `Nullable(...)` (e.g. `Array(Nullable(Int32))`, whose type does not start with
+    /// `Nullable(`). Otherwise `insertPostgreSQLValue` would rewrite a NULL array element to the element
+    /// type's default and silently corrupt results.
+    if (position(cols.wrappers, 'Nullable(') > 0, 'f', 't') AS attnotnull,
     cols.ndims AS attndims,
     '' AS attgenerated
 FROM (
@@ -1337,9 +1342,14 @@ FROM (
         coalesce(numeric_scale,
                  toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*Decimal\([0-9]+, ([0-9]+)\)'))) AS decimal_scale,
         extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*([A-Za-z0-9]+)') AS base,
+        /// The leading chain of `Nullable(` / `LowCardinality(` / `Array(` wrappers, reused below to count
+        /// array dimensions and to detect whether the value (an array element, or the scalar itself) is
+        /// nullable. A `Nullable(` can only appear in this chain right before the innermost scalar, so its
+        /// presence marks the element as nullable even for `Array(Nullable(T))`.
+        extract(type, '^((?:Nullable\(|LowCardinality\(|Array\()*)') AS wrappers,
         /// Count only the leading `Array(` wrappers. An `Array(` nested inside a `Map`/`Tuple` argument
         /// list must not make the column look like a top-level array: such columns are exposed as text.
-        toInt32(countSubstrings(extract(type, '^((?:Nullable\(|LowCardinality\(|Array\()*)'), 'Array(')) AS ndims
+        toInt32(countSubstrings(wrappers, 'Array(')) AS ndims
     FROM system.columns
 ) AS cols
 INNER JOIN pg_class_oids AS oids ON cols.database = oids.database AND cols.table = oids.name)");
