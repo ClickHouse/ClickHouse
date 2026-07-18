@@ -308,8 +308,16 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
 
     if (survival_enabled)
+    {
         mutate_task->enableSurvivalAcrossTransientReconnect(
             &is_surviving_reconnect, &storage.getTransientReconnectFlag(), &storage.getShutdownCalledFlag());
+
+        /// The mutation is now actually computing into a temporary part, so from here on a transient
+        /// reconnect may detach it and keep it running. Publish this only after `mutate_task` and the
+        /// survival wiring above are fully set up: `tryDetachForTransientReconnect` reads this flag
+        /// (with acquire semantics) to decide eligibility without racing this worker thread.
+        ready_to_detach.store(true);
+    }
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)
@@ -325,9 +333,20 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
+    /// The compute phase is over. Close the detach window (under `detach_mutex`) and take a single
+    /// consistent reading of whether this task detached itself as a survivor: after this point
+    /// `tryDetachForTransientReconnect` must not detach the task, so it does not race the commit
+    /// path below (which resets `mutate_task` and releases the temporary-directory guards).
+    bool surviving_reconnect = false;
+    {
+        std::lock_guard lock(detach_mutex);
+        ready_to_detach.store(false);
+        surviving_reconnect = is_surviving_reconnect.load();
+    }
+
     /// A task that survived a transient reconnection does not commit its result here; it deposits
     /// it so that a follow-up attempt can re-validate and commit it.
-    if (is_surviving_reconnect.load())
+    if (surviving_reconnect)
         return depositPrecomputedResultForReuse();
 
     HardlinkedFiles hardlinked_files;
@@ -430,17 +449,37 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
 bool MutateFromLogEntryTask::tryDetachForTransientReconnect()
 {
-    /// Only mutations for which the feature is enabled and which have work in progress worth
-    /// preserving may survive. A not-yet-started task (no mutate_task) or one that is already
-    /// reusing a previously-computed result is not eligible.
-    if (!survival_enabled || !mutate_task || reused_precomputed_part)
-        return false;
+    /// This is called by the background executor from the shutdown thread, possibly while a worker
+    /// thread is executing this very task. It must be race-free and must never block (it is called
+    /// with the executor's mutex held), so it only touches atomics up front and only ever tries to
+    /// acquire `detach_mutex`.
 
     /// This may be called more than once for the same task during a single partial shutdown
     /// (each background assignee removes the storage's tasks from the shared executor). If we
-    /// already detached as a survivor, keep saying "yes" so the task is left running.
+    /// already detached as a survivor, keep saying "yes" so the task is left running. Checked
+    /// first, so a survivor that is already depositing its result is never re-entered below.
     if (is_surviving_reconnect.load())
         return true;
+
+    /// Only a task that is actually computing a mutation into a temporary part is eligible. This
+    /// gate is published by the worker at the end of prepare() and cleared when finalize() begins,
+    /// so a not-yet-prepared task, one reusing a previously-computed result, or one that is already
+    /// finishing is not eligible. Reading it here (acquire) does not race the worker.
+    if (!ready_to_detach.load())
+        return false;
+
+    /// Serialize against finalize()'s commit-or-deposit decision. Never block: if the worker holds
+    /// the lock (it is finishing, or publishing state), just decline to survive this time — the
+    /// work is re-computed later, which is correct and only a lost optimization.
+    std::unique_lock lock(detach_mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+
+    /// Re-check under the lock: finalize() clears `ready_to_detach` under `detach_mutex`, so if it
+    /// is still set here the task is guaranteed to be in the compute phase and `mutate_task` /
+    /// `selected_entry` are stable and owned by us for the duration of this call.
+    if (!ready_to_detach.load() || is_surviving_reconnect.load())
+        return false;
 
     /// Reserve the target part name so the queue does not schedule a duplicate task for it while we
     /// keep computing. If it is already reserved or deposited, don't try to survive again.
