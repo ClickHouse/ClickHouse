@@ -422,18 +422,49 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
 
     const Settings & settings = context->getSettingsRef();
 
+    /// The parse-error diagnostic re-reads the inline data of the query (`ASTInsertQuery::data`) to infer
+    /// its structure. On the tail-only path that inline data is null and cannot be re-read: this is the
+    /// synchronous fallback of an async insert whose payload exceeded `async_insert_max_data_size`
+    /// (`executeQuery` moves the payload out of `ASTInsertQuery::data` into `tail` and nulls `data`), as
+    /// well as any other insert whose data arrives purely as a streamed tail. Capture a bounded prefix of
+    /// the bytes as they stream through instead, mirroring the client stdin path.
+    const bool capture_prefix_for_diagnostic = with_buffers && !input_function && !ast_insert_query->data;
+    std::unique_ptr<PrefixCapturingReadBuffer> capturing_buffer;
+    if (capture_prefix_for_diagnostic)
+        capturing_buffer = std::make_unique<PrefixCapturingReadBuffer>(
+            *input_buffer, settings[Setting::input_format_max_bytes_to_read_for_schema_inference]);
+
+    ReadBuffer & format_input = capturing_buffer ? static_cast<ReadBuffer &>(*capturing_buffer) : *input_buffer;
+
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,
+    auto format = context->getInputFormat(ast_insert_query->format, format_input, header,
                                           settings[Setting::max_insert_block_size], std::nullopt,
                                           settings[Setting::max_insert_block_size_bytes],
                                           settings[Setting::min_insert_block_size_rows],
                                           settings[Setting::min_insert_block_size_bytes]);
+
+    /// The format reads from the wrapper (when present), which references the wrapped buffer, so both must
+    /// be kept alive by the format. Moving the `unique_ptr`s does not move the buffer objects themselves,
+    /// so the reference held by the format and `captured_prefix_buffer` below stay valid.
+    const PrefixCapturingReadBuffer * captured_prefix_buffer = capturing_buffer.get();
     format->addBuffer(std::move(input_buffer));
+    if (capturing_buffer)
+        format->addBuffer(std::move(capturing_buffer));
 
     /// Attach a lazy diagnostic used only if parsing the inserted data fails. Skipped for the
     /// input() table function, whose data comes from a separate source.
     if (with_buffers && !input_function)
-        setInsertSchemaMismatchDiagnostic(*format, ast, header, context);
+    {
+        if (captured_prefix_buffer)
+            format->setParseErrorDiagnosticProvider(
+                [captured_prefix_buffer, expected_header = header, format_name = ast_insert_query->format, context]() -> String
+                {
+                    return getInsertDataSchemaMismatchDescription(
+                        captured_prefix_buffer->getCapturedPrefix(), format_name, expected_header, context);
+                });
+        else
+            setInsertSchemaMismatchDiagnostic(*format, ast, header, context);
+    }
 
     return format;
 }
