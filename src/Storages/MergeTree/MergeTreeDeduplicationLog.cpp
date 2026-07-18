@@ -676,21 +676,23 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
                 /// which keeps rotation honest even for a log full of rolled-back pairs.
                 /// It never survives a replay, so it adds nothing to effective coverage.
                 ++existing_logs[current_log_number].entries_count;
-            }
 
-            /// The rolled-back ADD records above are cancelled by these rollback
-            /// records and survive neither the in-memory map nor a replay, so they
-            /// must not count towards log retention: leaving them in
-            /// `effective_entries_count` would let dropOutdatedLogs treat them as
-            /// consumed deduplication-window slots and drop an older log that still
-            /// holds live block ids - after which a restart forgets those committed
-            /// blocks. Undo only the effective count of the ADD records (added above,
-            /// always to `add_log_number`); their raw count stays, so retention
-            /// shrinks while rotation still accounts for the physical growth. Done
-            /// only after the rollback records were written, so a failure to persist
-            /// them (handled below) leaves the ADDs counted as surviving - matching
-            /// what a replay of just their records would then reconstruct.
-            existing_logs.at(add_log_number).effective_entries_count -= written;
+                /// The ADD record this cancels (written above, always to
+                /// `add_log_number`) no longer survives a replay: the (ADD, DROP-marker)
+                /// pair is elided. So the ADD must stop counting towards that log's
+                /// effective coverage - otherwise dropOutdatedLogs treats it as a
+                /// consumed deduplication-window slot and can drop an older log that
+                /// still holds live block ids, after which a restart forgets those
+                /// committed blocks. Decrement once per successfully written compensating
+                /// record, right after it is durable, rather than once after the whole
+                /// loop: if a later writeRecord throws, only the ADDs whose compensating
+                /// record did reach disk are discounted, which is exactly what a replay
+                /// of the partially written rollback stream reconstructs. A single
+                /// post-loop decrement would instead discount every ADD even when only a
+                /// prefix of the compensating records was persisted, inflating
+                /// retention's view of the surviving coverage.
+                --existing_logs.at(add_log_number).effective_entries_count;
+            }
         }
         catch (...)
         {
@@ -822,9 +824,15 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
                 /// addPart), but never survives a replay, so not towards effective
                 /// coverage.
                 ++existing_logs[current_log_number].entries_count;
-            }
 
-            existing_logs.at(drop_log_number).effective_entries_count -= written;
+                /// The DROP record this CANCEL cancels (written above, always to
+                /// `drop_log_number`) no longer survives a replay, so decrement its
+                /// effective coverage once per successfully written CANCEL - right after
+                /// it is durable - so a mid-loop failure discounts only the DROPs whose
+                /// CANCEL reached disk, matching what a replay of the partially written
+                /// rollback reconstructs (see the analogous rollback in addPart).
+                --existing_logs.at(drop_log_number).effective_entries_count;
+            }
         }
         catch (...)
         {

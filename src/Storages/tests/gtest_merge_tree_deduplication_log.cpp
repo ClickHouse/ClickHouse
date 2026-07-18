@@ -196,6 +196,73 @@ public:
     const size_t fail_from_sync;
 };
 
+/// Wraps an already open file writer and fails once on a chosen sync() and once on a
+/// chosen flush (next()). Reproduces a rotation failure (the sync of the previous file)
+/// followed by a failure partway through writing the compensating rollback records (the
+/// flush), so the rollback itself is interrupted after persisting only some of its
+/// records. Both counters are shared across every writer the owning disk creates, so
+/// each fault fires exactly once overall.
+class FailingOnNthSyncAndNthFlushWriteBuffer : public WriteBufferFromFileDecorator
+{
+public:
+    FailingOnNthSyncAndNthFlushWriteBuffer(
+        std::unique_ptr<WriteBufferFromFileBase> impl_,
+        size_t & sync_count_, size_t fail_on_sync_,
+        size_t & flush_count_, size_t fail_on_flush_)
+        : WriteBufferFromFileDecorator(std::move(impl_))
+        , sync_count(sync_count_), fail_on_sync(fail_on_sync_)
+        , flush_count(flush_count_), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+    void sync() override
+    {
+        ++sync_count;
+        if (sync_count == fail_on_sync)
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected sync failure");
+        WriteBufferFromFileDecorator::sync();
+    }
+
+private:
+    void nextImpl() override
+    {
+        ++flush_count;
+        if (flush_count == fail_on_flush)
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        /// Same delegation `WriteBufferFromFileDecorator::nextImpl` does, inlined here
+        /// because that method is private in the base class.
+        SwapHelper swap(*this, *impl);
+        impl->next();
+    }
+
+    size_t & sync_count;
+    const size_t fail_on_sync;
+    size_t & flush_count;
+    const size_t fail_on_flush;
+};
+
+/// A DiskLocal whose writers fail once on the Nth sync() and once on the Mth flush.
+class DiskThrowingOnNthSyncAndNthFlush : public DiskLocal
+{
+public:
+    DiskThrowingOnNthSyncAndNthFlush(const String & name_, const String & path_, size_t fail_on_sync_, size_t fail_on_flush_)
+        : DiskLocal(name_, path_), fail_on_sync(fail_on_sync_), fail_on_flush(fail_on_flush_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        return std::make_unique<FailingOnNthSyncAndNthFlushWriteBuffer>(
+            DiskLocal::writeFile(path, buf_size, mode, settings), sync_count, fail_on_sync, flush_count, fail_on_flush);
+    }
+
+    size_t sync_count = 0;
+    const size_t fail_on_sync;
+    size_t flush_count = 0;
+    const size_t fail_on_flush;
+};
+
 /// Read the raw records of every deduplication log file under `logs_root`, in
 /// chronological (log-number) order, without any of the rollback-pairing logic -
 /// the way every server version reads them off the disk.
@@ -1216,6 +1283,71 @@ TEST(MergeTreeDeduplicationLog, RepeatedRollbacksAreCompactedAwayOnRestartWithou
         /// retryable - compaction preserved the live state exactly.
         EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
         EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: when a failed insert's rollback is itself interrupted partway -
+/// some compensating records reach disk, then a write throws - the per-file effective
+/// record count must reflect exactly what a replay of that partially written stream
+/// reconstructs. Otherwise retention (dropOutdatedLogs) over-counts the log holding the
+/// rolled-back ADD records - as if none of them had been cancelled - and can drop an
+/// older log that still holds a committed block id, so a restart forgets that committed
+/// insert and wrongly accepts its retry. Decrementing the effective count once per
+/// successfully written compensating record (rather than once after the whole rollback
+/// loop) keeps it in step with the partially written stream. Without append support
+/// every operation lands in its own file, so a committed block can sit in an older file
+/// than a later failed insert while both stay in the window.
+TEST(MergeTreeDeduplicationLog, PartialRollbackKeepsEffectiveCountInStepWithReplay)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_partial_rollback/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// Without append support every operation rotates and fsyncs the previous file.
+        /// The committed insert of "block1" is fsync #1 (succeeds). The three-block
+        /// failed insert writes three ADD records (flushes #2..#4), and its rotation is
+        /// fsync #2, which fails and rolls the insert back. The rollback then writes a
+        /// compensating record per ADD (flushes #5, #6, then #7 which fails), so only the
+        /// first two ADDs get cancelled durably; the third stays published on disk. That
+        /// interrupted rollback is exactly the scenario the effective count must survive.
+        auto disk = std::make_shared<DiskThrowingOnNthSyncAndNthFlush>(
+            "faulty", work_dir, /*fail_on_sync=*/ 2, /*fail_on_flush=*/ 7);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.simulateDiskWithoutWritingWithAppendSupportForTests();
+        log.load();
+
+        /// One committed insert, alone in its own log file. The window has room for it
+        /// plus the one straggler the interrupted rollback leaves published.
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// A three-block insert whose rotation fails, and whose rollback is then
+        /// interrupted after writing only two of its three compensating records.
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+
+        /// A no-op window resize forces a rotation and a retention pass while the
+        /// (possibly mis-counted) effective count is live. If the failed insert's log is
+        /// over-counted, dropOutdatedLogs drops the older log file holding "block1" here.
+        log.setDeduplicationWindowSize(2);
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart with a healthy disk. If retention wrongly dropped the "block1" file
+        /// above, replaying what is left forgets "block1" and its retry is accepted.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.simulateDiskWithoutWritingWithAppendSupportForTests();
+        log.load();
+
+        /// The committed block must still be deduplicated after the restart.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
     }
 
     std::filesystem::remove_all(work_dir);
