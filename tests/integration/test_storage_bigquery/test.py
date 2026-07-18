@@ -130,25 +130,32 @@ def test_schema_inference():
         "num_p": "Nullable(Decimal(10, 2))",
         "geo": "Nullable(String)",
         "j": "Nullable(String)",
-        "arr": "Array(Nullable(Int64))",
-        "rec": "Nullable(Tuple(x Nullable(Int64), y String, tags Array(Nullable(String))))",
-        "recs": "Array(Nullable(Tuple(k Int64, val Nullable(String))))",
+        "arr": "Array(Int64)",
+        "rec": "Nullable(Tuple(x Nullable(Int64), y String, tags Array(String)))",
+        # DESCRIBE renders a bare (non-Nullable) named Tuple inside an Array on multiple lines, escaped
+        # as `\n` in the TabSeparated output (a Nullable(Tuple(...)) prints on a single line, see `rec`).
+        "recs": "Array(Tuple(\\n    k Int64,\\n    val Nullable(String)))",
     }
 
 
-def test_array_with_null_element():
-    # A REPEATED field is inferred as Array(Nullable(...)) so that NULL elements
-    # returned by tabledata.list are preserved instead of being coerced to a default.
+def test_array_null_element_rejected():
+    # A BigQuery ARRAY cannot store NULL elements (ARRAY<T> is equivalent to ARRAY<T NOT NULL>), so a
+    # REPEATED field is inferred with a non-Nullable element type: DESCRIBE / SHOW CREATE do not advertise
+    # element nullability the backend cannot persist, and a natural Array(T) can be declared explicitly.
     result = node.query(f"DESCRIBE TABLE {bq('test_arr_nulls')}")
     name_to_type = dict(line.split("\t")[:2] for line in result.strip().split("\n"))
     assert name_to_type == {
         "i": "Int64",
-        "arr": "Array(Nullable(Int64))",
-        "tags": "Array(Nullable(String))",
+        "arr": "Array(Int64)",
+        "tags": "Array(String)",
     }
 
-    result = node.query(f"SELECT arr, tags FROM {bq('test_arr_nulls')} FORMAT TSV")
-    assert result == "[1,NULL,2]\t['a',NULL]\n"
+    # The mock table serves a {"v": null} array element (which a real BigQuery table cannot produce). Such
+    # a payload is malformed input and is rejected rather than being coerced into a default element.
+    error = node.query_and_get_error(
+        f"SELECT arr, tags FROM {bq('test_arr_nulls')} FORMAT TSV"
+    )
+    assert "cannot contain NULL elements" in error
 
 
 def test_select_all_types():
@@ -173,14 +180,14 @@ def test_nullable_record_opt_in():
     # (see test_select_all_types, where `rec` for i=2 comes back as NULL). Declaring such a column
     # with the BigQuery table engine persists a Nullable(Tuple) column, which requires the
     # enable_nullable_tuple_type setting, as for any Nullable(Tuple) column. The engine accepts either
-    # the exact Nullable(Tuple(...)) (or Array(Nullable(Tuple(...)))) or a plain Tuple(...).
+    # the exact Nullable(Tuple(...)) or a plain Tuple(...).
     settings = {"enable_nullable_tuple_type": 1}
 
     # Reading a NULL RECORD losslessly.
     node.query("DROP TABLE IF EXISTS bq_nullable_rec")
     node.query(
         "CREATE TABLE bq_nullable_rec "
-        "(i Int64, rec Nullable(Tuple(x Nullable(Int64), y String, tags Array(Nullable(String))))) "
+        "(i Int64, rec Nullable(Tuple(x Nullable(Int64), y String, tags Array(String)))) "
         f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
         f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
         settings=settings,
@@ -194,20 +201,18 @@ def test_nullable_record_opt_in():
     )
     node.query("DROP TABLE bq_nullable_rec")
 
-    # Array(Nullable(Tuple(...))) is likewise accepted for a REPEATED RECORD field.
+    # A REPEATED RECORD field is inferred as Array(Tuple(...)) (a BigQuery array cannot contain NULL
+    # elements), so it needs no enable_nullable_tuple_type setting. A NULL field inside a record element
+    # still round-trips through the field's own Nullable type.
     node.query("DROP TABLE IF EXISTS bq_nullable_recs")
     node.query(
         "CREATE TABLE bq_nullable_recs "
-        "(i Int64, recs Array(Nullable(Tuple(k Int64, val Nullable(String))))) "
+        "(i Int64, recs Array(Tuple(k Int64, val Nullable(String)))) "
         f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
-        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
-        settings=settings,
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
     )
     assert (
-        node.query(
-            "SELECT i, recs FROM bq_nullable_recs ORDER BY i FORMAT TSV",
-            settings=settings,
-        )
+        node.query("SELECT i, recs FROM bq_nullable_recs ORDER BY i FORMAT TSV")
         == "1\t[(1,'one'),(2,NULL)]\n2\t[]\n3\t[]\n"
     )
     node.query("DROP TABLE bq_nullable_recs")
@@ -239,7 +244,7 @@ def test_nullable_record_opt_in():
     node.query("DROP TABLE IF EXISTS bq_wrong_null")
     node.query(
         "CREATE TABLE bq_wrong_null "
-        "(i Int64, rec Nullable(Tuple(x Nullable(Int64), y Nullable(String), tags Array(Nullable(String))))) "
+        "(i Int64, rec Nullable(Tuple(x Nullable(Int64), y Nullable(String), tags Array(String)))) "
         f"ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_types', "
         f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
         settings=settings,

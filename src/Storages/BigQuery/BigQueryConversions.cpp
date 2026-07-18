@@ -221,7 +221,15 @@ void insertBigQueryValue(IColumn & column, const DataTypePtr & type, const BigQu
             auto element = elements->getObject(static_cast<unsigned>(i));
             if (!element)
                 throwIncorrectValue(field, value.toString());
-            insertNonRepeatedValue(column_array.getData(), nested_type, field, element->get("v"));
+            const auto element_value = element->get("v");
+            /// A stored BigQuery array cannot contain NULL elements, so the element type is not Nullable.
+            /// A NULL element in the response is therefore malformed input, not a value to coerce to a default.
+            if (element_value.isEmpty() && !nested_type->isNullable())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "The BigQuery array field '{}' contains a NULL element, but a BigQuery array cannot contain NULL elements",
+                    field.name);
+            insertNonRepeatedValue(column_array.getData(), nested_type, field, element_value);
         }
         offsets.push_back(offsets.back() + elements->size());
         return;

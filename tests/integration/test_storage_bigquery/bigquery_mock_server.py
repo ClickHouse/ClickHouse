@@ -173,8 +173,9 @@ WRITABLE_SCHEMA = [
     f("meta", "RECORD", "NULLABLE", fields=[f("a", "INTEGER")]),
 ]
 
-# A REPEATED field whose elements can be NULL: BigQuery serves them as {"v": null},
-# and they must be preserved (not coerced to a default).
+# A malformed fixture: a REPEATED field whose response carries {"v": null} elements. A real BigQuery
+# table cannot store NULL array elements (ARRAY<T> is equivalent to ARRAY<T NOT NULL>), so such a payload
+# is malformed input and the reader rejects it instead of coercing the element to a default.
 ARR_NULLS_SCHEMA = [
     f("i", "INTEGER", "REQUIRED"),
     f("arr", "INTEGER", "REPEATED"),
