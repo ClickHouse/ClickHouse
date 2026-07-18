@@ -8,6 +8,11 @@
 
 SET enable_streaming_queries = 1;
 
+-- Keep effective `max_threads` as set below. Under memory pressure (e.g. per_test_coverage)
+-- `getMaxThreadsForAvailableMemory` clamps `max_threads` down to 1, which stops the async branch
+-- from amplifying `requested_num_streams`, so a buggy build would false-pass. See PR #100383.
+SET max_threads_min_free_memory_per_thread = 0;
+
 DROP TABLE IF EXISTS t_stream_max_streams_clamp;
 
 CREATE TABLE t_stream_max_streams_clamp (x UInt64) ENGINE = MergeTree ORDER BY x;
