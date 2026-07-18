@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -280,11 +281,15 @@ void SelectStreamFactory::createForShardImpl(
             /// exception classes the named-table branch below can ignore, where `tryGetTable` returns null:
             /// `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` (this is also the set that `skip_unavailable_shards_mode
             /// = unavailable_or_table_missing` treats as a skippable "table missing" failure, see
-            /// `RemoteQueryExecutor::shouldIgnoreShardException`). For example `loop(...)` /
-            /// `dictionary(...)` whose backing object is missing only on the local replica. Every other
-            /// table-function error (e.g. a deterministic evaluation failure such as `numbers(intDiv(1, 0))`)
-            /// must propagate so it is not silently downgraded to a connection/skip failure, which would
-            /// bypass the `skip_unavailable_shards_mode` contract.
+            /// `RemoteQueryExecutor::shouldIgnoreShardException`), plus `BAD_ARGUMENTS`, which is how a
+            /// missing dictionary surfaces: `dictionary('d')` loads through `ExternalDictionariesLoader`,
+            /// which reports an unknown dictionary as `BAD_ARGUMENTS` ("... not found") rather than
+            /// `UNKNOWN_TABLE`. So for `loop(...)` / `dictionary(...)` / `view(...)` whose backing object is
+            /// missing only on the local replica, the query still tries a healthy remote replica or is
+            /// skipped. Every other table-function error (e.g. a deterministic evaluation failure such as
+            /// `numbers(intDiv(1, 0))`, which raises `ILLEGAL_DIVISION`) must propagate so it is not silently
+            /// downgraded to a connection/skip failure, which would bypass the `skip_unavailable_shards_mode`
+            /// contract.
             try
             {
                 TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
@@ -292,7 +297,8 @@ void SelectStreamFactory::createForShardImpl(
             }
             catch (const Exception & e)
             {
-                if (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                if (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE
+                    && e.code() != ErrorCodes::BAD_ARGUMENTS)
                     throw;
 
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),

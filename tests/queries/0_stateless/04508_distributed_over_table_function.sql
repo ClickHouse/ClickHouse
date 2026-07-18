@@ -565,12 +565,30 @@ SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 0, skip_
 DROP TABLE dist_probe_missing;
 DROP TABLE dist_probe_missing_named;
 
+-- A dictionary missing only on the local replica must be treated as an absent backing object by the
+-- local-replica probe too, so the query can fall back to a healthy remote replica or honor
+-- `skip_unavailable_shards`. Unlike a missing table (`UNKNOWN_TABLE`), the `dictionary` table function
+-- surfaces an unknown dictionary as `BAD_ARGUMENTS` ("... not found") from `ExternalDictionariesLoader`, so
+-- the probe recognizes `BAD_ARGUMENTS` in addition to `UNKNOWN_TABLE` / `UNKNOWN_DATABASE`. Otherwise the
+-- probe would abort the whole query on the local replica instead. `prefer_localhost_replica = 1` pins the
+-- read to the local-replica probe path; `test_shard_localhost` has no remote replicas, so the (only, local)
+-- shard is skipped and the query reports `ALL_CONNECTION_TRIES_FAILED` ("No available shards to query") -
+-- byte for byte the same as a missing table on the same shard - rather than the fatal `BAD_ARGUMENTS`.
+CREATE TABLE dist_probe_missing_dict (key UInt64, value String) ENGINE = Distributed(test_shard_localhost, dictionary('probe_missing_dict'));
+SELECT count() FROM dist_probe_missing_dict SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT count() FROM dist_probe_missing_dict SETTINGS enable_analyzer = 0, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+-- Without `skip_unavailable_shards` (and with no remote replica to try) the missing dictionary still
+-- surfaces the usual way, so nothing is silently swallowed.
+SELECT count() FROM dist_probe_missing_dict SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 0, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE dist_probe_missing_dict;
+
 -- A deterministic evaluation failure of the target table function is a real error and must be surfaced, not
--- silently downgraded to a skipped shard: the local-replica probe only treats a missing backing object
--- (`UNKNOWN_TABLE` / `UNKNOWN_DATABASE`) as "table absent", every other exception propagates - even with
--- `skip_unavailable_shards = 1`, which is only meant to swallow unavailability / missing-table failures.
--- `intDiv(1, 0)` fails the same way whether the target runs on the local replica (the probe) or a remote
--- shard, so the error surfaces regardless of `prefer_localhost_replica`.
+-- silently downgraded to a skipped shard: the local-replica probe treats only a missing backing object
+-- (`UNKNOWN_TABLE` / `UNKNOWN_DATABASE`, or `BAD_ARGUMENTS` for a missing dictionary) as "table absent",
+-- every other exception propagates - even with `skip_unavailable_shards = 1`, which is only meant to swallow
+-- unavailability / missing-table failures. `intDiv(1, 0)` raises `ILLEGAL_DIVISION` and fails the same way
+-- whether the target runs on the local replica (the probe) or a remote shard, so the error surfaces
+-- regardless of `prefer_localhost_replica`.
 CREATE TABLE dist_probe_error (n UInt64) ENGINE = Distributed(test_shard_localhost, numbers(intDiv(1, 0)));
 SELECT count() FROM dist_probe_error SETTINGS skip_unavailable_shards = 1; -- { serverError ILLEGAL_DIVISION }
 DROP TABLE dist_probe_error;
