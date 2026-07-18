@@ -1,10 +1,15 @@
 -- Tags: long
--- The `long` tag exempts the test from the 180s flaky-check per-run timeout:
--- it contains many distinct `WITH RECURSIVE` queries, each exercising a different
--- planner edge case, and under pathological random-settings combinations
--- (notably `max_threads = 32` with split-range injection) a single recursive
--- step can take several seconds, putting the whole test over budget even
--- though the dataset is small.
+-- The `long` tag only lifts the 180s soft "runs too long" flaky-check warning; it
+-- does NOT change the hard per-invocation `--timeout` (600s), which kills the whole
+-- `.sql` file when one run exceeds it. This test has many distinct `WITH RECURSIVE`
+-- queries (each a different planner edge case), and every recursive step rebuilds a
+-- fresh pipeline. Under pathological random-settings combinations -- notably
+-- `max_threads = 32` with split-range injection, per-stream read buffers and mmap
+-- reads -- that per-step fixed cost multiplies across the whole file and, in the
+-- debug build, pushed a single run past 600s. We therefore pin `max_threads` to a
+-- small value below: the results proved here (recursive-walk outputs and the
+-- primary-key mark-pruning `read_rows` counts) do not depend on thread count, so
+-- capping it removes the dominant overhead while preserving all the coverage.
 
 -- Test that recursive CTEs with JOINs use MergeTree primary key index.
 -- Without the optimization, each recursion step scans the entire table.
@@ -13,6 +18,11 @@
 -- MergeTree primary key index usage.
 
 SET enable_analyzer = 1;
+
+-- Pin `max_threads` so the flaky check's random `max_threads = 32` draw cannot
+-- multiply the per-step pipeline overhead into a >600s timeout (see the header
+-- note). The data is tiny and the assertions are thread-count-independent.
+SET max_threads = 4;
 
 -- A small `index_granularity` plus `OPTIMIZE ... FINAL` gives a single part with
 -- many marks, so the `read_rows` proof below is deterministic: it relies on
@@ -524,16 +534,16 @@ DROP TABLE small_branch;
 DROP TABLE IF EXISTS str_chain;
 CREATE TABLE str_chain (cur String, nxt String) ENGINE = MergeTree ORDER BY cur SETTINGS index_granularity = 128;
 INSERT INTO str_chain
-    SELECT repeat('k', 2000) || toString(number) AS cur,
-           repeat('k', 2000) || toString(number + 1) AS nxt
+    SELECT repeat('k', 200) || toString(number) AS cur,
+           repeat('k', 200) || toString(number + 1) AS nxt
     FROM numbers(6);
 -- Unrelated wide-key filler rows so a full scan is measurably large. They are
 -- isolated self-loops (`cur = nxt`) never reached from the `'k'` chain seed, so
 -- the result is unchanged; their only purpose is to make the fallback's
 -- `read_rows` observable.
 INSERT INTO str_chain
-    SELECT repeat('z', 2000) || toString(number) AS cur,
-           repeat('z', 2000) || toString(number) AS nxt
+    SELECT repeat('z', 200) || toString(number) AS cur,
+           repeat('z', 200) || toString(number) AS nxt
     FROM numbers(5000);
 OPTIMIZE TABLE str_chain FINAL;
 
@@ -544,7 +554,7 @@ OPTIMIZE TABLE str_chain FINAL;
 -- fires in the normal case; the small-limit case that follows proves the fallback.
 WITH RECURSIVE str_walk_opt AS
 (
-    SELECT repeat('k', 2000) || '0' AS cur
+    SELECT repeat('k', 200) || '0' AS cur
   UNION ALL
     SELECT e.nxt AS cur
     FROM str_chain AS e
@@ -566,7 +576,7 @@ LIMIT 1;
 
 WITH RECURSIVE str_walk AS
 (
-    SELECT repeat('k', 2000) || '0' AS cur
+    SELECT repeat('k', 200) || '0' AS cur
   UNION ALL
     SELECT e.nxt AS cur
     FROM str_chain AS e
