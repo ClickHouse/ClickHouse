@@ -116,18 +116,15 @@ deadlocks.
 ### Importing the dashboard {#import-dashboard}
 
 <Steps>
-<Step>
-#### Download the dashboard JSON {#download}
+<Step title="Download the dashboard JSON" id="download">
 
 <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Download the dashboard JSON</TrackedLink>.
 </Step>
-<Step>
-#### Open the import flow in Grafana {#open-import}
+<Step title="Open the import flow in Grafana" id="open-import">
 
 Go to **Dashboards → New → Import**. Upload the JSON file or paste its contents.
 </Step>
-<Step>
-#### Pick your Prometheus datasource {#pick-datasource}
+<Step title="Pick your Prometheus datasource" id="pick-datasource">
 
 When prompted for the `DS_PROMETHEUS` input, select the Prometheus datasource scraping the endpoint configured in the [previous section](#configuring-prometheus).
 </Step>
