@@ -128,16 +128,16 @@ FROM
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedData>>(argument_types);
         },
         documentation,
-        /// Resolves over a Variant argument (rejected later during execution); keep the resolution-time
-        /// behavior so get() does not reroute it through the supertype adapter.
-        {.support_variant_argument = true},
+        {},
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedWindowData>>(argument_types);
         }
     });

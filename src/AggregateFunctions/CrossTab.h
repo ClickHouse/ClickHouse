@@ -27,6 +27,22 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CORRUPTED_DATA;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+/// The CrossTab family (`contingency`, `cramersV`, `cramersVBiasCorrected`, `theilsU`) hashes its arguments through
+/// UniqVariadicHash, which relies on IColumn::getDataAt. ColumnVariant does not implement getDataAt, so a Variant
+/// (or Dynamic) argument that is accepted at resolution would only fail later during execution. Reject these types at
+/// resolution instead (matching argMin / argMax and the *Stable statistics): reporting ILLEGAL_TYPE_OF_ARGUMENT here
+/// lets AggregateFunctionVariantAdapter retry over the least common supertype of the variants (a lossless supertype
+/// yields a concrete column getDataAt can hash, e.g. Variant(UInt8, UInt64) -> UInt64), and reports a clean error at
+/// resolution otherwise instead of a resolve-success / execute-fail path.
+inline void assertNoDynamicOrVariantArguments(const std::string & name, const DataTypes & argument_types)
+{
+    for (const auto & argument_type : argument_types)
+        if (isDynamic(*argument_type) || isVariant(*argument_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument for aggregate function {}", argument_type->getName(), name);
 }
 
 struct CrossTabPhiSquaredWindowData;
