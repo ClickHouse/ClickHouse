@@ -678,7 +678,7 @@ struct AggregateFunctionMergedJSONPatchData
         /// handling: the aggregate flattens {"a":{"x":1}} into leaf "a.x", so on output we must
         /// reconstruct the value from all descendant leaves and insert it into the typed parent
         /// column as a whole.  Collect those ancestor paths and their types now.
-        std::unordered_map<std::string_view, WhichDataType> nested_typed_ancestors; // STYLE_CHECK_ALLOW_STD_STRING_CONTAINERS
+        std::unordered_map<std::string_view, WhichDataType> nested_typed_ancestors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         if (const auto * obj_type = typeid_cast<const DataTypeObject *>(result_type_.get()))
         {
             for (const auto & [tp, dt] : obj_type->getTypedPaths())
@@ -690,7 +690,7 @@ struct AggregateFunctionMergedJSONPatchData
         }
 
         /// Entries consumed by a nested-typed-ancestor insertion must not be re-processed.
-        std::unordered_set<std::string_view> consumed; // STYLE_CHECK_ALLOW_STD_STRING_CONTAINERS
+        std::unordered_set<std::string_view> consumed; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         for (const auto & [ancestor, which] : nested_typed_ancestors)
         {
