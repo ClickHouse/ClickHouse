@@ -1456,10 +1456,23 @@ The method byte also encodes the [column-level codecs](/sql-reference/statements
 | `0x9c` | `ALP`             |
 | `0x9d` | `SZ3`             |
 | `0x9e` | `Quantized`       |
+| `0x9f` | `LossyQuantile`   |
 
 `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
+
+`0x9f` (`LossyQuantile`) is an **experimental**, rate-controlled *lossy* codec for `Float32` and `Float64` that encodes each value as a K-bit index into per-group codebooks of empirical quantiles. A table can be created with `CODEC(LossyQuantile(bits[, group_size[, stripe_size]]))` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. The codec-specific body starts with an 11-byte header:
+
+```text
+[1 byte:  format version]           ← currently 1; a decoder must reject other values
+[1 byte:  float_width]              ← 4 (Float32) or 8 (Float64)
+[1 byte:  bits]                     ← K, bits per encoded value, 1..8
+[4 bytes: group_size LE u32]        ← number of values per quantile group, > 0
+[4 bytes: stripe_size LE u32]       ← interleaving stride for multi-dimensional data, > 0
+```
+
+The header is followed, for each group of `group_size` values and each of its `stripe_size` stripes, by a codebook of `2^bits` centroids (each `float_width` bytes, little-endian IEEE 754) and then the bit-packed K-bit indices of that stripe's values (least-significant bits first, the last byte zero-padded). Decompression reads all parameters from this persisted header, so the codec is fully self-describing and instantiable from the method byte alone.
 
 ### Checksum {#checksum}
 

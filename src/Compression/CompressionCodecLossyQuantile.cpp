@@ -107,7 +107,11 @@ uint8_t CompressionCodecLossyQuantile::getMethodByte() const
 
 void CompressionCodecLossyQuantile::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    /// float_width is derived from the column type, not from the SQL codec description,
+    /// so it must be hashed explicitly to prevent compact parts from sharing one codec
+    /// instance between Float32 and Float64 streams (same as Gorilla with data_bytes_size).
+    hash.update(float_width);
 }
 
 UInt32 CompressionCodecLossyQuantile::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -370,6 +374,17 @@ UInt32 CompressionCodecLossyQuantile::doCompressData(const char * source, UInt32
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
             "Cannot compress with codec LossyQuantile: source size ({}) is not a multiple of float width ({})",
             source_size, static_cast<unsigned>(float_width));
+
+    /// Compressed blocks are independent: both compression and decompression restart the stripe
+    /// phase at 0 for every block. If a block held a partial stripe period, the next block would
+    /// start on a rotated phase and per-dimension codebooks would no longer match dimensions.
+    /// Fail closed and ask the user to align the block size instead of writing drifted codebooks.
+    if (stripe_size > 1 && (source_size / float_width) % stripe_size != 0)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with codec LossyQuantile: the block contains {} values, which is not a multiple "
+            "of stripe_size ({}). Set max_compress_block_size (and min_compress_block_size) to a multiple of "
+            "stripe_size * {} bytes so that every compressed block contains whole stripe periods",
+            source_size / float_width, stripe_size, static_cast<unsigned>(float_width));
 
     switch (float_width)
     {
