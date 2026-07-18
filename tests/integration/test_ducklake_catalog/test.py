@@ -68,6 +68,26 @@ def create_postgres2_db():
     )
 
 
+def create_sqlite3_db():
+    node.query("DROP DATABASE IF EXISTS ducklake_sqlite3 SYNC")
+    node.query(
+        "CREATE DATABASE ducklake_sqlite3 ENGINE = DataLakeCatalog('ducklake')"
+        " SETTINGS catalog_type = 'ducklake', ducklake_backend = 'sqlite',"
+        " ducklake_connection_string = 'catalog3.db';",
+        settings={"allow_experimental_database_ducklake_catalog": 1},
+    )
+
+
+def create_postgres3_db():
+    node.query("DROP DATABASE IF EXISTS ducklake_pg3 SYNC")
+    node.query(
+        "CREATE DATABASE ducklake_pg3 ENGINE = DataLakeCatalog('ducklake')"
+        " SETTINGS catalog_type = 'ducklake', ducklake_backend = 'postgres',"
+        " ducklake_connection_string = 'host=postgres1 port=5432 dbname=ducklake3 user=postgres';",
+        settings={"allow_experimental_database_ducklake_catalog": 1},
+    )
+
+
 def copy_dir_to_container(instance, src_dir, dest_dir):
     """copy_file_to_container handles files only; ship a tarball instead."""
     tar_path = os.path.join(
@@ -86,7 +106,7 @@ def copy_dir_to_container(instance, src_dir, dest_dir):
 def started_cluster():
     cluster.start()
     try:
-        for data_dir in ("ducklake_data", "ducklake_fail_data", "ducklake_data2"):
+        for data_dir in ("ducklake_data", "ducklake_fail_data", "ducklake_data2", "ducklake_data3"):
             copy_dir_to_container(
                 node,
                 os.path.join(FIXTURES_DIR, data_dir),
@@ -96,7 +116,7 @@ def started_cluster():
         tar_path = os.path.join(cluster.instances_dir, node.name, "catalogs.tar.gz")
         os.makedirs(os.path.dirname(tar_path), exist_ok=True)
         with tarfile.open(tar_path, "w:gz") as tar:
-            for db_file in ("catalog.db", "catalog2.db", "catalog_inlined.db", "catalog_badversion.db"):
+            for db_file in ("catalog.db", "catalog2.db", "catalog3.db", "catalog_inlined.db", "catalog_badversion.db"):
                 tar.add(os.path.join(FIXTURES_DIR, db_file), arcname=db_file)
         node.copy_file_to_container(tar_path, "/tmp/catalogs.tar.gz")
         node.exec_in_container(
@@ -115,30 +135,32 @@ def started_cluster():
             ],
             shell=True,
         )
-        # the second catalog lives in its own database (same ducklake_* table names)
-        cluster.copy_file_to_container(
-            postgres_container_id,
-            os.path.join(FIXTURES_DIR, "catalog2.sql"),
-            "/tmp/catalog2.sql",
-        )
-        run_and_check(
-            [
-                f"docker exec {postgres_container_id} psql -U postgres -c 'DROP DATABASE IF EXISTS ducklake2'"
-            ],
-            shell=True,
-        )
-        run_and_check(
-            [
-                f"docker exec {postgres_container_id} psql -U postgres -c 'CREATE DATABASE ducklake2'"
-            ],
-            shell=True,
-        )
-        run_and_check(
-            [
-                f"docker exec {postgres_container_id} psql -U postgres -d ducklake2 -f /tmp/catalog2.sql"
-            ],
-            shell=True,
-        )
+        # the second and third catalogs live in their own databases (same ducklake_* table names)
+        for dump_name in ("catalog2.sql", "catalog3.sql"):
+            cluster.copy_file_to_container(
+                postgres_container_id,
+                os.path.join(FIXTURES_DIR, dump_name),
+                f"/tmp/{dump_name}",
+            )
+        for db_name in ("ducklake2", "ducklake3"):
+            run_and_check(
+                [
+                    f"docker exec {postgres_container_id} psql -U postgres -c 'DROP DATABASE IF EXISTS {db_name}'"
+                ],
+                shell=True,
+            )
+            run_and_check(
+                [
+                    f"docker exec {postgres_container_id} psql -U postgres -c 'CREATE DATABASE {db_name}'"
+                ],
+                shell=True,
+            )
+            run_and_check(
+                [
+                    f"docker exec {postgres_container_id} psql -U postgres -d {db_name} -f /tmp/{db_name.replace('ducklake', 'catalog')}.sql"
+                ],
+                shell=True,
+            )
         yield cluster
     finally:
         cluster.shutdown()
@@ -301,6 +323,36 @@ def run_checks2(database):
     ) == "4\n"
 
 
+def run_checks3(database):
+    # one normal file (region=aa, written with field ids), one name-mapped file
+    # (region=bb, added via ducklake_add_data_files without field ids; region comes
+    # from the hive path), one normal file written after a RENAME + ADD COLUMN
+    assert node.query("SHOW TABLES", database=database) == "main.mapped\n"
+    assert (
+        node.query("SELECT id, title, region, s, l, m, extra FROM `main.mapped` ORDER BY id", database=database)
+        == "1\tone\taa\t(1,'u')\t[1]\t{'a':1}\t\\N\n"
+        "2\ttwo\taa\t(2,'v')\t[2]\t{'b':2}\t\\N\n"
+        "3\tthree\tbb\t(3,'w')\t[3]\t{'c':3}\t\\N\n"
+        "4\tfour\tbb\t(4,'x')\t[4]\t{'d':4}\t\\N\n"
+        "5\tfive\tcc\t(5,'z')\t[5]\t{'e':5}\t5.5\n"
+    )
+    # filter on a hive partition column (constant from the catalog, applied post-read)
+    assert (
+        node.query("SELECT count() FROM `main.mapped` WHERE region = 'bb'", database=database) == "2\n"
+    )
+    # the name mapping resolves the old file's 'name' column to the renamed 'title'
+    assert (
+        node.query("SELECT id FROM `main.mapped` WHERE title = 'three'", database=database) == "3\n"
+    )
+    # subcolumns of name-mapped nested columns
+    assert (
+        node.query("SELECT id, s.x, s.y FROM `main.mapped` WHERE id = 3", database=database) == "3\t3\tw\n"
+    )
+    assert (
+        node.query("SELECT count() FROM `main.mapped`", database=database) == "5\n"
+    )
+
+
 def test_ducklake_sqlite(started_cluster):
     create_sqlite_db()
     run_checks("ducklake_sqlite")
@@ -319,6 +371,16 @@ def test_ducklake_sqlite2(started_cluster):
 def test_ducklake_postgres2(started_cluster):
     create_postgres2_db()
     run_checks2("ducklake_pg2")
+
+
+def test_ducklake_sqlite3(started_cluster):
+    create_sqlite3_db()
+    run_checks3("ducklake_sqlite3")
+
+
+def test_ducklake_postgres3(started_cluster):
+    create_postgres3_db()
+    run_checks3("ducklake_pg3")
 
 
 def test_pruning(started_cluster):

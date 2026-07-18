@@ -65,7 +65,8 @@ public:
     bool operator==(const IDataLakeMetadata & other) const override;
 
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const override { return column_mapper; }
-    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr) const override { return column_mapper; }
+    /// Files added via ducklake_add_data_files carry their own name-based ColumnMapper.
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
 

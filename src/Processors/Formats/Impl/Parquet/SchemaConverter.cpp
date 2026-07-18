@@ -141,13 +141,36 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(
+    const parq::SchemaElement & element, const String & current_path, const String & current_parquet_path) const
 {
     if (!column_mapper)
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
     if (!element.__isset.field_id)
     {
+        /// Files whose columns lack field ids (e.g. DuckLake name-mapped files) are matched
+        /// by their parquet-side dotted path before falling back to the raw name.
+        const auto & name_map = column_mapper->getStorageColumnNameMapping();
+        if (!name_map.empty())
+        {
+            const String full_parquet_path = current_parquet_path.empty()
+                ? element.name
+                : current_parquet_path + "." + element.name;
+            auto name_it = name_map.find(full_parquet_path);
+            if (name_it != name_map.end())
+            {
+                /// Same contract as the field-id path: full mapped name at top level,
+                /// child component (current_path prefix stripped) when nested.
+                if (current_path.empty())
+                    return name_it->second;
+                std::string_view mapped = name_it->second;
+                if (mapped.starts_with(current_path) && mapped.size() > current_path.size()
+                    && mapped[current_path.size()] == '.')
+                    return mapped.substr(current_path.size() + 1);
+                return name_it->second;
+            }
+        }
         /// Does iceberg require that parquet files have field ids?
         /// Our iceberg writer currently doesn't write them.
         //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
@@ -215,7 +238,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, node.getParquetName()));
 
         if (sample_block)
         {
@@ -758,7 +781,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
+        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, node.getParquetName()));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {

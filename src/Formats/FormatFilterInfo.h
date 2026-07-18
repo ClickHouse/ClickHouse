@@ -27,8 +27,13 @@ public:
     /// even if the whole tuple was requested, because the names of the fields may be different.
     void setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_);
 
+    /// Dotted parquet-side column path -> clickhouse dotted column name, for files whose
+    /// columns lack field ids and are matched by name (DuckLake name mappings).
+    void setStorageColumnNameMapping(std::unordered_map<String, String> && name_mapping_);
+
     const std::unordered_map<String, Int64> & getStorageColumnEncoding() const { return storage_encoding; }
     const std::unordered_map<Int64, String> & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
+    const std::unordered_map<String, String> & getStorageColumnNameMapping() const { return storage_name_mapping; }
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
@@ -59,6 +64,8 @@ public:
 private:
     std::unordered_map<String, Int64> storage_encoding;
     std::unordered_map<Int64, String> field_id_to_clickhouse_name;
+    /// Dotted parquet-side column path -> clickhouse dotted column name (DuckLake name mappings).
+    std::unordered_map<String, String> storage_name_mapping;
     std::unordered_set<String> iceberg_string_paths;
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
