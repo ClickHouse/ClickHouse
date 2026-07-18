@@ -39,6 +39,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/DefaultTotalsColumnsStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -2542,6 +2543,20 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Projection",
                 useful_sets);
+
+            /// An injective GROUP BY key f(g) unwrapped to g under a plain WITH TOTALS leaves the projection
+            /// recomputing f(default) on the grand-total row (which has no __grouping_set column to guard).
+            /// Overwrite those projection output columns with their type default on the totals stream only.
+            /// See OptimizeGroupByInjectiveFunctionsPass and #110715.
+            const auto & eliminated_totals_positions = query_node.getEliminatedTotalsDefaultPositions();
+            if (query_node.isGroupByWithTotals() && !eliminated_totals_positions.empty())
+            {
+                auto default_totals_step = std::make_unique<DefaultTotalsColumnsStep>(
+                    query_plan.getCurrentHeader(),
+                    std::vector<size_t>(eliminated_totals_positions.begin(), eliminated_totals_positions.end()));
+                default_totals_step->setStepDescription("Default totals columns");
+                query_plan.addStep(std::move(default_totals_step));
+            }
 
             if (query_node.isDistinct())
             {

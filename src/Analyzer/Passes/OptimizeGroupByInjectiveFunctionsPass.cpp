@@ -18,6 +18,8 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/grouping.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace Setting
@@ -150,11 +152,20 @@ private:
     /// the correct output-type default instead of f(default). See #110715.
     void optimizeWithModifier(QueryNode & query, bool allow_suspicious_types)
     {
-        /// WITH TOTALS on a plain/ROLLUP/CUBE/GROUPING SETS query is handled elsewhere (the totals row has
-        /// no __grouping_set column). If the only modifier is WITH TOTALS we cannot correct it here, so we
-        /// must not unwrap at all.
+        /// Two independent correction mechanisms depending on which modifier is present:
+        ///   - CUBE / ROLLUP / GROUPING SETS put a __grouping_set column on every output row (including the
+        ///     subtotal rows), so eliminated-key outputs are corrected with a grouping conditional. This is
+        ///     the has_grouping_set_column path below.
+        ///   - A plain WITH TOTALS row has no __grouping_set column and is produced on a separate totals
+        ///     port, so it is corrected by the planner overwriting the eliminated-key output columns on the
+        ///     totals stream. These are orthogonal: `GROUP BY ROLLUP(...) WITH TOTALS` uses both (grouping
+        ///     conditional for the subtotal rows, totals-port overwrite for the grand-total row).
         const bool has_grouping_set_column = query.isGroupByWithCube() || query.isGroupByWithRollup()
             || query.isGroupByWithGroupingSets();
+
+        if (query.isGroupByWithTotals())
+            optimizeWithTotals(query, allow_suspicious_types);
+
         if (!has_grouping_set_column)
             return;
 
@@ -301,6 +312,132 @@ private:
             rewriteOutputExpression(query.getOrderByNode(), replacements);
         if (query.hasHaving())
             rewriteOutputExpression(query.getHaving(), replacements);
+    }
+
+    /// Plain WITH TOTALS (no CUBE/ROLLUP/GROUPING SETS): the grand-total row is produced on a separate
+    /// totals port and carries no __grouping_set column, so it cannot be corrected with a grouping
+    /// conditional. Instead we unwrap the injective key f(g) -> g (narrowing the aggregation key) and record
+    /// which projection output columns are exactly f(g); the planner then overwrites just those columns with
+    /// their type default on the totals stream. We only unwrap a key when every output occurrence of f(g) is
+    /// a whole top-level projection column (so a per-column overwrite is sufficient); if f(g) also appears
+    /// nested inside another output expression, in ORDER BY or in HAVING, we leave that key un-unwrapped
+    /// (same conservative outcome as #110721 for that key). See #110715.
+    void optimizeWithTotals(QueryNode & query, bool allow_suspicious_types)
+    {
+        /// Only the pure WITH TOTALS case. When a grouping-set modifier is also present the grouping
+        /// conditional already corrects every row (including the grand total), so we must not unwrap here.
+        if (query.isGroupByWithCube() || query.isGroupByWithRollup() || query.isGroupByWithGroupingSets())
+            return;
+
+        auto & group_by = query.getGroupBy().getNodes();
+
+        /// Build the set of all keys to test leaf collisions (same guard as the grouping-set path).
+        QueryTreeNodePtrWithHashSet all_keys;
+        for (const auto & key : group_by)
+            all_keys.insert(key);
+
+        const auto & projection = query.getProjection().getNodes();
+
+        std::vector<size_t> eliminated_positions;
+
+        for (auto & key : group_by)
+        {
+            const auto * function_node = key->as<FunctionNode>();
+            if (!function_node)
+                continue;
+
+            auto leaves = collectUnwrappedLeaves(key, allow_suspicious_types);
+            if (leaves.size() != 1)
+                continue;
+
+            const auto & leaf = leaves.front();
+            if (leaf->isEqual(*key))
+                continue;
+
+            bool collides = false;
+            for (const auto & other : all_keys)
+            {
+                if (other.node->isEqual(*key))
+                    continue;
+                if (other.node->isEqual(*leaf))
+                {
+                    collides = true;
+                    break;
+                }
+            }
+            if (collides)
+                continue;
+
+            /// The correction is a whole-column overwrite on the totals row, so it is only valid if every
+            /// occurrence of f(g) in the output is a top-level projection column. Reject the key otherwise.
+            if (occursOnlyAsTopLevelProjection(key, query, projection))
+            {
+                for (size_t i = 0; i < projection.size(); ++i)
+                    if (projection[i]->isEqual(*key, {.compare_aliases = false}))
+                        eliminated_positions.push_back(i);
+
+                key = leaf; /// Unwrap in place, preserving key position.
+            }
+        }
+
+        if (eliminated_positions.empty())
+            return;
+
+        /// De-duplicate and order positions (a key may map to several identical projection columns).
+        std::sort(eliminated_positions.begin(), eliminated_positions.end());
+        eliminated_positions.erase(std::unique(eliminated_positions.begin(), eliminated_positions.end()), eliminated_positions.end());
+        query.setEliminatedTotalsDefaultPositions(std::move(eliminated_positions));
+    }
+
+    /// True if f(g) appears in the output only as one or more whole top-level projection columns: nowhere
+    /// nested inside a projection expression, and not in ORDER BY or HAVING. Only then can a totals-row
+    /// whole-column overwrite fully correct it.
+    bool occursOnlyAsTopLevelProjection(
+        const QueryTreeNodePtr & key, QueryNode & query, const QueryTreeNodes & projection)
+    {
+        bool appears_as_top_level = false;
+        for (const auto & column : projection)
+        {
+            if (column->isEqual(*key, {.compare_aliases = false}))
+                appears_as_top_level = true;
+            else if (containsNested(column, key))
+                return false; /// nested inside a larger projection expression -> cannot whole-column fix
+        }
+
+        if (!appears_as_top_level)
+            return false; /// f(g) is not projected at all -> nothing to correct, leave the key wrapped
+
+        if (query.hasOrderBy() && subtreeContains(query.getOrderByNode(), key))
+            return false;
+        if (query.hasHaving() && subtreeContains(query.getHaving(), key))
+            return false;
+
+        return true;
+    }
+
+    /// True if `key` occurs strictly BELOW `node` (i.e. as a proper descendant, not `node` itself).
+    static bool containsNested(const QueryTreeNodePtr & node, const QueryTreeNodePtr & key)
+    {
+        for (const auto & child : node->getChildren())
+            if (subtreeContains(child, key))
+                return true;
+        return false;
+    }
+
+    /// True if `key` occurs anywhere in the subtree rooted at `node` (inclusive), not descending into
+    /// nested subqueries (they have their own scope).
+    static bool subtreeContains(const QueryTreeNodePtr & node, const QueryTreeNodePtr & key)
+    {
+        if (!node)
+            return false;
+        if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+            return false;
+        if (node->isEqual(*key, {.compare_aliases = false}))
+            return true;
+        for (const auto & child : node->getChildren())
+            if (subtreeContains(child, key))
+                return true;
+        return false;
     }
 
     /// if(equals(groupingForKind(__grouping_set, unwrapped_key), present_value), original_key, default)

@@ -362,6 +362,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
+        eliminated_totals_default_positions == rhs_typed.eliminated_totals_default_positions &&
         settings_changes == rhs_typed.settings_changes;
 }
 
@@ -396,6 +397,14 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(projection_alias.size());
         state.update(projection_alias);
     }
+
+    /// Must be part of the tree hash: `GROUP BY toString(number) WITH TOTALS` (unwrapped to `number`,
+    /// this list = {toString(number) output position}) and `GROUP BY number ... project toString(number)
+    /// WITH TOTALS` (this list empty) otherwise produce identical trees but require different totals
+    /// values ('' vs '0').
+    state.update(eliminated_totals_default_positions.size());
+    for (const auto position : eliminated_totals_default_positions)
+        state.update(position);
 
     state.update(is_materialized);
     state.update(is_recursive_with);
@@ -443,6 +452,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
+    result_query_node->eliminated_totals_default_positions = eliminated_totals_default_positions;
 
     return result_query_node;
 }

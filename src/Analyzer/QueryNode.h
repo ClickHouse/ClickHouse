@@ -684,6 +684,24 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
+    /// Projection output column positions whose value on the WITH TOTALS row must be replaced with the
+    /// column type default. Set by OptimizeGroupByInjectiveFunctionsPass when it unwraps an injective key
+    /// f(g) under a plain WITH TOTALS: the totals row fills g with its type default and the projection then
+    /// recomputes f(default) instead of the required defaultOf(typeOf(f(g))). The totals row has no
+    /// __grouping_set column, so it cannot be corrected with a grouping conditional; the planner instead
+    /// overwrites these columns on the totals stream. Positions index getProjectionColumns() (stable: no
+    /// pass reorders or prunes projection columns after this one, and the projection actions preserve that
+    /// order 1:1). See #110715.
+    const std::vector<size_t> & getEliminatedTotalsDefaultPositions() const
+    {
+        return eliminated_totals_default_positions;
+    }
+
+    void setEliminatedTotalsDefaultPositions(std::vector<size_t> positions)
+    {
+        eliminated_totals_default_positions = std::move(positions);
+    }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -711,6 +729,7 @@ private:
     std::string cte_name;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
+    std::vector<size_t> eliminated_totals_default_positions;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 
