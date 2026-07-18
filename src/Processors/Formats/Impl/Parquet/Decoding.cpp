@@ -1252,14 +1252,30 @@ size_t Dictionary::decodedFootprintUpperBound(
     else
     {
         /// decode_generic: a fully materialized column of `num_values` decoded values (`col`) is built
-        /// while `decompressed_buf` is still held. Fixed-size decoded types take `num_values *
-        /// value_size`; variable-size types (e.g. String) take a per-value offset plus a chars buffer,
-        /// whose decoded size for the only in-spec (PLAIN) dictionary encoding is no larger than the
-        /// page payload - counted twice to cover `ColumnString`'s geometric chars growth.
+        /// while `decompressed_buf` is still held.
         if (raw_decoded_type.haveMaximumSizeOfValue())
+        {
+            /// Fixed-size decoded types take `num_values * value_size` regardless of the page encoding.
             bound += num_values * raw_decoded_type.getMaximumSizeOfValueInMemory();
-        else
+        }
+        else if (encoding == parq::Encoding::PLAIN)
+        {
+            /// Variable-size types (e.g. String) take a per-value offset plus a chars buffer. For the
+            /// only in-spec (PLAIN) dictionary encoding each value is stored as a 4-byte length plus its
+            /// raw bytes, so the decoded chars are no larger than the page payload - counted twice to
+            /// cover `ColumnString`'s geometric chars growth - plus a per-value UInt64 offset.
             bound += num_values * sizeof(UInt64) + 2 * uncompressed_page_size;
+        }
+        else
+        {
+            /// Non-PLAIN encodings of a variable-size type (e.g. DELTA_BYTE_ARRAY, DELTA_LENGTH_BYTE_ARRAY)
+            /// undo prefix/length compression while decoding, so the decoded chars can be many times the
+            /// page payload and cannot be bounded from the page header alone. Dictionary pages are PLAIN
+            /// in-spec; accepting other encodings here is a ClickHouse extension (see decode()). Report an
+            /// unbounded footprint so the pruning path rejects such a dictionary up front (full scan)
+            /// instead of overshooting the memory budget inside decode() and only catching it afterwards.
+            return std::numeric_limits<size_t>::max();
+        }
     }
 
     return bound;
