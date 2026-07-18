@@ -50,8 +50,10 @@ namespace
         /// the trivial-`LIMIT` source fast paths (`maxBlockSizeByLimit`, `mainQueryNodeBlockSizeByLimit`,
         /// `numbersLikeUtils::shouldPushdownLimit`), the generic limit pushdown (`tryPushDownLimit`,
         /// `optimizePrimaryKeyConditionAndLimit`), and the read-in-order `ORDER BY ... LIMIT` early termination
-        /// (`buildSortingDAG`) all keep the limit from truncating the function's input. This mirrors other
-        /// functions with block-level semantics such as `neighbor`.
+        /// (`buildSortingDAG`) all keep the limit from truncating the function's input. It also keeps
+        /// `MergeTreeWhereOptimizer` from moving a deterministic sibling conjunct of a stateful `WHERE` into
+        /// reader-side `PREWHERE`, which would prune granules before the stateful predicate runs. This mirrors
+        /// other functions with block-level semantics such as `neighbor`.
         bool isStateful() const override { return true; }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

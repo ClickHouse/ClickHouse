@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -43,6 +44,29 @@ static NameToIndexMap fillNamesPositions(const Names & names)
     }
 
     return names_positions;
+}
+
+/// Whether the AST subtree contains a call to a stateful function (`IFunctionBase::isStateful`,
+/// e.g. `neighbor`, `runningAccumulate`, `logTrace`), without descending into nested subqueries.
+/// Stateful functions have block- and data-order dependent results and side effects, so they must
+/// observe every input row and block. Moving any conjunct out of such a `WHERE` into reader-side
+/// `PREWHERE` lets the reader prune granules before the stateful predicate runs, changing the rows
+/// (and blocks) it sees. Mirrors `numbersLikeUtils::astContainsStatefulFunction` and the sibling
+/// guards across the limit-pushdown / read-in-order passes.
+static bool astContainsStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        const auto function_resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (function_resolver && function_resolver->isStateful())
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunction(child, context))
+            return true;
+    return false;
 }
 
 /// Find minimal position of any of the column in primary key.
@@ -115,6 +139,14 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     if (!select.where() || select.prewhere())
         return;
 
+    /// If the `WHERE` filter contains a stateful function, do not move any conjunct to `PREWHERE`.
+    /// A deterministic sibling condition moved to reader-side `PREWHERE` is evaluated first and filters
+    /// rows before the stateful predicate runs, so functions like `neighbor`, `runningAccumulate`, or
+    /// `logTrace` observe the wrong rows (and fewer blocks when the moved conjunct also prunes granules).
+    /// This is the old-analyzer `try_move_to_prewhere` path.
+    if (astContainsStatefulFunction(select.where(), context))
+        return;
+
     auto block_with_constants = KeyCondition::getBlockWithConstants(select_query_info.query->clone(),
         select_query_info.syntax_analyzer_result,
         context);
@@ -154,6 +186,15 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const ContextPtr & context,
     bool is_final)
 {
+    /// If the filter contains a stateful function, do not move any conjunct to `PREWHERE`.
+    /// A deterministic sibling condition moved to reader-side `PREWHERE` is evaluated first and filters
+    /// rows before the stateful predicate runs, so functions like `neighbor`, `runningAccumulate`, or
+    /// `logTrace` observe the wrong rows (and fewer blocks when the moved conjunct also prunes granules).
+    /// This is the query-plan `optimizePrewhere` path, which runs after `optimizePrimaryKeyConditionAndLimit`
+    /// leaves a stateful `FilterStep` in place.
+    if (filter_dag.hasStatefulFunctions())
+        return {};
+
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = {};

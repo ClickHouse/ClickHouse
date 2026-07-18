@@ -157,13 +157,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (read_step->isParallelReadingFromReplicas())
         return false;
 
-    /// A deterministic PREWHERE is fine - it prefilters inside the reader, below the spliced shortlist. But this pass
-    /// runs after `optimizePrewhere` (and `MergeTreeWhereOptimizer` does not reject stateful predicates), so by now a
-    /// stateful `WHERE` predicate (e.g. `neighbor`, `logTrace`) can be hidden inside the reader - as can an explicit
-    /// user-written `PREWHERE` - where the chain guards above cannot see it. The rewrite changes what the reader-side
-    /// predicate observes (the extra codes subcolumn changes the read, and lazy materialization later restructures the
-    /// read around the inner shortlist limit), so leave the query exact, matching the fences in `optimizeTopK` and
-    /// `useVectorSearch`. A row-level policy filter is reader-side as well.
+    /// A deterministic PREWHERE is fine - it prefilters inside the reader, below the spliced shortlist. `MergeTreeWhereOptimizer`
+    /// now refuses to move any conjunct of a stateful `WHERE` into `PREWHERE`, but an explicit user-written `PREWHERE`
+    /// (e.g. `PREWHERE neighbor(v, 1) = 0`) still reaches the reader here, where the chain guards above cannot see it. The
+    /// rewrite changes what the reader-side predicate observes (the extra codes subcolumn changes the read, and lazy
+    /// materialization later restructures the read around the inner shortlist limit), so leave the query exact, matching the
+    /// fences in `optimizeTopK` and `useVectorSearch`. A row-level policy filter is reader-side as well.
     if (const auto & prewhere_info = read_step->getPrewhereInfo())
         if (prewhere_info->prewhere_actions.hasStatefulFunctions())
             return false;
