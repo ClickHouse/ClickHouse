@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/Logger.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -722,6 +723,11 @@ MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuff
         if (entry.set_index_id == instance_id)
             return entry.ranges;
 
+    /// The cache outlives the query, so its memory (also freed here on eviction) must not be
+    /// charged to whichever query happens to be running on this thread. See FieldValue::update
+    /// for the same blocker on reallocations of the cached columns.
+    MemoryTrackerBlockerInThread blocker;
+
     size_t tuple_size = indexes_mapping.size();
     FieldValueRanges ranges;
     ranges.reserve(tuple_size);
@@ -1045,6 +1051,9 @@ void MergeTreeSetIndex::FieldValue::update(const Field & x)
         value = x;
     else
     {
+        /// The column belongs to the thread-local buffer of getFieldValueRangesBuffer, which
+        /// outlives the query; its reallocations must not be charged to the current query.
+        MemoryTrackerBlockerInThread blocker;
         /// Keep at most one element in column.
         if (!column->empty())
             column->popBack(1);
