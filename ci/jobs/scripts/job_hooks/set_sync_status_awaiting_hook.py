@@ -1,5 +1,6 @@
 from ci.defs.defs import SYNC
 from ci.praktika.gh import GH
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 
 # This status is a marker that the sync process can be started. We set it from
@@ -7,6 +8,10 @@ from ci.praktika.result import Result
 
 
 def main():
+    if Info().repo_name != "ClickHouse/ClickHouse":
+        print(f"Not applicable for repo [{Info().repo_name}], skipping")
+        return
+
     statuses = GH.get_commit_statuses()
     if statuses is None:
         print(f"Failed to fetch commit statuses, skip setting [{SYNC}]")

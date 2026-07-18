@@ -859,7 +859,7 @@ using namespace traits_;
 using namespace impl_;
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmetic : public IFunction
+class FunctionBinaryArithmetic : public IFunction, WithContext
 {
     static constexpr bool is_plus = IsOperation<Op>::plus;
     static constexpr bool is_minus = IsOperation<Op>::minus;
@@ -874,9 +874,43 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
     static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
 
-    ContextPtr context;
-
     bool check_decimal_overflow = true;
+
+    /// Date/Time overflow behavior, captured from the query context at construction time so that
+    /// executeImpl does not have to consult the context (which may have been destroyed by the time a
+    /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior{};
+
+    /// Builders for the interval/tuple special cases, resolved from the argument types at construction
+    /// time while the context is alive (see the constructor). At most one is non-null for a given
+    /// instance; a null builder means the corresponding special case does not apply. Precomputing them
+    /// keeps executeImpl free of the context.
+    ///
+    /// Caveat: the four tuple-family builders below wrap `ITupleFunction`-derived functions
+    /// (`FunctionTupleOperator`, `FunctionDateOrDateTimeOperationTupleOfIntervals`,
+    /// `FunctionTupleOperationInterval`, `FunctionTupleOperatorByNumber`, `FunctionDotProduct`) that
+    /// still hold a strong `ContextPtr` internally and use it at execute time to resolve their
+    /// element-wise sub-functions. So the tuple special cases still pin the build-time query context
+    /// (they keep working precisely because the strong reference keeps it alive); only the plain
+    /// numeric/Date/interval paths - and arrays whose element-level operation is one of those - are
+    /// fully context-free. Arrays over tuple-family elements (e.g. `[(1, 2)] + [(3, 4)]` or
+    /// `[INTERVAL 1 DAY] + [INTERVAL 1 HOUR]`) still pin the context the same way, through the
+    /// tuple-family builders cached by `array_element_function` below. Making the `ITupleFunction`
+    /// family context-free is a planned follow-up.
+    FunctionOverloadResolverPtr prepared_interval_function;
+    FunctionOverloadResolverPtr prepared_date_tuple_of_intervals_function;
+    FunctionOverloadResolverPtr prepared_merge_intervals_function;
+    FunctionOverloadResolverPtr prepared_tuple_function;
+    FunctionOverloadResolverPtr prepared_tuple_and_number_function;
+
+    /// Same-typed sibling built for the array element types. executeArraysImpl/executeArrayWithNumericImpl
+    /// evaluate the operation on the array element types, which differ from this function's (array)
+    /// argument types, so this function's precomputed builders above do not apply to them. The element
+    /// arithmetic is delegated to this sibling (whose own constructor resolves the element-level special
+    /// cases, recursively for nested arrays - including, per the caveat above, tuple-family builders that
+    /// pin the context when the element types hit one of those cases). Null when neither operand is an
+    /// array.
+    FunctionPtr array_element_function;
 
     static bool castType(const IDataType * type, auto && f)
     {
@@ -1579,7 +1613,7 @@ class FunctionBinaryArithmetic : public IFunction
             scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(time64_type->getScale());
         }
 
-        auto overflow_behavior = getDateTimeOverflowBehavior(context);
+        auto overflow_behavior = date_time_overflow_behavior;
 
         /// The valid range for the result, expressed in the result's own units:
         ///   DateTime:   seconds in [0, 2^32-1], covering ~1970 to ~2106.
@@ -1593,9 +1627,11 @@ class FunctionBinaryArithmetic : public IFunction
             const auto & res_type = assert_cast<const DataTypeDateTime64 &>(*result_type);
             result_scale = res_type.getScale();
             Int64 result_scale_mul = DecimalUtils::scaleMultiplier<Int64>(result_scale);
-            /// The min side (1900-01-01) fits in Int64 for all supported scales (0-9).
-            /// The max side (2299-12-31) overflows Int64 at scale 9; clamp to Int64 max in that case.
-            result_min = MIN_DATETIME64_TIMESTAMP * result_scale_mul;
+            /// Both ends of the representable window (0000-01-01 .. 9999-12-31) overflow Int64 once scaled at
+            /// the highest precisions, so clamp to the Int64 limits in that case instead of multiplying blindly.
+            result_min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / result_scale_mul)
+                ? MIN_DATETIME64_TIMESTAMP * result_scale_mul
+                : std::numeric_limits<Int64>::min();
             result_max = (MAX_DATETIME64_TIMESTAMP <= std::numeric_limits<Int64>::max() / result_scale_mul)
                 ? MAX_DATETIME64_TIMESTAMP * result_scale_mul + result_scale_mul - 1
                 : std::numeric_limits<Int64>::max();
@@ -1827,7 +1863,9 @@ class FunctionBinaryArithmetic : public IFunction
         const auto & left_offsets = left_array_col->getOffsets();
         if (!left_offsets.empty())
             rows_count = left_offsets.back();
-        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+        auto res = array_element_function
+            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
+            : executeImpl(new_arguments, result_array_type, rows_count);
 
         return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
@@ -1893,7 +1931,9 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (is_swapped)
             std::swap(new_arguments[1], new_arguments[0]);
-        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+        auto res = array_element_function
+            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
+            : executeImpl(new_arguments, result_array_type, rows_count);
 
         return ColumnArray::create(res, left_array_col->getOffsetsPtr());
     }
@@ -2048,11 +2088,56 @@ class FunctionBinaryArithmetic : public IFunction
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
+    static FunctionPtr create(ContextPtr context_, const DataTypePtr & left_type, const DataTypePtr & right_type)
+    {
+        return std::make_shared<FunctionBinaryArithmetic>(context_, left_type, right_type);
+    }
 
-    explicit FunctionBinaryArithmetic(ContextPtr context_)
-    :   context(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context_))
-    {}
+    explicit FunctionBinaryArithmetic(ContextPtr context_, const DataTypePtr & left_type = nullptr, const DataTypePtr & right_type = nullptr)
+    :   WithContext(context_),
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context_)),
+        date_time_overflow_behavior(getDateTimeOverflowBehavior(context_))
+    {
+        /// Resolve the context-dependent builders for the interval/tuple special cases now, while the
+        /// context is alive, so that executeImpl never needs it. The types are known only when the
+        /// function is built for concrete arguments (via the overload resolver); functions created
+        /// without them (e.g. least/greatest, whose operation never reaches these special cases) simply
+        /// leave the builders null.
+        ///
+        /// executeImpl sees the argument types after the default implementations strip LowCardinality
+        /// and - unless the operation is division-by-nullable - Nullable, so normalize the types the
+        /// same way here to resolve exactly the builders executeImpl would.
+        if (left_type && right_type)
+        {
+            auto normalize = [](DataTypePtr type)
+            {
+                type = recursiveRemoveLowCardinality(type);
+                if constexpr (!division_by_nullable && !is_division_or_null)
+                    type = removeNullable(type);
+                return type;
+            };
+            const DataTypePtr type0 = normalize(left_type);
+            const DataTypePtr type1 = normalize(right_type);
+            prepared_interval_function = getFunctionForIntervalArithmetic(type0, type1, context_);
+            prepared_date_tuple_of_intervals_function = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context_);
+            prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
+            prepared_tuple_function = getFunctionForTupleArithmetic(type0, type1, context_);
+            prepared_tuple_and_number_function = getFunctionForTupleAndNumberArithmetic(type0, type1, context_);
+
+            /// Array operands are handled element-wise by re-evaluating the operation on the element
+            /// types (see executeArraysImpl/executeArrayWithNumericImpl). Build that sub-function here so
+            /// those paths never re-enter executeImpl with element types the precomputed builders above
+            /// do not cover. Its own constructor recursively resolves the element-level special cases.
+            if (isArray(type0) || isArray(type1))
+            {
+                auto element_type = [](const DataTypePtr & type)
+                {
+                    return isArray(type) ? typeid_cast<const DataTypeArray &>(*type).getNestedType() : type;
+                };
+                array_element_function = create(context_, element_type(type0), element_type(type1));
+            }
+        }
+    }
 
     String getName() const override { return name; }
 
@@ -2080,7 +2165,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return getReturnTypeImplStatic(arguments, context);
+        /// Type resolution runs during analysis while the context is alive, but it is also re-invoked from
+        /// IFunction::compile when a stored expression (e.g. a table's sorting key) is JIT-compiled at
+        /// pipeline-build time - by then the query context that built the function may already be gone.
+        /// Only the plain-numeric path is JIT-compilable (interval/tuple/date/decimal operations are not),
+        /// and that path never dereferences the context, so lock the weak pointer instead of throwing
+        /// `Context has expired` on an expired context. See #54890.
+        return getReturnTypeImplStatic(arguments, context.lock());
     }
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
@@ -2954,33 +3045,33 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_interval_function)
         {
-            return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
+            return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, prepared_interval_function);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_date_tuple_of_intervals_function)
         {
-            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
+            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_date_tuple_of_intervals_function);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
-        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_merge_intervals_function)
         {
-            return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
+            return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_merge_intervals_function);
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_tuple_function)
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
+            return prepared_tuple_function->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
+        if (prepared_tuple_and_number_function)
         {
-            return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
+            return executeTupleNumberOperator(arguments, result_type, input_rows_count, prepared_tuple_and_number_function);
         }
 
         return executeImpl2(arguments, result_type, input_rows_count);
@@ -3279,7 +3370,7 @@ public:
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
         ContextPtr context_)
-        : Base(context_), left(left_), right(right_), return_type(return_type_)
+        : Base(context_, left_.type, right_.type), left(left_), right(right_), return_type(return_type_)
     {
     }
 
@@ -3632,9 +3723,9 @@ public:
         if constexpr (can_have_division_by_nullable)
         {
             if (division_by_nullable)
-                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context));
+                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context, arguments[0].type, arguments[1].type));
         }
-        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context));
+        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context, arguments[0].type, arguments[1].type));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

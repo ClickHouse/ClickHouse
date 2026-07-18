@@ -107,6 +107,7 @@ import argparse
 import dataclasses
 import json
 import os
+import sys
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
@@ -126,6 +127,20 @@ from version_helper import (
     get_version_from_repo,
     update_cmake_version,
     update_contributors,
+)
+
+# The empty-patch-release guard lives in `ci/jobs/scripts/release_checks.py` so
+# the `CI Tests` unit suite can exercise it without this module's release-only
+# dependencies. Import it here, at module load, while the working tree is still
+# the checked-out branch: `prepare()` later checks out the release ref (which may
+# predate this helper), and importing under that `checkout()` would read a tree
+# where the file does not exist. This script runs from `tests/ci` with the repo
+# root off `sys.path`, so add it before importing.
+_REPO_ROOT = str(Path(__file__).resolve().parents[2])
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+from ci.jobs.scripts.release_checks import (  # noqa: E402  pylint: disable=wrong-import-position
+    is_empty_patch_release,
 )
 
 CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
@@ -236,26 +251,6 @@ class ReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
         return self
 
-    @staticmethod
-    def _is_empty_patch_release(patch: int, tweak: int) -> bool:
-        """
-        Whether a patch release would be empty and must be refused.
-
-        For a patch release the tweak equals the number of commits since the
-        previous release tag (see `Git.tweak`), so `tweak == 1` means the only
-        commit on top of the previous release is the automated post-release
-        version bump — there is nothing to release (e.g. `v25.8.28.1-lts`).
-
-        The exception is `patch == 1`: that is the first user-facing
-        `stable`/`lts` release of a freshly cut branch. Its previous tag is the
-        non-user-facing `vX.Y.1.1-new`, and the single automated
-        `testing -> stable/lts` version-update commit also yields `tweak == 1`.
-        That release is legitimate and must be allowed. The post-release bump
-        always increments `patch`, so an already-published branch is always at
-        `patch >= 2` on a rerun.
-        """
-        return tweak == 1 and patch != 1
-
     def prepare(
         self,
         commit_ref: str,
@@ -310,8 +305,11 @@ class ReleaseInfo:
                 # (only-repo/only-docker) rebuild an already-tagged release and
                 # do not tag, so skip the check. This is checked before the
                 # out-of-order check below because "nothing to release" is the
-                # more fundamental condition.
-                if not _skip_out_of_order_check and self._is_empty_patch_release(
+                # more fundamental condition. `is_empty_patch_release` is
+                # imported at module load (see top of file); it must not be
+                # imported here, under `checkout()`, where the working tree may
+                # predate the helper.
+                if not _skip_out_of_order_check and is_empty_patch_release(
                     version.patch, version.tweak
                 ):
                     raise RuntimeError(
