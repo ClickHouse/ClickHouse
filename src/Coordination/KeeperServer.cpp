@@ -74,7 +74,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 fresh_log_gap;
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
-    extern const CoordinationSettingsUInt64 max_requests_append_size;
+    extern const CoordinationSettingsNonZeroUInt64 max_requests_append_size;
     extern const CoordinationSettingsUInt64 max_requests_append_bytes_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
