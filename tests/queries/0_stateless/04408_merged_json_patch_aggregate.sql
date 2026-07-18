@@ -331,3 +331,16 @@ FROM (
     UNION ALL SELECT '{"a":{"x":{"z":99}}}'::JSON(a Map(String, Map(String, UInt32))), 2
 );
 
+
+-- Bug 1: dangling string_view in rebuildNestedMap dedup set — two distinct first-level keys.
+-- Without the fix, string_views into moved-from Strings caused mis-deduplication (UB).
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"x":{"y":1},"z":{"w":2}}}'::JSON(a Map(String, Map(String, UInt32))) AS patch, 1 AS version);
+
+-- Bug 3: JSON(a JSON, `a.b` UInt32) — typed child path must not be absorbed into the
+-- reconstructed parent object and must still be written to its own typed column.
+-- Without the fix, a.b was consumed by the ancestor reconstruction loop and defaulted.
+-- Note: toJSONString renders `a JSON` and `a.b UInt32` as two separate "a" entries
+-- (a property of the overlapping typed-path schema, observable on the raw input row too).
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"x":1,"b":42}}'::JSON(a JSON, `a.b` UInt32) AS patch, 1 AS version);

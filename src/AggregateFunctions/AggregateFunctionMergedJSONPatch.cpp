@@ -595,7 +595,12 @@ struct AggregateFunctionMergedJSONPatchData
     /// If a direct exact-path entry exists at `ancestor_path` (scalar replacement of the whole
     /// object), that scalar is returned as-is.  Otherwise a Field::Object is assembled from all
     /// descendant leaf entries, recursing for multi-level paths.
-    Field rebuildNestedObject(std::string_view ancestor_path) const
+    ///
+    /// `result_column` is used to detect separately-declared typed child paths (e.g. `a.b` UInt32
+    /// when the parent `a` is JSON) so they are excluded from the reconstructed object and left
+    /// for the main loop to handle.  Pass nullptr to skip this filtering (e.g. when recursing).
+    Field rebuildNestedObject(std::string_view ancestor_path,
+                              const ColumnObject * result_column_for_skip = nullptr) const
     {
         /// Exact-path entry: scalar/array replaced the whole sub-object — return it directly.
         for (const auto & entry : entries)
@@ -611,6 +616,12 @@ struct AggregateFunctionMergedJSONPatchData
             if (!isDescendantPath(ancestor_path, p))
                 continue;
 
+            /// Skip entries that have their own separate typed column in the result schema —
+            /// they will be written directly by the main loop and must not appear inside the
+            /// reconstructed parent object (which would double-write them).
+            if (result_column_for_skip && result_column_for_skip->getTypedPaths().count(p))
+                continue;
+
             std::string_view rel = p.substr(ancestor_path.size() + 1);
             auto dot = rel.find('.');
             String direct_key(dot == std::string_view::npos ? rel : rel.substr(0, dot));
@@ -622,7 +633,7 @@ struct AggregateFunctionMergedJSONPatchData
             else
             {
                 String child_prefix = String(ancestor_path) + '.' + direct_key;
-                result[direct_key] = rebuildNestedObject(child_prefix);
+                result[direct_key] = rebuildNestedObject(child_prefix, result_column_for_skip);
             }
         }
         return result;
@@ -644,8 +655,10 @@ struct AggregateFunctionMergedJSONPatchData
         }
 
         /// Collect the distinct set of direct child keys under this ancestor, preserving order.
+        /// The set stores owned Strings — not string_views — to avoid dangling references after
+        /// the String is moved into seen_keys.
         std::vector<String> seen_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        std::unordered_set<std::string_view> seen_set; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_set<String> seen_set; // STYLE_CHECK_ALLOW_STD_STRING_CONTAINERS
         for (const auto & entry : entries)
         {
             std::string_view p = entry.pathView();
@@ -693,6 +706,9 @@ struct AggregateFunctionMergedJSONPatchData
                 /// because WhichDataType(Nullable(JSON)) reports "Nullable", not "Object".
                 DataTypePtr inner = removeLowCardinality(removeNullable(dt));
                 WhichDataType w(inner);
+                /// Variant typed paths are not reconstructed here: ColumnVariant::get() does
+                /// not return a Field::Object even when the active variant is JSON, so no child
+                /// paths are produced by collectLeaves and there is nothing to rebuild.
                 if (w.isObject() || w.isDynamic() || w.isMap())
                     nested_typed_ancestors.emplace(tp, w);
             }
@@ -716,7 +732,9 @@ struct AggregateFunctionMergedJSONPatchData
             if (!any)
                 continue;
 
-            Field nested = which.isMap() ? rebuildNestedMap(ancestor) : rebuildNestedObject(ancestor);
+            Field nested = which.isMap()
+                ? rebuildNestedMap(ancestor)
+                : rebuildNestedObject(ancestor, &result_column);
             auto typed_it = result_column.getTypedPaths().find(ancestor);
             if (typed_it != result_column.getTypedPaths().end())
                 typed_it->second->insert(nested);
@@ -724,7 +742,11 @@ struct AggregateFunctionMergedJSONPatchData
             for (const auto & entry : entries)
             {
                 std::string_view p = entry.pathView();
-                if (p == ancestor || isDescendantPath(ancestor, p))
+                /// Do not consume entries that are themselves separately declared typed paths
+                /// in the result schema (e.g. `a.b` UInt32 when parent `a` is JSON).
+                /// Those must still be inserted into their own typed columns by the main loop.
+                if ((p == ancestor || isDescendantPath(ancestor, p))
+                    && result_column.getTypedPaths().find(p) == result_column.getTypedPaths().end())
                     consumed.insert(p);
             }
         }
