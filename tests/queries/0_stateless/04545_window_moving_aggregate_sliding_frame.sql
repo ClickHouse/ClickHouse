@@ -432,6 +432,21 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
 );
 
+-- State-returning wrappers (-State, -Merge, -SimpleState) through the tree: their
+-- results are materialized via insertMergeResultInto instead of insertResultInto.
+SELECT countIf(NOT (s = s2 AND u = u2 AND m = m2 AND sm = sm2)) AS mismatches
+FROM
+(
+    SELECT
+        n,
+        finalizeAggregation(sumState(value) OVER w) AS s, arraySum(groupArray(value) OVER w) AS s2,
+        finalizeAggregation(uniqExactState(str) OVER w) AS u, length(arrayDistinct(groupArray(str) OVER w)) AS u2,
+        sumMerge(st) OVER w AS m, arraySum(groupArray(value) OVER w) AS m2,
+        minSimpleState(value) OVER w AS sm, arrayMin(groupArray(value) OVER w) AS sm2
+    FROM (SELECT n, value, str, initializeAggregation('sumState', value) AS st FROM moving_aggregate_test)
+    WINDOW w AS (ORDER BY n ROWS BETWEEN 250 PRECEDING AND CURRENT ROW)
+);
+
 -- argMin/argMax through the tree, and any/anyLast (whose constant-time batch add keeps
 -- them on the recompute path), cross-checked against the frame rows. The argMin/argMax
 -- comparison keys are unique: tie resolution is documented as non-deterministic.
