@@ -137,6 +137,12 @@ private:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant) const;
 
+    /// Position of the `-ArgMin` / `-ArgMax` combinator comparison key in the argument list, if the function has such a
+    /// combinator (nullopt otherwise). That key is compared exactly, so it must never be adapted through the lossy
+    /// Float64 fallback (see `tryGetVariantAdapter` and `AggregateFunctionProperties::is_float_promoting`). The key is
+    /// the last argument of the `-ArgMin` / `-ArgMax` call.
+    std::optional<size_t> getArgMinArgMaxKeyArgument(const String & name, size_t num_arguments) const;
+
     /// Resolve the function over `types_without_low_cardinality` without the Variant adapter, returning nullptr
     /// if the creator rejects them with an "unsupported argument type" error (any other error propagates). This
     /// encapsulates the "does the function accept these argument types" probe, so callers can branch on native

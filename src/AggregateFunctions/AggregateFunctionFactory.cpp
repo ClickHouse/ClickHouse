@@ -257,6 +257,14 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     auto properties = tryGetProperties(name, action);
     bool is_float_promoting = properties.has_value() && properties->is_float_promoting;
 
+    /// is_float_promoting classifies the base function (tryGetProperties strips the combinator suffixes: sumArgMax ->
+    /// sum), so a `-ArgMin` / `-ArgMax` combinator over a float-promoting base would inherit the Float64 fallback for
+    /// its comparison key too. That key is compared exactly (AggregateFunctionCombinatorArgMinArgMax rejects a Variant
+    /// key), so a lossy Float64 cast of the key would silently return the wrong argMax/argMin row -- e.g. sumArgMax(v, k)
+    /// with k in {9007199254740992, 9007199254740993} would collapse both keys to the same Float64. So the Float64
+    /// fallback must never apply to the key position (its lossless-supertype adaptation below stays allowed).
+    std::optional<size_t> argminmax_key_argument = getArgMinArgMaxKeyArgument(name, argument_types.size());
+
     /// The type each Variant argument would be adapted to: Nullable(least common supertype of its nested types).
     /// Nullable is used so that the implicit NULLs of the Variant become ordinary NULLs which the aggregation skips.
     /// A non-Variant argument keeps its type; a Variant with no Nullable-wrappable supertype has no adapted type
@@ -281,10 +289,12 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         /// are numeric. This fallback is deliberately NOT applied to exact/order-based aggregates (min/max/argMin/
         /// argMax/...): a lossy Float64 cast would silently return wrong results for them (two distinct integers
         /// above 2^53 collapse to the same Float64), so they keep reporting the original error when there is no
-        /// lossless common supertype. See AggregateFunctionProperties::is_float_promoting.
+        /// lossless common supertype. See AggregateFunctionProperties::is_float_promoting. The same applies to the
+        /// exact comparison key of the `-ArgMin` / `-ArgMax` combinators, so it is excluded here as well.
         if (!supertype
             && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); })
-            && is_float_promoting)
+            && is_float_promoting
+            && i != argminmax_key_argument)
             supertype = std::make_shared<DataTypeFloat64>();
         /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit NULLs
         /// of the Variant (which the aggregation then skips). This is not possible when there is no common supertype,
@@ -366,6 +376,33 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         return nullptr;
 
     return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, argument_types, *nested_argument_types, parameters);
+}
+
+std::optional<size_t> AggregateFunctionFactory::getArgMinArgMaxKeyArgument(const String & name, size_t num_arguments) const
+{
+    /// Peel combinator suffixes off the name (the same way tryGetProperties does), stopping at the `-ArgMin` /
+    /// `-ArgMax` combinator if present. Its comparison key is the last argument of that combinator's call, which stays
+    /// the last top-level argument: the `-ArgMin` / `-ArgMax` combinator is the outermost value combinator in the
+    /// standard forms (sumArgMax, avgArgMin, corrArgMax, ...), and combinators that could wrap it strip or unwrap
+    /// arguments in place rather than reorder them.
+    String current_name = name;
+    while (true)
+    {
+        current_name = getAliasToOrName(current_name);
+        if (aggregate_functions.contains(current_name)
+            || case_insensitive_aggregate_functions.contains(Poco::toLower(current_name)))
+            return {};
+
+        AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(current_name);
+        if (!combinator)
+            return {};
+
+        const String & combinator_name = combinator->getName();
+        if (combinator_name == "ArgMin" || combinator_name == "ArgMax")
+            return num_arguments == 0 ? std::optional<size_t>{} : std::optional<size_t>{num_arguments - 1};
+
+        current_name = current_name.substr(0, current_name.size() - combinator_name.size());
+    }
 }
 
 std::optional<AggregateFunctionWithProperties>
