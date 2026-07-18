@@ -76,6 +76,12 @@ public:
     /// resume into empty tables). The last-replica teardown itself still happens in `drop`.
     void beforeDropDatabase(ContextPtr local_context) override;
 
+    /// Reject TRUNCATE DATABASE / TRUNCATE ALL TABLES FROM db in coordinated mode. The generic database-wide
+    /// truncate walks the nested Replicated/Shared tables through an internal context and drops/truncates each
+    /// one directly, bypassing the per-table `StorageMaterializedPostgreSQL` guards, which would locally wipe the
+    /// shared replicated data while the shared slot/publication/marker (and the live consumer) stay in place.
+    void beforeTruncateDatabase(ContextPtr local_context) override;
+
     void drop(ContextPtr local_context) override;
 
     bool hasReplicationThread() const override { return true; }

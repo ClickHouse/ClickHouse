@@ -786,3 +786,44 @@ def test_drop_database_fails_when_keeper_is_unavailable(started_cluster):
                 break
             except Exception:
                 time.sleep(1)
+
+
+def test_database_wide_truncate_is_rejected_in_coordinated_mode(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("other_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.other_table SELECT number, number FROM numbers(50)"
+    )
+
+    create_coordinated_db("test_table, other_table")
+    for table in ("test_table", "other_table"):
+        check_tables_are_synchronized(instance, table)
+        check_tables_are_synchronized(instance2, table)
+
+    # A database-wide TRUNCATE (both `TRUNCATE DATABASE` and `TRUNCATE ALL TABLES FROM`) walks the nested
+    # Replicated tables through an internal context and drops/truncates each one directly, bypassing the
+    # per-table guards. Without a coordinated truncate path, one replica could locally wipe its copy of the
+    # shared data while the shared slot, publication and snapshot_completed marker (and the live consumer) stay
+    # in place. Both forms are refused on every replica (leader and standby alike).
+    for node in (instance, instance2):
+        error = node.query_and_get_error("TRUNCATE DATABASE test_database")
+        assert "coordinated MaterializedPostgreSQL" in error
+
+        error = node.query_and_get_error("TRUNCATE ALL TABLES FROM test_database")
+        assert "coordinated MaterializedPostgreSQL" in error
+
+    # The refused TRUNCATE must not have removed any data on either replica.
+    for node in (instance, instance2):
+        assert int(node.query("SELECT count() FROM test_database.test_table")) == 100
+        assert int(node.query("SELECT count() FROM test_database.other_table")) == 50
+
+    # Replication still works after the refused truncates.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200

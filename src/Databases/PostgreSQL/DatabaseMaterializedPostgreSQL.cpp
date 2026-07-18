@@ -587,6 +587,25 @@ void DatabaseMaterializedPostgreSQL::renameTable(
 }
 
 
+void DatabaseMaterializedPostgreSQL::beforeTruncateDatabase(ContextPtr local_context)
+{
+    /// Reject a database-wide TRUNCATE in coordinated mode. Both `TRUNCATE DATABASE db` (which drops each nested
+    /// table) and `TRUNCATE ALL TABLES FROM db` (which truncates each one) are executed by walking the nested
+    /// tables through an internal context (see `InterpreterDropQuery::executeToDatabaseImpl`), so they operate on
+    /// the local `ReplicatedReplacingMergeTree` / `SharedReplacingMergeTree` storages directly and never reach the
+    /// per-table `StorageMaterializedPostgreSQL::checkTableCanBeDropped` guard. Without this check one replica
+    /// could wipe all of its local copy of the shared data while the shared slot/publication/`snapshot_completed`
+    /// marker (and the live consumer) survive - the divergence the per-table guards exist to prevent. There is no
+    /// coordinated cross-replica truncate path, so refuse it up front. Only genuine (non-internal) user queries
+    /// are refused; internal cleanup must still be able to remove nested tables.
+    if (isCoordinated() && !local_context->isInternalQuery())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "TRUNCATE DATABASE / TRUNCATE ALL TABLES is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+}
+
+
 void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
 {
     /// Fail-close before the generic DROP DATABASE path starts removing the nested tables. In coordinated mode

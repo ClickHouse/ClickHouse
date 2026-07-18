@@ -494,6 +494,11 @@ public:
     /// is unreachable. Not called for DETACH or TRUNCATE. Default: no-op.
     virtual void beforeDropDatabase(ContextPtr /*context*/) {}
 
+    /// Called by TRUNCATE DATABASE / TRUNCATE ALL TABLES FROM db before any of the database's tables are
+    /// truncated or dropped (the database-wide truncate is implemented by walking the nested tables directly),
+    /// so an engine can veto it (throw) before any local data is removed. Default: no-op.
+    virtual void beforeTruncateDatabase(ContextPtr /*context*/) {}
+
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 

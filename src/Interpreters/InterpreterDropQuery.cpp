@@ -482,9 +482,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
     /// Let the engine veto the drop before any of its tables are removed (e.g. fail-close while a coordination
-    /// service it depends on is unreachable). Only for a real DROP: DETACH and TRUNCATE do not delete data here.
+    /// service it depends on is unreachable). Only for a real DROP: DETACH does not delete data here.
     if (drop)
         database->beforeDropDatabase(getContext());
+
+    /// A database-wide TRUNCATE removes data too (it walks the nested tables below and drops/truncates each one),
+    /// so let the engine veto it as well before any table is touched (e.g. a coordinated engine that has no
+    /// consistent cross-replica truncate path and must refuse it outright).
+    if (truncate)
+        database->beforeTruncateDatabase(getContext());
 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
