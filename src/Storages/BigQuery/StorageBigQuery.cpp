@@ -331,6 +331,25 @@ void validateInferredColumns(const ColumnsDescription & columns, const ContextPt
         validateDataType(column.type, validation_settings);
 }
 
+/// Two BigQuery schemas are equal when they have the same fields, in the same order, with the same
+/// name, kind, and mapped ClickHouse type (recursively for RECORDs). Used to confirm a wide `SELECT *`
+/// still reads exactly the analyzed snapshot after the explicit `selectedFields` list had to be dropped
+/// for being too long for the request URL (see StorageBigQuery::read).
+bool bigQueryFieldsEqual(const BigQueryFields & lhs, const BigQueryFields & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        if (lhs[i].name != rhs[i].name
+            || lhs[i].type != rhs[i].type
+            || !lhs[i].data_type->equals(*rhs[i].data_type)
+            || !bigQueryFieldsEqual(lhs[i].children, rhs[i].children))
+            return false;
+    }
+    return true;
+}
+
 }
 
 StorageBigQuery::StorageBigQuery(
@@ -455,15 +474,29 @@ Pipe StorageBigQuery::read(
 
     /// `selectedFields` is passed in the `tabledata.list` request URL, and BigQuery tables can have up to
     /// 10000 columns; for a very wide `SELECT *` the explicit list can exceed the URL / front-end length
-    /// limit even though the read itself is valid. When every column is requested we can safely fall back
-    /// to an empty `selectedFields` (equivalent for the current schema, only giving up the snapshot pin);
-    /// a wide projection cannot omit the list, so it is reported as an error instead of producing an
+    /// limit even though the read itself is valid. A wide projection cannot omit the list (an empty list
+    /// reads all columns, not the projected subset), so it is reported as an error instead of producing an
     /// oversized request.
     static constexpr size_t max_selected_fields_length = 8192;
     if (selected_fields.size() > max_selected_fields_length)
     {
         if (selected.size() == all_fields.size())
+        {
+            /// Every column is requested, so we can fall back to an empty `selectedFields` (BigQuery then
+            /// returns all of the table's *current* columns). This only reads the analyzed snapshot if the
+            /// remote schema is unchanged, and the positional `tabledata.list` response carries no column
+            /// names, so a change that keeps the column count (e.g. a dropped column offset by an added one)
+            /// could be read as the wrong columns without tripping the per-row count check. Re-fetch the
+            /// schema and require it to still match the snapshot before giving up the pin; fail closed
+            /// otherwise, so a concurrent schema change surfaces an error instead of a silent misread.
+            auto current_fields = fetchTableSchema(configuration, context, token_provider);
+            if (!bigQueryFieldsEqual(current_fields, all_fields))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The BigQuery table is too wide to pass an explicit column list in the `tabledata.list` "
+                    "request URL, and its schema changed between query analysis and execution; retry the query");
             selected_fields.clear();
+        }
         else
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

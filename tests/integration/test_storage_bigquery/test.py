@@ -90,6 +90,10 @@ def mock_reset():
     mock_ctl("/__reset__")
 
 
+def mock_mutate_wide_schema():
+    mock_ctl("/__mutate_wide_schema__")
+
+
 def sql_str(value):
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
@@ -380,6 +384,30 @@ def test_wide_table_selected_fields():
     requests = mock_stats()["data_requests"]
     assert requests
     assert all("selectedFields" not in r["params"] for r in requests)
+
+
+def test_wide_select_all_rejects_schema_drift():
+    mock_reset()
+    # A wide `SELECT *` drops the explicit `selectedFields` list (too long for the request URL) and relies
+    # on BigQuery returning all *current* columns. Because the `tabledata.list` response is positional and
+    # carries no column names, the reader re-fetches the schema at execution and refuses to read if it no
+    # longer matches the analyzed snapshot, rather than risk misaligning the columns.
+    node.query("DROP TABLE IF EXISTS bq_wide_drift")
+    node.query(
+        f"CREATE TABLE bq_wide_drift ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_wide', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    # The snapshot matches on the first read.
+    assert (
+        node.query("SELECT * FROM bq_wide_drift FORMAT TSV")
+        == "\t".join(["1"] * (WIDE_COLUMN_COUNT + 1)) + "\n"
+    )
+    # Rename a remote column, keeping the count: the per-row cell count is unchanged, so only the
+    # schema re-fetch can detect the drift.
+    mock_mutate_wide_schema()
+    error = node.query_and_get_error("SELECT * FROM bq_wide_drift FORMAT TSV")
+    assert "schema changed" in error
+    node.query("DROP TABLE bq_wide_drift")
 
 
 def test_wide_projection_rejected():

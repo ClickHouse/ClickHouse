@@ -457,6 +457,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             FAIL_INSERTS_AFTER[0] = int(rows) if rows is not None else None
             self.send_json(200, {})
             return
+        if parsed.path == "/__mutate_wide_schema__":
+            # Rename the last column of the wide table, keeping the column count. This simulates a remote
+            # schema change that a positional tabledata.list response cannot reveal on its own (the per-row
+            # cell count is unchanged), so the reader must detect it by re-fetching the schema.
+            schema = TABLES["test_wide"]["schema"]
+            schema[-1] = dict(schema[-1], name=schema[-1]["name"] + "_renamed")
+            self.send_json(200, {})
+            return
 
         if not self.check_auth():
             return
