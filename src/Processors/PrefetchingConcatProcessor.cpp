@@ -27,13 +27,20 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     if (!output.canPush())
         return Status::PortFull;
 
-    /// Pull available data from ALL inputs into their buffers.
+    /// Pull available data from inputs into their buffers.
     /// This lets their upstream sources continue producing data in parallel.
+    ///
+    /// A non-current input is only drained while its buffer is below `max_buffered_chunks`.
+    /// Once it reaches the cap we stop pulling, so the buffer honors the configured
+    /// backpressure bound even for a chunk still in flight on the port after a previous
+    /// `setNotNeeded` (ports hold one chunk, which would otherwise push the buffer one
+    /// past the limit). The current input is always drained because its chunks are
+    /// emitted immediately and never accumulate beyond a single buffered chunk.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
-            if (input.hasData())
+            if (input.hasData() && (idx == current_input_idx || buffers[idx].size() < max_buffered_chunks))
                 buffers[idx].push_back(input.pull());
             ++idx;
         }
