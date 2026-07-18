@@ -460,3 +460,54 @@ echo '--- JSONEachPacketString accepts Markdown with a valid UTF-8 (multi-byte) 
 data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT Markdown' | grep -c '"packet":"data"')
 [ "$data_packets" -ge 1 ] && echo 'Markdown (valid UTF-8 column name) accepted: OK'
+
+# `CSVWithNames` (and the CSV-shaped `CustomSeparated*` variants) flatten a Tuple column into its leaf
+# fields in the header (dotted names like `t.a`, `t.b`) when
+# `output_format_csv_header_serialize_tuple_into_separate_columns` is enabled (the default). A named
+# Tuple field with a non-UTF-8 element name therefore ends up in the header even though it never
+# appears in the top-level column names, so the raw-bytes gate must validate the actual flattened
+# header, not just the top-level block names.
+echo '--- JSONEachPacketString is rejected for CSVWithNames with a non-UTF-8 Tuple element name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CSVWithNames' \
+    | grep -o -m1 'is not compatible with the output format CSVWithNames'
+
+echo '--- EventStream base64-encodes CSVWithNames with a non-UTF-8 Tuple element name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CSVWithNames'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CSVWithNames' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CSVWithNames') \
+    && echo 'CSVWithNames payload with a non-UTF-8 Tuple element name round-trips' || echo 'MISMATCH'
+
+# The gate follows the actual header: with the header flattening disabled the header keeps the single
+# top-level Tuple name `t`, which is valid UTF-8, so the same query is accepted.
+echo '--- JSONEachPacketString accepts CSVWithNames with a non-UTF-8 Tuple element name when the header is not flattened'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_csv_header_serialize_tuple_into_separate_columns=0" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CSVWithNames' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'CSVWithNames (unflattened header, non-UTF-8 Tuple element name) accepted: OK'
+
+# A valid multi-byte UTF-8 Tuple element name must not be misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts CSVWithNames with a valid UTF-8 (multi-byte) Tuple element name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`col\xE2\x9C\x93` UInt8, c UInt8)) AS t FORMAT CSVWithNames' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'CSVWithNames (valid UTF-8 Tuple element name) accepted: OK'
+
+# The matching `CustomSeparated` CSV path flattens the header the same way when the escaping rule is
+# `CSV` and the field delimiter is the single character equal to `format_csv_delimiter` (`,`).
+echo '--- JSONEachPacketString is rejected for CustomSeparatedWithNames (CSV rule) with a non-UTF-8 Tuple element name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=CSV&format_custom_field_delimiter=," \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CustomSeparatedWithNames' \
+    | grep -o -m1 'is not compatible with the output format CustomSeparatedWithNames'
+
+echo '--- EventStream base64-encodes CustomSeparatedWithNames (CSV rule) with a non-UTF-8 Tuple element name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=CSV&format_custom_field_delimiter=," \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CustomSeparatedWithNames'
+
+# With a non-matching field delimiter the header is not flattened (it keeps the top-level name `t`), so
+# the same query is accepted - the gate follows the actual header under the current settings.
+echo '--- JSONEachPacketString accepts CustomSeparatedWithNames (CSV rule) with a non-matching delimiter (header not flattened)'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=CSV&format_custom_field_delimiter=|" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CustomSeparatedWithNames' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'CustomSeparatedWithNames (non-matching delimiter, header not flattened) accepted: OK'

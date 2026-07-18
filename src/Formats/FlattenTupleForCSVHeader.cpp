@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Common/isValidUTF8.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -56,6 +57,33 @@ void getCSVHeaderNamesAndTypes(const Block & sample, bool flatten, Names & names
             type_names.push_back(elem.type->getName());
         }
     }
+}
+
+bool csvHeaderNamesMayProduceRawBytes(const Block & sample, bool flatten, bool with_names, bool with_types)
+{
+    if (!with_names && !with_types)
+        return false;
+
+    Names names;
+    Names type_names;
+    getCSVHeaderNamesAndTypes(sample, flatten, names, type_names);
+
+    auto is_not_valid_utf8 = [](const std::string & s)
+    {
+        return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+    };
+
+    if (with_names)
+        for (const auto & name : names)
+            if (is_not_valid_utf8(name))
+                return true;
+
+    if (with_types)
+        for (const auto & type_name : type_names)
+            if (is_not_valid_utf8(type_name))
+                return true;
+
+    return false;
 }
 
 }

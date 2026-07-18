@@ -139,13 +139,21 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
             {
                 return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
             };
+            /// The header carries the dotted leaf names when a Tuple column is flattened, which happens
+            /// under the CSV escaping rule with a matching single-character field delimiter (mirroring
+            /// `CustomSeparatedRowOutputFormat::writePrefix`), so validate the actual flattened header.
+            const bool flatten = custom.escaping_rule == FormatSettings::EscapingRule::CSV
+                && settings.csv.serialize_tuple_into_separate_columns
+                && settings.csv.header_serialize_tuple_into_separate_columns
+                && custom.field_delimiter.size() == 1
+                && custom.field_delimiter[0] == settings.csv.tuple_delimiter;
             return is_not_valid_utf8(custom.result_before_delimiter)
                 || is_not_valid_utf8(custom.result_after_delimiter)
                 || is_not_valid_utf8(custom.row_before_delimiter)
                 || is_not_valid_utf8(custom.row_after_delimiter)
                 || is_not_valid_utf8(custom.row_between_delimiter)
                 || is_not_valid_utf8(custom.field_delimiter)
-                || headerNamesMayProduceRawBytes(header, with_names, with_types);
+                || csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types);
         });
 
         /// The `CSV` and `XML` escaping rules pass a carriage return in a `String` value through
