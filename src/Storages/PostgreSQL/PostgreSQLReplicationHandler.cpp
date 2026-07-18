@@ -474,6 +474,37 @@ std::pair<String, String> PostgreSQLReplicationHandler::getNormalizedSchemaAndTa
 }
 
 
+String PostgreSQLReplicationHandler::collidingForeignPublishedTables(
+    const std::set<std::pair<String, String>> & expected,
+    const std::set<std::pair<String, String>> & published) const
+{
+    /// In the multi-schema modes the WAL consumer keys relation messages by the qualified "schema.table"
+    /// name, so a foreign-schema table can never shadow one of this engine's tables - extras are harmless.
+    if (schema_as_a_part_of_table_name)
+        return {};
+
+    std::unordered_set<String> expected_bare_names;
+    for (const auto & [schema, table] : expected)
+        expected_bare_names.insert(table);
+
+    String colliding;
+    for (const auto & [schema, table] : published)
+    {
+        /// A pair this engine replicates itself is not an extra.
+        if (expected.contains(std::make_pair(schema, table)))
+            continue;
+        /// An extra whose bare name does not collide with any replicated table is harmless: the consumer
+        /// never maps it onto one of this engine's tables and its changes are simply ignored.
+        if (!expected_bare_names.contains(table))
+            continue;
+        if (!colliding.empty())
+            colliding += ", ";
+        colliding += schema + '.' + table;
+    }
+    return colliding;
+}
+
+
 String PostgreSQLReplicationHandler::doubleQuoteWithSchema(const String & table_name) const
 {
     auto [schema, table] = getSchemaAndTableName(table_name);
@@ -1005,9 +1036,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// The existing publication is reused as-is on attach (createPublicationIfNeeded() below is a no-op
         /// when it exists), and the slot resumes from its confirmed_flush_lsn with WAL filtered through
         /// whatever the publication currently publishes. If it has drifted and no longer publishes a table
-        /// this engine replicates, that table silently stops receiving changes - fail closed instead. Extra
-        /// tables the publication publishes but this engine does not replicate are harmless (their changes are
-        /// simply ignored) and are left to the redundant-work path in fetchRequiredTables().
+        /// this engine replicates, that table silently stops receiving changes - fail closed instead.
         ///
         /// The comparison is by exact (schema, table) pair, not by bare table name: in the single-schema
         /// modes (a single `materialized_postgresql_schema`, the default `public` schema, or a whole-schema
@@ -1021,15 +1050,18 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         {
             const auto published = fetchPublishedTablePairs(tx);
 
-            String missing;
+            std::set<std::pair<String, String>> expected;
             for (const auto & entry : materialized_storages)
+                expected.insert(getNormalizedSchemaAndTableName(entry.first));
+
+            String missing;
+            for (const auto & pair : expected)
             {
-                const auto expected = getNormalizedSchemaAndTableName(entry.first);
-                if (published.contains(expected))
+                if (published.contains(pair))
                     continue;
                 if (!missing.empty())
                     missing += ", ";
-                missing += expected.first + '.' + expected.second;
+                missing += pair.first + '.' + pair.second;
             }
 
             if (!missing.empty())
@@ -1046,6 +1078,26 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     "automatically once the conflict is resolved, without a server restart or a manual "
                     "re-attach.",
                     doubleQuoteString(publication_name), missing);
+
+            /// Extra tables the publication publishes but this engine does not replicate are usually harmless
+            /// (their changes are simply ignored). The exception is a foreign-schema table whose bare name
+            /// collides with one of this engine's tables in the single-schema modes: the WAL consumer keys
+            /// relation messages by the bare name there, so its changes would be replayed into this engine's
+            /// ClickHouse table instead of being ignored. Fail closed on such a collision.
+            const String colliding = collidingForeignPublishedTables(expected, published);
+            if (!colliding.empty())
+                throw Exception(
+                    ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot start MaterializedPostgreSQL replication on attach: the existing publication {} "
+                    "publishes the following foreign-schema table(s) whose bare name collides with a table this "
+                    "engine replicates: {}. In the single-schema modes the replication consumer identifies "
+                    "tables by their bare name, so resuming from the existing replication slot through this "
+                    "publication would replay the foreign table's changes into this engine's ClickHouse table. "
+                    "Replication is refused instead. Remove the colliding table(s) from the publication on the "
+                    "PostgreSQL side, or recreate this object for a clean rebuild: startup keeps retrying and "
+                    "replication starts automatically once the conflict is resolved, without a server restart "
+                    "or a manual re-attach.",
+                    doubleQuoteString(publication_name), colliding);
         }
     }
 
@@ -1709,15 +1761,18 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     /// The match is by exact (schema, table) pair, not by bare table name, so a publication
                     /// rewritten to a different schema with the same table names (`foo.a` -> `bar.a`) fails closed
                     /// here instead of resuming and replaying WAL from the wrong schema's table.
-                    String missing;
+                    std::set<std::pair<String, String>> expected;
                     for (const auto & table_name : *tables_replicated_by_previous_run)
+                        expected.insert(getNormalizedSchemaAndTableName(table_name));
+
+                    String missing;
+                    for (const auto & pair : expected)
                     {
-                        const auto expected = getNormalizedSchemaAndTableName(table_name);
-                        if (published.contains(expected))
+                        if (published.contains(pair))
                             continue;
                         if (!missing.empty())
                             missing += ", ";
-                        missing += expected.first + '.' + expected.second;
+                        missing += pair.first + '.' + pair.second;
                     }
 
                     if (!missing.empty())
@@ -1734,6 +1789,27 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "startup keeps retrying and replication starts automatically once the conflict is "
                             "resolved, without a server restart or a manual re-attach.",
                             doubleQuoteString(publication_name), missing);
+
+                    /// The whole-schema counterpart of the collision check in startSynchronization(): a
+                    /// foreign-schema table added to the publication (its nested table does not exist on disk,
+                    /// so the extra is otherwise tolerated) whose bare name collides with a table this database
+                    /// replicates would, in the single-schema modes, have its WAL replayed into the wrong
+                    /// ClickHouse table by the consumer. Fail closed on it.
+                    const String colliding = collidingForeignPublishedTables(expected, published);
+                    if (!colliding.empty())
+                        throw Exception(
+                            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                            "Cannot start MaterializedPostgreSQL replication on attach: the existing publication "
+                            "{} publishes the following foreign-schema table(s) whose bare name collides with a "
+                            "table this database replicates: {}. In the single-schema modes the replication "
+                            "consumer identifies tables by their bare name, so resuming from the existing "
+                            "replication slot through this publication would replay the foreign table's changes "
+                            "into this database's ClickHouse table. Replication is refused instead. Remove the "
+                            "colliding table(s) from the publication on the PostgreSQL side, or recreate this "
+                            "database for a clean rebuild: startup keeps retrying and replication starts "
+                            "automatically once the conflict is resolved, without a server restart or a manual "
+                            "re-attach.",
+                            doubleQuoteString(publication_name), colliding);
                 }
                 else
                 {

@@ -4344,6 +4344,239 @@ def test_attach_fails_closed_when_whole_schema_publication_rewritten_to_differen
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_fails_closed_when_foreign_schema_table_added_to_publication(
+    started_cluster,
+):
+    # Regression flagged in review of https://github.com/ClickHouse/ClickHouse/pull/110493: the
+    # current-identity drift check on attach compared exact (schema, table) pairs and rejected a publication
+    # that no longer publishes one of this engine's tables, but it TOLERATED extra tables the publication
+    # publishes that this engine does not replicate. In the single-schema modes
+    # (materialized_postgresql_schema, the default public schema, a whole-schema database over one common
+    # schema) that is not safe: MaterializedPostgreSQLConsumer keys relation messages by the bare relation
+    # name, so an extra foreign-schema table whose bare name collides with a replicated table (schema_a.t is
+    # still published, but an operator also ADDs schema_b.t while the server is down) has its WAL replayed
+    # into the ClickHouse table for schema_a.t. The check must fail closed on such a bare-name collision.
+    # This exercises the current-identity path (the standalone table engine, whose check lives in
+    # startSynchronization()).
+    cursor = pg_manager.get_db_cursor()
+    schema_a = "extra_collide_a"
+    schema_b = "extra_collide_b"
+    table = "extra_collide_t"
+    clickhouse_postgres_db = "postgres_database_extra_collide_schema"
+
+    create_postgres_schema(cursor, schema_a)
+    create_postgres_schema(cursor, schema_b)
+    create_postgres_table_with_schema(cursor, schema_a, table)
+    create_postgres_table_with_schema(cursor, schema_b, table)
+
+    # Distinct data so cross-schema replay is detectable: schema_b's values are offset by 1000.
+    cursor.execute(
+        f'INSERT INTO "{schema_a}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 29) AS g'
+    )
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_a,
+        postgres_database="postgres_database",
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_a}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the table is detached, the publication KEEPS schema_a.t but ALSO gains schema_b.t (the same bare
+    # table name in a different schema), and rows are committed to that foreign table. Resuming through this
+    # publication would replay these rows (value >= 1000) into the ClickHouse table for schema_a.t because the
+    # consumer maps the bare name "t" onto the single storage.
+    instance.query(f"DETACH TABLE {table} PERMANENTLY")
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{schema_b}"."{table}"'
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_b}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(0, 19) AS g'
+    )
+
+    # ATTACH returns immediately (startup is delayed); the background startup task fails closed on the
+    # bare-name collision and keeps retrying.
+    instance.query(f"ATTACH TABLE {table}")
+    assert_logs_contain_with_retry(
+        instance,
+        "whose bare name collides with a table this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the table does not advance, and NONE of schema_b's rows (value >= 1000) are replayed into
+    # it - there is no cross-schema replay.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+        assert 0 == int(instance.query(f"SELECT countIf(value >= 1000) FROM {table}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the table removes the publication and its slot, and recreating it
+    # takes a fresh snapshot of schema_a.t only (still no schema_b rows).
+    instance.query(f"DROP TABLE {table} SYNC")
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_a}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+    assert 0 == int(instance.query(f"SELECT countIf(value >= 1000) FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_fails_closed_when_foreign_schema_table_added_to_whole_schema_publication(
+    started_cluster,
+):
+    # The whole-schema attach-path counterpart of
+    # test_attach_fails_closed_when_foreign_schema_table_added_to_publication. A MaterializedPostgreSQL
+    # database over a single non-default schema (materialized_postgresql_schema, no
+    # materialized_postgresql_tables_list) keeps its publication as its persisted table set; its drift check
+    # lives in fetchRequiredTables(). Adding schema_b.t to the publication while KEEPING schema_a.t (same bare
+    # name, other schema) while the server was down must fail closed instead of resuming and replaying
+    # schema_b.t's WAL into schema_a.t's ClickHouse table.
+    cursor = pg_manager.get_db_cursor()
+    schema_a = "ws_extra_collide_a"
+    schema_b = "ws_extra_collide_b"
+    table = "ws_extra_collide_t"
+    mat_db = "ws_extra_collide_database"
+    pg_db_a = "ws_extra_collide_a_src"
+
+    create_postgres_schema(cursor, schema_a)
+    create_postgres_schema(cursor, schema_b)
+    create_postgres_table_with_schema(cursor, schema_a, table)
+    create_postgres_table_with_schema(cursor, schema_b, table)
+
+    cursor.execute(
+        f'INSERT INTO "{schema_a}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 29) AS g'
+    )
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db_a,
+        schema_name=schema_a,
+        postgres_database="postgres_database",
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_schema = '{schema_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db_a, materialized_database=mat_db
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication keeps schema_a.t but also gains schema_b.t (the same table
+    # name in a different schema), and rows are committed to that foreign table.
+    instance.stop_clickhouse()
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{schema_b}"."{table}"'
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_b}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(0, 19) AS g'
+    )
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "whose bare name collides with a table this database replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the table does not advance and no schema_b rows (value >= 1000) are replayed.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        assert 0 == int(
+            instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+        )
+        time.sleep(1)
+
+    # Recovery is a clean rebuild.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_schema = '{schema_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db_a, materialized_database=mat_db
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 0 == int(
+        instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

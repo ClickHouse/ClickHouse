@@ -126,6 +126,17 @@ private:
     /// can be compared directly against pg_publication_tables (see fetchPublishedTablePairs()).
     std::pair<String, String> getNormalizedSchemaAndTableName(const String & table_name) const;
 
+    /// In the single-schema modes (schema_as_a_part_of_table_name == false) the WAL consumer keys relation
+    /// messages by the bare table name (MaterializedPostgreSQLConsumer), so a publication that keeps this
+    /// engine's own tables but also publishes a foreign-schema table with the same bare name would have that
+    /// foreign table's WAL replayed into this engine's ClickHouse table. Given the set of (schema, table)
+    /// pairs this engine expects to replicate and the set the publication currently publishes, returns a
+    /// comma-separated list of such colliding foreign-schema extras ("schema.table"), or an empty string if
+    /// there are none (extras without a bare-name collision are harmless and are tolerated).
+    String collidingForeignPublishedTables(
+        const std::set<std::pair<String, String>> & expected,
+        const std::set<std::pair<String, String>> & published) const;
+
     void assertInitialized() const;
 
     void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
