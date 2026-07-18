@@ -64,10 +64,18 @@ String CompressionCodecFactory::getReasonUnsafeForUntypedData(const String & com
     auto ast = parseQuery(
         codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    const auto * func = ast->as<ASTFunction>();
+    return getReasonUnsafeForUntypedData(ast);
+}
+
+String CompressionCodecFactory::getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const
+{
+    if (!codec_ast)
+        return {};
+
+    const auto * func = codec_ast->as<ASTFunction>();
     if (!func)
         throw Exception(
-            ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", codec_ast->formatForErrorMessage());
 
     /// Build each codec in the chain individually via `getImpl`, which (unlike `get(ast, column_type)`)
     /// does not apply the null-column-type lossy guard. That guard throws for lossy codecs such as `SZ3`,

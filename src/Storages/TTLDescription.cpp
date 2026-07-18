@@ -1,6 +1,7 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -323,11 +324,38 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// a table created on an earlier version must still load even if its recompression codec would now be
             /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. `is_attach` here is
             /// also set for a create with `allow_suspicious_ttl_expressions`, matching `checkTTLExpression` below.
-            result.recompression_codec =
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {},
-                    !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
+            ///
+            /// A recompression codec is always resolved with a null column type in
+            /// `MergeTreeData::getCompressionCodecForPart`, so a stored codec that is unsafe for untyped data —
+            /// experimental (e.g. `PCO`), one that requires a column type, or a lossy one (e.g. `SZ3`) — could not
+            /// actually be used: it would throw or silently corrupt data at the first `TTL ... RECOMPRESS` merge.
+            /// On the metadata-load path, where rejecting would make the table unloadable, normalize such a codec
+            /// to the server default codec so the table stays loadable and writable, mirroring the marks / primary
+            /// key / default codec sanitization in the `MergeTreeData` constructor. At `CREATE` it is still
+            /// rejected by `validateCodecAndGetPreprocessedAST` below.
+            auto & factory = CompressionCodecFactory::instance();
+            String unsafe_reason;
+            if (is_attach)
+                unsafe_reason = factory.getReasonUnsafeForUntypedData(ttl_element->recompression_codec);
+
+            if (!unsafe_reason.empty())
+            {
+                LOG_WARNING(
+                    getLogger("TTLDescription"),
+                    "The recompression codec {} in a `TTL ... RECOMPRESS` clause can not be used because {}; "
+                    "resetting it to the default codec.",
+                    ttl_element->recompression_codec->formatForLogging(),
+                    unsafe_reason);
+                result.recompression_codec = makeASTFunction("CODEC", make_intrusive<ASTIdentifier>(DEFAULT_CODEC_NAME));
+            }
+            else
+            {
+                result.recompression_codec =
+                    factory.validateCodecAndGetPreprocessedAST(
+                        ttl_element->recompression_codec, {},
+                        !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                        is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
+            }
         }
     }
 

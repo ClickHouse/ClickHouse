@@ -87,6 +87,10 @@ public:
     /// load. Genuinely invalid codec strings still throw (e.g. `UNKNOWN_CODEC`).
     String getReasonUnsafeForUntypedData(const String & compression_codec) const;
 
+    /// Same as above, but for a codec chain given as a `CODEC(...)` AST (e.g. a stored
+    /// `TTL ... RECOMPRESS CODEC(...)` clause), so the caller need not round-trip it through a string.
+    String getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const;
+
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
 
