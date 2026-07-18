@@ -8392,7 +8392,7 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 
-An `INSERT ... VALUES`/`FORMAT` query with inline data is transpiled as a whole, so the inline data counts towards `max_query_size` (unlike a native ClickHouse `INSERT`, whose inline data is streamed and is not bounded by `max_query_size`). Increase `max_query_size` to submit larger inline payloads in this dialect.
+An `INSERT ... VALUES` query with inline data is transpiled as a whole, so the inline data counts towards `max_query_size` (unlike a native ClickHouse `INSERT`, whose inline data is streamed and is not bounded by `max_query_size`). Increase `max_query_size` to submit larger inline payloads in this dialect. Foreign-dialect `INSERT ... FORMAT` is not currently transpilable: the bundled dialects reject it, so only `INSERT ... VALUES` inline data is supported.
 )", EXPERIMENTAL) \
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
