@@ -50,3 +50,25 @@ SYSTEM DISABLE FAILPOINT distributed_plan_read_empty_snapshot_on_deserialize;
 SELECT count(), sum(v) FROM t_dp_empty_snapshot_final FINAL;
 
 DROP TABLE t_dp_empty_snapshot_final;
+
+-- Non-bucketed read shipped in a distributed fragment: when the distributed axis is an exchange above
+-- the read (here a global aggregation over a small FINAL read that is not itself range-split into
+-- buckets), the leaf ReadFromMergeTree ships with distributed_read_bucket_count == 0. readFromParts must
+-- still build a real (empty) step on an empty local snapshot; returning null crashed the generic plan
+-- deserializer with a SIGSEGV. A non-bucketed read is not pinned to coordinator-selected parts, so an
+-- empty snapshot is legitimately zero local rows (no divergence contract), not NO_SUCH_DATA_PART.
+DROP TABLE IF EXISTS t_dp_empty_snapshot_small;
+CREATE TABLE t_dp_empty_snapshot_small (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
+INSERT INTO t_dp_empty_snapshot_small SELECT number, number FROM numbers(50);
+
+-- Without the fault the non-bucketed FINAL global aggregation works normally.
+SELECT count(), sum(v) FROM t_dp_empty_snapshot_small FINAL;
+
+SYSTEM ENABLE FAILPOINT distributed_plan_read_empty_snapshot_on_deserialize;
+SELECT count(), sum(v) FROM t_dp_empty_snapshot_small FINAL;
+SYSTEM DISABLE FAILPOINT distributed_plan_read_empty_snapshot_on_deserialize;
+
+-- The server is still alive and reads work again once the fault is off.
+SELECT count(), sum(v) FROM t_dp_empty_snapshot_small FINAL;
+
+DROP TABLE t_dp_empty_snapshot_small;

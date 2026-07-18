@@ -5495,9 +5495,13 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// above), so the callbacks are always present.
         enable_parallel_reading,
         /*extension*/ nullptr,
-        /// A bucketed read must get a step even if this replica's snapshot is empty, so the bucket count
-        /// has somewhere to attach; the empty read is handled in initializePipeline.
-        /*build_empty_step_for_distributed_read*/ distributed_read_bucket_count > 0);
+        /// Any executed distributed-read fragment must get a step even if this replica's snapshot is empty
+        /// (parts merged away or dropped since the coordinator planned the read); a null step returned here
+        /// crashes the generic plan deserializer. Not gated on the bucket count: a plain (non-bucketed) read
+        /// still ships in a fragment when the distributed axis is an exchange above it (e.g. FINAL under a
+        /// distributed aggregation). The drain path never reaches here (see the ctx.skipping short-circuit
+        /// above). The empty read is resolved in initializePipeline.
+        /*build_empty_step_for_distributed_read*/ true);
 
     if (distributed_read_bucket_count)
     {
