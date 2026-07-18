@@ -4,6 +4,8 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/FieldToDataType.h>
 #include <IO/WriteHelpers.h>
@@ -628,6 +630,10 @@ struct AggregateFunctionMergedJSONPatchData
 
     /// Same as rebuildNestedObject but produces a Field::Map (vector of Tuple(key,value) pairs)
     /// suitable for insertion into a ColumnMap typed path.
+    ///
+    /// Keys are deduplicated: descendants under the same direct child key are collected once via
+    /// a recursive call, not pushed once per leaf.  This mirrors the coalescing that
+    /// rebuildNestedObject achieves through Field::Object's map assignment semantics.
     Field rebuildNestedMap(std::string_view ancestor_path) const
     {
         /// Exact-path entry: scalar/Map replaced the whole value — return it directly.
@@ -637,26 +643,26 @@ struct AggregateFunctionMergedJSONPatchData
                 return entry.value.get();
         }
 
-        Map result;
+        /// Collect the distinct set of direct child keys under this ancestor, preserving order.
+        std::vector<String> seen_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_set<std::string_view> seen_set; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (const auto & entry : entries)
         {
             std::string_view p = entry.pathView();
             if (!isDescendantPath(ancestor_path, p))
                 continue;
-
             std::string_view rel = p.substr(ancestor_path.size() + 1);
-            auto dot = rel.find('.');
-            String direct_key(dot == std::string_view::npos ? rel : rel.substr(0, dot));
+            String direct_key(rel.substr(0, rel.find('.')));
+            if (seen_set.insert(direct_key).second)
+                seen_keys.push_back(std::move(direct_key));
+        }
 
-            if (dot == std::string_view::npos)
-            {
-                result.push_back(Tuple{Field(direct_key), entry.value.get()});
-            }
-            else
-            {
-                String child_prefix = String(ancestor_path) + '.' + direct_key;
-                result.push_back(Tuple{Field(direct_key), rebuildNestedMap(child_prefix)});
-            }
+        Map result;
+        result.reserve(seen_keys.size());
+        for (const String & key : seen_keys)
+        {
+            String child_prefix = String(ancestor_path) + '.' + key;
+            result.push_back(Tuple{Field(key), rebuildNestedMap(child_prefix)});
         }
         return result;
     }
@@ -683,7 +689,10 @@ struct AggregateFunctionMergedJSONPatchData
         {
             for (const auto & [tp, dt] : obj_type->getTypedPaths())
             {
-                WhichDataType w(dt);
+                /// Unwrap Nullable / LowCardinality wrappers before testing the inner type,
+                /// because WhichDataType(Nullable(JSON)) reports "Nullable", not "Object".
+                DataTypePtr inner = removeLowCardinality(removeNullable(dt));
+                WhichDataType w(inner);
                 if (w.isObject() || w.isDynamic() || w.isMap())
                     nested_typed_ancestors.emplace(tp, w);
             }

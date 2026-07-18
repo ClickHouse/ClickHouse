@@ -306,3 +306,28 @@ FROM (
     )
 );
 
+-- Nullable(JSON) typed path: single-row round-trip must not double-write.
+-- Without the fix, WhichDataType(Nullable(JSON)) reports "Nullable" not "Object",
+-- so the typed parent was skipped and the leaf fell through to dynamic data.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"x":1}}'::JSON(a Nullable(JSON)) AS patch, 1 AS version);
+
+-- Nullable(JSON) typed path: RFC 7396 deep merge.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x":1,"y":2}}'::JSON(a Nullable(JSON)) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":{"y":3}}'::JSON(a Nullable(JSON)), 2
+);
+
+-- Nested Map typed path: descendants under the same key must not be duplicated.
+-- Without the fix, rebuildNestedMap pushed one tuple per leaf rather than per key.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"x":{"y":1,"z":2}}}'::JSON(a Map(String, Map(String, UInt32))) AS patch, 1 AS version);
+
+-- Nested Map typed path: RFC 7396 deep merge (z=99 wins, y=1 survives).
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x":{"y":1,"z":2}}}'::JSON(a Map(String, Map(String, UInt32))) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":{"x":{"z":99}}}'::JSON(a Map(String, Map(String, UInt32))), 2
+);
+
