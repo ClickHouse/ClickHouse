@@ -248,3 +248,74 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_acc_1"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_acc_2"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ACC_USER}"
+
+# The missing access may also concern a table that is not a child AST node but a plain string field of the
+# query. `CREATE OR REPLACE TABLE dst AS src` reads `src`'s structure, and `InterpreterCreateQuery` checks
+# `SHOW_COLUMNS` on `src` (`create.as_database`/`create.as_table`). A user who can `DETACH`/`ATTACH` the
+# existing destination `dst` (full table grants plus the engine grant) but lacks any access to the source
+# `src` must fail with `ACCESS_DENIED` without `dst` being detached — the `AS` source has to be folded into
+# the same preflight even though it lives outside the child AST.
+CREATE_USER="user_reattach_create_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${CREATE_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${CREATE_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${CREATE_USER}"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_create_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_create_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_create_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_create_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+# Full table grants on the destination make it a genuine detach candidate; grant nothing on the source.
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.t_reattach_create_dst TO ${CREATE_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${CREATE_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "CREATE OR REPLACE TABLE t_reattach_create_dst AS t_reattach_create_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_create_dst"; then
+    echo "FAIL (destination detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_create_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_create_src"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${CREATE_USER}"
+
+# `ALTER TABLE dst REPLACE PARTITION ... FROM src` needs `SELECT` on the source `src` (see
+# `InterpreterAlterQuery::getRequiredAccessForCommand`), which is kept in the command's `from_*` string
+# fields, not in a child AST node. A user who can `DETACH`/`ATTACH` the target `dst` but lacks `SELECT` on
+# `src` must fail with `ACCESS_DENIED` without `dst` being detached — the `from_*`/`to_*` tables have to be
+# folded into the same preflight. (Access is checked before partition validation, so no data is needed.)
+ALTER_USER="user_reattach_alter_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ALTER_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${ALTER_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${ALTER_USER}"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_alter_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_alter_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_alter_dst (a UInt64) ENGINE = MergeTree PARTITION BY a ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_alter_src (a UInt64) ENGINE = MergeTree PARTITION BY a ORDER BY a"
+# Full table grants on the target make it a genuine detach candidate; grant nothing on the source.
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.t_reattach_alter_dst TO ${ALTER_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ALTER_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "ALTER TABLE t_reattach_alter_dst REPLACE PARTITION 1 FROM t_reattach_alter_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_alter_dst"; then
+    echo "FAIL (target detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_alter_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_alter_src"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${ALTER_USER}"

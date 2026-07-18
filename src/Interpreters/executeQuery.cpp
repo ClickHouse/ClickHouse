@@ -1229,9 +1229,16 @@ AccessFlags requiredAccessForTableQuery(const IAST & ast)
         return AccessType::CHECK;
     if (ast.as<ASTOptimizeQuery>())
         return AccessType::OPTIMIZE;
-    /// The `ALTER` group covers every per-command flag `InterpreterAlterQuery::getRequiredAccess` may check.
+    /// `InterpreterAlterQuery::getRequiredAccessForCommand` checks per-command flags that are not all inside
+    /// the `ALTER` group: `ATTACH PARTITION` needs `INSERT`, `REPLACE PARTITION ... FROM src` needs
+    /// `ALTER_DELETE | INSERT` on the target (plus `SELECT` on `src`), and `MOVE PARTITION ... TO TABLE dst`
+    /// needs `INSERT` on `dst`. Requiring only `ALTER` here would under-approximate, so a user who has `ALTER`
+    /// but lacks e.g. `INSERT` would pass the preflight and get a real `DETACH`/`ATTACH` before the outer
+    /// `ALTER` fails with `ACCESS_DENIED`. Over-approximate with all table-level flags instead — over-requiring
+    /// only makes the preflight skip randomization, it never produces side effects for a failing query. The
+    /// extra source/destination tables (`from_*`/`to_*`) are folded into the collection in `collectTablesInQuery`.
     if (ast.as<ASTAlterQuery>())
-        return AccessType::ALTER;
+        return AccessFlags::allFlagsGrantableOnTableLevel();
     if (ast.as<ASTUpdateQuery>())
         return AccessType::ALTER_UPDATE;
     if (ast.as<ASTDeleteQuery>())
@@ -1248,7 +1255,9 @@ AccessFlags requiredAccessForTableQuery(const IAST & ast)
 /// Scope — this defines the contract of `reattach_tables_before_query_execution`: tables are extracted
 /// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, `BACKUP TABLE`/`RESTORE TABLE`
 /// (only explicit `TABLE` elements — see the `ASTBackupQuery` branch), and the `ASTQueryWithTableAndOutput`
-/// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...). Query classes that
+/// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...) — including the extra
+/// source/destination tables an `ALTER ... REPLACE/ATTACH/MOVE PARTITION` names in its `from_*`/`to_*` fields
+/// and the `AS` source of a `CREATE ... AS src` — see the `ASTQueryWithTableAndOutput` branch. Query classes that
 /// keep table references in other AST shapes — `SHOW COLUMNS`, `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE`,
 /// and the whole-database/whole-server `BACKUP`/`RESTORE DATABASE` and `BACKUP`/`RESTORE ALL` forms — are
 /// deliberately not covered: `RENAME` and `EXCHANGE` manipulate the tables' catalog registration themselves,
@@ -1415,6 +1424,35 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// table of the same name that the query never touches, so skip temporary-table references.
         if (!query_with_output->isTemporary())
             data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast));
+
+        /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the
+        /// main `database`/`table` nor in child AST nodes, yet the outer query's own access check validates them
+        /// at interpretation time. Collect those here too, so the access preflight stays complete and an
+        /// access-rejected query never produces `DETACH`/`ATTACH` side effects (see the preflight in
+        /// `reattachTablesUsedInQuery`). Their required access is over-approximated with all table-level flags —
+        /// over-requiring only makes the preflight skip randomization, it never lets a failing query detach.
+        if (const auto * alter = ast->as<ASTAlterQuery>())
+        {
+            /// `ALTER ... REPLACE PARTITION ... FROM src` / `ATTACH PARTITION ... FROM src` name a source table
+            /// in `from_*`, and `MOVE PARTITION ... TO TABLE dst` names a destination table in `to_*` (see
+            /// `InterpreterAlterQuery::getRequiredAccessForCommand`). These are plain strings in `ASTAlterCommand`,
+            /// not child AST nodes, so the generic recursion below never reaches them.
+            if (alter->command_list)
+                for (const auto & command_child : alter->command_list->children)
+                    if (const auto * command = command_child->as<ASTAlterCommand>())
+                    {
+                        data.addTableIfNotEmpty(command->from_database, command->from_table, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
+                        data.addTableIfNotEmpty(command->to_database, command->to_table, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
+                    }
+        }
+        else if (const auto * create = ast->as<ASTCreateQuery>())
+        {
+            /// `CREATE ... AS src` / `CREATE ... CLONE AS src` reads `src`'s structure; `InterpreterCreateQuery`
+            /// checks `SHOW_COLUMNS` on `create.as_database`/`create.as_table` before reading it. Without this,
+            /// `CREATE OR REPLACE TABLE dst AS src` would detach an existing `dst` before that check fails. The
+            /// source is a plain string in `ASTCreateQuery`, not a child AST node.
+            data.addTableIfNotEmpty(create->as_database, create->as_table, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
+        }
     }
     else if (const auto * function = ast->as<ASTFunction>())
     {
