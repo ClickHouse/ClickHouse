@@ -918,8 +918,17 @@ public:
         if (has_stateful_function)
             return false;
 
+        /// A non-correlated subquery is executed independently of the outer query (a scalar
+        /// subquery is evaluated once), so pushing a LIMIT below the outer projection does not
+        /// change how many times a stateful function inside it runs -- do not descend into it.
+        /// A correlated subquery, however, is an execution-time expression evaluated once per
+        /// outer row, so a stateful function inside it must still fence the outer LIMIT.
         auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+        if (child_node_type == QueryTreeNodeType::QUERY)
+            return child_node->as<QueryNode &>().isCorrelated();
+        if (child_node_type == QueryTreeNodeType::UNION)
+            return child_node->as<UnionNode &>().isCorrelated();
+        return true;
     }
 
     bool hasStatefulFunction() const
@@ -966,8 +975,15 @@ public:
         if (has_array_join_function)
             return false;
 
+        /// See the same reasoning in `CheckStatefulFunctionExistsVisitor::needChildVisit`: descend
+        /// into correlated subqueries (evaluated once per outer row) but not into non-correlated
+        /// ones (evaluated independently of the outer LIMIT).
         auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+        if (child_node_type == QueryTreeNodeType::QUERY)
+            return child_node->as<QueryNode &>().isCorrelated();
+        if (child_node_type == QueryTreeNodeType::UNION)
+            return child_node->as<UnionNode &>().isCorrelated();
+        return true;
     }
 
     bool hasArrayJoinFunction() const
