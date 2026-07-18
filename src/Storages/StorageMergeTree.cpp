@@ -1220,7 +1220,13 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
 
     const auto & mutation_entry = current_mutation_it->second;
 
-    auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
+    /// Do not pass a logger: this is a read-only status path polled by `waitForMutation` from
+    /// client threads. After this fix a committed transaction leaving the running list is a normal
+    /// state (resolved below via the transaction log), so the "Cannot find transaction ... probably
+    /// it finished" warning is expected here and must not be streamed to the client
+    /// (`--send_logs_level=warning`) as spurious `<Warning>` output. The scheduling
+    /// (`selectPartsToMutate`) and `killMutation` paths keep the logger for diagnostics.
+    auto txn = tryGetTransactionForMutation(mutation_entry);
     bool committed_without_txn = false;
     if (!txn && !mutation_entry.tid.isNonTransactional())
     {
