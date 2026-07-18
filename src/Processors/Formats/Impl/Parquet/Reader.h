@@ -546,11 +546,12 @@ struct Reader
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
     /// Returns false if the row group was filtered out and should be skipped.
-    /// `pruning_memory_budget` bounds the value sets built for dictionary filtering; it is the memory
-    /// still available for pruning (the high watermark minus what the pruning stage already holds), or
-    /// 0 when unbounded. It is shared across all dictionary lookups in the call, so several
-    /// dictionary-filtered columns cannot each use the full budget. See `ReadManager::pruningMemoryBudget`.
-    bool applyBloomAndDictionaryFilters(RowGroup & row_group, size_t pruning_memory_budget);
+    /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
+    /// still available for pruning, charged live to the shared `BloomFilterBlocksOrDictionary` stage
+    /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
+    /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
+    /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
+    bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);

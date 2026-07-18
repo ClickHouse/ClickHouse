@@ -121,6 +121,11 @@ private:
     /// charged in `runTask`, plus this batch's in-flight `diff`). Returns 0 when the watermark is 0
     /// (unbounded); otherwise at least 1, so 0 unambiguously means "unbounded" for the callers.
     size_t pruningMemoryBudget(const MemoryUsageDiff & diff) const;
+    /// Same budget as `pruningMemoryBudget`, but as a live reservation handle that charges the shared
+    /// `BloomFilterBlocksOrDictionary` stage counter, so the dictionary value sets built while
+    /// evaluating a row-group filter stay within the watermark across all row groups pruning in
+    /// parallel (see `PruningMemoryReservation` and `Reader::applyBloomAndDictionaryFilters`).
+    PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);

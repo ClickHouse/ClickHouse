@@ -116,7 +116,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     /// Finish the stage.
     if (stage == ReadStage::BloomFilterBlocksOrDictionary)
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryBudget(diff)))
+        if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
             stage = ReadStage::Deliver; // skip the row group
         for (auto & c : row_group.columns)
         {
@@ -825,6 +825,24 @@ size_t ReadManager::pruningMemoryBudget(const MemoryUsageDiff & diff) const
     size_t remaining = live_bytes < watermark ? watermark - live_bytes : 0;
     /// Clamp to at least 1: a literal 0 would be read as "unbounded" by the callers.
     return std::max<size_t>(remaining, 1);
+}
+
+PruningMemoryReservation ReadManager::pruningMemoryReservation(const MemoryUsageDiff & diff)
+{
+    size_t watermark = reader.options.format.parquet.memory_high_watermark;
+    if (watermark == 0)
+        return {}; /// Unbounded.
+
+    size_t idx = size_t(ReadStage::BloomFilterBlocksOrDictionary);
+    /// Reserve against the live stage counter (what previous batches flushed, plus the value sets
+    /// other row groups are holding right now), accounting for this batch's own not-yet-flushed pruning
+    /// memory (the dictionaries decoded earlier in this batch) via `in_flight`.
+    ssize_t in_flight = diff.by_stage[idx];
+    return PruningMemoryReservation{
+        .stage_memory = &stages[idx].memory_usage,
+        .watermark = watermark,
+        .in_flight = in_flight > 0 ? size_t(in_flight) : 0,
+    };
 }
 
 void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)

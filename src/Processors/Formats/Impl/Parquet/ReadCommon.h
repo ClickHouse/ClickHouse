@@ -192,6 +192,55 @@ private:
 };
 
 
+/// Live, cross-thread reservation of the memory used by dictionary-filter pruning. The decoded
+/// dictionaries are charged to the `BloomFilterBlocksOrDictionary` stage counter in
+/// `ReadManager::runTask` (and released in `clearColumnChunk`); the value sets built while evaluating
+/// the row-group filter (`Reader::hashDictionaryValues`) are charged to the same counter through this
+/// handle, for the lifetime of the lookup that holds them. Unlike a `MemoryUsageToken` - which records
+/// its allocation in a per-batch `MemoryUsageDiff` that is only flushed to the stage counter when the
+/// batch finishes - a value set is built and freed entirely within one batch, so a token would net to
+/// zero at flush and never become visible to other threads. Charging the shared atomic directly keeps a
+/// value set visible to every row group pruning in parallel for as long as it is alive, so their
+/// combined footprint - across several dictionary-filtered columns in one row group and across several
+/// row groups on different worker threads - stays within `input_format_parquet_memory_high_watermark`.
+/// A reservation is taken before the value set is allocated, so real memory never exceeds it; if it
+/// would push the total past the watermark the value set is not built and the row group is scanned in
+/// full (fail-open, never a wrong result). A default-constructed reservation (or watermark 0) is
+/// unbounded and charges nothing.
+struct PruningMemoryReservation
+{
+    /// The `BloomFilterBlocksOrDictionary` stage's live memory counter (nullptr == unbounded).
+    std::atomic<size_t> * stage_memory = nullptr;
+    /// `input_format_parquet_memory_high_watermark` (0 == unbounded).
+    size_t watermark = 0;
+    /// This batch's pruning memory already charged to its `MemoryUsageDiff` but not yet flushed to
+    /// `stage_memory` (the decoded dictionaries of the row group being pruned on this thread), so the
+    /// reservation accounts for them even though other threads cannot see them yet.
+    size_t in_flight = 0;
+
+    /// Reserve `bytes` against the shared budget. Returns true and charges the counter if it fits;
+    /// otherwise charges nothing and returns false (skip pruning). Unbounded reservations always fit.
+    bool tryReserve(size_t bytes) const
+    {
+        if (stage_memory == nullptr || watermark == 0)
+            return true;
+        size_t before = stage_memory->fetch_add(bytes, std::memory_order_relaxed);
+        if (before + bytes + in_flight > watermark)
+        {
+            stage_memory->fetch_sub(bytes, std::memory_order_relaxed);
+            return false;
+        }
+        return true;
+    }
+
+    void release(size_t bytes) const
+    {
+        if (stage_memory != nullptr && watermark != 0 && bytes != 0)
+            stage_memory->fetch_sub(bytes, std::memory_order_relaxed);
+    }
+};
+
+
 #ifdef OS_LINUX
 
 class CompletionNotification
