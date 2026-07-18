@@ -118,3 +118,83 @@ def test_mutation_survives_transient_keeper_reconnect(started_cluster):
     assert node.query("SELECT count() FROM t").strip() == "100000"
 
     node.query("DROP TABLE t SYNC")
+
+
+def test_survivor_result_discarded_when_target_part_dropped(started_cluster):
+    """
+    A mutation that detaches to survive a transient reconnect must not orphan its pre-computed
+    result if the target part's queue entry is meanwhile removed by a concurrent DROP PARTITION.
+    The still-computing survivor's result must be discarded (not deposited for reuse), and the
+    table must stay consistent and usable afterwards.
+    """
+    node.query("DROP TABLE IF EXISTS t2 SYNC")
+    node.query(
+        """
+        CREATE TABLE t2 (p UInt64, k UInt64, v UInt64)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t2', 'r1')
+        PARTITION BY p
+        ORDER BY k
+        SETTINGS reuse_precomputed_mutations_after_keeper_reconnect = 1,
+                 zookeeper_session_expiration_check_period = 1,
+                 index_granularity = 1024
+        """
+    )
+
+    # A single part in partition 0 with several granules so the mutation read loop runs more than once.
+    node.query("INSERT INTO t2 SELECT 0, number, number FROM numbers(100000)")
+    assert node.query("SELECT count() FROM system.parts WHERE table = 't2' AND active").strip() == "1"
+
+    survived_before = get_event("MutationsSurvivedKeeperReconnect")
+    reused_before = get_event("MutationsReusedPrecomputedParts")
+    partial_shutdown_before = get_event("ReplicaPartialShutdown")
+
+    # Pause the mutation right after it has produced its first block of the new part.
+    node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
+    node.query("ALTER TABLE t2 UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 0")
+    wait_for(
+        lambda: node.query(
+            "SELECT count() FROM system.merges WHERE table = 't2' AND is_mutation"
+        ).strip()
+        != "0",
+        "mutation to start and pause mid-computation",
+    )
+
+    # Expire the ZooKeeper session so the paused mutation detaches to survive the reconnect.
+    node.query("SYSTEM RECONNECT ZOOKEEPER")
+    wait_for(
+        lambda: get_event("ReplicaPartialShutdown") > partial_shutdown_before,
+        "the transient partial shutdown to happen",
+    )
+    wait_for(
+        lambda: node.query("SELECT is_readonly FROM system.replicas WHERE table = 't2'").strip() == "0",
+        "the replica to recover from readonly",
+    )
+
+    # Drop the partition that contains the part the (still-paused) survivor is computing. Executing
+    # the resulting DROP_RANGE removes the mutation's queue entry, so its result can never be
+    # committed and must be discarded.
+    node.query("ALTER TABLE t2 DROP PARTITION 0")
+    wait_for(
+        lambda: node.query("SELECT count() FROM t2").strip() == "0",
+        "the partition to be dropped (DROP_RANGE executed while the survivor is still computing)",
+    )
+
+    # Resume the survivor. It finishes computing and deposits, but the result must be dropped.
+    node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+
+    # The survivor did survive the reconnect ...
+    wait_for(
+        lambda: get_event("MutationsSurvivedKeeperReconnect") > survived_before,
+        "the mutation to survive the reconnect and finish computing",
+    )
+    # ... but its result must NOT have been reused: the partition (and the target part) was dropped.
+    assert get_event("MutationsReusedPrecomputedParts") == reused_before
+
+    # The partition is gone and the table is still consistent and usable.
+    assert node.query("SELECT count() FROM t2").strip() == "0"
+    node.query("INSERT INTO t2 SELECT 1, number, number FROM numbers(10)")
+    node.query("ALTER TABLE t2 UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    assert node.query("SELECT count() FROM t2 WHERE v = k + 1").strip() == "10"
+
+    # And the table drops cleanly (no orphaned temporary part keeping directories alive).
+    node.query("DROP TABLE t2 SYNC")
