@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -8,18 +9,6 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, WriteBuffer & ostr)
-    {
-        ostr << " ";
-        bool need_comma = false;
-        for (const String & name : names)
-        {
-            if (std::exchange(need_comma, true))
-                ostr << ", ";
-            ostr << backQuoteIfNeed(name);
-        }
-    }
-
     void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         ostr << " RENAME TO " << quoteString(new_name);
@@ -48,6 +37,9 @@ String ASTCreateRoleQuery::getID(char) const
 ASTPtr ASTCreateRoleQuery::clone() const
 {
     auto res = make_intrusive<ASTCreateRoleQuery>(*this);
+
+    if (names)
+        res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
 
     if (settings)
         res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
@@ -78,7 +70,8 @@ void ASTCreateRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     else if (or_replace)
         ostr << " OR REPLACE";
 
-    formatNames(names, ostr);
+    ostr << " ";
+    names->format(ostr, format);
 
     if (!storage_name.empty())
         ostr

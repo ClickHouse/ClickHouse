@@ -1,0 +1,5 @@
+CREATE ROLE role_param_04612
+CREATE ROLE role_param_04612_a
+CREATE ROLE role_param_04612_b
+CREATE ROLE role_param_04612 SETTINGS max_memory_usage = 5000001
+CREATE ROLE role_param_04612_renamed SETTINGS max_memory_usage = 5000001

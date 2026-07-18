@@ -9,6 +9,7 @@ namespace DB
 {
 class ASTSettingsProfileElements;
 class ASTAlterSettingsProfileElements;
+class ASTUserNamesWithHost;
 
 
 /** CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
@@ -33,7 +34,7 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    Strings names;
+    boost::intrusive_ptr<ASTUserNamesWithHost> names;
     String new_name;
     String storage_name;
 

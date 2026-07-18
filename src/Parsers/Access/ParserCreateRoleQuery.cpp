@@ -2,7 +2,9 @@
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ParserSettingsProfileElement.h>
+#include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
@@ -96,9 +98,10 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             or_replace = true;
     }
 
-    Strings names;
-    if (!parseRoleNames(pos, expected, names))
+    ASTPtr names_ast;
+    if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
         return false;
+    auto names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_ast);
 
     String new_name;
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;
@@ -108,7 +111,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
+        if (alter && new_name.empty() && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
         if (alter)
