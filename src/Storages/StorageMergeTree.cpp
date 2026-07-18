@@ -1344,7 +1344,14 @@ StorageMergeTree::DataPartsVector StorageMergeTree::getVisibleDataPartsVectorFor
     /// mutation's snapshot) would keep the mutation reported as unfinished forever even though it
     /// has processed every part it can touch. Use the live transaction's snapshot while it runs,
     /// and the snapshot recorded in the entry's transaction id once the transaction is gone.
-    if (auto txn = tryGetTransactionForMutation(entry, log.load()))
+    ///
+    /// Do not pass a logger here: this is a read-only status path (`system.mutations`,
+    /// `getUnfinishedMutationCommands`) that is polled frequently, and a transaction that committed
+    /// and left the running list is a normal, expected state for a still-pending mutation. Logging a
+    /// warning per poll would both spam the log and, because these queries run in a client's thread
+    /// group, be sent to the client and fail stateless tests that treat any server warning as an
+    /// error. The scheduling and `killMutation` paths keep the logger, where the warning is useful.
+    if (auto txn = tryGetTransactionForMutation(entry))
         return getVisibleDataPartsVector(txn);
 
     return getVisibleDataPartsVector(entry.tid.start_csn, entry.tid);
