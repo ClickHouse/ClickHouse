@@ -232,6 +232,13 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     non_final_reading->disableQueryConditionCache();
 
+    /// Preserve the read-in-order safeguard flags. `non_final_query_info` carries
+    /// `input_order_info`, so this reconstructed step still reads in order, but the
+    /// separate `has_outer_limit`/`prefer_multiple_streams` members are not part of
+    /// `query_info` and would otherwise reset to their defaults — silently re-enabling
+    /// per-part `PrefetchingConcat` (or collapsing parallel streams) in the lazy-FINAL branch.
+    non_final_reading->copyReadInOrderContractFrom(*reading_step);
+
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
     /// Copy them over, otherwise the filter drops every row.
@@ -590,6 +597,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
         /// This is an internal read — don't pollute or use the query condition cache.
         set_reading->disableQueryConditionCache();
+
+        /// Preserve the read-in-order safeguard flags for the same reason as `non_final_reading`
+        /// above: `set_query_info` keeps `input_order_info`, so this step reads in order and must
+        /// carry the `has_outer_limit`/`prefer_multiple_streams` contract too.
+        set_reading->copyReadInOrderContractFrom(*reading_step);
 
         set_plan.addStep(std::move(set_reading));
     }

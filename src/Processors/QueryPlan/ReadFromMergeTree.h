@@ -343,6 +343,19 @@ public:
     /// input streams (parallel aggregation + memory-bound merging).
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+
+    /// Copy the read-in-order safeguard flags that are not carried by `query_info`.
+    /// `has_outer_limit` and `prefer_multiple_streams` are set by `requestReadingInOrder`
+    /// and `setPreferMultipleStreams`, not stored in `SelectQueryInfo`. When a reading
+    /// step is reconstructed from `getQueryInfo()` (which keeps `input_order_info`, so the
+    /// step still reads in order) — e.g. the lazy-FINAL split in `optimizeLazyFinal` — these
+    /// flags must be carried over too, otherwise the per-part `PrefetchingConcat` contract
+    /// is silently dropped for that branch.
+    void copyReadInOrderContractFrom(const ReadFromMergeTree & source)
+    {
+        has_outer_limit = source.has_outer_limit;
+        prefer_multiple_streams = source.prefer_multiple_streams;
+    }
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
