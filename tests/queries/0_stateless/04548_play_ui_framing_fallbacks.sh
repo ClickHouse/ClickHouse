@@ -46,6 +46,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    ordinary SQL downloads the query that actually ran. That client logic is pinned by a unit test
 #    (`src/Parsers/tests/gtest_play_detect_explicit_format.cpp`); the served page wires it into the
 #    download handler, which is checked here.
+# 10. A successful user-chosen `JSONEachPacket*` query whose underlying output format has its own
+#    restore path (a `default_format` table or a `JSONCompactColumns` chart) is streamed as NDJSON
+#    packets, so the saved snapshot's bytes are a packet stream while its `format` is that special
+#    format. Both restore paths must replay any `ndjson_packets` snapshot as raw text (`updateRaw`),
+#    keyed off the persisted framing kind, not the format - otherwise the saved packet stream would
+#    be reparsed as that format's JSON on reload/tab switch. The server contract (the wire is NDJSON,
+#    not the special format) and the served-page dispatch are checked here.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -75,6 +82,13 @@ echo "$page" | grep -q -F 'framing_kind:' && echo 'framing kind persisted: OK'
 [ "$(echo "$page" | grep -c 'snapshotFramingKind(')" -ge 2 ] && echo 'restore keys off framing kind: OK'
 # The download strips only a real trailing `FORMAT` clause using the SQL-lexer walk, not a raw regex.
 echo "$page" | grep -q -F 'const format_clause = await detectExplicitFormatClause(query)' && echo 'download strips real format clause: OK'
+# The single-result restore (`restoreFromHistory`) dispatches an `ndjson_packets` snapshot at the
+# top level of its chain (`else if (kind === 'ndjson_packets')`), before the `!ok` and format
+# branches, so a successful packet stream whose format has a special restore path is replayed raw
+# via `updateRaw` and not reparsed as that format's JSON. ("Run all" via `renderSnapshotIntoElement`
+# hoists the same check above its `!snap.ok` branch.) A browser-only flow, checked on the page.
+ndjson_dispatch="else if (kind === 'ndjson_packets')"
+echo "$page" | grep -qF "$ndjson_dispatch" && echo 'restore replays ndjson packets raw: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
@@ -149,5 +163,18 @@ ${CLICKHOUSE_CURL} -sS -D "$header_file" \
     -d "SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'" > "$result_file"
 grep -o -m1 'application/x-ndjson' "$header_file"
 grep -o -m1 '"packet":"data"' "$result_file"
+
+echo '--- a successful user-framed query whose format has a special restore path streams NDJSON packets'
+# A successful `JSONEachPacketString` query with `FORMAT JSONCompactColumns` (a format the page would
+# otherwise restore as a chart via `JSON.parse`) streams NDJSON packets as `application/x-ndjson`, so
+# the saved snapshot's bytes are a packet stream while its recorded `format` is `JSONCompactColumns`.
+# The restore paths must therefore replay it as raw text keyed off the framing kind (checked on the
+# served page above), not reparse it as the underlying format's JSON.
+${CLICKHOUSE_CURL} -sS -D "$header_file" \
+    "${URL}&default_format=${framed_default_format}" \
+    -d "SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString' FORMAT JSONCompactColumns" > "$result_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 '"packet":"data"' "$result_file"
+[ "$(grep -c '"packet":"exception"' "$result_file")" -eq 0 ] && echo 'no exception: OK'
 
 rm -f "$result_file" "$header_file"

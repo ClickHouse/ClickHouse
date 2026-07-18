@@ -5,6 +5,7 @@ download framing guard present: OK
 framing kind persisted: OK
 restore keys off framing kind: OK
 download strips real format clause: OK
+restore replays ndjson packets raw: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream
@@ -34,3 +35,7 @@ stream begins with a packet: OK
 --- a query-level framing setting overrides the download default_format
 application/x-ndjson
 "packet":"data"
+--- a successful user-framed query whose format has a special restore path streams NDJSON packets
+application/x-ndjson
+"packet":"data"
+no exception: OK

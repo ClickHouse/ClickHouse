@@ -7078,17 +7078,19 @@ async function renderSnapshotIntoElement(el, snap, token) {
         return;
     }
 
+    /// A snapshot that carried its own `JSONEachPacket*` framing (NDJSON packets, one per line) is
+    /// replayed as raw text the way the live run showed it (`updateRaw`), for both successful and
+    /// failed runs and regardless of the underlying output format. Keyed off the persisted framing
+    /// kind, not the payload's first bytes or the format: without this a successful packet stream
+    /// whose format has its own restore path (a `default_format` table or a `JSONCompactColumns`
+    /// chart) would be reparsed as that format's JSON, and a failed one would be shown as one opaque
+    /// error string instead of the partial output followed by the exception packet.
+    if (kind === 'ndjson_packets') {
+        el.updateRaw(snap.data);
+        return;
+    }
+
     if (!snap.ok) {
-        /// A failed query that carried its own `JSONEachPacket*` framing saved its raw packet stream
-        /// (data, log, and progress packets ending with an `exception` packet) as `data`, not a
-        /// plain `{"exception": ...}` error body. Replay it as raw text - the way the live run showed
-        /// it (`updateRaw`) - instead of rendering the whole packet stream as one opaque error
-        /// string, so the partial output and the exception packet stay visible. Keyed off the
-        /// persisted framing kind, not the payload's first bytes.
-        if (kind === 'ndjson_packets') {
-            el.updateRaw(snap.data);
-            return;
-        }
         let has_exception = false;
         for (const line of snap.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
@@ -7322,6 +7324,24 @@ async function restoreFromHistory(state, token) {
             progressEl.clear();
             return;
         }
+    } else if (kind === 'ndjson_packets') {
+        /// A snapshot that carried its own `JSONEachPacket*` framing (NDJSON packets, one per line)
+        /// is replayed as raw text the way the live run showed it (`updateRaw`), for both successful
+        /// and failed runs and regardless of the underlying output format - keyed off the persisted
+        /// framing kind, not the payload's first bytes or the format. Without this a successful packet
+        /// stream whose format has its own restore path (a `default_format` table or a
+        /// `JSONCompactColumns` chart) would be reparsed as that format's JSON on reload/tab switch,
+        /// and a failed one would be shown as one opaque error string instead of the partial output
+        /// followed by the exception packet. A successful run falls through to the shared finish; a
+        /// failed one clears progress and returns like the other error branches.
+        is_raw = true;
+        resultEl.updateRaw(result.data);
+        if (!result.ok) {
+            is_error = true;
+            logoEl.style.display = 'none';
+            progressEl.clear();
+            return;
+        }
     } else if (!result.ok) {
         is_error = true;
         /// Hide the idle logo for the whole error branch, matching the live single-query error
@@ -7330,19 +7350,6 @@ async function restoreFromHistory(state, token) {
         /// left the logo showing, so a reloaded/switched-back error tab looked different from the
         /// original run.
         logoEl.style.display = 'none';
-
-        /// A failed query that carried its own `JSONEachPacket*` framing saved its raw packet stream
-        /// as `data` (data, log, and progress packets ending with an `exception` packet), not a plain
-        /// `{"exception": ...}` error body. Replay it as raw text - the way the live run showed it -
-        /// instead of rendering the whole packet stream as one opaque error string, so the partial
-        /// output and the exception packet stay visible. Keyed off the persisted framing kind, not
-        /// the payload's first bytes.
-        if (kind === 'ndjson_packets') {
-            is_raw = true;
-            resultEl.updateRaw(result.data);
-            progressEl.clear();
-            return;
-        }
 
         let has_exception = false;
         for (const line of result.data.split('\n')) {
