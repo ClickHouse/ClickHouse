@@ -1581,6 +1581,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// expression sees.
                 max_streams = 1;
                 max_threads_execute_query = 1;
+
+                /// The single-stream guarantee above only covers the local read. If parallel
+                /// replicas are enabled, the read can still be replaced with
+                /// `ReadFromParallelRemoteReplicasStep` further down (the parallel-replicas rewrite
+                /// keys off `trivial_limit`, which stays `0` in this branch), splitting the input
+                /// across replicas and re-interleaving the rows the stateful expression sees. Disable
+                /// parallel replicas here so the stateful function still observes a single
+                /// deterministic stream (mirrors the "not enough rows to read" disabling below and
+                /// the old-analyzer `InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis`).
+                planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                planner_context->getMutableQueryContext()->setSetting("max_parallel_replicas", UInt64{1});
             }
 
             if (!max_block_size)

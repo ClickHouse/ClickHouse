@@ -1160,6 +1160,28 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
+    /// There is a couple of instances where there might be a lower limit on the rows to be read
+    /// * The max_rows_to_read setting
+    /// * A LIMIT in a simple query (see maxBlockSizeByLimit())
+    bool stateful_function_blocked_trivial_limit = false;
+    UInt64 max_rows = maxBlockSizeByLimit(stateful_function_blocked_trivial_limit);
+
+    /// A stateful function in the SELECT list of an otherwise trivial `LIMIT` query
+    /// (e.g. `SELECT neighbor(v, 1) FROM mt LIMIT 1`) requires a single deterministic input
+    /// stream. If parallel replicas are enabled, the read is split across replicas and the rows
+    /// the stateful expression observes get interleaved, so disable parallel replicas here and
+    /// reanalyze (mirrors the trivial-count disabling above and the same guard on the new-analyzer
+    /// path in `PlannerJoinTree::buildQueryPlanForTableExpression`). This must happen before the
+    /// `parallel_replicas_min_number_of_rows_per_replica` early return below, which otherwise leaves
+    /// parallel replicas enabled.
+    if (stateful_function_blocked_trivial_limit)
+    {
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("max_parallel_replicas", UInt64{1});
+        LOG_DEBUG(log, "Disabling parallel replicas because a stateful function in the SELECT list requires a single input stream");
+        return true;
+    }
+
     auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
@@ -1167,11 +1189,6 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     auto query_info_copy = query_info;
     auto analysis_copy = analysis_result;
 
-    /// There is a couple of instances where there might be a lower limit on the rows to be read
-    /// * The max_rows_to_read setting
-    /// * A LIMIT in a simple query (see maxBlockSizeByLimit())
-    bool unused_stateful_function_blocked_trivial_limit = false;
-    UInt64 max_rows = maxBlockSizeByLimit(unused_stateful_function_blocked_trivial_limit);
     if (settings[Setting::max_rows_to_read])
         max_rows = max_rows ? std::min(max_rows, settings[Setting::max_rows_to_read].value) : settings[Setting::max_rows_to_read];
     query_info_copy.trivial_limit = max_rows;
@@ -2933,7 +2950,14 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             /// rejects the `ARRAY JOIN` clause form, so guard the `arrayJoin` function here too,
             /// matching the `actions.hasArrayJoin()` fence in `buildSortingDAG` (`optimizeReadInOrder.cpp`)
             /// and the sibling guard in `maxBlockSizeByLimit`.
+            /// `query.hasFiltration()` only sees AST-visible `WHERE`/`PREWHERE`/`HAVING`/`QUALIFY`.
+            /// Reader-side filters that are not in the AST -- a row policy, an additional table filter,
+            /// or a parallel-replicas custom-key filter (all collected into `query_info.filter_asts`) --
+            /// run after the read, so a pushed-down limit could stop the storage before they do and
+            /// return too few rows (e.g. a row policy `USING logTrace('x') = 0` or `USING neighbor(v, 1) = 20`).
+            /// Fence on those too, matching the `filter_asts.empty()` check in `maxBlockSizeByLimit`.
             UInt64 limit = (query.hasFiltration()
+                    || !query_info.filter_asts.empty()
                     || selectListHasArrayJoinFunction(query.select())
                     || selectListHasStatefulFunction(query.select(), context))
                 ? 0

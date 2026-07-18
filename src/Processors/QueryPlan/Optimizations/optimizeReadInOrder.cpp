@@ -1899,7 +1899,14 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
             query_info.syntax_analyzer_result);
 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy() || expression_below_forbids_limit_pushdown)
+    /// `select_query->hasFiltration()` only sees AST-visible `WHERE`/`PREWHERE`/`HAVING`/`QUALIFY`.
+    /// Reader-side filters not in the AST -- a row policy, an additional table filter, or a
+    /// parallel-replicas custom-key filter (all collected into `query_info.filter_asts`) -- run after
+    /// the read, so a pushed-down limit could stop the storage before they do and return too few rows
+    /// (e.g. a row policy `USING logTrace('x') = 0` or `USING neighbor(v, 1) = 20`). Fence on those
+    /// too, matching the sibling guard in `InterpreterSelectQuery::executeFetchColumns`.
+    UInt64 limit = (select_query->hasFiltration() || !query_info.filter_asts.empty() || select_query->groupBy()
+                    || expression_below_forbids_limit_pushdown)
         ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
 
     auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
