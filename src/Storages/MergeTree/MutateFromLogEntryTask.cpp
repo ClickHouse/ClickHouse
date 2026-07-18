@@ -533,6 +533,21 @@ bool MutateFromLogEntryTask::depositPrecomputedResultForReuse()
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
+    /// Release our zero-copy exclusive lock before the follow-up attempt is scheduled. On zero-copy
+    /// disks, `MergeTreeBackgroundExecutor::complete_task` reschedules the queue entry (via
+    /// `onCompleted`) before this task object is destroyed, so if we kept the lock until
+    /// `~MutateFromLogEntryTask` the follow-up attempt would run `prepare()`, take the deposited
+    /// part, then fail `tryCreateZeroCopyExclusiveLock` against our own still-held lock and drop the
+    /// preserved result on the early return. The deposited part is already finalized on disk (its
+    /// temporary directory is kept alive by `temporary_directory_lock`); the follow-up attempt
+    /// re-acquires a fresh lock and re-validates against ZooKeeper before committing.
+    if (zero_copy_lock)
+    {
+        LOG_DEBUG(log, "Removing zero-copy lock (the deposited result will be committed by a follow-up attempt)");
+        zero_copy_lock->lock->unlock();
+        zero_copy_lock.reset();
+    }
+
     storage.depositPrecomputedMutation(entry.new_part_name, std::move(preserved));
 
     /// The reservation is now represented by the deposited entry; don't release it in the destructor.
