@@ -123,7 +123,14 @@ namespace ErrorCodes
 /// AST-based path, so both are consistent. Declared `static` (rather than in one of this file's unnamed
 /// namespaces) so this one declaration and its later definition - which needs symbols from the second
 /// unnamed namespace below - refer to the same internal-linkage entity throughout.
-static void checkViewBaseTableAccess(
+///
+/// Returns whether the base-table access check was actually performed. It is skipped (returning `false`)
+/// when the view's inner query cannot be resolved by the analyzer - the same "format but do not resolve"
+/// shapes (`NOT_IMPLEMENTED`, `BAD_ARGUMENTS`, remote table-function connection errors, ...) that
+/// `resolveThenCheckAccessRights` handles for the top-level query. A legacy-path caller about to expand
+/// and dump the view body must then fall back to the unexpanded view reference, since no `SELECT` check
+/// on the base tables ever ran.
+static bool checkViewBaseTableAccess(
     const StoragePtr & view_storage, const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names);
 
 namespace
@@ -304,9 +311,17 @@ namespace
         ///
         /// Parameterized views are excluded: their base-table access is already enforced by the recursive
         /// `InterpreterSelectQuery` analysis of the subquery `ExpandParameterizedViewsMatcher` expanded them into.
-        static void checkNonParameterizedViewBaseTableAccess(
+        ///
+        /// Returns whether the base-table check ran for the main (FROM, leftmost) regular view - the only one
+        /// `StorageView::replaceWithSubquery` below expands and dumps. When it did not (the view's inner query
+        /// is legacy-explainable but analyzer-unresolvable, so `checkViewBaseTableAccess` skipped the check),
+        /// the caller must leave the view reference unexpanded rather than leak its body. JOIN-side views are
+        /// never expanded in the legacy path, so a skipped check there reveals nothing and does not affect the
+        /// result.
+        static bool checkNonParameterizedViewBaseTableAccess(
             const ASTSelectQuery & select, const ContextPtr & context, const SelectQueryInfo & query_info, const Names & main_table_column_names)
         {
+            bool main_view_access_check_performed = true;
             const auto table_expressions = getTableExpressions(select);
             for (size_t table_number = 0; table_number < table_expressions.size(); ++table_number)
             {
@@ -323,8 +338,10 @@ namespace
                 if (!view || view->isParameterizedView())
                     continue;
 
+                const bool is_main_from_view = table_number == 0 && query_info.view_query && !query_info.is_parameterized_view;
+
                 Names column_names;
-                if (table_number == 0 && query_info.view_query && !query_info.is_parameterized_view)
+                if (is_main_from_view)
                 {
                     column_names = main_table_column_names;
                 }
@@ -341,8 +358,13 @@ namespace
                 }
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-                checkViewBaseTableAccess(storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
+                const bool access_check_performed = checkViewBaseTableAccess(
+                    storage, storage->getStorageSnapshotWithoutData(metadata_snapshot, context), context, column_names);
+
+                if (is_main_from_view)
+                    main_view_access_check_performed = access_check_performed;
             }
+            return main_view_access_check_performed;
         }
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
@@ -357,9 +379,15 @@ namespace
             /// `StorageView::readImpl`'s `column_names` parameter), computed by the `analyze()`-mode interpreter
             /// above from this very query. Run the base-table access check for every regular view referenced,
             /// including JOIN sides, before the FROM view (if any) is rewritten into a subquery.
-            checkNonParameterizedViewBaseTableAccess(select, data.getContext(), query_info, interpreter.getRequiredColumns());
+            const bool main_view_access_check_performed
+                = checkNonParameterizedViewBaseTableAccess(select, data.getContext(), query_info, interpreter.getRequiredColumns());
 
-            if (query_info.view_query)
+            /// Expand the FROM view body only when its base-table access check actually ran. If it was skipped
+            /// (analyzer-unresolvable inner query), expanding would print the view body without any `SELECT`
+            /// check on the base tables ever having happened - a metadata leak for a `SQL SECURITY INVOKER`
+            /// view. Leaving the view reference unexpanded is the fail-safe fallback, matching how the
+            /// parameterized-view path falls back to the unexpanded query in the same situation.
+            if (query_info.view_query && main_view_access_check_performed)
             {
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
@@ -1010,7 +1038,7 @@ bool explainQueryTree(
 
 /// See the forward declaration above `ExpandParameterizedViewsMatcher` for why this is `static` at file
 /// scope rather than inside one of this file's unnamed namespaces.
-static void checkViewBaseTableAccess(
+static bool checkViewBaseTableAccess(
     const StoragePtr & view_storage, const StorageSnapshotPtr & view_snapshot, const ContextPtr & scope_context, const Names & column_names)
 {
     auto view_context = StorageView::getViewSubqueryContext(scope_context, view_snapshot);
@@ -1075,7 +1103,7 @@ static void checkViewBaseTableAccess(
     auto view_query_tree = buildQueryTree(inner_query, view_context);
     QueryTreePassManager view_pass_manager(view_context);
     addQueryTreePasses(view_pass_manager);
-    resolveThenCheckAccessRights(std::move(view_query_tree), view_pass_manager, view_context);
+    return resolveThenCheckAccessRights(std::move(view_query_tree), view_pass_manager, view_context);
 }
 
 static void formatHeaderExplainAnalyze(
@@ -1342,13 +1370,32 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
-            ExplainAnalyzedSyntaxVisitor(data).visit(query);
+
+            /// If a parameterized view was expanded above, the resulting query may be unresolvable (e.g. an
+            /// unknown identifier in the outer projection over the expanded body). The `analyze()`-mode
+            /// `InterpreterSelectQuery` this visitor runs then throws while resolving the expanded query. As on
+            /// the analyzer path, fall back to formatting the original, unexpanded query in that case: it is the
+            /// user's own text and carries no parameter-substituted view body, so nothing the (now skipped)
+            /// access check was supposed to protect is revealed. An `ACCESS_DENIED` is still propagated, so a
+            /// user without access to the view's base tables is denied instead of getting the fallback dump.
+            ASTPtr query_to_format;
+            try
+            {
+                ExplainAnalyzedSyntaxVisitor(data).visit(query);
+                query_to_format = ast.getExplainedQuery();
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::ACCESS_DENIED || !expanded_parameterized_view)
+                    throw;
+                query_to_format = explained_query_before_expansion;
+            }
 
             IAST::FormatSettings format_settings(settings.oneline);
             IAST::FormatState format_state;
             IAST::FormatStateStacked format_frame;
             format_frame.allow_operators = false;
-            ast.getExplainedQuery()->format(buf, format_settings, format_state, format_frame);
+            query_to_format->format(buf, format_settings, format_state, format_frame);
             break;
         }
         case ASTExplainQuery::QueryTree:
