@@ -1211,20 +1211,23 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     const auto & mutation_entry = current_mutation_it->second;
 
     auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
+    bool committed_without_txn = false;
     if (!txn && !mutation_entry.tid.isNonTransactional() && !from_another_mutation)
     {
         /// The transaction that started this mutation reached a terminal state.
-        /// If it committed, the mutation is still valid and its status can be reported
-        /// as usual. Otherwise it was rolled back, and the entry is either about to be
-        /// removed by `killMutation`, or is an orphaned entry left by a race between
-        /// mutation registration and `KILL TRANSACTION` (see the failpoint in
-        /// `startMutation`) that `selectPartsToMutate` removes when it encounters it.
+        /// If it committed, the mutation is still valid and its status is reported
+        /// against the mutation's original snapshot (see below). Otherwise it was
+        /// rolled back, and the entry is either about to be removed by `killMutation`,
+        /// or is an orphaned entry left by a race between mutation registration and
+        /// `KILL TRANSACTION` (see the failpoint in `startMutation`) that
+        /// `selectPartsToMutate` removes when it encounters it.
         /// Either way the mutation will never be executed, so report it as killed.
         CSN mutation_csn = mutation_entry.csn;
         if (mutation_csn == Tx::UnknownCSN)
             mutation_csn = TransactionLog::getCSN(mutation_entry.tid);
         if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
             return {};
+        committed_without_txn = true;
     }
 
     /// Check deadlock: if this mutation belongs to a transaction, check if there are
@@ -1260,7 +1263,16 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
         }
     }
 
-    auto data_parts = getVisibleDataPartsVector(txn);
+    /// If the transaction committed but its object is already gone from the running list,
+    /// check the parts against the mutation's original snapshot, exactly as the visibility
+    /// gate in `selectPartsToMutate` does. The latest active parts may include a part that
+    /// was never visible to the mutation (a part with a smaller data version committed by
+    /// another transaction after this mutation's snapshot); counting such a part here would
+    /// keep the status incomplete forever even though the mutation has finished every part
+    /// it was supposed to touch.
+    auto data_parts = committed_without_txn
+        ? getVisibleDataPartsVector(mutation_entry.tid.start_csn, mutation_entry.tid)
+        : getVisibleDataPartsVector(txn);
     for (const auto & data_part : data_parts)
     {
         Int64 data_version = data_part->info.getDataVersion();
