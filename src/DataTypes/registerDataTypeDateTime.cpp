@@ -162,8 +162,8 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from string,
--- - from integer interpreted as number of seconds since 1970-01-01.
+-- - from a string,
+-- - from a number interpreted as the number of seconds since 1970-01-01 (a fractional part is truncated to whole seconds).
 INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
 
 SELECT * FROM dt;
@@ -176,7 +176,7 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
-- When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+- When inserting datetime as a number, it is treated as a Unix Timestamp (UTC) in seconds. `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`. A number with a fractional or exponent part is accepted as well and truncated to whole seconds, consistent with `CAST`, `toDateTime` and the `Values` format. (Before version 26.7, such a fractional or exponent number in the `JSON` and `Values`/`Quoted` input paths was not accepted; set `input_format_read_datetime_number_as_raw_value = 1` to restore that. The tab-separated, CSV and other escaped text formats are not governed by this setting.)
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
