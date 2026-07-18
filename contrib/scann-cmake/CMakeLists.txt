@@ -142,11 +142,10 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-std=c++17"
 )
 
-# one_to_many_asymmetric.cc and dot_product_sse4.cc use SSE4.1 (_mm_cvtepi8_epi32,
-# _mm_blend_epi16) and SSSE3 (_mm_shuffle_epi8, _mm_maddubs_epi16) always_inline
-# intrinsics.  On SSE2-only builds (amd_compat) the compiler rejects always_inline
-# calls to intrinsics that require target features not enabled globally.  Add per-file
-# flags so these files are compiled with the SIMD level they actually require.
+# one_to_many_asymmetric.cc and the *_sse4.cc distance implementations use SSE3,
+# SSSE3, or SSE4.1 always_inline intrinsics.  On SSE2-only builds (amd_compat) the
+# compiler rejects calls to intrinsics that require target features not enabled
+# globally.  Add per-file flags matching the SIMD level these files require.
 if (ARCH_AMD64)
     set_source_files_properties(
         "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_many/one_to_many_asymmetric.cc"
@@ -154,8 +153,55 @@ if (ARCH_AMD64)
     )
     set_source_files_properties(
         "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_one/dot_product_sse4.cc"
+        "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_one/l1_distance_sse4.cc"
+        "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_one/l2_distance_sse4.cc"
         PROPERTIES COMPILE_OPTIONS "-msse4.1"
     )
+endif()
+
+# ScaNN's SCANN_SSE4 attribute is empty and relies on Bazel applying SSE4.1
+# flags to every translation unit that instantiates the corresponding header
+# templates.  That assumption does not hold for amd_compat.  Give only these
+# functions an SSE4.1 target instead of raising the ISA level of general source
+# files such as reordering_helper.cc.
+if (ARCH_AMD64)
+    set(_attributes_src "${SCANN_SOURCE_DIR}/scann/utils/intrinsics/attributes.h")
+    set(_attributes_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/utils/intrinsics/attributes.h")
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/utils/intrinsics")
+    configure_file("${_attributes_src}" "${_attributes_dst}" COPYONLY)
+    file(READ "${_attributes_dst}" _attributes_content)
+    string(REPLACE
+        "#include <x86intrin.h>\n\n#define SCANN_SSE4"
+        "#include <x86intrin.h>\n\n#define SCANN_SSE4 __attribute((target(\"sse4.1\")))"
+        _attributes_content "${_attributes_content}")
+    file(WRITE "${_attributes_dst}" "${_attributes_content}")
+
+    # These wrappers call SCANN_SSE4_INLINE methods and must carry the same target.
+    set(_horizontal_sum_src "${SCANN_SOURCE_DIR}/scann/utils/intrinsics/horizontal_sum.h")
+    set(_horizontal_sum_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/utils/intrinsics/horizontal_sum.h")
+    configure_file("${_horizontal_sum_src}" "${_horizontal_sum_dst}" COPYONLY)
+    file(READ "${_horizontal_sum_dst}" _horizontal_sum_content)
+    string(REPLACE
+        "SCANN_INLINE float HorizontalSum(Sse4<float>"
+        "SCANN_SSE4_INLINE float HorizontalSum(Sse4<float>"
+        _horizontal_sum_content "${_horizontal_sum_content}")
+    string(REPLACE
+        "SCANN_INLINE double HorizontalSum(Sse4<double>"
+        "SCANN_SSE4_INLINE double HorizontalSum(Sse4<double>"
+        _horizontal_sum_content "${_horizontal_sum_content}")
+    string(REPLACE
+        "SCANN_INLINE void HorizontalSum2X(Sse4<"
+        "SCANN_SSE4_INLINE void HorizontalSum2X(Sse4<"
+        _horizontal_sum_content "${_horizontal_sum_content}")
+    string(REPLACE
+        "SCANN_INLINE void HorizontalSum3X(Sse4<"
+        "SCANN_SSE4_INLINE void HorizontalSum3X(Sse4<"
+        _horizontal_sum_content "${_horizontal_sum_content}")
+    string(REPLACE
+        "SCANN_INLINE void HorizontalSum4X(Sse4<"
+        "SCANN_SSE4_INLINE void HorizontalSum4X(Sse4<"
+        _horizontal_sum_content "${_horizontal_sum_content}")
+    file(WRITE "${_horizontal_sum_dst}" "${_horizontal_sum_content}")
 endif()
 
 # scale_encoding_helpers.cc calls absl::little_endian::Load32(encoded.end() - sizeof(float))
