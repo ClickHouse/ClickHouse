@@ -23,6 +23,45 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_borrow_from_cache_atomic_db_creates_no_host_root_symlink(started_cluster):
+    # Regression: a `MergeTree` table on a `borrow_from_cache` disk has no real path on the local
+    # filesystem -- the `memory` metadata storage returns only the placeholder root ("/") from
+    # `getPath()`, so `getDataPaths()` produces a host-looking `/store/...` path built from that
+    # placeholder. An `Atomic` database (the default) used to trust that path and create a dangling
+    # symlink `data/<db>/<table>` -> `/store/...` pointing into the container's real filesystem
+    # root (and `system.tables.data_paths` reported the same bogus path). `tryCreateSymlink` must
+    # skip symlink creation for disks that are not on the local filesystem.
+    node.query("DROP TABLE IF EXISTS borrowed_symlink SYNC")
+    node.query(
+        """
+        CREATE TABLE borrowed_symlink (key UInt64)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS disk = disk(
+            type = object_storage,
+            object_storage_type = 'borrow_from_cache',
+            cache_name = 'borrowed_cache',
+            name = 'borrowed_symlink_disk')
+        """
+    )
+    node.query("INSERT INTO borrowed_symlink VALUES (1), (2), (3)")
+    assert node.query("SELECT count() FROM borrowed_symlink").strip() == "3"
+
+    # No symlink under the data directory may point into the (non-existent) host filesystem root.
+    dangling = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "find /var/lib/clickhouse/data -maxdepth 3 -type l -lname '/store/*' -print || true",
+        ]
+    ).strip()
+    assert (
+        dangling == ""
+    ), f"borrow_from_cache table created a host-root symlink: {dangling}"
+
+    # The table still drops cleanly (releasing the borrowed cache segments).
+    node.query("DROP TABLE borrowed_symlink SYNC")
+
+
 def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
     # A `borrow_from_cache` table stores its data only in node-local cache segments, so its data
     # does not survive a restart. The named cache is registered by a *separate* disk, and on restart

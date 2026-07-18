@@ -636,6 +636,18 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
     if (table->getDataPaths().empty())
         return;
 
+    /// Some disks (e.g. object storage with `memory` metadata such as `borrow_from_cache`) do not have
+    /// a real path on the local filesystem: `getPath` returns only a placeholder (the root `/`).
+    /// `getDataPaths` then produces a host-looking path (`/store/...` built from that placeholder), so
+    /// creating a symlink to it would point into a non-existent location under the filesystem root.
+    /// Skip symlink creation for tables whose data lives on such a disk (see `IDisk::isPathOnLocalFilesystem`).
+    if (auto policy = table->tryGetStoragePolicy(); policy.has_value() && *policy)
+    {
+        const auto & disks = (*policy)->getDisks();
+        if (!disks.empty() && !disks.front()->isPathOnLocalFilesystem())
+            return;
+    }
+
     const auto table_data_path = fs::path(table->getDataPaths().front()).lexically_normal();
 
     try
