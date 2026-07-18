@@ -421,6 +421,14 @@ public:
     /// needed.
     mutable bool default_codec_is_approximate = false;
 
+    /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated
+    /// during the current load. The regenerated file is compressed with the *current* built-in
+    /// default codec (`CompressionCodecFactory::getDefaultCodec`), not the codec the part was written
+    /// with, so its frame carries no write-time provenance. `detectDefaultCompressionCodecFromChecksums`
+    /// must not read the codec family from a regenerated `checksums.txt` and treats this case the same
+    /// as a part with no `checksums.txt` at all.
+    bool checksums_were_regenerated = false;
+
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.

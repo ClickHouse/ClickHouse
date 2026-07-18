@@ -1680,6 +1680,14 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodecFromChecksu
     /// `ZSTD(3)`), so for it - and for a part with no `checksums.txt` at all - infer `LZ4`.
     auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
 
+    /// If `checksums.txt` was missing and `loadChecksums` regenerated it earlier in this load, the file
+    /// now on disk is a fresh frame compressed with the *current* built-in default codec, not the one
+    /// the part was written with. Reading its codec family would recover the current default (e.g.
+    /// `ZSTD(3)` -> `ZSTD(1)`) rather than the write-time codec, defeating the purpose of this recovery.
+    /// Treat it exactly like a part that never had a `checksums.txt` and infer `LZ4`.
+    if (checksums_were_regenerated)
+        return lz4;
+
     auto buf = readFileIfExists("checksums.txt");
     if (!buf)
         return lz4;
@@ -1904,6 +1912,12 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+
+        /// The file we are about to write is compressed with the *current* built-in default codec, so
+        /// its frame reflects that codec, not the one the part was written with. Remember that it was
+        /// regenerated so `detectDefaultCompressionCodecFromChecksums` does not mistake it for
+        /// write-time provenance (it runs later in `loadColumnsChecksumsIndexes`, after `loadChecksums`).
+        checksums_were_regenerated = true;
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);

@@ -560,3 +560,70 @@ def test_default_codec_recovered_from_checksums_when_codec_file_malformed(start_
     )
 
     node4.query("DROP TABLE malformed_codec_file SYNC")
+
+
+def test_default_codec_not_recovered_from_regenerated_checksums(start_cluster):
+    # A part can lose *both* `default_compression_codec.txt` and `checksums.txt` (for example after a
+    # partial detach/copy/restore that dropped metadata files). On such a part every column here has an
+    # explicit CODEC, so no column proves the default codec and the recovery has nothing on disk that
+    # records it.
+    #
+    # `loadColumnsChecksumsIndexes` runs `loadChecksums` before `loadDefaultCompressionCodec`. With
+    # `checksums.txt` missing, `loadChecksums` regenerates it immediately, compressing it with the
+    # *current* built-in default codec (`ZSTD(3)`), which has nothing to do with the codec the part was
+    # written with. If `detectDefaultCompressionCodecFromChecksums` then read that freshly regenerated
+    # frame it would infer the current default family (`ZSTD(1)`) and mislabel a legacy `LZ4` part as
+    # ZSTD - the very provenance the recovery is meant to preserve. The regenerated frame must not be
+    # trusted: with no genuine `checksums.txt` on disk the recovery must infer `LZ4`, exactly as for a
+    # part that never had a `checksums.txt` at all.
+    node4.query(
+        """
+    CREATE TABLE no_codec_no_checksums (
+        key UInt64 CODEC(ZSTD(1)),
+        data String CODEC(ZSTD(1))
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """
+    )
+
+    # Two inserts and a merge, so the part whose metadata we strip is a merged part. `checksums.txt`
+    # is always compressed with the current built-in default codec (`ZSTD(3)`), so both the original
+    # and the regenerated file are a ZSTD frame - the recovery would infer `ZSTD(1)` from it if it
+    # trusted a regenerated file, so `LZ4` in the assertion below is only reachable with the fix.
+    node4.query("INSERT INTO no_codec_no_checksums VALUES (1, 'Hello world')")
+    node4.query("INSERT INTO no_codec_no_checksums VALUES (2, 'Goodbye world')")
+    node4.query("OPTIMIZE TABLE no_codec_no_checksums FINAL")
+
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='no_codec_no_checksums' AND active"
+    ).strip()
+
+    node4.query(f"ALTER TABLE no_codec_no_checksums DETACH PART '{part_name}'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='no_codec_no_checksums'"
+    ).strip()
+    # Remove both provenance files, leaving nothing on disk that records the write-time codec.
+    node4.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+    node4.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/checksums.txt"]
+    )
+
+    node4.query(f"ALTER TABLE no_codec_no_checksums ATTACH PART '{part_name}'")
+
+    assert node4.query("SELECT COUNT() FROM no_codec_no_checksums") == "2\n"
+
+    # `checksums.txt` was regenerated with the current `ZSTD(3)` default during ATTACH, but that frame
+    # is not write-time provenance, so the recovery must fall back to `LZ4` rather than read `ZSTD(1)`
+    # out of the regenerated frame.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='no_codec_no_checksums' AND active"
+        ).strip()
+        == "LZ4"
+    )
+
+    node4.query("DROP TABLE no_codec_no_checksums SYNC")
