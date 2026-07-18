@@ -161,12 +161,21 @@ void BackgroundJobsAssignee::finish(bool is_transient)
     /// find, cancel, and wait for that survivor here — otherwise it would keep using the
     /// `StorageReplicatedMergeTree` reference while shutdown destroys the storage. These calls are
     /// idempotent and cheap when there is nothing left to remove.
-    getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-    getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+    ///
+    /// The background executors are shared, lazily created singletons owned by the global context;
+    /// in some environments (e.g. `clickhouse-local`) they are never initialized, so the accessors
+    /// return null. Skip the cleanup in that case — there can be no tasks to remove if the
+    /// executors do not exist.
+    if (auto executor = getContext()->getMovesExecutor())
+        executor->removeTasksCorrespondingToStorage(storage_id);
+    if (auto executor = getContext()->getFetchesExecutor())
+        executor->removeTasksCorrespondingToStorage(storage_id);
     /// Only merge/mutate tasks are allowed to survive a transient reconnect, because their
     /// (potentially expensive) computation does not touch ZooKeeper until commit time.
-    getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id, is_transient);
-    getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
+    if (auto executor = getContext()->getMergeMutateExecutor())
+        executor->removeTasksCorrespondingToStorage(storage_id, is_transient);
+    if (auto executor = getContext()->getCommonExecutor())
+        executor->removeTasksCorrespondingToStorage(storage_id);
 }
 
 
