@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskType.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -25,6 +26,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
@@ -233,6 +235,8 @@ namespace Setting
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsUInt64 dead_blobs_to_delay_insert;
+    extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsUInt64 parts_to_throw_insert;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -276,6 +280,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_throw_insert;
+    extern const MergeTreeSettingsUInt64 dead_blobs_to_throw_insert;
+    extern const MergeTreeSettingsUInt64 dead_blobs_to_delay_insert;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
@@ -1242,10 +1248,22 @@ void MergeTreeData::checkProperties(
             validate_complex_projection(projection.name, {"_block_offset"});
     }
 
+    /// On CREATE, `old_metadata` and `new_metadata` are the same object; on ALTER they differ.
+    const bool is_alter = &old_metadata != &new_metadata;
+
     for (const auto & col : new_metadata.columns)
     {
-        if (!col.statistics.empty())
-            MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type);
+        if (col.statistics.empty())
+            continue;
+
+        /// Allow deprecated `minmax` only when loading an existing table (attach/startup) or when
+        /// the column already carried `minmax` before an unrelated ALTER — never for a fresh introduction.
+        bool allow_deprecated_minmax = attach
+            || (is_alter
+                && old_metadata.columns.has(col.name)
+                && old_metadata.columns.get(col.name).statistics.contains("minmax"));
+
+        MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type, allow_deprecated_minmax);
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
@@ -2809,7 +2827,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 
     watch.stop();
-    LOG_DEBUG(log, "Loaded data parts ({} items) took {} seconds", data_parts_indexes.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Loaded data parts ({} items) took {:.3f} seconds", data_parts_indexes.size(), watch.elapsedSeconds());
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
@@ -2960,7 +2978,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     auto old_parts = grabOldParts(true);
 
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {} seconds",
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {:.3f} seconds",
         parts_to_add.size(), old_parts.size(), watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
@@ -3418,7 +3436,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {} seconds", watch.elapsedSeconds());
+    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {:.3f} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
@@ -4628,6 +4646,51 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
+    /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
+    /// (existing parts are not rewritten and the custom serialization is not reattached), so an in-place ALTER would
+    /// leave the table inconsistent: existing parts keep the plain serialization (no companion codes stream, and `pq`
+    /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
+    /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
+    {
+        auto quantize_signature = [](const ASTPtr & codec) -> String
+        {
+            const auto params = tryExtractQuantizedCodecParams(codec);
+            if (!params)
+                return {};
+            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+        };
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_COLUMN && command.type != AlterCommand::MODIFY_COLUMN)
+                continue;
+            const bool old_has = old_metadata.getColumns().has(command.column_name);
+            const bool new_has = new_metadata.getColumns().has(command.column_name);
+            const String old_sig = old_has ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String new_sig = new_has ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec) : String{};
+
+            /// The codec was added, removed, or changed.
+            bool forbidden = old_sig != new_sig;
+            /// Or a typed `MODIFY COLUMN` is applied while the Quantized codec is present. Such a command reassigns the
+            /// column type (`ColumnsDescription::modify` sets `col.type = command.data_type`), which drops the codec's
+            /// custom serialization even when the type is textually unchanged (e.g. `MODIFY COLUMN vec Array(Float32)
+            /// COMMENT '...'`): the metadata still carries `CODEC(Quantized(...))` while subsequent writes stop producing
+            /// the companion codes subcolumn, leaving parts inconsistent. A comment-only `MODIFY COLUMN vec COMMENT '...'`
+            /// (no type clause) does not set `data_type` and remains allowed.
+            if (!forbidden && command.type == AlterCommand::MODIFY_COLUMN && command.data_type && !old_sig.empty())
+                forbidden = true;
+
+            if (forbidden)
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The Quantized(...) codec is immutable via ALTER: it cannot be added, removed or changed, and a "
+                    "MODIFY COLUMN that restates the type of a Quantized-coded column is rejected (column {}), because it "
+                    "would drop the codec's serialization and leave new parts without the companion codes subcolumn. Set "
+                    "the codec at CREATE TABLE; to change the codec or type on existing data, create a new table with the "
+                    "codec and INSERT ... SELECT into it. A comment-only MODIFY COLUMN (without a type) is allowed.",
+                    backQuoteIfNeed(command.column_name));
+        }
+    }
+
     const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
         /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
@@ -4681,6 +4744,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             disk->getName(), desc.toString());
                 }
             }
+        }
+    }
+
+    /// Reject deprecated statistics types (currently `minmax`) when they are introduced through
+    /// `ALTER TABLE ... MODIFY SETTING auto_statistics_types = ...`. This is a shared check reached by
+    /// both ordinary and replicated tables. Only an explicit change to the setting in this statement is
+    /// inspected, so loading or otherwise altering an existing table that already carries `minmax` in the
+    /// setting is unaffected.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            Field value;
+            if (command.settings_changes.tryGet("auto_statistics_types", value))
+                validateAutoStatisticsTypes(value.safeGet<String>());
         }
     }
 
@@ -5342,6 +5420,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
+    /// column, trained at serialization suffix). A compact part serializes each granule with a fresh serialization
+    /// state, which would train and write a separate codebook per granule and leave the reader unable to pair each row
+    /// with its granule's codebook. Force a wide part when any column carries `Quantize('pq', ...)`, so the codebook is
+    /// part-level. The data-independent Quantize methods are stateless per row and work in either part format.
+    if (part_type == PartType::Compact)
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        for (const auto & column : metadata_snapshot->getColumns())
+        {
+            const auto params = tryExtractQuantizedCodecParams(column.codec);
+            if (params && params->method == "product")
+            {
+                part_type = PartType::Wide;
+                break;
+            }
+        }
+    }
 
     return {part_type, PartStorageType::Full};
 }
@@ -6483,6 +6580,11 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
 
+    const auto active_parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
+    const auto active_parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
+    const auto dead_blobs_to_delay_insert = query_settings[Setting::dead_blobs_to_delay_insert] ? query_settings[Setting::dead_blobs_to_delay_insert] : (*settings)[MergeTreeSetting::dead_blobs_to_delay_insert];
+    const auto dead_blobs_to_throw_insert = query_settings[Setting::dead_blobs_to_throw_insert] ? query_settings[Setting::dead_blobs_to_throw_insert] : (*settings)[MergeTreeSetting::dead_blobs_to_throw_insert];
+
     /// Check if we have too many parts in total
     if (allow_throw && parts_count_in_total >= (*settings)[MergeTreeSetting::max_parts_in_total])
     {
@@ -6512,12 +6614,35 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             outdated_parts_over_threshold = outdated_parts_count_in_partition - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert] + 1;
     }
 
+    size_t dead_blobs_count = 0;
+    size_t dead_blobs_over_threshold = 0;
+    {
+        if (dead_blobs_to_throw_insert > 0 || dead_blobs_to_delay_insert > 0)
+        {
+            for (auto disk : getDisks())
+            {
+                if (auto delegate_disk = disk->getDelegateDiskIfExists())
+                    disk = delegate_disk;
+
+                for (auto object_storage_disk = std::dynamic_pointer_cast<const DiskObjectStorage>(disk); object_storage_disk; object_storage_disk = object_storage_disk->getWrappedDisk())
+                    dead_blobs_count += object_storage_disk->getDeadBlobsQueueEstimate();
+            }
+        }
+
+        if (allow_throw && dead_blobs_to_throw_insert > 0 && dead_blobs_count >= dead_blobs_to_throw_insert)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTS,
+                "Too many dead blobs in queue ({}) on disks of table '{}'. Blobs cleanup is processing significantly slower than inserts",
+                dead_blobs_count, getLogName());
+        }
+        if (dead_blobs_to_delay_insert > 0 && dead_blobs_count >= dead_blobs_to_delay_insert)
+            dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
+    }
+
     auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
-    const auto active_parts_to_delay_insert
-        = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
-    const auto active_parts_to_throw_insert
-        = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
     size_t active_parts_over_threshold = 0;
 
     {
@@ -6541,7 +6666,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     }
 
     /// no need for delay
-    if (!active_parts_over_threshold && !outdated_parts_over_threshold)
+    if (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold)
         return;
 
     UInt64 delay_milliseconds = 0;
@@ -6549,27 +6674,41 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         size_t parts_over_threshold = 0;
         size_t allowed_parts_over_threshold = 1;
         const bool use_active_parts_threshold = (active_parts_over_threshold >= outdated_parts_over_threshold);
-        if (use_active_parts_threshold)
+        if (active_parts_over_threshold || outdated_parts_over_threshold)
         {
-            parts_over_threshold = active_parts_over_threshold;
-            allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+            if (use_active_parts_threshold)
+            {
+                parts_over_threshold = active_parts_over_threshold;
+                allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+            }
+            else
+            {
+                parts_over_threshold = outdated_parts_over_threshold;
+                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
+                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
+                    allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
+            }
         }
-        else
+
+        size_t allowed_dead_blobs_over_threshold = 1;
+        if (dead_blobs_over_threshold)
         {
-            parts_over_threshold = outdated_parts_over_threshold;
-            allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
-            if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
-                allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
+            allowed_dead_blobs_over_threshold = dead_blobs_over_threshold; /// if throw threshold is not set, will use max delay
+            if (dead_blobs_to_throw_insert > dead_blobs_to_delay_insert)
+                allowed_dead_blobs_over_threshold = dead_blobs_to_throw_insert - dead_blobs_to_delay_insert;
         }
 
         const UInt64 max_delay_milliseconds = ((*settings)[MergeTreeSetting::max_delay_to_insert] > 0 ? (*settings)[MergeTreeSetting::max_delay_to_insert] * 1000 : 1000);
-        if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold)
+        if (parts_over_threshold >= allowed_parts_over_threshold || dead_blobs_over_threshold >= allowed_dead_blobs_over_threshold)
         {
             delay_milliseconds = max_delay_milliseconds;
         }
         else
         {
-            double delay_factor = static_cast<double>(parts_over_threshold) / static_cast<double>(allowed_parts_over_threshold);
+            double delay_factor = std::max(
+                static_cast<double>(parts_over_threshold) / static_cast<double>(allowed_parts_over_threshold),
+                static_cast<double>(dead_blobs_over_threshold) / static_cast<double>(allowed_dead_blobs_over_threshold)
+            );
             const UInt64 min_delay_milliseconds = (*settings)[MergeTreeSetting::min_delay_to_insert_ms];
             delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(static_cast<double>(max_delay_milliseconds) * delay_factor));
         }
@@ -6580,8 +6719,8 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
-    LOG_INFO(log, "Delaying inserting block by {} ms. because there are {} parts and their average size is {}",
-        delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size));
+    LOG_INFO(log, "Delaying inserting block by {} ms. because there are {} parts with average size {} and {} dead blobs in queue",
+        delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size), dead_blobs_count);
 
     if (until)
         until->tryWait(delay_milliseconds);
@@ -6957,6 +7096,41 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     }
 
     primary_index_size.add(part->getIndexSizeFromFile());
+}
+
+IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
+{
+    auto result = getColumnSizes();
+
+    /// Collect subcolumn names that are not already in the result.
+    Names subcolumn_names;
+    for (const auto & col_name : columns)
+    {
+        if (result.contains(col_name))
+            continue;
+
+        subcolumn_names.push_back(col_name);
+    }
+
+    if (subcolumn_names.empty())
+        return result;
+
+    /// For each requested column that is a subcolumn and not already in the result,
+    /// aggregate its size across all active parts using getSubcolumnSize.
+    /// This gives the correct on-disk size for subcolumns based on required substreams.
+    auto parts_lock = readLockParts();
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+    for (const auto & part : committed_parts_range)
+    {
+        for (const auto & col_name : subcolumn_names)
+        {
+            auto column = part->tryGetColumn(col_name);
+            if (column && column->isSubcolumn())
+                result[col_name].add(part->getSubcolumnSize(col_name));
+        }
+    }
+
+    return result;
 }
 
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
@@ -10631,6 +10805,13 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
             {
+                /// tryCreateZeroCopyExclusiveLock, waitZeroCopyLockToDisappear, and ~ZeroCopyLock (releasing the
+                /// ephemeral lock node when the local `lock` below is destroyed) all issue ZooKeeper requests.
+                /// This runs on a background moves thread (scheduleDataMovingJob / async movePartsToSpace via
+                /// ExecutableLambdaAdapter) with no component scope set, so set one explicitly here; otherwise
+                /// zero-copy part moves abort the server under enforce_keeper_component_tracking.
+                auto component_guard = Coordination::setCurrentComponent("MergeTreeData::moveParts");
+
                 /// This loop is not endless, if shutdown called/connection failed/replica became readonly
                 /// we will return true from waitZeroCopyLock and createZeroCopyLock will return nullopt.
                 while (true)
@@ -10752,9 +10933,16 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto alter = mutation_command.ast();
+                /// The predicate and assignment expressions were re-parsed from the serialized mutation
+                /// command, so their set operations (UNION/INTERSECT/EXCEPT) are not normalized yet.
+                /// Normalize them before building the query tree, as `executeQuery` does, otherwise the
+                /// analyzer rejects an in-progress mutation that legitimately contains such a subquery.
                 if (alter && alter->predicate)
                 {
-                    auto query_tree = buildQueryTree(ASTPtr(alter->predicate), local_context);
+                    ASTPtr predicate(alter->predicate);
+                    normalizeSetOperations(predicate, local_context);
+
+                    auto query_tree = buildQueryTree(predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
@@ -10769,7 +10957,10 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                         if (assignment.column_name == command.column_name)
                             throw_exception(mutation_name, action, "column", command.column_name);
 
-                        auto query_tree = buildQueryTree(assignment.expression(), local_context);
+                        ASTPtr assignment_expression = assignment.expression();
+                        normalizeSetOperations(assignment_expression, local_context);
+
+                        auto query_tree = buildQueryTree(assignment_expression, local_context);
                         auto identifiers = collectIdentifiersFullNames(query_tree);
                         if (identifiers.contains(command.column_name))
                             throw_exception(mutation_name, action, "column", command.column_name);
