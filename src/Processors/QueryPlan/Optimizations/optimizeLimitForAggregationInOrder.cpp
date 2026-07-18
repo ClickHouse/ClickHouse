@@ -20,8 +20,13 @@ static bool isTransparentStep(IQueryPlanStep * step)
 {
     /// ExpressionStep does not advertise preserves_sorting (it cannot prove it
     /// for arbitrary expressions). Row count must be checked: ARRAY JOIN changes it.
+    /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) must
+    /// observe the full pre-LIMIT stream, so the limit must never be pushed past it
+    /// into the aggregation's early termination — matching the stateful-function
+    /// fences in `splitFilter`, filter push-down and the read-in-order/top-K rewrites.
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
-        return expression->getTransformTraits().preserves_number_of_rows;
+        return expression->getTransformTraits().preserves_number_of_rows
+            && !expression->getExpression().hasStatefulFunctions();
 
     /// ExtremesStep observes the stream before LIMIT is applied; pushing the
     /// limit past it would feed it a truncated prefix and produce wrong extremes.
