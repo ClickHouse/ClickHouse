@@ -356,3 +356,114 @@ def test_explicit_schema(started_cluster):
         )
         == "0\n"
     )
+
+
+def test_copy_to_stdout_standard_format_spellings(started_cluster):
+    # Real PostgreSQL clients spell the COPY format in several ways: as a bare legacy keyword (`CSV`), after
+    # `WITH` (`WITH CSV`), or inside the modern parenthesized option list (`WITH (FORMAT CSV)`, `(FORMAT
+    # CSV)`). All of these must select the requested format instead of silently falling back to the default
+    # TSV, and `binary` in any of these spellings must hit the binary-COPY rejection.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        for spelling in [
+            "CSV",
+            "WITH CSV",
+            "(FORMAT CSV)",
+            "WITH (FORMAT CSV)",
+            "WITH (FORMAT csv)",
+        ]:
+            out = io.StringIO()
+            cur.copy_expert(f"COPY (SELECT 1 AS a, 2 AS b) TO STDOUT {spelling}", out)
+            assert out.getvalue() == "1,2\n", spelling
+
+        # The legacy text spellings map to TSV.
+        for spelling in ["TEXT", "WITH TEXT", "WITH (FORMAT text)"]:
+            out = io.StringIO()
+            cur.copy_expert(f"COPY (SELECT 1 AS a, 2 AS b) TO STDOUT {spelling}", out)
+            assert out.getvalue() == "1\t2\n", spelling
+
+        # A binary COPY is rejected regardless of how it is spelled; the connection survives the error, so
+        # it can be reused between the attempts (roll back the aborted command first).
+        for spelling in ["BINARY", "WITH BINARY", "WITH (FORMAT BINARY)", "(FORMAT binary)"]:
+            with pytest.raises(py_psql.Error, match="binary COPY format is not supported"):
+                out = io.BytesIO()
+                cur.copy_expert(f"COPY (SELECT 1 AS a) TO STDOUT {spelling}", out)
+            conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_self_connect_skips_materialized_and_alias_columns(started_cluster):
+    # The data path streams a table with `SELECT * FROM <table>`, which omits MATERIALIZED / ALIAS / EPHEMERAL
+    # columns. The emulated `pg_attribute` must advertise exactly that column set, so the catalog schema and
+    # the COPY payload stay aligned; otherwise a client infers more columns than the stream carries and row
+    # decoding goes out of sync.
+    node.query("DROP TABLE IF EXISTS test_mat_alias SYNC")
+    node.query(
+        "CREATE TABLE test_mat_alias "
+        "(id UInt32, name String, mat UInt32 MATERIALIZED id * 10, al UInt32 ALIAS id + 1, "
+        "ep UInt8 EPHEMERAL 5, reg Int32) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query("INSERT INTO test_mat_alias (id, name, reg) VALUES (1, 'a', 100), (2, 'b', 200)")
+
+    # The postgresql() reader discovers only the physical columns (id, name, reg) and reads them correctly.
+    # If the catalog still advertised the MATERIALIZED/ALIAS columns, the inferred structure would have five
+    # columns and this result would not match.
+    assert (
+        node.query(f"SELECT * FROM {pg_source('default', 'test_mat_alias')} ORDER BY id")
+        == "1\ta\t100\n2\tb\t200\n"
+    )
+
+    # A raw PostgreSQL client sees the same alignment: the emulated catalog reports three columns for the
+    # table, and a bare-table `COPY ... TO STDOUT` streams exactly three fields per row.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT count() FROM pg_attribute WHERE attrelid = "
+            "(SELECT oid FROM pg_class WHERE relname = 'test_mat_alias' "
+            "AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')) "
+            "AND NOT attisdropped AND attnum > 0"
+        )
+        assert cur.fetchone()[0] == 3
+
+        out = io.StringIO()
+        cur.copy_expert("COPY test_mat_alias TO STDOUT", out)
+        assert out.getvalue() == "1\ta\t100\n2\tb\t200\n"
+    finally:
+        conn.close()
+
+
+def test_explicit_schema_resolves_correct_database(started_cluster):
+    # Two databases that both contain a table with the same name must each resolve to the right table through
+    # the schema-qualified self-connect lookup. Namespace (database) OIDs are assigned from a dense, unique
+    # mapping, so two database names can never share a namespace OID and make the `pg_class` lookup return the
+    # wrong row or more than one row for a common table name.
+    node.query("DROP DATABASE IF EXISTS pg_ns_a SYNC")
+    node.query("DROP DATABASE IF EXISTS pg_ns_b SYNC")
+    node.query("CREATE DATABASE pg_ns_a")
+    node.query("CREATE DATABASE pg_ns_b")
+    node.query("CREATE TABLE pg_ns_a.events (id UInt32, tag String) ENGINE = MergeTree ORDER BY id")
+    node.query("CREATE TABLE pg_ns_b.events (id UInt32, tag String) ENGINE = MergeTree ORDER BY id")
+    node.query("INSERT INTO pg_ns_a.events VALUES (1, 'a')")
+    node.query("INSERT INTO pg_ns_b.events VALUES (2, 'b')")
+
+    assert (
+        node.query(
+            f"SELECT id, tag FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'events', 'pguser', 'pgpass', 'pg_ns_a')"
+        )
+        == "1\ta\n"
+    )
+    assert (
+        node.query(
+            f"SELECT id, tag FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'events', 'pguser', 'pgpass', 'pg_ns_b')"
+        )
+        == "2\tb\n"
+    )
