@@ -79,6 +79,23 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     std::optional<StorageReplicatedMergeTree::PreservedMutationPart> preserved
         = storage.takePrecomputedMutation(entry.new_part_name);
 
+    /// The deposited result is taken above, before any of the fresh recompute setup below
+    /// (`reserveSpace`, the zero-copy lock, `MergeList::insert`). If one of those steps throws a
+    /// transient error before the reuse decision — `reserveSpace` throwing `NOT_ENOUGH_SPACE` on a
+    /// nearly-full disk is the easy case, since the survivor already wrote the temporary part but a
+    /// re-mutation would need a second full reservation — put the deposited result back so the next
+    /// attempt can still reuse it instead of re-mutating the whole part from scratch. Deliberate
+    /// early returns (the part is obsolete, or is being fetched from / computed by another replica)
+    /// intentionally let it go: those paths obtain the part another way, and the deposit is cleaned
+    /// up when the queue entry is removed. The reuse and discard branches below consume `preserved`
+    /// on the non-throwing path, so this guard only fires on an in-flight exception.
+    const int uncaught_exceptions_before = std::uncaught_exceptions();
+    scope_guard redeposit_preserved_on_failure = [this, &preserved, uncaught_exceptions_before]()
+    {
+        if (preserved && std::uncaught_exceptions() > uncaught_exceptions_before)
+            storage.depositPrecomputedMutation(entry.new_part_name, std::move(*preserved));
+    };
+
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
     future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
@@ -284,6 +301,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             reused_hardlinked_files = std::move(preserved->hardlinked_files);
             reused_temporary_directory_lock = std::move(preserved->temporary_directory_lock);
             reused_precomputed_part = true;
+            /// Consumed: the temporary-directory lock now lives in `reused_temporary_directory_lock`,
+            /// so the re-deposit guard must not put this (moved-from) result back.
+            preserved.reset();
 
             for (auto & item : future_mutated_part->parts)
                 priority.value += item->getBytesOnDisk();
