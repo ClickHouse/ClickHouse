@@ -1381,9 +1381,14 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         /// arbitrarily large payload past `max_memory_usage`. AllocatorWithMemoryTracking
         /// enforces the limit as the buffer grows, matching the Arena's behavior.
         ///
-        /// The reuse branch requires `capacity >= size` (not just `>= bytes_to_read`) so that
-        /// the legacy-format fixup below can safely append one byte at index `size - 1`.
-        if (capacity < size)
+        /// The direct-read reuse branch only needs `capacity >= bytes_to_read`: in the normal
+        /// zero-terminated format the buffer holds exactly `size - 1 == bytes_to_read` content
+        /// bytes. Requiring `capacity >= size` here would force every valid payload whose length
+        /// is exactly a power of two (so `capacity == bytes_to_read` after allocation) back
+        /// through the staging path on every subsequent read, re-copying the whole value and
+        /// regressing valid large reads. The rare legacy-format fixup below, which appends one
+        /// byte at index `size - 1`, grows the buffer once when there is no room for it.
+        if (capacity < bytes_to_read)
         {
             StringWithMemoryTracking tmp;
             UInt32 bytes_read = 0;
@@ -1436,6 +1441,18 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         }
         else
         {
+            /// The direct-read reuse branch only guarantees `capacity >= bytes_to_read`. When
+            /// `bytes_to_read` is exactly a power of two, `capacity == bytes_to_read` leaves no
+            /// room for this trailing byte, so grow once (preserving the bytes already read)
+            /// before writing it. This only happens for the rare legacy (non-zero-terminated)
+            /// format; the staging branch above already reserves the extra byte.
+            if (capacity < size)
+            {
+                StringWithMemoryTracking tmp;
+                tmp.append(large_data, size - 1);
+                allocateLargeDataIfNeeded(size, arena);
+                memcpy(large_data, tmp.data(), size - 1);
+            }
             large_data[size - 1] = last_char;
         }
         ++size;
