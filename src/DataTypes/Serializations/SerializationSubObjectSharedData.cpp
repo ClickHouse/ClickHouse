@@ -72,6 +72,7 @@ struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::De
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObjectSharedData>(*this);
+        new_state->map_state = map_state ? map_state->clone() : nullptr;
         for (size_t bucket = 0; bucket != bucket_map_states.size(); ++bucket)
             new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone() : nullptr;
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
