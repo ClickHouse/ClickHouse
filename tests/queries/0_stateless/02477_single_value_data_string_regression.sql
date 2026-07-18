@@ -98,6 +98,13 @@ SELECT '2^30', maxMerge(x) from (select CAST(unhex('00000040') || randomString(1
 SELECT '2^30+1', maxMerge(x) from (select CAST(unhex('01000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
 
 SELECT '2^30-1', maxMerge(x) from (select CAST(unhex('ffffff3f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
+
+-- Under a tight memory limit, a malformed state with a bogus huge size prefix must still fail with
+-- CANNOT_READ_ALL_DATA. Before this fix the whole declared size (here 2^30 ~ 1 GiB) was allocated up
+-- front, which trips the memory tracker and fails with MEMORY_LIMIT_EXCEEDED instead. The actual data
+-- (~100 KB) is staged incrementally and fits comfortably below the limit, so the read reaches EOF and
+-- reports CANNOT_READ_ALL_DATA (https://github.com/ClickHouse/ClickHouse/pull/110630).
+SELECT '2^30 tight memory', maxMerge(x) from (select CAST(unhex('00000040') || randomString(100500), 'AggregateFunction(max, String)') as x) SETTINGS max_memory_usage = '100Mi'; -- { serverError CANNOT_READ_ALL_DATA }
 -- The following query works, but it's too long and consumes to much memory
 -- SELECT '2^30-1', length(maxMerge(x)) from (select CAST(unhex('ffffff3f') || randomString(0x3FFFFFFF - 1) || 'x', 'AggregateFunction(max, String)') as x);
 SELECT '1M without 0', length(maxMerge(x)) from (select CAST(unhex('00001000') || randomString(0x00100000 - 1) || 'x', 'AggregateFunction(max, String)') as x);
