@@ -1,6 +1,8 @@
 default format extracted: OK
 framed default format extracted: OK
 rejection pattern extracted: OK
+download framing guard present: OK
+ndjson restore guard present: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream
@@ -26,3 +28,7 @@ no exception: OK
 application/x-ndjson
 "packet":"data"
 {"packet":"exception"
+stream begins with a packet: OK
+--- a query-level framing setting overrides the download default_format
+application/x-ndjson
+"packet":"data"

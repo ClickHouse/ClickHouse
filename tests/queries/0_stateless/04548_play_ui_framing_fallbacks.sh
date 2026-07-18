@@ -29,6 +29,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    streamed ends with a `{"packet":"exception",...}` line inside a 200 OK response. The page shows
 #    the packet lines verbatim but scans them for that exception packet to report the query as a
 #    failure ("Run all" then stops), so the exact packet prefix must appear in the response.
+# 6. A query carrying its own `framing_output_format` in a `SETTINGS` clause overrides the download's
+#    `default_format`: the download request shape (`&default_format=CSV` + the query) still returns
+#    the framing packet stream, not CSV. So the download button refuses such a query rather than
+#    saving a mislabeled file - a client-side guard whose presence is checked on the served page.
+# 7. The `JSONEachPacket*` stream a failed user-framed query saves begins with a `{"packet": ...}`
+#    object. History restore recognizes that prefix to replay the saved packet stream as raw text
+#    (keeping the partial output and the exception packet) instead of showing one opaque error
+#    string; the presence of that restore guard is checked on the served page too.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -46,6 +54,15 @@ rejection_pattern="$(echo "$page" | sed -n "s/.*framed_error_stream\.includes('\
 [ -n "$default_format" ] && echo 'default format extracted: OK'
 [ -n "$framed_default_format" ] && echo 'framed default format extracted: OK'
 [ -n "$rejection_pattern" ] && echo 'rejection pattern extracted: OK'
+
+# The download button refuses a query that chooses its own `framing_output_format`, because that
+# setting overrides the download's `default_format` and the file would be the framing stream under
+# the chosen extension. Checked here by the presence of the guard message on the served page (the
+# download itself is a browser-only flow, not reachable from this shell test).
+echo "$page" | grep -q -F 'overrides the download format' && echo 'download framing guard present: OK'
+# History restore replays a saved `JSONEachPacket*` failure stream as raw text by recognizing its
+# leading `{"packet":` object. Both restore paths (single result and "Run all") carry that check.
+[ "$(echo "$page" | grep -c "startsWith('{\"packet\":')")" -ge 2 ] && echo 'ndjson restore guard present: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
@@ -105,5 +122,20 @@ grep -c '^HTTP/1.1 200 OK' "$header_file"
 grep -o -m1 'application/x-ndjson' "$header_file"
 grep -o -m1 '"packet":"data"' "$result_file"
 grep -o -m1 -F '{"packet":"exception"' "$result_file"
+# The saved snapshot of such a failed run begins with a `{"packet": ...}` object; history restore
+# keys off that prefix to replay the packet stream as raw text instead of one opaque error string.
+head -c 10 "$result_file" | grep -q -F '{"packet":' && echo 'stream begins with a packet: OK'
+
+echo '--- a query-level framing setting overrides the download default_format'
+# The download button resubmits the query with the user-selected `default_format` (e.g. CSV) and
+# strips only `FORMAT ...`. A query-level `SETTINGS framing_output_format = ...` still overrides
+# that format, so the response is the NDJSON framing packet stream, not CSV - which is why the
+# download refuses such a query (guard checked on the served page above) rather than saving the
+# packet stream under a `.csv` name.
+${CLICKHOUSE_CURL} -sS -D "$header_file" \
+    "${URL}&default_format=CSV" \
+    -d "SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'" > "$result_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 '"packet":"data"' "$result_file"
 
 rm -f "$result_file" "$header_file"
