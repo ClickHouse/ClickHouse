@@ -35,8 +35,14 @@ namespace
 String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
 {
     auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-    if (!WhichDataType(*type).isStringOrFixedString())
+    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
+    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
+    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
+    /// NULL value as before.
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
+    if (column->isNullAt(0))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
     return String(column->getDataAt(0));
 }
 
