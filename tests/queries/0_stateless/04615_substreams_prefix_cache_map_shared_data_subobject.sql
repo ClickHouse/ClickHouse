@@ -60,7 +60,7 @@ SELECT
             merge_tree_use_deserialization_prefixes_cache = 1,
             merge_tree_min_rows_for_concurrent_read = 1,
             merge_tree_min_bytes_for_concurrent_read = 1,
-            max_block_size = 100
+            max_block_size = 256
     ),
     ground_truth = (
         SELECT sum(cityHash64(toString(json.^a)))
@@ -119,7 +119,7 @@ SELECT
             merge_tree_use_deserialization_prefixes_cache = 1,
             merge_tree_min_rows_for_concurrent_read = 1,
             merge_tree_min_bytes_for_concurrent_read = 1,
-            max_block_size = 100
+            max_block_size = 256
     );
 
 DROP TABLE t_json_map_prefix_cache_wide_tuple;
