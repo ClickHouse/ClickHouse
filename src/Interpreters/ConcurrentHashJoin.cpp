@@ -497,12 +497,12 @@ bool ConcurrentHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     return table_join->allowParallelNonJoinedRowsProcessing()
         && JoinCommon::hasNonJoinedBlocks(*table_join)
-        && hash_joins[0]->data->twoLevelMapIsUsed();
+        && !table_join->getOnlyClause().key_names_right.empty();
 }
 
 ///   1) always-false condition (no keys): stream 0 returns all right rows
 ///   2) two-level maps - each stream scans buckets where (bucket % num_streams == stream_idx)
-///   3) single-level maps - stream 0 concatenates per-slot streams sequentially
+///   3) single-level maps - each stream scans slots where (slot % num_streams == stream_idx)
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
     size_t stream_idx, size_t num_streams) const
@@ -530,14 +530,12 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, stream_idx, num_streams);
     }
 
-    /// single-level maps - each slot has its own HashJoin, only stream 0 collects them
-    if (stream_idx != 0)
-        return {};
-
+    /// single-level maps - each slot has its own HashJoin; distribute the slots across
+    /// streams so stream stream_idx scans slots where (slot % num_streams == stream_idx)
     std::vector<IBlocksStreamPtr> streams;
-    streams.reserve(slots);
-    for (const auto & hash_join : hash_joins)
+    for (size_t i = stream_idx; i < slots; i += num_streams)
     {
+        const auto & hash_join = hash_joins[i];
         std::lock_guard lock(hash_join->mutex);
         if (hash_join->data->hasNonJoinedRows())
         {
