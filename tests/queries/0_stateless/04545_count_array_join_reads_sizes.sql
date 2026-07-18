@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
--- The EXPLAIN PLAN assertions below depend on the count()-over-ARRAY-JOIN rewrite, which is a
--- new-analyzer pass; the plan shape differs under parallel replicas.
+-- The EXPLAIN PLAN assertions below depend on the count()-over-ARRAY-JOIN rewrite, which is an
+-- analyzer pass; the plan shape differs under parallel replicas.
 
 -- Tests that count() over an ARRAY JOIN, whose element values are never referenced, is rewritten to
 -- sum() over the array lengths so only the lightweight arr.size0 subcolumn is read instead of the
