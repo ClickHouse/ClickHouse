@@ -6077,6 +6077,25 @@ function isDefaultFormat(format)
     return format === default_format || format === framed_default_format;
 }
 
+/// The JSON `*WithProgress` output formats can carry a query-execution failure in-band, as a
+/// trailing top-level `{"exception":...}` object appended to their NDJSON stream while the HTTP
+/// status stays `200` (with `http_write_exception_in_output_format`), instead of failing the
+/// request. These formats write progress as rows of their own output, so the framing rejects them
+/// (`writesProgressConcurrently`); a query with such an explicit `FORMAT` is therefore retried
+/// without framing and its plain stream is shown here. That stream must be scanned for the in-band
+/// `{"exception":...}` object - unlike the `JSONEachPacket*` framings, whose exception is a
+/// `{"packet":"exception",...}` packet. The list is pinned by `04548_play_ui_framing_fallbacks.sh`.
+const WITH_PROGRESS_JSON_FORMATS = new Set([
+    'JSONEachRowWithProgress',
+    'JSONStringsEachRowWithProgress',
+    'JSONCompactEachRowWithProgress',
+    'JSONCompactStringsEachRowWithProgress',
+]);
+function formatMayWriteInBandException(format)
+{
+    return WITH_PROGRESS_JSON_FORMATS.has(format);
+}
+
 let controller = null;
 
 /// Color helpers for the logs view, mirroring how `clickhouse-client` colors streamed server logs
@@ -6573,6 +6592,17 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         /// it no longer reveals the output format.
         const image_mime = imageMimeForFormat(format);
 
+        /// The trailing exception marker (if any) that a raw NDJSON stream shown via `updateRaw` (the
+        /// `else` branch below, and the non-`200` `application/x-ndjson` branch) can carry to signal
+        /// an in-band failure. It depends on how the stream was produced: the page's own
+        /// `JSONEachPacket*` framing ends with a `{"packet":"exception",...}` packet, while a plain
+        /// `JSON*EachRowWithProgress` format retried without framing ends with its own top-level
+        /// `{"exception":...}` object. Any other raw text has no such marker and is left unscanned, so
+        /// an arbitrary result that merely contains that text is not mistaken for a failure.
+        const ndjson_exception_prefix = user_framing
+            ? '{"packet":"exception"'
+            : (formatMayWriteInBandException(format) ? '{"exception":' : null);
+
         /// For any streaming (framing) query, show the result/logs switcher up front - regardless of
         /// the outcome - so the server logs streamed before a failure stay reachable and the Logs
         /// button is present in the case of an exception too.
@@ -6580,26 +6610,26 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             targetResultEl.enableViews();
         }
 
-        /// Read a query's own `JSONEachPacket*` framing (one JSON packet per line, `Content-Type:
-        /// application/x-ndjson`): the packet lines are shown verbatim via `updateRaw`, and - when
-        /// `scan_packets` is set (the user chose the framing) - scanned for a
-        /// `{"packet":"exception",...}` line. A framed query can fail after data was already streamed
-        /// and the `200 OK` header sent (the exception arrives as the last packet while the status
-        /// stays `200`), or before the header (a non-200 `application/x-ndjson` response whose body is
-        /// likewise a packet stream). Either way the packets are the result the user explicitly asked
-        /// to see, so both are rendered here rather than as one opaque error string. The exact packet
-        /// form is pinned by `04548_play_ui_framing_fallbacks.sh`.
-        const readNdjsonPacketStream = async (scan_packets) => {
+        /// Read a line-delimited NDJSON stream (`Content-Type: application/x-ndjson`) shown verbatim
+        /// via `updateRaw`: a query's own `JSONEachPacket*` framing, or a plain
+        /// `JSON*EachRowWithProgress` format retried without framing. When `exception_prefix` is set,
+        /// the stream is scanned for a line beginning with it - the framing `{"packet":"exception",...}`
+        /// packet, or the plain `{"exception":...}` object. Such a stream can fail after data was
+        /// already streamed and the `200 OK` header sent (the exception arrives as the last line while
+        /// the status stays `200`), or before the header (a non-200 `application/x-ndjson` response
+        /// whose body is likewise a packet stream). Either way the lines are the result the user asked
+        /// to see, so both are rendered here rather than as one opaque error string. The exact forms
+        /// are pinned by `04548_play_ui_framing_fallbacks.sh`.
+        const readNdjsonPacketStream = async (exception_prefix) => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            const exception_prefix = '{"packet":"exception"';
             let saw_exception = false;
-            /// The first characters of the current line, capped at the prefix length: a line either
-            /// begins with the exception packet or not, so only the head is needed (this keeps the
-            /// scan bounded regardless of how large a single data packet line is).
+            /// The first characters of the current line, capped at the marker length: a line either
+            /// begins with the exception marker or not, so only the head is needed (this keeps the
+            /// scan bounded regardless of how large a single line is).
             let line_head = '';
             const scanForException = (chunk) => {
-                if (!scan_packets || saw_exception) return;
+                if (exception_prefix === null || saw_exception) return;
                 for (let i = 0; i < chunk.length; ++i) {
                     const c = chunk[i];
                     if (c === '\n') { line_head = ''; continue; }
@@ -6646,9 +6676,8 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             /// rather than rendering the whole stream as one opaque error string.
             is_error = true;
             is_raw = true;
-            const scan_packets = user_framing;
-            if (scan_packets) framing_kind = 'ndjson_packets';
-            const res = await readNdjsonPacketStream(scan_packets);
+            if (ndjson_exception_prefix !== null) framing_kind = 'ndjson_packets';
+            const res = await readNdjsonPacketStream(ndjson_exception_prefix);
             if (res.cancelled) { return { cancelled: true }; }
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
         } else if (!response.ok) {
@@ -6732,6 +6761,16 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 let cont = true;
                 for (const line of lines.slice(0, -1)) {
                     const data = JSON.parse(line);
+                    /// The default format is `JSON*EachRowWithProgress`; when a query with an
+                    /// explicit `FORMAT JSONStringsEachRowWithProgress` is retried without framing it
+                    /// also lands here. Such a run can fail after rows were already streamed and the
+                    /// `200 OK` header sent, ending the stream with a trailing `{"exception":...}`
+                    /// object (`http_write_exception_in_output_format`). `update` renders it inline;
+                    /// mark the run failed so the single view shows the error state and `Run all`
+                    /// stops after it, mirroring the framed and raw NDJSON paths. The snapshot stays
+                    /// `response_ok: true` so it restores through this same table path (rows followed
+                    /// by the exception), rather than as one opaque error string.
+                    if (data.exception) { is_error = true; }
                     cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
                 }
@@ -6754,19 +6793,20 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             await targetResultEl.renderChart(JSON.parse(reply), () => posted_request_num === request_num);
         } else {
             is_raw = true;
-            /// A query that carries its own `JSONEachPacket*` framing (the NDJSON framings the page
-            /// does not render specially) streams its packet lines verbatim here. `scan_packets` is
-            /// `user_framing`: a query can fail after data was already streamed and the `200 OK`
-            /// header sent, ending the stream with an `exception` packet while the HTTP status stays
-            /// `200`. Report that as a failure so the single run shows the error state and `Run all`
-            /// stops, mirroring the framed `EventStream` path above and the non-200 NDJSON path.
-            /// Plain raw output produced after a framing retry (`use_framing` turned off,
-            /// `user_framing` false) is not scanned - it has no packets. Recording
+            /// A line-delimited NDJSON stream streamed verbatim here: either a query's own
+            /// `JSONEachPacket*` framing, or a plain `JSON*EachRowWithProgress` format (e.g.
+            /// `JSONEachRowWithProgress` / `JSONCompactEachRowWithProgress`) retried without framing
+            /// because the framing rejected its in-band progress. Both can fail after data was already
+            /// streamed and the `200 OK` header sent, ending the stream with an exception marker
+            /// (`{"packet":"exception",...}` for the framing, or a plain `{"exception":...}` object for
+            /// the retried format under `http_write_exception_in_output_format`) - `ndjson_exception_prefix`
+            /// selects the right one, or is `null` for arbitrary raw output that carries no marker.
+            /// Report a match as a failure so the single run shows the error state and `Run all` stops,
+            /// mirroring the framed `EventStream` path above and the non-200 NDJSON path. Recording
             /// `framing_kind = 'ndjson_packets'` routes a saved run through `updateRaw` on replay,
-            /// keyed off this kind instead of the `{"packet":`-prefix of the saved bytes.
-            const scan_packets = user_framing;
-            if (scan_packets) framing_kind = 'ndjson_packets';
-            const res = await readNdjsonPacketStream(scan_packets);
+            /// keyed off this kind instead of the payload's first bytes or the format.
+            if (ndjson_exception_prefix !== null) framing_kind = 'ndjson_packets';
+            const res = await readNdjsonPacketStream(ndjson_exception_prefix);
             if (res.cancelled) { return { cancelled: true }; }
             if (res.saw_exception) {
                 is_error = true;
@@ -7119,13 +7159,14 @@ async function renderSnapshotIntoElement(el, snap, token) {
         return;
     }
 
-    /// A snapshot that carried its own `JSONEachPacket*` framing (NDJSON packets, one per line) is
-    /// replayed as raw text the way the live run showed it (`updateRaw`), for both successful and
-    /// failed runs and regardless of the underlying output format. Keyed off the persisted framing
-    /// kind, not the payload's first bytes or the format: without this a successful packet stream
-    /// whose format has its own restore path (a `default_format` table or a `JSONCompactColumns`
-    /// chart) would be reparsed as that format's JSON, and a failed one would be shown as one opaque
-    /// error string instead of the partial output followed by the exception packet.
+    /// A snapshot of a line-delimited NDJSON stream shown raw (a query's own `JSONEachPacket*`
+    /// framing, or a plain `JSON*EachRowWithProgress` format retried without framing) is replayed as
+    /// raw text the way the live run showed it (`updateRaw`), for both successful and failed runs and
+    /// regardless of the underlying output format. Keyed off the persisted framing kind, not the
+    /// payload's first bytes or the format: without this a successful stream whose format has its own
+    /// restore path (a `default_format` table or a `JSONCompactColumns` chart) would be reparsed as
+    /// that format's JSON, and a failed one would be shown as one opaque error string instead of the
+    /// partial output followed by the exception line.
     if (kind === 'ndjson_packets') {
         el.updateRaw(snap.data);
         return;
@@ -7366,15 +7407,16 @@ async function restoreFromHistory(state, token) {
             return;
         }
     } else if (kind === 'ndjson_packets') {
-        /// A snapshot that carried its own `JSONEachPacket*` framing (NDJSON packets, one per line)
-        /// is replayed as raw text the way the live run showed it (`updateRaw`), for both successful
-        /// and failed runs and regardless of the underlying output format - keyed off the persisted
-        /// framing kind, not the payload's first bytes or the format. Without this a successful packet
-        /// stream whose format has its own restore path (a `default_format` table or a
-        /// `JSONCompactColumns` chart) would be reparsed as that format's JSON on reload/tab switch,
-        /// and a failed one would be shown as one opaque error string instead of the partial output
-        /// followed by the exception packet. A successful run falls through to the shared finish; a
-        /// failed one clears progress and returns like the other error branches.
+        /// A snapshot of a line-delimited NDJSON stream shown raw (a query's own `JSONEachPacket*`
+        /// framing, or a plain `JSON*EachRowWithProgress` format retried without framing) is replayed
+        /// as raw text the way the live run showed it (`updateRaw`), for both successful and failed
+        /// runs and regardless of the underlying output format - keyed off the persisted framing kind,
+        /// not the payload's first bytes or the format. Without this a successful stream whose format
+        /// has its own restore path (a `default_format` table or a `JSONCompactColumns` chart) would
+        /// be reparsed as that format's JSON on reload/tab switch, and a failed one would be shown as
+        /// one opaque error string instead of the partial output followed by the exception line. A
+        /// successful run falls through to the shared finish; a failed one clears progress and returns
+        /// like the other error branches.
         is_raw = true;
         resultEl.updateRaw(result.data);
         if (!result.ok) {

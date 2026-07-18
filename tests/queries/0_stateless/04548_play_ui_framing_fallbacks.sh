@@ -62,6 +62,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    they asked for and the saved snapshot replays correctly, instead of rendering one opaque error
 #    string. The server contract (non-200, NDJSON, packet exception, no plain-exception body) and the
 #    served-page dispatch are checked here.
+# 12. When a query with an explicit `JSON*EachRowWithProgress` format (which the framing rejects for
+#    its in-band progress) is retried without framing, its plain NDJSON stream can still signal a
+#    failure in-band - a trailing top-level `{"exception":...}` object while the HTTP status stays
+#    200 (`http_write_exception_in_output_format`). That is neither a framing `{"packet":"exception"}`
+#    packet nor a plain-text error body, so the page scans such a retried WithProgress stream for the
+#    in-band `{"exception":...}` object - keyed off the output format (`formatMayWriteInBandException`),
+#    not only the user's own `JSONEachPacket*` framing - to report the failure so "Run all" stops. The
+#    server contract (200 OK, NDJSON, streamed rows then an in-band exception object, no framing
+#    packet) and the served-page detector are checked here.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -111,6 +120,9 @@ echo "$page" | grep -qF "$non_ok_ndjson_dispatch" && echo 'non-200 ndjson dispat
 echo "$page" | grep -q -F 'function appendCappedSnapshot(' && echo 'snapshot cap helper present: OK'
 [ "$(echo "$page" | grep -c -F 'reply = appendCappedSnapshot(reply,')" -ge 3 ] && echo 'all collection sites capped: OK'
 [ "$(echo "$page" | grep -c -F 'reply += ')" -eq 0 ] && echo 'no uncapped reply growth: OK'
+# A retried plain `JSON*EachRowWithProgress` stream is scanned for its own in-band `{"exception":...}`
+# object, keyed off the output format (`formatMayWriteInBandException`), not only the user's framing.
+echo "$page" | grep -q -F 'function formatMayWriteInBandException(' && echo 'in-band exception detector present: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
@@ -217,5 +229,25 @@ grep -o -m1 -F '{"packet":"exception"' "$result_file"
 # plain-error branch (which scans for `{"exception":`-prefixed lines) cannot parse it - which is why
 # the dedicated non-200 NDJSON branch is needed.
 [ "$(grep -c '^{"exception":' "$result_file")" -eq 0 ] && echo 'not a plain exception body: OK'
+
+echo '--- a plain WithProgress format retried without framing signals failure in-band at 200 OK'
+# When a query with an explicit `FORMAT JSONEachRowWithProgress` (a format the framing rejects for
+# its in-band progress) is retried without framing, the plain NDJSON stream can end with a trailing
+# `{"exception":...}` object while the HTTP status stays 200 (`http_write_exception_in_output_format`).
+# The page requests this on the plain shape with its own `default_format`, but the explicit `FORMAT`
+# wins, so the wire is `JSONEachRowWithProgress`: rows stream, then the in-band exception. This is
+# neither a framing `{"packet":"exception",...}` packet nor a plain-text error body, so the page must
+# scan the retried WithProgress stream (keyed off the format) for the `{"exception":...}` object to
+# report the failure - otherwise "Run all" would run later statements after a failed retried query.
+${CLICKHOUSE_CURL} -sS -D "$header_file" \
+    "${URL}&default_format=${default_format}" \
+    -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT JSONEachRowWithProgress SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
+grep -c '^HTTP/1.1 200 OK' "$header_file"
+grep -o -m1 'application/json' "$header_file"
+grep -o -m1 -F '"row"' "$result_file"
+grep -o -m1 -F '{"exception":' "$result_file"
+# The failure is an in-band JSON object, not a framing packet: the page cannot rely on the
+# `{"packet":"exception"` prefix for this retried WithProgress path.
+[ "$(grep -c -F '{"packet":"exception"' "$result_file")" -eq 0 ] && echo 'not a framing packet: OK'
 
 rm -f "$result_file" "$header_file"

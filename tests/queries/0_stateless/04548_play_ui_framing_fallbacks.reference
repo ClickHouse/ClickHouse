@@ -10,6 +10,7 @@ non-200 ndjson dispatched as packets: OK
 snapshot cap helper present: OK
 all collection sites capped: OK
 no uncapped reply growth: OK
+in-band exception detector present: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream
@@ -48,3 +49,9 @@ no exception: OK
 application/x-ndjson
 {"packet":"exception"
 not a plain exception body: OK
+--- a plain WithProgress format retried without framing signals failure in-band at 200 OK
+1
+application/json
+"row"
+{"exception":
+not a framing packet: OK
