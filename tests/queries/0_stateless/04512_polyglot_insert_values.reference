@@ -18,6 +18,9 @@ ok
 SYNTAX_ERROR
 --- no insert from rejected EXPLAIN INSERT (expect: 100 5) ---
 100	5
+SYNTAX_ERROR
+--- no insert from rejected FORMAT insert (expect: 100 5) ---
+100	5
 counts towards max_query_size
 --- no insert when payload exceeds max_query_size (expect: 100 5) ---
 100	5

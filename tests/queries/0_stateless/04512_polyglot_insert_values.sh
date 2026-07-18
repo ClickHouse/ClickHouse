@@ -71,6 +71,21 @@ $CLICKHOUSE_CLIENT $POLY --multiquery -q "EXPLAIN INSERT INTO t VALUES (1)" 2>&1
 echo "--- no insert from rejected EXPLAIN INSERT (expect: 100 5) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# INSERT ... FORMAT with inline data is not transpilable by the bundled foreign dialects. FORMAT is a
+# ClickHouse-only extension: a foreign-dialect parser has no notion of it, so it rejects the query at
+# the inline data that follows (the PostgreSQL dialect here fails on the first data row after
+# FORMAT CSV). A foreign-dialect INSERT ... FORMAT therefore fails cleanly with a syntax error and
+# inserts nothing, exactly like EXPLAIN INSERT ... VALUES above. Only INSERT ... VALUES inline data is
+# transpilable today; the server-owned transpiled buffer is format-agnostic and would carry FORMAT
+# data too, but no bundled dialect can currently produce such a query (and even a hypothetical identity
+# transpiler drops the raw FORMAT payload rather than re-emitting it).
+$CLICKHOUSE_CLIENT $POLY -q "INSERT INTO t FORMAT CSV
+1
+2
+3" 2>&1 | grep -om1 "SYNTAX_ERROR"
+echo "--- no insert from rejected FORMAT insert (expect: 100 5) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 # A polyglot inline INSERT is transpiled as a whole, so the inline data counts towards
 # max_query_size (unlike a native ClickHouse INSERT, whose inline data is streamed and is not bounded
 # by max_query_size). An oversized payload is rejected up front with a dedicated, actionable error
