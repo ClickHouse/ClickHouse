@@ -1638,6 +1638,25 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     }
     else
         default_codec = detectDefaultCompressionCodec();
+
+    /// The part default codec is fed raw — without a column type — into untyped streams such as the
+    /// statistics and text-index serialization, and a mutation copies it straight into the writer of
+    /// the new part (see `MutateTask`). A codec that requires a column type (e.g. `PCO`) cannot
+    /// compress there and would only fail at the first such write with a confusing error. The table
+    /// compression settings and the server `<compression>` selector already reject such codecs up
+    /// front; enforce the same invariant on the metadata-load path too, where an attached or pre-fix
+    /// part may still carry a `CODEC(...)` that requires a column type in `default_compression_codec.txt`
+    /// (or have one detected from a column file). Fall back to the server default codec, which is always
+    /// usable for untyped streams, so the bad metadata cannot reach a mutation writer.
+    if (default_codec->requiresColumnTypeToCompress())
+    {
+        LOG_WARNING(
+            storage.log,
+            "Part {} has a default compression codec that requires a column type and cannot be used for untyped "
+            "streams; falling back to the server default codec.",
+            name);
+        default_codec = CompressionCodecFactory::instance().getDefaultCodec();
+    }
 }
 
 void IMergeTreeDataPart::loadSourcePartsSet()
