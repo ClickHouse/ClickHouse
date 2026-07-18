@@ -55,6 +55,7 @@
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
+#include <Analyzer/Passes/RewriteArrayJoinCountPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
@@ -274,6 +275,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
+    /// Must run after PruneArrayJoinColumnsPass (which collapses a value-unused ARRAY JOIN to a single
+    /// expression) and before FunctionToSubcolumnsPass (which folds length(arr) into arr.size0).
+    manager.addPass(std::make_unique<RewriteArrayJoinCountPass>());
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());

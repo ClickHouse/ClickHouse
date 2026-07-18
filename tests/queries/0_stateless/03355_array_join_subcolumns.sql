@@ -1,8 +1,6 @@
 -- Tags: no-parallel-replicas
 
 set enable_analyzer=1;
--- The ARRAY JOIN plan shape below depends on the count()-over-ARRAY-JOIN subcolumn rewrite, which is gated on this setting.
-set optimize_functions_to_subcolumns=1;
 
 drop table if exists test;
 create table test (arr Array(UInt64), t Tuple(a Array(UInt32), b Array(UInt32))) engine=Memory;
