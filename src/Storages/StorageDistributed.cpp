@@ -2466,10 +2466,10 @@ void registerStorageDistributed(StorageFactory & factory)
 
             /// Not every table function can back a table. The `*Cluster` table functions (`urlCluster`,
             /// `s3Cluster`, `fileCluster`, ...) are meant to be called directly and cannot be used to create
-            /// a table (`ITableFunctionCluster::canBeUsedToCreateTable` is false). Instantiate the candidate
-            /// and reject it here at create time, exactly as `InterpreterCreateQuery` does for
-            /// `CREATE TABLE ... AS table_function`. Otherwise, with explicit columns the unsupported
-            /// combination would be silently written to metadata and only discovered later at read time.
+            /// a table (`ITableFunctionCluster::canBeUsedToCreateTable` is false). Reject such a function here
+            /// at create time, exactly as `InterpreterCreateQuery` does for `CREATE TABLE ... AS table_function`.
+            /// Otherwise, with explicit columns the unsupported combination would be silently written to
+            /// metadata and only discovered later at read time.
             /// The check must cover every fresh user-supplied query, including a user-issued `ATTACH TABLE`
             /// (`LoadingStrictnessLevel::ATTACH`); only skip it when loading from previously-validated
             /// metadata (server startup / force-restore), where the object was already validated at creation
@@ -2499,11 +2499,19 @@ void registerStorageDistributed(StorageFactory & factory)
                 /// another table function's argument is bound as well, not only the outermost target.
                 bindTableFunctionTargetsToCurrentDatabase(engine_args[1], local_context);
 
-                auto table_function = TableFunctionFactory::instance().get(engine_args[1], local_context);
-                if (!table_function->canBeUsedToCreateTable())
+                /// Only construct the table-function object to check its kind; do not `parseArguments`.
+                /// Whether a function can back a table depends on the function kind alone
+                /// (`ITableFunctionCluster::canBeUsedToCreateTable`), so parsing the arguments is not needed
+                /// here - and it must be avoided: some functions (`timeSeries*`, `prometheusQuery*`, ...) resolve
+                /// their source storage during `parseArguments`, which would make an otherwise valid target
+                /// impossible to create on a node that only holds the metadata (an explicit column list and a
+                /// cluster with no local replicas). Argument resolution is deferred to where it is actually
+                /// needed - schema inference for an omitted column list, or a read on a shard.
+                auto table_function = TableFunctionFactory::instance().tryGet(table_function_ast->name, local_context);
+                if (table_function && !table_function->canBeUsedToCreateTable())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Table function '{}' cannot be used to create a Distributed table",
-                                    table_function->getName());
+                                    table_function_ast->name);
             }
 
             remote_table_function_ptr = engine_args[1];
