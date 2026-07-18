@@ -414,4 +414,3 @@
 [submodule "contrib/pcodec"]
 	path = contrib/pcodec
 	url = https://github.com/ClickHouse/pcodec.git
-	branch = main

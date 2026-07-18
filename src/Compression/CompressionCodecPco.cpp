@@ -234,7 +234,7 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     /// Block layout written by `doCompressData` (documented in `docs/en/interfaces/specs/NativeFormat.md`):
     /// `[1 byte: W|flags][1 byte: B][B raw leading bytes][payload]`, where `W` is the element width,
     /// the `0x80` flag marks a stored payload, and `B = uncompressed_size mod W`. The `PCO` method byte
-    /// `0x9d` is dispatched by the shared `CompressedReadBuffer` and can therefore reach this decoder
+    /// `0x9f` is dispatched by the shared `CompressedReadBuffer` and can therefore reach this decoder
     /// from unchecked external framed input (notably the HTTP `decompress=1` path), so validate the
     /// stored header fields strictly and fail closed.
     UInt8 first_byte = static_cast<UInt8>(source[0]);
