@@ -6,10 +6,14 @@ INSERT INTO test_insert_format_compression SELECT * FROM input(\'id UInt32, text
 4	D
 7	G
 8	H
+15	O
+16	P
 9	I
 10	J
 13	M
 14	N
+17	Q
+18	R
 1
 1
 1

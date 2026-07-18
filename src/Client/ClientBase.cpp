@@ -2243,7 +2243,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         {
             const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
             String compression_method_string = compression_method_node.value.safeGet<std::string>();
-            CompressionMethod compression_method = chooseCompressionMethod("", compression_method_string);
+            /// "auto" has no filename to sniff an extension from here; reuse the detection already
+            /// done once against the real stdin descriptor for the default (no explicit COMPRESSION) case.
+            CompressionMethod compression_method = compression_method_string == "auto"
+                ? default_input_compression_method
+                : chooseCompressionMethod("", compression_method_string);
             compressed_buf = wrapReadBufferWithCompressionMethod(
                 wrapReadBufferReference(buf), compression_method,
                 /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);

@@ -74,6 +74,7 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , default_input_compression_method(CompressionMethod::None)
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
@@ -90,6 +91,7 @@ LocalConnection::LocalConnection(
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
+    , default_input_compression_method(CompressionMethod::None)
 {
 }
 
@@ -287,7 +289,11 @@ void LocalConnection::sendQuery(
             {
                 const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
                 String compression_method_string = compression_method_node.value.safeGet<std::string>();
-                CompressionMethod compression_method = chooseCompressionMethod("", compression_method_string);
+                /// "auto" has no filename to sniff an extension from here; reuse the detection the
+                /// client application already did once against its real stdin descriptor.
+                CompressionMethod compression_method = compression_method_string == "auto"
+                    ? default_input_compression_method
+                    : chooseCompressionMethod("", compression_method_string);
                 compressed_in = wrapReadBufferWithCompressionMethod(
                     wrapReadBufferReference(*in), compression_method,
                     /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);

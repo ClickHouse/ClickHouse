@@ -55,6 +55,18 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 rm -f "${CLICKHOUSE_TMP}"/04506_data3.csv "${CLICKHOUSE_TMP}"/04506_data3.csv.zst
 
+# COMPRESSION 'auto' on the bare-FORMAT stdin path must reuse the compression already
+# auto-detected from the redirected stdin file descriptor's name, not silently become a no-op.
+printf '15,O\n16,P\n' > "${CLICKHOUSE_TMP}"/04506_data6.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data6.csv
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'auto'" < "${CLICKHOUSE_TMP}"/04506_data6.csv.gz
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data6.csv "${CLICKHOUSE_TMP}"/04506_data6.csv.gz
+
 # clickhouse-local regression: bare FORMAT + COMPRESSION via stdin works the same way in clickhouse-local
 # as in clickhouse-client (both share ClientBase::sendDataFrom for this path). A bare-FORMAT INSERT fed
 # via stdin must be the last statement in its query text (true regardless of COMPRESSION -- the parser
@@ -101,6 +113,26 @@ ${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path2 --query "SELECT
 
 rm -f "${CLICKHOUSE_TMP}"/04506_data5.csv "${CLICKHOUSE_TMP}"/04506_data5.csv.gz
 rm -rf "${CLICKHOUSE_TMP}"/04506_local_path2
+
+# clickhouse-local regression: COMPRESSION 'auto' through the input() table function must resolve to
+# the compression already detected from the real stdin descriptor (threaded from LocalServer into
+# LocalConnection via setDefaultInputCompressionMethod), not silently become a no-op the way it would
+# if resolved with an empty path hint.
+printf '17,Q\n18,R\n' > "${CLICKHOUSE_TMP}"/04506_data7.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data7.csv
+
+rm -rf "${CLICKHOUSE_TMP}"/04506_local_path3
+mkdir -p "${CLICKHOUSE_TMP}"/04506_local_path3
+
+${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path3 --query "
+CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO test_insert_format_compression SELECT * FROM input('id UInt32, text String') FORMAT CSV COMPRESSION 'auto'
+" < "${CLICKHOUSE_TMP}"/04506_data7.csv.gz
+
+${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path3 --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data7.csv "${CLICKHOUSE_TMP}"/04506_data7.csv.gz
+rm -rf "${CLICKHOUSE_TMP}"/04506_local_path3
 
 # Negative check: COMPRESSION is client-side-only. Sent directly to the server over HTTP (which never
 # decompresses this clause), it must be rejected with a clear error instead of falling through to the

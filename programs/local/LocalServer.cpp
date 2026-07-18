@@ -1114,6 +1114,7 @@ void LocalServer::connect()
     }
     connection = LocalConnection::createConnection(
         connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
+    static_cast<LocalConnection &>(*connection).setDefaultInputCompressionMethod(default_input_compression_method);
 }
 
 
