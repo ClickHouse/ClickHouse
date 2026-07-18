@@ -11,7 +11,10 @@
 -- pipeline resolve it -- here to the retryable NO_SUCH_DATA_PART divergence error.
 
 DROP TABLE IF EXISTS t_dp_empty_snapshot;
-CREATE TABLE t_dp_empty_snapshot (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- Pin index_granularity so 100000 rows produce enough marks to split into the 3 requested buckets;
+-- otherwise a large granularity yields too few marks, the read is not bucketed, and the assertion below
+-- (which requires a bucketed read) does not hold.
+CREATE TABLE t_dp_empty_snapshot (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256;
 INSERT INTO t_dp_empty_snapshot SELECT number FROM numbers(100000);
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
@@ -37,7 +40,9 @@ DROP TABLE t_dp_empty_snapshot;
 -- (NullSource / total_marks == 0) run first and the worker silently returns zero rows instead of the
 -- retryable NO_SUCH_DATA_PART error -- a wrong-results regression the LOGICAL_ERROR fix must not create.
 DROP TABLE IF EXISTS t_dp_empty_snapshot_final;
-CREATE TABLE t_dp_empty_snapshot_final (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
+-- Pin index_granularity for the same reason as above: the FINAL read must bucketize so the empty
+-- snapshot hits the eager divergence check rather than the non-bucketed zero-row path.
+CREATE TABLE t_dp_empty_snapshot_final (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 256;
 INSERT INTO t_dp_empty_snapshot_final SELECT number, number FROM numbers(100000);
 
 -- Without the fault the bucketed FINAL read works normally.
@@ -58,7 +63,9 @@ DROP TABLE t_dp_empty_snapshot_final;
 -- deserializer with a SIGSEGV. A non-bucketed read is not pinned to coordinator-selected parts, so an
 -- empty snapshot is legitimately zero local rows (no divergence contract), not NO_SUCH_DATA_PART.
 DROP TABLE IF EXISTS t_dp_empty_snapshot_small;
-CREATE TABLE t_dp_empty_snapshot_small (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
+-- Only 50 rows: one mark regardless of granularity, so this read is never bucketed. Pin the granularity
+-- anyway to keep the non-bucketed intent explicit and independent of any injected default.
+CREATE TABLE t_dp_empty_snapshot_small (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 256;
 INSERT INTO t_dp_empty_snapshot_small SELECT number, number FROM numbers(50);
 
 -- Without the fault the non-bucketed FINAL global aggregation works normally.
