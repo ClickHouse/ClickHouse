@@ -112,5 +112,51 @@ def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
     ).strip() == "1"
     assert "READ_ONLY" in node.query_and_get_error("INSERT INTO borrowed VALUES (4)")
 
+    # A *new* CREATE that reuses the already-registered, read-only `borrowed_disk` (the same inline
+    # `disk(...)` definition, so `getOrCreateDisk` returns the existing disk without re-validating
+    # its now-absent cache) is NOT rejected up front. `MergeTreeData::initializeDirectoriesAndFormatVersion`
+    # skips directory creation and the `format_version.txt` write on a read-only disk, so the empty
+    # table is created and the failure is deferred to the first `INSERT`. This pins the documented
+    # "Restart robustness" behavior in `docs/en/operations/storing-data.md`.
+    node.query(
+        """
+        CREATE TABLE borrowed_reuse (key UInt64)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS disk = disk(
+            type = object_storage,
+            object_storage_type = 'borrow_from_cache',
+            cache_name = 'borrowed_cache',
+            name = 'borrowed_disk')
+        """
+    )
+    assert node.query("SELECT count() FROM borrowed_reuse").strip() == "0"
+    assert "READ_ONLY" in node.query_and_get_error(
+        "INSERT INTO borrowed_reuse VALUES (7)"
+    )
+    node.query("DROP TABLE borrowed_reuse")
+
+    # Conversely, registering a *fresh* borrow disk (a name not seen before) does re-validate the
+    # cache, so it is rejected outright while the cache is absent -- the immediate-failure guarantee
+    # only holds for disk creation, not for reuse of an already read-only disk.
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        """
+        CREATE TABLE borrowed_fresh (key UInt64)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS disk = disk(
+            type = object_storage,
+            object_storage_type = 'borrow_from_cache',
+            cache_name = 'borrowed_cache',
+            name = 'brand_new_disk')
+        """
+    )
+
+    # Referencing the custom disk by bare name (rather than its full inline definition) is rejected
+    # outright: custom DDL disks cannot be shared between tables by name, so this path cannot create
+    # a table on the read-only disk either.
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        "CREATE TABLE borrowed_byname (key UInt64) ENGINE = MergeTree ORDER BY key "
+        "SETTINGS disk = 'borrowed_disk'"
+    )
+
     # The leftover table can still be dropped.
     node.query("DROP TABLE borrowed")
