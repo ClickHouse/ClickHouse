@@ -56,6 +56,22 @@ void ReplicatedMergeTreeAttachThread::start()
     }
 
     task->activateAndSchedule();
+
+    /// Close the check-then-act race with `shutdown()`: if `shutdown()` ran entirely between the
+    /// `shutdown_called` check above and `activateAndSchedule()`, its `task->deactivate()` observed the
+    /// task still inactive and was a no-op, so the task we just re-armed would run its first try after
+    /// shutdown. Re-check and deactivate here. `shutdown()` deactivates unconditionally, so whichever
+    /// ordering wins, the task ends up deactivated:
+    ///   - `shutdown()` observed before this re-check: we deactivate the task we armed;
+    ///   - `shutdown()` observed after this re-check: its own `deactivate()` cancels the armed task.
+    /// `deactivate()` is idempotent, so a concurrent deactivate from both sides is safe. Unblock
+    /// `waitFirstTry` here too, so the waiter always wakes even if it observes our deactivation.
+    if (shutdown_called)
+    {
+        task->deactivate();
+        if (!first_try_done.exchange(true))
+            first_try_done.notify_one();
+    }
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
