@@ -5401,6 +5401,14 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
     /// `query` already IS the whole editor.
     const paramValuesSnapshot = await resolveRunParams(params_restore_pending, history_query_text || query);
+    /// The live in-memory `tab.params` at launch, for `saveHistory`'s pending-restore guard. When a
+    /// run races an in-flight parameter restore, `saveHistory` trusts the launch-time snapshot only
+    /// while the live tab has NOT diverged from it. A newer trusted parameter edit during the request
+    /// updates `tab.params` (the `param-` input handler), so comparing the current `tab.params`
+    /// against this launch snapshot tells such an edit apart from a merely stale/blank pending-restore
+    /// input state (which never touches `tab.params`). Captured before the network round-trip.
+    const active_tab_at_launch = getActiveTab();
+    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
     /// Snapshot the selected database for this run, so the request URL, the saved result
     /// snapshot, and a later download all use the database the query actually ran against,
     /// even if the panel selection changes while the query is in flight.
@@ -5450,6 +5458,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 elapsed_ns: 1e6 * (performance.now() - last_query_start),
                 params: paramValuesSnapshot,
                 params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
+                live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
                 partial: partial,
                 database: query_database,
                 url: query_url,
@@ -5499,6 +5508,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
         params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
+        live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
         partial: partial,
         database: query_database,
         url: query_url,
@@ -5516,6 +5526,10 @@ let multiQueryControllers = [];
 async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial)
 {
     const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text);
+    /// The live in-memory `tab.params` at launch, for `saveHistory`'s pending-restore guard (see
+    /// `postSingle`): trust the launch-time snapshot only while the live tab has not diverged from it.
+    const active_tab_at_launch = getActiveTab();
+    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
     /// Snapshot the selected database for this run (see `postImpl`); all statements run against it.
     const query_database = selected_database;
     /// Snapshot the connection too, so the saved result carries the server/user that produced it
@@ -5697,6 +5711,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
         params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
+        live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
         partial: partial || skipped_after_error,
         database: query_database,
         url: query_url,
@@ -7054,7 +7069,20 @@ function saveHistory(stateData, titleForDoc) {
     /// derives the params from the launched query text (`paramValuesForQuery`) rather than the live
     /// inputs — so an edited query does not stamp the old query's params even if the edit's own
     /// `updateQueryParams` rebuild has not landed yet.
-    if (stateData.params_restore_pending)
+    ///
+    /// BUT the launch-time snapshot is authoritative only while the live tab still matches what ran.
+    /// A run outlives newer trusted edits — typing / editing a parameter does not cancel a request —
+    /// so if the user edited the query (`tab.query` diverges from the launched `stateData.query`) or a
+    /// parameter (`tab.params`, which only trusted edits change, diverges from its launch-time value
+    /// `stateData.live_params_at_launch`) WHILE this run was in flight, the live draft — not the
+    /// stale snapshot — must be recorded, with `run=1` dropped, exactly as the non-pending path does.
+    /// Restoring the snapshot in that case would clobber the newer edit (in `tab.params` and, via
+    /// `setParamValues`, in the live input) and, comparing the snapshot against itself, wrongly keep
+    /// `run=1`, so a reload / shared link would replay the stale binding rather than what the user now
+    /// sees (or, for a query edit, an incoherent entry — the old params under the new query).
+    if (stateData.params_restore_pending
+        && tab.query === stateData.query
+        && JSON.stringify(tab.params || {}) === JSON.stringify(stateData.live_params_at_launch || {}))
     {
         tab.params = { ...(stateData.params || {}) };
         setParamValues(tab.params);

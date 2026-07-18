@@ -1091,6 +1091,96 @@ async function reload()
     sandbox.getQueryUnderCursor = async () => '';
     sandbox.currentQueryParams = [];
 
+    /// A run launched under a pending param restore, then a NEWER trusted PARAMETER edit while the
+    /// request is still in flight, must NOT stamp the launch-time snapshot back over the live edit:
+    /// typing / editing does not cancel a request, so the destination tab's saved params are
+    /// authoritative only until the user moves on. Switch toward `SELECT {y}` (saved y=2), press Run
+    /// before the restore finishes, then change y to 9 while the run is in flight. `saveHistory` must
+    /// leave the live `{y:'9'}` alone, drop `run=1` (the shown binding was never run), and record
+    /// `{y:'9'}` — never restore `{y:'2'}` over it (which, comparing the snapshot against itself,
+    /// would also keep `run=1`, so a reload / shared link would replay the stale binding). Drives the
+    /// REAL `postOne`/`postSingle`/`resolveRunParams`.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    await run('SELECT {x}');                        /// tab A: a clean, run-backed entry with x=1
+    const dest_tab_param_edit = sandbox.makeTab();
+    dest_tab_param_edit.query = 'SELECT {y}';
+    dest_tab_param_edit.params = { y: '2' };
+    sandbox.tabs.push(dest_tab_param_edit);
+    sandbox.activeTabId = dest_tab_param_edit.id;
+    sandbox.query_area.value = 'SELECT {y}';
+    sandbox.param_inputs = {};                      /// the restore has not written the destination inputs yet
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';   /// the query the restore was for; unchanged here
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorParamEdit;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorParamEdit = () => resolve('SELECT {y}'); });
+    const paramEditRunPromise = sandbox.postOne();
+    await drain();
+    releaseCursorParamEdit();
+    await drain();
+    /// The user edits the destination parameter (y: 2 -> 9) while the run is still in flight; the
+    /// real `param-` input handler persists it into `tab.params` and stamps the entry (`syncHistory`).
+    setParam('y', '9');
+    resolvePendingPostImpl();
+    await paramEditRunPromise;
+    await drain();
+    assert_eq('param edit under pending restore mid-flight: the run drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_params('param edit under pending restore mid-flight: the live param edit survives', active().params, { y: '9' });
+    assert_eq('param edit under pending restore mid-flight: the live param input keeps the edit', sandbox.param_inputs.y, '9');
+    assert_eq('param edit under pending restore mid-flight: the stale launch binding does not reach the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y=2'), false);
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    sandbox.getQueryUnderCursor = async () => '';
+
+    /// The same hazard, but the newer trusted edit is to the QUERY (not a parameter) while the run is
+    /// in flight. Switch toward `SELECT {y}` (saved y=2), press Run before the restore finishes, then
+    /// edit the editor to `SELECT {z}` (its `updateQueryParams` rebuilds the inputs for the new query).
+    /// The launch-time snapshot's params belong to the OLD query, so `saveHistory` must NOT restore
+    /// `{y:'2'}` under the new draft — that would produce an incoherent `#SELECT {z}` entry carrying
+    /// `param_y=2`. It must leave the live draft alone, record the coherent `{z:''}`, and drop `run=1`.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    await run('SELECT {x}');                        /// tab A: a clean, run-backed entry with x=1
+    const dest_tab_query_edit = sandbox.makeTab();
+    dest_tab_query_edit.query = 'SELECT {y}';
+    dest_tab_query_edit.params = { y: '2' };
+    sandbox.tabs.push(dest_tab_query_edit);
+    sandbox.activeTabId = dest_tab_query_edit.id;
+    sandbox.query_area.value = 'SELECT {y}';
+    sandbox.param_inputs = {};
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorQueryEdit;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorQueryEdit = () => resolve('SELECT {y}'); });
+    const queryEditRunPromise = sandbox.postOne();
+    await drain();
+    releaseCursorQueryEdit();
+    await drain();
+    /// The user edits the query to `SELECT {z}` while the run is in flight; the editor's `input`
+    /// handler keeps `tab.query` in sync and `updateQueryParams` rebuilds the inputs for the new query.
+    type('SELECT {z}');
+    sandbox.param_inputs = { z: '' };
+    resolvePendingPostImpl();
+    await queryEditRunPromise;
+    await drain();
+    assert_eq('query edit under pending restore mid-flight: the run drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('query edit under pending restore mid-flight: the live draft query survives', active().query, 'SELECT {z}');
+    assert_params('query edit under pending restore mid-flight: the entry carries the new query params, not the old', active().params, { z: '' });
+    assert_eq('query edit under pending restore mid-flight: the stale destination param does not leak into the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y'), false);
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    sandbox.getQueryUnderCursor = async () => '';
+
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
     /// the reload restores the draft as editor text — but the stale-reload branch drops the URL's

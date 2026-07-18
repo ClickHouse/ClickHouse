@@ -72,6 +72,14 @@ edited query under pending restore, inputs not yet rebuilt: the clean run keeps 
 edited query under pending restore, inputs not yet rebuilt: the stale source param does not leak
 edited query under pending restore, inputs not yet rebuilt: no destination param leaks either
 edited query under pending restore, inputs not yet rebuilt: the entry carries no stale params
+param edit under pending restore mid-flight: the run drops run=1
+param edit under pending restore mid-flight: the live param edit survives
+param edit under pending restore mid-flight: the live param input keeps the edit
+param edit under pending restore mid-flight: the stale launch binding does not reach the URL
+query edit under pending restore mid-flight: the run drops run=1
+query edit under pending restore mid-flight: the live draft query survives
+query edit under pending restore mid-flight: the entry carries the new query params, not the old
+query edit under pending restore mid-flight: the stale destination param does not leak into the URL
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first
