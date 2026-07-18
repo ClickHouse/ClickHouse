@@ -49,8 +49,9 @@ namespace ErrorCodes
         "so it cannot be combined with a user-managed `materialized_postgresql_replication_slot` or " \
         "`materialized_postgresql_snapshot`, nor with a column-filtered `materialized_postgresql_tables_list` " \
         "(all replicas share one set of nested tables and must agree on the exact column projection). " \
-        "Supports the {uuid}, {shard} and " \
-        "{replica} macros. It must resolve to the same value on every replica.", 0) \
+        "It must resolve to the same value on every replica (it is both the coordination namespace and the " \
+        "root of the shared nested tables), so it supports the {uuid} and {shard} macros but the per-replica " \
+        "{replica} macro is rejected: put the per-replica part in `materialized_postgresql_replica_name`.", 0) \
     DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
         "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
         "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica.", 0) \

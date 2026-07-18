@@ -647,3 +647,99 @@ def test_takeover_after_partial_snapshot_drops_stale_deleted_rows(started_cluste
         int(instance.query("SELECT value FROM test_database.test_table WHERE key = 0"))
         == 777
     )
+
+
+def test_keeper_path_rejects_per_replica_macro(started_cluster):
+    # The keeper path is both the coordination namespace and the root of the shared nested tables, so it
+    # must resolve to the same value on every replica. A per-replica macro like {replica} would put each
+    # replica on a disjoint Keeper subtree - each electing its own leader and creating its own nested
+    # tables - while they still contend for the same PostgreSQL slot and publication, so the loser would
+    # silently never receive data. It must be rejected at CREATE time.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_per_replica_path "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/{{replica}}/test'"
+    )
+    assert "{replica}" in error
+    assert "materialized_postgresql_replica_name" in error
+    # The rejected CREATE must not have left a database behind.
+    assert "test_per_replica_path" not in instance.query("SHOW DATABASES")
+
+
+def test_join_with_drifted_schema_reports_error(started_cluster):
+    # The shared nested-table schema is authoritative in coordinated mode. A replica joins by declaring a
+    # nested table derived from the *current* PostgreSQL schema, and ReplicatedMergeTree compares that
+    # against the metadata already stored in Keeper. If the PostgreSQL table drifted after the shared tree
+    # was created (MaterializedPostgreSQL continues by column position and does not track PostgreSQL DDL),
+    # the join fails. It must report an actionable schema-drift error, not a cryptic metadata mismatch.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # Only the first replica creates the shared tree (schema: key, value).
+    create_settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=create_settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    # Drift the PostgreSQL schema (add a column) without any further DML, so the leader's consumer is not
+    # disturbed but a joining replica now derives a different structure.
+    pg_query("ALTER TABLE test_table ADD COLUMN extra integer DEFAULT 0")
+
+    # The second replica derives (key, value, extra) and cannot join the shared (key, value) tree.
+    pg_manager2.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=create_settings
+    )
+
+    for _ in range(90):
+        if instance2.contains_in_log("shared nested-table schema is authoritative"):
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError("The joining replica did not report the schema-drift error")
+
+
+def test_drop_database_fails_when_keeper_is_unavailable(started_cluster):
+    # The last-replica decision on DROP DATABASE is made in Keeper. If Keeper is unavailable it must
+    # fail-close: DROP DATABASE has to fail before the local nested tables are removed, otherwise it could
+    # delete the last actual copy of the data while the shared slot, publication and snapshot_completed
+    # marker survive (a later recreate would then resume into empty tables).
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    # Drop the standby (not the leader) so the leader's replication is not disturbed by the outage.
+    leader_name = wait_for_leader(instance)
+    standby = instance2 if leader_name == "coord_instance1" else instance
+
+    zk_nodes = ["zoo1", "zoo2", "zoo3"]
+    try:
+        started_cluster.stop_zookeeper_nodes(zk_nodes)
+
+        error = standby.query_and_get_error("DROP DATABASE test_database")
+        assert error != ""
+        # The database and its local data must survive the refused drop.
+        assert "test_database" in standby.query("SHOW DATABASES")
+        assert (
+            int(standby.query("SELECT count() FROM test_database.test_table")) == 100
+        )
+    finally:
+        started_cluster.start_zookeeper_nodes(zk_nodes)
+        # Wait until Keeper is reachable again so the teardown drop can complete.
+        for _ in range(120):
+            try:
+                standby.query("SELECT count() FROM system.zookeeper WHERE path = '/'")
+                break
+            except Exception:
+                time.sleep(1)
