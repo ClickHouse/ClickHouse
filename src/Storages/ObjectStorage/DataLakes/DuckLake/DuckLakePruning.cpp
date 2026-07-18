@@ -658,6 +658,9 @@ bool FilePruner::canBePruned(
             {
                 if (Poco::toLower(field.transform) != "identity")
                     continue;
+                /// Mirror the skip in getIdentityCondition so point and key stay aligned.
+                if (!column_types_by_id.contains(field.column_id))
+                    continue;
                 if (static_cast<size_t>(field.partition_key_index) >= file.partition_values.size())
                 {
                     usable = false;
