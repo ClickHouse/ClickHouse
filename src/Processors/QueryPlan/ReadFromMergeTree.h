@@ -386,6 +386,11 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
+    /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
+    /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
+    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
+
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
     /// Adds virtual columns for reading from text index.
