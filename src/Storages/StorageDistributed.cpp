@@ -936,7 +936,8 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
-    const ASTPtr & remote_table_function)
+    const ASTPtr & remote_table_function,
+    bool table_function_target_uses_declared_structure)
 {
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
@@ -961,8 +962,16 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
-        /// Subquery in table function `view` may reference tables that don't exist on the initiator.
-        if (table_function_node->getTableFunctionName() == "view")
+        /// A subquery in the table function `view` may reference tables that don't exist on the initiator.
+        /// The same holds for a persisted `Distributed(...)` engine created over a table function: the engine
+        /// carries its own declared column list and the target is meant to run only on the shards, so build the
+        /// header from that declared structure instead of resolving the target on the initiator. Resolving it
+        /// eagerly would fail on the initiator whenever its local backing object is missing (e.g. `loop(src)`,
+        /// `dictionary('d')`, `mergeTreeProjection(...)`), even when a healthy remote shard exists or
+        /// `skip_unavailable_shards` should apply - unlike the classic named-table form, which never resolves
+        /// the remote table on the initiator. The `remote` / `cluster` table functions keep resolving their
+        /// target (they own their cluster and have no separately declared column list of their own).
+        if (table_function_node->getTableFunctionName() == "view" || table_function_target_uses_declared_structure)
         {
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
@@ -975,7 +984,15 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
             auto storage = std::make_shared<StorageDummy>(fake_storage_id, ColumnsDescription{column_names_and_types});
 
-            table_function_node->resolve({}, std::move(storage), query_context, /*unresolved_arguments_indexes_=*/{ 0 });
+            /// Leave every argument of the target table function unresolved, so the initiator never resolves
+            /// objects that may only exist on the shards (a `view` subquery, or the table / dictionary names of
+            /// `loop`, `dictionary`, `mergeTreeProjection`, ...). The shard resolves the target when it runs.
+            VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
+            const size_t num_arguments = table_function_node->getArguments().getNodes().size();
+            for (size_t i = 0; i < num_arguments; ++i)
+                unresolved_arguments_indexes.push_back(i);
+
+            table_function_node->resolve({}, std::move(storage), query_context, std::move(unresolved_arguments_indexes));
         }
         else
         {
@@ -1049,10 +1066,16 @@ void StorageDistributed::read(
         /// Avoid constructing it from empty names (which throws), matching the `remote_storage` member.
         StorageID remote_storage_id = remote_table_function_ptr ? StorageID::createEmpty() : StorageID{remote_database, remote_table};
 
+        /// A persisted `Distributed(...)` engine over a table function (`owned_cluster` is empty, unlike the
+        /// `remote` / `cluster` table functions) has its own declared column list and its target runs only on
+        /// the shards, so the initiator should use that declared structure instead of resolving the target.
+        const bool table_function_target_uses_declared_structure = remote_table_function_ptr && !owned_cluster;
+
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
-            remote_table_function_ptr);
+            remote_table_function_ptr,
+            table_function_target_uses_declared_structure);
         Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
