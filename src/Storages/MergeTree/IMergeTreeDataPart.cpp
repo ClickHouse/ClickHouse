@@ -733,7 +733,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
             /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
             if (!column_name_to_position.contains(full_name))
                 serializations.emplace(full_name, subdata.serialization);
-        }, ISerialization::SubstreamData(serialization));
+        }, ISerialization::SubstreamData(serialization).withType(column.type));
     }
 
     auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
@@ -800,6 +800,17 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
 {
     auto it = serializations.find(column_name);
     return it == serializations.end() ? nullptr : it->second;
+}
+
+SerializationPtr LoadedMergeTreeDataPartInfoForReader::getSerialization(const NameAndTypePair & column) const
+{
+    if (auto serialization = data_part->tryGetSerialization(column.name))
+        return serialization;
+
+    if (isObject(column.getTypeInStorage()) && column.isSubcolumn())
+        return column.getTypeInStorage()->getSubcolumnSerialization(
+            column.getSubcolumnName(), data_part->getSerialization(column.getNameInStorage()));
+    return data_part->getSerialization(column.name);
 }
 
 bool IMergeTreeDataPart::isMovingPart() const

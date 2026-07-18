@@ -405,6 +405,9 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
+    if (isObject(column_in_part->getTypeInStorage()) && column_in_part->isSubcolumn())
+        return data_part_info_for_read->getSerialization(*column_in_part);
+
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
