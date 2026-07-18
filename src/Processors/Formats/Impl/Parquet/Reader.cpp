@@ -946,24 +946,34 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
     /// dictionary is decoded lazily and throttled by the normal column-data memory accounting).
     if (max_decoded_bytes != 0)
     {
-        /// Coarse pre-decode gate: reject before decompressing if even the raw page payload already
-        /// exceeds the budget, to avoid decompressing a page we would only throw away.
-        Int64 page_bytes = std::max(header.uncompressed_page_size, header.compressed_page_size);
-        if (page_bytes < 0 || size_t(page_bytes) > max_decoded_bytes)
+        /// Worst-case pre-decode gate. `Dictionary::decode` allocates per-entry state *on top of* the
+        /// decompressed page bytes - a `StringPlain` offsets array, or a fully decoded `col` for types
+        /// that need conversion - so the true footprint can be several times the page payload (e.g. a
+        /// bit-packed dictionary decoded into a wider column). `Dictionary::decodedFootprintUpperBound`
+        /// predicts that footprint from the page header before anything is allocated, so an oversized
+        /// dictionary is rejected *before* `decode` transiently materializes it, and the pruning path
+        /// never overshoots `max_decoded_bytes` even momentarily. If it does not fit, skip it and let
+        /// the caller fall back to a full scan (a missed optimization, never a wrong result); the
+        /// dictionary is re-decoded later, unbounded and throttled, on the data-read path if the column
+        /// is actually read.
+        if (header.compressed_page_size < 0 || header.uncompressed_page_size < 0
+            || header.dictionary_page_header.num_values < 0)
+            return false; /// Malformed header sizes; the data-read path (max_decoded_bytes == 0) surfaces the error.
+        size_t page_bytes = size_t(std::max(header.uncompressed_page_size, header.compressed_page_size));
+        size_t predicted_bytes = Dictionary::decodedFootprintUpperBound(
+            header.dictionary_page_header.encoding, column_info.decoder,
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+        if (predicted_bytes > max_decoded_bytes)
             return false;
     }
 
     decodeDictionaryPageImpl(header, page_data, column, column_info);
 
-    /// Exact post-decode check. `Dictionary::decode` allocates per-entry state *on top of* the
-    /// decompressed page bytes the gate above measured - a `StringPlain` offsets array, or a fully
-    /// decoded `col` for types that need conversion (see `Dictionary::decode` /
-    /// `Dictionary::allocatedBytes`) - so the true footprint can be several times the page payload
-    /// (e.g. a bit-packed dictionary decoded into a wider column). Verify the real footprint against
-    /// the budget before the dictionary is charged (in `ReadManager::runTask`) and used for pruning,
-    /// and drop it if it does not fit, so a single decoded dictionary never overshoots the pruning
-    /// budget. The caller then falls back to a full scan; the dictionary is re-decoded later,
-    /// unbounded and throttled, on the data-read path if the column is actually read.
+    /// Defensive backstop: the pre-decode bound above already guarantees the decoded dictionary fits,
+    /// so this exact check should never trigger. It only guards against `decode` and
+    /// `decodedFootprintUpperBound` drifting out of sync; if that ever happened, drop the dictionary
+    /// and fall back to a full scan rather than charging (in `ReadManager::runTask`) and pruning with a
+    /// dictionary larger than the budget.
     if (max_decoded_bytes != 0 && column.dictionary.allocatedBytes() > max_decoded_bytes)
     {
         column.dictionary.reset();
@@ -1134,11 +1144,26 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// FormatFactory). This is the decoded-value-set cap the compressed-page limit alone cannot provide;
     /// the decoded dictionary *page* itself is capped against the same remaining budget before it is
     /// used, in `decodeDictionaryPage` on the pruning path.
-    size_t estimated_value_set_bytes = count *
-        (size_t(column.dictionary.getAverageValueSize())
-         + sizeof(UInt32)        /// identity `indexes` (materialized path only)
-         + sizeof(UInt64)        /// `hashes` vector
-         + 2 * sizeof(UInt64));  /// `value_hashes` HashSet (rounds capacity up to a power of two)
+    /// This must be an upper bound on the peak transient memory allocated below, so that when the
+    /// check passes the value set is guaranteed to stay within the remaining budget. The `hashes`
+    /// vector and the resulting `value_hashes` HashSet (power-of-two capacity, up to ~2 UInt64 cells
+    /// per value) are always built. When the dictionary is not already an `IColumn` (FixedSize /
+    /// StringPlain modes) the values are first materialized into a fresh column of `count` values plus
+    /// an identity `indexes` vector: a `ColumnString` there reserves only its UInt64 offsets and grows
+    /// its `chars` buffer geometrically (up to ~2x the final size) as `insertData` appends, so count
+    /// twice the average value size for the payload plus a UInt64 per-value offset - the raw
+    /// `getAverageValueSize` alone understates that materialized footprint. The `Mode::Column` path
+    /// hashes the already-decoded (and already-charged) column in place, so it needs none of the
+    /// materialization terms.
+    size_t per_value_bytes =
+        sizeof(UInt64)          /// `hashes` vector
+        + 2 * sizeof(UInt64);   /// `value_hashes` HashSet (rounds capacity up to a power of two)
+    if (column.dictionary.mode != Dictionary::Mode::Column)
+        per_value_bytes +=
+            2 * size_t(column.dictionary.getAverageValueSize())  /// materialized column payload, incl. geometric chars growth
+            + sizeof(UInt64)    /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
+            + sizeof(UInt32);   /// identity `indexes`
+    size_t estimated_value_set_bytes = count * per_value_bytes;
     if (remaining_pruning_budget != 0 && estimated_value_set_bytes > remaining_pruning_budget)
         return std::nullopt;
 

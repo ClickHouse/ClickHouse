@@ -1227,6 +1227,44 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
 }
 
+size_t Dictionary::decodedFootprintUpperBound(
+    parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values,
+    size_t uncompressed_page_size, const IDataType & raw_decoded_type)
+{
+    /// Mirror the mode selection in decode(). The decompressed page payload (`decompressed_buf`) is
+    /// always held; on top of it the trivial fast paths add either nothing (FixedSize: `data` points
+    /// into the buffer) or a UInt32 offset per value (StringPlain), while the generic path materializes
+    /// a whole column (`col`). Keep this in sync with decode().
+    if (encoding == parq::Encoding::PLAIN_DICTIONARY)
+        encoding = parq::Encoding::PLAIN;
+
+    size_t bound = uncompressed_page_size;
+
+    if (encoding == parq::Encoding::PLAIN && info.fixed_size_converter && info.fixed_size_converter->isTrivial())
+    {
+        /// Mode::FixedSize: no per-entry allocation.
+    }
+    else if (encoding == parq::Encoding::PLAIN && info.string_converter && info.string_converter->isTrivial())
+    {
+        /// Mode::StringPlain: a UInt32 offset per value.
+        bound += num_values * sizeof(UInt32);
+    }
+    else
+    {
+        /// decode_generic: a fully materialized column of `num_values` decoded values (`col`) is built
+        /// while `decompressed_buf` is still held. Fixed-size decoded types take `num_values *
+        /// value_size`; variable-size types (e.g. String) take a per-value offset plus a chars buffer,
+        /// whose decoded size for the only in-spec (PLAIN) dictionary encoding is no larger than the
+        /// page payload - counted twice to cover `ColumnString`'s geometric chars growth.
+        if (raw_decoded_type.haveMaximumSizeOfValue())
+            bound += num_values * raw_decoded_type.getMaximumSizeOfValueInMemory();
+        else
+            bound += num_values * sizeof(UInt64) + 2 * uncompressed_page_size;
+    }
+
+    return bound;
+}
+
 template<size_t value_size>
 static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const char> data, std::span<char> to)
 {
