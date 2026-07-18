@@ -1,0 +1,20 @@
+huge positive integer
+num	Nullable(Float64)					
+name	Nullable(String)					
+huge negative integer
+num	Nullable(Float64)					
+boundary values that fit into 64-bit types keep integer types
+num	Nullable(Int64)					
+num	Nullable(Int64)					
+num	Nullable(UInt64)					
+boundary values just outside 64-bit ranges
+num	Nullable(Float64)					
+num	Nullable(Float64)					
+merging with regular integers
+num	Nullable(Float64)					
+num	Nullable(Float64)					
+huge integer inside an array
+arr	Array(Nullable(Float64))					
+huge integer in Values format
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					

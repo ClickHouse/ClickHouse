@@ -1036,8 +1036,13 @@ namespace
 
                 /// NOTE: it may break parsing of tryReadFloat() != tryReadIntText() + parsing of '.'/'e'
                 /// But, for now it is true
-                if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
+                bool parsed_as_float = tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional);
+                if (parsed_as_float && has_fractional)
                     return std::make_shared<DataTypeFloat64>();
+
+                /// Remember the position after the parsed float to be able to infer
+                /// Float64 for integers that don't fit into Int64/UInt64.
+                char * float_end = buf.position();
 
                 Int64 tmp_int = 0;
                 buf.position() = number_start;
@@ -1055,6 +1060,21 @@ namespace
                 if (tryReadIntText(tmp_uint, buf))
                     return std::make_shared<DataTypeUInt64>();
 
+                /// The number was parsed as a float without a fractional part and starts with a digit,
+                /// so it consists only of digits (with an optional sign), but doesn't fit into Int64/UInt64.
+                /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way
+                /// as tryInferNumberFromStringImpl does for numbers inside strings.
+                /// The check for a leading digit filters out 'inf'/'nan', which also parse as floats.
+                if (parsed_as_float)
+                {
+                    char * digits_start = (*number_start == '-' || *number_start == '+') ? number_start + 1 : number_start;
+                    if (digits_start != float_end && isNumericASCII(*digits_start))
+                    {
+                        buf.position() = float_end;
+                        return std::make_shared<DataTypeFloat64>();
+                    }
+                }
+
                 return nullptr;
             }
 
@@ -1064,7 +1084,8 @@ namespace
             PeekableReadBuffer peekable_buf(buf);
             PeekableReadBufferCheckpoint checkpoint(peekable_buf);
 
-            if (tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional) && has_fractional)
+            bool parsed_as_float = tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional);
+            if (parsed_as_float && has_fractional)
                 return std::make_shared<DataTypeFloat64>();
             peekable_buf.rollbackToCheckpoint(/* drop= */ false);
 
@@ -1076,12 +1097,31 @@ namespace
                     json_info->negative_integers.insert(type.get());
                 return type;
             }
-            peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+            peekable_buf.rollbackToCheckpoint(/* drop= */ false);
 
             /// In case of Int64 overflow we can try to infer UInt64.
             UInt64 tmp_uint = 0;
             if (tryReadIntText(tmp_uint, peekable_buf))
                 return std::make_shared<DataTypeUInt64>();
+
+            /// The number was parsed as a float without a fractional part and starts with a digit,
+            /// so it consists only of digits (with an optional sign), but doesn't fit into Int64/UInt64.
+            /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way
+            /// as tryInferNumberFromStringImpl does for numbers inside strings.
+            /// The check for a leading digit filters out 'inf'/'nan', which also parse as floats.
+            if (parsed_as_float)
+            {
+                peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+                if (*peekable_buf.position() == '-' || *peekable_buf.position() == '+')
+                    ++peekable_buf.position();
+                if (!peekable_buf.eof() && isNumericASCII(*peekable_buf.position()))
+                {
+                    /// Consume the rest of the digits to move the position to the end of the number.
+                    while (!peekable_buf.eof() && isNumericASCII(*peekable_buf.position()))
+                        ++peekable_buf.position();
+                    return std::make_shared<DataTypeFloat64>();
+                }
+            }
         }
         else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
         {
