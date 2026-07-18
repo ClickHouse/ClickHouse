@@ -151,16 +151,22 @@ void BackgroundJobsAssignee::finish(bool is_transient)
     }
 
     if (local_holder)
-    {
         local_holder->deactivate();
 
-        getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        /// Only merge/mutate tasks are allowed to survive a transient reconnect, because their
-        /// (potentially expensive) computation does not touch ZooKeeper until commit time.
-        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id, is_transient);
-        getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
-    }
+    /// Always remove this storage's tasks from every background executor, even when there is no
+    /// schedule-pool holder left to deactivate. A prior transient shutdown (`finish(true)`) may
+    /// have already moved the holder out while letting an in-flight merge/mutate task detach and
+    /// keep running as a survivor in the shared executor. If the table is then dropped before the
+    /// restarting thread recreates the holders, a later full shutdown (`finish(false)`) must still
+    /// find, cancel, and wait for that survivor here — otherwise it would keep using the
+    /// `StorageReplicatedMergeTree` reference while shutdown destroys the storage. These calls are
+    /// idempotent and cheap when there is nothing left to remove.
+    getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+    getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+    /// Only merge/mutate tasks are allowed to survive a transient reconnect, because their
+    /// (potentially expensive) computation does not touch ZooKeeper until commit time.
+    getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id, is_transient);
+    getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
 }
 
 
