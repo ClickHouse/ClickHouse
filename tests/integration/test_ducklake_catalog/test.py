@@ -199,6 +199,7 @@ def run_checks2(database):
         "main.inlined_nested\n"
         "main.inlined_types\n"
         "main.partitioned\n"
+        "main.partitioned_cal\n"
     )
 
     # file with 100 rows minus 3 inlined deletions, plus 5 inlined inserts of which
@@ -280,6 +281,25 @@ def run_checks2(database):
         database=database,
     ) == "20\n"
 
+    # calendar-partitioned (year/month/day) table: exact bucket pruning correctness
+    assert node.query("SELECT count() FROM `main.partitioned_cal`", database=database) == "36\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned_cal` WHERE ts >= '2024-06-01 00:00:00' AND ts < '2024-06-02 00:00:00'",
+        database=database,
+    ) == "2\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned_cal` WHERE ts < '2024-01-01 00:00:00'",
+        database=database,
+    ) == "8\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned_cal` WHERE toMonth(ts) = 6",
+        database=database,
+    ) == "8\n"
+    assert node.query(
+        "SELECT count() FROM `main.partitioned_cal` WHERE toYear(ts) = 2024 AND toMonth(ts) = 6",
+        database=database,
+    ) == "4\n"
+
 
 def test_ducklake_sqlite(started_cluster):
     create_sqlite_db()
@@ -310,6 +330,16 @@ def test_pruning(started_cluster):
     assert node.grep_in_log("DuckLake: pruned 4 of 6 files")
     node.query("SELECT count() FROM `main.partitioned` WHERE region = 'zzz'", database="ducklake_sqlite2")
     assert node.grep_in_log("DuckLake: pruned 6 of 6 files")
+    # calendar buckets: exact single-day, upper-bound-only, and function-form pruning
+    node.query(
+        "SELECT count() FROM `main.partitioned_cal` WHERE ts >= '2024-06-01 00:00:00' AND ts < '2024-06-02 00:00:00'",
+        database="ducklake_sqlite2",
+    )
+    assert node.grep_in_log("DuckLake: pruned 17 of 18 files")
+    node.query("SELECT count() FROM `main.partitioned_cal` WHERE ts < '2024-01-01 00:00:00'", database="ducklake_sqlite2")
+    assert node.grep_in_log("DuckLake: pruned 14 of 18 files")
+    node.query("SELECT count() FROM `main.partitioned_cal` WHERE toMonth(ts) = 6", database="ducklake_sqlite2")
+    assert node.grep_in_log("DuckLake: pruned 14 of 18 files")
 
 
 def test_requires_experimental_setting(started_cluster):
