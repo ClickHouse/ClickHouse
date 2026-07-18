@@ -2,6 +2,7 @@ import glob
 import json as json_module
 import os
 import platform
+import shutil
 import signal
 import subprocess
 import sys
@@ -335,6 +336,12 @@ class ClickHouseProc:
 
     @staticmethod
     def stop_log_exports():
+        # Flush any buffered system-log records so the final queries are
+        # exported before the replication views are detached.
+        Shell.check(
+            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
+            verbose=True,
+        )
         return Shell.check(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
@@ -447,32 +454,76 @@ class ClickHouseProc:
 
         return res
 
+    _MINIO_LOG_DISK_PATHS = (
+        "/var/lib/clickhouse/disks/minio_audit_logs/",
+        "/var/lib/clickhouse/disks/minio_server_logs/",
+    )
+
+    @staticmethod
+    def _reset_minio_log_disk_dirs():
+        """Remove the minio log tables' pinned disk directories before re-creating them.
+
+        These live outside run_path* (see create_minio_log_tables), so they can
+        survive across restarts; a stale or planted symlink at either path must
+        not be followed - `rm -rf .../` would recurse into whatever it points at.
+        Only a verified real directory (or nothing) is removed.
+        """
+        for path in ClickHouseProc._MINIO_LOG_DISK_PATHS:
+            p = Path(path)
+            if p.is_symlink():
+                print(f"ERROR: refusing to remove {path}: it is a symlink")
+                return False
+            try:
+                if p.exists():
+                    shutil.rmtree(p)
+            except OSError as e:
+                print(f"ERROR: failed to remove {path}: {e}")
+                return False
+        return True
+
     def create_minio_log_tables(self):
         self.minio_setup_error = None
         # Minio log setup is non-fatal (caller continues when this returns
         # False). Every step MUST stay non-strict: a strict=True step would
         # raise before we can record the reason and signal failure. Record the
         # concrete failing sub-step so it reaches CIDB test_context_raw.
-        # storage_policy = 'default' pins these diagnostic tables to local disk.
-        # On s3 storage runs the default merge_tree policy is S3
-        # (s3_storage_policy_for_merge_tree_by_default.xml), which would put the
-        # audit log on S3, so (1) every audit-event insert writes parts to S3 and
-        # thereby generates more audit events (a feedback loop that inflates the
-        # table), and (2) the post-run `select * ... into outfile` dump reads all
-        # of it back from S3 - on amd_tsan this JSON-typed table grew to ~700k
-        # rows / ~1.5 GB and the dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap,
-        # failing the "Scraping system tables" check. These are diagnostics ABOUT
-        # S3 activity; there is no reason to store them ON S3. 'default' is a
-        # local policy on every stateless config (no config remaps it), so this
-        # is a no-op on non-s3 runs.
+        # These two diagnostic tables must live on LOCAL disk. They record the
+        # MinIO audit/server webhook stream, so storing them on S3 is doubly bad:
+        # (1) every audit-event insert writes parts to S3, which itself generates
+        # more audit events - a feedback loop that inflates the table, and (2) the
+        # post-run `select * ... into outfile` dump reads it all back from S3. On
+        # amd_tsan the JSON-typed audit table grew to ~700k rows / ~1.5 GB and the
+        # dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap, failing the "Scraping
+        # system tables" check.
+        #
+        # An explicit `disk = disk(type = 'local', ...)` pins each table to a
+        # dedicated local disk under custom_local_disks_base_directory
+        # (/var/lib/clickhouse/disks/, from custom_disks_base_path.xml, which is
+        # always installed). We deliberately do NOT use `storage_policy =
+        # 'default'`: in the public repo `default` is a local policy, but in the
+        # private/cloud repo `default` is cloud-based (object storage), so pinning
+        # to it would still put these tables on S3. An explicit local disk is
+        # correct in both. Each table gets its own path so it gets its own disk.
         setup_steps = [
             (
+                # start() wipes only run_path*, so each restart destroys these
+                # tables' metadata while their data - pinned below to disks
+                # outside run_path* - would survive it. Both callers run right
+                # after a fresh start() (initial setup and each
+                # bugfix-validation binary swap), so no live table references
+                # the directories; wipe them so a dead incarnation's parts
+                # (~1.5 GB of audit logs on sanitizer s3 runs) are not leaked
+                # on every swap or carried over from a previous run.
+                "reset minio log table disks",
+                self._reset_minio_log_disk_dirs,
+            ),
+            (
                 "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = disk(type = \'local\', path = \'/var/lib/clickhouse/disks/minio_audit_logs/\')"',
             ),
             (
                 "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS disk = disk(type = \'local\', path = \'/var/lib/clickhouse/disks/minio_server_logs/\')"',
             ),
             (
                 "set clickminio logger_webhook config",
@@ -483,8 +534,9 @@ class ClickHouseProc:
                 '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
             ),
         ]
-        for what, command in setup_steps:
-            if not Shell.check(command, verbose=True):
+        for what, step in setup_steps:
+            ok = step() if callable(step) else Shell.check(step, verbose=True)
+            if not ok:
                 self.minio_setup_error = f"failed to {what}"
                 print(f"ERROR: Failed to {what}")
                 return False
