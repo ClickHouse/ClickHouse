@@ -402,6 +402,13 @@ public:
         /// otherwise (for example after a `KILL MUTATION` dropped one of the mutations in the range)
         /// the precomputed result no longer matches the requested commands and is discarded.
         Strings mutation_ids;
+        /// Whether the part was produced on a zero-copy disk under zero-copy replication, i.e. its
+        /// commit must recreate the Keeper zero-copy lock nodes (`getLockSharedDataOps` only does
+        /// this while `allow_remote_fs_zero_copy_replication` is enabled). The follow-up attempt
+        /// reuses the part only if this disposition is unchanged; otherwise (e.g. the setting was
+        /// toggled after the deposit) the part would be published with the wrong lock metadata, so
+        /// it is re-computed instead.
+        bool requires_zero_copy_commit = false;
     };
 
     /// Returns true if the reservation was made; false if the part is already reserved or deposited.

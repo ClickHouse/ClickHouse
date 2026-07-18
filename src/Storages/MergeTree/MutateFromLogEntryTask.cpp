@@ -79,16 +79,18 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     std::optional<StorageReplicatedMergeTree::PreservedMutationPart> preserved
         = storage.takePrecomputedMutation(entry.new_part_name);
 
-    /// The deposited result is taken above, before any of the fresh recompute setup below
-    /// (`reserveSpace`, the zero-copy lock, `MergeList::insert`). If one of those steps throws a
-    /// transient error before the reuse decision — `reserveSpace` throwing `NOT_ENOUGH_SPACE` on a
-    /// nearly-full disk is the easy case, since the survivor already wrote the temporary part but a
-    /// re-mutation would need a second full reservation — put the deposited result back so the next
-    /// attempt can still reuse it instead of re-mutating the whole part from scratch. Deliberate
-    /// early returns (the part is obsolete, or is being fetched from / computed by another replica)
-    /// intentionally let it go: those paths obtain the part another way, and the deposit is cleaned
-    /// up when the queue entry is removed. The reuse and discard branches below consume `preserved`
-    /// on the non-throwing path, so this guard only fires on an in-flight exception.
+    /// The deposited result is taken above, before the reuse decision and the setup below. The
+    /// reuse decision is made *before* `reserveSpace` and skips it entirely when the result is
+    /// reused, so a `NOT_ENOUGH_SPACE` on a nearly-full disk no longer discards the deposit — that
+    /// is exactly the large-part-on-a-full-disk case the feature targets. This guard covers the
+    /// remaining window: if a step between here and the reuse commit throws a transient error (the
+    /// zero-copy exclusive lock, `MergeList::insert`, ...), put the deposited result back so the
+    /// next attempt can still reuse it instead of re-mutating the whole part from scratch.
+    /// Deliberate early returns (the part is obsolete, or is being fetched from / computed by
+    /// another replica) intentionally let it go: those paths obtain the part another way, and the
+    /// deposit is cleaned up when the queue entry is removed. The reuse and discard branches below
+    /// consume `preserved` on the non-throwing path, so this guard only fires on an in-flight
+    /// exception.
     const int uncaught_exceptions_before = std::uncaught_exceptions();
     scope_guard redeposit_preserved_on_failure = [this, &preserved, uncaught_exceptions_before]()
     {
@@ -197,20 +199,74 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// mutation_ids can be empty here.
     mutation_ids_for_log = mutation_ids;
 
-    /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
-    /// Can throw an exception.
-    reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
-    future_mutated_part->updatePath(storage, reserved_space.get());
-
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    mutation_metadata_version = metadata_snapshot->getMetadataVersion();
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
+    /// Decide whether the result a survivor deposited across a transient Keeper reconnection can be
+    /// reused instead of re-computing the whole part — and decide it *before* reserving disk space
+    /// below. The deposited part is already fully written to disk, so committing it needs no fresh
+    /// reservation; this matters for exactly the "large part on a nearly full disk" case the feature
+    /// targets, where a second `reserveSpace()` would throw `NOT_ENOUGH_SPACE` on every retry and the
+    /// deposited result — otherwise ready to commit — would never make it past the reservation.
+    ///
+    /// The decision is fail-closed: reuse only if the setting is still enabled and the source part,
+    /// the table metadata version, the exact mutation set, and the zero-copy commit disposition are
+    /// all still unchanged. The last check closes a data-safety gap: if the survivor produced the
+    /// part on a zero-copy disk, committing it must recreate its Keeper zero-copy lock nodes, which
+    /// `getLockSharedDataOps` only does while `allow_remote_fs_zero_copy_replication` is enabled and
+    /// the disk supports zero-copy. If that disposition changed after the deposit (the setting was
+    /// toggled either way), reuse would publish the part with the wrong lock metadata, so re-compute.
+    const bool zero_copy_commit_now = preserved
+        && (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
+        && preserved->part->getDataPartStorage().supportZeroCopyReplication();
+
+    const bool reuse_precomputed_result = preserved
+        && survival_enabled
+        && preserved->source_part_name == source_part_name
+        && preserved->metadata_version == mutation_metadata_version
+        && preserved->mutation_ids == mutation_ids
+        && preserved->requires_zero_copy_commit == zero_copy_commit_now;
+
+    if (preserved && !reuse_precomputed_result)
+    {
+        LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the setting was disabled, or the "
+            "source part, the table metadata, the set of mutations, or the zero-copy replication mode changed after "
+            "the reconnection, will re-compute it.", entry.new_part_name);
+        /// Release the preserved temporary part now, before re-computing below into a possibly
+        /// identically-named temporary directory: its lock is dropped and the leftover directory is
+        /// cleaned up as an old temporary directory.
+        preserved.reset();
+    }
+
+    if (reuse_precomputed_result)
+    {
+        /// The deposited part is already on disk; reuse needs no fresh reservation. Point the
+        /// merge-list display at the disk the part already lives on, mirroring updatePath below.
+        future_mutated_part->updatePath(
+            storage, storage.getStoragePolicy()->getDiskByName(preserved->part->getDataPartStorage().getDiskName()));
+    }
+    else
+    {
+        /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
+        /// Can throw an exception.
+        reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
+        future_mutated_part->updatePath(storage, reserved_space.get());
+    }
+
+    /// Take the zero-copy exclusive lock. On the reuse path the deposited part is already on a
+    /// specific disk; on the recompute path it is the freshly reserved disk. Both paths then commit
+    /// through `checkPartChecksumsAndCommit`, which recreates the shared-data lock nodes.
     if ((*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
-        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
+        DiskPtr disk = reuse_precomputed_result
+            ? storage.getStoragePolicy()->getDiskByName(preserved->part->getDataPartStorage().getDiskName())
+            : reserved_space->getDisk();
+
+        if (disk->supportZeroCopyReplication())
         {
             if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
             {
@@ -284,43 +340,29 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         PartLogElement::MUTATE_PART_START, {}, 0,
         entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log, {});
 
-    mutation_metadata_version = metadata_snapshot->getMetadataVersion();
-
     /// Reuse the result deposited by a survivor of a transient Keeper reconnection instead of
-    /// re-computing the whole part, but only if the assignment is still exactly the same.
-    if (preserved)
+    /// re-computing the whole part. Eligibility (including the fail-closed checks) was decided
+    /// above, before the disk reservation, so this branch only adopts the already-validated result.
+    if (reuse_precomputed_result)
     {
-        if (survival_enabled
-            && preserved->source_part_name == source_part_name
-            && preserved->metadata_version == mutation_metadata_version
-            && preserved->mutation_ids == mutation_ids)
-        {
-            LOG_INFO(log, "Reusing the pre-computed result for mutation of part {} that survived a ZooKeeper reconnection.",
-                entry.new_part_name);
-            new_part = preserved->part;
-            reused_hardlinked_files = std::move(preserved->hardlinked_files);
-            reused_temporary_directory_lock = std::move(preserved->temporary_directory_lock);
-            reused_precomputed_part = true;
-            /// Consumed: the temporary-directory lock now lives in `reused_temporary_directory_lock`,
-            /// so the re-deposit guard must not put this (moved-from) result back.
-            preserved.reset();
-
-            for (auto & item : future_mutated_part->parts)
-                priority.value += item->getBytesOnDisk();
-
-            return PrepareResult{
-                .prepared_successfully = true,
-                .need_to_check_missing_part_in_fetch = true,
-                .part_log_writer = part_log_writer,
-            };
-        }
-
-        LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the setting was disabled, or the source "
-            "part, the table metadata, or the set of mutations changed after the reconnection, will re-compute it.", entry.new_part_name);
-        /// Release the preserved temporary part now, before re-computing below into a possibly
-        /// identically-named temporary directory: its lock is dropped and the leftover directory is
-        /// cleaned up as an old temporary directory.
+        LOG_INFO(log, "Reusing the pre-computed result for mutation of part {} that survived a ZooKeeper reconnection.",
+            entry.new_part_name);
+        new_part = preserved->part;
+        reused_hardlinked_files = std::move(preserved->hardlinked_files);
+        reused_temporary_directory_lock = std::move(preserved->temporary_directory_lock);
+        reused_precomputed_part = true;
+        /// Consumed: the temporary-directory lock now lives in `reused_temporary_directory_lock`,
+        /// so the re-deposit guard must not put this (moved-from) result back.
         preserved.reset();
+
+        for (auto & item : future_mutated_part->parts)
+            priority.value += item->getBytesOnDisk();
+
+        return PrepareResult{
+            .prepared_successfully = true,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = part_log_writer,
+        };
     }
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
@@ -554,6 +596,11 @@ bool MutateFromLogEntryTask::depositPrecomputedResultForReuse()
     preserved.source_part_name = entry.source_parts.at(0);
     preserved.metadata_version = mutation_metadata_version;
     preserved.mutation_ids = mutation_ids_for_log;
+    /// The survivor held a zero-copy exclusive lock iff it computed the part on a zero-copy disk
+    /// under zero-copy replication. Record it (before the lock is released below) so the follow-up
+    /// attempt reuses the part only when the same zero-copy commit semantics still apply — see
+    /// `PreservedMutationPart::requires_zero_copy_commit`.
+    preserved.requires_zero_copy_commit = zero_copy_lock.has_value();
 
     mutate_task->updateProfileEvents();
     mutate_task.reset();
