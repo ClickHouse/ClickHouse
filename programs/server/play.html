@@ -5400,7 +5400,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     /// Compare the FULL launched editor (not the single statement) against the restore's destination
     /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
     /// `query` already IS the whole editor.
-    const paramValuesSnapshot = resolveRunParams(params_restore_pending, history_query_text || query);
+    const paramValuesSnapshot = await resolveRunParams(params_restore_pending, history_query_text || query);
     /// Snapshot the selected database for this run, so the request URL, the saved result
     /// snapshot, and a later download all use the database the query actually ran against,
     /// even if the panel selection changes while the query is in flight.
@@ -5515,7 +5515,7 @@ let multiQueryControllers = [];
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
 async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial)
 {
-    const paramValuesSnapshot = resolveRunParams(params_restore_pending, launch_query_text);
+    const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text);
     /// Snapshot the selected database for this run (see `postImpl`); all statements run against it.
     const query_database = selected_database;
     /// Snapshot the connection too, so the saved result carries the server/user that produced it
@@ -7050,8 +7050,10 @@ function saveHistory(stateData, titleForDoc) {
     /// synthetic `input` events `setParamValues` fires are ignored by the param handler
     /// (`!e.isTrusted`), so this does not re-enter history/persist. `stateData.params` here is
     /// already the RIGHT snapshot: `resolveRunParams` returns the destination tab's saved params
-    /// only while the editor is still the restore's destination query, and falls back to the live
-    /// inputs once the user edited it — so an edited query does not stamp the old query's params.
+    /// only while the editor is still the restore's destination query, and once the user edited it
+    /// derives the params from the launched query text (`paramValuesForQuery`) rather than the live
+    /// inputs — so an edited query does not stamp the old query's params even if the edit's own
+    /// `updateQueryParams` rebuild has not landed yet.
     if (stateData.params_restore_pending)
     {
         tab.params = { ...(stateData.params || {}) };
@@ -9448,12 +9450,21 @@ function setParamValues(values)
 /// for (`params_restore_pending_query`). If the user edited the query before pressing Run
 /// (`launch_query` diverges), those saved params belong to the OLD query — stamping them back
 /// would reintroduce the stale-placeholder leak this contract fixes (e.g. running an edited
-/// `SELECT 1` would keep the destination's `param_y`, marked `run=1`). The edit's own
-/// `updateQueryParams` rebuilt the live inputs for the new query, so fall back to them.
-function resolveRunParams(params_restore_pending, launch_query)
+/// `SELECT 1` would keep the destination's `param_y`, marked `run=1`).
+///
+/// But the live inputs are NOT a safe fallback in that edited case either. `getParamValues` reads
+/// them through `currentQueryParams`, and the edit's own `updateQueryParams` rebuilds BOTH only
+/// after its `await tokenize(...)`; if the user pressed Run before that async rebuild completed,
+/// `currentQueryParams`/the inputs still describe the PREVIOUS tab (e.g. `param_x`), so reading them
+/// here would stamp `param_x=1` onto the edited placeholder-free `SELECT 1` — the very leak, just
+/// sourced from the other side of the race. Derive the parameter set from `launch_query` itself
+/// instead (`paramValuesForQuery`): tokenize it, enumerate its own placeholders, and read each
+/// value from its input if that input already exists (else blank). This records exactly the edited
+/// query's parameters and nothing foreign, whether or not the edit's rebuild has landed yet.
+async function resolveRunParams(params_restore_pending, launch_query)
 {
     if (!params_restore_pending) return getParamValues();
-    if (params_restore_pending_query !== null && launch_query !== params_restore_pending_query) return getParamValues();
+    if (params_restore_pending_query !== null && launch_query !== params_restore_pending_query) return await paramValuesForQuery(launch_query);
     const tab = getActiveTab();
     const saved = (tab && tab.params) || {};
     const values = {};
@@ -9462,6 +9473,38 @@ function resolveRunParams(params_restore_pending, launch_query)
         values[name] = saved[name] !== undefined ? saved[name] : '';
     }
     setParamValues(values);
+    return values;
+}
+
+/// The parameter values a specific query would run with, derived from the query TEXT rather than
+/// the live `currentQueryParams`/inputs (which a still-pending `updateQueryParams` may leave
+/// describing a different query — see `resolveRunParams`). Tokenizes the query, enumerates its own
+/// placeholders, and reads each one's value from its `param_*` input when that input already exists
+/// (else blank, since the user could not have typed a value into an input that is not there yet).
+/// Fails closed to no parameters when the query cannot be tokenized (empty, WASM lexer unavailable,
+/// or too large): an un-analyzable query at most loses a default binding rather than leaking a
+/// foreign placeholder onto the run's history entry / URL.
+async function paramValuesForQuery(query)
+{
+    if (!query || typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
+    {
+        return {};
+    }
+    let names;
+    try
+    {
+        names = extractQueryParams(await tokenize(query)).map(p => p.name);
+    }
+    catch (e)
+    {
+        return {};
+    }
+    const values = {};
+    for (const name of names)
+    {
+        const input = document.getElementById('param-' + name);
+        values[name] = input ? input.value : '';
+    }
     return values;
 }
 

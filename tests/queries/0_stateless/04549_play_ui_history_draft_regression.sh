@@ -114,8 +114,12 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     /// The real parameter resolver, so the params-restore-pending run case below drives `postSingle`'s
     /// real sourcing of the destination tab's own saved params (rather than the stale live inputs)
     /// end to end. For `params_restore_pending = false` it just returns `getParamValues()`, exactly
-    /// what the previous stub did, so the other cases are unaffected.
-    'resolveRunParams',
+    /// what the previous stub did, so the other cases are unaffected. When the destination query was
+    /// edited before Run, it derives the launched query's own parameters from its TEXT via
+    /// `paramValuesForQuery` (which tokenizes and enumerates the placeholders with `extractQueryParams`)
+    /// rather than the possibly-stale live inputs, so the edited-query race case below runs the real
+    /// derivation instead of a stub.
+    'resolveRunParams', 'paramValuesForQuery', 'extractQueryParams',
     'postSingle', 'postOne'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
@@ -411,6 +415,10 @@ function startMultiRun(editorText)
 /// itself before letting the caller inspect the tab/history it produced.
 async function finishMultiRun(promise)
 {
+    /// `postMulti` yields a microtask (`await resolveRunParams`) before it registers its hung
+    /// `postImpl` calls, so let it reach them first — otherwise `resolvePendingPostImpl` runs
+    /// against an empty queue and the run hangs waiting for resolvers that were never released.
+    await drain();
     resolvePendingPostImpl();
     await promise;
     await drain();
@@ -1029,6 +1037,59 @@ async function reload()
     sandbox.params_restore_pending_token = -1;
     sandbox.params_restore_pending_query = null;
     sandbox.getQueryUnderCursor = async () => '';
+
+    /// The SAME edited-query-under-pending-restore race, but reproduced BEFORE the edit's own
+    /// `updateQueryParams` has rebuilt the inputs. The live `param_*` inputs (and `currentQueryParams`,
+    /// which `getParamValues` reads through) still describe the PREVIOUS tab, holding `{x:'1'}`. A
+    /// fallback that read the live inputs here would stamp `param_x=1` onto the edited placeholder-free
+    /// `SELECT 1` -- the very leak this contract fixes, just sourced from the other side of the async
+    /// rebuild (the earlier case set `param_inputs = {}`, the already-rebuilt path, so it could not
+    /// catch this). The fix derives the launched query's own parameters from its TEXT
+    /// (`resolveRunParams` -> `paramValuesForQuery` -> real `tokenize`/`extractQueryParams`), so
+    /// `SELECT 1` records no parameters regardless of what the not-yet-rebuilt inputs still show.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    await run('SELECT {x}');                        /// tab A: a clean, run-backed entry with x=1
+    const dest_tab_race = sandbox.makeTab();
+    dest_tab_race.query = 'SELECT {y}';
+    dest_tab_race.params = { y: '2' };
+    sandbox.tabs.push(dest_tab_race);
+    sandbox.activeTabId = dest_tab_race.id;
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';
+    /// The user edited the editor to `SELECT 1`, but the edit's async `updateQueryParams` has NOT run
+    /// yet, so the live inputs (and `currentQueryParams`) still hold the previous tab's `{x:'1'}`.
+    sandbox.query_area.value = 'SELECT 1';
+    active().query = 'SELECT 1';
+    sandbox.param_inputs = { x: '1' };
+    sandbox.currentQueryParams = [{ name: 'x', type: 'String' }];
+    /// The real `paramValuesForQuery` tokenizes the LAUNCH query to find its own placeholders;
+    /// `SELECT 1` has none, so the derived parameter set is empty regardless of the stale inputs.
+    sandbox.tokenize = async () => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false }, { token: '1', significant: true },
+    ];
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorRace;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorRace = () => resolve('SELECT 1'); });
+    const raceRunPromise = sandbox.postOne();
+    await drain();
+    releaseCursorRace();
+    await drain();
+    resolvePendingPostImpl();
+    await raceRunPromise;
+    await drain();
+    assert_eq('edited query under pending restore, inputs not yet rebuilt: the clean run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_eq('edited query under pending restore, inputs not yet rebuilt: the stale source param does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    assert_eq('edited query under pending restore, inputs not yet rebuilt: no destination param leaks either', sandbox.history.stack[sandbox.history.idx].url.includes('param_y'), false);
+    assert_params('edited query under pending restore, inputs not yet rebuilt: the entry carries no stale params', active().params, {});
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    sandbox.getQueryUnderCursor = async () => '';
+    sandbox.currentQueryParams = [];
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
