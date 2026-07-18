@@ -385,6 +385,17 @@ namespace
                 /// extracted here and the generic walk descends into the inner function instead.
                 addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 1);
             }
+            else if (function.name == "mergeTreeIndex" || function.name == "mergeTreeProjection"
+                     || function.name == "mergeTreeTextIndex" || function.name == "mergeTreeAnalyzeIndexes")
+            {
+                /// mergeTreeIndex(database, table, ...) / mergeTreeProjection(database, table, projection) /
+                /// mergeTreeTextIndex(database, table, index_name) / mergeTreeAnalyzeIndexes(database, table, ...):
+                /// these inspect a concrete local MergeTree table named by the first two arguments and read it
+                /// via `DatabaseCatalog::getTable` at read time, so a DROP / RENAME of that table must be tracked
+                /// as a referential dependency. The UUID-resolved form (`mergeTreeAnalyzeIndexesUUID`) references
+                /// its source by UUID rather than by name and so needs no name-based dependency here.
+                addDatabaseAndTableNameFromArguments(function, 0, 1);
+            }
             /// The `merge` table function is deliberately absent here: its argument is a regular expression,
             /// not a table name, and the set of matching tables is resolved anew on every read. Dropping or
             /// renaming a matched table does not break the definition - later reads simply match the remaining
