@@ -1657,15 +1657,34 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                         listed_tables += table_name;
                     }
 
-                    LOG_ERROR(log,
-                              "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
-                              "Will use tables list from setting. "
-                              "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
-                              "Or you can you ALTER SETTING. "
-                              "\nPublication tables: {}.\nTables list: {}",
-                              doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
+                    /// In coordinated mode the shared publication is authoritative and is adopted (not
+                    /// recreated), so the table set must be derived from the publication. Honoring a
+                    /// mismatching explicit `materialized_postgresql_tables_list` here would make this
+                    /// replica build nested tables that PostgreSQL never publishes into (or skip tables
+                    /// the publication does publish), so replicas would silently diverge on which tables
+                    /// actually replicate. Use the publication's table set (already in `result_tables`)
+                    /// and warn that the setting is overridden. To honor an explicit list, the user must
+                    /// make it match the publication (e.g. via ALTER PUBLICATION) or recreate the setup.
+                    if (coordination_enabled)
+                    {
+                        LOG_WARNING(log,
+                            "Coordinated setup: the specified `materialized_postgresql_tables_list` ({}) does not match "
+                            "the shared publication {} ({}); differing tables: {}. The publication is authoritative in "
+                            "coordinated mode, so its table set is used instead of the setting.",
+                            listed_tables, doubleQuoteString(publication_name), publication_tables, diff_tables);
+                    }
+                    else
+                    {
+                        LOG_ERROR(log,
+                                  "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
+                                  "Will use tables list from setting. "
+                                  "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
+                                  "Or you can you ALTER SETTING. "
+                                  "\nPublication tables: {}.\nTables list: {}",
+                                  doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
 
-                    return std::set(expected_tables.begin(), expected_tables.end());
+                        return std::set(expected_tables.begin(), expected_tables.end());
+                    }
                 }
             }
         }
