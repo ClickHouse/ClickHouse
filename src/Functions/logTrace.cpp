@@ -52,8 +52,11 @@ namespace
         /// `optimizePrimaryKeyConditionAndLimit`), and the read-in-order `ORDER BY ... LIMIT` early termination
         /// (`buildSortingDAG`) all keep the limit from truncating the function's input. It also keeps
         /// `MergeTreeWhereOptimizer` from moving a deterministic sibling conjunct of a stateful `WHERE` into
-        /// reader-side `PREWHERE`, which would prune granules before the stateful predicate runs. This mirrors
-        /// other functions with block-level semantics such as `neighbor`.
+        /// reader-side `PREWHERE`, which would prune granules before the stateful predicate runs, and keeps
+        /// projection selection (`QueryDAG::build`, used by `optimizeUseNormalProjections` and
+        /// `optimizeUseAggregateProjections`) from substituting a projection read or index whose different sort
+        /// key and granularity would change the observed row and block stream. This mirrors other functions with
+        /// block-level semantics such as `neighbor`.
         bool isStateful() const override { return true; }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

@@ -178,6 +178,12 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     {
         if (const auto & row_level_filter = reading->getRowLevelFilter())
         {
+            /// A stateful reader-side filter (e.g. a row policy using `neighbor`/`logTrace`)
+            /// observes the base-table row and block stream. Substituting a projection read
+            /// or projection index would change that stream, so leave stateful queries on the
+            /// base-table read.
+            if (row_level_filter->actions.hasStatefulFunctions())
+                return false;
             appendExpression(row_level_filter->actions);
             if (const auto * filter_expression = findInOutputs(*dag, row_level_filter->column_name, row_level_filter->do_remove_column))
                 filter_nodes.push_back(filter_expression);
@@ -186,6 +192,10 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
         }
         if (const auto & prewhere_info = reading->getPrewhereInfo())
         {
+            /// Same reasoning as for the row-level filter above: a stateful `PREWHERE` must
+            /// see the base-table stream, so bail out of projection selection for it.
+            if (prewhere_info->prewhere_actions.hasStatefulFunctions())
+                return false;
             appendExpression(prewhere_info->prewhere_actions);
             if (const auto * filter_expression
                 = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
@@ -205,7 +215,11 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
-        if (actions.hasArrayJoin())
+        /// A stateful function (e.g. `neighbor`/`runningAccumulate`/`logTrace`) depends on the
+        /// order and blocking of the rows it observes. A projection may have a different sort key
+        /// and granularity than the base table, so substituting a projection read would change
+        /// the observed stream. Leave such queries on the base-table read, as we do for arrayJoin.
+        if (actions.hasArrayJoin() || actions.hasStatefulFunctions())
             return false;
 
         appendExpression(actions);
@@ -215,7 +229,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * filter = typeid_cast<FilterStep *>(step))
     {
         const auto & actions = filter->getExpression();
-        if (actions.hasArrayJoin())
+        if (actions.hasArrayJoin() || actions.hasStatefulFunctions())
             return false;
 
         appendExpression(actions);
