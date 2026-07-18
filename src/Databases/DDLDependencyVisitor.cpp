@@ -19,7 +19,6 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Common/KnownObjectNames.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -452,8 +451,14 @@ namespace
 
             const ASTFunction * table_function = nullptr;
             if (const auto * second_arg_as_function = args[1]->as<ASTFunction>();
-                second_arg_as_function && KnownTableFunctionNames::instance().exists(second_arg_as_function->name))
+                second_arg_as_function && TableFunctionFactory::instance().isTableFunctionName(second_arg_as_function->name))
             {
+                /// `TableFunctionFactory::isTableFunctionName` (not `KnownTableFunctionNames`) so that factory
+                /// aliases are recognized too: e.g. `timeSeriesData` is registered only as an alias of
+                /// `timeSeriesSamples` and is absent from `KnownTableFunctionNames`. Missing it here would leave
+                /// the remote target subtree unskipped, and the generic walk would then register a bogus local
+                /// dependency on the table the function reads only on the remote shards. This matches the
+                /// disambiguation used by `visitDistributedTableEngine` and `registerStorageDistributed`.
                 table_function = second_arg_as_function;
             }
 
