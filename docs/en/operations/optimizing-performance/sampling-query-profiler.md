@@ -70,7 +70,7 @@ In self-managed deployments, to use the query profiler follow the steps below:
 ### Install ClickHouse with debug info {#debug-info}
 
 Install the `clickhouse-common-static-dbg` package:
-1. Follow the instructions in step ["Set up the Debian repository"](/install/debian_ubuntu#setup-the-debian-repository)
+1. Follow the instructions in step ["Set up the Debian repository"](/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
 2. Run `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg` to install ClickHouse compiled binary files with debug info
 3. Run `sudo service clickhouse-server start` to start the server
 4. Run `clickhouse-client`. The debug symbols from clickhouse-common-static-dbg will automatically be picked up by the server - you don't need to do anything special to enable them

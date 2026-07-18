@@ -90,7 +90,7 @@ Engines in the family:
 | [Buffer](/engines/table-engines/special/buffer)               |
 | [External Data](/engines/table-engines/special/external-data) |
 | [GenerateRandom](/engines/table-engines/special/generate)     |
-| [KeeperMap](/engines/table-engines/special/keeper-map)        |
+| [KeeperMap](/engines/table-engines/special/keepermap)        |
 | [FileLog](/engines/table-engines/special/filelog)                                                   |
 
 ## Virtual columns {#table_engines-virtual_columns}
