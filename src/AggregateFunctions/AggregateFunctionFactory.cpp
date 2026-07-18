@@ -263,7 +263,7 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     /// key), so a lossy Float64 cast of the key would silently return the wrong argMax/argMin row -- e.g. sumArgMax(v, k)
     /// with k in {9007199254740992, 9007199254740993} would collapse both keys to the same Float64. So the Float64
     /// fallback must never apply to the key position (its lossless-supertype adaptation below stays allowed).
-    std::optional<size_t> argminmax_key_argument = getArgMinArgMaxKeyArgument(name, argument_types.size());
+    std::optional<size_t> argminmax_key_argument = getArgMinArgMaxKeyArgument(name, argument_types);
 
     /// The type each Variant argument would be adapted to: Nullable(least common supertype of its nested types).
     /// Nullable is used so that the implicit NULLs of the Variant become ordinary NULLs which the aggregation skips.
@@ -378,14 +378,18 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, argument_types, *nested_argument_types, parameters);
 }
 
-std::optional<size_t> AggregateFunctionFactory::getArgMinArgMaxKeyArgument(const String & name, size_t num_arguments) const
+std::optional<size_t> AggregateFunctionFactory::getArgMinArgMaxKeyArgument(const String & name, const DataTypes & argument_types) const
 {
     /// Peel combinator suffixes off the name (the same way tryGetProperties does), stopping at the `-ArgMin` /
-    /// `-ArgMax` combinator if present. Its comparison key is the last argument of that combinator's call, which stays
-    /// the last top-level argument: the `-ArgMin` / `-ArgMax` combinator is the outermost value combinator in the
-    /// standard forms (sumArgMax, avgArgMin, corrArgMax, ...), and combinators that could wrap it strip or unwrap
-    /// arguments in place rather than reorder them.
+    /// `-ArgMax` combinator if present, and collect the combinators that wrap it (outermost first, the order
+    /// tryFindSuffix reports them). The `-ArgMin` / `-ArgMax` comparison key is the last argument of that
+    /// combinator's own call, so its top-level position is not simply the last argument: an outer combinator may
+    /// append its own trailing argument after the key (e.g. `-If` adds a condition column, `-Resample` adds a
+    /// resampling key). To find the key position exactly we replay the wrapping combinators' argument transforms
+    /// on the real argument types, which is what resolution itself does: the number of arguments the `-ArgMin` /
+    /// `-ArgMax` combinator sees is the size of the transformed list, and its key is the last of them.
     String current_name = name;
+    std::vector<AggregateFunctionCombinatorPtr> wrapping_combinators; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     while (true)
     {
         current_name = getAliasToOrName(current_name);
@@ -399,10 +403,23 @@ std::optional<size_t> AggregateFunctionFactory::getArgMinArgMaxKeyArgument(const
 
         const String & combinator_name = combinator->getName();
         if (combinator_name == "ArgMin" || combinator_name == "ArgMax")
-            return num_arguments == 0 ? std::optional<size_t>{} : std::optional<size_t>{num_arguments - 1};
+            break;
 
+        wrapping_combinators.push_back(combinator);
         current_name = current_name.substr(0, current_name.size() - combinator_name.size());
     }
+
+    /// Replay the wrapping combinators' argument transforms (outermost first) to get the argument list the
+    /// `-ArgMin` / `-ArgMax` combinator itself receives. transformArguments may reject the types the same way
+    /// resolution would (e.g. `-If` requires a UInt8 last argument); that is a genuine error for these types and
+    /// is allowed to propagate, matching the error the native resolution would report for the same call.
+    DataTypes key_level_arguments = argument_types;
+    for (const auto & combinator : wrapping_combinators)
+        key_level_arguments = combinator->transformArguments(key_level_arguments);
+
+    if (key_level_arguments.empty())
+        return {};
+    return key_level_arguments.size() - 1;
 }
 
 std::optional<AggregateFunctionWithProperties>

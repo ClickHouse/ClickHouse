@@ -1,0 +1,3 @@
+sumArgMaxIf lossless key	20
+sumArgMinIf lossless key	10
+sumArgMaxIf float-promoting value	2.5	Nullable(Float64)

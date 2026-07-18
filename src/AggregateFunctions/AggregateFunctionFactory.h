@@ -137,11 +137,13 @@ private:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant) const;
 
-    /// Position of the `-ArgMin` / `-ArgMax` combinator comparison key in the argument list, if the function has such a
-    /// combinator (nullopt otherwise). That key is compared exactly, so it must never be adapted through the lossy
-    /// Float64 fallback (see `tryGetVariantAdapter` and `AggregateFunctionProperties::is_float_promoting`). The key is
-    /// the last argument of the `-ArgMin` / `-ArgMax` call.
-    std::optional<size_t> getArgMinArgMaxKeyArgument(const String & name, size_t num_arguments) const;
+    /// Position of the `-ArgMin` / `-ArgMax` combinator comparison key in the top-level argument list, if the function
+    /// has such a combinator (nullopt otherwise). That key is compared exactly, so it must never be adapted through the
+    /// lossy Float64 fallback (see `tryGetVariantAdapter` and `AggregateFunctionProperties::is_float_promoting`). The
+    /// key is the last argument of the `-ArgMin` / `-ArgMax` call itself, which is not necessarily the last top-level
+    /// argument: an outer combinator may append its own trailing argument (e.g. `-If`, `-Resample`), so the position is
+    /// computed by replaying the wrapping combinators' argument transforms on `argument_types`.
+    std::optional<size_t> getArgMinArgMaxKeyArgument(const String & name, const DataTypes & argument_types) const;
 
     /// Resolve the function over `types_without_low_cardinality` without the Variant adapter, returning nullptr
     /// if the creator rejects them with an "unsupported argument type" error (any other error propagates). This
