@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
@@ -58,7 +59,14 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     {
         WriteBufferFromOwnString wbuf;
         SerializedSetsRegistry registry;
-        IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
+        /// The bytes are only hashed, never sent, so use the current version; otherwise steps
+        /// with version-gated payloads would refuse to serialize as if an old peer were reading.
+        IQueryPlanStep::Serialization ctx{
+            .out = wbuf,
+            .registry = registry,
+            .skip_final_flag = true,
+            .skip_cache_key = true,
+            .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
 
         writeStringBinary(transform.getSerializationName(), wbuf);
         if (transform.isSerializable())
