@@ -62,8 +62,19 @@ struct MergeTreeDeduplicationLogNameDescription
     /// Path to log
     std::string path;
 
-    /// How many entries we have in log
+    /// Total number of records physically stored in this log file, including
+    /// rollback records and the records they cancel out. Drives log rotation and
+    /// compaction (`rotateAndDropIfNeeded`): a burst of rolled-back operations
+    /// still grows this count, so a single file keeps rotating and cannot grow
+    /// without bound.
     size_t entries_count{};
+
+    /// Number of records that survive rollback-pair elimination - i.e. the records
+    /// a replay would actually apply to the in-memory map. Drives retention
+    /// (`dropOutdatedLogs`): the cancelled pairs of a rolled-back operation
+    /// contribute nothing, so they are not counted as consumed deduplication-window
+    /// slots and cannot drop an older log that still holds committed block ids.
+    size_t effective_entries_count{};
 };
 
 /// Simple string-key HashTable with fixed size based on STL containers.
@@ -291,11 +302,13 @@ private:
     /// preceding ADD or DROP (both are skipped), so an insert that failed and
     /// rolled back consumes no deduplication-window slot and a drop that failed
     /// and rolled back erases nothing; the remaining ADD/DROP records are
-    /// applied exactly as they were live. Also recomputes each log's
-    /// `entries_count` from only the surviving records (`record_log_numbers`
-    /// maps each record back to its file), so retention does not count
-    /// cancelled pairs as consumed deduplication-window slots and drop a log
-    /// that still holds live block ids.
+    /// applied exactly as they were live. Also recomputes each log's counts
+    /// (`record_log_numbers` maps each record back to its file): the raw
+    /// `entries_count` from every record (so rotation still accounts for the
+    /// physical growth of rollback-heavy logs) and `effective_entries_count`
+    /// from only the surviving records (so retention does not count cancelled
+    /// pairs as consumed deduplication-window slots and drop a log that still
+    /// holds live block ids).
     void applyRecords(
         const std::vector<MergeTreeDeduplicationLogRecord> & records,
         const std::vector<size_t> & record_log_numbers);

@@ -114,8 +114,9 @@ void MergeTreeDeduplicationLog::load()
         /// an earlier log file, so the record pairs of rolled-back operations can
         /// only be cancelled out once the whole history is known.
         /// `record_log_numbers` keeps each record's originating log number so
-        /// `applyRecords` can recompute the per-file `entries_count` from only the
-        /// surviving records.
+        /// `applyRecords` can recompute the per-file record counts - the raw
+        /// `entries_count` from every record and `effective_entries_count` from only
+        /// the surviving ones.
         std::vector<MergeTreeDeduplicationLogRecord> records;
         std::vector<size_t> record_log_numbers;
         for (auto & [log_number, desc] : existing_logs)
@@ -217,19 +218,30 @@ void MergeTreeDeduplicationLog::applyRecords(
         }
     }
 
-    /// Recompute each log's `entries_count` from only the records that survive
-    /// cancel-pair elimination. `dropOutdatedLogs` sums these counts from the
-    /// newest log backwards to decide which older logs are redundant; a cancelled
-    /// pair contributes nothing to the reconstructed map, so counting its raw
-    /// records would let a failed multi-block operation inflate the counts and
-    /// wrongly drop an older log that still holds live block ids - after which a
-    /// restart forgets those committed blocks. Counting only survivors keeps the
-    /// retention accounting in step with what a replay actually reconstructs.
+    /// Recompute each log's two counts from the records just read. The raw
+    /// `entries_count` counts every record: it drives rotation and compaction, so a
+    /// log full of rolled-back pairs still rotates once it reaches the raw threshold
+    /// instead of growing without bound. The `effective_entries_count` counts only
+    /// the records that survive cancel-pair elimination: `dropOutdatedLogs` sums it
+    /// from the newest log backwards to decide which older logs are redundant, and a
+    /// cancelled pair contributes nothing to the reconstructed map, so counting its
+    /// raw records there would let a failed multi-block operation inflate the sums
+    /// and wrongly drop an older log that still holds live block ids - after which a
+    /// restart forgets those committed blocks. Splitting the two keeps retention in
+    /// step with what a replay reconstructs while rotation stays bounded by the
+    /// physical log size.
     for (auto & log : existing_logs)
+    {
         log.second.entries_count = 0;
+        log.second.effective_entries_count = 0;
+    }
     for (size_t i = 0; i < records.size(); ++i)
+    {
+        auto & description = existing_logs.at(record_log_numbers[i]);
+        ++description.entries_count;
         if (!cancelled[i])
-            existing_logs.at(record_log_numbers[i]).entries_count++;
+            ++description.effective_entries_count;
+    }
 
     /// Now replay the surviving records exactly as they happened live: ADD inserts
     /// (evicting the oldest entry when the map is full), DROP erases.
@@ -335,7 +347,11 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         }
 
         auto & description = itr->second;
-        current_sum += description.entries_count;
+        /// Retention is decided by the effective (surviving-record) coverage, not the
+        /// raw record count: the cancelled pairs of a rolled-back operation reconstruct
+        /// nothing on replay, so counting them here could drop an older log that still
+        /// holds committed block ids. Rotation, in contrast, uses the raw count.
+        current_sum += description.effective_entries_count;
     }
 
     /// If we found some logs to drop
@@ -358,6 +374,10 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 {
     /// If we don't have logs at all or already have enough records in current
     /// For the disk that doesn't support writing with append, we can't append logs to the last file.
+    /// Rotation uses the raw `entries_count` (every physical record, including
+    /// rollback records), so a log dominated by rolled-back pairs - whose effective
+    /// coverage is zero - still rotates once it reaches the threshold rather than
+    /// growing without bound.
     if (existing_logs.empty() || existing_logs[current_log_number].entries_count >= rotate_interval || !disk_supports_writing_with_append)
     {
         rotate();
@@ -441,8 +461,10 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
             record.block_id = block_id;
             /// Write it to disk
             writeRecord(record, *current_writer);
-            /// We have one more record in current log
-            existing_logs[current_log_number].entries_count++;
+            /// One more record physically in the current log (raw growth) and, unless
+            /// this insert rolls back below, one more record that survives a replay.
+            ++existing_logs[current_log_number].entries_count;
+            ++existing_logs[current_log_number].effective_entries_count;
             ++written;
         }
         /// Rotate and drop old logs if needed
@@ -490,20 +512,27 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
                 record.part_name = DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME;
                 record.block_id = block_ids[i];
                 writeRecord(record, *current_writer);
+                /// The compensating record is physically on disk, so it counts towards
+                /// raw log growth (in whatever log `current_writer` points at now -
+                /// possibly a fresh one, if the writer was canceled and rotated above),
+                /// which keeps rotation honest even for a log full of rolled-back pairs.
+                /// It never survives a replay, so it adds nothing to effective coverage.
+                ++existing_logs[current_log_number].entries_count;
             }
 
             /// The rolled-back ADD records above are cancelled by these rollback
             /// records and survive neither the in-memory map nor a replay, so they
-            /// must not count towards log retention: leaving them (and the rollback
-            /// records) in `entries_count` would let dropOutdatedLogs treat them as
+            /// must not count towards log retention: leaving them in
+            /// `effective_entries_count` would let dropOutdatedLogs treat them as
             /// consumed deduplication-window slots and drop an older log that still
             /// holds live block ids - after which a restart forgets those committed
-            /// blocks. Undo the count of the ADD records (added above, always to
-            /// `add_log_number`) and do not count the rollback records, so the live
-            /// accounting matches what a replay of these logs reconstructs. Done
+            /// blocks. Undo only the effective count of the ADD records (added above,
+            /// always to `add_log_number`); their raw count stays, so retention
+            /// shrinks while rotation still accounts for the physical growth. Done
             /// only after the rollback records were written, so a failure to persist
-            /// them (handled below) leaves the on-disk ADD records still counted.
-            existing_logs.at(add_log_number).entries_count -= written;
+            /// them (handled below) leaves the ADDs counted as surviving - matching
+            /// what a replay of just their records would then reconstruct.
+            existing_logs.at(add_log_number).effective_entries_count -= written;
         }
         catch (...)
         {
@@ -594,8 +623,10 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             record.block_id = block_ids[i];
             /// Write it to disk
             writeRecord(record, *current_writer);
-            /// We have one more record on disk
-            existing_logs[current_log_number].entries_count++;
+            /// One more record physically on disk (raw growth) and, unless this drop
+            /// rolls back below, one more record that survives a replay.
+            ++existing_logs[current_log_number].entries_count;
+            ++existing_logs[current_log_number].effective_entries_count;
             ++written;
         }
 
@@ -624,9 +655,13 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
                 record.part_name = part_names[i];
                 record.block_id = block_ids[i];
                 writeRecord(record, *current_writer);
+                /// Counts towards raw log growth (see the analogous rollback in
+                /// addPart), but never survives a replay, so not towards effective
+                /// coverage.
+                ++existing_logs[current_log_number].entries_count;
             }
 
-            existing_logs.at(drop_log_number).entries_count -= written;
+            existing_logs.at(drop_log_number).effective_entries_count -= written;
         }
         catch (...)
         {

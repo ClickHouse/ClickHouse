@@ -660,6 +660,62 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureRetainsCommittedLogsAfterTwoR
     std::filesystem::remove_all(work_dir);
 }
 
+/// Regression test: log rotation and compaction must be driven by the RAW number
+/// of records physically written to a file, not by how many survive rollback-pair
+/// elimination. A rolled-back operation writes records - its ADD/DROP records and
+/// the compensating records that cancel them - that reconstruct nothing on replay,
+/// so they consume no deduplication-window slot and must not count towards
+/// retention (dropOutdatedLogs). But they are still bytes on disk, so if they also
+/// did not count towards rotation, a log dominated by rolled-back pairs would never
+/// reach the rotation threshold and could grow without bound (and load would then
+/// have to materialize O(number of failures) records). Rotation must therefore use
+/// the raw count and keep rotating such a log.
+TEST(MergeTreeDeduplicationLog, RotationCountsRolledBackRecordsAsRawGrowth)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_raw_rotation/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto count_logs = [&]() -> size_t
+    {
+        return std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator());
+    };
+
+    /// Fail only the first sync, which is the rotation triggered by the second add.
+    auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    /// deduplication_window == 1 gives rotate_interval == 2.
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+    log.load();
+
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    /// load() created the first log file.
+    ASSERT_EQ(count_logs(), 1u);
+
+    /// First add does not rotate yet (one record, rotate_interval is two).
+    log.addPart({"block1"}, part("all_1_1_0"));
+
+    /// The ADD for "block2" reaches rotate_interval and triggers a rotation whose
+    /// sync of the previous file fails: the insert is rolled back, and the
+    /// compensating record is written into the freshly opened second log file. That
+    /// file now holds one record that reconstructs nothing on replay.
+    EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+    EXPECT_EQ(count_logs(), 2u);
+
+    /// A single committed insert now brings the second log file's RAW size to
+    /// rotate_interval (its rollback record plus this ADD), so it must rotate into a
+    /// third file. Counting only surviving records, the rollback record would not
+    /// count, the file would stay below the threshold, no rotation would happen, and
+    /// only two files would exist here - letting a rollback-heavy log grow unbounded.
+    log.addPart({"block3"}, part("all_3_3_0"));
+    EXPECT_EQ(count_logs(), 3u);
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test: dropPart must apply to the in-memory map all-or-nothing, just
 /// like addPart. It writes a DROP record per covered block id and then, since
 /// rotate can now rethrow a failure to finalize or fsync the previous log file
