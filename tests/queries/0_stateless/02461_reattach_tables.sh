@@ -56,6 +56,13 @@ check_if_detached "SELECT * FROM t_reattach_1" "t_reattach_1"
 check_if_detached "SELECT * FROM t_reattach_1 JOIN t_reattach_2 USING a" "t_reattach_1"
 check_if_detached "SELECT * FROM t_reattach_1 JOIN t_reattach_2 USING a" "t_reattach_2"
 
+# `IN table` / `GLOBAL IN table` keep the right-hand-side table as a bare identifier outside the FROM/JOIN
+# table expressions, but it is still a real table the query reads, so both the FROM table and the IN table
+# must be detached. (A subquery right-hand side is covered by the CTE/subquery cases below.)
+check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN t_reattach_2" "t_reattach_1"
+check_if_detached "SELECT * FROM t_reattach_1 WHERE a IN t_reattach_2" "t_reattach_2"
+check_if_detached "SELECT * FROM t_reattach_1 WHERE a GLOBAL IN t_reattach_2" "t_reattach_2"
+
 check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_1"
 check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_2"
 
@@ -195,6 +202,24 @@ fi
 REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
     --reattach_tables_before_query_execution=1 \
     --query "SELECT * FROM t_reattach_acc_2 JOIN t_reattach_acc_1 USING a" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_acc"; then
+    echo "FAIL (a table was detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+# The missing access may also concern a table reached only through `IN`: here the user may SELECT (and
+# detach) the FROM table t_reattach_acc_2 but lacks SELECT on the `IN` table t_reattach_acc_1, so the whole
+# query fails with ACCESS_DENIED and neither table may be detached. This locks down that the `IN` table's
+# required access is folded into the same preflight as FROM/JOIN tables.
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${ACC_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT * FROM t_reattach_acc_2 WHERE a IN t_reattach_acc_1" 2>&1)
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -eq 0 ]; then
     echo "FAIL (query unexpectedly succeeded)"

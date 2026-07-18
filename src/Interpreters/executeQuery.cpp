@@ -27,6 +27,7 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -82,6 +83,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Databases/IDatabase.h>
@@ -1413,6 +1415,22 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// table of the same name that the query never touches, so skip temporary-table references.
         if (!query_with_output->isTemporary())
             data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast));
+    }
+    else if (const auto * function = ast->as<ASTFunction>())
+    {
+        /// `IN table` / `GLOBAL IN table` (and the `NOT IN` / null-aware variants) keep the right-hand-side
+        /// table as a bare identifier that is not part of the `FROM`/`JOIN` table expressions walked above,
+        /// so collect it here (mirroring how `AddDefaultDatabaseVisitor` and `ActionsMatcher::makeSet` treat
+        /// the second `IN` argument). A subquery right-hand side (`... IN (SELECT ...)`) is handled by the
+        /// generic recursion into children below; a tuple/literal or table-function right-hand side names no
+        /// table to detach. The referenced table needs `SELECT` just like a `FROM` table, so a user missing
+        /// `SELECT` on it keeps the whole query side-effect free via the access preflight.
+        if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        {
+            if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
+                if (auto table_id = id->createTable())
+                    data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, AccessType::SELECT);
+        }
     }
 
     for (const auto & child : ast->children)
