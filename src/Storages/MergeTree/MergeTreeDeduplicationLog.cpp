@@ -110,11 +110,12 @@ void MergeTreeDeduplicationLog::load()
     {
         /// Order important, we load history from the begging to the end.
         /// Collect every record from all logs first (in chronological order), then
-        /// replay them together: a CANCEL record can refer to an ADD in an earlier
-        /// log file, so the (ADD, CANCEL) pairs of rolled-back inserts can only be
-        /// cancelled out once the whole history is known. `record_log_numbers` keeps
-        /// each record's originating log number so `applyRecords` can recompute the
-        /// per-file `entries_count` from only the surviving records.
+        /// replay them together: a rollback record can refer to an ADD or DROP in
+        /// an earlier log file, so the record pairs of rolled-back operations can
+        /// only be cancelled out once the whole history is known.
+        /// `record_log_numbers` keeps each record's originating log number so
+        /// `applyRecords` can recompute the per-file `entries_count` from only the
+        /// surviving records.
         std::vector<MergeTreeDeduplicationLogRecord> records;
         std::vector<size_t> record_log_numbers;
         for (auto & [log_number, desc] : existing_logs)
@@ -163,25 +164,31 @@ void MergeTreeDeduplicationLog::applyRecords(
     const std::vector<MergeTreeDeduplicationLogRecord> & records,
     const std::vector<size_t> & record_log_numbers)
 {
-    /// First, cancel out the (ADD, CANCEL) and (DROP, CANCEL) pairs left behind
-    /// by operations that failed and rolled back. Each CANCEL record cancels the
-    /// most recent preceding, not-yet-cancelled ADD or DROP of the same block id -
-    /// which is exactly the record the failed operation wrote, because the
-    /// rollback writes the CANCEL records immediately after the failed batch
-    /// under the same lock, with no other operation in between. Dropping both
-    /// records means the transient record never touches the in-memory map on
-    /// replay: a rolled-back ADD neither publishes its block id nor consumes a
-    /// deduplication-window slot (which could otherwise evict an unrelated,
-    /// still-active block before the CANCEL is seen), and a rolled-back DROP does
-    /// not erase a block id that stayed published in the live map.
+    /// First, cancel out the record pairs left behind by operations that failed
+    /// and rolled back: (ADD, DROP with the reserved cancelled-add part name) for
+    /// a failed insert and (DROP, CANCEL) for a failed part drop. Each rollback
+    /// record cancels the most recent preceding, not-yet-cancelled ADD or DROP of
+    /// the same block id - which is exactly the record the failed operation
+    /// wrote, because the rollback writes its records immediately after the
+    /// failed batch under the same lock, with no other operation in between.
+    /// Dropping both records means the transient record never touches the
+    /// in-memory map on replay: a rolled-back ADD neither publishes its block id
+    /// nor consumes a deduplication-window slot (which could otherwise evict an
+    /// unrelated, still-active block before the rollback record is seen), and a
+    /// rolled-back DROP does not erase a block id that stayed published in the
+    /// live map. An older server replays the rollback records themselves with
+    /// the correct net effect instead (see MergeTreeDeduplicationOp), so the
+    /// encoding needs no format version.
     std::vector<bool> cancelled(records.size(), false);
     std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_indices;
     for (size_t i = 0; i < records.size(); ++i)
     {
         const auto & record = records[i];
-        if (record.operation == MergeTreeDeduplicationOp::CANCEL)
+        const bool is_rollback = record.operation == MergeTreeDeduplicationOp::CANCEL
+            || (record.operation == MergeTreeDeduplicationOp::DROP && record.part_name == DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME);
+        if (is_rollback)
         {
-            /// The CANCEL record itself is never replayed.
+            /// The rollback record itself is never replayed.
             cancelled[i] = true;
             auto it = pending_indices.find(record.block_id);
             if (it != pending_indices.end() && !it->second.empty())
@@ -400,12 +407,16 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     }
     catch (...)
     {
-        /// Best effort: write compensating CANCEL records for the block IDs that
-        /// were durably written above, so that replaying the log on server startup
-        /// does not publish the rolled back block IDs either. A CANCEL cancels the
-        /// matching ADD on replay - as opposed to a DROP, which would still replay
-        /// the transient ADD first and could evict an unrelated, still-active block
-        /// from the bounded in-memory map before erasing the rolled-back one.
+        /// Best effort: write compensating records for the block IDs that were
+        /// durably written above, so that replaying the log on server startup does
+        /// not publish the rolled back block IDs either. The compensation is a
+        /// DROP record carrying the reserved cancelled-add part name: replay
+        /// recognizes the marker and cancels the (ADD, DROP) pair out entirely -
+        /// a plain DROP would still replay the transient ADD first and could evict
+        /// an unrelated, still-active block from the bounded in-memory map before
+        /// erasing the rolled-back one - while an older server, which knows no
+        /// marker, still replays the record as the erase that unpublishes the
+        /// never-committed block id, keeping a downgrade safe.
         try
         {
             /// If the exception came from `writeRecord` failing to write one of the
@@ -418,29 +429,30 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
             /// still the previous writer (opening the new log file failed, and
             /// nothing changed) or a fresh one (the new log file was opened, but
             /// finalizing the previous one failed and `rotate` rethrew that failure
-            /// after switching over), so the CANCEL records below go to it directly.
+            /// after switching over), so the compensating records below go to it
+            /// directly.
             if (current_writer->isCanceled())
                 rotate();
 
             for (size_t i = 0; i < written; ++i)
             {
                 MergeTreeDeduplicationLogRecord record;
-                record.operation = MergeTreeDeduplicationOp::CANCEL;
-                record.part_name = part_info.getPartNameAndCheckFormat(format_version);
+                record.operation = MergeTreeDeduplicationOp::DROP;
+                record.part_name = DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME;
                 record.block_id = block_ids[i];
                 writeRecord(record, *current_writer);
             }
 
-            /// The rolled-back ADD records above are cancelled by these CANCEL
+            /// The rolled-back ADD records above are cancelled by these rollback
             /// records and survive neither the in-memory map nor a replay, so they
-            /// must not count towards log retention: leaving them (and the CANCEL
+            /// must not count towards log retention: leaving them (and the rollback
             /// records) in `entries_count` would let dropOutdatedLogs treat them as
             /// consumed deduplication-window slots and drop an older log that still
             /// holds live block ids - after which a restart forgets those committed
             /// blocks. Undo the count of the ADD records (added above, always to
-            /// `add_log_number`) and do not count the CANCEL records, so the live
+            /// `add_log_number`) and do not count the rollback records, so the live
             /// accounting matches what a replay of these logs reconstructs. Done
-            /// only after the CANCEL records were written, so a failure to persist
+            /// only after the rollback records were written, so a failure to persist
             /// them (handled below) leaves the on-disk ADD records still counted.
             existing_logs.at(add_log_number).entries_count -= written;
         }
@@ -512,7 +524,9 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// covered block ids while the live map kept them all. The rollback below
     /// therefore writes a compensating CANCEL record for each DROP record that was
     /// written, mirroring addPart, so a replay reconstructs the same all-or-nothing
-    /// state the live map kept.
+    /// state the live map kept. (The CANCEL carries the real part name, so an older
+    /// server replays it as the insert that restores the block id - the same net
+    /// effect; see MergeTreeDeduplicationOp.)
     size_t written = 0;
     /// All DROP records below go to the log that is current right now: no rotation
     /// happens until the rotateAndDropIfNeeded() after the loop. Remember it so the

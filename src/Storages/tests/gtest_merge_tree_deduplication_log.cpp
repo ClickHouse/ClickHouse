@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
+#include <map>
 
 #include <Disks/DiskLocal.h>
 #include <Disks/WriteMode.h>
@@ -148,6 +150,39 @@ public:
     size_t sync_count = 0;
     const size_t fail_on_sync;
 };
+
+/// Read the raw records of every deduplication log file under `logs_root`, in
+/// chronological (log-number) order, without any of the rollback-pairing logic -
+/// the way every server version reads them off the disk.
+std::vector<MergeTreeDeduplicationLogRecord> readAllRecordsRaw(const std::string & logs_root)
+{
+    std::map<size_t, std::filesystem::path> logs;
+    for (const auto & entry : std::filesystem::directory_iterator(logs_root))
+    {
+        const std::string stem = entry.path().stem();
+        logs.emplace(std::stoull(stem.substr(stem.find_last_of('_') + 1)), entry.path());
+    }
+
+    std::vector<MergeTreeDeduplicationLogRecord> records;
+    for (const auto & [log_number, path] : logs)
+    {
+        std::ifstream in(path);
+        std::string line;
+        while (std::getline(in, line))
+        {
+            const size_t first_tab = line.find('\t');
+            const size_t second_tab = line.find('\t', first_tab + 1);
+            EXPECT_NE(first_tab, std::string::npos) << "malformed record: " << line;
+            EXPECT_NE(second_tab, std::string::npos) << "malformed record: " << line;
+            MergeTreeDeduplicationLogRecord record;
+            record.operation = static_cast<MergeTreeDeduplicationOp>(std::stoi(line.substr(0, first_tab)));
+            record.part_name = line.substr(first_tab + 1, second_tab - first_tab - 1);
+            record.block_id = line.substr(second_tab + 1);
+            records.push_back(std::move(record));
+        }
+    }
+    return records;
+}
 
 }
 
@@ -466,11 +501,11 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureRollsBackAfterRestart)
 /// Regression test (after-restart variant of RotationFailureDoesNotEvictUnrelatedBlockIds):
 /// a failed insert must not evict an unrelated, already-active block ID after a
 /// server restart either. The compensating record for the rolled-back insert
-/// replays before the ADD it undoes, so if it were a plain DROP the transient ADD
+/// replays after the ADD it undoes, so if it were a plain DROP the transient ADD
 /// would still evict the oldest committed block from the bounded map on replay,
-/// even though the failed insert never took effect in memory. It is written as a
-/// CANCEL instead, so replay drops the (ADD, CANCEL) pair and never consumes a
-/// deduplication-window slot for it.
+/// even though the failed insert never took effect in memory. It carries a
+/// reserved part-name marker instead, so replay recognizes it and drops the
+/// (ADD, DROP) pair entirely, never consuming a deduplication-window slot for it.
 TEST(MergeTreeDeduplicationLog, RotationFailureDoesNotEvictUnrelatedBlockIdsAfterRestart)
 {
     const std::string work_dir = "tmp/gtest_dedup_log_no_evict_restart/";
@@ -536,7 +571,7 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureDoesNotEvictUnrelatedBlockIds
 
         /// The ADD record for "block2" is written and flushed, but syncing the old
         /// log file during the rotation fails, so the insert is rolled back with a
-        /// CANCEL record written into the newly opened log file.
+        /// rollback record written into the newly opened log file.
         EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
 
         log.shutdown();
@@ -557,16 +592,17 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureDoesNotEvictUnrelatedBlockIds
     std::filesystem::remove_all(work_dir);
 }
 
-/// Regression test: a failed multi-block insert whose rollback writes CANCEL
-/// records must not shrink the retained log history across a restart. Replaying
-/// the log correctly cancels the (ADD, CANCEL) pairs, but log retention
-/// (dropOutdatedLogs) sums per-file record counts to decide which older logs are
-/// redundant. If those counts still include the cancelled pairs, the first restart
-/// over-counts the rolled-back records, rotates, and drops the older log that holds
-/// the committed block IDs - so a second restart replays only the CANCEL-only log
-/// and forgets the committed inserts, wrongly accepting their retries. The counts
-/// must therefore be recomputed from only the surviving records, both in memory
-/// (after the failed insert) and after each replay.
+/// Regression test: a failed multi-block insert whose rollback writes
+/// compensating records must not shrink the retained log history across a
+/// restart. Replaying the log correctly cancels the rolled-back record pairs, but
+/// log retention (dropOutdatedLogs) sums per-file record counts to decide which
+/// older logs are redundant. If those counts still include the cancelled pairs,
+/// the first restart over-counts the rolled-back records, rotates, and drops the
+/// older log that holds the committed block IDs - so a second restart replays
+/// only the rollback-only log and forgets the committed inserts, wrongly
+/// accepting their retries. The counts must therefore be recomputed from only the
+/// surviving records, both in memory (after the failed insert) and after each
+/// replay.
 TEST(MergeTreeDeduplicationLog, RotationSyncFailureRetainsCommittedLogsAfterTwoRestarts)
 {
     const std::string work_dir = "tmp/gtest_dedup_log_retention_two_restarts/";
@@ -591,7 +627,7 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureRetainsCommittedLogsAfterTwoR
 
         /// A four-block insert writes its ADD records, then the rotation that
         /// follows fails to sync the previous log file, so the insert is rolled back
-        /// with four CANCEL records written into the freshly opened log file.
+        /// with four rollback records written into the freshly opened log file.
         EXPECT_ANY_THROW(log.addPart({"block3", "block4", "block5", "block6"}, part("all_3_3_0")));
 
         log.shutdown();
@@ -747,6 +783,91 @@ TEST(MergeTreeDeduplicationLog, DropPartWriteFailureIsAllOrNothingAfterRestart)
 
         /// The insert written after the failed drop survives the restart too.
         EXPECT_FALSE(log.addPart({"block3"}, part("all_8_8_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// The rollback records the failure paths above leave on disk must stay safe to
+/// replay for servers from BEFORE these records existed - a downgrade and restart
+/// with such records already in the logs. An old server replays every record as
+/// `DROP` = erase and anything else = insert (parsing the part name). The
+/// rollback of a failed insert is therefore encoded as a DROP (with a reserved
+/// part-name marker only newer servers interpret): an old server then erases the
+/// never-committed block id, so a client retry of the failed insert is accepted -
+/// encoding it as an op unknown to old servers would replay as an insert that
+/// keeps the block id published and silently drops the retry's data. The rollback
+/// of a failed drop is a CANCEL carrying the real, parseable part name: an old
+/// server replays it as the insert that restores the block id, which is exactly
+/// the rollback's net effect.
+TEST(MergeTreeDeduplicationLog, RollbackRecordsReplaySafelyOnOlderServers)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_downgrade/";
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        /// A failed insert: the ADD record for "block2" reaches the disk, but the
+        /// fsync of the previous log file during the rotation that follows fails,
+        /// so the insert is rolled back.
+        auto disk = std::make_shared<DiskThrowingOnNthSync>("faulty", work_dir, /*fail_on_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        log.addPart({"block1"}, part("all_1_1_0"));
+        EXPECT_ANY_THROW(log.addPart({"block2"}, part("all_2_2_0")));
+        log.shutdown();
+
+        /// An old server replaying these logs must not consider the rolled-back,
+        /// never-committed "block2" published: it would wrongly deduplicate - and
+        /// silently drop - a client retry of the failed insert. (Losing "block1"
+        /// to the transient ADD's window slot matches what the old server's own
+        /// code produced on this failure path; only keeping "block2" published
+        /// would be a new, data-dropping regression.)
+        LimitedOrderedHashMap<MergeTreePartInfo> map(/*max_size=*/ 1);
+        for (const auto & record : readAllRecordsRaw(work_dir + "dedup_logs"))
+        {
+            if (record.operation == MergeTreeDeduplicationOp::DROP)
+                map.erase(record.block_id);
+            else
+                map.insert(record.block_id, MergeTreePartInfo::fromPartName(record.part_name, format_version));
+        }
+        EXPECT_FALSE(map.contains("block2"));
+    }
+
+    {
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        /// A failed drop: the DROP record for "block1" is durable when the write
+        /// of the DROP for "block2" fails (flushes #1-#2 are the two ADD records,
+        /// #3 the first DROP, #4 - injected to fail - the second), so the whole
+        /// drop is rolled back and both block ids stay published.
+        auto disk = std::make_shared<DiskThrowingOnNthFlush>("faulty", work_dir, /*fail_on_flush=*/ 4);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+        log.addPart({"block1"}, part("all_1_1_0"));
+        log.addPart({"block2"}, part("all_2_2_0"));
+        EXPECT_ANY_THROW(log.dropPart(part("all_0_9_999")));
+        log.shutdown();
+
+        /// An old server replaying these logs must still consider both block ids
+        /// published, matching the rolled-back (all-or-nothing) live state: the
+        /// CANCEL replays there as an insert with the real part name, restoring
+        /// "block1" after the durable DROP prefix erased it.
+        LimitedOrderedHashMap<MergeTreePartInfo> map(/*max_size=*/ 10);
+        for (const auto & record : readAllRecordsRaw(work_dir + "dedup_logs"))
+        {
+            if (record.operation == MergeTreeDeduplicationOp::DROP)
+                map.erase(record.block_id);
+            else
+                map.insert(record.block_id, MergeTreePartInfo::fromPartName(record.part_name, format_version));
+        }
+        EXPECT_TRUE(map.contains("block1"));
+        EXPECT_TRUE(map.contains("block2"));
     }
 
     std::filesystem::remove_all(work_dir);
