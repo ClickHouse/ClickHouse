@@ -3,3 +3,4 @@ CREATE TABLE default.dist_ts_tags\n(\n    `id` UUID DEFAULT reinterpretAsUUID(si
 CREATE TABLE default.dist_pq\n(\n    `tags` Array(Tuple(\n        String,\n        String)),\n    `timestamp` DateTime64(3),\n    `value` Float64\n)\nENGINE = Distributed(\'test_shard_localhost\', prometheusQuery(\'default\', \'ts_src\', \'up\', now()))
 0
 0
+CREATE TABLE default.dist_ts_remote_only\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_cluster_multiple_nodes_all_unavailable\', timeSeriesMetrics(\'default\', \'ts_absent\'))
