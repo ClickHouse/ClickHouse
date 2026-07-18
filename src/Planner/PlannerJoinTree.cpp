@@ -924,8 +924,9 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info, 
     /// could drop output rows that the LIMIT should keep. See issue #82279 and the sibling guard
     /// in `numbersLikeUtils::shouldPushdownLimit`. (The `ARRAY JOIN` clause is lowered to a
     /// separate table expression in the analyzer, so it is not a single-table read and never
-    /// reaches this optimization.)
-    if (hasFunctionNode(main_query_node.getProjectionNode(), "arrayJoin"))
+    /// reaches this optimization.) `hasArrayJoinFunctionNode` canonicalizes the name, so the
+    /// case-insensitive alias `unnest` is caught too.
+    if (hasArrayJoinFunctionNode(main_query_node.getProjectionNode()))
         return 0;
 
     /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) gives block- and
@@ -1133,8 +1134,9 @@ void pushOrderByIntoView(
     /// source rows before the expansion runs, so if the top ordered rows have
     /// empty arrays the rewritten query would return too few rows instead of
     /// continuing to lower ordered rows to fill the `LIMIT`. Mirror the existing
-    /// guard in `mainQueryNodeBlockSizeByLimit`.
-    if (hasFunctionNode(outer->getProjectionNode(), "arrayJoin"))
+    /// guard in `mainQueryNodeBlockSizeByLimit`. `hasArrayJoinFunctionNode` canonicalizes the
+    /// name, so the case-insensitive alias `unnest` is caught too.
+    if (hasArrayJoinFunctionNode(outer->getProjectionNode()))
         return;
 
     /// A stateful function (e.g. `neighbor`, `runningAccumulate`, `logTrace`) in the outer

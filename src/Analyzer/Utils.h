@@ -142,6 +142,13 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
   */
 bool hasStatefulFunctionNode(const QueryTreeNodePtr & node);
 
+/** Returns true if there is a node of the `arrayJoin` function (including its case-insensitive
+  * alias `unnest`) in node children, false otherwise. Unlike `hasFunctionNode(node, "arrayJoin")`,
+  * the function name is canonicalized, so the alias is caught even when function names are not
+  * normalized (`normalize_function_names = 0`). Do not visit subqueries.
+  */
+bool hasArrayJoinFunctionNode(const QueryTreeNodePtr & node);
+
 /** Replace columns in node children.
   * If there is column node and its source is specified table expression node and there is
   * node for column name in map replace column node with node from map.

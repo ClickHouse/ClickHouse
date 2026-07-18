@@ -944,6 +944,54 @@ bool hasStatefulFunctionNode(const QueryTreeNodePtr & node)
 namespace
 {
 
+class CheckArrayJoinFunctionExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckArrayJoinFunctionExistsVisitor>
+{
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (has_array_join_function)
+            return;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        /// `unnest` is a case-insensitive alias of `arrayJoin`. Canonicalize the name so the alias
+        /// is caught even when function names are not normalized (`normalize_function_names = 0`).
+        has_array_join_function = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    {
+        if (has_array_join_function)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool hasArrayJoinFunction() const
+    {
+        return has_array_join_function;
+    }
+
+private:
+    bool has_array_join_function = false;
+};
+
+}
+
+bool hasArrayJoinFunctionNode(const QueryTreeNodePtr & node)
+{
+    CheckArrayJoinFunctionExistsVisitor visitor;
+    visitor.visit(node);
+
+    return visitor.hasArrayJoinFunction();
+}
+
+namespace
+{
+
 class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
 {
 public:

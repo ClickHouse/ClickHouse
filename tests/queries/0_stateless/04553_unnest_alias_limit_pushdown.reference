@@ -1,0 +1,16 @@
+-- unnest in SELECT, normalize_function_names = 0
+3
+4
+5
+-- unnest in SELECT, optimizer disabled, normalize_function_names = 0
+3
+4
+5
+-- unnest via WITH alias in WHERE only, normalize_function_names = 0
+3
+4
+5
+-- unnest in SELECT, name normalization on
+3
+4
+5

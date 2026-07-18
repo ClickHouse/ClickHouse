@@ -63,12 +63,14 @@ void addNullSource(Pipe & pipe, SharedHeader header)
 namespace
 {
 
+/// The function name is canonicalized so the case-insensitive alias `unnest` is also caught
+/// even when function names are not normalized (`normalize_function_names = 0`).
 bool astContainsArrayJoinFunction(const ASTPtr & ast)
 {
     if (!ast)
         return false;
     if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
+        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
             return true;
     for (const auto & child : ast->children)
         if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
