@@ -55,6 +55,58 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & compression_code
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
+String CompressionCodecFactory::getReasonUnsafeForUntypedData(const String & compression_codec) const
+{
+    if (compression_codec.empty())
+        return {};
+
+    ParserCodec codec_parser;
+    auto ast = parseQuery(
+        codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    const auto * func = ast->as<ASTFunction>();
+    if (!func)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
+
+    /// Build each codec in the chain individually via `getImpl`, which (unlike `get(ast, column_type)`)
+    /// does not apply the null-column-type lossy guard. That guard throws for lossy codecs such as `SZ3`,
+    /// but here we must be able to classify them (so the caller can reset the offending setting) rather
+    /// than throw. `getImpl` never reaches the guard, so we inspect `isLossyCompression` ourselves.
+    for (const auto & inner_codec_ast : func->arguments->children)
+    {
+        String codec_family_name;
+        ASTPtr codec_arguments;
+        if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+        {
+            codec_family_name = family_name->name();
+            codec_arguments = {};
+        }
+        else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+        {
+            codec_family_name = ast_func->name;
+            codec_arguments = ast_func->arguments;
+        }
+        else
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+
+        /// `Default` is an alias for the server default codec, which is always safe for untyped data.
+        if (codec_family_name == DEFAULT_CODEC_NAME)
+            continue;
+
+        auto codec = getImpl(codec_family_name, codec_arguments, nullptr);
+        if (codec->isExperimental())
+            return "it is experimental (experimental codecs can only be specified per column, with the"
+                   " 'allow_experimental_codecs' setting enabled)";
+        if (codec->requiresColumnTypeToCompress())
+            return "it requires a column type and can not be applied to untyped data";
+        if (codec->isLossyCompression())
+            return "it is lossy and can only be applied to floating-point columns, not to untyped data";
+    }
+
+    return {};
+}
+
 CompressionCodecPtr CompressionCodecFactory::get(
     const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
 {

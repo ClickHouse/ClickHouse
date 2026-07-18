@@ -2661,21 +2661,17 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
 /// also applied to untyped streams: `marks_compression_codec` and `primary_key_compression_codec`
 /// compress the marks and primary key directly, and `default_compression_codec` becomes the part
 /// default codec, which is fed raw into the statistics and text-index streams. So a codec that
-/// requires a column type (e.g. `PCO`) would only fail later, at the first such write.
+/// requires a column type (e.g. `PCO`) or is lossy (e.g. `SZ3`) would only fail later, at the first
+/// such write.
 ///
-/// Returns an empty string if the codec is safe, otherwise a human-readable reason.
+/// Returns an empty string if the codec is safe, otherwise a human-readable reason. The classification
+/// is delegated to `CompressionCodecFactory::getReasonUnsafeForUntypedData`, which — unlike
+/// `CompressionCodecFactory::get(const String &)` — does not throw while resolving a lossy codec without
+/// a column type. That matters for `sanitizeCompressionCodecSettings`: on the metadata-load path it must
+/// be able to reset such a setting rather than let the load fail.
 static String unsafeUntypedCompressionCodecReason(const String & codec_string)
 {
-    if (codec_string.empty())
-        return {};
-
-    auto codec = CompressionCodecFactory::instance().get(codec_string);
-    if (codec->isExperimental())
-        return "it is experimental (experimental codecs can only be specified per column, with the"
-               " 'allow_experimental_codecs' setting enabled)";
-    if (codec->requiresColumnTypeToCompress())
-        return "it requires a column type and the setting is applied to untyped data";
-    return {};
+    return CompressionCodecFactory::instance().getReasonUnsafeForUntypedData(codec_string);
 }
 
 void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
