@@ -397,6 +397,22 @@ def test_wide_projection_rejected():
     assert mock_stats()["data_requests"] == []
 
 
+def test_wide_projection_near_threshold_rejected():
+    mock_reset()
+    # The limit is budgeted against the full encoded `tabledata.list` request URI, not just the raw
+    # comma-joined `selectedFields` payload. A 27-column projection of these ~297-byte names makes a raw
+    # field list of 27 * 297 + 26 = 8045 bytes, which is under the 8192-byte budget; a naive check on the
+    # raw payload alone would let it through. But the full request URI adds the table path, the fixed query
+    # parameters, the percent-encoding of each `,` (as `%2C`), and headroom for the `pageToken` on page 2+,
+    # so the actual URL exceeds the limit and the read is rejected up front rather than failing with an
+    # opaque HTTP error near the threshold.
+    columns = ", ".join(f"`{wide_column_name(i)}`" for i in range(27))
+    error = node.query_and_get_error(f"SELECT {columns} FROM {bq('test_wide')}")
+    assert "too long" in error
+    # The oversized request is never sent.
+    assert mock_stats()["data_requests"] == []
+
+
 def test_insert_roundtrip():
     mock_reset()
     node.query(f"""

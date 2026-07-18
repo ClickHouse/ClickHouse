@@ -62,6 +62,13 @@ public:
     /// `selected_fields` is a comma-separated list of columns, empty means all columns.
     TableDataPage listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const;
 
+    /// The length of the encoded `path?query` of the `tabledata.list` request for `selected_fields`, measured
+    /// for a first-page request (no `pageToken`). This is the actual number of bytes that goes over the wire,
+    /// including the percent-encoded field list and the fixed query parameters, so callers can reject a read
+    /// whose request URL would exceed the HTTP front-end URL length limit instead of failing opaquely later.
+    /// The caller should add headroom for the `pageToken` that appears from the second page onward.
+    size_t tableDataRequestUriLength(const String & selected_fields, UInt64 max_results) const;
+
     /// tabledata.insertAll (streaming insert). Throws if any row of this request is rejected.
     /// A single `INSERT` is split into several such requests, which are not atomic with respect to
     /// each other: a failure here does not roll back rows accepted by earlier requests. Each row may
@@ -74,6 +81,13 @@ private:
         const String & path,
         const Poco::URI::QueryParameters & params,
         const String & request_body) const;
+
+    /// Assembles the request URI (base URL + path + encoded query parameters). Shared by `requestJSON` and
+    /// `tableDataRequestUriLength` so that the length measured up front matches the URL actually sent.
+    Poco::URI buildRequestURI(const String & path, const Poco::URI::QueryParameters & params) const;
+
+    /// The `tabledata.list` query parameters (shared by the request and its length estimation).
+    static Poco::URI::QueryParameters listTableDataParams(const String & page_token, const String & selected_fields, UInt64 max_results);
 
     String tablePath() const;
 

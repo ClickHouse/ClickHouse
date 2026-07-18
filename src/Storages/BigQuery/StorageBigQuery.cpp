@@ -473,6 +473,8 @@ Pipe StorageBigQuery::read(
         selected_names.push_back(field.name);
     String selected_fields = fmt::format("{}", fmt::join(selected_names, ","));
 
+    auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
+
     /// `selectedFields` is passed in the `tabledata.list` request URL, and it is the only way to pin the
     /// read to the schema snapshot taken at analysis time: an empty `selectedFields` tells BigQuery to
     /// return all of the table's *current* columns, and because the `tabledata.list` response is positional
@@ -483,15 +485,25 @@ Pipe StorageBigQuery::read(
     /// dropped (a pre-execution schema re-fetch still leaves a window before, and between the pages of, the
     /// data requests), so rather than risk a silent misread the query is rejected: the read must project a
     /// smaller set of columns whose explicit list fits the request URL.
-    static constexpr size_t max_selected_fields_length = 8192;
-    if (selected_fields.size() > max_selected_fields_length)
+    ///
+    /// The limit is budgeted against the *full* encoded request URI, not the raw field list: the URI also
+    /// carries the table path and the fixed `prettyPrint` / `formatOptions.useInt64Timestamp` / `maxResults`
+    /// parameters, and the field list is percent-encoded (each `,` becomes `%2C`), so the wire length is
+    /// larger than `selected_fields.size()`. Headroom is reserved for the `pageToken` that BigQuery adds from
+    /// the second page onward (it is absent from the first request, so it cannot be measured up front).
+    static constexpr size_t max_request_uri_length = 8192;
+    static constexpr size_t page_token_length_reserve = 1024;
+    const size_t request_uri_length = client->tableDataRequestUriLength(selected_fields, max_block_size);
+    if (request_uri_length + page_token_length_reserve > max_request_uri_length)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The list of selected BigQuery columns is too long ({} bytes) to pass in the `tabledata.list` "
-            "request URL while pinning the read to the analyzed schema; select fewer columns",
-            selected_fields.size());
+            "The list of selected BigQuery columns is too long: it makes the `tabledata.list` request URL "
+            "{} bytes (plus {} bytes reserved for pagination), over the {}-byte limit, while pinning the read "
+            "to the analyzed schema; select fewer columns",
+            request_uri_length,
+            page_token_length_reserve,
+            max_request_uri_length);
 
-    auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return Pipe(std::make_shared<BigQuerySource>(
         std::move(client),
         std::move(selected),

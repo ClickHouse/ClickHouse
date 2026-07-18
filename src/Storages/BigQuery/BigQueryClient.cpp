@@ -193,16 +193,22 @@ String BigQueryClient::tablePath() const
     return fmt::format("/bigquery/v2/projects/{}/datasets/{}/tables/{}", configuration.project, configuration.dataset, configuration.table);
 }
 
+Poco::URI BigQueryClient::buildRequestURI(const String & path, const Poco::URI::QueryParameters & params) const
+{
+    Poco::URI uri(configuration.base_url);
+    uri.setPath(path);
+    for (const auto & [name, value] : params)
+        uri.addQueryParameter(name, value);
+    return uri;
+}
+
 Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
     const String & method,
     const String & path,
     const Poco::URI::QueryParameters & params,
     const String & request_body) const
 {
-    Poco::URI uri(configuration.base_url);
-    uri.setPath(path);
-    for (const auto & [name, value] : params)
-        uri.addQueryParameter(name, value);
+    Poco::URI uri = buildRequestURI(path, params);
 
     context->getRemoteHostFilter().checkURL(uri);
 
@@ -261,7 +267,7 @@ Poco::JSON::Object::Ptr BigQueryClient::getTable() const
     return requestJSON(Poco::Net::HTTPRequest::HTTP_GET, tablePath(), {{"prettyPrint", "false"}}, {});
 }
 
-BigQueryClient::TableDataPage BigQueryClient::listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const
+Poco::URI::QueryParameters BigQueryClient::listTableDataParams(const String & page_token, const String & selected_fields, UInt64 max_results)
 {
     Poco::URI::QueryParameters params;
     params.emplace_back("prettyPrint", "false");
@@ -272,6 +278,19 @@ BigQueryClient::TableDataPage BigQueryClient::listTableData(const String & page_
         params.emplace_back("pageToken", page_token);
     if (!selected_fields.empty())
         params.emplace_back("selectedFields", selected_fields);
+    return params;
+}
+
+size_t BigQueryClient::tableDataRequestUriLength(const String & selected_fields, UInt64 max_results) const
+{
+    /// Measure the first-page request (no `pageToken`); the caller reserves headroom for the token separately.
+    auto uri = buildRequestURI(tablePath() + "/data", listTableDataParams(/*page_token*/ "", selected_fields, max_results));
+    return uri.getPathAndQuery().size();
+}
+
+BigQueryClient::TableDataPage BigQueryClient::listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const
+{
+    auto params = listTableDataParams(page_token, selected_fields, max_results);
 
     auto response = requestJSON(Poco::Net::HTTPRequest::HTTP_GET, tablePath() + "/data", params, {});
 
