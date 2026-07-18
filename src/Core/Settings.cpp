@@ -350,8 +350,6 @@ Set to `0` to disable this limit.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
-
-Cloud default value: `0`.
 )", 0) \
     DECLARE(MaxThreads, max_download_threads, 4, R"(
 The maximum number of threads to download data (e.g. for URL engine).
@@ -363,13 +361,13 @@ The maximum number of threads to parse data in input formats that support parall
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
     DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the buffer to read from the filesystem.
+The maximum size of the buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
-The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
-The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_distributed_connections, 1024, R"(
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
@@ -3202,8 +3200,6 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
-Cloud default value: `0`.
-
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
 
@@ -3227,8 +3223,6 @@ The setting is fairly low level and should be used with caution
 :::
 )", 0) \
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
-Cloud default value: `throw`
-
 Sets what to do if the volume of the result exceeds one of the limits.
 
 Possible values:
@@ -6885,7 +6879,7 @@ Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the prefetch buffer to read from the filesystem.
+The maximum size of the prefetch buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetch_step_bytes, 0, R"(
 Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
@@ -7290,8 +7284,6 @@ Possible values:
 
 - Positive integer.
 - 0 — Retries are disabled
-
-Cloud default value: `20`.
 
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
