@@ -69,6 +69,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -308,6 +309,13 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_TABLE;
+}
+
+namespace FailPoints
+{
+    /// Simulates a worker whose local parts snapshot became empty (parts merged away or dropped)
+    /// between the coordinator planning a bucketed distributed read and this worker deserializing it.
+    extern const char distributed_plan_read_empty_snapshot_on_deserialize[];
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -5442,8 +5450,16 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
+    RangesInDataPartsPtr parts_for_read = snapshot_data.parts;
+    /// Test hook: pretend this replica's snapshot is empty (parts merged away or dropped since the
+    /// coordinator planned the bucketed read) to exercise the empty-distributed-read path deterministically.
+    fiu_do_on(FailPoints::distributed_plan_read_empty_snapshot_on_deserialize,
+    {
+        parts_for_read = std::make_shared<const RangesInDataParts>();
+    });
+
     auto step = executor.readFromParts(
-        snapshot_data.parts,
+        parts_for_read,
         snapshot_data.mutations_snapshot,
         column_names,
         storage_snapshot,
@@ -5459,7 +5475,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// only reached for a plan that will actually be executed (see the ctx.skipping short-circuit
         /// above), so the callbacks are always present.
         enable_parallel_reading,
-        /*extension*/ nullptr);
+        /*extension*/ nullptr,
+        /// A bucketed read must get a step even if this replica's snapshot is empty, so the bucket count
+        /// has somewhere to attach; the empty read is handled in initializePipeline.
+        /*build_empty_step_for_distributed_read*/ distributed_read_bucket_count > 0);
 
     if (distributed_read_bucket_count)
     {

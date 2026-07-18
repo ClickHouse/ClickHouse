@@ -1814,7 +1814,8 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading,
-    std::shared_ptr<ParallelReadingExtension> extension_) const
+    std::shared_ptr<ParallelReadingExtension> extension_,
+    bool build_empty_step_for_distributed_read) const
 {
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
@@ -1830,7 +1831,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
         parts = std::make_shared<const RangesInDataParts>();
     }
-    else if (parts->empty() && !query_info.isStream())
+    /// A bucketed distributed read still needs a ReadFromMergeTree step to carry its bucket count even
+    /// when this replica's snapshot is empty (parts merged away or dropped since the coordinator planned
+    /// the read); initializePipeline then resolves it to an empty read or a retryable divergence error.
+    else if (parts->empty() && !query_info.isStream() && !build_empty_step_for_distributed_read)
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
