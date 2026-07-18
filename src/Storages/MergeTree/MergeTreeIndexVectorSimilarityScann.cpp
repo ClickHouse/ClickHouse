@@ -2,6 +2,10 @@
 
 #if USE_SCANN
 
+#if defined(__powerpc64__)
+#include <scann_ppc64le_compat.h>
+#endif
+
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarityScann.h>
 
 #include <Columns/ColumnArray.h>

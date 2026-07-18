@@ -485,9 +485,11 @@ endif()
 # identical (load 64 bits into the low half, zero the high half); the only
 # difference is the parameter type (void const* vs __m128i const*).  On ppc64le
 # in LE mode, _mm_loadl_epi64 uses *(long long*)ptr which tolerates unaligned
-# addresses, matching the semantics of _mm_loadu_si64.  A forced-include compat
-# header defines the missing intrinsic via its equivalent so Eigen's SSE2
-# vectorization path compiles without disabling SIMD entirely.
+# addresses, matching the semantics of _mm_loadu_si64.  A compat header defines
+# the missing intrinsic via its equivalent so Eigen's SSE2 vectorization path
+# compiles without disabling SIMD entirely.  It is force-included privately for
+# _scann; consumers that instantiate ScaNN headers include it explicitly because
+# contrib targets must not propagate INTERFACE_COMPILE_OPTIONS.
 if (ARCH_PPC64LE)
     set(_ppc_compat_h "${CMAKE_CURRENT_BINARY_DIR}/scann_ppc64le_compat.h")
     file(WRITE "${_ppc_compat_h}"
@@ -496,7 +498,7 @@ if (ARCH_PPC64LE)
         "#  define _mm_loadu_si64(p) _mm_loadl_epi64((__m128i const *)(p))\n"
         "#endif\n"
     )
-    target_compile_options(_scann PUBLIC "-include" "${_ppc_compat_h}")
+    target_compile_options(_scann PRIVATE "-include" "${_ppc_compat_h}")
 endif()
 
 target_compile_options(_scann PRIVATE -w)
