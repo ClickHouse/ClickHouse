@@ -17,8 +17,11 @@ namespace DB
 
 struct FileRemoteInfo
 {
-    size_t bytes_size;
-    time_t last_modified;
+    size_t bytes_size = 0;
+    time_t last_modified = 0;
+    /// Relative object key under the common key prefix, e.g. "{random_dir}/{blob_name}".
+    /// Empty means the blob is at "{parent_directory.remote_path}/{logical_filename}" (implicit layout).
+    std::string object_key;
 };
 
 struct DirectoryRemoteInfo
@@ -27,6 +30,8 @@ struct DirectoryRemoteInfo
     std::string etag;
     time_t last_modified = 0;
     std::unordered_map<std::string, FileRemoteInfo> files;
+    /// True when prefix.path stores an explicit file -> blob mapping.
+    bool explicit_files = false;
 };
 
 /// Maintains virtual file system tree of directories. Files are not included into
@@ -71,6 +76,8 @@ public:
     /// Creates virtual path in tree according to the path. Only leaf of this path will be physical (will have remote info).
     void recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info);
     void recordFile(const std::string & path, FileRemoteInfo info);
+    /// Replaces remote info of an existing physical directory (same remote_path required).
+    void replaceDirectoryRemoteInfo(const std::string & path, DirectoryRemoteInfo info);
 
     void unlinkTree(const std::string & path);
 

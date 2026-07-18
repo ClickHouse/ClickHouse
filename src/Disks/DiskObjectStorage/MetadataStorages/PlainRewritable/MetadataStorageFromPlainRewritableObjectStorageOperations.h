@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableBlobRefcounts.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 
@@ -53,8 +54,9 @@ private:
     std::unordered_set<std::string> changed_paths;
     bool moved_in_memory = false;
 
-    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_content);
-    void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, WriteBuffer & buffer);
+    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path);
+    void rewriteSingleDirectory(
+        const std::filesystem::path & to, const DirectoryRemoteInfo & remote_info, WriteBuffer & buffer);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -102,8 +104,11 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts;
 
+    std::string relative_object_key;
     bool written = false;
+    bool rewrote_prefix_path = false;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
@@ -112,7 +117,8 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts_);
 
     void execute() override;
     void undo() override;
@@ -127,11 +133,16 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts;
     StoredObjects & removed_objects;
 
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
+    std::string relative_object_key;
     std::optional<FileRemoteInfo> file_remote_info;
+    bool used_explicit_unlink = false;
+    bool metadata_updated = false;
+    bool blob_remove_scheduled = false;
     bool copy_started = false;
     bool remove_started = false;
     bool remove_finished = false;
@@ -144,6 +155,7 @@ public:
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts_,
         StoredObjects & removed_objects_);
 
     void execute() override;
@@ -151,8 +163,8 @@ public:
     void finalize() override;
 };
 
-/// Throws an exception if path_to_ already exists.
-class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
+/// Creates a hard link by sharing the source blob (dest directory becomes explicit).
+class MetadataStorageFromPlainObjectStorageHardLinkOperation final : public IMetadataOperation
 {
 private:
     const std::filesystem::path path_from;
@@ -161,19 +173,20 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts;
 
-    std::filesystem::path remote_path_from;
-    std::filesystem::path remote_path_to;
-    bool copy_attempted = false;
+    std::string relative_object_key;
+    bool link_created = false;
 
 public:
-    MetadataStorageFromPlainObjectStorageCopyFileOperation(
+    MetadataStorageFromPlainObjectStorageHardLinkOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts_);
 
     void execute() override;
     void undo() override;
@@ -194,14 +207,21 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts;
     StoredObjects & removed_objects;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
+    std::string relative_object_key_from;
+    std::string relative_object_key_to;
+    std::string relative_object_key_replaced;
     std::optional<FileRemoteInfo> file_from_remote_info;
     std::optional<FileRemoteInfo> file_to_remote_info;
+    bool metadata_only_move{false};
+    bool updated_blob_refcounts{false};
+    bool decremented_replaced{false};
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
     bool created_target_file{false};
@@ -216,6 +236,7 @@ public:
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts_,
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
@@ -250,6 +271,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts;
     StoredObjects & removed_objects;
 
     const LoggerPtr log;
@@ -265,6 +287,7 @@ public:
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts_,
         StoredObjects & removed_objects_);
 
     void execute() override;

@@ -3,6 +3,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetadataHelpers.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritablePrefixPath.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -10,6 +12,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
@@ -40,6 +43,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -111,6 +115,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         if (!has_data && !has_metadata)
         {
             LOG_DEBUG(log, "Loaded metadata (empty)");
+            rebuildBlobRefcounts(remote_layout);
             fs_tree->apply(std::move(remote_layout));
             return;
         }
@@ -119,16 +124,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
     try
     {
-        /// Root folder is a special case. Files are stored as /__root/{file-name}.
-        for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
-        {
-            auto remote_file = iterator->current();
-            remote_layout[""].files.emplace(remote_file->getFileName(), FileRemoteInfo{
-                .bytes_size = remote_file->metadata->size_bytes,
-                .last_modified = remote_file->metadata->last_modified.epochTime(),
-            });
-        }
-
         for (auto iterator = object_storage->iterate(layout->constructMetadataDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
         {
             const auto file = iterator->current();
@@ -160,39 +155,78 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
                 StoredObject object{object_path};
-                String local_path;
                 /// Assuming that local and the object storage clocks are synchronized.
                 Poco::Timestamp last_modified = metadata->last_modified;
                 std::unordered_map<std::string, FileRemoteInfo> files;
+                bool explicit_files = false;
+                String local_path;
 
                 try
                 {
+                    PlainRewritablePrefixPath prefix_path;
                     if (metadata->size_bytes == 0)
+                    {
                         LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", object_path);
+                    }
                     else
                     {
                         auto read_buf = object_storage->readObject(object, settings);
-                        readStringUntilEOF(local_path, *read_buf);
+                        String content;
+                        readStringUntilEOF(content, *read_buf);
+                        prefix_path = parsePlainRewritablePrefixPath(content);
+                        local_path = prefix_path.logical_path;
+                        explicit_files = prefix_path.explicit_files;
                     }
 
-                    /// Load the list of files inside the directory.
-                    for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path.value()), 0, /*with_tags=*/ false, std::nullopt); dir_iterator->isValid(); dir_iterator->next())
+                    /// Root directory metadata uses the reserved remote token and maps to logical "".
+                    if (remote_path.value() == PlainRewritableLayout::ROOT_DIRECTORY_TOKEN)
+                        local_path.clear();
+
+                    if (explicit_files)
                     {
-                        const auto remote_file = dir_iterator->current();
-                        const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
-                        if (!unpacked_remote_file_path.has_value())
+                        /// Explicit form: file list comes from prefix.path; blobs may live under other prefixes.
+                        for (const auto & [filename, relative_object_key] : prefix_path.files)
                         {
-                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file->getPath());
-                            continue;
+                            const auto absolute_object_key = layout->constructObjectKey(relative_object_key);
+                            auto object_metadata = object_storage->tryGetObjectMetadata(absolute_object_key, /*with_tags=*/ false);
+                            if (!object_metadata)
+                            {
+                                throw Exception(
+                                    ErrorCodes::INCORRECT_DATA,
+                                    "Blob '{}' referenced by explicit prefix.path for directory '{}' does not exist",
+                                    absolute_object_key,
+                                    local_path);
+                            }
+
+                            files.emplace(filename, FileRemoteInfo{
+                                .bytes_size = object_metadata->size_bytes,
+                                .last_modified = object_metadata->last_modified.epochTime(),
+                                .object_key = relative_object_key,
+                            });
                         }
+                    }
+                    else
+                    {
+                        /// Implicit form: discover files by listing blobs under the directory remote prefix.
+                        for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path.value()), 0, /*with_tags=*/ false, std::nullopt); dir_iterator->isValid(); dir_iterator->next())
+                        {
+                            const auto remote_file = dir_iterator->current();
+                            const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
+                            if (!unpacked_remote_file_path.has_value())
+                            {
+                                LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file->getPath());
+                                continue;
+                            }
 
-                        const auto & [directory_remote_path, filename] = unpacked_remote_file_path.value();
-                        chassert(directory_remote_path == remote_path);
+                            const auto & [directory_remote_path, filename] = unpacked_remote_file_path.value();
+                            chassert(directory_remote_path == remote_path);
 
-                        files.emplace(filename, FileRemoteInfo{
-                            .bytes_size = remote_file->metadata->size_bytes,
-                            .last_modified = remote_file->metadata->last_modified.epochTime(),
-                        });
+                            files.emplace(filename, FileRemoteInfo{
+                                .bytes_size = remote_file->metadata->size_bytes,
+                                .last_modified = remote_file->metadata->last_modified.epochTime(),
+                                .object_key = layout->makeRelativeFileObjectKey(remote_path.value(), filename),
+                            });
+                        }
                     }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -230,7 +264,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
 
                 std::lock_guard guard(remote_layout_mutex);
-                remote_layout[local_path] = DirectoryRemoteInfo{remote_path.value(), metadata->etag, last_modified.epochTime(), std::move(files)};
+                remote_layout[local_path] = DirectoryRemoteInfo{
+                    remote_path.value(),
+                    metadata->etag,
+                    last_modified.epochTime(),
+                    std::move(files),
+                    explicit_files};
             });
         }
     }
@@ -242,9 +281,92 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
+    /// Root folder is a special case. Files are stored as /__root/{file-name} unless an explicit
+    /// prefix.path for the root remote token already provided the file list.
+    if (!remote_layout[""].explicit_files)
+    {
+        for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+        {
+            auto remote_file = iterator->current();
+            remote_layout[""].files.emplace(remote_file->getFileName(), FileRemoteInfo{
+                .bytes_size = remote_file->metadata->size_bytes,
+                .last_modified = remote_file->metadata->last_modified.epochTime(),
+                .object_key = layout->makeRelativeFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, remote_file->getFileName()),
+            });
+        }
+    }
+
     LOG_DEBUG(log, "Loaded metadata for {} directories", remote_layout.size());
+    rebuildBlobRefcounts(remote_layout);
+    if (is_initial_load)
+        removeOrphanBlobs(remote_layout);
     fs_tree->apply(std::move(remote_layout));
     previous_refresh.restart();
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::rebuildBlobRefcounts(
+    const std::unordered_map<std::string, DirectoryRemoteInfo> & remote_layout)
+{
+    std::unordered_map<std::string, uint32_t> new_refcounts;
+    for (const auto & [_, directory_info] : remote_layout)
+    {
+        for (const auto & [file_name, file_info] : directory_info.files)
+        {
+            const auto relative_key = resolvePlainRewritableRelativeObjectKey(*layout, directory_info, file_name, file_info);
+            ++new_refcounts[relative_key];
+        }
+    }
+
+    blob_refcounts->replaceAll(std::move(new_refcounts));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::removeOrphanBlobs(
+    const std::unordered_map<std::string, DirectoryRemoteInfo> & remote_layout)
+{
+    auto referenced = blob_refcounts->snapshot();
+    std::unordered_set<std::string> referenced_absolute;
+    referenced_absolute.reserve(referenced.size());
+    for (const auto & [relative_key, _] : referenced)
+        referenced_absolute.insert(layout->constructObjectKey(relative_key));
+
+    /// All prefix.path objects are metadata and must be kept.
+    for (const auto & [_, directory_info] : remote_layout)
+        referenced_absolute.insert(layout->constructDirectoryObjectKey(directory_info.remote_path));
+
+    StoredObjects orphans;
+    const auto common_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+    for (auto iterator = object_storage->iterate(common_prefix, 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+    {
+        const auto object_path = iterator->current()->getPath();
+        if (referenced_absolute.contains(object_path))
+            continue;
+
+        /// Keep the metadata directory listing objects themselves out of GC if parsing failed.
+        if (object_path.find(std::string(PlainRewritableLayout::METADATA_DIRECTORY_TOKEN) + "/") != std::string::npos
+            && object_path.ends_with(PlainRewritableLayout::PREFIX_PATH_FILE_NAME))
+            continue;
+
+        LOG_INFO(getLogger("MetadataStorageFromPlainObjectStorage"), "Removing orphan blob '{}'", object_path);
+        orphans.emplace_back(object_path);
+    }
+
+    if (!orphans.empty())
+        object_storage->removeObjectsIfExist(orphans);
+}
+
+uint32_t MetadataStorageFromPlainRewritableObjectStorage::getHardlinkCount(const std::string & path) const
+{
+    const auto file_info = fs_tree->getFileRemoteInfo(path);
+    if (!file_info)
+        return 0;
+
+    const auto normalized_path = normalizePath(path);
+    const auto directory_info = fs_tree->getDirectoryRemoteInfo(normalized_path.parent_path());
+    if (!directory_info)
+        return 0;
+
+    const auto relative_key = resolvePlainRewritableRelativeObjectKey(*layout, *directory_info, normalized_path.filename(), *file_info);
+    return blob_refcounts->get(relative_key);
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
@@ -254,6 +376,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , fs_tree(std::make_shared<InMemoryDirectoryTree>(metrics->directory_map_size, metrics->file_count))
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
+    , blob_refcounts(std::make_shared<PlainRewritableBlobRefcounts>())
 {
     load(/*is_initial_load=*/true, /*do_not_load_unchanged_directories=*/false);
 }
@@ -336,8 +459,8 @@ StoredObjects MetadataStorageFromPlainRewritableObjectStorage::getStorageObjects
 
 std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::getStorageObjectsIfExist(const std::string & path) const
 {
-    const auto object_size = getFileSizeIfExists(path);
-    if (!object_size)
+    const auto file_info = fs_tree->getFileRemoteInfo(path);
+    if (!file_info)
         return std::nullopt;
 
     const auto normalized_path = normalizePath(path);
@@ -345,8 +468,10 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     if (!directory_remote_info)
         return std::nullopt;
 
-    auto object_key = layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename());
-    return StoredObjects{StoredObject(object_key, path, object_size.value())};
+    const auto relative_key
+        = resolvePlainRewritableRelativeObjectKey(*layout, *directory_remote_info, normalized_path.filename(), *file_info);
+    auto object_key = layout->constructObjectKey(relative_key);
+    return StoredObjects{StoredObject(object_key, path, file_info->bytes_size)};
 }
 
 Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
@@ -410,7 +535,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataF
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.blob_refcounts));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory(const std::string & path)
@@ -480,6 +606,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
         metadata_storage.fs_tree,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.blob_refcounts,
         removed_objects));
 }
 
@@ -509,18 +636,20 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         metadata_storage.fs_tree,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.blob_refcounts,
         removed_objects));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageHardLinkOperation>(
         path_from,
         path_to,
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.blob_refcounts));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
@@ -533,6 +662,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
         metadata_storage.fs_tree,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.blob_refcounts,
         removed_objects));
 }
 
@@ -546,6 +676,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
         metadata_storage.fs_tree,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.blob_refcounts,
         removed_objects));
 }
 
@@ -560,11 +691,23 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     if (uncommitted_fs_tree->existsVirtualDirectory(parent_path) || metadata_storage.fs_tree->existsVirtualDirectory(parent_path))
         createDirectoryRecursive(parent_path);
 
+    auto resolve_key = [&](const DirectoryRemoteInfo & directory_remote_info)
+    {
+        /// Explicit directories use random blob names to avoid clobbering hard-linked blobs after delete+recreate.
+        if (directory_remote_info.explicit_files)
+        {
+            return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(
+                directory_remote_info.remote_path, getRandomASCIIString(32)));
+        }
+        return ObjectStorageKey::createAsAbsolute(
+            metadata_storage.layout->constructFileObjectKey(directory_remote_info.remote_path, normalized_path.filename()));
+    };
+
     if (const auto directory_remote_info = uncommitted_fs_tree->getDirectoryRemoteInfo(parent_path))
-        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+        return resolve_key(*directory_remote_info);
 
     if (const auto directory_remote_info = metadata_storage.fs_tree->getDirectoryRemoteInfo(parent_path))
-        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+        return resolve_key(*directory_remote_info);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());
 }
