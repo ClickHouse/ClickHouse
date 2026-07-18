@@ -427,8 +427,21 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       always activates the `PostgreSQLCleanerTask`, so after the upgrade restart the leftover database's cleaner
 #       task (`removeOutdatedTables`) tries to connect and the connection pool logs `<Error>` for each retry.
 #       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
-#       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
-#       query errors) are not masked.
+#       context AND a connection failure to the known 04210 fixture host `192.0.2.1:5432` together, so a real
+#       cleaner-task connect failure on a different (persisted) host, or a non-connection PostgreSQL regression
+#       (auth, protocol, query errors), still fails this job.
+#       The same leftover `DatabasePostgreSQL` engine reaches the same unreachable host through two more code
+#       paths that also log the benign connection failure, so they are filtered the same way:
+#       `DatabasePostgreSQL::getTablesIterator` (a `system.tables` scan reads the leftover engine and probes
+#       the pool; it deliberately swallows the error and logs it via `tryLogCurrentException`), and
+#       `AsyncLoader::worker` (the post-upgrade startup asynchronously loads the leftover engine and logs the
+#       same `POSTGRESQL_CONNECTION_FAILURE` (Code: 614) exception). Both matchers require the PostgreSQL
+#       code-path context AND a connection failure to the known 04210 fixture host `192.0.2.1:5432` together
+#       (the `AsyncLoader` one additionally pins the PostgreSQL-specific `Code: 614`). `PoolWithFailover::get`
+#       builds every `pqxx::broken_connection` into the same `Code: 614` / `Connection to <host_port> failed`
+#       text, so scoping to the fixture host (not any `Connection to .* failed`) keeps genuine connect-time
+#       PostgreSQL regressions on a persisted `DatabasePostgreSQL` (a different host, or a non-614 code)
+#       still failing this job.
 # The MySQL matchers below filter the same class of benign connection failure from a `DatabaseMySQL` engine
 #       that `04210_show_remote_databases_in_system_tables` also creates
 #       (`ENGINE = MySQL('192.0.2.1:3306', ...)`, the same unreachable RFC 5737 host). On the post-upgrade
@@ -521,8 +534,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -av -e "Value passed to 'throwIf' function is non-zero" \
-    | grep -av -e "PostgreSQLConnectionPool: Connection error" \
-    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
+    | grep -av -e "PostgreSQLConnectionPool: Connection error.*192\.0\.2\.1., port 5432 failed" \
+    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .192\.0\.2\.1:5432. failed" \
+    | grep -av -e "DatabasePostgreSQL::getTablesIterator.*Connection to .192\.0\.2\.1:5432. failed" \
+    | grep -av -e "AsyncLoader::worker.*Code: 614.*Connection to .192\.0\.2\.1:5432. failed" \
     | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
     | grep -av -e "Application: Connection to mysql failed" \
     | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \

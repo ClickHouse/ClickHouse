@@ -908,6 +908,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
+            /// Reject deprecated statistics types (currently `minmax`) only when a table is freshly created
+            /// with them in `auto_statistics_types`. Skipped for ATTACH and replicated propagation so that
+            /// existing tables which still carry `minmax` in the setting keep loading.
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                validateAutoStatisticsTypes(statistics_types_str);
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }
 
@@ -2329,14 +2334,12 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
-<CloudNotSupportedBadge/>
-
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family:
 
 ```sql
 CREATE TABLE tab
 (
-    a Int64 STATISTICS(TDigest, Uniq),
+    a Int64 STATISTICS(tdigest, uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -2346,7 +2349,7 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements:
 
 ```sql
-ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
 ALTER TABLE tab DROP STATISTICS a;
 ```
 
@@ -2356,7 +2359,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
@@ -2366,7 +2369,7 @@ Part pruning allows to skip reading entire data parts when the query filter cond
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(MinMax)
+    value Int64 STATISTICS(minmax)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -2389,13 +2392,20 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 
-- `MinMax`
+- `basic`
+
+    A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
+  - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
+
+    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `minmax`, `basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+
+- `minmax`
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
-    Syntax: `minmax`
-
-- `TDigest`
+- `tdigest`
 
     :::warning
     Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
@@ -2403,15 +2413,15 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
-    Syntax: `tdigest`
+- `uniq`
 
-- `Uniq`
+    [BJKST](https://people.iith.ac.in/aravind/Files-CS5120/pc-lec14-BJKST.pdf) sketches which provide an estimation how many distinct values a column contains. Internally uses [`uniq`](/sql-reference/aggregate-functions/reference/uniq).
 
-    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
+- `uniq_v2`
 
-    Syntax: `uniq`
+    Similar to `uniq` but internally uses [`uniqCombined`](/sql-reference/aggregate-functions/reference/uniqcombined)`(12)` (a variant of [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). Consumes less memory than `uniq` and can be build faster.
 
-- `CountMin`
+- `countmin`
 
     :::warning
     Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
@@ -2419,25 +2429,33 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
-    Syntax `countmin`
-
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|               | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+|---------------|----------------------------------------------------|----- |-----------------------|
+| basic         | ✔                                                  | ✔    | ✔                     |
+| countmin      | ✔                                                  | ✔    | ✔                     |
+| minmax        | ✔                                                  | ✔    | ✗                     |
+| tdigest       | ✔                                                  | ✗    | ✗                     |
+| uniq          | ✔                                                  | ✔    | ✔                     |
+| uniq_v2       | ✔                                                  | ✔    | ✔                     |
+
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|               | Equality filters (==) | Range filters (`>, >=, <, <=`) |
+|---------------|------------------------|---------------------------------|
+| basic         | ✗                      | ✔ (numeric columns only)        |
+| countmin      | ✔                      | ✗                               |
+| minmax        | ✗                      | ✔ (numeric columns only)        |
+| tdigest       | ✗                      | ✔ (numeric columns only)        |
+| uniq          | ✔                      | ✗                               |
+| uniq_v2       | ✔                      | ✗                               |
+
+For `basic` on `String` / `FixedString` columns the statistic only records the total
+non-NULL byte length (used to estimate average string length) and the null count;
+range filters and part pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 
