@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTLiteral.h>
@@ -58,6 +59,24 @@ String getInsertDataSchemaMismatchDescription(
         return {};
 
     const auto format_settings = getFormatSettings(context);
+
+    /// Ask the format's own schema reader how the real parser identifies columns and validates types,
+    /// so the comparison below follows the parser instead of a fixed heuristic. The defaults describe a
+    /// positional, value-inferred format (the safe, low-false-positive interpretation) and are used only
+    /// if the schema reader cannot be created.
+    bool format_has_strict_order_of_columns = true;
+    bool format_has_exact_types_from_data = false;
+    try
+    {
+        auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
+        auto schema_reader = FormatFactory::instance().getSchemaReader(format_name, *probe_buffer, context, format_settings);
+        format_has_strict_order_of_columns = schema_reader->hasStrictOrderOfColumns();
+        format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Best-effort: keep the conservative defaults above; it is Ok to ignore the exception.
+    }
 
     ColumnsDescription inferred_columns;
     try
@@ -99,10 +118,18 @@ String getInsertDataSchemaMismatchDescription(
     /// explanation to an unrelated parse error, we treat a column as mismatched only when the inferred
     /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
-    auto types_are_compatible = [](const DataTypePtr & inferred_type, const DataTypePtr & expected_type)
+    auto types_are_compatible = [format_has_exact_types_from_data](const DataTypePtr & inferred_type, const DataTypePtr & expected_type)
     {
         if (inferred_type->equals(*expected_type))
             return true;
+
+        /// Self-describing formats (the -WithNamesAndTypes family) carry the declared types in the data,
+        /// and the parser validates them against the destination exactly, so any difference is a real
+        /// structure mismatch. The loose, supertype-based rule below only makes sense when the types are
+        /// inferred (and widened) from the data values.
+        if (format_has_exact_types_from_data)
+            return false;
+
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
             return true;
 
@@ -138,19 +165,17 @@ String getInsertDataSchemaMismatchDescription(
     for (const auto & column : expected)
         expected_by_name.emplace(column.name, column.type);
 
-    /// Whether the format identifies fields by name is decided by the format itself: formats that can
-    /// read a subset of the destination columns (`JSONEachRow`, `TSKV`, the `*WithNames*` family when
-    /// the header is used, ...) necessarily map fields to columns by name. Formats that read by name
-    /// but do not declare subset support are still caught by the fallback heuristic: if every inferred
-    /// name is a destination column name, matching by name is the right interpretation.
+    /// Whether the format identifies fields by name is decided by the format itself, mirroring the real
+    /// parser. Two cases map fields to columns by name: formats that can read a subset of the destination
+    /// columns (`JSONEachRow`, `TSKV`, the `*WithNames*` family when `input_format_with_names_use_header`
+    /// is enabled, ...), and formats whose schema reader does not impose a strict column order
+    /// (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...). Everything else is compared by position — in
+    /// particular a `*WithNames*` format read with the header disabled, where the parser ignores the
+    /// file's names and maps columns positionally even though schema inference still reports those names.
     const bool format_reads_by_name = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 
     const bool match_by_name = expected_by_name.size() == expected.size()
-        && (format_reads_by_name
-            || std::all_of(
-                inferred.begin(),
-                inferred.end(),
-                [&](const NameAndTypePair & column) { return expected_by_name.contains(column.name); }));
+        && (format_reads_by_name || !format_has_strict_order_of_columns);
 
     bool corresponds = true;
     if (match_by_name)

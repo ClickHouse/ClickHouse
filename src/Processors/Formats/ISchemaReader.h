@@ -33,6 +33,13 @@ public:
     /// Exceptions: JSON, TSKV.
     virtual bool hasStrictOrderOfColumns() const { return true; }
 
+    /// True if the column types are declared in the data itself (e.g. the second header row of the
+    /// -WithNamesAndTypes formats) and are validated by the parser against the destination types
+    /// exactly, rather than inferred from the data values (and therefore widened). A caller that
+    /// compares an inferred schema against an expected one can use this to know when an exact type
+    /// comparison mirrors the parser and a loose (supertype-based) one would be wrong.
+    virtual bool hasExactTypesFromData() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 

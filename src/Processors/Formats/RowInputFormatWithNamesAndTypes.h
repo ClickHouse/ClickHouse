@@ -178,6 +178,11 @@ public:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    /// The -WithNamesAndTypes formats carry the declared column types in the second header row; when the
+    /// parser is configured to use that header (`input_format_with_types_use_header`), it validates those
+    /// types against the destination exactly (see RowInputFormatWithNamesAndTypes::readPrefix).
+    bool hasExactTypesFromData() const override { return with_types && format_settings.with_types_use_header; }
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
