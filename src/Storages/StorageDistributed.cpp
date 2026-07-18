@@ -2277,11 +2277,23 @@ namespace
 /// identifier as the table name (`timeSeriesMetrics(t)`); when it does not (`merge`), an identifier is
 /// left as is for the function itself to reject. Every other malformed argument is also left as is: the
 /// table function is instantiated right after this rewrite (for `canBeUsedToCreateTable`) and rejects it.
-void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t short_form_num_args, bool table_name_can_be_identifier, const ContextPtr & local_context)
+/// `table_name_may_reference_temporary_table` mirrors whether the function resolves the table name through
+/// `Context::resolveStorageID` (the `timeSeries*` / `prometheusQuery*` family does), which looks up
+/// session-local temporary/external tables before the current database; when it does, an unqualified name
+/// that matches a temporary/external table is left as is so it is not shadowed by a permanent table of the
+/// same name (the same exemption `AddDefaultDatabaseVisitor` applies to plain identifiers and `dictGet` /
+/// `joinGet`). `merge` matches tables of the current database by regexp and never resolves a temporary
+/// table, so it does not take this exemption.
+void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t short_form_num_args, bool table_name_can_be_identifier, bool table_name_may_reference_temporary_table, const ContextPtr & local_context)
 {
     ASTs & args = table_function_ast.arguments->children;
     if (args.size() != short_form_num_args)
         return;
+
+    std::set<String> external_tables;
+    if (table_name_may_reference_temporary_table && !local_context->isGlobalContext())
+        for (const auto & [external_table_name, _ /* storage */] : local_context->getExternalTables())
+            external_tables.insert(external_table_name);
 
     ASTPtr & table_name_arg = args.at(0);
     if (const auto * identifier = table_name_arg->as<ASTIdentifier>())
@@ -2293,6 +2305,8 @@ void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t
             return;
         if (!table_identifier->getDatabaseName().empty())
             return;
+        if (external_tables.contains(table_identifier->shortName()))
+            return;
         table_name_arg = make_intrusive<ASTLiteral>(table_identifier->shortName());
     }
     else
@@ -2301,8 +2315,9 @@ void bindLeadingTableNameArgument(const ASTFunction & table_function_ast, size_t
         const auto * literal = evaluated->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::String)
             return;
-        /// In the short form the whole string is the table name (it is not split at a dot), so it is
-        /// qualified unconditionally.
+        /// In the short form the whole string is the table name (it is not split at a dot).
+        if (external_tables.contains(literal->value.safeGet<String>()))
+            return;
         table_name_arg = evaluated;
     }
 
@@ -2342,27 +2357,27 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
              || function_name == "timeSeriesTags" || function_name == "timeSeriesMetrics")
     {
         /// timeSeriesMetrics([db.]table) / timeSeriesMetrics('db', 'table')
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ true, local_context);
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "timeSeriesSelector")
     {
         /// timeSeriesSelector([db.]table, selector, min_time, max_time)
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 4, /* table_name_can_be_identifier= */ true, local_context);
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 4, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "prometheusQuery")
     {
         /// prometheusQuery([db.]table, promql_query, evaluation_time)
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 3, /* table_name_can_be_identifier= */ true, local_context);
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 3, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "prometheusQueryRange")
     {
         /// prometheusQueryRange([db.]table, promql_query, start_time, end_time, step)
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 5, /* table_name_can_be_identifier= */ true, local_context);
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 5, /* table_name_can_be_identifier= */ true, /* table_name_may_reference_temporary_table= */ true, local_context);
     }
     else if (function_name == "merge")
     {
         /// merge('table_name_regexp'): the regexp matches tables of the current database
-        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ false, local_context);
+        bindLeadingTableNameArgument(table_function_ast, /* short_form_num_args= */ 1, /* table_name_can_be_identifier= */ false, /* table_name_may_reference_temporary_table= */ false, local_context);
     }
     else if (function_name == "loop")
     {

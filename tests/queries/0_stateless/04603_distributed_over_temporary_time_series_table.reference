@@ -1,0 +1,3 @@
+CREATE TABLE default.dist_over_tmp_ts\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(ts_src))
+CREATE TABLE default.dist_over_tmp_ts\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'ts_src\'))
+CREATE TABLE default.dist_over_tmp_ts\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'default\', \'ts_src\'))
