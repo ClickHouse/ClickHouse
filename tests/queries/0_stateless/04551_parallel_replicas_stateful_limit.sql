@@ -5,7 +5,7 @@
 --
 -- The trivial-`LIMIT` guard used to force only a single *local* stream, while the parallel-replicas
 -- rewrite still fired (it keys off `trivial_limit`, which the guard leaves at 0). This is fixed for
--- both the new-analyzer planner (`PlannerJoinTree`) and the old-analyzer interpreter
+-- both the planner (`PlannerJoinTree`) and the old-analyzer interpreter
 -- (`InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis`).
 
 DROP TABLE IF EXISTS t_pr_stateful;

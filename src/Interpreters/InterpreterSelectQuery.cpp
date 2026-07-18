@@ -1170,7 +1170,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     /// (e.g. `SELECT neighbor(v, 1) FROM mt LIMIT 1`) requires a single deterministic input
     /// stream. If parallel replicas are enabled, the read is split across replicas and the rows
     /// the stateful expression observes get interleaved, so disable parallel replicas here and
-    /// reanalyze (mirrors the trivial-count disabling above and the same guard on the new-analyzer
+    /// reanalyze (mirrors the trivial-count disabling above and the same guard on the planner
     /// path in `PlannerJoinTree::buildQueryPlanForTableExpression`). This must happen before the
     /// `parallel_replicas_min_number_of_rows_per_replica` early return below, which otherwise leaves
     /// parallel replicas enabled.
