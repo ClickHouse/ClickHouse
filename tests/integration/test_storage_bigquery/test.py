@@ -90,10 +90,6 @@ def mock_reset():
     mock_ctl("/__reset__")
 
 
-def mock_mutate_wide_schema():
-    mock_ctl("/__mutate_wide_schema__")
-
-
 def sql_str(value):
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
@@ -365,49 +361,23 @@ def test_no_referenced_columns():
         )
 
 
-# Must match bigquery_mock_server.py::wide_column_name / WIDE_COLUMN_COUNT.
-WIDE_COLUMN_COUNT = 40
-
-
+# Must match bigquery_mock_server.py::wide_column_name (the mock's `test_wide` table has 40 such columns
+# plus a leading `i`, wide enough that a full column list overflows the request URL length limit).
 def wide_column_name(i):
     return "wide_column_" + str(i).zfill(4) + "_" + "x" * 280
 
 
-def test_wide_table_selected_fields():
+def test_wide_select_all_rejected():
     mock_reset()
-    # `SELECT *` on a very wide table would make the comma-separated `selectedFields` list longer than
-    # the request URL can hold. Because every column is requested anyway, the reader falls back to an
-    # empty `selectedFields` (BigQuery then returns all current columns) instead of building an
-    # oversized GET, so the read still succeeds.
-    result = node.query(f"SELECT * FROM {bq('test_wide')} FORMAT TSV")
-    assert result == "\t".join(["1"] * (WIDE_COLUMN_COUNT + 1)) + "\n"
-    requests = mock_stats()["data_requests"]
-    assert requests
-    assert all("selectedFields" not in r["params"] for r in requests)
-
-
-def test_wide_select_all_rejects_schema_drift():
-    mock_reset()
-    # A wide `SELECT *` drops the explicit `selectedFields` list (too long for the request URL) and relies
-    # on BigQuery returning all *current* columns. Because the `tabledata.list` response is positional and
-    # carries no column names, the reader re-fetches the schema at execution and refuses to read if it no
-    # longer matches the analyzed snapshot, rather than risk misaligning the columns.
-    node.query("DROP TABLE IF EXISTS bq_wide_drift")
-    node.query(
-        f"CREATE TABLE bq_wide_drift ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_wide', "
-        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
-    )
-    # The snapshot matches on the first read.
-    assert (
-        node.query("SELECT * FROM bq_wide_drift FORMAT TSV")
-        == "\t".join(["1"] * (WIDE_COLUMN_COUNT + 1)) + "\n"
-    )
-    # Rename a remote column, keeping the count: the per-row cell count is unchanged, so only the
-    # schema re-fetch can detect the drift.
-    mock_mutate_wide_schema()
-    error = node.query_and_get_error("SELECT * FROM bq_wide_drift FORMAT TSV")
-    assert "schema changed" in error
-    node.query("DROP TABLE bq_wide_drift")
+    # `SELECT *` on a very wide table would make the comma-separated `selectedFields` list longer than the
+    # request URL can hold. `selectedFields` is the only way to pin the read to the analyzed schema
+    # snapshot (an empty list returns all *current* columns, whose positional `tabledata.list` response
+    # could be misaligned by a concurrent schema change without tripping the per-row cell-count check), so
+    # rather than read unpinned the query is rejected: the user must project fewer columns.
+    error = node.query_and_get_error(f"SELECT * FROM {bq('test_wide')}")
+    assert "too long" in error
+    # No unpinned "all current columns" request is ever sent.
+    assert mock_stats()["data_requests"] == []
 
 
 def test_wide_projection_rejected():
@@ -532,6 +502,24 @@ def test_insert_flushes_by_bytes():
     assert all(r["body_bytes"] <= 10 * 1024 * 1024 for r in requests)
     assert sum(r["rows"] for r in requests) == 16
     assert node.query(f"SELECT count() FROM {bq('writable')}") == "16\n"
+
+
+def test_insert_large_single_row():
+    # A single row close to (but under) BigQuery's 10 MB request limit must be accepted: the sink budgets
+    # against the full serialized request body (envelope + row + commas), not a blanket sub-limit margin, so
+    # a ~9.5 MB row goes through in its own request. The previous 9 MiB margin would have rejected it
+    # locally even though BigQuery accepts it.
+    mock_reset()
+    # `repeat` caps the repeat count at 1,000,000, so repeat a 10-byte unit to reach ~9.5 MB.
+    node.query(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name) SELECT 1, repeat('xxxxxxxxxx', 950000)",
+        settings={"max_threads": 1, "max_insert_threads": 1},
+    )
+    requests = mock_stats()["insert_requests"]
+    assert len(requests) == 1
+    assert requests[0]["rows"] == 1
+    assert 9500000 < requests[0]["body_bytes"] <= 10 * 1024 * 1024
+    assert node.query(f"SELECT count() FROM {bq('writable')}") == "1\n"
 
 
 def test_insert_allowed_when_mutations_disabled():

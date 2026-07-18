@@ -23,6 +23,7 @@
 
 #include <ranges>
 #include <sstream>
+#include <string_view>
 
 namespace DB
 {
@@ -42,10 +43,19 @@ namespace
 constexpr size_t INSERT_ALL_BATCH_SIZE = 500;
 
 /// BigQuery's `tabledata.insertAll` rejects HTTP requests larger than 10 MB. Rows are buffered across
-/// chunks, so the sink flushes by serialized size in addition to the row-count cap, leaving margin for
-/// the request envelope. A single row that alone exceeds this cannot be split and is refused with a
-/// clear error instead of letting BigQuery reject the whole request with an opaque `invalid`.
-constexpr size_t INSERT_ALL_MAX_REQUEST_BYTES = 9 * 1024 * 1024;
+/// chunks, so the sink flushes by serialized request size in addition to the row-count cap. A single
+/// row whose serialized entry plus the request envelope alone exceeds this cannot be split and is
+/// refused with a clear error instead of letting BigQuery reject the whole request with an opaque
+/// `invalid`.
+constexpr size_t INSERT_ALL_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+
+/// The `insertAll` request body is `{"kind":"bigquery#tableDataInsertAllRequest","rows":[<entry>,...]}`
+/// (see `BigQueryClient::insertAll`); these are the fixed bytes around the rows array, and consecutive
+/// rows are separated by one comma each. Budgeting against the full request body (envelope, rows and
+/// commas) rather than a blanket sub-limit margin keeps otherwise valid single-row inserts in the 9-10 MB
+/// range from being rejected locally even though BigQuery would accept them.
+constexpr std::string_view INSERT_ALL_REQUEST_ENVELOPE = R"({"kind":"bigquery#tableDataInsertAllRequest","rows":[]})";
+constexpr size_t INSERT_ALL_REQUEST_ENVELOPE_BYTES = INSERT_ALL_REQUEST_ENVELOPE.size();
 
 /// BigQuery rejects `insertId` values longer than 128 bytes, but the ClickHouse `query_id` used as the
 /// deduplication prefix is user-controllable and unbounded. Keep a short query id verbatim (so the
@@ -187,15 +197,25 @@ public:
             std::ostringstream entry_stream;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             entry->stringify(entry_stream);
             const size_t entry_size = static_cast<size_t>(entry_stream.tellp());
-            if (entry_size > INSERT_ALL_MAX_REQUEST_BYTES)
+            /// A single row whose serialized entry plus the request envelope alone exceeds the limit
+            /// cannot be split into a smaller request, so it is refused up front.
+            if (INSERT_ALL_REQUEST_ENVELOPE_BYTES + entry_size > INSERT_ALL_MAX_REQUEST_BYTES)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "A single row of {} bytes exceeds the maximum BigQuery streaming-insert request size of {} bytes",
                     entry_size, INSERT_ALL_MAX_REQUEST_BYTES);
 
-            /// Flush the buffered rows before adding one that would push the request over the size limit.
-            if (pending_rows && pending_bytes + entry_size > INSERT_ALL_MAX_REQUEST_BYTES)
-                flush();
+            /// Flush the buffered rows before adding one that would push the serialized request over the
+            /// size limit. The request body is the fixed envelope, the buffered rows, this row, and one
+            /// comma between each pair of rows (the pending rows already contribute one comma each once
+            /// this row is appended).
+            if (pending_rows)
+            {
+                const size_t projected_bytes
+                    = INSERT_ALL_REQUEST_ENVELOPE_BYTES + pending_bytes + entry_size + pending_rows->size();
+                if (projected_bytes > INSERT_ALL_MAX_REQUEST_BYTES)
+                    flush();
+            }
 
             if (!pending_rows)
                 pending_rows = new Poco::JSON::Array;
@@ -331,25 +351,6 @@ void validateInferredColumns(const ColumnsDescription & columns, const ContextPt
         validateDataType(column.type, validation_settings);
 }
 
-/// Two BigQuery schemas are equal when they have the same fields, in the same order, with the same
-/// name, kind, and mapped ClickHouse type (recursively for RECORDs). Used to confirm a wide `SELECT *`
-/// still reads exactly the analyzed snapshot after the explicit `selectedFields` list had to be dropped
-/// for being too long for the request URL (see StorageBigQuery::read).
-bool bigQueryFieldsEqual(const BigQueryFields & lhs, const BigQueryFields & rhs)
-{
-    if (lhs.size() != rhs.size())
-        return false;
-    for (size_t i = 0; i < lhs.size(); ++i)
-    {
-        if (lhs[i].name != rhs[i].name
-            || lhs[i].type != rhs[i].type
-            || !lhs[i].data_type->equals(*rhs[i].data_type)
-            || !bigQueryFieldsEqual(lhs[i].children, rhs[i].children))
-            return false;
-    }
-    return true;
-}
-
 }
 
 StorageBigQuery::StorageBigQuery(
@@ -462,48 +463,31 @@ Pipe StorageBigQuery::read(
         if (!sample.has(name))
             checkColumnMatchesSchema(columns.getPhysical(name), all_fields);    /// throws with a proper message
 
-    /// Send the explicit field list so that execution stays pinned to the analyzed schema snapshot: an
-    /// empty `selectedFields` tells BigQuery to return all of the table's *current* columns, so if the
-    /// remote table gained a column after the schema snapshot was taken (analysis time), execution would
-    /// then receive wider rows than the header expects and fail with "Malformed row".
+    /// Build the explicit list of requested columns to send as `selectedFields` (see below for why the
+    /// read is always pinned to this list).
     Names selected_names;
     selected_names.reserve(selected.size());
     for (const auto & field : selected)
         selected_names.push_back(field.name);
     String selected_fields = fmt::format("{}", fmt::join(selected_names, ","));
 
-    /// `selectedFields` is passed in the `tabledata.list` request URL, and BigQuery tables can have up to
-    /// 10000 columns; for a very wide `SELECT *` the explicit list can exceed the URL / front-end length
-    /// limit even though the read itself is valid. A wide projection cannot omit the list (an empty list
-    /// reads all columns, not the projected subset), so it is reported as an error instead of producing an
-    /// oversized request.
+    /// `selectedFields` is passed in the `tabledata.list` request URL, and it is the only way to pin the
+    /// read to the schema snapshot taken at analysis time: an empty `selectedFields` tells BigQuery to
+    /// return all of the table's *current* columns, and because the `tabledata.list` response is positional
+    /// and carries no column names, a concurrent schema change that keeps the column count (e.g. a dropped
+    /// column offset by an added one) would be read into the wrong columns without tripping the per-row
+    /// cell-count check. BigQuery tables can have up to 10000 columns, so for a very wide read the explicit
+    /// list can exceed the request URL / front-end length limit. There is no pinned read once the list is
+    /// dropped (a pre-execution schema re-fetch still leaves a window before, and between the pages of, the
+    /// data requests), so rather than risk a silent misread the query is rejected: the read must project a
+    /// smaller set of columns whose explicit list fits the request URL.
     static constexpr size_t max_selected_fields_length = 8192;
     if (selected_fields.size() > max_selected_fields_length)
-    {
-        if (selected.size() == all_fields.size())
-        {
-            /// Every column is requested, so we can fall back to an empty `selectedFields` (BigQuery then
-            /// returns all of the table's *current* columns). This only reads the analyzed snapshot if the
-            /// remote schema is unchanged, and the positional `tabledata.list` response carries no column
-            /// names, so a change that keeps the column count (e.g. a dropped column offset by an added one)
-            /// could be read as the wrong columns without tripping the per-row count check. Re-fetch the
-            /// schema and require it to still match the snapshot before giving up the pin; fail closed
-            /// otherwise, so a concurrent schema change surfaces an error instead of a silent misread.
-            auto current_fields = fetchTableSchema(configuration, context, token_provider);
-            if (!bigQueryFieldsEqual(current_fields, all_fields))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The BigQuery table is too wide to pass an explicit column list in the `tabledata.list` "
-                    "request URL, and its schema changed between query analysis and execution; retry the query");
-            selected_fields.clear();
-        }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The list of selected BigQuery columns is too long ({} bytes) to pass in the `tabledata.list` "
-                "request URL; select fewer columns",
-                selected_fields.size());
-    }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The list of selected BigQuery columns is too long ({} bytes) to pass in the `tabledata.list` "
+            "request URL while pinning the read to the analyzed schema; select fewer columns",
+            selected_fields.size());
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
     return Pipe(std::make_shared<BigQuerySource>(
