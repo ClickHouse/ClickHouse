@@ -1,0 +1,63 @@
+---
+sidebarTitle: '마켓플레이스'
+slug: /cloud/features/ai-ml/agents/marketplace
+title: '에이전트 마켓플레이스'
+description: 'ClickHouse Cloud 조직에서 공유된 에이전트를 찾아 사용합니다'
+keywords: ['AI', 'ClickHouse Cloud', '에이전트', '마켓플레이스', '공유', '디스커버리']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge />
+
+에이전트 마켓플레이스는 조직 내 다른 사용자가 공유한 에이전트를 찾아보고, 검색하고, 실행할 수 있는 곳입니다. 또한 관리자가 조직 전체에 게시한 에이전트도 포함됩니다. 왼쪽 사이드바의 **에이전트 마켓플레이스** 옵션에서 열 수 있습니다.
+
+<Image img="/images/cloud/agent-builder/marketplace/marketplace.webp" alt="왼쪽 사이드바에서 에이전트 마켓플레이스 옵션이 강조 표시된 채팅 화면" size="lg" />
+
+<div id="browse">
+  ## 둘러보기
+</div>
+
+에이전트는 범주별로 그룹화되어 있습니다. 예를 들어 *General*, *Human Resources*, *Research &amp; Development*, *Finance*, *IT*, *Sales* 등이 있습니다. 마켓플레이스 상단의 탭에서 범주를 전환하세요. 각 에이전트 카드에는 이름, 아이콘, 그리고 속한 범주가 표시됩니다.
+
+검색창을 사용해 모든 범주에서 이름이나 키워드로 에이전트를 찾으세요.
+
+<Image img="/images/cloud/agent-builder/marketplace/browse.webp" alt="제목, 검색창, 범주 탭(General, Human Resources, Research and Development, Finance, IT, Sales, After Sales, All), 그리고 에이전트 카드가 표시된 에이전트 마켓플레이스 화면" size="lg" />
+
+<div id="open-an-agent">
+  ## 에이전트 열기
+</div>
+
+에이전트 카드를 클릭하면 상세 보기로 이동합니다. 여기에서 다음 작업을 수행할 수 있습니다:
+
+* **Start Chat** - 에이전트와 새 채팅을 시작합니다.
+* **Pin** - 빠르게 액세스할 수 있도록 에이전트를 즐겨찾기에 추가합니다.
+* **Copy link** - 에이전트의 direct link를 공유합니다.
+
+<Image img="/images/cloud/agent-builder/marketplace/use-agent.webp" alt="에이전트 이름, 아이콘, Pin, Copy link, Start Chat 작업이 표시된 에이전트 상세 정보 모달" size="md" />
+
+<div id="publish-your-own">
+  ## 자체 에이전트 게시
+</div>
+
+에이전트를 마켓플레이스에서 찾을 수 있게 하려면 [공유 및 액세스](/ko/products/cloud/features/ai-ml/agents/sharing-and-access) 패널에서 적절한 범위로 공유하십시오. 공개 범위는 다음과 같습니다:
+
+* **비공개** - 본인만 볼 수 있습니다. 마켓플레이스에는 표시되지 않습니다.
+* **사용자 또는 그룹과 공유** - 해당 주체에게 표시됩니다. 해당 사용자의 마켓플레이스에 표시됩니다.
+* **조직 전체** - 조직의 모든 사용자에게 표시됩니다. 관리자의 마켓플레이스 권한이 적용됩니다.
+
+게시하기 전에 에이전트의 카테고리를 지정하고 설명을 명확하게 작성하십시오 — 이 필드는 검색과 카테고리별 탐색 경험에 모두 반영됩니다.
+
+<div id="admin-controls">
+  ## 관리자 제어 기능
+</div>
+
+조직 관리자는 다음 작업을 수행할 수 있습니다:
+
+* 마켓플레이스에 표시할 카테고리 구성을 선별합니다.
+* 개별 에이전트를 조직 전체 보기로 승격합니다.
+* 역할별로 마켓플레이스 액세스를 허용하거나 제한합니다.
+
+권한 모델은 [공유 및 액세스](/ko/products/cloud/features/ai-ml/agents/sharing-and-access)를 참조하십시오.

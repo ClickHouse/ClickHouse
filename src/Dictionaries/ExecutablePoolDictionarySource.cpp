@@ -264,7 +264,10 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
-    factory.registerSource("executable_pool", create_table_source);
+    factory.registerSource("executable_pool", create_table_source, Documentation{
+        .description = "Like the `executable` source, but maintains a pool of persistent script processes that are reused across requests. Intended for the `cache`, `complex_key_cache`, `direct`, and `complex_key_direct` layouts. For security reasons, dictionaries with this source cannot be created from a DDL query; they are only allowed when configured in a server configuration file.",
+        .syntax = "SOURCE(EXECUTABLE_POOL(command 'script.sh' format 'TabSeparated' pool_size 4))",
+        .related = {"executable"}});
 }
 
 }

@@ -1,0 +1,104 @@
+---
+description: "Le moteur `Atomic` prend en charge les requêtes [`DROP TABLE`](#drop-detach-table) et [`RENAME TABLE`](#rename-table) sans blocage, ainsi que les requêtes atomiques [`EXCHANGE TABLES`](#exchange-tables). Le moteur de base de données `Atomic` est utilisé par défaut."
+sidebarTitle: 'Atomic'
+slug: /engines/database-engines/atomic
+title: 'Atomic'
+doc_type: 'reference'
+---
+
+Le moteur `Atomic` prend en charge les requêtes [`DROP TABLE`](#drop-detach-table) et [`RENAME TABLE`](#rename-table) sans blocage, ainsi que les requêtes atomiques [`EXCHANGE TABLES`](#exchange-tables). Le moteur de base de données `Atomic` est utilisé par défaut dans la version open source de ClickHouse.
+
+<Note>
+  Dans ClickHouse Cloud, le [moteur de base de données `Shared`](/fr/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) est utilisé par défaut et prend également en charge
+  les opérations mentionnées ci-dessus.
+</Note>
+
+<div id="creating-a-database">
+  ## Créer une base de données
+</div>
+
+```sql
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+```
+
+<div id="specifics-and-recommendations">
+  ## Spécificités et recommandations
+</div>
+
+<div id="table-uuid">
+  ### UUID de la table
+</div>
+
+Chaque table de la base de données `Atomic` possède un [UUID](/fr/reference/data-types/uuid) permanent et stocke ses données dans le répertoire suivant :
+
+```text
+/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
+```
+
+où `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` est l’UUID de la table.
+
+Par défaut, l’UUID est généré automatiquement. Les utilisateurs peuvent toutefois le définir explicitement lors de la création d’une table, bien que cela ne soit pas recommandé.
+
+Par exemple :
+
+```sql
+CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
+```
+
+<Note>
+  Vous pouvez utiliser le paramètre [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/fr/reference/settings/session-settings#show_table_uuid_in_table_create_query_if_not_nil) pour afficher l’UUID dans le résultat de la requête `SHOW CREATE`.
+</Note>
+
+<div id="rename-table">
+  ### RENAME TABLE
+</div>
+
+Les requêtes [`RENAME`](/fr/reference/statements/rename) ne modifient pas l’UUID et ne déplacent pas les données de la table. Elles s’exécutent immédiatement et n’attendent pas la fin des autres requêtes utilisant la table.
+
+<div id="drop-detach-table">
+  ### DROP/DETACH TABLE
+</div>
+
+Lors de l&#39;utilisation de `DROP TABLE`, aucune donnée n&#39;est supprimée. Le moteur `Atomic` se contente de marquer la table comme supprimée en déplaçant ses métadonnées vers `/clickhouse_path/metadata_dropped/` et en notifiant le thread d&#39;arrière-plan. Le délai avant la suppression définitive des données de la table est défini par le paramètre [`database_atomic_delay_before_drop_table_sec`](/fr/reference/settings/server-settings/settings#database_atomic_delay_before_drop_table_sec).
+Vous pouvez activer le mode synchrone à l&#39;aide du modificateur `SYNC`. Pour cela, utilisez le paramètre [`database_atomic_wait_for_drop_and_detach_synchronously`](/fr/reference/settings/session-settings#database_atomic_wait_for_drop_and_detach_synchronously). Dans ce cas, `DROP` attend la fin des requêtes `SELECT`, `INSERT` et autres requêtes en cours qui utilisent la table. La table sera supprimée lorsqu&#39;elle ne sera plus utilisée.
+
+<div id="exchange-tables">
+  ### EXCHANGE TABLES/DICTIONARIES
+</div>
+
+La requête [`EXCHANGE`](/fr/reference/statements/exchange) permute des tables ou des dictionnaires de manière atomique. Par exemple, au lieu de cette opération non atomique :
+
+```sql title="Non-atomic"
+RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
+```
+
+vous pouvez utiliser une base de données de type Atomic :
+
+```sql title="Atomic"
+EXCHANGE TABLES new_table AND old_table;
+```
+
+<div id="replicatedmergetree-in-atomic-database">
+  ### ReplicatedMergeTree dans la base de données atomic
+</div>
+
+Pour les tables [`ReplicatedMergeTree`](/fr/reference/engines/table-engines/mergetree-family/replication), il est recommandé de ne pas spécifier les paramètres du moteur pour le chemin dans ZooKeeper ni le nom de la réplique. Dans ce cas, les paramètres de configuration [`default_replica_path`](/fr/reference/settings/server-settings/settings#default_replica_path) et [`default_replica_name`](/fr/reference/settings/server-settings/settings#default_replica_name) seront utilisés. Si vous souhaitez spécifier explicitement les paramètres du moteur, il est recommandé d’utiliser les macros `{uuid}`. Cela garantit que des chemins uniques sont automatiquement générés pour chaque table dans ZooKeeper.
+
+<div id="metadata-disk">
+  ### Disque de métadonnées
+</div>
+
+Lorsque `disk` est spécifié dans `SETTINGS`, le disque est utilisé pour stocker les fichiers de métadonnées de la table.
+Par exemple :
+
+```sql
+CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+```
+
+Si rien n’est précisé, le disque défini dans `database_disk.disk` est utilisé par défaut.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [system.databases](/fr/reference/system-tables/databases) table système

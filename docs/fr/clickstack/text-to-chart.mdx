@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: "Générez des graphiques à partir de prompts en langage naturel dans ClickStack grâce à la fonctionnalité Text-to-Chart propulsée par l'IA."
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'IA', 'visualisation', 'Chart Explorer', 'langage naturel', 'observability']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La fonctionnalité Text-to-Chart de ClickStack vous permet de créer des visualisations en décrivant en texte simple ce que vous souhaitez voir. Au lieu de sélectionner manuellement des métriques, des filtres et des champs de group-by, vous pouvez saisir un prompt comme &quot;taux d&#39;erreur par service sur les dernières 24 heures&quot;, et ClickStack générera automatiquement le chart correspondant.
+
+Cette fonctionnalité utilise un grand modèle de langage (LLM) pour convertir votre prompt en requête, puis crée la visualisation dans le [Chart Explorer](/fr/clickstack/features/dashboards/overview#navigate-chart-explorer). Elle fonctionne avec n&#39;importe quelle source de données configurée.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+Text-to-Chart nécessite une [clé API Anthropic](https://console.anthropic.com/). Définissez la variable d’environnement `ANTHROPIC_API_KEY` lors du démarrage de ClickStack.
+
+Pour les déploiements open source, transmettez la clé sous forme de variable d’environnement. La méthode varie selon le type de déploiement :
+
+<Tabs>
+  <Tab title="Docker (All-in-One ou mode local)">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+  </Tab>
+
+  <Tab title="Docker (HyperDX uniquement)">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
+    ```
+  </Tab>
+
+  <Tab title="Docker Compose">
+    Ajoutez la variable à votre fichier `.env` ou définissez-la directement dans le `docker-compose.yaml` :
+
+    ```yaml
+    services:
+      app:
+        environment:
+          ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Helm">
+    Transmettez la clé avec `--set` :
+
+    ```bash
+    helm install my-hyperdx hyperdx/hdx-oss-v2 \
+      --set env[0].name=ANTHROPIC_API_KEY \
+      --set env[0].value=<YOUR_KEY>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="using-text-to-chart">
+  ## Utilisation de Text-to-Chart
+</div>
+
+<Steps>
+  <Step>
+    ### Accéder à Chart Explorer
+
+    Sélectionnez **Chart Explorer** dans le menu de gauche de HyperDX.
+  </Step>
+
+  <Step>
+    ### Sélectionner une source de données
+
+    Choisissez la source de données que vous souhaitez visualiser — par exemple, **Logs**, **Traces** ou **Metrics**.
+
+    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
+  </Step>
+
+  <Step>
+    ### Saisir un prompt
+
+    En haut de Chart Explorer, repérez le champ de saisie **Assistant IA**. Saisissez une description en langage naturel du graphique que vous souhaitez créer. Par exemple :
+
+    * `Show error rates by service over the last 24 hours`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    ClickStack convertit le prompt en requête et affiche automatiquement la visualisation.
+
+    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+  </Step>
+</Steps>
+
+<div id="demo-data">
+  ## Essayer avec des données de démonstration
+</div>
+
+Pour essayer Text-to-Chart au plus vite, utilisez l&#39;[image Docker Local Mode](/fr/clickstack/deployment/local-mode-only) et le [jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data) :
+
+```bash
+docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
+```
+
+Accédez à `localhost:8080`. Pour vous connecter aux données de démonstration, accédez à **Team Settings** et créez une nouvelle connexion avec les informations suivantes :
+
+* **Nom de la connexion** : `Demo`
+* **Hôte** : `https://sql-clickhouse.clickhouse.com`
+* **Nom d&#39;utilisateur** : `otel_demo`
+* **Mot de passe** : laissez vide
+
+<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="Créer une connexion" />
+
+Modifiez ensuite chacune des sources — **Logs**, **Traces**, **Metrics** et **Sessions** — pour utiliser la base de données `otel_v2`. Pour plus de détails sur la configuration des sources, consultez le [guide du jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data).
+
+Une fois connecté, ouvrez le **Chart Explorer** et essayez des prompts avec les logs, les traces et les métriques disponibles.
+
+<div id="example-prompts">
+  ## Exemples de prompts
+</div>
+
+Les prompts suivants illustrent des cas d’usage courants lors de l’utilisation de données d’observabilité :
+
+| Prompt                                            | Source de données | Description                                                      |
+| ------------------------------------------------- | ----------------- | ---------------------------------------------------------------- |
+| `Error count by service over time`                | Logs              | Représente la fréquence des erreurs dans les différents services |
+| `Average request duration grouped by endpoint`    | Traces            | Affiche les tendances de latence par endpoint                    |
+| `P99 latency by service`                          | Traces            | Identifie la tail latency selon les services                     |
+| `Count of 5xx status codes over the last 6 hours` | Logs              | Suit les tendances des erreurs du serveur                        |
+
+Les prompts peuvent référencer n’importe quelle colonne ou n’importe quel attribut disponible dans vos sources de données configurées. Plus le prompt est spécifique, plus le graphique généré sera précis.
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+* Text-to-Chart prend actuellement en charge Anthropic comme fournisseur de LLM. La prise en charge d&#39;autres fournisseurs, dont OpenAI, est prévue dans de futures versions.
+* Seuls les logs et les traces sont pris en charge comme sources de données. Les métriques Prometheus ne sont pas encore prises en charge.
+* La précision du graphique dépend de la clarté du prompt et de la structure des données sous-jacentes. Si un graphique généré ne correspond pas aux attentes, essayez de reformuler le prompt ou d&#39;indiquer explicitement les noms de colonnes.
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+* [Du texte aux graphiques : une façon plus rapide de visualiser avec ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — article de blog présentant cette fonctionnalité
+* [Tableaux de bord et visualisations](/fr/clickstack/features/dashboards/overview) — création manuelle de graphiques avec Chart Explorer
+* [Search](/fr/clickstack/features/search) — syntaxe de recherche en texte intégral et par propriété
+* [Configuration](/fr/clickstack/managing/config) — toutes les variables d’environnement de ClickStack

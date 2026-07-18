@@ -1,5 +1,6 @@
 #include <Interpreters/RowRefs.h>
 
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Columns/ColumnDecimal.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnVector.h>
@@ -88,7 +89,7 @@ public:
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
 
-    void insert(const IColumn & asof_column, const ColumnsInfo * columns, size_t row_num) override
+    void insert(const IColumn & asof_column, UInt32 block_no, size_t row_num) override
     {
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
@@ -97,7 +98,7 @@ public:
         chassert(!sorted.load(std::memory_order_acquire));
 
         entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
-        row_refs.emplace_back(RowRef(columns, row_num));
+        row_refs.emplace_back(RowRef(block_no, row_num));
     }
 
     /// Unrolled version of upper_bound and lower_bound
@@ -152,7 +153,7 @@ public:
         return low;
     }
 
-    RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
+    const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -221,16 +222,125 @@ private:
 
 }
 
-ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
+StoredBlock::StoredBlock(Columns columns_) : columns(std::move(columns_))
 {
     rebuildReplicatedColumns();
 }
 
-void ColumnsInfo::rebuildReplicatedColumns()
+StoredBlock::StoredBlock(Columns columns_, detail::Selector selector_)
+    : columns(std::move(columns_)), selector(std::move(selector_))
+{
+    rebuildReplicatedColumns();
+}
+
+void StoredBlock::rebuildReplicatedColumns()
 {
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
+}
+
+size_t StoredBlock::allocatedBytes() const
+{
+    if (columns.empty())
+        return 0;
+
+    size_t rows = columns.front()->size();
+    if (rows == 0)
+        return 0;
+
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->allocatedBytes();
+    return res * selector.size() / rows;
+}
+
+void throwRowRefPointerTooLarge()
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Arena pointer does not fit in 48 bits; RowRefList pointer+count packing is invalid on this platform");
+}
+
+void throwRowRefOutOfRange(size_t block_no, size_t row_no)
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "RowRef out of range: block_no {} must fit in 31 bits and row_no {} in 32 bits",
+        block_no, row_no);
+}
+
+UInt32 StoredColumnsIndex::add(const StoredBlock * block)
+{
+    std::lock_guard guard(mutex);
+    if (blocks.size() > RowRef::BLOCK_NO_MASK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
+    blocks.push_back(block);
+    ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).
+    return static_cast<UInt32>(blocks.size() - 1);
+}
+
+void StoredColumnsIndex::clearEntry(UInt32 block_no)
+{
+    std::lock_guard guard(mutex);
+    chassert(block_no < blocks.size());
+    blocks[block_no] = nullptr;
+    ++blocks_generation;
+}
+
+void StoredColumnsIndex::invalidateEmitTable()
+{
+    std::lock_guard guard(mutex);
+    ++blocks_generation;
+}
+
+void StoredColumnsIndex::resolveEmitColumns(
+    size_t saved_columns_count,
+    const std::vector<size_t> & positions,
+    std::vector<const IColumn * const *> & out_columns,
+    std::vector<const ColumnReplicated * const *> & out_replicated)
+{
+    std::lock_guard guard(mutex);
+
+    if (emit_generation != blocks_generation)
+    {
+        /// Blocks changed since the table was last built: every cached `const IColumn *` is stale. Drop
+        /// the whole table; positions other queries still need will be rebuilt when they ask for them.
+        emit_columns.clear();
+        emit_columns.resize(saved_columns_count); /// value-initializes to null unique_ptrs (no copy)
+        emit_generation = blocks_generation;
+    }
+    else if (emit_columns.size() < saved_columns_count)
+    {
+        emit_columns.resize(saved_columns_count); /// defensive; saved_columns_count is fixed per join
+    }
+
+    const size_t num_blocks = blocks.size();
+    out_columns.clear();
+    out_replicated.clear();
+    out_columns.reserve(positions.size());
+    out_replicated.reserve(positions.size());
+    for (size_t pos : positions)
+    {
+        chassert(pos < saved_columns_count);
+        if (!emit_columns[pos]) /// not built yet for this generation: build this requested position
+        {
+            auto emit_column = std::make_unique<EmitColumn>();
+            emit_column->by_block.resize(num_blocks);
+            emit_column->repl_by_block.resize(num_blocks);
+            for (size_t b = 0; b < num_blocks; ++b)
+            {
+                const StoredBlock * block = blocks[b];
+                /// A cleared/popped slot keeps a null entry: no live ref points to it (mirrors `at()`).
+                emit_column->by_block[b] = block ? block->columns[pos].get() : nullptr;
+                emit_column->repl_by_block[b] = block ? block->replicated_columns[pos] : nullptr;
+            }
+            emit_columns[pos] = std::move(emit_column);
+        }
+        const EmitColumn & emit_column = *emit_columns[pos];
+        out_columns.push_back(emit_column.by_block.data());
+        out_replicated.push_back(emit_column.repl_by_block.data());
+    }
 }
 
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)

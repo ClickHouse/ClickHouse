@@ -1,0 +1,114 @@
+---
+title: Como filtrar uma tabela do ClickHouse por uma coluna do tipo Array?
+description: "Artigo da base de conhecimento sobre como filtrar uma tabela do ClickHouse por uma coluna do tipo Array."
+date: 2024-12-17
+tags: ['Modelagem de Dados', 'Funções']
+keywords: ['Filtro', 'Coluna do tipo Array']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Filtrar uma tabela do ClickHouse por uma coluna do tipo Array é uma tarefa comum, e o produto oferece muitas [funções](/pt-BR/reference/functions/regular-functions/array-functions) para trabalhar com colunas do tipo Array.
+
+Neste artigo, vamos nos concentrar em filtrar uma tabela por uma coluna do tipo Array, mas o vídeo abaixo aborda muitas outras funções relacionadas a Arrays:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JKHAdCFtYDg?si=OqS3ry1LFrOlF8Iy" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="example">
+  ## Exemplo
+</div>
+
+Usaremos o exemplo de uma tabela com duas colunas, `tags_string` e `tags_int`, que contêm um array de strings e de inteiros, respectivamente.
+
+* Crie um banco de dados e uma tabela de exemplo.
+
+```sql
+CREATE DATABASE db1;
+```
+
+* Crie uma tabela de exemplo
+
+```sql
+CREATE TABLE db1.tags_table
+(
+    `id` UInt64,
+    `tags_string` Array(String),
+    `tags_int` Array(UInt64),
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+* Insira alguns dados de exemplo na tabela.
+
+```sql
+INSERT INTO db1.tags_table VALUES (1, ['tag1', 'tag2', 'tag3'], [1, 2, 3]), (2, ['tag2', 'tag3', 'tag4'], [2, 3, 4]), (3, ['tag1', 'tag3', 'tag5'], [1, 3, 5]);
+```
+
+Filtre a tabela usando a função `has(arr, elem)` para retornar as linhas em que o array `arr` contém o elemento `elem`.
+
+Filtre a tabela para retornar as linhas em que o array `tags_string` contém o elemento `tag1`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE has(tags_string, 'tag1');
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Use a função `hasAll(arr, elems)` para retornar as linhas em que todos os elementos do array `elems` estão presentes no array `arr`.
+
+Filtre a tabela para retornar as linhas em que todos os elementos do array `tags_string` estão presentes no array `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAll(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Use a função `hasAny(arr, elems)` para retornar as linhas em que pelo menos um elemento do array `elems` está presente no array `arr`.
+
+Filtre a tabela para retornar as linhas em que pelo menos um elemento do array `tags_string` está presente no array `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAny(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Podemos usar uma função lambda para filtrar a tabela com a função `arrayExists(lambda, arr)`.
+
+Filtre a tabela para retornar as linhas em que pelo menos um elemento do array `tags_int` seja maior que 3.
+
+```sql
+SELECT * FROM db1.tags_table WHERE arrayExists(x -> x > 3, tags_int);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```

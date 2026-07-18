@@ -1,0 +1,448 @@
+---
+slug: /whats-new/cloud/2025
+sidebarTitle: '2025'
+title: 'سجل تغييرات Cloud لعام 2025'
+description: 'سجل تغييرات ClickHouse Cloud لعام 2025'
+doc_type: 'changelog'
+keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'التحديثات', 'الميزات الجديدة', 'تغييرات Cloud', '2025']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="december-19-2025">
+  ## 19 ديسمبر 2025
+</div>
+
+* تدعم AWS ap-south-1 الآن إطلاق الخدمات المتوافقة مع PCI.
+* **معاينة خاصة للهوية الموحّدة للمستخدم**
+  يمكن للعملاء المهتمين بإدارة مستخدمي قاعدة البيانات من خلال Console تمكين طريقة مصادقة جديدة لـ SQL Console.
+  يتيح ذلك للعملاء تجربة طريقة المصادقة الجديدة بينما نواصل العمل على إتاحة إدارة مستخدمي قاعدة البيانات في Console.
+* **أصبح الوضع غير المرتّب متاحًا الآن في S3 ClickPipes**:
+  يمكن للعملاء الآن إدخال البيانات من Amazon S3 إلى ClickHouse Cloud بأي ترتيب لإجراء تحليلات قائمة على الأحداث.
+  لم يعد مطلوبًا أن تكون الملفات مرتبة ترتيبًا معجميًا لكي تتم معالجتها. تتوفر المزيد من التفاصيل في [مدونة الإعلان](https://clickhouse.com/blog/clickpipes-s3-unordered-mode).
+* انتقل موصل Fivetran مؤخرًا إلى المرحلة التجريبية. إذا كنت تستخدم Fivetran وترغب في إعداد ClickHouse كوجهة، فاطّلع على هذه [الوثائق](https://fivetran.com/docs/destinations/clickhouse/setup-guide).
+
+<div id="december-12-2025">
+  ## 12 ديسمبر 2025
+</div>
+
+* **إعداد SAML SSO للخدمة الذاتية**
+
+  يمكن لعملاء Enterprise الآن إكمال إعداد SAML في Console من دون الحاجة إلى تذكرة دعم.
+  بالإضافة إلى ذلك، يمكن لعملاء SAML تعيين دور افتراضي يُسنَد إلى المستخدمين الجدد المُضافين عبر موفّر الهوية الخاص بهم، كما يمكنهم تعيين إعدادات مخصّصة لمهلة الجلسة.
+  لمزيد من المعلومات، يُرجى مراجعة [الوثائق](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+* **الحد الأقصى لحجم النسخة المتماثلة وحدود التوسّع في Azure**
+
+  يمكن للعملاء الآن ضبط الحد الأقصى لحجم النسخة المتماثلة على 356 GiB في جميع مناطق Azure، باستثناء `eastus2` حيث يبلغ الحد الأقصى المتاح لحجم النسخة المتماثلة 120 GiB.
+
+<div id="november-21-2025">
+  ## 21 نوفمبر 2025
+</div>
+
+* أصبح ClickHouse Cloud متاحًا الآن في **AWS Israel (Tel Aviv) — il-central-1**
+* تم تحسين تجربة الإعداد عبر Marketplace لإعداد مؤسسات ClickHouse للفوترة من خلال اشتراكات Marketplace بنظام Pay-As-You-Go أو عبر Private Offer.
+
+<div id="november-14-2025">
+  ## 14 نوفمبر 2025
+</div>
+
+* يسرّنا الإعلان عن أن **ClickHouse Cloud** أصبح متاحًا الآن في **منطقتين عامتين إضافيتين**:
+
+  * **GCP Japan (asia-northeast1)**
+  * **AWS Seoul (Asia Pacific, ap-northeast-2)** — وهي مدعومة الآن أيضًا في **ClickPipes**
+
+  كانت هاتان المنطقتان متاحتين سابقًا بوصفهما **منطقتين خاصتين**، وهما الآن **متاحتان لجميع المستخدمين**.
+* يدعم Terraform وواجهة برمجة التطبيقات الآن إضافة وسوم إلى الخدمات وتصفية الخدمات حسب الوسوم.
+
+<div id="november-7-2025">
+  ## 7 نوفمبر 2025
+</div>
+
+* تدعم وحدة تحكم ClickHouse Cloud الآن ضبط أحجام النسخ المتماثلة بزيادات قدرها 1 vCPU و4 GiB مباشرةً من وحدة تحكم ClickHouse Cloud.
+  تتوفر هذه الخيارات سواءً عند إعداد خدمة جديدة أو عند تحديد الحدين الأدنى والأقصى لأحجام النسخ المتماثلة في صفحة الإعدادات.
+* تدعم ملفات تعريف الأجهزة المخصصة (المتاحة ضمن فئة Enterprise) الآن الخمول التلقائي.
+* يوفّر ClickHouse Cloud الآن تجربة شراء مبسطة عبر AWS Marketplace، مع خيارات منفصلة لكل من [الدفع حسب الاستخدام](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu?sr=0-2\&ref_=beagle\&applicationId=AWSMPContessa) و[عقود الالتزام بالإنفاق](https://aws.amazon.com/marketplace/pp/prodview-4qyeihstyym2s?sr=0-3\&ref_=beagle\&applicationId=AWSMPContessa).
+* أصبحت التنبيهات متاحة الآن لمستخدمي ClickStack في ClickHouse Cloud.
+  يمكنك الآن إنشاء التنبيهات وإدارتها مباشرةً من واجهة مستخدم HyperDX عبر السجلات والمقاييس والتتبعات، من دون إعداد إضافي، أو بنية تحتية أو خدمة إضافية، ومن دون أي config. تتكامل التنبيهات مع Slack وPagerDuty وغيرهما.
+  لمزيد من المعلومات، راجع [وثائق التنبيهات](/ar/clickstack/features/alerts).
+
+<div id="october-17-2025">
+  ## 17 أكتوبر 2025
+</div>
+
+* **مراقبة الخدمة - لوحة معلومات استخدام الموارد**
+  سيتغيّر عرض مقاييس استخدام CPU واستخدام الذاكرة ليُظهر الحد الأقصى للاستخدام خلال فترة زمنية معيّنة بدلًا من المتوسط، بما يساعد على إبراز حالات نقص توفير الموارد بشكل أفضل.
+  بالإضافة إلى ذلك، سيعرض مقياس استخدام CPU مقياسًا لاستخدام CPU على مستوى Kubernetes، وهو أقرب إلى المقياس الذي يستخدمه المُوسِّع التلقائي في ClickHouse Cloud.
+* **حاويات التخزين الخارجية**
+  يتيح لك ClickHouse Cloud الآن تصدير النسخ الاحتياطية مباشرةً إلى حسابك لدى مزود الخدمة السحابية.
+  صِل حاوية التخزين الخارجية الخاصة بك — AWS S3 أو Google Cloud Storage أو Azure Blob Storage — وتولَّ إدارة النسخ الاحتياطية بنفسك.
+
+<div id="august-29-2025">
+  ## 29 أغسطس 2025
+</div>
+
+* تحوّل [ClickHouse Cloud Azure Private Link](/ar/products/cloud/guides/security/connectivity/private-networking/azure-privatelink) من استخدام عوامل تصفية Resource GUID إلى عوامل تصفية Resource ID لتحديد الموارد. ولا يزال بإمكانك استخدام Resource GUID القديم، فهو متوافق بأثر رجعي، لكننا نوصي بالانتقال إلى عوامل تصفية Resource ID. وللاطلاع على تفاصيل الانتقال، راجع [الوثائق](/ar/products/cloud/guides/security/connectivity/private-networking/azure-privatelink#obtaining-private-endpoint-resourceid) الخاصة بـ Azure Private Link.
+
+<div id="august-22-2025">
+  ## 22 أغسطس 2025
+</div>
+
+* **ClickHouse Connector for AWS Glue**
+  يمكنك الآن استخدام [ClickHouse Connector for AWS Glue](/ar/integrations/connectors/data-ingestion/AWS/glue) الرسمي، والمتاح عبر [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). ويستفيد من محرك AWS Glue بدون خوادم والمعتمد على Apache
+  Spark لتنفيذ عمليات استخراج البيانات وتحويلها وتحميلها ضمن تكامل البيانات بين ClickHouse ومصادر البيانات الأخرى. ابدأ
+  باتباع [منشور المدوّنة](http://clickhouse.com/blog/clickhouse-connector-aws-glue) الخاص بالإعلان لمعرفة كيفية إنشاء الجداول وكتابة البيانات وقراءتها بين ClickHouse وSpark.
+* **تغيير في الحد الأدنى لعدد النسخ المتماثلة في خدمة**
+  يمكن الآن [تقليص الخدمات التي جرى توسيعها](/ar/products/cloud/features/autoscaling/overview) لاستخدام نسخة متماثلة واحدة (في السابق كان الحد الأدنى نسختين متماثلتين). ملاحظة: الخدمات أحادية النسخة المتماثلة أقل توافراً، ولا يُنصح باستخدامها في بيئات الإنتاج.
+* سيبدأ ClickHouse Cloud في إرسال إشعارات متعلقة بتوسيع نطاق الخدمة وترقيات إصدار الخدمة، بشكل افتراضي لأدوار المسؤولين. ويمكنهم تعديل تفضيلات الإشعارات الخاصة بهم في إعدادات الإشعارات.
+
+<div id="august-13-2025">
+  ## 13 أغسطس 2025
+</div>
+
+* **ClickPipes for MongoDB CDC متاح الآن ضمن المعاينة الخاصة**
+  يمكنك الآن استخدام ClickPipes لنسخ البيانات من MongoDB إلى ClickHouse Cloud ببضع نقرات فقط، مما يتيح
+  التحليلات في الوقت الفعلي من دون الحاجة إلى أدوات ETL خارجية. يدعم
+  الموصل التكرار المستمر
+  بالإضافة إلى عمليات الترحيل لمرة واحدة، وهو متوافق مع MongoDB Atlas وعمليات نشر MongoDB
+  ذاتية الاستضافة. اقرأ [مقالة المدونة](https://clickhouse.com/blog/mongodb-cdc-clickhouse-preview) للاطلاع على نظرة عامة على موصل MongoDB CDC، و[سجّل هنا للحصول على وصول مبكر](https://clickhouse.com/cloud/clickpipes/mongodb-cdc-connector)!
+
+<div id="august-08-2025">
+  ## 8 أغسطس 2025
+</div>
+
+* **الإشعارات**: ستتلقى الآن إشعارًا في واجهة المستخدم عند بدء ترقية خدمتك إلى إصدار جديد من ClickHouse. ويمكن إضافة إشعارات إضافية عبر البريد الإلكتروني وSlack من خلال مركز الإشعارات.
+* **ClickPipes**: أُضيف دعم Azure Blob Storage (ABS) ClickPipes إلى موفّر Terraform الخاص بـ ClickHouse. راجع وثائق الموفّر للاطلاع على مثال يوضّح كيفية إنشاء ABS ClickPipe برمجيًا.
+  * [إصلاح خطأ] تعرض Object Storage ClickPipes التي تكتب إلى جدول الوجهة باستخدام محرك Null الآن مقياسي &quot;إجمالي السجلات&quot; و&quot;البيانات المستوعبة&quot; في واجهة المستخدم.
+  * [إصلاح خطأ] كان محدِّد &quot;الفترة الزمنية&quot; للمقاييس في واجهة المستخدم يُضبط افتراضيًا على &quot;24 ساعة&quot; بغض النظر عن الفترة الزمنية المحددة. وقد أُصلح ذلك الآن، وأصبحت واجهة المستخدم تُحدّث المخططات بشكل صحيح وفقًا للفترة الزمنية المحددة.
+* **أصبح Private Link عبر المناطق (AWS)** الآن متاحًا بشكل عام. يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) للاطلاع على قائمة المناطق المدعومة.
+
+<div id="july-31-2025">
+  ## 31 يوليو 2025
+</div>
+
+**التوسيع الرأسي لـ ClickPipes متاح الآن**
+
+[أصبح التوسيع الرأسي متاحًا الآن لخدمات ClickPipes المتدفقة](https://clickhouse.com/blog/clickpipes-flexible-scaling-monitoring).
+تتيح لك هذه الميزة التحكم في حجم كل نسخة متماثلة، بالإضافة إلى
+عدد النسخ المتماثلة (التحجيم الأفقي). وتتضمن صفحة التفاصيل الخاصة بكل ClickPipe الآن
+أيضًا معدلات استخدام CPU والذاكرة لكل نسخة متماثلة، مما يساعدك على
+فهم أحمال العمل لديك بشكل أفضل والتخطيط لعمليات إعادة التحجيم بثقة.
+
+<div id="july-24-2025">
+  ## 24 يوليو 2025
+</div>
+
+**ClickPipes for MySQL CDC متوفر الآن كإصدار تجريبي عام**
+
+أصبح موصل MySQL CDC في ClickPipes متاحًا الآن على نطاق واسع كإصدار تجريبي عام. وببضع نقرات فقط،
+يمكنك بدء نسخ بيانات MySQL (أو MariaDB) مباشرةً إلى ClickHouse Cloud في الوقت الفعلي،
+من دون أي تبعيات خارجية. اقرأ [منشور المدونة](https://clickhouse.com/blog/mysql-cdc-connector-clickpipes-beta)
+للتعرّف على نظرة عامة حول الموصل، واتبع [دليل البدء السريع](/ar/integrations/clickpipes/mysql/index)
+للبدء بسرعة.
+
+<div id="june-11-2025">
+  ## 11 يوليو 2025
+</div>
+
+* أصبحت الخدمات الجديدة الآن تخزّن البيانات الوصفية للـ database والـ table في **SharedCatalog** مركزي،
+  وهو نموذج جديد للتنسيق ودورات حياة الكائنات يوفّر ما يلي:
+
+  * **عمليات DDL على نطاق Cloud**، حتى عند ارتفاع Concurrency
+  * **حذف أكثر موثوقية وعمليات DDL جديدة**
+  * **بدء تشغيل واستيقاظ أسرع**، إذ تُشغَّل العقد عديمة الحالة الآن من دون أي تبعيات على disk
+  * **compute عديم الحالة عبر كلٍّ من التنسيقات native والمفتوحة**، بما في ذلك Iceberg وDelta Lake
+
+  اقرأ المزيد عن SharedCatalog في [مدونتنا](https://clickhouse.com/blog/clickhouse-cloud-stateless-compute)
+
+* أصبحنا ندعم الآن إمكانية تشغيل خدمات متوافقة مع HIPAA في GCP `europe-west4`
+
+<div id="june-27-2025">
+  ## 27 يونيو 2025
+</div>
+
+* ندعم الآن رسميًا موفّر Terraform لإدارة امتيازات قاعدة البيانات،
+  وهو متوافق أيضًا مع عمليات النشر المُدارة ذاتيًا. يُرجى الرجوع إلى
+  [المدونة](https://clickhouse.com/blog/new-terraform-provider-manage-clickhouse-database-users-roles-and-privileges-with-code)
+  و[الوثائق](https://registry.terraform.io/providers/ClickHouse/clickhousedbops/latest/docs)
+  لمزيد من المعلومات.
+* يمكن الآن لخدمات فئة Enterprise الاشتراك في [قناة الإصدار البطيء](/ar/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades) لتأجيل
+  الترقيات لمدة أسبوعين بعد الإصدار المعتاد، مما يتيح وقتًا إضافيًا
+  للاختبار.
+
+<div id="june-13-2025">
+  ## 13 يونيو 2025
+</div>
+
+* يسعدنا أن نعلن أن لوحات المعلومات في ClickHouse Cloud أصبحت الآن متاحة بشكل عام. تتيح لك لوحات المعلومات تصوّر الاستعلامات ضمن لوحات المعلومات، والتفاعل مع البيانات عبر عوامل التصفية ومعلمات الاستعلام، وإدارة المشاركة.
+* عوامل تصفية IP لمفتاح API: نقدّم طبقة إضافية من الحماية لتفاعلاتك مع ClickHouse Cloud. عند إنشاء مفتاح API، يمكنك إعداد قائمة سماح لعناوين IP لقصر استخدام مفتاح API على عناوين محددة. يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) للاطّلاع على التفاصيل.
+
+<div id="may-30-2025">
+  ## 30 مايو 2025
+</div>
+
+* يسعدنا الإعلان عن التوافر العام لـ **ClickPipes for Postgres CDC**
+  في ClickHouse Cloud. وببضع نقرات فقط، يمكنك الآن نسخ قواعد بيانات Postgres
+  إلى ClickHouse والاستفادة من تحليلات لحظية فائقة السرعة. يوفّر الموصل
+  مزامنة أسرع للبيانات، وزمن انتقال منخفضًا يصل إلى بضع ثوانٍ، ومواكبة تلقائية لتغييرات المخطط،
+  واتصالًا آمنًا بالكامل، وغير ذلك. راجع
+  [المدونة](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-ga) لمزيد من
+  المعلومات. وللبدء، راجع التعليمات [هنا](/ar/integrations/clickpipes/postgres/index).
+
+* أُدخلت تحسينات جديدة على لوحات معلومات SQL Console:
+  * المشاركة: يمكنك مشاركة لوحة المعلومات مع أعضاء فريقك. تتوفر أربعة مستويات من الوصول، ويمكن ضبطها على مستوى المؤسسة أو لكل مستخدم على حدة:
+    * *وصول الكتابة*: إضافة/تعديل التصورات المرئية، وتعديل إعدادات التحديث، والتفاعل مع لوحات المعلومات عبر عوامل التصفية.
+    * *المالك*: مشاركة لوحة معلومات، وحذف لوحة معلومات، وجميع الأذونات الأخرى المتاحة لمستخدم لديه &quot;وصول الكتابة&quot;.
+    * *وصول للقراءة فقط*: عرض لوحة المعلومات والتفاعل معها عبر عوامل التصفية
+    * *بلا وصول*: لا يمكنه عرض لوحة معلومات
+  * بالنسبة إلى لوحات المعلومات الحالية التي أُنشئت بالفعل، يمكن لمسؤولي المؤسسة تعيين أنفسهم مالكين لها.
+  * يمكنك الآن إضافة table أو chart من SQL Console إلى لوحة معلومات من عرض الاستعلام.
+
+<Image img="/images/cloud/reference/may-30-dashboards.webp" size="md" alt="تحسينات لوحات المعلومات" border />
+
+* نفتح الآن باب التسجيل للمشاركة في المعاينة الخاصة بـ [Distributed cache](https://clickhouse.com/cloud/distributed-cache-waitlist)
+  على AWS وGCP. اقرأ المزيد في [المدونة](https://clickhouse.com/blog/building-a-distributed-cache-for-s3).
+
+<div id="may-16-2025">
+  ## 16 مايو 2025
+</div>
+
+* أطلقنا لوحة معلومات استخدام الموارد، التي توفّر عرضًا
+  للموارد التي تستهلكها خدمة في ClickHouse Cloud. وتُجمَع المقاييس التالية
+  من جداول النظام وتُعرَض على لوحة المعلومات هذه:
+  * الذاكرة وCPU: رسوم بيانية لـ `CGroupMemoryTotal` (الذاكرة المخصّصة)، و`CGroupMaxCPU` (CPU المخصّص)،
+    و`MemoryResident` (الذاكرة المستخدمة)، و`ProfileEvent_OSCPUVirtualTimeMicroseconds` (CPU المستخدم)
+  * نقل البيانات: رسوم بيانية تُظهر حركة البيانات الواردة والصادرة في ClickHouse Cloud. تعرّف على المزيد [هنا](/ar/products/cloud/reference/billing/network-data-transfer).
+* يسعدنا الإعلان عن إطلاق المكوّن الإضافي الجديد Prometheus/Grafana لـ ClickHouse Cloud،
+  والمصمَّم لتبسيط مراقبة خدمات ClickHouse Cloud لديك.
+  يستخدم هذا المكوّن الإضافي نقطة نهاية واجهة برمجة التطبيقات المتوافقة مع Prometheus لدمج
+  مقاييس ClickHouse بسلاسة في إعداد Prometheus وGrafana الحالي لديك. ويتضمن
+  لوحة معلومات مُعدّة مسبقًا تمنحك رؤية آنية لصحة
+  خدماتك وأدائها. راجع [مدونة الإطلاق](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in) لمزيد من المعلومات.
+
+<div id="april-18-2025">
+  ## 18 أبريل 2025
+</div>
+
+* تم طرح دور جديد على مستوى المؤسسة باسم **Member**، ودورين جديدين على مستوى الخدمة
+  هما: **Service Admin** و**Service Read Only**.
+  ويُعد **Member** دورًا على مستوى المؤسسة يُسنَد إلى مستخدمي SAML SSO
+  افتراضيًا، ولا يوفّر سوى إمكانات تسجيل الدخول وتحديث الملف الشخصي. ويمكن إسناد دوري **Service Admin**
+  و**Service Read Only** لخدمة واحدة أو أكثر إلى المستخدمين
+  الذين لديهم أدوار **Member** أو **Developer** أو **Billing Admin**. ولمزيد من المعلومات،
+  راجع [&quot;التحكم في الوصول في ClickHouse Cloud&quot;](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users)
+* يوفّر ClickHouse Cloud الآن خدمات **HIPAA** و**PCI** في المناطق التالية
+  لعملاء **Enterprise**: AWS eu-central-1 وAWS eu-west-2 وAWS us-east-2.
+* تم طرح **إشعارات موجّهة للمستخدمين في ClickPipes**. ترسل هذه الميزة
+  تنبيهات تلقائية عند تعطل ClickPipes عبر البريد الإلكتروني وواجهة مستخدم ClickHouse Cloud و
+  Slack. وتكون الإشعارات عبر البريد الإلكتروني وواجهة المستخدم مفعّلة افتراضيًا، ويمكن
+  ضبطها لكل pipe على حدة. وبالنسبة إلى **Postgres CDC ClickPipes**، تغطي التنبيهات أيضًا
+  عتبة replication slot (يمكن ضبطها من علامة التبويب **Settings**) وأنواعًا محددة من
+  الأخطاء، بالإضافة إلى خطوات ذاتية الخدمة لحل حالات التعطل.
+* أصبحت **MySQL CDC private preview** متاحة الآن. يتيح ذلك للعملاء نسخ قواعد بيانات MySQL
+  إلى ClickHouse Cloud ببضع نقرات فقط، ما يوفّر تحليلات سريعة
+  ويلغي الحاجة إلى أدوات ETL خارجية. ويدعم الموصل كلاً من النسخ المتماثل المستمر
+  وعمليات الترحيل لمرة واحدة، سواء كان MySQL يعمل على السحابة (RDS،
+  Aurora وCloud SQL وAzure وما إلى ذلك) أو في بيئة محلية. يمكنك التسجيل في
+  private preview من خلال [اتباع هذا الرابط](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
+* تم طرح **AWS PrivateLink لـ ClickPipes**. يمكنك استخدام AWS PrivateLink
+  لإنشاء اتصال آمن بين شبكات VPC وخدمات AWS وأنظمتك المحلية
+  وClickHouse Cloud. ويمكن تنفيذ ذلك دون تعريض حركة المرور إلى
+  الإنترنت العام أثناء نقل البيانات من مصادر مثل Postgres وMySQL و
+  MSK على AWS. كما يدعم أيضًا الوصول عبر المناطق من خلال نقاط نهاية خدمة VPC.
+  وأصبح إعداد اتصال PrivateLink الآن [ذاتي الخدمة بالكامل](/ar/integrations/clickpipes/aws-privatelink)
+  عبر ClickPipes.
+
+<div id="april-4-2025">
+  ## 4 أبريل 2025
+</div>
+
+* إشعارات Slack لـ ClickHouse Cloud: يدعم ClickHouse Cloud الآن إشعارات Slack لأحداث الفوترة، والتوسعة، وClickPipes، بالإضافة إلى الإشعارات داخل Console وعبر البريد الإلكتروني. تُرسَل هذه الإشعارات عبر تطبيق ClickHouse Cloud على Slack. ويمكن لمشرفي المؤسسة إعداد هذه الإشعارات من خلال مركز الإشعارات، وذلك بتحديد قنوات Slack التي يجب إرسال الإشعارات إليها.
+* سيرى المستخدمون الذين يشغّلون خدمات Production وDevelopment الآن رسوم استخدام ClickPipes ونقل البيانات في فواتيرهم.
+
+<div id="march-21-2025">
+  ## 21 مارس 2025
+</div>
+
+* أصبحت إمكانية الاتصال عبر Private Link بين المناطق على AWS متاحة الآن في Beta. يُرجى الرجوع إلى
+  [وثائق](/ar/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) Private Link الخاصة بـ ClickHouse Cloud
+  للاطّلاع على تفاصيل الإعداد وقائمة المناطق المدعومة.
+* أصبح الحد الأقصى لحجم النسخة المتماثلة المتاح للخدمات على AWS يبلغ الآن 236 GiB من RAM.
+  يتيح ذلك استخدامًا أكثر كفاءة للموارد، مع ضمان تخصيص موارد
+  للعمليات الخلفية.
+
+<div id="march-7-2025">
+  ## 7 مارس 2025
+</div>
+
+* نقطة نهاية جديدة لواجهة برمجة تطبيقات `UsageCost`: تدعم مواصفة واجهة برمجة التطبيقات الآن نقطة نهاية جديدة
+  لاسترجاع معلومات الاستخدام. هذه نقطة نهاية على مستوى المؤسسة، ويمكن الاستعلام عن
+  تكاليف الاستخدام بحد أقصى 31 يومًا. وتشمل المقاييس التي يمكن
+  استرجاعها Storage و Compute و نقل البيانات و ClickPipes. يُرجى الرجوع
+  إلى [الوثائق](/ar/api-reference/billing/get-organization-usage-costs) لمزيد من التفاصيل.
+* يتيح إصدار Terraform provider [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) تفعيل نقطة نهاية MySQL.
+
+<div id="february-21-2025">
+  ## 21 فبراير 2025
+</div>
+
+<div id="clickhouse-byoc-for-aws-ga">
+  ### أصبح ClickHouse Bring Your Own Cloud (BYOC) لـ AWS متاحًا رسميًا للاستخدام العام
+</div>
+
+في نموذج النشر هذا، تعمل مكوّنات مستوى بيانات (قدرات المعالجة، والتخزين، والنسخ الاحتياطية، والسجلات، والمقاييس)
+داخل بيئة VPC الخاصة بالعميل، بينما يظل مستوى التحكم (الوصول عبر الويب، وواجهات برمجة التطبيقات، والفوترة)
+ضمن ClickHouse VPC. ويُعد هذا الإعداد مثاليًا لأعباء العمل الكبيرة التي
+تحتاج إلى الامتثال لمتطلبات صارمة بشأن مكان إقامة البيانات، إذ يضمن بقاء جميع البيانات
+داخل بيئة عميل آمنة.
+
+* لمزيد من التفاصيل، يمكنك الرجوع إلى [الوثائق](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview) الخاصة بـ BYOC
+  أو قراءة [مقالة الإعلان على مدونتنا](https://clickhouse.com/blog/announcing-general-availability-of-clickhouse-bring-your-own-cloud-on-aws).
+* [تواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud) لطلب الوصول.
+
+<div id="postgres-cdc-connector-for-clickpipes">
+  ### موصل Postgres CDC لـ ClickPipes
+</div>
+
+يمكّنك موصل Postgres CDC لـ ClickPipes من نسخ قواعد بيانات Postgres لديك إلى ClickHouse Cloud ومزامنتها بسلاسة.
+
+* للبدء، راجع [الوثائق](/ar/integrations/clickpipes/postgres/index) الخاصة بموصل Postgres CDC في ClickPipes.
+* لمزيد من المعلومات حول حالات استخدام العملاء والإمكانات المتاحة، يُرجى الرجوع إلى [الصفحة التعريفية](https://clickhouse.com/cloud/clickpipes/postgres-cdc-connector) و[مدونة الإطلاق](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-public-beta).
+
+<div id="pci-compliance-for-clickhouse-cloud-on-aws">
+  ### امتثال PCI في ClickHouse Cloud على AWS
+</div>
+
+يدعم ClickHouse Cloud الآن **الخدمات المتوافقة مع PCI** لعملاء **فئة Enterprise**
+في منطقتي **us-east-1** و**us-west-2**. ويمكن للمستخدمين الذين يرغبون في إنشاء
+خدمة في بيئة متوافقة مع PCI التواصل مع [الدعم](https://clickhouse.com/support/program)
+للحصول على المساعدة.
+
+<div id="tde-and-cmek-on-gcp">
+  ### التشفير الشفاف للبيانات ومفاتيح التشفير المُدارة من العميل على Google Cloud Platform
+</div>
+
+أصبح دعم **التشفير الشفاف للبيانات (TDE)** و**مفاتيح التشفير المُدارة من العميل (CMEK)** متاحًا الآن في ClickHouse Cloud على **Google Cloud Platform (GCP)**.
+
+* يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/guides/security/cmek#transparent-data-encryption-tde) الخاصة بهذه الميزات لمزيد من المعلومات.
+
+<div id="aws-middle-east-uae-availability">
+  ### التوفر في AWS Middle East (UAE)
+</div>
+
+أُضيف دعمٌ لمنطقة جديدة في ClickHouse Cloud، وأصبحت الخدمة متاحة الآن في
+منطقة **AWS Middle East (UAE) me-central-1**.
+
+<div id="clickhouse-cloud-guardrails">
+  ### ضوابط ClickHouse Cloud
+</div>
+
+لتعزيز أفضل الممارسات وضمان الاستخدام المستقر لـ ClickHouse Cloud، نستحدث
+ضوابط لعدد الجداول وقواعد البيانات والتقسيمات والأجزاء
+قيد الاستخدام.
+
+* راجع قسم [حدود الاستخدام](/ar/products/cloud/guides/best-practices/usagelimits)
+  في الوثائق للاطلاع على التفاصيل.
+* إذا كانت خدمتك تتجاوز هذه الحدود بالفعل، فسنسمح بزيادة إضافية قدرها 10%.
+  يُرجى التواصل مع [الدعم](https://clickhouse.com/support/program) إذا كانت لديك أي أسئلة.
+
+<div id="january-27-2025">
+  ## 27 يناير 2025
+</div>
+
+<div id="changes-to-clickhouse-cloud-tiers">
+  ### تغييرات على فئات ClickHouse Cloud
+</div>
+
+نلتزم بتكييف منتجاتنا لتلبية المتطلبات المتغيرة باستمرار لعملائنا. ومنذ إطلاق ClickHouse Cloud في مرحلة GA خلال العامين الماضيين، تطورت الخدمة بشكل كبير، واكتسبنا رؤى قيّمة للغاية حول كيفية استفادة عملائنا من عروضنا السحابية.
+
+نطرح ميزات جديدة لتحسين sizing وكفاءة التكلفة في خدمات ClickHouse Cloud بما يلائم أعباء العمل لديكم. وتشمل هذه الميزات **compute-compute separation**، وأنواع الأجهزة عالية الأداء، و**الخدمات أحادية النسخة المتماثلة**. كما نعمل أيضًا على تطوير التوسّع التلقائي والترقيات المُدارة بحيث تُنفَّذ بسلاسة أكبر وباستجابة أسرع.
+
+كما نضيف **فئة Enterprise جديدة** لتلبية احتياجات العملاء وأعباء العمل الأكثر تطلبًا، مع التركيز على ميزات الأمان والامتثال الخاصة بقطاعات محددة، ومزيد من التحكم في العتاد الأساسي والترقيات، وميزات متقدمة للتعافي من الكوارث.
+
+ولدعم هذه التغييرات، نعيد هيكلة فئتَي **Development** و**Production** الحاليتين لدينا بما يعكس بشكل أدق كيفية استخدام قاعدة عملائنا المتنامية لعروضنا. كما نطرح فئة **Basic**، الموجهة للمستخدمين الذين يختبرون أفكارًا ومشروعات جديدة، وفئة **Scale**، المناسبة للمستخدمين الذين يشغّلون أعباء عمل إنتاجية ويتعاملون مع البيانات على نطاق واسع.
+
+يمكنك قراءة المزيد عن هذه التغييرات الوظيفية وغيرها في هذه [المدونة](https://clickhouse.com/blog/evolution-of-clickhouse-cloud-new-features-superior-performance-tailored-offerings). وسيحتاج العملاء الحاليون إلى اتخاذ إجراء لاختيار [خطة جديدة](https://clickhouse.com/pricing). وقد أُرسلت رسائل تواصل موجّهة إلى العملاء عبر البريد الإلكتروني إلى مسؤولي organization.
+
+<div id="warehouses-compute-compute-separation-ga">
+  ### Warehouses: الفصل بين موارد الحوسبة (GA)
+</div>
+
+أصبحت ميزة الفصل بين موارد الحوسبة (المعروفة أيضًا باسم &quot;Warehouses&quot;) متاحةً بشكل عام؛ يُرجى الرجوع إلى [المدونة](https://clickhouse.com/blog/introducing-warehouses-compute-compute-separation-in-clickhouse-cloud) لمزيد من التفاصيل، وإلى [الوثائق](/ar/products/cloud/features/infrastructure/warehouses).
+
+<div id="single-replica-services">
+  ### الخدمات أحادية النسخة المتماثلة
+</div>
+
+نطرح مفهوم &quot;الخدمة أحادية النسخة المتماثلة&quot;، سواءً كخيار مستقل أو ضمن المستودعات. وكخيار مستقل، تكون الخدمات أحادية النسخة المتماثلة محدودة الحجم ومخصّصة لأعباء العمل الاختبارية الصغيرة. وضمن المستودعات، يمكن نشر الخدمات أحادية النسخة المتماثلة بأحجام أكبر، واستخدامها لأعباء العمل التي لا تتطلّب توافرًا عاليًا على نطاق واسع، مثل مهام ETL القابلة لإعادة التشغيل.
+
+<div id="vertical-auto-scaling-improvements">
+  ### تحسينات التوسيع الرأسي التلقائي
+</div>
+
+نقدّم آلية جديدة للتوسيع الرأسي لنسخ compute المتماثلة، نُطلق عليها اسم &quot;Make Before Break&quot;‏ (MBB). يضيف هذا النهج نسخة متماثلة واحدة أو أكثر بالحجم الجديد قبل إزالة النسخ المتماثلة القديمة، ما يمنع أي فقدان في السعة أثناء عمليات التوسيع. ومن خلال سدّ الفجوة بين إزالة النسخ المتماثلة الحالية وإضافة النسخ الجديدة، يوفّر MBB عملية توسيع أكثر سلاسة وأقل تأثيرًا. ويكون هذا مفيدًا بشكل خاص في سيناريوهات scale-up، حيث يؤدّي ارتفاع استخدام الموارد إلى الحاجة إلى سعة إضافية، لأن إزالة النسخ المتماثلة مبكرًا لن تؤدي إلا إلى تفاقم قيود الموارد.
+
+<div id="horizontal-scaling-ga">
+  ### التوسّع الأفقي (GA)
+</div>
+
+أصبح التوسّع الأفقي متاحًا الآن بشكل عام. يمكنك إضافة نُسخ متماثلة إضافية لتوسيع خدمتك أفقيًا عبر واجهات برمجة التطبيقات وCloud Console. يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling) لمزيد من المعلومات.
+
+<div id="configurable-backups">
+  ### النسخ الاحتياطية القابلة للتخصيص
+</div>
+
+ندعم الآن إمكانية تصدير العملاء للنسخ الاحتياطية إلى حساباتهم السحابية الخاصة؛ يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/guides/backups/configurable-backups) لمزيد من المعلومات.
+
+<div id="managed-upgrade-improvements">
+  ### تحسينات الترقيات المُدارة
+</div>
+
+توفّر الترقيات المُدارة الآمنة قيمة كبيرة لمستخدمينا، إذ تتيح لهم مواكبة أحدث إصدارات قاعدة البيانات مع استمرار تطورها وإضافة ميزات جديدة. ومع هذا الطرح، اعتمدنا في الترقيات نهج &quot;الإنشاء قبل الإزالة&quot; (أو MBB)، مما خفّض بدرجة أكبر التأثير في أحمال العمل قيد التشغيل.
+
+<div id="hipaa-support">
+  ### دعم HIPAA
+</div>
+
+نحن ندعم الآن HIPAA في المناطق المتوافقة، بما في ذلك AWS `us-east-1` و`us-west-2` وGCP `us-central1` و`us-east1`. ويجب على العملاء الراغبين في الانضمام توقيع اتفاقية شريك أعمال (BAA) والنشر في الإصدار المتوافق من المنطقة. لمزيد من المعلومات حول HIPAA، يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/reference/security/compliance-overview).
+
+<div id="scheduled-upgrades">
+  ### الترقيات المجدولة
+</div>
+
+يمكنك جدولة الترقيات لخدماتك. هذه الميزة متاحة فقط للخدمات ضمن فئة Enterprise. لمزيد من المعلومات حول الترقيات المجدولة، يُرجى الرجوع إلى [الوثائق](/ar/products/cloud/features/admin-features/upgrades).
+
+<div id="language-client-support-for-complex-types">
+  ### دعم الأنواع المعقدة في مكتبات العملاء للغات البرمجة
+</div>
+
+أضافت مكتبات [Golang](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.30.1) و[بايثون](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.11) و[NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.1) دعمًا لأنواع Dynamic وVariant وJSON.
+
+<div id="dbt-support-for-refreshable-materialized-views">
+  ### دعم DBT للعروض المُجسَّدة القابلة للتحديث
+</div>
+
+يدعم DBT الآن [العروض المُجسَّدة القابلة للتحديث](https://github.com/ClickHouse/dbt-clickhouse/releases/tag/v1.8.7) اعتبارًا من الإصدار `1.8.7`.
+
+<div id="jwt-token-support">
+  ### دعم JWT
+</div>
+
+تمت إضافة دعم المصادقة المستندة إلى JWT في JDBC driver v2، وclickhouse-java، وعميل [بايثون](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.12)، وعميل[ NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.0).
+
+سيتوفر JDBC / Java في[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/tag/v0.8.0) عند صدوره - لم يُحدَّد بعد الموعد المتوقع لذلك.
+
+<div id="prometheus-integration-improvements">
+  ### تحسينات تكامل Prometheus
+</div>
+
+أضفنا عدة تحسينات إلى تكامل Prometheus:
+
+* **نقطة نهاية على مستوى المؤسسة**. أدخلنا تحسينًا على تكامل Prometheus في ClickHouse Cloud. فإلى جانب المقاييس على مستوى الخدمة، تتضمن واجهة برمجة التطبيقات الآن نقطة نهاية لمقاييس **على مستوى المؤسسة**. تجمع نقطة النهاية الجديدة هذه المقاييس تلقائيًا لجميع الخدمات داخل مؤسستك، مما يبسّط عملية تصدير المقاييس إلى جامع Prometheus لديك. ويمكن دمج هذه المقاييس مع أدوات التصور مثل Grafana وDatadog للحصول على رؤية أشمل لأداء مؤسستك.
+
+  هذه الميزة متاحة الآن لجميع المستخدمين. يمكنك العثور على مزيد من التفاصيل [هنا](/ar/products/cloud/features/monitoring/prometheus).
+
+* **المقاييس المصفّاة**. أضفنا دعمًا لإرجاع قائمة مقاييس مصفّاة في تكامل Prometheus الخاص بنا لـ ClickHouse Cloud. تساعد هذه الميزة على تقليل حجم حمولة الاستجابة، إذ تتيح لك التركيز على المقاييس المهمة لمراقبة سلامة خدمتك.
+
+  تتوفر هذه الوظيفة عبر مَعلمة استعلام اختيارية في واجهة برمجة التطبيقات، مما يسهّل تحسين جمع البيانات لديك وتبسيط عمليات التكامل مع أدوات مثل Grafana وDatadog.
+
+  ميزة المقاييس المصفّاة متاحة الآن لجميع المستخدمين. يمكنك العثور على مزيد من التفاصيل [هنا](/ar/products/cloud/features/monitoring/prometheus).

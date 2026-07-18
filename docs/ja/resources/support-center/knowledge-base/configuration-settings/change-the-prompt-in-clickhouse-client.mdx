@@ -1,0 +1,164 @@
+---
+title: clickhouse-client のプロンプトを変更する
+description: "この記事では、ClickHouse client と clickhouse-local のターミナルで、プロンプトを :) からプレフィックス付きの :) に変更する方法を説明します"
+date: 2023-11-16
+tags: ['Settings', 'ネイティブクライアントとインターフェイス']
+keywords: ['ClickHouse Client', 'プロンプトの変更']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+端末ウィンドウでの `clickhouse client` や clickhouse-local のプロンプト表示が気に入らない場合は、変更してプレフィックスを追加できます。
+この記事では、プロンプトを好きな内容に変更する方法を説明します。
+
+デフォルトのプロンプトは、ローカルコンピューター名の後に `:) ` が付いた形式です。
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="デフォルトの ClickHouse client のプロンプト" />
+
+プロンプトで使用できる変数は次のとおりです: `{user}`, `{host}`
+
+プロンプトを更新する方法はいくつかあり、ここではそれぞれを順に見ていきます。
+
+<div id="--prompt-flag">
+  ## `--prompt` フラグ
+</div>
+
+このフラグを変更する最初の方法は、`--prompt` を使用することです。
+
+```bash
+clickhouse --prompt 👉
+```
+
+これで、スマイリーフェイスの前に指の絵文字が追加されます：
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="指の絵文字が付いたClickHouse clientプロンプト" />
+
+<div id="config-file---top-level">
+  ## 設定ファイル - トップレベル
+</div>
+
+また、`config.xml` ファイルでプロンプトのプレフィックスを指定することもできます。
+
+```xml
+<config>
+    <prompt>👉 </prompt>
+</config>
+```
+
+```
+clickhouse
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="設定ファイルを使用したClickHouse clientのプロンプト" />
+
+設定ファイルは任意の名前で作成でき、`-C` フラグで指定できます。
+
+```xml
+<config>
+    <prompt>🎄 </prompt>
+</config>
+```
+
+```
+clickhouse -C christmas.xml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="クリスマスツリーの絵文字付きのClickHouse clientプロンプト" />
+
+設定ファイルはYAML形式にしたいですか？
+それでも問題ありません:
+
+```yaml
+prompt: 🟡
+```
+
+```bash
+clickhouse -C christmas.yaml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="黄色い丸の絵文字付きのClickHouse clientのプロンプト" />
+
+<div id="config-file---connections_credentials">
+  ## 設定ファイル - connections_credentials
+</div>
+
+あるいは、接続認証情報ごとにプロンプトを指定することもできます。
+これは、clickhouse-client を使用する場合にのみ有効です。
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <n>prod<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
+        </connection>
+        <connection>
+            <n>dev<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[32m[DEVELOPMENT]\e[0m {user}@dev</prompt>
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+次に、`dev` 接続を使って接続を試します:
+
+```bash
+clickhouse client -C connections.xml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="development 接続の ClickHouse client のプロンプト" />
+
+または `prod` のほう:
+
+```bash
+clickhouse client -C connections.xml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="本番環境への接続を使用したClickHouse clientのプロンプト" />
+
+YAML版は次のとおりです:
+
+```yaml
+connections_credentials:
+  connection:
+    - name: prod
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[35m[PRODUCTION]\e[0m {user}@{host}"
+    - name: dev
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[34m[DEVELOPMENT]\e[0m {user}@{host}"
+```
+
+`dev` 接続では:
+
+```bash
+clickhouse client -C connections.yaml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="YAMLを使用した開発用接続の ClickHouse client のプロンプト" />
+
+次に `prod`:
+
+```bash
+clickhouse client -C connections.yaml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="YAML を使用した本番環境への接続時の ClickHouse client のプロンプト" />

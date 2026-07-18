@@ -1,0 +1,24 @@
+---
+description: '制約の操作に関するドキュメント'
+sidebarTitle: 'CONSTRAINT'
+slug: /sql-reference/statements/alter/constraint
+title: '制約の操作'
+doc_type: 'reference'
+---
+
+制約は、次の構文で追加または削除できます。
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
+```
+
+[制約](/ja/reference/statements/create/table#constraints)の詳細については、こちらを参照してください。
+
+クエリでは、テーブルの制約に関するメタデータの追加や削除は即座に処理されます。
+
+<Tip>
+  制約を追加しても、既存のデータに対しては制約チェックは**実行されません**。
+</Tip>
+
+レプリケートテーブルに対するすべての変更は ZooKeeper にブロードキャストされ、他のレプリカにも適用されます。

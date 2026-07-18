@@ -1,0 +1,46 @@
+---
+alias: ['MD']
+description: 'Markdown 格式文档'
+keywords: ['Markdown']
+slug: /interfaces/formats/Markdown
+title: 'Markdown'
+doc_type: '参考'
+---
+
+| 输入 | 输出 | 别名   |
+| -- | -- | ---- |
+| ✗  | ✔  | `MD` |
+
+<div id="description">
+  ## 描述
+</div>
+
+你可以使用 [Markdown](https://en.wikipedia.org/wiki/Markdown) 格式导出结果，生成可直接粘贴到 `.md` 文件中的内容：
+
+系统会自动生成 Markdown 表格，可用于支持 Markdown 的平台，例如 GitHub。此格式仅用于输出。
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>

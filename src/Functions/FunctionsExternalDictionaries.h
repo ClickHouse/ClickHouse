@@ -48,6 +48,29 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/// The range value passed to `dictGet`/`dictHas` for a `range_hashed` dictionary is cast to the
+/// dictionary's range type before the lookup (see `RangeHashedDictionary::getColumn`). The accepted
+/// classes mirror the range types that `range_hashed`/`complex_key_range_hashed` itself accepts (see
+/// `impl::callOnRangeType`): integer-represented types (integers, `Date`/`DateTime`, `Enum`),
+/// floating point, `DateTime64` and `Decimal`. `DateTime64` and `Decimal` are not "represented by
+/// integer", so they must be checked explicitly; otherwise such an argument would be rejected even
+/// though it is a valid range type.
+inline bool isValidRangeArgumentType(const DataTypePtr & range_col_type)
+{
+    /// The type class must be checked before the in-memory size: variable-size types such as
+    /// `String` have no fixed value size and would make `getSizeOfValueInMemory` throw a
+    /// `LOGICAL_ERROR` instead of producing the intended `ILLEGAL_COLUMN` message below.
+    if (!(range_col_type->isValueRepresentedByInteger()
+          || isFloat(range_col_type)
+          || isDateTime64(range_col_type)
+          || isDecimal(range_col_type)))
+        return false;
+
+    /// The range value is compared as a 64-bit quantity, so wider types (e.g. `Int128`,
+    /// `Decimal128`) are rejected with `ILLEGAL_COLUMN`.
+    return range_col_type->getSizeOfValueInMemory() <= sizeof(Int64);
+}
+
 
 /** Functions that use plug-ins (external) dictionaries_loader.
   *
@@ -243,7 +266,7 @@ public:
             range_col = arguments[2].column;
             range_col_type = arguments[2].type;
 
-            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+            if (!isValidRangeArgumentType(range_col_type))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),
@@ -452,7 +475,7 @@ public:
             range_col = arguments[current_arguments_index].column;
             range_col_type = arguments[current_arguments_index].type;
 
-            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+            if (!isValidRangeArgumentType(range_col_type))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),

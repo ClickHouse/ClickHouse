@@ -1,0 +1,88 @@
+#pragma once
+
+#include <Disks/IDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
+
+#include <Poco/URI.h>
+
+#include <optional>
+
+namespace DB
+{
+
+class MetadataStorageFromIndexPages final : public IMetadataStorage
+{
+private:
+    const WebObjectStorage & object_storage;
+    LoggerPtr log;
+
+    struct IndexPage
+    {
+        std::string body;
+        std::string final_url;
+    };
+
+    std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
+    IndexPage readIndexPage(const std::string & url) const;
+    std::vector<std::string> extractURLs(
+        const std::string & page_body,
+        const std::string & listing_url,
+        const std::string & listing_prefix_url,
+        const std::string & base_url,
+        const std::string & source_url,
+        const std::string & path) const;
+
+    bool tryListDirectory(
+        const std::string & path,
+        RelativePathsWithMetadata & result,
+        std::optional<size_t> shard_index,
+        const std::optional<String> & path_for_glob_matching) const;
+
+public:
+    explicit MetadataStorageFromIndexPages(const WebObjectStorage & object_storage_);
+
+    MetadataTransactionPtr createTransaction() override;
+
+    const std::string & getPath() const override;
+
+    MetadataStorageType getType() const override { return MetadataStorageType::WebIndex; }
+
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
+
+    uint64_t getFileSize(const String & path) const override;
+    std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
+
+    std::vector<std::string> listDirectory(const std::string & path) const override;
+    RelativePathsWithMetadata listDirectoryWithMetadata(
+        const std::string & path,
+        std::optional<size_t> shard_index = std::nullopt,
+        const std::optional<String> & path_for_glob_matching = std::nullopt) const;
+
+    DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
+
+    StoredObjects getStorageObjects(const std::string & path) const override;
+    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
+
+    struct stat stat(const String & /* path */) const override { return {}; }
+
+    Poco::Timestamp getLastModified(const std::string & /* path */) const override
+    {
+        /// Required by MergeTree
+        return {};
+    }
+    uint32_t getHardlinkCount(const std::string & /* path */) const override
+    {
+        return 1;
+    }
+
+    bool supportsChmod() const override { return false; }
+    bool supportsStat() const override { return false; }
+    bool isReadOnly() const override { return true; }
+    bool areBlobPathsRandom() const override { return false; }
+};
+
+}

@@ -1,0 +1,319 @@
+---
+slug: /cloud/managed-postgres/migrations/peerdb
+sidebarTitle: 'PeerDB'
+title: 'Migrer vers ClickHouse Managed Postgres avec PeerDB'
+description: 'Découvrez comment migrer vos données PostgreSQL vers ClickHouse Managed Postgres avec PeerDB'
+keywords: ['postgres', 'postgresql', 'réplication logique', 'migration', 'transfert de données', 'Managed Postgres', 'PeerDB']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce guide explique, étape par étape, comment migrer votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de PeerDB.
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
+
+<div id="migration-peerdb-prerequisites">
+  ## Prérequis
+</div>
+
+* Accès à votre base de données PostgreSQL source.
+* Une instance ClickHouse Managed Postgres vers laquelle vous souhaitez migrer vos données.
+* PeerDB installé sur une machine. Vous pouvez suivre les instructions d&#39;installation dans le [dépôt GitHub de PeerDB](https://github.com/PeerDB-io/peerdb?tab=readme-ov-file#get-started). Il vous suffit de cloner le dépôt et d&#39;exécuter `docker-compose up`. Pour ce guide, nous utiliserons **PeerDB UI**, qui sera accessible à l&#39;adresse `http://localhost:3000` une fois PeerDB démarré.
+
+<div id="migration-peerdb-considerations-before">
+  ## Points à prendre en compte avant la migration
+</div>
+
+Avant de démarrer votre migration, gardez les points suivants à l’esprit :
+
+* **Objets de base de données** : PeerDB créera automatiquement des tables dans la base de données cible à partir du schéma source. Cependant, certains objets de base de données, comme les index, les contraintes et les triggers, ne seront pas migrés automatiquement. Vous devrez recréer manuellement ces objets dans la base de données cible après la migration.
+* **Modifications DDL** : Si vous activez la réplication continue, PeerDB maintiendra la base de données cible synchronisée avec la source pour les opérations DML (INSERT, UPDATE, DELETE) et propagera les opérations ADD COLUMN. Cependant, les autres modifications DDL (comme DROP COLUMN et ALTER COLUMN) ne sont pas propagées automatiquement. Pour en savoir plus sur la prise en charge des modifications de schéma, consultez [ce guide](/fr/integrations/clickpipes/postgres/schema-changes)
+* **Connectivité réseau** : Assurez-vous que les bases de données source et cible sont toutes deux accessibles depuis la machine sur laquelle PeerDB s’exécute. Vous devrez peut-être configurer des règles de pare-feu ou des paramètres de groupe de sécurité pour autoriser la connectivité.
+
+<div id="migration-peerdb-create-peers">
+  ## Créer des peers
+</div>
+
+Nous devons d&#39;abord créer des peers pour les bases de données source et cible. Un peer représente une connexion à une base de données. Dans PeerDB UI, accédez à la section &quot;Peers&quot; en cliquant sur &quot;Peers&quot; dans la barre latérale. Pour créer un nouveau peer, cliquez sur le bouton `+ New peer`.
+
+<div id="migration-peerdb-source-peer">
+  ### Création du peer source
+</div>
+
+Créez un peer pour votre base de données PostgreSQL source en saisissant les détails de connexion, tels que l’hôte, le port, le nom de la base de données, le nom d’utilisateur et le mot de passe. Une fois ces informations renseignées, cliquez sur le bouton `Create peer` pour enregistrer le peer.
+
+<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="Création du peer source" size="md" border />
+
+<div id="migration-peerdb-target-peer">
+  ### Création du peer cible
+</div>
+
+De la même manière, créez un peer pour votre instance ClickHouse Managed Postgres en fournissant les informations de connexion nécessaires. Vous pouvez obtenir les [informations de connexion](/fr/products/managed-postgres/connection) de votre instance depuis la console ClickHouse Cloud. Après avoir renseigné les informations, cliquez sur le bouton `Create peer` pour enregistrer le peer cible.
+
+<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="Création du peer cible" size="md" border />
+
+Vous devriez maintenant voir les peers source et cible dans la section &quot;Peers&quot;.
+
+<Image img="/images/managed-postgres/peerdb/peers.webp" alt="Liste des peers" size="md" border />
+
+<div id="migration-peerdb-source-schema-dump">
+  ### Obtenir le dump du schéma de la base de données source
+</div>
+
+Pour reproduire la configuration de la base de données source dans la base de données cible, nous devons obtenir un dump du schéma de la base de données source. Vous pouvez utiliser `pg_dump` pour créer un export contenant uniquement le schéma de votre base de données PostgreSQL source :
+
+<Accordion title="Installation de pg_dump">
+  **Ubuntu :**
+
+  Mettez à jour les listes de paquets :
+
+  ```shell
+  sudo apt update
+  ```
+
+  Installez le client PostgreSQL :
+
+  ```shell
+  sudo apt install postgresql-client
+  ```
+
+  **macOS :**
+
+  Méthode 1 : avec Homebrew (recommandé)
+
+  Installez Homebrew si vous ne l&#39;avez pas :
+
+  ```shell
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+
+  Installez PostgreSQL :
+
+  ```shell
+  brew install postgresql
+  ```
+
+  Vérifiez l&#39;installation :
+
+  ```shell
+  pg_dump --version
+  ```
+</Accordion>
+
+```shell
+pg_dump -d 'postgresql://<user>:<password>@<host>:<port>/<database>'  -s > source_schema.sql
+```
+
+<div id="migration-peerdb-remove-constraints-indexes">
+  #### Supprimer les contraintes d’unicité et les index du dump du schéma
+</div>
+
+Avant de l’appliquer à la base de données cible, nous devons supprimer les contraintes UNIQUE et les index du fichier de dump afin que l’ingestion de PeerDB dans les tables cibles ne soit pas bloquée par ces contraintes. Ces éléments peuvent être supprimés comme suit :
+
+```shell
+# Preview
+grep -n "CONSTRAINT.*UNIQUE" <dump_file_path>
+grep -n "CREATE UNIQUE INDEX" <dump_file_path>
+grep -n -E "(CONSTRAINT.*UNIQUE|CREATE UNIQUE INDEX)" <dump_file_path>
+
+# Remove
+sed -i.bak -E '/CREATE UNIQUE INDEX/,/;/d; /(CONSTRAINT.*UNIQUE|ADD CONSTRAINT.*UNIQUE)/d' <dump_file_path>
+```
+
+<div id="migration-peerdb-apply-schema-dump">
+  ### Appliquer le dump du schéma à la base de données cible
+</div>
+
+Après avoir nettoyé le fichier de dump du schéma, vous pouvez l’importer dans votre base de données cible ClickHouse Managed Postgres en vous [connectant](/fr/products/managed-postgres/connection) via `psql` et en exécutant le fichier de dump du schéma :
+
+```shell
+psql -h <target_host> -p <target_port> -U <target_username> -d <target_database> -f source_schema.sql
+```
+
+Ici, du côté de la cible, nous ne voulons pas que l’ingestion de PeerDB soit bloquée par des contraintes de clé étrangère. Pour cela, nous pouvons modifier le rôle de la cible (utilisé ci-dessus dans le peer cible) afin de définir `session_replication_role` sur `replica` :
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = replica;
+```
+
+<div id="migration-peerdb-create-mirror">
+  ## Créer un mirror
+</div>
+
+Ensuite, nous devons créer un mirror pour définir le processus de migration des données entre les peers source et cible. Dans PeerDB UI, accédez à la section &quot;Mirrors&quot; en cliquant sur &quot;Mirrors&quot; dans la barre latérale. Pour créer un nouveau mirror, cliquez sur le bouton `+ New mirror`.
+
+<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="Créer un mirror" size="md" border />
+
+1. Donnez à votre mirror un nom décrivant la migration.
+2. Sélectionnez les peers source et cible que vous avez créés précédemment dans les menus déroulants.
+3. Assurez-vous que :
+
+* Soft delete est sur OFF.
+* Développez `Advanced settings`. Assurez-vous que le **système de types Postgres est activé** et que les **colonnes PeerDB sont désactivées**.
+
+<Image img="/images/managed-postgres/peerdb/settings.webp" alt="Paramètres du mirror" size="md" border />
+
+4. Sélectionnez les tables que vous souhaitez migrer. Vous pouvez choisir des tables spécifiques ou sélectionner toutes les tables de la base de données source.
+
+<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="Sélecteur de tables" size="md" border />
+
+<Info>
+  **Sélection des tables**
+
+  Assurez-vous que les noms des tables de destination sont identiques à ceux des tables source dans la base de données cible, car nous avons migré le schéma tel quel à l’étape précédente.
+</Info>
+
+5. Une fois les paramètres du mirror configurés, cliquez sur le bouton `Create mirror`.
+
+Vous devriez voir votre mirror nouvellement créé dans la section &quot;Mirrors&quot;.
+
+<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="Liste des mirrors" size="md" border />
+
+<div id="migration-peerdb-initial-load">
+  ## Attendre le chargement initial
+</div>
+
+Après avoir créé le mirror, PeerDB lance le chargement initial des données depuis la base de données source vers la base de données cible. Vous pouvez cliquer sur le mirror, puis sur l’onglet **Chargement initial** pour suivre la progression de la migration initiale des données.
+
+<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="Progression du chargement initial" size="md" border />
+
+Une fois le chargement initial terminé, vous devriez voir un état indiquant que la migration est terminée.
+
+<div id="migration-peerdb-monitoring">
+  ## Suivi du chargement initial et de la réplication
+</div>
+
+Si vous cliquez sur le peer source, vous pouvez voir la liste des commandes que PeerDB est en train d’exécuter. Par exemple :
+
+1. Nous exécutons d’abord une requête COUNT pour estimer le nombre de lignes dans chaque table.
+2. Ensuite, nous exécutons une requête de partitionnement avec NTILE pour découper les grandes tables en fragments plus petits afin d’optimiser le transfert des données.
+3. Nous exécutons ensuite des commandes FETCH pour récupérer les données depuis la base de données source, puis PeerDB les synchronise avec la base de données cible.
+
+<div id="migration-peerdb-considerations">
+  ## Tâches post-migration
+</div>
+
+<Note>
+  Ces étapes peuvent varier selon votre cas d’usage et les exigences de votre application. L’essentiel est de garantir la cohérence des données, de minimiser les interruptions de service et de valider l’intégrité des données migrées avant de basculer complètement vers le nouveau système.
+</Note>
+
+Une fois la migration terminée :
+
+* **Effectuez les vérifications de validation avant le basculement**
+
+Comparez les tables clés de la source et de la cible avant de basculer le trafic :
+
+```sql
+-- Row count comparison for critical tables
+SELECT 'public.orders' AS table_name, COUNT(*) AS row_count FROM public.orders;
+SELECT 'public.customers' AS table_name, COUNT(*) AS row_count FROM public.customers;
+
+-- Spot-check latest records in high-activity tables
+SELECT MAX(updated_at) FROM public.orders;
+SELECT MAX(id) FROM public.orders;
+```
+
+* **Arrêter les écritures sur le système source**
+
+Mettez d’abord en pause les écritures de l’application. Comme mesure de protection supplémentaire, placez la base de données source en lecture seule pendant le basculement :
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+Si vous devez revenir en arrière, vous pouvez réactiver les écritures :
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = off;
+```
+
+* **Confirmez que la réplication est entièrement à jour**
+
+Vérifiez que la dernière ligne d’une ou de plusieurs tables très sollicitées en écriture est identique sur la source et la cible :
+
+```sql
+-- Run on both source and target and compare results
+SELECT MAX(id) AS latest_id, MAX(updated_at) AS latest_ts FROM public.orders;
+```
+
+* **Recréez et activez les contraintes, les index et les déclencheurs**
+
+Si vous avez supprimé ou différé des contraintes/index pour l’ingestion, réappliquez-les maintenant. Réinitialisez également le rôle de réplication sur la cible si vous l’aviez précédemment défini sur `replica` :
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = origin;
+```
+
+```shell
+# Example: apply a SQL file containing constraints/indexes/triggers
+psql -h <target_host> -p <target_port> -U <target_user> -d <target_db> -f post_migration_objects.sql
+```
+
+* **Réinitialiser les séquences des tables cibles**
+
+Après le chargement des données, synchronisez les séquences avec les valeurs actuelles des tables :
+
+```sql
+-- Generic sequence reset for all serial/identity-backed columns in non-system schemas
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+* **Basculer le trafic applicatif**
+
+Une fois la validation réussie et les séquences/contraintes en place :
+
+1. Dirigez le trafic de lecture vers ClickHouse Managed Postgres.
+2. Dirigez le trafic d’écriture vers ClickHouse Managed Postgres.
+3. Surveillez les erreurs de l’application, les violations de contraintes et la santé de la base de données.
+
+* **Nettoyer les ressources**
+
+Une fois la migration validée et votre application basculée vers ClickHouse Managed Postgres, vous pouvez supprimer le mirror et les peers dans PeerDB.
+
+<Info>
+  **Slots de réplication**
+
+  Si vous avez activé la réplication continue, PeerDB créera un **slot de réplication** sur la base de données PostgreSQL source. Veillez à supprimer manuellement le slot de réplication de la base de données source une fois la migration terminée afin d’éviter une consommation inutile de ressources.
+</Info>
+
+<div id="migration-peerdb-references">
+  ## Références
+</div>
+
+* [Documentation de ClickHouse Managed Postgres](/fr/products/managed-postgres/overview)
+* [Guide PeerDB pour la création d’un CDC](https://docs.peerdb.io/mirror/cdc-pg-pg)
+* [FAQ sur Postgres ClickPipe (également valable pour PeerDB)](/fr/integrations/clickpipes/postgres/faq)
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## Prochaines étapes
+</div>
+
+Félicitations ! Vous avez migré avec succès votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de pg&#95;dump et pg&#95;restore. Vous pouvez maintenant découvrir les fonctionnalités de Managed Postgres et son intégration avec ClickHouse. Voici un guide de démarrage rapide de 10 minutes pour bien démarrer :
+
+* [Guide de démarrage rapide de Managed Postgres](/fr/products/managed-postgres/quickstart)

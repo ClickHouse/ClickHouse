@@ -1,0 +1,58 @@
+---
+title: '重新同步数据库 ClickPipe'
+description: '关于重新同步数据库 ClickPipe 的文档'
+slug: /integrations/clickpipes/postgres/resync
+sidebarTitle: '重新同步 ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="what-postgres-resync-do">
+  ### 重新同步会执行什么操作？
+</div>
+
+重新同步会按顺序执行以下操作：
+
+1. 现有的 ClickPipe 会被删除，并启动一个新的“重新同步” ClickPipe。因此，执行重新同步时，也会一并识别源表结构的变更。
+2. 重新同步 ClickPipe 会创建 (或替换) 一组新的目标端表，这些表的名称与原始表相同，只是在末尾加上了 `_resync` 后缀。
+3. 对这些 `_resync` 表执行初始加载。
+4. 然后将 `_resync` 表与原始表进行交换。交换前，原始表中的软删除行会先转移到 `_resync` 表中。
+
+原始 ClickPipe 的所有设置都会保留在重新同步 ClickPipe 中。UI 中原始 ClickPipe 的统计信息会被清空。
+
+<div id="use-cases-postgres-resync">
+  ### 重新同步 ClickPipe 的使用场景
+</div>
+
+以下是一些场景：
+
+1. 你可能需要对源表进行重大的 schema 变更，这会导致现有 ClickPipe 无法继续工作，并且需要重新开始。完成这些变更后，只需点击 重新同步。
+2. 对于 ClickHouse，可能需要更改目标表的 ORDER BY 键。你可以通过 重新同步 将数据重新填充到具有正确排序键的新表中。
+3. 如果 ClickPipe 的 replication slot 已失效：重新同步 会创建一个新的 ClickPipe，并在源数据库上创建一个新的 replication slot。
+
+<Note>
+  你可以多次重新同步，但重新同步时请考虑源数据库上的负载，
+  因为每次都会涉及使用并行线程进行初始加载。
+</Note>
+
+<div id="guide-postgres-resync">
+  ### 重新同步 ClickPipe 指南
+</div>
+
+1. 在 **Data Sources** 选项卡中，点击要重新同步的 Postgres ClickPipe。
+2. 转到 **Settings** 选项卡。
+3. 点击 **重新同步** 按钮。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. 此时会弹出确认对话框。再次点击 **重新同步**。
+5. 转到 **Metrics** 选项卡。
+6. 大约 5 秒后 (以及刷新页面后) ，管道状态应为 **Setup** 或 **Snapshot**。
+7. 可在 **Tables** 选项卡的 **Initial Load Stats** 部分查看重新同步的初始加载进度。
+8. 初始加载完成后，管道会以原子方式将 `_resync` 表与原始表进行交换。在交换期间，状态将为 **重新同步**。
+9. 交换完成后，管道将进入 **Running** 状态，并在启用时执行 CDC (变更数据捕获) 。

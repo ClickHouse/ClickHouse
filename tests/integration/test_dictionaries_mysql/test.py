@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import logging
 import socket
+import threading
 import time
 import warnings
 
@@ -588,7 +589,7 @@ def test_background_dictionary_reconnect(started_cluster):
         for _ in range(5):
             try:
                 result = query("SELECT value FROM dict WHERE id = 1")
-            except Exception as e:
+            except Exception:
                 pass
 
         time.sleep(5)
@@ -618,7 +619,7 @@ def test_background_dictionary_reconnect(started_cluster):
         assert (
             int(
                 query(
-                    "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+                    "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to server on %'"
                 )
             )
             > 0
@@ -730,4 +731,304 @@ def test_enable_compression_xml_dict(started_cluster):
             instance.query("DROP DICTIONARY IF EXISTS dict_compression_wire_check")
     finally:
         execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict_compression_table;")
+        mysql_connection.close()
+
+
+def test_mysql_shared_connection_pool_limit(started_cluster):
+    """Regression for https://github.com/ClickHouse/ClickHouse/issues/22048
+
+    XML / config-path dictionaries (i.e. without a named collection) must honor
+    `connection_pool_size` and `connection_wait_timeout`. Previously these were ignored on
+    that path, and a shared pool (`share_connection=true`) always waited indefinitely for a
+    free connection (wait_timeout = UINT64_MAX). As a result, concurrent loads through a
+    single shared pool could freeze SYSTEM RELOAD DICTIONAR{Y,IES} once all connections were
+    in use, instead of failing with a clear error.
+
+    Two dictionaries that resolve to the same shared, single-connection pool are reloaded
+    concurrently. With the fix, the reload that loses the race for the only connection must
+    fail fast (`connection_wait_timeout 0` => "do not wait"). Before the fix the size limit
+    was ignored, the pool had 16 connections, and both reloads simply succeeded.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    def make_dict(name):
+        instance.query(f"DROP DICTIONARY IF EXISTS {name}")
+        instance.query(
+            f"""
+            CREATE DICTIONARY {name} (id UInt32, value UInt32)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80'
+                port 3306
+                user 'root'
+                password '{mysql_pass}'
+                db 'test'
+                query 'SELECT id, value FROM test.shared_pool_test WHERE SLEEP(5) = 0'
+                share_connection 1
+                close_connection 1
+                connection_pool_size 1
+                connection_wait_timeout 0
+            ))
+            LAYOUT(HASHED())
+            LIFETIME(0)
+            """
+        )
+
+    try:
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.shared_pool_test;"
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "CREATE TABLE test.shared_pool_test (id INT NOT NULL, value INT NOT NULL, PRIMARY KEY(id));",
+        )
+        execute_mysql_query(
+            mysql_connection, "INSERT INTO test.shared_pool_test VALUES (1, 100);"
+        )
+
+        make_dict("shared_pool_dict_a")
+        make_dict("shared_pool_dict_b")
+
+        # Reload both dictionaries concurrently. They resolve to the same shared pool
+        # (identical host/port/user/db) which now holds a single connection. One reload
+        # acquires it and runs the slow query; the other must fail fast instead of waiting
+        # forever (the freeze) or grabbing an out-of-limit connection (the pre-fix behavior).
+        results = {}
+
+        def reload(name):
+            try:
+                instance.query(f"SYSTEM RELOAD DICTIONARY {name}")
+                results[name] = None
+            except Exception as e:  # noqa: BLE001
+                results[name] = str(e)
+
+        threads = [
+            threading.Thread(target=reload, args=("shared_pool_dict_a",)),
+            threading.Thread(target=reload, args=("shared_pool_dict_b",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+        for t in threads:
+            assert (
+                not t.is_alive()
+            ), "SYSTEM RELOAD DICTIONARY hung on a shared connection pool (issue #22048)"
+
+        errors = [msg for msg in results.values() if msg]
+        successes = [name for name, msg in results.items() if not msg]
+
+        assert len(errors) >= 1, (
+            "Expected the shared single-connection pool to reject the second concurrent "
+            f"reload, but both succeeded (connection_pool_size was ignored): {results}"
+        )
+        assert any("Pool is full" in msg for msg in errors), (
+            f"Expected a 'Pool is full' error from the exhausted shared pool, got: {errors}"
+        )
+        assert len(successes) >= 1, f"Expected exactly one reload to succeed: {results}"
+
+        # The winning concurrent reload returns its single shared connection to the pool only
+        # after the client has already received the query result, so there is a brief window
+        # in which the connection is not recycled yet. Because these dictionaries use
+        # `connection_wait_timeout 0` (fail fast, never wait), a reload issued inside that
+        # window can still observe "Pool is full". Retry until the connection becomes available
+        # again (it always does shortly after the slow reload finishes); any other error is a
+        # real failure.
+        reloaded = False
+        for _ in range(60):
+            try:
+                instance.query("SYSTEM RELOAD DICTIONARY shared_pool_dict_a")
+                reloaded = True
+                break
+            except Exception as e:  # noqa: BLE001
+                assert "Pool is full" in str(e), f"Unexpected reload error: {e}"
+                time.sleep(0.5)
+        assert reloaded, "Shared connection pool never freed up after concurrent reloads"
+        value = instance.query(
+            "SELECT dictGetUInt32('shared_pool_dict_a', 'value', toUInt64(1))"
+        ).strip()
+        assert value == "100", f"Unexpected dictionary value: {value!r}"
+    finally:
+        instance.query("DROP DICTIONARY IF EXISTS shared_pool_dict_a")
+        instance.query("DROP DICTIONARY IF EXISTS shared_pool_dict_b")
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.shared_pool_test;"
+        )
+        mysql_connection.close()
+
+
+def test_mysql_config_pool_zero_size_rejected(started_cluster):
+    """A config-path (XML / DDL without a named collection) MySQL dictionary must reject
+    `connection_pool_size 0`, matching `createMySQLPoolWithFailover` (the named-collection / DDL
+    path). Otherwise `max_connections` becomes 0 while the pool still hands out the default start
+    connection (it is allocated before `max_connections` is enforced), so the pool is neither
+    rejected nor truly zero-sized.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+    try:
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.zero_pool_test;"
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "CREATE TABLE test.zero_pool_test (id INT NOT NULL, value INT NOT NULL, PRIMARY KEY(id));",
+        )
+        execute_mysql_query(
+            mysql_connection, "INSERT INTO test.zero_pool_test VALUES (1, 100);"
+        )
+
+        instance.query("DROP DICTIONARY IF EXISTS zero_pool_dict")
+        instance.query(
+            f"""
+            CREATE DICTIONARY zero_pool_dict (id UInt32, value UInt32)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80'
+                port 3306
+                user 'root'
+                password '{mysql_pass}'
+                db 'test'
+                query 'SELECT id, value FROM test.zero_pool_test'
+                connection_pool_size 0
+            ))
+            LAYOUT(HASHED())
+            LIFETIME(0)
+            """
+        )
+
+        error = instance.query_and_get_error("SYSTEM RELOAD DICTIONARY zero_pool_dict")
+        assert "Connection pool cannot have zero size" in error, (
+            f"Expected a zero-size pool to be rejected on the config path, got: {error!r}"
+        )
+    finally:
+        instance.query("DROP DICTIONARY IF EXISTS zero_pool_dict")
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.zero_pool_test;"
+        )
+        mysql_connection.close()
+
+
+def test_mysql_shared_pool_no_setting_inheritance(started_cluster):
+    """Regression for the shared-pool setting-inheritance bug (review of #108083 / issue #22048).
+
+    The PoolFactory cache must key shared pools by their settings (`connection_pool_size`,
+    `connection_wait_timeout`) too, not only by connection identity (host/port/user/db/compression).
+    Otherwise the dictionary that creates the cached pool first wins: a default-settings dictionary
+    (16 connections, 5 second wait) seeds the cache, and later dictionaries with the same endpoint
+    but `connection_pool_size 1` silently inherit that 16-connection pool instead of getting their
+    own bounded one.
+
+    A default-settings dictionary is loaded first via a plain `dictGet` to seed the pool cache for
+    the endpoint (a lazy load does not reset the cache, unlike SYSTEM RELOAD DICTIONAR{Y,IES}). Two
+    `connection_pool_size 1, connection_wait_timeout 0` dictionaries for the same endpoint are then
+    reloaded concurrently. With the fix they share their own single-connection pool, so the reload
+    that loses the race for the only connection fails fast with "Pool is full". Before the fix both
+    inherited the cached default 16-connection pool and both reloads succeeded.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    def make_limited_dict(name):
+        instance.query(f"DROP DICTIONARY IF EXISTS {name}")
+        instance.query(
+            f"""
+            CREATE DICTIONARY {name} (id UInt32, value UInt32)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80'
+                port 3306
+                user 'root'
+                password '{mysql_pass}'
+                db 'test'
+                query 'SELECT id, value FROM test.inherit_pool_test WHERE SLEEP(5) = 0'
+                share_connection 1
+                close_connection 1
+                connection_pool_size 1
+                connection_wait_timeout 0
+            ))
+            LAYOUT(HASHED())
+            LIFETIME(0)
+            """
+        )
+
+    try:
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.inherit_pool_test;"
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "CREATE TABLE test.inherit_pool_test (id INT NOT NULL, value INT NOT NULL, PRIMARY KEY(id));",
+        )
+        execute_mysql_query(
+            mysql_connection, "INSERT INTO test.inherit_pool_test VALUES (1, 100);"
+        )
+
+        # Default-settings dictionary for the same endpoint: shared pool, default size (16) and
+        # default wait timeout (5s), fast query. Loading it first seeds the PoolFactory cache.
+        instance.query("DROP DICTIONARY IF EXISTS inherit_default_dict")
+        instance.query(
+            f"""
+            CREATE DICTIONARY inherit_default_dict (id UInt32, value UInt32)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80'
+                port 3306
+                user 'root'
+                password '{mysql_pass}'
+                db 'test'
+                query 'SELECT id, value FROM test.inherit_pool_test'
+                share_connection 1
+                close_connection 1
+            ))
+            LAYOUT(HASHED())
+            LIFETIME(0)
+            """
+        )
+
+        make_limited_dict("inherit_limited_dict_a")
+        make_limited_dict("inherit_limited_dict_b")
+
+        # Lazy-load the default dictionary to populate the shared-pool cache for the endpoint
+        # without resetting it (a plain dictGet does not call PoolFactory::reset, unlike a reload).
+        value = instance.query(
+            "SELECT dictGetUInt32('inherit_default_dict', 'value', toUInt64(1))"
+        ).strip()
+        assert value == "100", f"Unexpected default dictionary value: {value!r}"
+
+        # Concurrently reload the two limited dictionaries. With the fix they get their own
+        # single-connection pool (keyed by their settings), distinct from the cached default
+        # 16-connection pool, so the reload that loses the race for the only connection fails fast.
+        results = {}
+
+        def reload(name):
+            try:
+                instance.query(f"SYSTEM RELOAD DICTIONARY {name}")
+                results[name] = None
+            except Exception as e:  # noqa: BLE001
+                results[name] = str(e)
+
+        threads = [
+            threading.Thread(target=reload, args=("inherit_limited_dict_a",)),
+            threading.Thread(target=reload, args=("inherit_limited_dict_b",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+        for t in threads:
+            assert (
+                not t.is_alive()
+            ), "SYSTEM RELOAD DICTIONARY hung on a shared connection pool (issue #22048)"
+
+        errors = [msg for msg in results.values() if msg]
+        assert any("Pool is full" in msg for msg in errors), (
+            "Expected the limited dictionaries to use their own single-connection pool and reject "
+            f"the second concurrent reload, but they inherited the cached default pool: {results}"
+        )
+    finally:
+        instance.query("DROP DICTIONARY IF EXISTS inherit_default_dict")
+        instance.query("DROP DICTIONARY IF EXISTS inherit_limited_dict_a")
+        instance.query("DROP DICTIONARY IF EXISTS inherit_limited_dict_b")
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.inherit_pool_test;"
+        )
         mysql_connection.close()

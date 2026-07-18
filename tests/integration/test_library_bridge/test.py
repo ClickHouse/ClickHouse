@@ -1,11 +1,9 @@
-import logging
 import os
-import os.path as p
 import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

@@ -6,10 +6,14 @@
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
+
+#include <string_view>
+#include <unordered_set>
 
 #include "config.h"
 
@@ -73,22 +77,6 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
-bool SortDescription::hasPrefix(const Names & prefix) const
-{
-    if (prefix.empty())
-        return true;
-
-    if (prefix.size() > size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-    {
-        if ((*this)[i].column_name != prefix[i])
-            return false;
-    }
-    return true;
-}
-
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
 {
     size_t i = 0;
@@ -101,6 +89,27 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     auto res = lhs;
     res.erase(res.begin() + i, res.end());
     return res;
+}
+
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
+{
+    std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
+
+    SortDescription prefix;
+    for (const auto & sort_column_desc : description)
+    {
+        if (!column_set.contains(sort_column_desc.column_name))
+            break;
+
+        /// A collated column is ordered by its collation key, not by value, so equal values are not
+        /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
+        if (sort_column_desc.collator)
+            break;
+
+        prefix.emplace_back(sort_column_desc);
+    }
+
+    return prefix;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -179,7 +188,7 @@ static LoggerPtr getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
 {
-    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
+    static UnorderedMapWithMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
 
     if (!description.compile_sort_description || sort_description_types.empty())

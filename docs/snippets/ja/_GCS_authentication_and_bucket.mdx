@@ -1,0 +1,43 @@
+---
+title: GCS の認証とバケット
+---
+
+<Accordion title="GCS バケットと HMAC キーを作成する">
+  ### ch_bucket_us_east1
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="US East 1 で GCS バケットを作成する" border />
+
+  ### ch_bucket_us_east4
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="US East 4 で GCS バケットを作成する" border />
+
+  ### アクセスキーを生成する
+
+  ### サービス アカウントの HMAC キーとシークレットを作成する
+
+  **Cloud Storage &gt; Settings &gt; Interoperability** を開き、既存の **Access key** を選択するか、**CREATE A KEY FOR A SERVICE ACCOUNT** を選択します。このガイドでは、新しいサービス アカウント用に新しいキーを作成する手順を説明します。
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="GCS でサービス アカウントの HMAC キーを生成する" border />
+
+  ### 新しいサービス アカウントを追加する
+
+  既存のサービス アカウントがないプロジェクトの場合は、**CREATE NEW ACCOUNT** を選択します。
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="GCS で新しいサービス アカウントを追加する" border />
+
+  サービス アカウントの作成は 3 つの手順で行います。最初の手順では、アカウントにわかりやすい名前、ID、説明を設定します。
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="GCS で新しいサービス アカウントの名前と ID を定義する" border />
+
+  Interoperability の設定ダイアログでは、IAM role **Storage Object Admin** を使用することを推奨します。2 番目の手順でこのロールを選択してください。
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="GCS で IAM role Storage Object Admin を選択する" border />
+
+  3 番目の手順は任意であり、このガイドでは使用しません。ポリシーに応じて、ユーザーにこれらの権限を付与できます。
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="GCS で新しいサービス アカウントの追加設定を構成する" border />
+
+  サービス アカウントの HMAC キーが表示されます。この情報は ClickHouse の設定で使用するため、保存しておいてください。
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="GCS 用に生成された HMAC キーを取得する" border />
+</Accordion>
