@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/FieldToDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <unordered_set>
 
 
 namespace DB
@@ -191,9 +193,20 @@ struct AggregateFunctionMergedJSONPatchData
         }
     }
 
-    static bool isObjectField(const Field & value)
+    /// Returns true for Field types that represent a JSON object and should be recursed into
+    /// during leaf collection, rather than stored as an atomic value.
+    ///
+    /// Field::Types::Object — produced by ColumnObject::get (untyped / dynamic JSON).
+    /// Field::Types::Map    — produced by ColumnMap::get for typed Map(K,V) paths; in Field
+    ///                        representation a Map is a vector of Tuple(key, value) pairs.
+    ///
+    /// Field::Types::Tuple is intentionally excluded: Tuple sub-fields are positional and carry
+    /// no key names, so we cannot reconstruct dotted JSON child paths without the column's type
+    /// metadata. Tuples are treated as atomic leaves (replaced as a whole on conflict).
+    static bool isExpandableField(const Field & value)
     {
-        return value.getType() == Field::Types::Object;
+        return value.getType() == Field::Types::Object
+            || value.getType() == Field::Types::Map;
     }
 
     static bool isDescendantPath(std::string_view ancestor, std::string_view path)
@@ -266,20 +279,39 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertPathValue(std::string_view path, Field value, const SortKey & sort_key)
     {
-        if (!isObjectField(value))
+        if (!isExpandableField(value))
         {
             insertLeafEntry(path, std::move(value), sort_key);
             return;
         }
 
-        const auto & object = value.safeGet<Object>();
-        for (const auto & [child_key, child_value] : object)
+        if (value.getType() == Field::Types::Object)
         {
-            String child_path(path);
-            if (!child_path.empty())
-                child_path += '.';
-            child_path += child_key;
-            insertPathValue(child_path, child_value, sort_key);
+            const auto & object = value.safeGet<Object>();
+            for (const auto & [child_key, child_value] : object)
+            {
+                String child_path(path);
+                if (!child_path.empty())
+                    child_path += '.';
+                child_path += child_key;
+                insertPathValue(child_path, child_value, sort_key);
+            }
+        }
+        else
+        {
+            /// Field::Types::Map: each element is a Tuple(key, value) pair.
+            const auto & map = value.safeGet<Map>();
+            for (const auto & elem : map)
+            {
+                const auto & kv = elem.safeGet<Tuple>();
+                chassert(kv.size() == 2);
+                const String & child_key = kv[0].safeGet<String>();
+                String child_path(path);
+                if (!child_path.empty())
+                    child_path += '.';
+                child_path += child_key;
+                insertPathValue(child_path, kv[1], sort_key);
+            }
         }
     }
 
@@ -359,18 +391,37 @@ struct AggregateFunctionMergedJSONPatchData
     };
 
     /// Recursively flatten value into (path, scalar-or-array, sort_key) leaf entries.
+    /// Field::Types::Object and Field::Types::Map are expanded into child paths.
+    /// All other types (including Tuple) are stored as atomic leaves.
     static void collectLeaves(String path, Field value, const SortKey & sort_key, std::vector<LeafRef> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        if (!isObjectField(value))
+        if (!isExpandableField(value))
         {
             out.push_back({std::move(path), std::move(value), sort_key});
             return;
         }
-        const auto & object = value.safeGet<Object>();
-        for (const auto & [child_key, child_value] : object)
+
+        if (value.getType() == Field::Types::Object)
         {
-            String child_path = path.empty() ? child_key : path + '.' + child_key;
-            collectLeaves(child_path, child_value, sort_key, out);
+            const auto & object = value.safeGet<Object>();
+            for (const auto & [child_key, child_value] : object)
+            {
+                String child_path = path.empty() ? child_key : path + '.' + child_key;
+                collectLeaves(child_path, child_value, sort_key, out);
+            }
+        }
+        else
+        {
+            /// Field::Types::Map: each element is a Tuple(key, value) pair.
+            const auto & map = value.safeGet<Map>();
+            for (const auto & elem : map)
+            {
+                const auto & kv = elem.safeGet<Tuple>();
+                chassert(kv.size() == 2);
+                const String & child_key = kv[0].safeGet<String>();
+                String child_path = path.empty() ? child_key : path + '.' + child_key;
+                collectLeaves(child_path, kv[1], sort_key, out);
+            }
         }
     }
 
@@ -537,7 +588,80 @@ struct AggregateFunctionMergedJSONPatchData
         insertBatchAtomic(batch);
     }
 
-    void insertResultInto(IColumn & to, const DataTypePtr &) const
+    /// Reconstruct a Field::Object for all entries under `ancestor_path`.
+    ///
+    /// If a direct exact-path entry exists at `ancestor_path` (scalar replacement of the whole
+    /// object), that scalar is returned as-is.  Otherwise a Field::Object is assembled from all
+    /// descendant leaf entries, recursing for multi-level paths.
+    Field rebuildNestedObject(std::string_view ancestor_path) const
+    {
+        /// Exact-path entry: scalar/array replaced the whole sub-object — return it directly.
+        for (const auto & entry : entries)
+        {
+            if (entry.pathView() == ancestor_path)
+                return entry.value.get();
+        }
+
+        Object result;
+        for (const auto & entry : entries)
+        {
+            std::string_view p = entry.pathView();
+            if (!isDescendantPath(ancestor_path, p))
+                continue;
+
+            std::string_view rel = p.substr(ancestor_path.size() + 1);
+            auto dot = rel.find('.');
+            String direct_key(dot == std::string_view::npos ? rel : rel.substr(0, dot));
+
+            if (dot == std::string_view::npos)
+            {
+                result[direct_key] = entry.value.get();
+            }
+            else
+            {
+                String child_prefix = String(ancestor_path) + '.' + direct_key;
+                result[direct_key] = rebuildNestedObject(child_prefix);
+            }
+        }
+        return result;
+    }
+
+    /// Same as rebuildNestedObject but produces a Field::Map (vector of Tuple(key,value) pairs)
+    /// suitable for insertion into a ColumnMap typed path.
+    Field rebuildNestedMap(std::string_view ancestor_path) const
+    {
+        /// Exact-path entry: scalar/Map replaced the whole value — return it directly.
+        for (const auto & entry : entries)
+        {
+            if (entry.pathView() == ancestor_path)
+                return entry.value.get();
+        }
+
+        Map result;
+        for (const auto & entry : entries)
+        {
+            std::string_view p = entry.pathView();
+            if (!isDescendantPath(ancestor_path, p))
+                continue;
+
+            std::string_view rel = p.substr(ancestor_path.size() + 1);
+            auto dot = rel.find('.');
+            String direct_key(dot == std::string_view::npos ? rel : rel.substr(0, dot));
+
+            if (dot == std::string_view::npos)
+            {
+                result.push_back(Tuple{Field(direct_key), entry.value.get()});
+            }
+            else
+            {
+                String child_prefix = String(ancestor_path) + '.' + direct_key;
+                result.push_back(Tuple{Field(direct_key), rebuildNestedMap(child_prefix)});
+            }
+        }
+        return result;
+    }
+
+    void insertResultInto(IColumn & to, const DataTypePtr & result_type_) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
@@ -550,9 +674,58 @@ struct AggregateFunctionMergedJSONPatchData
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
 
+        /// Typed paths whose column type is a nested Object (JSON), Dynamic, or Map need special
+        /// handling: the aggregate flattens {"a":{"x":1}} into leaf "a.x", so on output we must
+        /// reconstruct the value from all descendant leaves and insert it into the typed parent
+        /// column as a whole.  Collect those ancestor paths and their types now.
+        std::unordered_map<std::string_view, WhichDataType> nested_typed_ancestors; // STYLE_CHECK_ALLOW_STD_STRING_CONTAINERS
+        if (const auto * obj_type = typeid_cast<const DataTypeObject *>(result_type_.get()))
+        {
+            for (const auto & [tp, dt] : obj_type->getTypedPaths())
+            {
+                WhichDataType w(dt);
+                if (w.isObject() || w.isDynamic() || w.isMap())
+                    nested_typed_ancestors.emplace(tp, w);
+            }
+        }
+
+        /// Entries consumed by a nested-typed-ancestor insertion must not be re-processed.
+        std::unordered_set<std::string_view> consumed; // STYLE_CHECK_ALLOW_STD_STRING_CONTAINERS
+
+        for (const auto & [ancestor, which] : nested_typed_ancestors)
+        {
+            bool any = false;
+            for (const auto & entry : entries)
+            {
+                std::string_view p = entry.pathView();
+                if (p == ancestor || isDescendantPath(ancestor, p))
+                {
+                    any = true;
+                    break;
+                }
+            }
+            if (!any)
+                continue;
+
+            Field nested = which.isMap() ? rebuildNestedMap(ancestor) : rebuildNestedObject(ancestor);
+            auto typed_it = result_column.getTypedPaths().find(ancestor);
+            if (typed_it != result_column.getTypedPaths().end())
+                typed_it->second->insert(nested);
+
+            for (const auto & entry : entries)
+            {
+                std::string_view p = entry.pathView();
+                if (p == ancestor || isDescendantPath(ancestor, p))
+                    consumed.insert(p);
+            }
+        }
+
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
+            if (consumed.count(path))
+                continue;
+
             Field value = entry.value.get();
 
             if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())

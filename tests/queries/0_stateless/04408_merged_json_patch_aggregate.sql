@@ -255,3 +255,54 @@ FROM
     ORDER BY rn
 );
 
+
+-- Map typed path: RFC 7396 deep merge must preserve x=1 when newer patch only touches y.
+-- Without the fix, Map was treated as an atomic leaf and x was dropped.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x":1,"y":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":{"y":3}}'::JSON(a Map(String, UInt32)), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT '{"a":{"x":1,"y":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
+        UNION ALL SELECT '{"a":{"y":3}}'::JSON(a Map(String, UInt32)), 2
+    )
+);
+
+-- Map typed path: newer non-Map scalar at the same path still replaces the whole key.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x":1}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":5}'::JSON, 2
+);
+
+-- Nested JSON typed path: single-row round-trip must not produce a double "a" path.
+-- Without the fix, the flattened leaf "a.x" fell through to a dynamic path and the
+-- typed "a" column received insertDefault(), producing {"a":{},"a":{"x":1}}.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x":1}}'::JSON(a JSON) AS patch, 1 AS version
+);
+
+-- Nested JSON typed path: RFC 7396 deep merge across two rows.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x":1,"y":2}}'::JSON(a JSON) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":{"y":3}}'::JSON(a JSON), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT '{"a":{"x":1,"y":2}}'::JSON(a JSON) AS patch, 1 AS version
+        UNION ALL SELECT '{"a":{"y":3}}'::JSON(a JSON), 2
+    )
+);
+
