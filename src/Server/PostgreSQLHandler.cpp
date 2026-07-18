@@ -451,9 +451,23 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     /// always advertise the text format code, so emitting ClickHouse's `RowBinary` for `WITH FORMAT binary`
     /// would hand a real PostgreSQL client a payload it cannot parse. Reject it explicitly instead - the text
     /// and CSV formats cover the self-connect use case (ClickHouse reads the result with `pqxx`, which uses
-    /// text `COPY`). This throws before any COPY response is sent, so the client gets a clean error.
+    /// text `COPY`).
+    ///
+    /// Send an `ErrorResponse` and return (marking the query as handled) rather than throwing: this is an
+    /// ordinary "your query failed" error, not a fatal connection error, so the connection must stay open
+    /// for the `ReadyForQuery` that the run loop sends next. Throwing would tear the connection down right
+    /// after the `ErrorResponse` and before that `ReadyForQuery`, and a driver such as `libpq`/`psycopg2`
+    /// (unlike the plain `psql` REPL) that is still completing the command cycle then hits EOF and reports
+    /// "server closed the connection unexpectedly" instead of surfacing this message.
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->format == ASTCopyQuery::Formats::Binary)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL binary COPY format is not supported; use the text or CSV format");
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "0A000",
+                "PostgreSQL binary COPY format is not supported; use the text or CSV format"),
+            true);
+        return true;
+    }
 
     /* The Postgres protocol for a copy query is different from simple queries such as SELECT.
      * In the case of a COPY FROM request, the server sends CopyInResponse - a sign of readiness to receive data from the client.
