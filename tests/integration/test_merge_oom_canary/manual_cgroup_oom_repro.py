@@ -71,6 +71,15 @@ LIMIT_BYTES = LIMIT_GB * 1024 * 1024 * 1024
 NUM_WORKERS = 12
 CHURN_SECONDS = 40
 
+# Bounded client timeouts, shared by the startup/setup probes and the churn workers. Without them a
+# `clickhouse client` call falls back to the CLI defaults (connect 10s, receive 300s), so a wedged or
+# half-started server could park the "40 tries" startup loop or the pre-workload `CREATE TABLE` for
+# minutes before any churn begins, defeating the fail-closed / bounded-startup guarantee. The
+# `--connect_timeout`/`--receive_timeout` bound the call server-side; the subprocess `timeout` is a
+# hard backstop that kills a stuck client.
+CLIENT_TIMEOUT_ARGS = ("--connect_timeout", "5", "--receive_timeout", "10")
+CLIENT_TIMEOUT_BACKSTOP = 20
+
 
 def die(message, code=1):
     print(message, file=sys.stderr)
@@ -140,6 +149,13 @@ def client(*args, user=None, timeout=None):
     finally:
         with _clients_lock:
             _clients.discard(proc)
+
+
+def bounded_client(*args, user=None):
+    # `client` with the shared bounded timeouts applied, so neither the setup probes nor the churn
+    # workers can block on a wedged or OOM-killed server past the backstop. Raises `TimeoutExpired`
+    # if even the backstop is hit; callers decide whether that means "not up yet" or a hard failure.
+    return client(*CLIENT_TIMEOUT_ARGS, *args, user=user, timeout=CLIENT_TIMEOUT_BACKSTOP)
 
 
 def cleanup(base):
@@ -252,11 +268,19 @@ def main():
             ["runuser", "-u", RUN_USER, "--", BIN, "server", "--config-file", config_file],
             preexec_fn=enter_cgroup,
         )
+        # Bound the startup probe too: a half-started server can accept the connection but stall the
+        # query, so an unbounded `SELECT 1` would park the "40 tries" loop for minutes. A backstop
+        # `TimeoutExpired` here just means "not up yet" - retry until the loop budget is exhausted.
+        started = False
         for _ in range(40):
-            if client("-q", "SELECT 1").returncode == 0:
-                break
+            try:
+                if bounded_client("-q", "SELECT 1").returncode == 0:
+                    started = True
+                    break
+            except subprocess.TimeoutExpired:
+                pass
             time.sleep(1)
-        if client("-q", "SELECT 1").returncode != 0:
+        if not started:
             log_tail = subprocess.run(
                 ["tail", "-5", f"{base}/ch.log"], capture_output=True, text=True
             ).stdout
@@ -281,14 +305,19 @@ def main():
         ).stdout.splitlines()
         print(f"server up in {LIMIT_GB} GiB cgroup ({ram[0] if ram else ''})")
 
-        create = client(
-            "-q",
-            "CREATE TABLE m (id UInt8, s AggregateFunction(groupArray, String)) "
-            "ENGINE = AggregatingMergeTree ORDER BY id "
-            "SETTINGS min_bytes_for_wide_part = 0, "
-            "vertical_merge_algorithm_min_rows_to_activate = 1000000000, "
-            "vertical_merge_algorithm_min_columns_to_activate = 1000000000",
-        )
+        # Bound the pre-workload setup query as well, so a wedged server fails setup quickly instead
+        # of blocking on the default 300s receive timeout.
+        try:
+            create = bounded_client(
+                "-q",
+                "CREATE TABLE m (id UInt8, s AggregateFunction(groupArray, String)) "
+                "ENGINE = AggregatingMergeTree ORDER BY id "
+                "SETTINGS min_bytes_for_wide_part = 0, "
+                "vertical_merge_algorithm_min_rows_to_activate = 1000000000, "
+                "vertical_merge_algorithm_min_columns_to_activate = 1000000000",
+            )
+        except subprocess.TimeoutExpired:
+            die("timed out creating table m (server wedged during setup)")
         # Fail closed here too: if the table is not created, every churn worker below would just loop
         # on a nonexistent table and the script would misreport "OOM did not fire", hiding the real
         # setup failure as if the workload were merely too small.
@@ -304,25 +333,17 @@ def main():
         def churn():
             while not stop.is_set():
                 # Queries are expected to fail once the cgroup OOM fires; keep churning regardless.
-                # Bound every client call: after `stop` is set - or once the server is OOM-killed or
-                # otherwise wedged - a call must not block forever, or the worker would never observe
-                # `stop` and the script would hang at exit. `--receive_timeout`/`--connect_timeout`
-                # bound it server-side; the subprocess `timeout` is a hard backstop that kills a stuck
-                # client. A `TimeoutExpired` here is expected under OOM, so swallow it and re-check
-                # `stop` on the next iteration.
+                # `bounded_client` caps every call (see CLIENT_TIMEOUT_* above), so after `stop` is
+                # set - or once the server is OOM-killed or otherwise wedged - a call cannot block
+                # forever and the worker still observes `stop`. A `TimeoutExpired` here is expected
+                # under OOM, so swallow it and re-check `stop` on the next iteration.
                 try:
-                    client(
-                        "--connect_timeout", "5", "--receive_timeout", "10",
+                    bounded_client(
                         "-q",
                         "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', "
                         "arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)",
-                        timeout=20,
                     )
-                    client(
-                        "--connect_timeout", "5", "--receive_timeout", "10",
-                        "-q", "OPTIMIZE TABLE m FINAL",
-                        timeout=20,
-                    )
+                    bounded_client("-q", "OPTIMIZE TABLE m FINAL")
                 except subprocess.TimeoutExpired:
                     pass
 
