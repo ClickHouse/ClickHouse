@@ -549,14 +549,27 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- an empty result, exactly like the classic named-table form, rather than throwing `UNKNOWN_TABLE` while
 -- resolving the target on the initiator. The legacy analyzer builds the header from the declared columns too.
 -- These queries produce no rows; the point is that they succeed instead of failing on the initiator.
+-- `enable_parallel_replicas = 0` keeps the read on the table's own (all-unavailable) cluster: with parallel
+-- replicas the read is rewritten onto `cluster_for_parallel_replicas`, whose replicas are reachable, so the
+-- missing target would resolve there and raise `UNKNOWN_TABLE` instead of being skipped.
 CREATE TABLE dist_probe_missing (n UInt64) ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, loop(probe_missing_src));
 CREATE TABLE dist_probe_missing_named (n UInt64) ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, currentDatabase(), probe_missing_src);
-SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1;
-SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1;
-SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1;
-SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1;
+SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
+SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
+SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
+SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
 DROP TABLE dist_probe_missing;
 DROP TABLE dist_probe_missing_named;
+
+-- A deterministic evaluation failure of the target table function is a real error and must be surfaced, not
+-- silently downgraded to a skipped shard: the local-replica probe only treats a missing backing object
+-- (`UNKNOWN_TABLE` / `UNKNOWN_DATABASE`) as "table absent", every other exception propagates - even with
+-- `skip_unavailable_shards = 1`, which is only meant to swallow unavailability / missing-table failures.
+-- `intDiv(1, 0)` fails the same way whether the target runs on the local replica (the probe) or a remote
+-- shard, so the error surfaces regardless of `prefer_localhost_replica`.
+CREATE TABLE dist_probe_error (n UInt64) ENGINE = Distributed(test_shard_localhost, numbers(intDiv(1, 0)));
+SELECT count() FROM dist_probe_error SETTINGS skip_unavailable_shards = 1; -- { serverError ILLEGAL_DIVISION }
+DROP TABLE dist_probe_error;
 
 -- The MergeTree-inspection table functions (`mergeTreeIndex`, `mergeTreeProjection`, `mergeTreeTextIndex`,
 -- `mergeTreeAnalyzeIndexes`) name a concrete local table in their first two arguments and read it at query

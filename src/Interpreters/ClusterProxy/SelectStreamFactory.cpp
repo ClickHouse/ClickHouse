@@ -47,6 +47,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ALL_REPLICAS_ARE_STALE;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
 }
 
 namespace FailPoints
@@ -272,20 +274,30 @@ void SelectStreamFactory::createForShardImpl(
 
         if (table_func_ptr)
         {
-            /// Probe the local replica by evaluating the table function. If it throws (e.g. the local
-            /// replica is missing the backing object for `loop(...)`, `dictionary(...)`, `view(...)`,
-            /// ...), treat it like an absent local table so the query can still fall back to a healthy
-            /// remote replica (or honor `skip_unavailable_shards`), matching the named-table branch below.
+            /// Probe the local replica by evaluating the table function. Treat it like an absent local
+            /// table (so the query can still fall back to a healthy remote replica or honor
+            /// `skip_unavailable_shards`) only when the backing object is missing - i.e. for the same
+            /// exception classes the named-table branch below can ignore, where `tryGetTable` returns null:
+            /// `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` (this is also the set that `skip_unavailable_shards_mode
+            /// = unavailable_or_table_missing` treats as a skippable "table missing" failure, see
+            /// `RemoteQueryExecutor::shouldIgnoreShardException`). For example `loop(...)` /
+            /// `dictionary(...)` whose backing object is missing only on the local replica. Every other
+            /// table-function error (e.g. a deterministic evaluation failure such as `numbers(intDiv(1, 0))`)
+            /// must propagate so it is not silently downgraded to a connection/skip failure, which would
+            /// bypass the `skip_unavailable_shards_mode` contract.
             try
             {
                 TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
                 main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                    throw;
+
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "Table function could not be evaluated on local replica of shard {}: {}",
-                    shard_info.shard_num, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+                    shard_info.shard_num, e.message());
                 main_table_storage = nullptr;
             }
         }
