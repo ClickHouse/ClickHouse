@@ -38,14 +38,18 @@ namespace ErrorCodes
     DECLARE(String, materialized_postgresql_table_engine, "ReplacingMergeTree", \
         "Engine for the nested tables created by the engine. One of `ReplacingMergeTree`, " \
         "`ReplicatedReplacingMergeTree`, `SharedReplacingMergeTree`. The replicated/shared variants require " \
-        "`materialized_postgresql_keeper_path` to be set (which enables single-active-worker coordination).", 0) \
+        "`materialized_postgresql_keeper_path` to be set (which enables single-active-worker coordination). " \
+        "`SharedReplacingMergeTree` is only available in ClickHouse Cloud; setting an engine that is not " \
+        "registered in this build is rejected at `CREATE` time.", 0) \
     DECLARE(String, materialized_postgresql_keeper_path, "", \
         "Keeper path used to coordinate the PostgreSQL logical replication slot across ClickHouse replicas. " \
         "When non-empty, exactly one replica consumes the slot at a time (the others take over on its failure), " \
         "and `materialized_postgresql_table_engine` must be set to a replicated/shared engine so that the " \
         "standby replicas receive the data through ClickHouse replication. Coordination owns the shared slot, " \
         "so it cannot be combined with a user-managed `materialized_postgresql_replication_slot` or " \
-        "`materialized_postgresql_snapshot`. Supports the {uuid}, {shard} and " \
+        "`materialized_postgresql_snapshot`, nor with a column-filtered `materialized_postgresql_tables_list` " \
+        "(all replicas share one set of nested tables and must agree on the exact column projection). " \
+        "Supports the {uuid}, {shard} and " \
         "{replica} macros. It must resolve to the same value on every replica.", 0) \
     DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
         "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \

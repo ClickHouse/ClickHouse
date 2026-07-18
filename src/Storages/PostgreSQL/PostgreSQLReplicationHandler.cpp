@@ -25,6 +25,7 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#include <Storages/StorageFactory.h>
 #include <Interpreters/getTableOverride.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -268,6 +269,18 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             "Unsupported value '{}' for setting materialized_postgresql_table_engine. Allowed values: "
             "ReplacingMergeTree, ReplicatedReplacingMergeTree, SharedReplacingMergeTree", engine);
 
+    /// The nested tables are created with this engine, so it must actually be available in this build.
+    /// `SharedReplacingMergeTree`, in particular, is a ClickHouse Cloud engine that is not registered in
+    /// the open-source build: accepting it here would let `CREATE DATABASE` succeed and only fail much
+    /// later, when `ensureNestedTablesExist` reaches `InterpreterCreateQuery`, leaving the database stuck
+    /// in a background retry loop instead of rejecting the unsupported mode up front.
+    if (!StorageFactory::instance().getAllStorages().contains(engine))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_table_engine = '{}' is not available in this build. The nested tables "
+            "are created with this engine, so it must be a registered table engine; otherwise the database "
+            "would fail to create its nested tables and keep retrying forever instead of failing at CREATE time",
+            engine);
+
     const bool coordination_enabled = !settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
 
     if (is_replicated && !coordination_enabled)
@@ -303,6 +316,24 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             "materialized_postgresql_snapshot. Coordination re-exports a fresh snapshot when it (re)creates the "
             "shared slot, so a fixed snapshot token would become stale and a mid-snapshot takeover could never "
             "recover. Leave the snapshot unset so coordination can manage it");
+
+    /// In coordinated mode the shared publication's table set is authoritative and is adopted by every replica,
+    /// but the per-table column projection (`table(col1, col2)`) is still taken from this replica's local
+    /// `materialized_postgresql_tables_list`. All coordinated replicas share one set of nested
+    /// Replicated/SharedReplacingMergeTree tables on the same Keeper path, so they must agree on the exact
+    /// column set. If two replicas were created with different column filters (or one with a filter and one
+    /// without) they would try to create diverging schemas on the same shared path, breaking the shared-state
+    /// contract. Reject column-filtered lists so every replica builds the identical shared schema; a column
+    /// projection is denoted by a `(` after a table name in the setting value (the same syntax parsed by
+    /// `getTableAllowedColumns`).
+    const String coordinated_tables_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list];
+    if (coordination_enabled && coordinated_tables_list.find('(') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a column-filtered "
+            "materialized_postgresql_tables_list (e.g. `table(col1, col2)`). Coordinated replicas share one set of "
+            "nested tables on the same Keeper path, so they must agree on the exact column projection, but the "
+            "per-table column list is taken from each replica's local setting rather than from the shared "
+            "publication. List the tables without column filters so every replica builds the identical shared schema");
 }
 
 

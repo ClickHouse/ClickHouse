@@ -243,6 +243,8 @@ The path supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must reso
 
 Only the active worker loads the initial snapshot; the other replicas receive the data (both the snapshot and ongoing changes) through ClickHouse replication of the shared replicated nested tables. The replication slot and the PostgreSQL publication are shared by all participating replicas: dropping the database on one replica keeps them for the others and only dropping the last replica removes them from PostgreSQL. Dynamically adding or removing tables (`ATTACH TABLE` / `DETACH TABLE PERMANENTLY`) is not supported in coordinated mode; recreate the database with an updated `materialized_postgresql_tables_list` instead.
 
+Coordinated mode also does not support a column-filtered `materialized_postgresql_tables_list` (e.g. `table1(col1, col2)`): all replicas share one set of nested tables on the same Keeper path and must agree on the exact column projection, but the per-table column list is taken from each replica's local setting rather than from the shared publication, so a column filter is rejected at `CREATE` time. List the tables without column filters so every replica builds the identical shared schema.
+
 ### `materialized_postgresql_replica_name` {#materialized-postgresql-replica-name}
 
 Replica identity used for the coordination node and for the nested replicated table engine. Default: `{replica}`. Supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to a distinct value on every replica**.

@@ -529,3 +529,34 @@ def test_coordinated_create_adopts_publication_over_mismatching_tables_list(star
     tables_on_standby = instance2.query("SHOW TABLES FROM test_database").split()
     assert "test_table" in tables_on_standby
     assert "extra_table" not in tables_on_standby
+
+
+def test_shared_engine_is_rejected_when_unavailable(started_cluster):
+    # `SharedReplacingMergeTree` is a ClickHouse Cloud engine that is not registered in the open-source
+    # build. Accepting it here would let CREATE DATABASE succeed and only fail much later, when the nested
+    # tables are created, leaving the database stuck in a background retry loop. The setting must be
+    # rejected up front against the actually-registered table engines.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_shared_engine "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'SharedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{KEEPER_PATH}'"
+    )
+    assert "is not available in this build" in error
+
+
+def test_coordination_conflicts_with_column_filtered_tables_list(started_cluster):
+    # Coordinated replicas share one set of nested tables on the same Keeper path, so they must agree on
+    # the exact column projection. The per-table column list is taken from each replica's local setting
+    # rather than from the shared publication, so a column-filtered `materialized_postgresql_tables_list`
+    # would let two replicas create diverging schemas on the same shared path. It must be rejected.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_column_filtered "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{KEEPER_PATH}', "
+        f"materialized_postgresql_tables_list = 'test_table(key, value)'"
+    )
+    assert "column-filtered" in error
