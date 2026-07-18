@@ -6456,11 +6456,18 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     /// format all depend on it), so such a query is refused up front instead of being sent with a
     /// `default_format` (`framed_default_format`) that the plain, unframed response cannot use.
     ///
+    /// A standalone `SET framing_output_format = ...` changes the setting for the rest of the session
+    /// (when the connection uses a `session_id`), but this page appends its own `framing_output_format`
+    /// to every request, so it would silently override that session-level choice on the next query.
+    /// Rather than break `SET` semantics, such a statement is refused up front too; a query-level
+    /// `SETTINGS framing_output_format = ...` clause is the supported way to choose framing for one
+    /// query.
+    ///
     /// The setting is detected with the WASM lexer (`detectFramingSetting`), not a text match, so a
     /// `framing_output_format` mention inside a string literal or a comment - e.g.
     /// `SELECT 'framing_output_format = None'` - is not mistaken for a real setting and does not
     /// change how the request is framed.
-    const { user_framing, user_disables_framing } = await detectFramingSetting(query);
+    const { user_framing, user_disables_framing, user_sets_session_framing } = await detectFramingSetting(query);
     let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
@@ -6485,6 +6492,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     let response, reply, format;
     reply = '';
     try {
+        if (user_sets_session_framing)
+        {
+            throw new Error("This page sets framing_output_format on every request, so it cannot change it for the whole session with a standalone SET. To use a specific framing for one query, put it in that query's SETTINGS clause, e.g. SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'.");
+        }
         if (user_disables_framing)
         {
             throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None'.");
@@ -8685,9 +8696,13 @@ async function tokenize(query) {
 }
 
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
-/// setting disables framing (`= 'None'`). Used by `postImpl` to leave a query that chose its own
-/// framing untouched (its framing applies alone) and to refuse a query that turns framing off (this
-/// page renders only the framed path). Returns `{ user_framing, user_disables_framing }`.
+/// setting is a query-level choice (an inline `SETTINGS` clause), disables framing (`= 'None'`), or is
+/// a standalone `SET` statement that changes the setting for the whole session. Used by `postImpl` to
+/// leave a query that chose its own framing untouched (its framing applies alone), to refuse a query
+/// that turns framing off (this page renders only the framed path), and to refuse a standalone
+/// `SET framing_output_format = ...` (this page appends its own `framing_output_format` to every
+/// request, so it cannot honor a session-level change and would silently override it on the next
+/// query). Returns `{ user_framing, user_disables_framing, user_sets_session_framing }`.
 ///
 /// The detection walks the lexer tokens rather than matching the raw text, and it counts
 /// `framing_output_format = value` only when it appears in a real settings context: a top-level
@@ -8698,22 +8713,34 @@ async function tokenize(query) {
 /// `SELECT 'framing_output_format'` (framing silently dropped, so the compact default renders as raw
 /// text instead of a table), or `SELECT framing_output_format = 'None' FROM values(...)` (a boolean
 /// comparison refused as if it turned framing off). The `SETTINGS` clause may follow the `FORMAT`
-/// clause (`SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'None'` is valid). Falls back to a
-/// best-effort text match only when WebAssembly - hence the lexer - is unavailable, mirroring
-/// `getQueryUnderCursor`.
+/// clause (`SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'None'` is valid). A standalone
+/// `SET framing_output_format = ...` is distinguished from a query-level `SETTINGS` clause because the
+/// former persists in the session (when the connection uses a `session_id`), which this page cannot
+/// honor. Falls back to a best-effort text match only when WebAssembly - hence the lexer - is
+/// unavailable, mirroring `getQueryUnderCursor`.
 async function detectFramingSetting(query)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
         /// Without the lexer, require a `SETTINGS`/`SET` keyword before the assignment so that a bare
         /// comparison in the query body is not mistaken for a setting.
         const has_setting = /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=/i.test(query);
-        const disables = has_setting && /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
-        return { user_framing: has_setting && !disables, user_disables_framing: disables };
+        /// A standalone `SET framing_output_format = ...` (the statement begins with `SET`) changes the
+        /// session default, which this page cannot honor; detect it by the leading keyword.
+        const sets_session = /^\s*set\b[\s\S]*\bframing_output_format\s*=/i.test(query);
+        const disables = has_setting && !sets_session
+            && /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
+        return {
+            user_framing: has_setting && !disables && !sets_session,
+            user_disables_framing: disables,
+            user_sets_session_framing: sets_session,
+        };
     }
 
     const tokens = (await tokenize(query)).filter(t => t.significant);
     let depth = 0;
-    let in_settings = false;
+    /// The settings context the walk is currently inside: `'settings'` for a query-level `SETTINGS`
+    /// clause, `'set'` for a standalone `SET` statement, or `''` for neither.
+    let settings_context = '';
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
     let at_statement_start = true;
@@ -8725,14 +8752,22 @@ async function detectFramingSetting(query)
         } else if (CLOSING_BRACKETS.has(t.type)) {
             if (depth > 0) --depth;
         } else if (is_top_level_semicolon) {
-            in_settings = false;
+            settings_context = '';
         } else if (t.type === TT.BareWord && depth === 0) {
             const lower = t.token.toLowerCase();
-            if (lower === 'settings' || (lower === 'set' && at_statement_start)) {
-                in_settings = true;
-            } else if (in_settings
+            if (lower === 'settings') {
+                settings_context = 'settings';
+            } else if (lower === 'set' && at_statement_start) {
+                settings_context = 'set';
+            } else if (settings_context
                 && lower === 'framing_output_format'
                 && tokens[i + 1] && tokens[i + 1].type === TT.Equals) {
+                /// A standalone `SET framing_output_format = ...` changes the setting for the whole
+                /// session; this page overrides `framing_output_format` on every request, so it cannot
+                /// honor a session-level change and refuses it rather than silently overriding it.
+                if (settings_context === 'set') {
+                    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
+                }
                 /// The value is the next significant token; a string literal carries its surrounding quotes.
                 const value_token = tokens[i + 2];
                 let value = value_token ? value_token.token : '';
@@ -8740,15 +8775,15 @@ async function detectFramingSetting(query)
                     value = value.slice(1, -1);
                 }
                 if (value.toLowerCase() === 'none') {
-                    return { user_framing: false, user_disables_framing: true };
+                    return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false };
                 }
-                return { user_framing: true, user_disables_framing: false };
+                return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false };
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
         at_statement_start = is_top_level_semicolon;
     }
-    return { user_framing: false, user_disables_framing: false };
+    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false };
 }
 
 /// Detect a real `FORMAT` clause in the query and return the format name (e.g. `JSON`), or `null`

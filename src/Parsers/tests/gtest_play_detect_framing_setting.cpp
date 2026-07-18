@@ -23,6 +23,11 @@
   * `SELECT framing_output_format = 'None' FROM values('framing_output_format String', ('None'))`,
   * which never sets the query setting. The `SETTINGS` clause may follow the `FORMAT` clause.
   *
+  * A standalone `SET framing_output_format = ...` is reported separately (`user_sets_session_framing`)
+  * from a query-level `SETTINGS` clause: it changes the setting for the whole session (when the
+  * connection uses a `session_id`), which the page cannot honor because it appends its own
+  * `framing_output_format` to every request, so it is refused rather than silently overridden.
+  *
   * There is no JavaScript/WebAssembly runtime in CI, so we cannot run the browser code directly.
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
   * (the part most likely to evolve) is shared; only the small detection below is a port. Keep this
@@ -80,6 +85,7 @@ struct FramingSetting
 {
     bool user_framing;
     bool user_disables_framing;
+    bool user_sets_session_framing;
 };
 
 /// Faithful port of `detectFramingSetting` from play.html.
@@ -87,7 +93,9 @@ FramingSetting detectFramingSetting(const std::string & query)
 {
     const std::vector<Tok> tokens = tokenizeSignificant(query);
     int depth = 0;
-    bool in_settings = false;
+    /// The settings context the walk is currently inside: "settings" for a query-level `SETTINGS`
+    /// clause, "set" for a standalone `SET` statement, or "" for neither.
+    std::string settings_context;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
     bool at_statement_start = true;
@@ -106,39 +114,49 @@ FramingSetting detectFramingSetting(const std::string & query)
         }
         else if (is_top_level_semicolon)
         {
-            in_settings = false;
+            settings_context.clear();
         }
         else if (t.type == DB::TokenType::BareWord && depth == 0)
         {
             const std::string lower = toLower(t.text);
-            if (lower == "settings" || (lower == "set" && at_statement_start))
+            if (lower == "settings")
             {
-                in_settings = true;
+                settings_context = "settings";
             }
-            else if (in_settings
+            else if (lower == "set" && at_statement_start)
+            {
+                settings_context = "set";
+            }
+            else if (!settings_context.empty()
                 && lower == "framing_output_format"
                 && i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::Equals)
             {
+                /// A standalone `SET framing_output_format = ...` changes the setting for the whole
+                /// session; the page overrides it on every request, so it is refused rather than
+                /// silently overridden.
+                if (settings_context == "set")
+                    return {false, false, true};
                 /// The value is the next significant token; a string literal carries its surrounding quotes.
                 std::string value = (i + 2 < tokens.size()) ? tokens[i + 2].text : "";
                 if (i + 2 < tokens.size() && tokens[i + 2].type == DB::TokenType::StringLiteral && value.size() >= 2)
                     value = value.substr(1, value.size() - 2);
                 if (toLower(value) == "none")
-                    return {false, true};
-                return {true, false};
+                    return {false, true, false};
+                return {true, false, false};
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
         at_statement_start = is_top_level_semicolon;
     }
-    return {false, false};
+    return {false, false, false};
 }
 
-void expectFraming(const std::string & query, bool user_framing, bool user_disables_framing)
+void expectFraming(const std::string & query, bool user_framing, bool user_disables_framing, bool user_sets_session_framing = false)
 {
     const FramingSetting result = detectFramingSetting(query);
     EXPECT_EQ(result.user_framing, user_framing) << "query: " << query;
     EXPECT_EQ(result.user_disables_framing, user_disables_framing) << "query: " << query;
+    EXPECT_EQ(result.user_sets_session_framing, user_sets_session_framing) << "query: " << query;
 }
 
 }
@@ -156,12 +174,28 @@ TEST(PlayDetectFramingSetting, RealSettingEnablesUserFraming)
     expectFraming("SELECT 1 SETTINGS framing_output_format='EventStream'", true, false);
     /// Case-insensitive setting name and other settings around it.
     expectFraming("SELECT 1 SETTINGS max_threads = 2, FRAMING_OUTPUT_FORMAT = 'EventStream', max_block_size = 1", true, false);
-    /// A standalone `SET` statement is a real assignment too.
-    expectFraming("SET framing_output_format = 'JSONEachPacketString'", true, false);
     /// An unquoted value is still a real assignment.
     expectFraming("SELECT 1 SETTINGS framing_output_format = EventStream", true, false);
     /// The `SETTINGS` clause may follow the `FORMAT` clause.
     expectFraming("SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'EventStream'", true, false);
+}
+
+TEST(PlayDetectFramingSetting, StandaloneSetIsSessionLevel)
+{
+    /// The reported bug: a standalone `SET framing_output_format = ...` changes the setting for the
+    /// whole session (with a `session_id`), which the page cannot honor because it appends its own
+    /// `framing_output_format` to every request. It must be reported as a session-level change (so the
+    /// page refuses it) rather than as a query-level `user_framing` choice, and never as a plain query.
+    expectFraming("SET framing_output_format = 'JSONEachPacketString'", false, false, true);
+    expectFraming("set framing_output_format='EventStream'", false, false, true);
+    /// A standalone `SET ... = 'None'` is a session-level change too (refused, not treated as an
+    /// inline disable).
+    expectFraming("SET framing_output_format = 'None'", false, false, true);
+    /// The `SET` must be the leading statement keyword: a later statement after a `;` is still checked
+    /// per statement.
+    expectFraming("SELECT 1; SET framing_output_format = 'JSONEachPacketString'", false, false, true);
+    /// A query-level `SETTINGS` clause is NOT a session-level change - it stays a `user_framing` choice.
+    expectFraming("SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'", true, false, false);
 }
 
 TEST(PlayDetectFramingSetting, NoneDisablesFraming)
