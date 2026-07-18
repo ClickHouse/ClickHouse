@@ -222,7 +222,14 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
-        return data.type->getDynamicSubcolumnData(subcolumn_name, data, settings.array_level, throw_if_null);
+    {
+        res = data.type->getDynamicSubcolumnData(subcolumn_name, data, settings.array_level, throw_if_null);
+        /// Some overrides (e.g. the ":`type hint`" fall-through in DataTypeObject) can return null
+        /// even in throw_if_null mode. Fall through to the throw below so callers that dereference
+        /// the result (getSubcolumnType/getSubcolumn/getSubcolumnSerialization) get an exception.
+        if (res)
+            return res;
+    }
 
     if (!res && throw_if_null)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
