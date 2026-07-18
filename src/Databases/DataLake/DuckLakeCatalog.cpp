@@ -584,12 +584,6 @@ DuckLakeFileListing DuckLakeCatalog::getDataFiles(Int64 table_id, Int64 snapshot
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "DuckLake data file '{}' is encrypted; Parquet modular encryption is not supported",
                 row[1].value_or(""));
-        if (row[6].has_value())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "DuckLake data file '{}' uses a column name mapping (added via ducklake_add_data_files); "
-                "name-mapped files are not supported",
-                row[1].value_or(""));
         const String file_format = Poco::toLower(row[7].value_or("parquet"));
         if (file_format != "parquet")
             throw Exception(
@@ -607,6 +601,8 @@ DuckLakeFileListing DuckLakeCatalog::getDataFiles(Int64 table_id, Int64 snapshot
                 .record_count = row[3].has_value() ? std::stoll(*row[3]) : 0,
                 .file_size_bytes = row[4].has_value() ? std::stoll(*row[4]) : 0,
                 .partition_id = std::nullopt,
+                .mapping_id = std::nullopt,
+                .name_mapping = {},
                 .delete_files = {},
                 .column_stats = {},
                 .partition_values = {},
@@ -614,6 +610,8 @@ DuckLakeFileListing DuckLakeCatalog::getDataFiles(Int64 table_id, Int64 snapshot
             };
             if (row[8].has_value())
                 entry.partition_id = std::stoll(*row[8]);
+            if (row[6].has_value())
+                entry.mapping_id = std::stoll(*row[6]);
             listing.files.push_back(std::move(entry));
         }
 
@@ -702,6 +700,106 @@ DuckLakeFileListing DuckLakeCatalog::getDataFiles(Int64 table_id, Int64 snapshot
             .column_id = parseInt64(row[2], "column_id"),
             .transform = row[3].value_or(""),
         });
+    }
+
+    /// Name mappings for files added via ducklake_add_data_files (mapping_id NOT NULL).
+    /// ducklake_name_mapping rows form a tree via parent_column (mapping row id of the
+    /// parent entry); flatten it to dotted source paths per mapping_id.
+    {
+        std::unordered_map<Int64, size_t> position_by_mapping_id;
+        for (size_t i = 0; i < listing.files.size(); ++i)
+        {
+            if (listing.files[i].mapping_id.has_value())
+                position_by_mapping_id.emplace(*listing.files[i].mapping_id, i);
+        }
+        if (!position_by_mapping_id.empty())
+        {
+            const auto column_mappings = connection->exec(fmt::format(
+                "SELECT mapping_id, type FROM {} WHERE table_id = {}",
+                connection->qualified("ducklake_column_mapping"),
+                table_id));
+            for (const auto & row : column_mappings.rows)
+            {
+                const String mapping_type = row[1].value_or("");
+                if (mapping_type != "map_by_name")
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "DuckLake column mapping type '{}' is not supported (only 'map_by_name')",
+                        mapping_type);
+            }
+
+            const auto name_mappings = connection->exec(fmt::format(
+                "SELECT nm.mapping_id, nm.column_id, nm.source_name, nm.target_field_id, "
+                "nm.parent_column, nm.is_partition "
+                "FROM {0} nm "
+                "JOIN {1} cm ON cm.mapping_id = nm.mapping_id "
+                "WHERE cm.table_id = {2}",
+                connection->qualified("ducklake_name_mapping"),
+                connection->qualified("ducklake_column_mapping"),
+                table_id));
+
+            struct RawNameMapRow
+            {
+                Int64 mapping_id;
+                String source_name;
+                Int64 target_field_id;
+                std::optional<Int64> parent_column;
+                bool is_partition;
+            };
+            std::unordered_map<Int64, RawNameMapRow> rows_by_column_id;
+            for (const auto & row : name_mappings.rows)
+            {
+                const Int64 column_id = parseInt64(row[1], "column_id");
+                RawNameMapRow raw{
+                    .mapping_id = parseInt64(row[0], "mapping_id"),
+                    .source_name = row[2].value_or(""),
+                    .target_field_id = parseInt64(row[3], "target_field_id"),
+                    .parent_column = std::nullopt,
+                    .is_partition = parseBool(row[5]),
+                };
+                if (row[4].has_value())
+                    raw.parent_column = std::stoll(*row[4]);
+                rows_by_column_id.emplace(column_id, std::move(raw));
+            }
+
+            for (const auto & [column_id, raw] : rows_by_column_id)
+            {
+                const auto file_it = position_by_mapping_id.find(raw.mapping_id);
+                if (file_it == position_by_mapping_id.end())
+                    continue;
+
+                /// Walk the parent chain to build the dotted source path; guard against
+                /// catalog corruption (cycles) with a depth limit.
+                String source_path = raw.source_name;
+                std::vector<Int64> ancestor_field_ids;
+                auto parent = raw.parent_column;
+                for (size_t depth = 0; parent.has_value() && depth < 1000; ++depth)
+                {
+                    const auto parent_it = rows_by_column_id.find(*parent);
+                    if (parent_it == rows_by_column_id.end())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "DuckLake name mapping (id {}) references unknown parent column {}",
+                            raw.mapping_id,
+                            *parent);
+                    source_path = parent_it->second.source_name + "." + source_path;
+                    ancestor_field_ids.push_back(parent_it->second.target_field_id);
+                    parent = parent_it->second.parent_column;
+                }
+                if (parent.has_value())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "DuckLake name mapping (id {}) has a cycle in parent_column links",
+                        raw.mapping_id);
+
+                listing.files[file_it->second].name_mapping.push_back(DuckLakeNameMapEntry{
+                    .source_path = std::move(source_path),
+                    .target_field_id = raw.target_field_id,
+                    .ancestor_field_ids = std::move(ancestor_field_ids),
+                    .is_partition = raw.is_partition,
+                });
+            }
+        }
     }
 
     /// Inlined deletions live in ducklake_inlined_delete_N (file_id, row_id, begin_snapshot),

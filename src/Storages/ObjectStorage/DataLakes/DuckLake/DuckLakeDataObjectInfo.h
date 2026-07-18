@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Formats/FormatFilterInfo.h>
+#include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakePartitionConstantsTransform.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
 namespace DB
@@ -42,6 +44,13 @@ struct DuckLakeDataObjectInfo : public ObjectInfo
     std::optional<Int64> file_size_bytes;
     /// File-relative positions deleted via the catalog's inlined deletion table.
     std::vector<UInt64> inlined_deleted_positions;
+    /// Set for files added via ducklake_add_data_files: the parquet columns are matched
+    /// by name (ducklake_name_mapping) instead of by field id, so the file needs its own
+    /// ColumnMapper instead of the table-wide one.
+    ColumnMapperPtr column_mapper;
+    /// Hive partition columns whose values come from the catalog rather than the parquet
+    /// content (is_partition name mappings).
+    std::vector<DuckLakePartitionConstantsTransform::ConstantColumn> partition_constants;
 };
 
 using DuckLakeDataObjectInfoPtr = std::shared_ptr<DuckLakeDataObjectInfo>;

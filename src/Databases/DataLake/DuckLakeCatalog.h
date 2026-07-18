@@ -34,6 +34,20 @@ struct DuckLakeFileColumnStats
     std::optional<String> max_value;
 };
 
+/// One row of ducklake_name_mapping, flattened to a dotted parquet-side source path.
+struct DuckLakeNameMapEntry
+{
+    /// Dotted parquet column path (struct children joined by '.'; list/map children are
+    /// structural and excluded by the metadata layer).
+    String source_path;
+    /// Catalog column id this path maps to.
+    Int64 target_field_id;
+    /// Target ids of the ancestor mapping entries (used to detect structural parents).
+    std::vector<Int64> ancestor_field_ids;
+    /// Value comes from the partition path, not from the parquet content.
+    bool is_partition;
+};
+
 /// One row of ducklake_data_file (visible at a pinned snapshot) with its delete files,
 /// column statistics, partition values and inlined deletions.
 struct DuckLakeDataFileEntry
@@ -45,11 +59,15 @@ struct DuckLakeDataFileEntry
     Int64 file_size_bytes;
     /// Partition spec this file was written with (index into DuckLakeFileListing::partition_specs).
     std::optional<Int64> partition_id;
+    /// ducklake_column_mapping.mapping_id when the file was added via ducklake_add_data_files
+    /// and its parquet columns must be matched by name.
+    std::optional<Int64> mapping_id;
+    std::vector<DuckLakeNameMapEntry> name_mapping;
     std::vector<DuckLakeDeleteFileEntry> delete_files;
     std::vector<DuckLakeFileColumnStats> column_stats;
     /// Partition values serialized like stats values, indexed by partition_key_index.
     std::vector<std::optional<String>> partition_values;
-    /// File-relative positions deleted via the inlined deletion table
+    /// File-relative positions deleted via the catalog's inlined deletion table
     /// (ducklake_inlined_delete_N), already translated from global row ids.
     std::vector<UInt64> inlined_deleted_positions;
 };

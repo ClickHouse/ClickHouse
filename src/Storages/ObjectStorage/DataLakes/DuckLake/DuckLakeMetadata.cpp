@@ -4,12 +4,14 @@
 
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Databases/DataLake/DuckLakeCatalog.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakeInlinedDataSource.h>
 #include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakeInlinedValues.h>
 #include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakePositionalDeleteTransform.h>
@@ -48,6 +50,11 @@ String stripScheme(const String & path)
     return path.substr(pos + 3);
 }
 
+bool isInactiveColumnName(const String & name)
+{
+    return name.starts_with("__ducklake_inactive_column_");
+}
+
 /// Simple iterator over a pre-materialized file list (DuckLake file listing is one catalog query).
 class DuckLakeObjectIterator final : public IObjectIterator
 {
@@ -70,6 +77,134 @@ private:
     std::vector<DuckLakeDataObjectInfoPtr> infos;
     size_t index = 0;
 };
+
+/// Build the per-file ColumnMapper for a name-mapped file (ducklake_add_data_files):
+/// the table-wide field-id encoding plus a parquet-path -> clickhouse-name mapping.
+/// List/map children are structural in parquet and are excluded from the name mapping.
+ColumnMapperPtr buildNameMappedColumnMapper(
+    const DuckLakeDataFileEntry & file,
+    const std::unordered_map<String, Int64> & field_id_map,
+    const std::unordered_map<Int64, String> & id_to_name,
+    const std::unordered_map<Int64, NameAndTypePair> & column_types)
+{
+    auto mapper = std::make_shared<ColumnMapper>();
+    std::unordered_map<String, Int64> encoding(field_id_map.begin(), field_id_map.end());
+    mapper->setStorageColumnEncoding(std::move(encoding));
+
+    std::unordered_map<String, String> name_map;
+    for (const auto & entry : file.name_mapping)
+    {
+        if (entry.is_partition)
+            continue;
+        bool structural = false;
+        for (const Int64 ancestor : entry.ancestor_field_ids)
+        {
+            const auto type_it = column_types.find(ancestor);
+            if (type_it == column_types.end())
+                continue;
+            const auto nested = removeNullable(type_it->second.type);
+            if (isArray(nested) || isMap(nested))
+            {
+                structural = true;
+                break;
+            }
+        }
+        if (structural)
+            continue;
+
+        const auto name_it = id_to_name.find(entry.target_field_id);
+        if (name_it == id_to_name.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "DuckLake name mapping of file '{}' references unknown column id {}",
+                file.path,
+                entry.target_field_id);
+        name_map.emplace(entry.source_path, name_it->second);
+    }
+    mapper->setStorageColumnNameMapping(std::move(name_map));
+    return mapper;
+}
+
+/// Collect the hive partition constants of a name-mapped file (is_partition entries):
+/// values from ducklake_file_partition_value, keyed by the catalog partition spec.
+std::vector<DuckLakePartitionConstantsTransform::ConstantColumn> collectPartitionConstants(
+    const DuckLakeDataFileEntry & file,
+    const DuckLakeFileListing & listing,
+    const std::unordered_map<Int64, String> & id_to_name,
+    const std::unordered_map<Int64, NameAndTypePair> & column_types)
+{
+    std::vector<DuckLakePartitionConstantsTransform::ConstantColumn> constants;
+    for (const auto & entry : file.name_mapping)
+    {
+        if (!entry.is_partition)
+            continue;
+        const auto name_it = id_to_name.find(entry.target_field_id);
+        if (name_it == id_to_name.end() || isInactiveColumnName(name_it->second))
+            continue; /// dropped partition column: its values are not visible anymore
+
+        const auto type_it = column_types.find(entry.target_field_id);
+        if (type_it == column_types.end())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "DuckLake partition column id {} of file '{}' is missing in the column types",
+                entry.target_field_id,
+                file.path);
+
+        if (!file.partition_id.has_value())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "DuckLake file '{}' has hive partition columns but no partition_id",
+                file.path);
+        const auto spec_it = listing.partition_specs.find(*file.partition_id);
+        if (spec_it == listing.partition_specs.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "DuckLake file '{}' references partition spec {} which is not visible",
+                file.path,
+                *file.partition_id);
+
+        const DuckLakePartitionField * spec_field = nullptr;
+        for (const auto & field : spec_it->second)
+        {
+            if (field.column_id == entry.target_field_id)
+            {
+                spec_field = &field;
+                break;
+            }
+        }
+        if (!spec_field)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "DuckLake file '{}' has a hive partition column (id {}) which is not in its partition spec",
+                file.path,
+                entry.target_field_id);
+
+        const auto key_index = static_cast<size_t>(spec_field->partition_key_index);
+        if (key_index >= file.partition_values.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "DuckLake file '{}' has no partition value at index {}",
+                file.path,
+                key_index);
+
+        Field value;
+        const auto & raw_value = file.partition_values[key_index];
+        if (raw_value.has_value())
+        {
+            auto parsed = DuckLake::parseStatsValue(*raw_value, type_it->second.type);
+            if (!parsed.has_value())
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot parse DuckLake hive partition value '{}' for column '{}'",
+                    *raw_value,
+                    name_it->second);
+            value = std::move(*parsed);
+        }
+        constants.push_back(DuckLakePartitionConstantsTransform::ConstantColumn{
+            name_it->second, type_it->second.type, std::move(value)});
+    }
+    return constants;
+}
 
 }
 
@@ -181,6 +316,12 @@ ObjectIterator DuckLakeMetadata::iterate(
     const auto & field_id_map = column_mapper ? column_mapper->getStorageColumnEncoding() : no_field_ids;
     DuckLake::FilePruner pruner(filter_dag, field_id_map, column_types_by_id, context);
 
+    /// Inverse of the field-id map: column id -> clickhouse dotted name (covers inactive
+    /// columns via their synthetic names). Used to resolve name-mapping target ids.
+    std::unordered_map<Int64, String> id_to_name;
+    for (const auto & [column_name, column_id] : field_id_map)
+        id_to_name.emplace(column_id, column_name);
+
     size_t pruned_files = 0;
     std::vector<DuckLakeDataObjectInfoPtr> infos;
     infos.reserve(listing.files.size());
@@ -210,12 +351,27 @@ ObjectIterator DuckLakeMetadata::iterate(
             });
         }
 
-        infos.push_back(std::make_shared<DuckLakeDataObjectInfo>(
+        auto info = std::make_shared<DuckLakeDataObjectInfo>(
             toObjectPath(file.path, file.path_is_relative),
             std::move(delete_files),
             file.record_count,
             file.file_size_bytes,
-            file.inlined_deleted_positions));
+            file.inlined_deleted_positions);
+
+        if (file.mapping_id.has_value())
+        {
+            info->column_mapper = buildNameMappedColumnMapper(file, field_id_map, id_to_name, column_types_by_id);
+            info->partition_constants = collectPartitionConstants(file, listing, id_to_name, column_types_by_id);
+            if (!info->partition_constants.empty())
+            {
+                /// The constants transform runs after reading; format-level PREWHERE on a
+                /// partition column would evaluate on default-filled values instead.
+                info->data_lake_metadata = DataLakeObjectMetadata();
+                info->data_lake_metadata->force_post_read_filters = true;
+            }
+        }
+
+        infos.push_back(std::move(info));
     }
 
     if (pruned_files > 0)
@@ -238,6 +394,14 @@ bool DuckLakeMetadata::operator==(const IDataLakeMetadata & other) const
         && table_id == ducklake_metadata->table_id;
 }
 
+ColumnMapperPtr DuckLakeMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
+{
+    auto ducklake_object_info = std::dynamic_pointer_cast<DuckLakeDataObjectInfo>(object_info);
+    if (ducklake_object_info && ducklake_object_info->column_mapper)
+        return ducklake_object_info->column_mapper;
+    return column_mapper;
+}
+
 void DuckLakeMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
 {
     /// DeletionVectorTransform needs ChunkInfoRowNumbers on chunks.
@@ -254,8 +418,19 @@ void DuckLakeMetadata::addDeleteTransformers(
     ContextPtr context) const
 {
     auto ducklake_object_info = std::dynamic_pointer_cast<DuckLakeDataObjectInfo>(object_info);
-    if (!ducklake_object_info
-        || (ducklake_object_info->positional_delete_files.empty() && ducklake_object_info->inlined_deleted_positions.empty()))
+    if (!ducklake_object_info)
+        return;
+
+    if (!ducklake_object_info->partition_constants.empty())
+    {
+        builder.addSimpleTransform(
+            [constants = ducklake_object_info->partition_constants](const SharedHeader & header)
+        {
+            return std::make_shared<DuckLakePartitionConstantsTransform>(header, constants);
+        });
+    }
+
+    if (ducklake_object_info->positional_delete_files.empty() && ducklake_object_info->inlined_deleted_positions.empty())
         return;
 
     builder.addSimpleTransform(

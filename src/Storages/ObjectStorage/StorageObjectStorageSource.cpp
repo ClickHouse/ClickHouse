@@ -1033,8 +1033,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             const bool format_supports_prewhere =
                 FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
 
+            /// The data lake can require post-read filters for a file (e.g. DuckLake hive
+            /// partition constants are only materialized after reading).
+            const bool strip_filters = !format_supports_prewhere
+                || (object_info->data_lake_metadata && object_info->data_lake_metadata->force_post_read_filters);
+
             /// Save filters for fallback FilterTransform when format doesn't support PREWHERE.
-            if (!format_supports_prewhere)
+            if (strip_filters)
             {
                 if (format_filter_info->row_level_filter)
                     stripped_row_level_filter = format_filter_info->row_level_filter;
@@ -1059,14 +1064,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// Parquet row-group / page pruning.
                     const bool has_schema_transform
                         = configuration->getSchemaTransformer(context_, object_info) != nullptr;
-                    if (format_supports_prewhere && has_schema_transform)
+                    if (!strip_filters && has_schema_transform)
                     {
                         if (format_filter_info->row_level_filter)
                             stripped_row_level_filter = format_filter_info->row_level_filter;
                         if (format_filter_info->prewhere_info)
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
-                    const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
+                    const bool keep_in_reader = !strip_filters && !has_schema_transform;
                     auto result = std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
@@ -1082,12 +1087,35 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 }
             }
 
-            if (!format_supports_prewhere)
+            if (strip_filters)
+            {
+                /// Data lake files can carry their own ColumnMapper (e.g. DuckLake
+                /// name-mapped files matched by column name); prefer it over the
+                /// table-wide one.
+                if (auto object_mapper = configuration->getColumnMapperForObject(object_info))
+                    return std::make_shared<FormatFilterInfo>(
+                        format_filter_info->filter_actions_dag,
+                        format_filter_info->context.lock(),
+                        object_mapper,
+                        nullptr, nullptr);
                 return std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
+            }
+
+            /// Data lake files can carry their own ColumnMapper (e.g. DuckLake name-mapped
+            /// files matched by column name); swap it in when it differs from the
+            /// table-wide one.
+            if (auto object_mapper = configuration->getColumnMapperForObject(object_info);
+                object_mapper && object_mapper != format_filter_info->column_mapper)
+                return std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    object_mapper,
+                    format_filter_info->row_level_filter,
+                    format_filter_info->prewhere_info);
 
             return format_filter_info;
         }();
@@ -1211,11 +1239,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            Names needed_names = read_from_format_info.requested_columns.getNames();
+            /// The transform produces whole columns, so keep top-level names here:
+            /// removeUnusedActions throws on subcolumn names like `s.x` (extracted later).
+            Names needed_names;
+            for (const auto & requested_column : read_from_format_info.requested_columns)
+                needed_names.push_back(requested_column.name.substr(0, requested_column.name.find('.')));
             auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
-                    needed_names.push_back(required.name);
+                    needed_names.push_back(required.name.substr(0, required.name.find('.')));
             };
             if (stripped_row_level_filter)
                 add_filter_required_names(stripped_row_level_filter->actions);
