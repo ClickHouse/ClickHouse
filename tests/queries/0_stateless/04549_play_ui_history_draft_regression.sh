@@ -87,6 +87,14 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     'captureActiveTab', 'invalidateInFlight', 'activateTab', 'closeTab', 'scheduleSave',
     'buildHistoryParams', 'isCurrentEntryForTab', 'writeHistoryEntry', 'tabReflectsRun',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
+    /// The connection/database identity helpers the merged history writers and Back/Forward restore
+    /// now consult (added on master). Extracted so the run=1 / draft cases run the REAL divergence
+    /// and effective-database logic: a run-produced entry stamps the live connection and stays
+    /// reproducible (`run=1` kept), and the selected database (always null / server default in these
+    /// cases) never spuriously drops the marker. `applySelectedDatabaseHighlight` is DOM-only and is
+    /// stubbed below.
+    'liveDivergedFromRun', 'effectiveDatabase', 'sameServerAddress', 'effectiveConnectionUser',
+    'stampSelectedDatabaseConnection',
     /// The real structural tab operations, so the draft-in-another-tab case below drives the
     /// same capture/refresh/activate/sync sequence a tab click or the "+" button does.
     'markBootstrapDirty', 'switchToTab', 'addTab',
@@ -201,6 +209,9 @@ const sandbox = {
     },
 };
 sandbox.url_elem = { value: sandbox.location.origin };
+/// The connection password input the merged `postSingle`/`postMulti` snapshot into the per-run
+/// connection tuple (never persisted). Empty for the default same-origin connection used here.
+sandbox.password_elem = { value: '' };
 /// `new URL(window.location)` (persistColorModes) coerces the location to its href.
 sandbox.location.toString = function() { return this.href; };
 sandbox.window = sandbox;
@@ -239,6 +250,20 @@ sandbox.defer_run_for_reconcile = false;
 sandbox.postAllCalled = false;
 sandbox.updateQueryParams = async () => true;
 sandbox.setParamValues = values => { if (values) for (const [k, v] of Object.entries(values)) sandbox.param_inputs[k] = v; };
+/// Connection/database state the merged history writers + Back/Forward restore read (added on
+/// master). These cases never select a database or change the connection, so the selection stays
+/// null (the server default) and the live connection matches the producing one on every run — so
+/// `liveDivergedFromRun` is false and `run=1` is preserved exactly as before the merge. The
+/// server's current database is unknown to this harness (no `system.databases` fetch), which
+/// `effectiveDatabase` treats as "no canonical default", leaving null === null. `deferred_run_cancelled`
+/// is the startup auto-run kill switch the editor-only writers set; irrelevant post-startup here.
+sandbox.selected_database = null;
+sandbox.selected_database_connection = null;
+sandbox.server_current_database = null;
+sandbox.deferred_run_cancelled = false;
+/// DOM-only: highlights the selected row in the databases panel. No panel in the harness, so the
+/// real one would throw on `querySelectorAll`; the highlight is irrelevant to the history contract.
+sandbox.applySelectedDatabaseHighlight = () => {};
 /// The auto-run on a still-authoritative URL. The reload cases assert this fires for a clean
 /// run but never for a restored unrun draft.
 sandbox.postAll = async () => { sandbox.postAllCalled = true; };
@@ -332,7 +357,11 @@ function setParam(name, value)
 async function run(q)
 {
     type(q);
-    sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1 });
+    sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
+        /// Stamp the live connection the run executed against, exactly as `postSingle`/`postMulti` do,
+        /// so the snapshot is recognized as reproducible on the current connection (`liveDivergedFromRun`
+        /// false) and the entry keeps `run=1`; an unstamped snapshot is treated as diverged (fail closed).
+        database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
 
@@ -342,7 +371,8 @@ async function run(q)
 async function runSelected(editorText, selectedStatement)
 {
     type(editorText);
-    sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1 });
+    sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
+        database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
 
@@ -360,7 +390,8 @@ function startRun(q)
 /// never whatever the editor/params hold by the time the response actually arrives.
 async function finishRun(started)
 {
-    sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1 });
+    sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1,
+        database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
 
@@ -403,6 +434,9 @@ function reset()
     /// so restore it (and the spent marker with it).
     sandbox.url_run_directive = true;
     sandbox.run_directive_spent = false;
+    /// Clear the session-accumulated deferred-run cancellation between cases, so a prior case's
+    /// editor-only write does not leak a cancelled auto-run into the next case's reload.
+    sandbox.deferred_run_cancelled = false;
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
     sandbox.activeTabId = tab.id;
@@ -425,6 +459,9 @@ async function reload()
     sandbox.url_run_directive = sandbox.current_url.searchParams.has('run');
     sandbox.run_directive_spent = false;
     sandbox.defer_run_for_reconcile = sandbox.url_run_directive;
+    /// A real reload is a fresh JS context, so the session-accumulated "the deferred startup auto-run
+    /// was cancelled" flag starts false (module init) — reconcileStartup gates the auto-run on it.
+    sandbox.deferred_run_cancelled = false;
     sandbox.query_area.value = sandbox.url_query;
     sandbox.param_inputs = {};
     sandbox.bootstrap_dirty = false;
