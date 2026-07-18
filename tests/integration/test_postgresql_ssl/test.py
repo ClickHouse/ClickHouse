@@ -350,6 +350,55 @@ def test_materialized_postgresql_table_engine_ssl(started_cluster):
     node.query("DROP TABLE mpg_tbl_ssl SYNC")
 
 
+def test_materialized_postgresql_client_certificate(started_cluster):
+    # The MaterializedPostgreSQL cases above replicate over the SSL-forced connection,
+    # so they would still pass if the `materialized_postgresql_ssl_*` settings were
+    # silently dropped and libpq fell back to its default `sslmode`. To prove the full
+    # TLS parameters are actually threaded into the replication connection -- including
+    # `materialized_postgresql_ssl_cert`/`_ssl_key`, which no other MaterializedPostgreSQL
+    # case exercises -- replicate the `certdb` database, which only accepts a connection
+    # presenting a verified client certificate. Both the snapshot and the WAL-consumer
+    # connections must authenticate with it, so a successful replication proves the
+    # certificate parameters reached libpq (a dropped `_ssl_cert`/`_ssl_key` would make
+    # `certdb` refuse the connection and the initial sync would never complete).
+    node.query("DROP DATABASE IF EXISTS mpg_cert_ssl")
+    node.query(
+        f"""
+        CREATE DATABASE mpg_cert_ssl
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', '{CERT_DB}', 'postgres', '{pg_pass}')
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}',
+            materialized_postgresql_ssl_cert = '{CLIENT_CERT_PATH}',
+            materialized_postgresql_ssl_key = '{CLIENT_KEY_PATH}',
+            materialized_postgresql_tables_list = '{CERT_TABLE}'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+
+    wait_for(
+        lambda: node.query(f"SELECT count() FROM mpg_cert_ssl.{CERT_TABLE}").strip() == "10",
+        120,
+        "MaterializedPostgreSQL initial sync over a client-certificate connection",
+    )
+    assert node.query(f"SELECT sum(value) FROM mpg_cert_ssl.{CERT_TABLE}").strip() == str(sum(i * 10 for i in range(10)))
+
+    # A row inserted after CREATE DATABASE must replicate too, so the WAL consumer
+    # (a separate connection) also authenticates with the client certificate. Insert
+    # over the local socket (trust auth): a psycopg2 client here has no certificate to
+    # reach `certdb`.
+    pg_exec(f'psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "INSERT INTO {CERT_TABLE} VALUES (10, 100)"')
+
+    wait_for(
+        lambda: node.query(f"SELECT value FROM mpg_cert_ssl.{CERT_TABLE} WHERE key = 10").strip() == "100",
+        120,
+        "MaterializedPostgreSQL to replicate a post-create insert over a client-certificate connection",
+    )
+    assert node.query(f"SELECT count() FROM mpg_cert_ssl.{CERT_TABLE}").strip() == "11"
+
+    node.query("DROP DATABASE mpg_cert_ssl")
+
+
 def test_relative_certificate_path_is_resolved_against_user_files(started_cluster):
     # A relative sslrootcert is resolved against the `user_files` directory (libpq
     # itself would resolve it against the server's working directory).
