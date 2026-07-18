@@ -26,15 +26,19 @@ meta="${data_path%/}/${rel_path}"
 ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${db}"
 
 # Strip the column list from the stored metadata, leaving a columnless view definition.
+# Keep the original (valid) metadata in a variable so we can restore it and drop the
+# database cleanly at the end. Do not write a backup file next to the metadata: any extra
+# file in the store directory makes the later ATTACH fail with INCORRECT_FILE_NAME.
+config="${CUR_DIR}/04603_columnless_view_metadata_no_server_abort.xml"
 if [ -e "${meta}" ]; then
     # Database metadata lives on the local filesystem.
+    orig_view_meta=$(cat "${meta}")
     perl -0777 -pi -e 's/\n\(\n.*?\n\)\n(AS SELECT)/\n$1/s' "${meta}"
 else
     # Database metadata lives on a remote object-storage disk (the CI "db disk" config,
     # --remote-database-disk). Edit it in place via clickhouse-disks instead.
-    config="${CUR_DIR}/04603_columnless_view_metadata_no_server_abort.xml"
-    view_meta=$(clickhouse-disks -C "${config}" --disk disk_db_remote --query "read ${rel_path}")
-    view_meta=$(printf '%s' "${view_meta}" | perl -0777 -pe 's/\n\(\n.*?\n\)\n(AS SELECT)/\n$1/s')
+    orig_view_meta=$(clickhouse-disks -C "${config}" --disk disk_db_remote --query "read ${rel_path}")
+    view_meta=$(printf '%s' "${orig_view_meta}" | perl -0777 -pe 's/\n\(\n.*?\n\)\n(AS SELECT)/\n$1/s')
     printf '%s' "${view_meta}" | clickhouse-disks -C "${config}" --disk disk_db_remote --query "write --path-to ${rel_path}"
     # disk_db_remote is plain_rewritable: drop the metadata cache so the edit is visible.
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP DISK METADATA CACHE 'disk_db_remote'"
@@ -47,4 +51,16 @@ ${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${db}" 2>&1 | grep -o -m1 "EMPTY_LIST_O
 # The server must still be alive.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'server alive'"
 
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db}"
+# The failed ATTACH left ${db} detached with its metadata still on disk; a plain
+# DROP DATABASE IF EXISTS is a no-op on the unregistered database and leaves the
+# metadata file behind, which would poison a rerun on the same server (CREATE DATABASE
+# then fails with ATOMIC_RENAME_FAIL because the metadata file already exists). Restore
+# the original (valid) metadata, re-attach, and DROP ... SYNC so cleanup is unconditional.
+if [ -e "${meta}" ]; then
+    printf '%s' "${orig_view_meta}" > "${meta}"
+else
+    printf '%s' "${orig_view_meta}" | clickhouse-disks -C "${config}" --disk disk_db_remote --query "write --path-to ${rel_path}"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP DISK METADATA CACHE 'disk_db_remote'"
+fi
+${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${db}"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db} SYNC"
