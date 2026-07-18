@@ -41,7 +41,8 @@ else
 fi
 
 # Re-reading the metadata must fail gracefully, not abort the server.
-${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${db}" 2>&1 | grep -o "EMPTY_LIST_OF_COLUMNS_PASSED" | head -n1
+# grep is the terminal command (no trailing head) so its exit code is not masked.
+${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${db}" 2>&1 | grep -o -m1 "EMPTY_LIST_OF_COLUMNS_PASSED"
 
 # The server must still be alive.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'server alive'"
