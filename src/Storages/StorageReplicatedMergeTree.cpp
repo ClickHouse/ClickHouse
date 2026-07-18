@@ -6087,7 +6087,8 @@ void StorageReplicatedMergeTree::releasePrecomputedMutationReservation(const Str
     cancelled_survivor_mutations.erase(new_part_name);
 }
 
-std::optional<StorageReplicatedMergeTree::PreservedMutationPart> StorageReplicatedMergeTree::takePrecomputedMutation(const String & new_part_name)
+std::optional<StorageReplicatedMergeTree::PreservedMutationPart> StorageReplicatedMergeTree::takePrecomputedMutation(
+    const String & new_part_name, std::atomic<bool> * invalidated_flag)
 {
     std::lock_guard lock(precomputed_mutations_mutex);
     auto it = precomputed_mutation_parts.find(new_part_name);
@@ -6095,6 +6096,14 @@ std::optional<StorageReplicatedMergeTree::PreservedMutationPart> StorageReplicat
         return {};
     auto result = std::move(it->second);
     precomputed_mutation_parts.erase(it);
+    /// A follow-up attempt that keeps the taken part around (while it sets up the reuse commit)
+    /// registers its invalidation flag, so that if a range operation removes the target part's queue
+    /// entry in the meantime (`discardPrecomputedMutation`), the attempt's re-deposit-on-failure guard
+    /// drops the part instead of orphaning it — there would be no queue entry left to commit it. A
+    /// deposited entry and a reservation are mutually exclusive, so nothing for this name is registered
+    /// here yet.
+    if (invalidated_flag)
+        mutations_being_computed_by_survivor.emplace(new_part_name, invalidated_flag);
     return result;
 }
 

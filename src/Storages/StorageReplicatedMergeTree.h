@@ -423,14 +423,25 @@ public:
     void depositPrecomputedMutation(const String & new_part_name, PreservedMutationPart preserved);
     /// Release a reservation without depositing anything (the survivor failed or was cancelled).
     void releasePrecomputedMutationReservation(const String & new_part_name);
-    /// Pop a deposited part for reuse; returns nullopt if there is none.
-    std::optional<PreservedMutationPart> takePrecomputedMutation(const String & new_part_name);
-    /// Called by the replication queue when a range operation removes the queue entry for a part
-    /// that a survivor is (or was) computing. Drops an already-deposited result, or marks a
-    /// still-computing survivor so its eventual deposit is dropped rather than orphaned.
+    /// Pop a deposited part for reuse; returns nullopt if there is none. If `invalidated_flag` is not
+    /// null, the follow-up attempt is registered (like a reservation) while it holds the taken part:
+    /// a range operation that removes the target part's queue entry in the meantime
+    /// (`discardPrecomputedMutation`) then marks this take cancelled, so the attempt's
+    /// re-deposit-on-failure path drops the part instead of orphaning it. The flag pointer stays valid
+    /// until the matching `depositPrecomputedMutation` / `releasePrecomputedMutationReservation`
+    /// (both remove the map entry under the same mutex, and the follow-up task outlives its take).
+    std::optional<PreservedMutationPart> takePrecomputedMutation(
+        const String & new_part_name, std::atomic<bool> * invalidated_flag = nullptr);
+    /// Called by the replication queue when a range operation removes the queue entry for a part that a
+    /// survivor is (or was) computing, or that a follow-up attempt has taken for reuse. Drops an
+    /// already-deposited result, or marks a still-computing survivor / a taken-for-reuse result so its
+    /// eventual deposit (or re-deposit) is dropped rather than orphaned.
     void discardPrecomputedMutation(const String & new_part_name);
-    /// True while a survivor is still computing this part (reserved but not yet deposited). Used
-    /// by the queue to avoid scheduling a duplicate mutation task for the same target part.
+    /// True while a survivor is still computing this part, or a follow-up attempt is holding its taken
+    /// result (reserved but not yet deposited/committed). Used by the queue to avoid scheduling a
+    /// duplicate mutation task for the same target part. (A follow-up attempt that registered here is
+    /// itself `currently_executing`, so the queue already skips it; the registration matters only for
+    /// the discard-vs-re-deposit race above.)
     bool isPartBeingComputedBySurvivor(const String & new_part_name) const;
     /// Best-effort: whether a transient Keeper reconnection is currently in progress.
     bool isTransientReconnectInProgress() const { return transient_reconnect_in_progress.load(); }
@@ -553,10 +564,11 @@ private:
 
     /// State for reusing a mutation result across a transient Keeper reconnection.
     mutable std::mutex precomputed_mutations_mutex;
-    /// Target part names currently being computed by a detached (surviving) mutation task, mapped to
-    /// that task's invalidation flag. Setting the flag makes the survivor abort its compute (see
-    /// `discardPrecomputedMutation`); the pointer is owned by the survivor task and removed from the
-    /// map before the task is destroyed.
+    /// Target part names owned by a detached task: either a survivor still computing the result, or a
+    /// follow-up attempt holding the taken result while it sets up the reuse commit. Mapped to that
+    /// task's invalidation flag; setting the flag makes a survivor abort its compute (see
+    /// `discardPrecomputedMutation`). The pointer is owned by the task and removed from the map before
+    /// the task is destroyed (via `depositPrecomputedMutation` / `releasePrecomputedMutationReservation`).
     std::map<String, std::atomic<bool> *> mutations_being_computed_by_survivor;
     /// Target part names of still-computing survivors whose queue entry has been removed by a range
     /// operation (DROP_RANGE / REPLACE_RANGE / broken-part cleanup). Their eventual deposit must be

@@ -76,26 +76,38 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// fail-closed: the result is reused only if the setting is still enabled and the source part,
     /// the table metadata version, and the exact mutation set are all unchanged, and it still goes
     /// through the normal commit path (which re-validates against ZooKeeper).
+    /// Take it and, while we hold it, register `survivor_invalidated` so a range operation that
+    /// removes this part's queue entry meanwhile (`discardPrecomputedMutation`) can tell us the entry
+    /// is gone; the re-deposit guard below then drops the result instead of orphaning it. The
+    /// registration is released on every exit path (the guard, or the reuse / discard branches below).
     std::optional<StorageReplicatedMergeTree::PreservedMutationPart> preserved
-        = storage.takePrecomputedMutation(entry.new_part_name);
+        = storage.takePrecomputedMutation(entry.new_part_name, &survivor_invalidated);
 
     /// The deposited result is taken above, before the reuse decision and the setup below. The
     /// reuse decision is made *before* `reserveSpace` and skips it entirely when the result is
     /// reused, so a `NOT_ENOUGH_SPACE` on a nearly-full disk no longer discards the deposit — that
     /// is exactly the large-part-on-a-full-disk case the feature targets. This guard covers the
-    /// remaining window: if a step between here and the reuse commit throws a transient error (the
-    /// zero-copy exclusive lock, `MergeList::insert`, ...), put the deposited result back so the
-    /// next attempt can still reuse it instead of re-mutating the whole part from scratch.
-    /// Deliberate early returns (the part is obsolete, or is being fetched from / computed by
-    /// another replica) intentionally let it go: those paths obtain the part another way, and the
-    /// deposit is cleaned up when the queue entry is removed. The reuse and discard branches below
-    /// consume `preserved` on the non-throwing path, so this guard only fires on an in-flight
-    /// exception.
+    /// remaining window between here and the reuse commit:
+    ///   * If a step throws a transient error (the zero-copy exclusive lock, `MergeList::insert`, ...),
+    ///     put the deposited result back so the next attempt can still reuse it instead of re-mutating
+    ///     the whole part — unless a concurrent range operation removed the queue entry (which marks
+    ///     this take cancelled), in which case `depositPrecomputedMutation` drops it: re-depositing
+    ///     with no queue entry left to consume it would orphan the temporary part.
+    ///   * On a deliberate early return (the part is obsolete, or is being fetched from / computed by
+    ///     another replica) let the deposit go — those paths obtain the part another way — and release
+    ///     the registration so a later attempt can select the entry again.
+    /// The reuse and discard branches below consume `preserved` (and release the registration) on the
+    /// non-throwing reuse/discard path, so this guard's body runs only on an in-flight exception or a
+    /// deliberate early return.
     const int uncaught_exceptions_before = std::uncaught_exceptions();
     scope_guard redeposit_preserved_on_failure = [this, &preserved, uncaught_exceptions_before]()
     {
-        if (preserved && std::uncaught_exceptions() > uncaught_exceptions_before)
+        if (!preserved)
+            return;
+        if (std::uncaught_exceptions() > uncaught_exceptions_before)
             storage.depositPrecomputedMutation(entry.new_part_name, std::move(*preserved));
+        else
+            storage.releasePrecomputedMutationReservation(entry.new_part_name);
     };
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
@@ -214,40 +226,57 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// deposited result — otherwise ready to commit — would never make it past the reservation.
     ///
     /// The decision is fail-closed: reuse only if the setting is still enabled and the source part,
-    /// the table metadata version, the exact mutation set, and the zero-copy commit disposition are
-    /// all still unchanged. The last check closes a data-safety gap: if the survivor produced the
-    /// part on a zero-copy disk, committing it must recreate its Keeper zero-copy lock nodes, which
-    /// `getLockSharedDataOps` only does while `allow_remote_fs_zero_copy_replication` is enabled and
-    /// the disk supports zero-copy. If that disposition changed after the deposit (the setting was
-    /// toggled either way), reuse would publish the part with the wrong lock metadata, so re-compute.
+    /// the table metadata version, the exact mutation set, the zero-copy commit disposition, and the
+    /// storage placement are all still unchanged.
+    ///
+    /// The zero-copy check closes a data-safety gap: if the survivor produced the part on a zero-copy
+    /// disk, committing it must recreate its Keeper zero-copy lock nodes, which `getLockSharedDataOps`
+    /// only does while `allow_remote_fs_zero_copy_replication` is enabled and the disk supports
+    /// zero-copy. If that disposition changed after the deposit (the setting was toggled either way),
+    /// reuse would publish the part with the wrong lock metadata, so re-compute.
+    ///
+    /// The storage-placement check resolves the disk the deposited part lives on through the *current*
+    /// storage policy. A pure `ALTER TABLE ... MODIFY SETTING storage_policy = ...` / `disk = ...` does
+    /// not bump the table metadata version, so the metadata-version check above cannot notice a
+    /// placement change; if the new policy no longer exposes that disk, reuse is impossible (committing
+    /// the part there would place it outside the table's current policy). Resolving with the
+    /// non-throwing `tryGetDiskByName` and treating a missing disk as a mismatch keeps the reuse path
+    /// from ever throwing while re-resolving the disk (which would otherwise re-deposit the result and
+    /// retry the same failure forever); it discards and re-computes on the new placement instead.
     const bool zero_copy_commit_now = preserved
         && (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
         && preserved->part->getDataPartStorage().supportZeroCopyReplication();
+
+    const DiskPtr preserved_part_disk = preserved
+        ? storage.getStoragePolicy()->tryGetDiskByName(preserved->part->getDataPartStorage().getDiskName())
+        : nullptr;
 
     const bool reuse_precomputed_result = preserved
         && survival_enabled
         && preserved->source_part_name == source_part_name
         && preserved->metadata_version == mutation_metadata_version
         && preserved->mutation_ids == mutation_ids
-        && preserved->requires_zero_copy_commit == zero_copy_commit_now;
+        && preserved->requires_zero_copy_commit == zero_copy_commit_now
+        && preserved_part_disk != nullptr;
 
     if (preserved && !reuse_precomputed_result)
     {
         LOG_INFO(log, "Discarding the pre-computed result for mutation of part {}: the setting was disabled, or the "
-            "source part, the table metadata, the set of mutations, or the zero-copy replication mode changed after "
-            "the reconnection, will re-compute it.", entry.new_part_name);
+            "source part, the table metadata, the set of mutations, the zero-copy replication mode, or the storage "
+            "placement of the part changed after the reconnection, will re-compute it.", entry.new_part_name);
         /// Release the preserved temporary part now, before re-computing below into a possibly
         /// identically-named temporary directory: its lock is dropped and the leftover directory is
-        /// cleaned up as an old temporary directory.
+        /// cleaned up as an old temporary directory. Also release the take registration made above.
         preserved.reset();
+        storage.releasePrecomputedMutationReservation(entry.new_part_name);
     }
 
     if (reuse_precomputed_result)
     {
         /// The deposited part is already on disk; reuse needs no fresh reservation. Point the
-        /// merge-list display at the disk the part already lives on, mirroring updatePath below.
-        future_mutated_part->updatePath(
-            storage, storage.getStoragePolicy()->getDiskByName(preserved->part->getDataPartStorage().getDiskName()));
+        /// merge-list display at the disk the part already lives on (resolved above through the
+        /// current policy), mirroring updatePath below.
+        future_mutated_part->updatePath(storage, preserved_part_disk);
     }
     else
     {
@@ -263,7 +292,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     if ((*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         DiskPtr disk = reuse_precomputed_result
-            ? storage.getStoragePolicy()->getDiskByName(preserved->part->getDataPartStorage().getDiskName())
+            ? preserved_part_disk
             : reserved_space->getDisk();
 
         if (disk->supportZeroCopyReplication())
@@ -354,6 +383,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         /// Consumed: the temporary-directory lock now lives in `reused_temporary_directory_lock`,
         /// so the re-deposit guard must not put this (moved-from) result back.
         preserved.reset();
+        /// Release the take registration made above: this attempt now owns the result and will commit
+        /// it in finalize(). (Its queue entry is `currently_executing` throughout the commit, so a
+        /// concurrent range operation waits for it rather than racing the deposit.)
+        storage.releasePrecomputedMutationReservation(entry.new_part_name);
 
         for (auto & item : future_mutated_part->parts)
             priority.value += item->getBytesOnDisk();
