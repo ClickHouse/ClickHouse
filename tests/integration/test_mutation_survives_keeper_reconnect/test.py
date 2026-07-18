@@ -124,8 +124,10 @@ def test_survivor_result_discarded_when_target_part_dropped(started_cluster):
     """
     A mutation that detaches to survive a transient reconnect must not orphan its pre-computed
     result if the target part's queue entry is meanwhile removed by a concurrent DROP PARTITION.
-    The still-computing survivor's result must be discarded (not deposited for reuse), and the
-    table must stay consistent and usable afterwards.
+    While the survivor is still computing, executing the DROP_RANGE removes its queue entry, so the
+    in-progress computation is aborted (and, in the race where it had already deposited, its result
+    is discarded). Either way the result must never be reused, and the table must stay consistent and
+    usable afterwards.
     """
     node.query("DROP TABLE IF EXISTS t2 SYNC")
     node.query(
@@ -170,24 +172,36 @@ def test_survivor_result_discarded_when_target_part_dropped(started_cluster):
         "the replica to recover from readonly",
     )
 
+    # The (still-paused) mutation detached to survive the reconnect instead of being cancelled.
+    wait_for(
+        lambda: get_event("MutationsSurvivedKeeperReconnect") > survived_before,
+        "the mutation to survive the reconnect",
+    )
+
     # Drop the partition that contains the part the (still-paused) survivor is computing. Executing
     # the resulting DROP_RANGE removes the mutation's queue entry, so its result can never be
-    # committed and must be discarded.
+    # committed.
     node.query("ALTER TABLE t2 DROP PARTITION 0")
     wait_for(
         lambda: node.query("SELECT count() FROM t2").strip() == "0",
         "the partition to be dropped (DROP_RANGE executed while the survivor is still computing)",
     )
 
-    # Resume the survivor. It finishes computing and deposits, but the result must be dropped.
+    # Resume the survivor. Its computation is aborted now that the queue entry is gone (in the race
+    # where it had already deposited, the deposited result is discarded instead).
     node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
 
-    # The survivor did survive the reconnect ...
+    # Wait for the resumed survivor task to finish tearing down, so that if a stale result were
+    # (incorrectly) going to be reused, it would have happened by now.
     wait_for(
-        lambda: get_event("MutationsSurvivedKeeperReconnect") > survived_before,
-        "the mutation to survive the reconnect and finish computing",
+        lambda: node.query(
+            "SELECT count() FROM system.merges WHERE table = 't2' AND is_mutation"
+        ).strip()
+        == "0",
+        "the aborted survivor task to finish",
     )
-    # ... but its result must NOT have been reused: the partition (and the target part) was dropped.
+
+    # The result must NOT have been reused: the partition (and the target part) was dropped.
     assert get_event("MutationsReusedPrecomputedParts") == reused_before
 
     # The partition is gone and the table is still consistent and usable.

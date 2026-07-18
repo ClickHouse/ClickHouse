@@ -512,6 +512,11 @@ bool MutateFromLogEntryTask::tryDetachForTransientReconnect()
     };
 
     is_surviving_reconnect.store(true);
+    /// The mutation survived the reconnect: it keeps running instead of being cancelled and later
+    /// recomputed from scratch. Counted here, at the point of survival, rather than when the result
+    /// is finally deposited — the computation may still be aborted before then (e.g. if the target
+    /// part is dropped by a concurrent `DROP PARTITION` while this survivor is still computing).
+    ProfileEvents::increment(ProfileEvents::MutationsSurvivedKeeperReconnect);
 
     /// Detach from the replication queue: releasing the "currently executing" holder empties
     /// `future_parts`, so the queue can be reinitialized cleanly during the reconnect. The queue
@@ -578,7 +583,6 @@ bool MutateFromLogEntryTask::depositPrecomputedResultForReuse()
 
     LOG_INFO(log, "Kept the pre-computed result for mutation of part {} after a transient ZooKeeper reconnection; "
         "it will be committed by a follow-up attempt if the assignment is still valid.", entry.new_part_name);
-    ProfileEvents::increment(ProfileEvents::MutationsSurvivedKeeperReconnect);
 
     return true;
 }
