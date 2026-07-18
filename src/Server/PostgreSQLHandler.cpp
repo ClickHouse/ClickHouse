@@ -1357,6 +1357,11 @@ FROM (
         /// list must not make the column look like a top-level array: such columns are exposed as text.
         toInt32(countSubstrings(wrappers, 'Array(')) AS ndims
     FROM system.columns
+    /// The data path streams a table with `SELECT * FROM <table>` (see `processCopyQuery`), which omits
+    /// `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns by default. Advertise exactly that column set here, so
+    /// the emulated catalog and the `COPY` payload agree - otherwise schema inference sees more columns than
+    /// the stream carries and row decoding goes out of sync.
+    WHERE default_kind NOT IN ('MATERIALIZED', 'ALIAS', 'EPHEMERAL')
 ) AS cols
 INNER JOIN pg_class_oids AS oids ON cols.database = oids.database AND cols.table = oids.name)");
 
