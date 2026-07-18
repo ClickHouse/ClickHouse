@@ -479,8 +479,13 @@ void MergeTreeDeduplicationLog::compact()
         {
             disk->removeFileIfExists(new_path);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
+            /// Cleanup of a failed compaction; if even removing the orphan snapshot fails there
+            /// is nothing more to do. Leaving the file behind is harmless: it is not registered in
+            /// existing_logs, and it holds the highest log number, so should load ever read it, its
+            /// ADD records replay last as no-ops on top of the already-reconstructed live state.
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an orphan snapshot file left by a failed deduplication log compaction");
         }
         return;
     }
