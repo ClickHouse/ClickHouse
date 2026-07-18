@@ -852,38 +852,74 @@ html:not(.dark) .pagination-prev:hover {
    Sticky sidebar header (search + Ask AI)
    ============================================
 
-   `#sidebar-content` is the sidebar's scroll container (Mintlify gives it
-   `overflow-y-auto`). Its three direct children are, in order:
+   Mintlify's scroll viewport lives directly inside `#sidebar-content`. The
+   viewport's inner wrapper has three children, in order:
      [0] the logo + dark-mode-toggle row  (div.flex.justify-between.items-center)
      [1] the search + Ask AI row          (div.flex.flex-col.gap-4.mt-6)
      [2] the page navigation              (#navigation-items)
-   Because all three live inside the one scrolling box, the logo and search
-   rows scroll away with the nav. To pin them, move the scroll boundary off
-   `#sidebar-content` and onto `#navigation-items` only: lay `#sidebar-content`
-   out as a flex column that clips instead of scrolls, and let the nav list
-   flex-grow into the remaining height and scroll on its own. The two header
-   rows then stay put at the top while the nav scrolls beneath them.
+   Keep Mintlify's viewport as the scroll container so its visible Base UI
+   scrollbar continues to work. Pin the logo and search rows within that
+   viewport while the navigation scrolls beneath them.
    `#sidebar` is `hidden lg:flex`, so this only affects the desktop sidebar. */
-#sidebar-content {
-    display: flex !important;
-    flex-direction: column;
-    overflow-y: hidden !important;
-    min-height: 0;
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    position: sticky;
+    z-index: 20;
+    background: #ffffff;
 }
-#sidebar-content > #navigation-items {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
+
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child {
+    top: 0;
+    z-index: 21;
+}
+
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    top: 3.5rem;
+}
+
+/* Cover the complete sticky header, including the space above, between, and
+   below its two rows, so menu items cannot show through while scrolling. */
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    position: absolute;
+    z-index: -1;
+    top: -5rem;
+    right: -1rem;
+    bottom: -2rem;
+    left: -1.75rem;
+    background: #ffffff;
+    content: "";
+    pointer-events: none;
+}
+
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2),
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    background: #151515;
+}
+
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before,
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    background: #151515;
+}
+
+#sidebar-content #navigation-items {
     /* Mintlify inserts an empty `mt-8` list before the first real menu item.
-       Move that spacing outside the scrolling box so the scrollbar track starts
-       level with the first item instead of directly below search and Ask AI. */
-    margin-top: 2.5rem;
+       Preserve an explicit gap between the sticky controls and the first menu
+       item rather than relying on that empty element's collapsed margin. */
+    margin-top: 2rem;
     scrollbar-width: thin;
     scrollbar-color: #d1d5db transparent;
 }
 
 #navigation-items > ul.list-none.mt-8:first-child:empty {
     margin-top: 0 !important;
+}
+
+/* Start Mintlify's scrollbar track at the first navigation item rather than at
+   the top of the sticky logo/search header. */
+#sidebar-content > [data-component-part="scroll-area-scrollbar"][data-orientation="vertical"] {
+    margin-top: 9.25rem;
 }
 
 #navigation-items::-webkit-scrollbar {

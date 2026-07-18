@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/PNGOutputFormat.h>
 
-#if USE_LIBPNG && USE_SIMDUTF
+#if USE_SIMDUTF
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
