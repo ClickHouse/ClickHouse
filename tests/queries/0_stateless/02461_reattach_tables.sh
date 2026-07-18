@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-detach, no-replicated-database
+# Tags: long, no-random-detach, no-replicated-database
 # no-random-detach: test uses DETACH/ATTACH itself
+# long: comprehensive regression suite (RBAC users, BACKUP/RESTORE, many DETACH/ATTACH cycles) whose
+#       cumulative time across flaky-check reruns exceeds the flaky-check budget, though each run is quick
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
