@@ -453,6 +453,14 @@ protected:
     String server_logs_file;
     std::unique_ptr<InternalTextLogs> logs_out_stream;
 
+    /// The terminal-facing WriteBufferFromFileDescriptor that logs_out_stream flushes through: the
+    /// dedicated stderr buffer (out_logs_buf) by default, or std_out in --server_logs_file=- mode.
+    /// Tracked so the server-log / profile-events flushes can be kept responsive to cancellation on a
+    /// stuck terminal, like the result-set (std_out) and progress (tty_buf) paths. Null when server
+    /// logs go to a real file, which never blocks on write. Points into out_logs_buf / std_out and is
+    /// cleared in resetOutput() before out_logs_buf is reset.
+    WriteBufferFromFileDescriptor * logs_out_terminal_buf = nullptr;
+
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// But running embedded into server, we write the progress to given tty file dexcriptor.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.

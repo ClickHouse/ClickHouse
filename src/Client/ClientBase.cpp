@@ -951,7 +951,9 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
+                auto stderr_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
+                logs_out_terminal_buf = stderr_buf.get();
+                out_logs_buf = std::move(stderr_buf);
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -959,6 +961,7 @@ void ClientBase::initLogsOutputStream()
             {
                 /// Use stdout if --server_logs_file=- specified
                 wb = std_out.get();
+                logs_out_terminal_buf = std_out.get();
                 color_logs = stdout_is_a_tty;
             }
             else
@@ -966,10 +969,23 @@ void ClientBase::initLogsOutputStream()
                 out_logs_buf
                     = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                 wb = out_logs_buf.get();
+                /// A real file never blocks like a terminal, so it stays outside the responsive path.
+                logs_out_terminal_buf = nullptr;
             }
         }
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
+
+        /// Keep the server-log / profile-events output responsive to cancellation on a stuck terminal,
+        /// like the result-set (std_out) and progress (tty_buf) paths: onLogData / onProfileEvents
+        /// flush this stream while the query runs, and in the default case it is a separate
+        /// WriteBufferFromFileDescriptor on stderr - typically the same terminal as the progress
+        /// output - so without a hook the first Ctrl+C could still hang in a log/profile-events flush.
+        /// In --server_logs_file=- mode the sink is std_out, which is already armed for the query (and
+        /// whose hook resetOutput() re-points during teardown), so it must not be re-armed from here.
+        if (server_logs_file.empty() && logs_out_terminal_buf)
+            logs_out_terminal_buf->setCancellationHook(
+                [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
     }
 }
 
@@ -1940,13 +1956,17 @@ void ClientBase::resetOutput()
     /// output_format.reset() above joined the parallel-formatting collector, the only other reader of
     /// std_out's cancellation hook (WriteBufferFromFileDescriptor::nextImpl), so the hook can now be
     /// re-pointed for the teardown flushes below and cleared at function end without racing it.
-    /// On exception paths the interrupt handler is already stopped here (its cancelled() is then
-    /// unconditionally true), so fall back to the genuine cancellation flag to avoid discarding
-    /// already-produced output; on normal completion the handler is still armed and is honored so a
-    /// fresh Ctrl+C keeps interrupting a flush to a slow/stuck stdout.
-    const bool interrupt_handler_armed = !query_interrupt_handler.cancelled();
-    auto teardown_cancellation_hook = [this, interrupt_handler_armed]
-    { return interrupt_handler_armed ? query_interrupt_handler.cancelled() : cancelled.load(); };
+    /// Use the very same predicate as the in-query hooks: honor a cancellation only while the interrupt
+    /// handler is still armed for this query. On exception paths the handler is already stopped here
+    /// (its cancelled() is then unconditionally true), so isRunning() is false and the teardown flush is
+    /// not treated as cancelled - this avoids discarding already-produced output. On normal completion
+    /// the handler is still armed, so a fresh Ctrl+C during a teardown flush to a slow/stuck stdout is
+    /// honored regardless of whether the signal raced in before or after this point. Basing the
+    /// predicate on a captured `!cancelled()` instead would go permanently inert if the signal arrived
+    /// just before the capture (the handler's cancelled() flips, but the local `cancelled` flag is only
+    /// set by cancelQuery inside receiveResult, which no longer runs once we are in this teardown).
+    auto teardown_cancellation_hook = [this]
+    { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); };
     if (std_out)
         std_out->setCancellationHook(teardown_cancellation_hook);
     /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
@@ -1994,6 +2014,10 @@ void ClientBase::resetOutput()
     std_out_wrapper.reset();
 
     logs_out_stream.reset();
+
+    /// Drop the tracked terminal-facing log sink before the buffer it points into is destroyed; the
+    /// next initLogsOutputStream() (including the trailing profile-events flush) re-establishes it.
+    logs_out_terminal_buf = nullptr;
 
     out_logs_buf.reset();
 
@@ -2829,6 +2853,17 @@ void ClientBase::processParsedSingleQuery(
             std::unique_lock lock(tty_mutex);
             progress_table.clearTableOutput(*tty_buf, lock);
         }
+        /// The interrupt handler is already stopped here, so the log stream's cancellation hook
+        /// (armed in initLogsOutputStream) is inert; and in --server_logs_file=- mode this flush hits
+        /// std_out after resetOutput() already cleared its hook. Bound this trailing flush to the
+        /// terminal-facing log sink with a best-effort budget so a stuck terminal cannot hang the
+        /// client here - the same discipline tty_buf uses just above.
+        if (logs_out_terminal_buf)
+            logs_out_terminal_buf->setBestEffortFlushBudget(1000);
+        SCOPE_EXIT({
+            if (logs_out_terminal_buf)
+                logs_out_terminal_buf->setBestEffortFlushBudget(std::nullopt);
+        });
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
 
