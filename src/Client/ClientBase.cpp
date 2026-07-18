@@ -622,16 +622,21 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Restore progress bar and progress table after data block.
     if (need_render_progress && tty_buf)
     {
-        if (select_into_file && !select_into_file_and_stdout)
-            error_stream << "\r";
         std::unique_lock lock(tty_mutex);
+        /// Route the carriage return through tty_buf (the bounded, cancellable progress path) instead
+        /// of a plain blocking error_stream write: for an interactive SELECT ... INTO OUTFILE (without
+        /// AND STDOUT) tty_buf is the same terminal, so a stuck terminal could otherwise hang the
+        /// client here on the first Ctrl+C, before the responsive writeProgress() is even reached. See
+        /// #22426.
+        if (select_into_file && !select_into_file_and_stdout)
+            writeChar('\r', *tty_buf);
         progress_indication.writeProgress(*tty_buf, lock);
     }
     if (need_render_progress_table && tty_buf && !cancelled)
     {
-        if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
-            error_stream << "\r";
         std::unique_lock lock(tty_mutex);
+        if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
+            writeChar('\r', *tty_buf);
         progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false);
     }
 }
