@@ -6332,6 +6332,23 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, imageMime)
     return binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
 }
 
+/// Append streamed text to the string kept for the tab/history snapshot, but stop just past 100 KB.
+/// The snapshot is dropped above that size (see `saveHistory` and its callers), so a large framed
+/// data/log burst must not be retained in full: append at most enough of the crossing chunk to push
+/// the length past the limit, instead of appending the whole (possibly multi-megabyte) chunk once
+/// `reply` is still under budget. The result then stays over 100 KB, so the truncated text can never
+/// be saved (and later replayed) as a complete snapshot. Returns the new value.
+function appendCappedSnapshot(reply, chunk)
+{
+    if (reply.length > 100000)
+        return reply;
+    if (reply.length + chunk.length <= 100000)
+        return reply + chunk;
+    /// Keep exactly one character past the limit: this bounds memory to ~100 KB while leaving the
+    /// length strictly above 100 KB, so the "> 100000 -> drop" check still treats it as incomplete.
+    return reply + chunk.slice(0, 100001 - reply.length);
+}
+
 async function readEventStream(response, targetResultEl, abortController, posted_request_num, rawText, base64, imageMime)
 {
     const reader = response.body.getReader();
@@ -6363,12 +6380,12 @@ async function readEventStream(response, targetResultEl, abortController, posted
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
             /// The full response text is kept only for the tab/history snapshot, which is never
-            /// stored above 100 KB (see `saveHistory` and its callers). Stop collecting once past
-            /// that limit, so a long stream (e.g. a query producing tens of millions of log lines)
-            /// is not also retained as one huge string. The result stays over the limit, so the
-            /// truncated text can never be saved (and later replayed) as a complete snapshot.
-            if (reply.length <= 100000)
-                reply += chunk;
+            /// stored above 100 KB (see `saveHistory` and its callers). Cap the collected text just
+            /// past that limit (`appendCappedSnapshot`), so a long stream (e.g. a query producing
+            /// tens of millions of log lines) - or a single huge chunk crossing the limit - is not
+            /// retained in full. The result stays over the limit, so the truncated text can never be
+            /// saved (and later replayed) as a complete snapshot.
+            reply = appendCappedSnapshot(reply, chunk);
         }
 
         /// Events are separated by a blank line; process every complete event in the buffer.
@@ -6596,7 +6613,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 const { done, value } = await reader.read();
                 if (done) break;
                 let new_content = decoder.decode(value, { stream: true });
-                reply += new_content;
+                reply = appendCappedSnapshot(reply, new_content);
                 if (posted_request_num != request_num) { return { cancelled: true }; }
                 targetResultEl.updateRaw(new_content);
                 scanForException(new_content);
@@ -6707,7 +6724,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 
                 let new_content = decoder.decode(value, { stream: true });
                 buffer += new_content;
-                reply += new_content;
+                reply = appendCappedSnapshot(reply, new_content);
 
                 let lines = buffer.split('\n');
                 let fragment = document.createDocumentFragment();

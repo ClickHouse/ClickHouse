@@ -103,6 +103,14 @@ echo "$page" | grep -qF "$ndjson_dispatch" && echo 'restore replays ndjson packe
 # the presence of that branch on the served page (the response handling is a browser-only flow).
 non_ok_ndjson_dispatch="else if (!response.ok && content_type.startsWith('application/x-ndjson'))"
 echo "$page" | grep -qF "$non_ok_ndjson_dispatch" && echo 'non-200 ndjson dispatched as packets: OK'
+# The text kept for the tab/history snapshot is capped just past 100 KB as it is collected, so a
+# single large framed data/log burst is not retained in full only to be dropped later by
+# `saveHistory`. `appendCappedSnapshot` appends at most enough of a crossing chunk to exceed the
+# limit; every streaming collection site goes through it, and none appends a chunk to `reply`
+# uncapped. Retention is a browser-only concern, checked here by the guard's presence on the page.
+echo "$page" | grep -q -F 'function appendCappedSnapshot(' && echo 'snapshot cap helper present: OK'
+[ "$(echo "$page" | grep -c -F 'reply = appendCappedSnapshot(reply,')" -ge 3 ] && echo 'all collection sites capped: OK'
+[ "$(echo "$page" | grep -c -F 'reply += ')" -eq 0 ] && echo 'no uncapped reply growth: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
