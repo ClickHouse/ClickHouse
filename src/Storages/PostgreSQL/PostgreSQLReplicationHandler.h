@@ -83,6 +83,12 @@ private:
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
+    /// The (schema, table) pairs an existing publication currently publishes, read from
+    /// pg_publication_tables. The schema is normalized so the default schema is reported as "public"
+    /// (matching getNormalizedSchemaAndTableName()), so the two sets can be compared by exact pair.
+    template <typename T>
+    std::set<std::pair<String, String>> fetchPublishedTablePairs(T & tx) const;
+
     void dropPublication(pqxx::nontransaction & ntx);
 
     void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
@@ -115,6 +121,10 @@ private:
     String doubleQuoteWithSchema(const String & table_name) const;
 
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
+
+    /// getSchemaAndTableName() with the default schema normalized to "public", so the resulting pair
+    /// can be compared directly against pg_publication_tables (see fetchPublishedTablePairs()).
+    std::pair<String, String> getNormalizedSchemaAndTableName(const String & table_name) const;
 
     void assertInitialized() const;
 

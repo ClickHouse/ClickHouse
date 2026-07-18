@@ -467,6 +467,13 @@ std::pair<String, String> PostgreSQLReplicationHandler::getSchemaAndTableName(co
 }
 
 
+std::pair<String, String> PostgreSQLReplicationHandler::getNormalizedSchemaAndTableName(const String & table_name) const
+{
+    auto [schema, table] = getSchemaAndTableName(table_name);
+    return std::make_pair(isDefaultPostgreSQLSchema(schema) ? "public" : schema, table);
+}
+
+
 String PostgreSQLReplicationHandler::doubleQuoteWithSchema(const String & table_name) const
 {
     auto [schema, table] = getSchemaAndTableName(table_name);
@@ -1001,26 +1008,28 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         /// this engine replicates, that table silently stops receiving changes - fail closed instead. Extra
         /// tables the publication publishes but this engine does not replicate are harmless (their changes are
         /// simply ignored) and are left to the redundant-work path in fetchRequiredTables().
+        ///
+        /// The comparison is by exact (schema, table) pair, not by bare table name: in the single-schema
+        /// modes (a single `materialized_postgresql_schema`, the default `public` schema, or a whole-schema
+        /// database over one common schema) the generated names, the publication table list and the WAL
+        /// consumer all key tables by their bare name, so a publication rewritten from `foo.a` to `bar.a`
+        /// while the server was down would otherwise pass this check unchanged and then replay WAL from
+        /// `bar.a` into the ClickHouse table for `foo.a` (MaterializedPostgreSQLConsumer keys relation
+        /// messages by the bare relation name in that mode). Deriving the expected schema from each
+        /// replicated table via getNormalizedSchemaAndTableName() closes that hole.
         if (publication_exists)
         {
-            pqxx::result published_rows{tx.exec(fmt::format(
-                "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name))};
-            std::set<String> published;
-            for (const auto & row : published_rows)
-                published.insert(
-                    schema_as_a_part_of_table_name
-                        ? row[0].as<std::string>() + '.' + row[1].as<std::string>()
-                        : row[1].as<std::string>());
+            const auto published = fetchPublishedTablePairs(tx);
 
             String missing;
             for (const auto & entry : materialized_storages)
             {
-                const auto & table_name = entry.first;
-                if (published.contains(table_name))
+                const auto expected = getNormalizedSchemaAndTableName(entry.first);
+                if (published.contains(expected))
                     continue;
                 if (!missing.empty())
                     missing += ", ";
-                missing += table_name;
+                missing += expected.first + '.' + expected.second;
             }
 
             if (!missing.empty())
@@ -1663,12 +1672,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "Publication {} already exists and tables list is empty. Assuming publication is correct.",
                             doubleQuoteString(publication_name));
 
-                std::set<String> published_tables;
-                {
-                    pqxx::work tx(connection.getRef());
-                    published_tables = fetchTablesFromPublication(tx);
-                }
-
                 /// On attach the whole-schema database materializes the tables it already replicated in the
                 /// previous run (their nested tables exist on disk), not whatever the publication currently
                 /// publishes. The two sets can differ in either direction, and both differences must be
@@ -1687,6 +1690,12 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 {
                     result_tables = *tables_replicated_by_previous_run;
 
+                    std::set<std::pair<String, String>> published;
+                    {
+                        pqxx::work tx(connection.getRef());
+                        published = fetchPublishedTablePairs(tx);
+                    }
+
                     /// The reverse of the extra-tables case above is a real drift: a table this database
                     /// already replicated in the previous run (its nested table exists on disk) is missing from
                     /// the publication - for example an operator ran ALTER PUBLICATION ... DROP TABLE. Resuming
@@ -1697,14 +1706,18 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     /// adoptLegacyReplicationIdentityIfNeeded() for the whole-schema database engine, whose
                     /// expected set is the on-disk table set rather than a `tables_list`. (The single-table and
                     /// `tables_list` engines are checked against their configured set in startSynchronization().)
+                    /// The match is by exact (schema, table) pair, not by bare table name, so a publication
+                    /// rewritten to a different schema with the same table names (`foo.a` -> `bar.a`) fails closed
+                    /// here instead of resuming and replaying WAL from the wrong schema's table.
                     String missing;
                     for (const auto & table_name : *tables_replicated_by_previous_run)
                     {
-                        if (published_tables.contains(table_name))
+                        const auto expected = getNormalizedSchemaAndTableName(table_name);
+                        if (published.contains(expected))
                             continue;
                         if (!missing.empty())
                             missing += ", ";
-                        missing += table_name;
+                        missing += expected.first + '.' + expected.second;
                     }
 
                     if (!missing.empty())
@@ -1728,7 +1741,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     /// synchronization did not create a single nested table before the restart), so there is no
                     /// on-disk set to treat as authoritative. Fall back to the publication's tables to bootstrap
                     /// the initial synchronization.
-                    result_tables = std::move(published_tables);
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
@@ -1882,6 +1896,27 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 
     return tables;
 }
+
+
+template <typename T>
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(T & tx) const
+{
+    pqxx::result result{tx.exec(fmt::format(
+        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name))};
+    std::set<std::pair<String, String>> tables;
+    for (const auto & row : result)
+    {
+        const auto schema = row[0].as<std::string>();
+        tables.emplace(isDefaultPostgreSQLSchema(schema) ? "public" : schema, row[1].as<std::string>());
+    }
+    return tables;
+}
+
+template
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::nontransaction & tx) const;
+
+template
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::work & tx) const;
 
 
 namespace
