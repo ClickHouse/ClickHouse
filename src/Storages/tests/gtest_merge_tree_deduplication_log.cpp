@@ -151,6 +151,51 @@ public:
     const size_t fail_on_sync;
 };
 
+/// Wraps an already open file writer and throws on every sync() at or after the Nth,
+/// simulating a disk that keeps failing to fsync the deduplication log (e.g. a
+/// failing device), so that each rotation is rolled back and leaves more cancelled
+/// records - and another log file - behind. The counter is shared across every writer
+/// the owning disk creates.
+class FailingFromNthSyncWriteBuffer : public WriteBufferFromFileDecorator
+{
+public:
+    FailingFromNthSyncWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, size_t & sync_count_, size_t fail_from_sync_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), sync_count(sync_count_), fail_from_sync(fail_from_sync_)
+    {
+    }
+
+    void sync() override
+    {
+        ++sync_count;
+        if (sync_count >= fail_from_sync)
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected sync failure");
+        WriteBufferFromFileDecorator::sync();
+    }
+
+private:
+    size_t & sync_count;
+    const size_t fail_from_sync;
+};
+
+/// A DiskLocal whose writers throw on every sync() at or after the Nth.
+class DiskThrowingFromNthSync : public DiskLocal
+{
+public:
+    DiskThrowingFromNthSync(const String & name_, const String & path_, size_t fail_from_sync_)
+        : DiskLocal(name_, path_), fail_from_sync(fail_from_sync_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        return std::make_unique<FailingFromNthSyncWriteBuffer>(DiskLocal::writeFile(path, buf_size, mode, settings), sync_count, fail_from_sync);
+    }
+
+    size_t sync_count = 0;
+    const size_t fail_from_sync;
+};
+
 /// Read the raw records of every deduplication log file under `logs_root`, in
 /// chronological (log-number) order, without any of the rollback-pairing logic -
 /// the way every server version reads them off the disk.
@@ -1024,6 +1069,80 @@ TEST(MergeTreeDeduplicationLog, AddPartEnforcesWindowOnSuccess)
     /// "block1" was evicted by the trim after "block3" committed, so its retry is
     /// accepted again rather than deduplicated.
     EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: rolled-back operations leave (ADD, rollback) record pairs that
+/// cancel out on replay but that dropOutdatedLogs cannot reclaim - the rollback
+/// record sits in a newer file while the record it cancels sits in an older file
+/// still retained for other, live block ids, and retention only drops an oldest
+/// prefix. Under repeated transient failures these pairs, and the files holding
+/// them, would accumulate without bound, so every restart would replay O(number of
+/// failures) records. compact() must rewrite the live state into a single fresh log
+/// file so that both the retained files and the replay stay bounded by the
+/// deduplication window - while preserving the live deduplication state exactly.
+TEST(MergeTreeDeduplicationLog, RepeatedRollbacksAreCompactedAwayOnRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_compaction/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto count_logs = [&]() -> size_t
+    {
+        return std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator());
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// A disk that fails every fsync. deduplication_window == 1 gives
+        /// rotate_interval == 2, so the second record written into a file triggers a
+        /// rotation, whose fsync of the previous file fails and rolls the insert back
+        /// with a compensating record written into the freshly opened file.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// One committed insert.
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// Several failed inserts. Each writes an ADD that trips the rotation, whose
+        /// fsync fails; the insert is rolled back, leaving an (ADD, rollback) pair and
+        /// a new log file behind. dropOutdatedLogs keeps them all: they hold no live
+        /// coverage of their own, yet cancel an ADD in the still-retained "block1"
+        /// file, so they are neither the oldest nor droppable.
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        /// The garbage really did pile up: many small files, none reclaimable.
+        EXPECT_GT(count_logs(), 4u);
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart with a healthy disk. load() replays every file, reconstructs the
+        /// single live block, and then compacts the accumulated garbage away.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// Compaction rewrote the live state into a single fresh log file; without it
+        /// every rolled-back file would still be here and load would keep replaying
+        /// all of them on every future restart.
+        EXPECT_EQ(count_logs(), 1u);
+
+        /// The committed block still deduplicates, and a never-committed block is
+        /// still retryable - compaction preserved the live state exactly.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
+    }
 
     std::filesystem::remove_all(work_dir);
 }

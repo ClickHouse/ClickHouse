@@ -63,17 +63,18 @@ struct MergeTreeDeduplicationLogNameDescription
     std::string path;
 
     /// Total number of records physically stored in this log file, including
-    /// rollback records and the records they cancel out. Drives log rotation and
-    /// compaction (`rotateAndDropIfNeeded`): a burst of rolled-back operations
-    /// still grows this count, so a single file keeps rotating and cannot grow
-    /// without bound.
+    /// rollback records and the records they cancel out. Drives log rotation
+    /// (`rotateAndDropIfNeeded`): a burst of rolled-back operations still grows this
+    /// count, so a single file keeps rotating and cannot grow without bound.
     size_t entries_count{};
 
     /// Number of records that survive rollback-pair elimination - i.e. the records
     /// a replay would actually apply to the in-memory map. Drives retention
     /// (`dropOutdatedLogs`): the cancelled pairs of a rolled-back operation
     /// contribute nothing, so they are not counted as consumed deduplication-window
-    /// slots and cannot drop an older log that still holds committed block ids.
+    /// slots and cannot drop an older log that still holds committed block ids. The
+    /// gap between this and `entries_count`, summed over all files, is the amount of
+    /// unreclaimable rollback garbage that triggers `compact`.
     size_t effective_entries_count{};
 };
 
@@ -285,6 +286,23 @@ private:
 
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
+
+    /// Rewrite the whole live deduplication state into a single fresh log file and
+    /// drop every older file. A rolled-back operation leaves an (ADD, rollback) or
+    /// (DROP, CANCEL) record pair that cancels out on replay but holds no live state,
+    /// and dropOutdatedLogs cannot reclaim it (the rollback record cancels a record in
+    /// an older file that is still retained for other, live block ids, and retention
+    /// only drops an oldest prefix). Rewriting the in-memory map - which already holds
+    /// exactly the surviving state - as an ADD-per-entry snapshot discards all that
+    /// accumulated garbage while reconstructing the identical state on the next replay.
+    void compact();
+
+    /// Compact when the raw record count has grown well beyond the effective coverage,
+    /// i.e. when repeated rolled-back operations have left enough cancelled record pairs
+    /// that the retained files (and the records load must replay) would otherwise keep
+    /// growing without bound. A no-op in normal operation, where the two counts are
+    /// equal.
+    void compactIfNeeded();
 
     /// Read all records of a single log from disk in order, appending them to
     /// `records` (and the log's number, in lockstep, to `record_log_numbers`, so

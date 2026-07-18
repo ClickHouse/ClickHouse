@@ -139,6 +139,12 @@ void MergeTreeDeduplicationLog::load()
         /// Can happen in case we have unfinished log
         if (!current_writer)
             current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+
+        /// A previous run may have left a lot of rolled-back record pairs that
+        /// dropOutdatedLogs cannot reclaim; compact them away so replaying this log on
+        /// every future restart stays bounded by the deduplication window, not by the
+        /// number of past failures.
+        compactIfNeeded();
     }
 }
 
@@ -385,6 +391,133 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
     }
 }
 
+void MergeTreeDeduplicationLog::compactIfNeeded()
+{
+    /// Compaction rewrites the whole live state through an appended snapshot file, so
+    /// it needs a disk that supports appending. On object storage without append
+    /// support every operation already rotates into a fresh file - a different regime -
+    /// so skip it there.
+    if (deduplication_window == 0 || !disk_supports_writing_with_append)
+        return;
+
+    size_t total_raw = 0;
+    size_t total_effective = 0;
+    for (const auto & [number, description] : existing_logs)
+    {
+        total_raw += description.entries_count;
+        total_effective += description.effective_entries_count;
+    }
+
+    /// The gap between the two counts is exactly the records left behind by rolled-back
+    /// operations: their ADD/DROP records and the compensating records that cancel them
+    /// reconstruct nothing on replay, so they raise the raw count without raising the
+    /// effective coverage (in normal operation the two are equal and this is zero).
+    /// dropOutdatedLogs cannot reclaim those records - a rollback record cancels a
+    /// record in an older file that is still retained for other, live block ids, and
+    /// retention only drops an oldest prefix - so under repeated transient write or
+    /// rotation failures the retained files, and the records load must replay, would
+    /// otherwise grow without bound. Once more than a couple of rotation intervals of
+    /// such garbage has piled up, rewrite the live state into a single fresh file;
+    /// tolerating some of it first keeps a sporadic failure from triggering a full
+    /// rewrite.
+    if (total_raw <= total_effective + 2 * rotate_interval)
+        return;
+
+    compact();
+}
+
+void MergeTreeDeduplicationLog::compact()
+{
+    /// Snapshot the entire live deduplication state into a single fresh log file and
+    /// drop every older file. The in-memory map already holds exactly the records that
+    /// survive rollback-pair elimination, so a fresh ADD-per-entry log written in the
+    /// map's insertion order replays - evicting in the same order - to the identical
+    /// state; it is therefore safe to discard the whole history and start from the
+    /// snapshot. This reclaims the cancelled record pairs that dropOutdatedLogs cannot
+    /// (see compactIfNeeded).
+    ///
+    /// Best effort: on any failure the existing files and writer are left untouched, so
+    /// the log stays correct and usable and only the space optimization is skipped. The
+    /// snapshot is finalized (object storage only makes a file durable on finalize) and
+    /// the reopened writer prepared before any old file is removed, so a throw can never
+    /// leave the live state only in files that are about to be deleted.
+    const size_t new_log_number = current_log_number + 1;
+    const auto new_path = getLogPath(logs_dir, new_log_number);
+    const size_t snapshot_size = deduplication_map.size();
+
+    std::unique_ptr<WriteBufferFromFileBase> new_writer;
+    try
+    {
+        {
+            auto snapshot_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            for (const auto & node : deduplication_map)
+            {
+                MergeTreeDeduplicationLogRecord record;
+                record.operation = MergeTreeDeduplicationOp::ADD;
+                record.part_name = node.value.getPartNameAndCheckFormat(format_version);
+                record.block_id = node.key;
+                writeRecord(record, *snapshot_writer);
+            }
+            snapshot_writer->finalize();
+            snapshot_writer->sync();
+        }
+
+        /// Reopen the finalized snapshot for future appends and register it - the only
+        /// remaining steps that can throw - while the old writer and files are still
+        /// live, so a failure here changes nothing.
+        new_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        existing_logs.emplace(new_log_number, MergeTreeDeduplicationLogNameDescription{new_path, snapshot_size, snapshot_size});
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot compact the MergeTree deduplication log; keeping the existing log files");
+        /// Discard whatever was set up so no orphan snapshot file is left for load to read.
+        if (new_writer)
+            new_writer->cancel();
+        existing_logs.erase(new_log_number);
+        try
+        {
+            disk->removeFileIfExists(new_path);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        return;
+    }
+
+    /// Point of no return: the snapshot is durable and registered, and the new writer
+    /// is open. Everything below is non-throwing - `cancel` is noexcept, per-file
+    /// removal is guarded, and the switch-over is an integer store and a unique_ptr move.
+    /// The old writer's records are all captured in the snapshot, so discard it.
+    if (current_writer)
+        current_writer->cancel();
+
+    for (auto it = existing_logs.begin(); it != existing_logs.end();)
+    {
+        if (it->first == new_log_number)
+        {
+            ++it;
+            continue;
+        }
+        try
+        {
+            disk->removeFile(it->second.path);
+            it = existing_logs.erase(it);
+        }
+        catch (...)
+        {
+            /// The snapshot has the highest log number, so load replays it last and its
+            /// ADDs are no-ops on top of whatever an un-removed older file reconstructs -
+            /// the state stays correct even if a removal fails; the file just lingers.
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an outdated deduplication log file during compaction");
+            ++it;
+        }
+    }
+
+    current_log_number = new_log_number;
+    current_writer = std::move(new_writer);
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
@@ -550,6 +683,11 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// back.
     deduplication_map.trimToMaxSize();
 
+    /// Reclaim the record pairs left behind by any rolled-back operations once enough
+    /// of them have piled up (best effort, never throws), so a burst of transient
+    /// failures cannot grow the retained log without bound.
+    compactIfNeeded();
+
     return {};
 }
 
@@ -676,6 +814,10 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// Everything is durable now; erase the dropped block ids from the map.
     for (const auto & block_id : block_ids)
         deduplication_map.erase(block_id);
+
+    /// Reclaim the record pairs left behind by any rolled-back operations once enough
+    /// of them have piled up (best effort, never throws).
+    compactIfNeeded();
 }
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)
