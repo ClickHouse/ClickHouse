@@ -299,7 +299,12 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
 /// UInt64 base v - is a synthesized column, not a bare identifier: its write footprint is that of the
 /// target type, so it must NOT be priced from the base column's (String / UInt64) stream count. Returns
 /// nullopt when no source part records this name with a matching type, so the caller falls back to the
-/// type's own write-time capacity. Also returns nullopt if any matching source part is a legacy wide part
+/// type's own write-time capacity. Also returns nullopt as soon as any same-name source part stores a
+/// DIFFERENT type than the projection output (a capacity-changing ALTER: an old JSON part merged with a
+/// newer JSON(val UInt32) one, or Dynamic parts of different max_types): the old part is reserialized under
+/// the current metadata during the rebuild, but its dynamic paths are named for its own type and so are
+/// invisible to the union over the same-type parts - the type-capacity fallback covers them safely. Also
+/// returns nullopt if any matching source part is a legacy wide part
 /// that records no substreams for the column (a pre-columns_substreams.txt upgrade path): its dynamic
 /// (JSON / Dynamic) substreams are invisible to the union by name, so trusting only the newer parts' recorded
 /// union would drop the legacy part's dynamic paths - exactly the mixed legacy/new undercount countOutputStreams
@@ -313,8 +318,17 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
     for (const auto & part : source_parts)
     {
         const auto part_column = part->getColumns().tryGetByName(column.name);
-        if (!part_column || !part_column->type->equals(*column.type))
+        if (!part_column)
             continue;
+        /// A same-name source part with a DIFFERENT type is still reserialized into this projection column
+        /// under the current metadata during the rebuild - a supported path: a JSON part written before
+        /// ALTER TABLE ... MODIFY COLUMN j JSON(val UInt32) merged with a newer hinted part, or Dynamic parts
+        /// of different declared max_types. Its dynamic paths are invisible to the by-name union over the
+        /// same-type parts (its recorded substreams are named for its own, different type), so trusting only
+        /// the same-type parts would drop the old-part-only paths that writeTempProjectionPart still writes.
+        /// Bail out to the type's write-time capacity, which no rebuilt column can exceed.
+        if (!part_column->type->equals(*column.type))
+            return std::nullopt;
         const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name);
         if (!substreams)
             return std::nullopt;
@@ -362,10 +376,10 @@ size_t countRebuiltProjectionStreams(
 /// the default serialization collapses JSON / Dynamic to a single stream, and tryGetColumnSubstreams returns
 /// nothing): an old wide part written before that file existed, or a compact part written with
 /// write_marks_for_substreams_in_compact_parts = 0. Those parts' dynamic streams are added back explicitly
-/// below - by name for a wide part (its .bin files are the ground truth), by the type's write-time capacity
-/// for a compact part (which stores every column in a single data.bin, so its per-column stream layout is not
-/// recoverable from disk) - so a mixed old/new merge with disjoint dynamic paths is not undercounted. The
-/// result is also floored at the widest source part's actual stream count (countPartStreams reads an old wide
+/// below - by name for a wide part (its .bin files are the ground truth), by the output column type's
+/// write-time capacity for a compact part (which stores every column in a single data.bin, so its per-column
+/// stream layout is not recoverable from disk) - so a mixed old/new merge with disjoint dynamic paths is not
+/// undercounted. The result is also floored at the widest source part's actual stream count (countPartStreams reads an old wide
 /// part's real .bin count), since the merged part is never narrower than any single source part. For simple
 /// columns and modern parts all adjustments are no-ops.
 size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
@@ -391,10 +405,13 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
     /// A COMPACT part stores every column in a single data.bin, so it has no per-column .bin files to recover
     /// from and (when it also records no substreams, i.e. write_marks_for_substreams_in_compact_parts = 0 or an
     /// older .mrk3 part) collapses its JSON / Dynamic columns to the default one-stream count. Bound each of its
-    /// dynamic-structure columns by the type's own write-time capacity instead (countDynamicCapacityStreams, the
-    /// same conservative bound a rebuilt projection uses for a synthesized semi-structured column), which no
-    /// merged column can exceed. Add each output column once - the capacity is the merged column's hard limit,
-    /// not a per-part quantity - so many similar compact parts do not multiply it.
+    /// dynamic-structure columns by the write-time capacity of the OUTPUT (merged, current-metadata) column
+    /// instead (countDynamicCapacityStreams, the same conservative bound a rebuilt projection uses for a
+    /// synthesized semi-structured column), which no merged column can exceed. Using the output type, not the
+    /// source part's own type, matters after a capacity-changing ALTER (an old Dynamic(max_types=0) part merged
+    /// into a Dynamic(max_types=5) column writes the wider output type's streams). Add each output column once -
+    /// the capacity is the merged column's hard limit, not a per-part quantity - so many similar compact parts
+    /// do not multiply it.
     ///
     /// For parts written after columns_substreams.txt exists, and for merges of only simple columns, all of
     /// this adds nothing.
@@ -438,10 +455,21 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
         else
         {
             /// A compact part cannot expose its per-column dynamic files; bound each of its dynamic-structure
-            /// columns by the type's write-time capacity, once per output column.
+            /// columns by the write-time capacity of the OUTPUT (merged, current-metadata) column, once per
+            /// output column. The merged wide part reserializes the column under the current metadata, which a
+            /// capacity-changing ALTER can make wider than the source part's own type - an old
+            /// Dynamic(max_types=0) or unhinted JSON part merged into a Dynamic(max_types=5) / JSON(...) column
+            /// writes the output type's streams, not the smaller source type's - so pricing the source type
+            /// would under-reserve. A column absent from the merged part (dropped by ALTER) is not written and
+            /// is skipped.
             for (const auto & column : part_columns)
-                if (column.type->hasDynamicStructure() && compact_recovered_columns.insert(column.name).second)
-                    compact_dynamic_streams += countDynamicCapacityStreams(*column.type, settings);
+            {
+                if (!column.type->hasDynamicStructure())
+                    continue;
+                const auto output_column = output_columns.tryGetByName(column.name);
+                if (output_column && compact_recovered_columns.insert(column.name).second)
+                    compact_dynamic_streams += countDynamicCapacityStreams(*output_column->type, settings);
+            }
         }
     }
     streams += unrecorded_dynamic_files.size() + compact_dynamic_streams;
