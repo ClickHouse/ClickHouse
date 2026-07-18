@@ -468,6 +468,15 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
+    elif is_flaky_check and info.is_merge_queue_event:
+        # The merge-queue flaky check is a drift guard, not a full flakiness
+        # hunt: the PR CI already ran the full flaky check, and this rerun only
+        # needs to catch new tests broken by the current `master` state (e.g. a
+        # setting randomization added to `tests/clickhouse-test` after the PR's
+        # last CI run). A randomized setting drawn with probability 0.4 per run
+        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
+        # count keeps merge-queue latency bounded without losing the signal.
+        rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
@@ -809,9 +818,18 @@ def main():
 
         global_time_limit = 0
         if is_flaky_check:
-            FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
+            # The merge-queue run gets a tighter budget: it delays merges
+            # directly, and its reduced rerun_count needs less time anyway.
+            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            # Floor the budget at a small positive value: `run_tests` interprets
+            # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
+            # cap at all. If setup already consumed the whole budget (more likely
+            # under the tighter merge-queue limit) a `0` here would turn the run
+            # unbounded, defeating the very latency bound it is meant to enforce.
+            # A minimal explicit limit keeps the run bounded while still doing one
+            # quick pass. Mirrors the targeted-check floor below.
             global_time_limit = max(
-                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
                 f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
