@@ -524,7 +524,14 @@ struct Reader
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
-    bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// `max_decoded_bytes`, when non-zero, caps the *decoded* dictionary page size for the
+    /// dictionary-filter pruning path: if decompressing the page would exceed it, decoding is
+    /// skipped and false is returned (without touching the page), so the caller can fall back to a
+    /// full scan for that column. This bounds a highly compressible dictionary whose decoded size
+    /// the compressed-page limit alone cannot bound; see the memory-budget note in
+    /// `hashDictionaryValues`. Pass 0 (the default) on the data-read path, where the dictionary
+    /// must be decoded regardless of size.
+    bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info, size_t max_decoded_bytes = 0);
 
     /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
     /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data

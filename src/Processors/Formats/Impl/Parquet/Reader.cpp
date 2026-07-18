@@ -915,7 +915,7 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     }
 }
 
-bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info, size_t max_decoded_bytes)
 {
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
     const char * data_ptr = data.data();
@@ -929,6 +929,25 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
 
         /// Parquet metadata didn't specifically say that this byte range is a dictionary page.
         return false;
+    }
+
+    /// Dictionary-filter pruning path: bound the decoded dictionary size *before* decompressing it.
+    /// `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary page
+    /// (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
+    /// still decompress to many times that. This pruning stage (`BloomFilterBlocksOrDictionary`) is
+    /// not memory-throttled and runs for many row groups in parallel, so decoding an oversized
+    /// dictionary here - the `decompressed_buf` and the decoded `Dictionary`, both ~ the uncompressed
+    /// page size - could overshoot `input_format_parquet_memory_high_watermark` before pruning even
+    /// gets a chance to build its value set. If the decoded page would exceed the budget, skip it and
+    /// let the caller fall back to a full scan (a missed optimization, never a wrong result). The
+    /// complementary cap on the decoded value set built from the dictionary lives in
+    /// `hashDictionaryValues`. The watermark scales down with the query's memory budget (see
+    /// FormatFactory), so we only give up pruning when the dictionary would genuinely threaten it.
+    if (max_decoded_bytes != 0)
+    {
+        Int64 decoded_bytes = std::max(header.uncompressed_page_size, header.compressed_page_size);
+        if (decoded_bytes < 0 || size_t(decoded_bytes) > max_decoded_bytes)
+            return false;
     }
 
     decodeDictionaryPageImpl(header, page_data, column, column_info);
@@ -1085,7 +1104,9 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// back to a full scan (reported as "can't rule out a match", the same as an unhashable type
     /// below). The watermark scales down automatically when the query has little memory to spare (see
     /// FormatFactory), so we only give up pruning when the value set would genuinely threaten the
-    /// budget. This is the decoded-size cap the compressed-page limit alone cannot provide.
+    /// budget. This is the decoded-value-set cap the compressed-page limit alone cannot provide; the
+    /// decoded dictionary *page* itself is capped against the same watermark before it is decompressed,
+    /// in `decodeDictionaryPage` on the pruning path.
     size_t estimated_value_set_bytes = count *
         (size_t(column.dictionary.getAverageValueSize())
          + sizeof(UInt32)        /// identity `indexes` (materialized path only)

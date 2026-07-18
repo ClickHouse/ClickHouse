@@ -828,8 +828,13 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    bool ok = reader.decodeDictionaryPage(column, column_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-                    chassert(ok);
+                    /// Cap the decoded dictionary size so the default-on pruning stays within the
+                    /// reader's memory budget (see decodeDictionaryPage / hashDictionaryValues). If
+                    /// the dictionary is too large to decode within budget, skip pruning for this
+                    /// column: `applyBloomAndDictionaryFilters` then treats it as a full scan, and
+                    /// the dictionary is decoded later (throttled) on the data-read path if needed.
+                    if (!reader.decodeDictionaryPage(column, column_info, reader.options.format.parquet.memory_high_watermark))
+                        column.use_dictionary_filter = false;
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
