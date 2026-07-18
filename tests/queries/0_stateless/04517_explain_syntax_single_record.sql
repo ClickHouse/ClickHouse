@@ -17,11 +17,27 @@ SELECT count(), countSubstrings(explain, '\n') FROM (EXPLAIN SYNTAX oneline = 1 
 -- single_record always collapses the per-line records into exactly one, whatever the line count.
 SELECT count() FROM (EXPLAIN SYNTAX SELECT 1);
 
+-- The per-query SETTINGS form documented in explain.md restores the one-record-per-line output.
+-- This is the advertised, upgrade-safe override that avoids editing the EXPLAIN options of every query.
+SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2) SETTINGS explain_syntax_single_record = 0);
+
+-- The EXPLAIN-local single_record option still wins over the explain_syntax_single_record setting.
+SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2) SETTINGS explain_syntax_single_record = 0);
+
 -- compatibility = '26.6' predates explain_syntax_single_record, so it restores the pre-26.7
 -- default (single_record = 0): the multi-line reformatted query is returned as several records
 -- again. This is the upgrade-safe legacy path old clients rely on instead of editing every query.
+-- (This must precede any explicit SET of explain_syntax_single_record below, because compatibility
+-- only affects settings the user has not changed explicitly.)
 SET compatibility = '26.6';
 SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
 
 -- The EXPLAIN-local single_record option still wins over compatibility when explicitly set.
 SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+
+-- explain_syntax_single_record = 0 as a session setting also restores the one-record-per-line output,
+-- and an explicit value wins over the compatibility-derived default in both directions.
+SET explain_syntax_single_record = 0;
+SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+SET explain_syntax_single_record = 1;
+SELECT count() FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
