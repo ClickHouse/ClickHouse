@@ -412,6 +412,10 @@ public:
     void releasePrecomputedMutationReservation(const String & new_part_name);
     /// Pop a deposited part for reuse; returns nullopt if there is none.
     std::optional<PreservedMutationPart> takePrecomputedMutation(const String & new_part_name);
+    /// Called by the replication queue when a range operation removes the queue entry for a part
+    /// that a survivor is (or was) computing. Drops an already-deposited result, or marks a
+    /// still-computing survivor so its eventual deposit is dropped rather than orphaned.
+    void discardPrecomputedMutation(const String & new_part_name);
     /// True while a survivor is still computing this part (reserved but not yet deposited). Used
     /// by the queue to avoid scheduling a duplicate mutation task for the same target part.
     bool isPartBeingComputedBySurvivor(const String & new_part_name) const;
@@ -538,6 +542,10 @@ private:
     mutable std::mutex precomputed_mutations_mutex;
     /// Target part names currently being computed by a detached (surviving) mutation task.
     std::set<String> mutations_being_computed_by_survivor;
+    /// Target part names of still-computing survivors whose queue entry has been removed by a range
+    /// operation (DROP_RANGE / REPLACE_RANGE / broken-part cleanup). Their eventual deposit must be
+    /// dropped instead of stored, because there is no longer a queue entry to commit it.
+    std::set<String> cancelled_survivor_mutations;
     /// Finished-but-not-committed mutation results, keyed by target part name, ready to be reused.
     std::map<String, PreservedMutationPart> precomputed_mutation_parts;
 

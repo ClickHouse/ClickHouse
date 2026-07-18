@@ -1441,6 +1441,15 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
         {
             const String & znode_name = (*it)->znode_name;
 
+            /// A mutation that detached itself to survive a transient Keeper reconnection is no
+            /// longer `currently_executing` (its holder was released so the queue could be
+            /// reinitialized), so it is not added to `to_wait` below, yet it may still be computing
+            /// or may have already deposited a result for `new_part_name`. Since we are about to
+            /// remove its queue entry, that result can never be committed and must be discarded,
+            /// otherwise its temporary part would be orphaned on disk until the table is shut down.
+            if ((*it)->type == LogEntry::MUTATE_PART)
+                storage.discardPrecomputedMutation((*it)->new_part_name);
+
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
 

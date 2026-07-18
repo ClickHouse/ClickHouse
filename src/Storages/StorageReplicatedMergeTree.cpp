@@ -6061,6 +6061,9 @@ bool StorageReplicatedMergeTree::reservePrecomputedMutation(const String & new_p
     std::lock_guard lock(precomputed_mutations_mutex);
     if (precomputed_mutation_parts.contains(new_part_name))
         return false;
+    /// A stale cancellation marker (from a previous survivor for the same target part name) must not
+    /// leak into this fresh reservation; clear it before reserving.
+    cancelled_survivor_mutations.erase(new_part_name);
     return mutations_being_computed_by_survivor.insert(new_part_name).second;
 }
 
@@ -6068,6 +6071,12 @@ void StorageReplicatedMergeTree::depositPrecomputedMutation(const String & new_p
 {
     std::lock_guard lock(precomputed_mutations_mutex);
     mutations_being_computed_by_survivor.erase(new_part_name);
+    /// The target part's queue entry was removed by a range operation (DROP_RANGE / REPLACE_RANGE /
+    /// broken-part cleanup) while this survivor was still computing. There is no longer a queue entry
+    /// to commit the result, so drop it here instead of depositing it: `preserved` (and its
+    /// temporary-directory guard) is released on return, so the leftover directory is cleaned up.
+    if (cancelled_survivor_mutations.erase(new_part_name))
+        return;
     precomputed_mutation_parts.insert_or_assign(new_part_name, std::move(preserved));
 }
 
@@ -6075,6 +6084,7 @@ void StorageReplicatedMergeTree::releasePrecomputedMutationReservation(const Str
 {
     std::lock_guard lock(precomputed_mutations_mutex);
     mutations_being_computed_by_survivor.erase(new_part_name);
+    cancelled_survivor_mutations.erase(new_part_name);
 }
 
 std::optional<StorageReplicatedMergeTree::PreservedMutationPart> StorageReplicatedMergeTree::takePrecomputedMutation(const String & new_part_name)
@@ -6086,6 +6096,21 @@ std::optional<StorageReplicatedMergeTree::PreservedMutationPart> StorageReplicat
     auto result = std::move(it->second);
     precomputed_mutation_parts.erase(it);
     return result;
+}
+
+void StorageReplicatedMergeTree::discardPrecomputedMutation(const String & new_part_name)
+{
+    std::lock_guard lock(precomputed_mutations_mutex);
+    /// The survivor already deposited its result: drop it. The temporary-directory guard held by the
+    /// PreservedMutationPart is released here, so the leftover directory is cleaned up as an old
+    /// temporary directory.
+    if (precomputed_mutation_parts.erase(new_part_name))
+        return;
+    /// A survivor is still computing this part: mark it so that its eventual deposit is dropped
+    /// instead of stored (see depositPrecomputedMutation). Without this, the deposited temporary
+    /// part would be orphaned, since the queue entry that would have committed it is being removed.
+    if (mutations_being_computed_by_survivor.contains(new_part_name))
+        cancelled_survivor_mutations.insert(new_part_name);
 }
 
 bool StorageReplicatedMergeTree::isPartBeingComputedBySurvivor(const String & new_part_name) const
