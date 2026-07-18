@@ -458,3 +458,95 @@ def test_refreshable_mv_scheduling_missing_flags_when_exchange_wins_race(started
 
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("DROP DATABASE rdb5 SYNC")
+
+
+def test_refreshable_mv_scheduling_missing_flags_lost_ownership_race(started_cluster):
+    # A lost-Keeper-session variant of the exchange-wins race. The feature-flags-missing give-up path
+    # reconciles a Finished in-flight refresh in Keeper with a version-checked set(). If this replica
+    # lost its Keeper session while the refresh was running, another replica can advance the
+    # coordination znode first (reclaim the stale '/running' lock via the crashed-replica grace
+    # period, or start the next refresh), so the reconciling set() is rejected with ZBADVERSION.
+    #
+    # This give-up path returns before readZnodesIfNeeded (the only place a fresh znode version is
+    # re-read), and updateCoordinationState only converts version mismatches into a re-read for the
+    # running=true acquire path. So a naive retry would keep reusing the same stale version and loop
+    # in Scheduling forever instead of converging to Disabled. A lost-ownership conflict is terminal:
+    # another replica now owns the coordination state and this replica is giving up coordination
+    # permanently anyway, so the view must become Disabled without spinning.
+    #
+    # The Finished-at-give-up window is forced with refresh_mv_pause_after_interrupt_check exactly as
+    # in test_..._when_exchange_wins_race; refresh_mv_force_scheduling_feature_flags_missing drives
+    # the give-up path on a healthy Keeper; and refresh_mv_force_coordination_version_conflict makes
+    # the reconciling set() carry a stale version so Keeper rejects it with ZBADVERSION.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb6 ENGINE = Replicated('/clickhouse/rdb6', '{shard}', '{replica}')"
+    )
+    REFRESH_ROWS = 5
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW rdb6.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers({REFRESH_ROWS})
+        """
+    )
+
+    aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+
+    # Pause the refresh after the pre-exchange interrupt check has passed, before the exchange.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
+    node.query("SYSTEM REFRESH VIEW rdb6.mv")
+    node.query("SYSTEM WAIT FAILPOINT refresh_mv_pause_after_interrupt_check PAUSE", timeout=60)
+    assert node.query("SELECT count() FROM rdb6.mv").strip() == "0"
+
+    # A scheduling pass now finds the flags missing while the refresh is in flight. It only interrupts
+    # (a no-op: the interrupt check already passed) and leaves the view Running. Arm the version
+    # conflict too, so that when the deferred attempt reaches Finished the reconciling set() is
+    # rejected with ZBADVERSION (simulating another replica having taken over after a lost session).
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_coordination_version_conflict")
+    node.query("SYSTEM REFRESH VIEW rdb6.mv")
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb6'"
+    ).strip()
+    assert status == "Running", status
+
+    # Resume. The exchange wins the race, the attempt reaches Finished, and the next scheduling pass
+    # runs the Finished reconciliation on the give-up path, where the set() hits ZBADVERSION. With the
+    # fix that conflict is terminal and the view converges to Disabled; without it the pass throws,
+    # reschedules, and re-enters the same stale-version give-up forever (never Disabled). A bounded
+    # poll is used instead of an unbounded WAIT VIEW so the missing-fix case fails instead of hanging.
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
+
+    status = None
+    for _ in range(120):
+        status = node.query(
+            "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb6'"
+        )
+        if "Disabled" in status:
+            break
+        time.sleep(0.5)
+    assert "Disabled" in status, status
+    assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
+
+    # A lost-ownership ZBADVERSION is a normal Keeper error caught by the give-up path, not a
+    # scheduling-thread abort.
+    aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    assert aborts_after == aborts_before, (aborts_before, aborts_after)
+
+    # The view stays Disabled (no oscillation back into Scheduling on the next poke).
+    node.query("SYSTEM REFRESH VIEW rdb6.mv")
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb6'"
+    ).strip()
+    assert status == "Disabled", status
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_coordination_version_conflict")
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("DROP DATABASE rdb6 SYNC")

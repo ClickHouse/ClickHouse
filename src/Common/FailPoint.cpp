@@ -141,6 +141,7 @@ static struct InitFiu
     REGULAR(object_storage_force_refresh_callback_success) \
     REGULAR(refresh_mv_skip_attach_feature_flag_check) \
     REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
+    REGULAR(refresh_mv_force_coordination_version_conflict) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \

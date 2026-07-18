@@ -103,6 +103,12 @@ namespace FailPoints
     /// hit the window where a scheduling pass that gives up coordination must not still cause the
     /// exchange to be lost / the view to be disabled mid-flight.
     extern const char refresh_mv_pause_after_interrupt_check[];
+    /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
+    /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
+    /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
+    /// the lost-ownership conflict is treated as terminal (the view converges to Disabled) instead
+    /// of retrying with the same stale version and looping in Scheduling forever.
+    extern const char refresh_mv_force_coordination_version_conflict[];
 }
 
 namespace
@@ -832,16 +838,49 @@ void RefreshTask::doScheduling(bool is_shutdown)
                     /// notified, and '/running' dangles until another replica reclaims it as a crash.
                     /// updateCoordinationState only does set + optional remove, so it needs neither
                     /// MULTI_READ nor CREATE_IF_NOT_EXISTS and works on this downgraded Keeper.
-                    if (execution.znode.version == coordination.root_znode.version)
+                    ///
+                    /// The reconciling set() is version-checked. If this replica lost its Keeper
+                    /// session while the refresh was running, another replica may have already
+                    /// advanced the coordination znode (reclaimed the stale '/running' lock via the
+                    /// crashed-replica grace period, or started the next refresh), so the write
+                    /// throws ZBADVERSION. We cannot re-read the fresh version here: the normal
+                    /// version-mismatch retry in updateCoordinationState is for running=true only,
+                    /// and this feature-flags-missing fast path returns before readZnodesIfNeeded
+                    /// (the only place should_reread_znodes is consumed), so retrying would reuse the
+                    /// same stale version and loop in Scheduling forever. A lost-ownership conflict
+                    /// is terminal anyway: another replica now owns the coordination state, our
+                    /// ephemeral '/running' was already dropped by the session loss, and we are
+                    /// giving up coordination permanently. Swallow it and converge to Disabled.
+                    fiu_do_on(FailPoints::refresh_mv_force_coordination_version_conflict, {
+                        /// Simulate another replica having advanced the coordination znode after we
+                        /// lost our Keeper session: make our cached version stale so the reconciling
+                        /// set() below is rejected with ZBADVERSION, exercising the lost-ownership
+                        /// terminal path. (max() keeps it a real version check, never the -1
+                        /// "any version" sentinel.)
+                        execution.znode.version = std::max(execution.znode.version - 1, 0);
+                        coordination.root_znode.version = std::max(coordination.root_znode.version - 1, 0);
+                    });
+                    try
                     {
-                        if (!updateCoordinationState(execution.znode, /*running=*/ false, zookeeper, lock))
-                            return;
+                        if (execution.znode.version == coordination.root_znode.version)
+                        {
+                            if (!updateCoordinationState(execution.znode, /*running=*/ false, zookeeper, lock))
+                                return;
+                        }
+                        else
+                        {
+                            CoordinationZnode znode = coordination.root_znode;
+                            znode.refresh_running = false;
+                            updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
+                        }
                     }
-                    else
+                    catch (const Coordination::Exception & e)
                     {
-                        CoordinationZnode znode = coordination.root_znode;
-                        znode.refresh_running = false;
-                        updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
+                        if (e.code != Coordination::Error::ZBADVERSION)
+                            throw;
+                        if (!lock.owns_lock())
+                            lock.lock();
+                        LOG_INFO(getLogger(), "Lost the refresh coordination lock (another replica advanced the znode) while giving up coordination on this Keeper. Treating as terminal and stopping the view.");
                     }
                     execution.state = ExecutionState::State::None;
                 }
