@@ -75,6 +75,11 @@ public:
     /// Clean up replication: remove publication and replication slots.
     void shutdownFinal();
 
+    /// Fail-close probe for DROP DATABASE: throw if Keeper is unreachable. Called before the drop removes any
+    /// local nested table, so a drop during a Keeper outage aborts before deleting the last copy of the data
+    /// while the shared slot/publication/marker survive. Does not mutate any state.
+    void assertCoordinationKeeperReachable();
+
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
@@ -152,9 +157,18 @@ private:
     /// Keeper session.
     bool isLeader() const;
 
+    /// Register this replica under <keeper_path>/replicas and then create its local nested tables, undoing the
+    /// registration if nested-table creation fails. Register-first so that a data-bearing replica is always
+    /// registered (see the implementation for the reasoning). Both steps are idempotent.
+    void registerReplicaThenEnsureNestedTables();
+
     /// Register this replica under <keeper_path>/replicas, so that dropping the engine on another
     /// replica knows the shared PostgreSQL objects (slot, publication) are still in use. Idempotent.
     void registerReplicaInKeeper();
+
+    /// Best-effort removal of this replica's <keeper_path>/replicas/<name> node, with no last-replica decision
+    /// and without touching any shared state. Used to undo `registerReplicaInKeeper` on a startup error path.
+    void unregisterReplica();
 
     /// Unregister this replica from <keeper_path>/replicas. Returns true when it was the last
     /// registered replica: only then may the caller drop the shared PostgreSQL objects and the

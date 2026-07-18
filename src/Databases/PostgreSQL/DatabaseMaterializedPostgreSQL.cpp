@@ -566,6 +566,43 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
 }
 
 
+void DatabaseMaterializedPostgreSQL::renameTable(
+    ContextPtr local_context, const String & table_name, IDatabase & to_database,
+    const String & to_table_name, bool exchange, bool dictionary)
+{
+    /// Reject RENAME / EXCHANGE TABLE in coordinated mode. The base `DatabaseAtomic::renameTable` would rename
+    /// only this replica's local nested table, while the shared publication, the `materialized_postgresql_tables_list`
+    /// setting, the cached `materialized_tables` wrappers and every peer replica all keep the old name - silently
+    /// diverging the coordinated setup, and breaking even this replica (SHOW TABLES follows the renamed nested
+    /// metadata, but `tryGetTable` still serves the wrapper under the old key). There is no cross-replica rename
+    /// coordination, so refuse it up front. Only genuine (non-internal) user queries are refused; internal
+    /// cleanup must still be able to move nested tables.
+    if (isCoordinated() && !local_context->isInternalQuery())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RENAME / EXCHANGE TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+    DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+}
+
+
+void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
+{
+    /// Fail-close before the generic DROP DATABASE path starts removing the nested tables. In coordinated mode
+    /// the nested tables are the local copy of the shared replicated data, and the last-replica teardown of the
+    /// shared slot/publication/marker is decided in Keeper (in `shutdownFinal`, called from `drop`). If Keeper
+    /// is unreachable, aborting here - before any nested table is dropped - is the only way to avoid deleting
+    /// the last copy of the data while the shared state survives (a later recreate on the same keeper path would
+    /// then resume into empty tables). Only probing Keeper here (not tearing anything down) keeps the actual
+    /// last-replica cleanup - and the resulting Keeper node cleanup ordering - unchanged in `drop`. Retry the
+    /// drop once Keeper is reachable again.
+    std::lock_guard lock(handler_mutex);
+    if (isCoordinated() && replication_handler)
+        replication_handler->assertCoordinationKeeperReachable();
+}
+
+
 void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
     std::lock_guard lock(handler_mutex);

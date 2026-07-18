@@ -505,6 +505,49 @@ def test_drop_table_is_rejected_in_coordinated_mode(started_cluster):
     assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
 
 
+def test_rename_and_exchange_table_are_rejected_in_coordinated_mode(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("other_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.other_table SELECT number, number FROM numbers(50)"
+    )
+
+    create_coordinated_db("test_table, other_table")
+    for table in ("test_table", "other_table"):
+        check_tables_are_synchronized(instance, table)
+        check_tables_are_synchronized(instance2, table)
+
+    # Renaming/exchanging a nested table only changes it on the local replica, while the shared publication,
+    # the tables-list setting, the cached wrappers and the peer replicas keep the old name - diverging the
+    # coordinated setup. Both RENAME and EXCHANGE are refused on every replica (leader and standby alike).
+    for node in (instance, instance2):
+        error = node.query_and_get_error(
+            "RENAME TABLE test_database.test_table TO test_database.renamed_table"
+        )
+        assert "coordinated MaterializedPostgreSQL" in error
+
+        error = node.query_and_get_error(
+            "EXCHANGE TABLES test_database.test_table AND test_database.other_table"
+        )
+        assert "coordinated MaterializedPostgreSQL" in error
+
+    # The refused RENAME/EXCHANGE must not have broken replication or renamed anything.
+    tables = instance2.query("SHOW TABLES FROM test_database").split()
+    assert "test_table" in tables
+    assert "other_table" in tables
+    assert "renamed_table" not in tables
+
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+
 def test_coordinated_create_adopts_publication_over_mismatching_tables_list(started_cluster):
     # A coordinated CREATE with an explicit `materialized_postgresql_tables_list` that disagrees with the
     # already-existing shared publication must not honor the local list: the publication is authoritative

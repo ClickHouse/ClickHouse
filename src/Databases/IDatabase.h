@@ -489,6 +489,11 @@ public:
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
+    /// Called by DROP DATABASE before any of the database's tables are dropped, so an engine can veto the drop
+    /// (throw) before any local data is removed - e.g. to fail-close while a coordination service it depends on
+    /// is unreachable. Not called for DETACH or TRUNCATE. Default: no-op.
+    virtual void beforeDropDatabase(ContextPtr /*context*/) {}
+
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 

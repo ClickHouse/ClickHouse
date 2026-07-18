@@ -474,13 +474,7 @@ void PostgreSQLReplicationHandler::startup(bool delayed)
         }
         else
         {
-            /// Create the local nested tables first, then register this replica. Registration persists a
-            /// /replicas/<name> node that is only removed by shutdownFinal, so registering before local
-            /// setup succeeds would leave a ghost participant if nested-table creation throws (the engine
-            /// is never created, so no shutdownFinal runs), and a later last-replica drop would then keep
-            /// the shared slot and publication forever.
-            ensureNestedTablesExist();
-            registerReplicaInKeeper();
+            registerReplicaThenEnsureNestedTables();
             coordination_task->activateAndSchedule();
         }
         return;
@@ -534,13 +528,8 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
         connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
         if (coordination_enabled)
         {
-            /// Register this replica only after its local nested tables exist: a persistent /replicas/<name>
-            /// node is removed only by shutdownFinal, so registering before local setup succeeds would leave
-            /// a ghost participant if nested-table creation throws, and a later last-replica drop would then
-            /// keep the shared slot and publication forever. This path retries on error (see below), and both
-            /// steps are idempotent.
-            ensureNestedTablesExist();
-            registerReplicaInKeeper();
+            /// This path retries on error (see below), and every step is idempotent.
+            registerReplicaThenEnsureNestedTables();
             coordination_task->activateAndSchedule();
         }
         else
@@ -1321,6 +1310,40 @@ void PostgreSQLReplicationHandler::coordinationFunc()
 }
 
 
+void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
+{
+    /// Order matters and must be register-first: the nested tables are replicas of a shared
+    /// Replicated/SharedReplacingMergeTree tree, so once `ensureNestedTablesExist` returns this replica holds
+    /// a durable, replicated copy of the shared data. `shutdownFinal` decides "last replica" purely from
+    /// <keeper_path>/replicas, so the /replicas/<name> node has to exist *before* this replica owns any nested
+    /// data - otherwise a Keeper blip between the two steps could leave a data-bearing but unregistered
+    /// replica, and a last-replica drop on a peer would then remove the shared slot/publication/marker while
+    /// this copy still exists (a later resnapshot would resume into it without truncation, duplicating rows or
+    /// preserving stale deletes).
+    ///
+    /// The flip side of registering first is a ghost participant if nested-table creation then fails (the
+    /// database engine is never created, so no shutdownFinal runs). Undo the registration on failure to close
+    /// that hole. Both steps are idempotent, so the startup task can safely retry.
+    registerReplicaInKeeper();
+    try
+    {
+        ensureNestedTablesExist();
+    }
+    catch (...)
+    {
+        try
+        {
+            unregisterReplica();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to unregister replica after nested-table creation failed");
+        }
+        throw;
+    }
+}
+
+
 void PostgreSQLReplicationHandler::registerReplicaInKeeper()
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::registerReplicaInKeeper");
@@ -1330,6 +1353,30 @@ void PostgreSQLReplicationHandler::registerReplicaInKeeper()
     zookeeper->createAncestors(replica_path);
     zookeeper->createIfNotExists(replica_path, "");
     LOG_DEBUG(log, "Registered replica '{}' at {}", coordination_replica_name, replica_path);
+}
+
+
+void PostgreSQLReplicationHandler::unregisterReplica()
+{
+    /// Best-effort removal of this replica's registration node, used to undo `registerReplicaInKeeper` when a
+    /// later startup step fails. Unlike `unregisterReplicaAndCheckLast` this makes no last-replica decision and
+    /// never removes any shared state, so it is safe to call from an error path.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::unregisterReplica");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    zookeeper->tryRemove(coordination_keeper_path + "/replicas/" + coordination_replica_name);
+}
+
+
+void PostgreSQLReplicationHandler::assertCoordinationKeeperReachable()
+{
+    /// Lightweight, non-mutating fail-close probe for DROP DATABASE (see DatabaseMaterializedPostgreSQL::
+    /// beforeDropDatabase). Obtaining the session and issuing an `exists` both throw if Keeper is unreachable,
+    /// which aborts the drop before any nested table is removed. The actual last-replica teardown still happens
+    /// in shutdownFinal once the drop proceeds.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::assertCoordinationKeeperReachable");
+
+    getContext()->getZooKeeper()->exists(coordination_keeper_path);
 }
 
 

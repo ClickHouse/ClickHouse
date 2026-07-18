@@ -66,6 +66,16 @@ public:
 
     void dropTable(ContextPtr local_context, const String & name, bool sync) override;
 
+    void renameTable(
+        ContextPtr local_context, const String & table_name, IDatabase & to_database,
+        const String & to_table_name, bool exchange, bool dictionary) override;
+
+    /// Fail-close for DROP DATABASE in coordinated mode: called before the generic DROP path removes any
+    /// nested table, it aborts the drop if Keeper is unreachable, so a Keeper outage can never delete the last
+    /// local copy of the data while the shared slot/publication/marker survive (a later recreate would then
+    /// resume into empty tables). The last-replica teardown itself still happens in `drop`.
+    void beforeDropDatabase(ContextPtr local_context) override;
+
     void drop(ContextPtr local_context) override;
 
     bool hasReplicationThread() const override { return true; }
