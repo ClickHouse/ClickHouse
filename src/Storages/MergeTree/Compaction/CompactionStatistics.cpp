@@ -358,44 +358,60 @@ size_t countRebuiltProjectionStreams(
 
 /// Number of on-disk column streams the merged wide part will write. Its substream set is the union of
 /// the source parts' substreams (countColumnStreamsFromParts), matched by column name. The per-column union
-/// can still miss dynamic substreams that live only in an old source part without columns_substreams.txt
-/// (there the default serialization collapses JSON / Dynamic to a single stream, and tryGetColumnSubstreams
-/// returns nothing). Those old parts' dynamic streams are added back explicitly below (see
-/// unrecorded_dynamic_files), so a mixed old/new merge with disjoint dynamic paths is not undercounted.
-/// The result is also floored at the widest source part's actual stream count (countPartStreams reads an old
-/// wide part's real .bin count), since the merged part is never narrower than any single source part. For
-/// simple columns and modern parts both adjustments are no-ops.
+/// can still miss dynamic substreams that live only in a source part without columns_substreams.txt (there
+/// the default serialization collapses JSON / Dynamic to a single stream, and tryGetColumnSubstreams returns
+/// nothing): an old wide part written before that file existed, or a compact part written with
+/// write_marks_for_substreams_in_compact_parts = 0. Those parts' dynamic streams are added back explicitly
+/// below - by name for a wide part (its .bin files are the ground truth), by the type's write-time capacity
+/// for a compact part (which stores every column in a single data.bin, so its per-column stream layout is not
+/// recoverable from disk) - so a mixed old/new merge with disjoint dynamic paths is not undercounted. The
+/// result is also floored at the widest source part's actual stream count (countPartStreams reads an old wide
+/// part's real .bin count), since the merged part is never narrower than any single source part. For simple
+/// columns and modern parts all adjustments are no-ops.
 size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
 {
     size_t streams = countColumnStreamsFromParts(output_columns, source_parts);
 
     /// The per-column union above can only see substreams recorded in columns_substreams.txt. A source part
-    /// written before that file existed (a pre-25.8 upgrade path) records nothing, so the dynamic substreams
-    /// of its JSON / Dynamic columns are invisible to the union. When such an old part is merged with newer
-    /// parts, its dynamic paths can be disjoint from theirs (old part has path 'a', new part has 'b', and the
-    /// merged part writes both), so the union - which only saw the newer part's 'b' - undercounts the result.
-    /// The whole-part max floor below does not close this: neither the old part nor the new part is on its own
-    /// as wide as their union. Recover each old wide part's unrecorded dynamic files - its actual .bin file
-    /// names minus the names accountable to its non-dynamic columns (collectStaticStreamFileNames; already
-    /// covered by the union above) - and UNION them across parts, by name, rather than summing their counts.
-    /// Two old parts that both physically store the same dynamic file (e.g. the same JSON path resolved to
-    /// the same type) name it identically (ISerialization::getFileNameForStream depends only on column,
-    /// path and resolved type, not on which part wrote it), and the merged part writes that stream only
-    /// once; summing per-part counts would charge it once per part instead. Treating genuinely distinct
-    /// dynamic files as disjoint from every other part is still the safe direction for a reservation. For
-    /// parts written after columns_substreams.txt exists, and for merges of only simple columns, this adds
-    /// nothing.
+    /// written without that file records nothing, so the dynamic substreams of its JSON / Dynamic columns are
+    /// invisible to the union. When such a part is merged with newer parts, its dynamic paths can be disjoint
+    /// from theirs (old part has path 'a', new part has 'b', and the merged part writes both), so the union -
+    /// which only saw the newer part's 'b' - undercounts the result. The whole-part max floor below does not
+    /// close this: neither part is on its own as wide as their union.
+    ///
+    /// A WIDE part's real layout is recoverable from disk: its actual .bin file names minus the names
+    /// accountable to its columns' static skeleton (collectStaticStreamFileNames; already covered by the union
+    /// above) are exactly its unrecorded dynamic files. UNION them across parts, by name, rather than summing
+    /// their counts - two old parts that both physically store the same dynamic file (e.g. the same JSON path
+    /// resolved to the same type) name it identically (ISerialization::getFileNameForStream depends only on
+    /// column, path and resolved type, not on which part wrote it), and the merged part writes that stream only
+    /// once; summing per-part counts would charge it once per part instead. Treating genuinely distinct dynamic
+    /// files as disjoint from every other part is still the safe direction for a reservation.
+    ///
+    /// A COMPACT part stores every column in a single data.bin, so it has no per-column .bin files to recover
+    /// from and (when it also records no substreams, i.e. write_marks_for_substreams_in_compact_parts = 0 or an
+    /// older .mrk3 part) collapses its JSON / Dynamic columns to the default one-stream count. Bound each of its
+    /// dynamic-structure columns by the type's own write-time capacity instead (countDynamicCapacityStreams, the
+    /// same conservative bound a rebuilt projection uses for a synthesized semi-structured column), which no
+    /// merged column can exceed. Add each output column once - the capacity is the merged column's hard limit,
+    /// not a per-part quantity - so many similar compact parts do not multiply it.
+    ///
+    /// For parts written after columns_substreams.txt exists, and for merges of only simple columns, all of
+    /// this adds nothing.
     const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
     std::unordered_set<std::string> unrecorded_dynamic_files;
+    std::unordered_set<std::string> compact_recovered_columns;
+    size_t compact_dynamic_streams = 0;
     for (const auto & part : source_parts)
     {
-        if (part->getType() != MergeTreeDataPartType::Wide || !part->getColumnsSubstreams().empty())
+        /// A part that records its substreams is already fully accounted for by the per-column union above.
+        if (!part->getColumnsSubstreams().empty())
             continue;
 
         /// Only types with a dynamic structure (JSON, Dynamic, and composites containing them) have
-        /// substreams that the default serialization cannot enumerate, so only such parts need the
-        /// recovery at all. hasDynamicSubcolumns() would be too broad as the gate: a plain Map or Variant
-        /// reports true there, yet its physical streams are fully enumerable from the default serialization.
+        /// substreams that the default serialization cannot enumerate, so only such parts need the recovery
+        /// at all. hasDynamicSubcolumns() would be too broad as the gate: a plain Map or Variant reports true
+        /// there, yet its physical streams are fully enumerable from the default serialization.
         const auto & part_columns = part->getColumns();
         const bool has_dynamic_structure_column = std::any_of(
             part_columns.begin(), part_columns.end(),
@@ -403,21 +419,32 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
         if (!has_dynamic_structure_column)
             continue;
 
-        /// Subtract every file name the default serialization can enumerate from the part's actual on-disk
-        /// file names. For a column without dynamic structure that is all of its files; for a column with
-        /// dynamic structure it is the static skeleton of its layout - and composites keep a real one:
-        /// Tuple(UInt64, JSON) still has the UInt64 element stream, Array(JSON) its offsets, JSON its
-        /// shared-data streams. Both kinds are already counted once by the per-column union above, so
-        /// subtracting only whole non-dynamic columns (as if a dynamic-structure column had no enumerable
-        /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
-        /// What remains after the subtraction is exactly the part's dynamic files, which nothing else
-        /// accounts for.
-        const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
-        for (const auto & file_name : collectWidePartDataFileNames(*part))
-            if (!static_files.contains(file_name))
-                unrecorded_dynamic_files.insert(file_name);
+        if (part->getType() == MergeTreeDataPartType::Wide)
+        {
+            /// Subtract every file name the default serialization can enumerate from the part's actual on-disk
+            /// file names. For a column without dynamic structure that is all of its files; for a column with
+            /// dynamic structure it is the static skeleton of its layout - and composites keep a real one:
+            /// Tuple(UInt64, JSON) still has the UInt64 element stream, Array(JSON) its offsets, JSON its
+            /// shared-data streams. Both kinds are already counted once by the per-column union above, so
+            /// subtracting only whole non-dynamic columns (as if a dynamic-structure column had no enumerable
+            /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
+            /// What remains after the subtraction is exactly the part's dynamic files, which nothing else
+            /// accounts for.
+            const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
+            for (const auto & file_name : collectWidePartDataFileNames(*part))
+                if (!static_files.contains(file_name))
+                    unrecorded_dynamic_files.insert(file_name);
+        }
+        else
+        {
+            /// A compact part cannot expose its per-column dynamic files; bound each of its dynamic-structure
+            /// columns by the type's write-time capacity, once per output column.
+            for (const auto & column : part_columns)
+                if (column.type->hasDynamicStructure() && compact_recovered_columns.insert(column.name).second)
+                    compact_dynamic_streams += countDynamicCapacityStreams(*column.type, settings);
+        }
     }
-    streams += unrecorded_dynamic_files.size();
+    streams += unrecorded_dynamic_files.size() + compact_dynamic_streams;
 
     /// The merged wide part is never narrower than any single source part, so floor the estimate at the
     /// widest source part's actual stream count. For simple columns and modern parts this floor equals the
@@ -702,8 +729,41 @@ UInt64 estimateNeededMemoryForMerge(
                 /// stream per substream); count them with countRebuiltProjectionStreams rather than the default
                 /// serialization, which would collapse such a column to a single stream and undersize the
                 /// reservation.
-                const size_t projection_streams = countRebuiltProjectionStreams(
+                const size_t projection_wide_streams = countRebuiltProjectionStreams(
                     projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, settings);
+
+                /// A temporary projection part is written as Wide only when it is big enough:
+                /// writeTempProjectionPart passes the projected block's size to choosePartFormat, which picks
+                /// Compact below min_bytes_for_wide_part (default 10 MiB) / min_rows_for_wide_part, and a merge
+                /// output part's level always clears min_level_for_wide_part. A Compact temp part writes every
+                /// column through ONE shared writer buffer, and MergeProjectionPartsTask reads it back through
+                /// ONE shared reader buffer per part - not one per substream. Pricing a per-substream stream
+                /// count for a Compact temp part would over-reserve by orders of magnitude on a semi-structured
+                /// projection and serialize background merges, the very starvation this estimate avoids on the
+                /// base path. Estimate the projected data volume from the projection's own columns in the source
+                /// parts (whole part size for a compact part, whose per-column sizes are not tracked) and let
+                /// choosePartFormat decide the format exactly as the merge will, honoring any per-projection
+                /// wide-part settings. An expression that expands bytes per row can push a small input over the
+                /// wide threshold; underestimating the projected size here can only misclassify a Wide temp part
+                /// as Compact, which merely weakens throttling of concurrent merges (a single merge is always
+                /// admitted), the safe direction.
+                const auto projection_required_columns = projection.getRequiredColumns();
+                UInt64 projection_uncompressed_bytes = 0;
+                UInt64 projection_rows = 0;
+                for (const auto & part : future_part.parts)
+                {
+                    projection_rows += part->rows_count;
+                    UInt64 part_projection_bytes = 0;
+                    for (const auto & required_column : projection_required_columns)
+                        part_projection_bytes += part->getColumnSize(required_column).data_uncompressed;
+                    projection_uncompressed_bytes
+                        += part_projection_bytes != 0 ? part_projection_bytes : part->getBytesUncompressedOnDisk();
+                }
+
+                const auto temp_projection_format = future_part.parts.front()->storage.choosePartFormat(
+                    projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection);
+                const size_t projection_streams
+                    = temp_projection_format.part_type == MergeTreeDataPartType::Compact ? 1 : projection_wide_streams;
 
                 /// Unlike the base output above, a rebuilt projection is NOT size-bounded by the merge input:
                 /// a projection expression is not size-monotone (repeat(...), JSON / array construction can
