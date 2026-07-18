@@ -549,15 +549,19 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- an empty result, exactly like the classic named-table form, rather than throwing `UNKNOWN_TABLE` while
 -- resolving the target on the initiator. The legacy analyzer builds the header from the declared columns too.
 -- These queries produce no rows; the point is that they succeed instead of failing on the initiator.
--- `enable_parallel_replicas = 0` keeps the read on the table's own (all-unavailable) cluster: with parallel
--- replicas the read is rewritten onto `cluster_for_parallel_replicas`, whose replicas are reachable, so the
--- missing target would resolve there and raise `UNKNOWN_TABLE` instead of being skipped.
+-- `enable_parallel_replicas = 0` and `serialize_query_plan = 0` keep the read on the plain `Distributed`
+-- path over the table's own (all-unavailable) cluster. Both are orthogonal execution variants that resolve
+-- the remote target on the initiator, for the classic named-table form and the table-function form alike:
+-- with parallel replicas the read is rewritten onto `cluster_for_parallel_replicas` (whose replicas are
+-- reachable), and with `serialize_query_plan = 1` the initiator builds and serializes the full plan, which
+-- resolves the target locally. In either case the missing target would raise `UNKNOWN_TABLE` on the
+-- initiator instead of being skipped - so the skip behavior is asserted only on the plain path it applies to.
 CREATE TABLE dist_probe_missing (n UInt64) ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, loop(probe_missing_src));
 CREATE TABLE dist_probe_missing_named (n UInt64) ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, currentDatabase(), probe_missing_src);
-SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
-SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
-SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
-SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1, enable_parallel_replicas = 0;
+SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0;
+SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0;
+SELECT count() FROM dist_probe_missing SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0;
+SELECT count() FROM dist_probe_missing_named SETTINGS enable_analyzer = 0, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0;
 DROP TABLE dist_probe_missing;
 DROP TABLE dist_probe_missing_named;
 
