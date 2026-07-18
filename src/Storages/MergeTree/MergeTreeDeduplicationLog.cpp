@@ -393,11 +393,7 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 
 void MergeTreeDeduplicationLog::compactIfNeeded()
 {
-    /// Compaction rewrites the whole live state through an appended snapshot file, so
-    /// it needs a disk that supports appending. On object storage without append
-    /// support every operation already rotates into a fresh file - a different regime -
-    /// so skip it there.
-    if (deduplication_window == 0 || !disk_supports_writing_with_append)
+    if (deduplication_window == 0)
         return;
 
     size_t total_raw = 0;
@@ -439,17 +435,30 @@ void MergeTreeDeduplicationLog::compact()
     /// Best effort: on any failure the existing files and writer are left untouched, so
     /// the log stays correct and usable and only the space optimization is skipped. The
     /// snapshot is finalized (object storage only makes a file durable on finalize) and
-    /// the reopened writer prepared before any old file is removed, so a throw can never
-    /// leave the live state only in files that are about to be deleted.
-    const size_t new_log_number = current_log_number + 1;
-    const auto new_path = getLogPath(logs_dir, new_log_number);
+    /// the writer for the next operation prepared before any old file is removed, so a
+    /// throw can never leave the live state only in files that are about to be deleted.
+    const size_t snapshot_log_number = current_log_number + 1;
+    const auto snapshot_path = getLogPath(logs_dir, snapshot_log_number);
     const size_t snapshot_size = deduplication_map.size();
+
+    /// The writer the next operation appends to. On an append-capable disk that is the
+    /// finalized snapshot file itself, reopened for appending. On a disk without append
+    /// support the snapshot file cannot be reopened that way, so it stays a finalized,
+    /// durable file and the next operation starts in its own fresh, empty file - the
+    /// same regime rotate() uses on such a disk, where every operation already writes a
+    /// new file. Either way the retained history is reduced to the snapshot, so repeated
+    /// rolled-back operations can no longer grow the log files - or the load-time replay -
+    /// without bound on any disk (previously compaction was skipped entirely without
+    /// append support, so on e.g. s3_plain_rewritable the rollback records still piled up).
+    const bool reopen_snapshot = disk_supports_writing_with_append;
+    const size_t writer_log_number = reopen_snapshot ? snapshot_log_number : snapshot_log_number + 1;
+    const auto writer_path = reopen_snapshot ? snapshot_path : getLogPath(logs_dir, writer_log_number);
 
     std::unique_ptr<WriteBufferFromFileBase> new_writer;
     try
     {
         {
-            auto snapshot_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            auto snapshot_writer = disk->writeFile(snapshot_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
             for (const auto & node : deduplication_map)
             {
                 MergeTreeDeduplicationLogRecord record;
@@ -462,22 +471,32 @@ void MergeTreeDeduplicationLog::compact()
             snapshot_writer->sync();
         }
 
-        /// Reopen the finalized snapshot for future appends and register it - the only
-        /// remaining steps that can throw - while the old writer and files are still
-        /// live, so a failure here changes nothing.
-        new_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-        existing_logs.emplace(new_log_number, MergeTreeDeduplicationLogNameDescription{new_path, snapshot_size, snapshot_size});
+        /// Open the writer for the next operation (reopen the snapshot on an append-capable
+        /// disk, a fresh file otherwise) and register the snapshot - and, without append
+        /// support, that fresh file too - the only remaining steps that can throw, while
+        /// the old writer and files are still live, so a failure here changes nothing.
+        new_writer = disk->writeFile(
+            writer_path, DBMS_DEFAULT_BUFFER_SIZE, reopen_snapshot ? WriteMode::Append : WriteMode::Rewrite);
+        existing_logs.emplace(snapshot_log_number, MergeTreeDeduplicationLogNameDescription{snapshot_path, snapshot_size, snapshot_size});
+        if (!reopen_snapshot)
+            existing_logs.emplace(writer_log_number, MergeTreeDeduplicationLogNameDescription{writer_path, 0, 0});
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot compact the MergeTree deduplication log; keeping the existing log files");
-        /// Discard whatever was set up so no orphan snapshot file is left for load to read.
+        /// Discard whatever was set up so no orphan file is left for load to read.
         if (new_writer)
             new_writer->cancel();
-        existing_logs.erase(new_log_number);
+        existing_logs.erase(snapshot_log_number);
+        if (!reopen_snapshot)
+            existing_logs.erase(writer_log_number);
         try
         {
-            disk->removeFileIfExists(new_path);
+            disk->removeFileIfExists(snapshot_path);
+            /// writer_path == snapshot_path when the snapshot is reopened, so only a
+            /// separate fresh writer file needs its own cleanup.
+            if (!reopen_snapshot)
+                disk->removeFileIfExists(writer_path);
         }
         catch (...)
         {
@@ -499,7 +518,7 @@ void MergeTreeDeduplicationLog::compact()
 
     for (auto it = existing_logs.begin(); it != existing_logs.end();)
     {
-        if (it->first == new_log_number)
+        if (it->first == snapshot_log_number || it->first == writer_log_number)
         {
             ++it;
             continue;
@@ -511,15 +530,16 @@ void MergeTreeDeduplicationLog::compact()
         }
         catch (...)
         {
-            /// The snapshot has the highest log number, so load replays it last and its
-            /// ADDs are no-ops on top of whatever an un-removed older file reconstructs -
-            /// the state stays correct even if a removal fails; the file just lingers.
+            /// The snapshot has a higher log number than any older file, so load replays it
+            /// after them and its ADDs are no-ops on top of whatever an un-removed older file
+            /// reconstructs - the state stays correct even if a removal fails; the file just
+            /// lingers.
             tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an outdated deduplication log file during compaction");
             ++it;
         }
     }
 
-    current_log_number = new_log_number;
+    current_log_number = writer_log_number;
     current_writer = std::move(new_writer);
 }
 

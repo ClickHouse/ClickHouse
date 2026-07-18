@@ -247,6 +247,13 @@ public:
     void shutdown();
 
     ~MergeTreeDeduplicationLog();
+
+    /// For unit tests only. A disk without append support (e.g. `s3_plain_rewritable`)
+    /// takes a different code path - every operation rotates into a fresh file and
+    /// compaction reopens no file - but cannot be constructed cheaply in a unit test, so
+    /// simulate its regime on a local disk. Must be called right after construction,
+    /// before `load`.
+    void simulateDiskWithoutWritingWithAppendSupportForTests() { disk_supports_writing_with_append = false; }
 private:
     const std::string logs_dir;
     /// Size of deduplication window
@@ -274,7 +281,7 @@ private:
 
     /// Disk where log is stored
     DiskPtr disk;
-    const bool disk_supports_writing_with_append;
+    bool disk_supports_writing_with_append;
 
     bool stopped{false};
 

@@ -1146,3 +1146,77 @@ TEST(MergeTreeDeduplicationLog, RepeatedRollbacksAreCompactedAwayOnRestart)
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// The same repeated-rollback growth must also be bounded on a disk without append
+/// support (e.g. `s3_plain_rewritable`), the very regime the original bug reproduced
+/// on. There every operation rotates into a fresh file, so the accumulated rollback
+/// pairs cannot be reopened-and-appended-over; compaction must instead write the live
+/// snapshot to a fresh durable file and start the next operation in another fresh file.
+/// Without the non-append compaction path these files (and the load-time replay) would
+/// grow with the number of failures on every restart.
+TEST(MergeTreeDeduplicationLog, RepeatedRollbacksAreCompactedAwayOnRestartWithoutAppendSupport)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_compaction_no_append/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto count_logs = [&]() -> size_t
+    {
+        return std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator());
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// A disk that fails every fsync at or after the second. Without append support
+        /// every operation rotates and thus fsyncs the previous file, so the first
+        /// insert's rotation (fsync #1) succeeds and commits it, while the second and
+        /// every later insert's rotation (fsync #2+) fails and rolls the insert back,
+        /// leaving an (ADD, rollback) pair and a new file behind.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 2);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.simulateDiskWithoutWritingWithAppendSupportForTests();
+        log.load();
+
+        /// One committed insert.
+        log.addPart({"block1"}, part("all_1_1_0"));
+
+        /// Several failed inserts. Each rolls back and leaves a new log file behind that
+        /// dropOutdatedLogs cannot reclaim (its rollback record cancels an ADD in the
+        /// still-retained "block1" file, so it holds no live coverage of its own).
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        /// The garbage really did pile up: many small files, none reclaimable.
+        EXPECT_GT(count_logs(), 4u);
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart with a healthy disk, still without append support. load() replays every
+        /// file, reconstructs the single live block, and then compacts the accumulated
+        /// garbage away by rewriting the live state into a fresh durable snapshot file and
+        /// starting the next operation in another fresh file.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.simulateDiskWithoutWritingWithAppendSupportForTests();
+        log.load();
+
+        /// Compaction left just the snapshot file plus the fresh, empty file the next
+        /// operation writes to - not one file per past failure.
+        EXPECT_EQ(count_logs(), 2u);
+
+        /// The committed block still deduplicates, and a never-committed block is still
+        /// retryable - compaction preserved the live state exactly.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
