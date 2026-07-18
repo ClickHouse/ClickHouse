@@ -6290,6 +6290,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
     }
+    else if (query_node_typed.isGroupByAll())
+    {
+        /// Under group_by_use_nulls the GROUP BY ALL keys must be registered as
+        /// nullable_group_by_keys before the projection is resolved, so expand GROUP BY ALL now
+        /// instead of at the end of resolveQuery. resolveGroupByNode below registers the keys and
+        /// clears the caches, so the projection is re-resolved with the Nullable promotion. (#110915)
+        resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        expandGroupByAll(query_node_typed);
+    }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {

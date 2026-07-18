@@ -1,0 +1,18 @@
+-- inner projection type --
+Nullable(UInt64)
+-- scalar subquery aggregates --
+2
+2
+2
+2
+-- deterministic key --
+-- group by all matches explicit key --
+0	9
+1	12
+2	15
+\N	36
+----
+0	9
+1	12
+2	15
+\N	36
