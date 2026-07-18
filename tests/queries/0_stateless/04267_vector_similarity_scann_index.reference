@@ -48,3 +48,6 @@
 0
 0
 21. Unquoted scann identifier requires allow_experimental_scann_index
+22. Existing ScaNN index does not block unrelated ALTER
+unrelated ALTER succeeds
+1

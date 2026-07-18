@@ -484,3 +484,31 @@ CREATE TABLE tab_scann_unquoted (id Int32, vec Array(Float32)) ENGINE = MergeTre
 ALTER TABLE tab_scann_unquoted ADD INDEX idx vec TYPE vector_similarity(scann, 'L2Distance', 2) GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE tab_scann_unquoted;
 SET allow_experimental_scann_index = 1;
+
+-- Test 22: The experimental gate applies only when an ALTER introduces a ScaNN index.
+-- Unrelated metadata changes on a table that already has a ScaNN index must remain allowed.
+SELECT '22. Existing ScaNN index does not block unrelated ALTER';
+DROP TABLE IF EXISTS tab_scann_experimental_gate_alter;
+CREATE TABLE tab_scann_experimental_gate_alter
+(
+    id UInt64,
+    vector Array(Float32),
+    INDEX vector_idx vector TYPE vector_similarity('scann', 'cosineDistance', 2)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SET allow_experimental_scann_index = 0;
+ALTER TABLE tab_scann_experimental_gate_alter MODIFY COMMENT 'unrelated ALTER succeeds';
+ALTER TABLE tab_scann_experimental_gate_alter ADD COLUMN note String;
+ALTER TABLE tab_scann_experimental_gate_alter
+    ADD INDEX IF NOT EXISTS vector_idx vector TYPE vector_similarity('scann', 'cosineDistance', 2);
+
+SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'tab_scann_experimental_gate_alter';
+SELECT hasColumnInTable(currentDatabase(), 'tab_scann_experimental_gate_alter', 'note');
+
+ALTER TABLE tab_scann_experimental_gate_alter
+    ADD INDEX vector_idx_2 vector TYPE vector_similarity('scann', 'cosineDistance', 2); -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE tab_scann_experimental_gate_alter;
+SET allow_experimental_scann_index = 1;

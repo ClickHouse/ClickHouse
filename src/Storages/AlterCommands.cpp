@@ -1406,18 +1406,41 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-bool AlterCommands::hasScannVectorSimilarityIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasNewScannVectorSimilarityIndex(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata)
 {
-    for (const auto & index : metadata.secondary_indices)
+    const auto is_scann_index = [](const auto & index)
     {
         if (index.type != "vector_similarity")
+            return false;
+
+        const FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+        return !args.empty()
+            && args[0].getType() == Field::Types::String
+            && args[0].safeGet<String>() == "scann";
+    };
+
+    for (const auto & new_index : new_metadata.secondary_indices)
+    {
+        if (!is_scann_index(new_index))
             continue;
-        FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
-        if (args.empty() || args[0].getType() != Field::Types::String)
-            continue;
-        if (args[0].safeGet<String>() == "scann")
+
+        const auto old_index = std::ranges::find_if(old_metadata.secondary_indices, [&](const auto & index)
+        {
+            if (index.name != new_index.name || !is_scann_index(index))
+                return false;
+
+            return index.definition_ast
+                && new_index.definition_ast
+                && index.definition_ast->getTreeHash(/*ignore_aliases=*/ true)
+                    == new_index.definition_ast->getTreeHash(/*ignore_aliases=*/ true);
+        });
+
+        if (old_index == old_metadata.secondary_indices.end())
             return true;
     }
+
     return false;
 }
 

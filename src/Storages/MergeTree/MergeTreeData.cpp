@@ -993,7 +993,7 @@ void MergeTreeData::checkProperties(
             checkSuspiciousIndices(index_function);
 
 #if USE_SCANN
-    if (!attach && local_context && AlterCommands::hasScannVectorSimilarityIndex(new_metadata)
+    if (!attach && local_context && AlterCommands::hasNewScannVectorSimilarityIndex(new_metadata, old_metadata)
         && !local_context->getSettingsRef()[Setting::allow_experimental_scann_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "vector_similarity index with method 'scann' is experimental. "
@@ -4780,7 +4780,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
 #if USE_SCANN
-    if (AlterCommands::hasScannVectorSimilarityIndex(new_metadata)
+    if (AlterCommands::hasNewScannVectorSimilarityIndex(new_metadata, old_metadata)
         && !settings[Setting::allow_experimental_scann_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "vector_similarity index with method 'scann' is experimental. "
