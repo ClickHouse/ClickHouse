@@ -205,6 +205,19 @@ node_graphite_empty = cluster_graphite_empty.add_instance(
     main_configs=["configs/config.d/graphite_empty_section.xml"],
 )
 
+# Compatibility case: a valid `GraphiteMergeTree` rollup section whose `<pattern>` uses
+# `<rule_type>tag_list</rule_type>` together with a non-empty `<regexp>`. `appendGraphitePattern`
+# rewrites this into the dispatchable `tagged` type via `buildTaggedRegex`, so the parser accepts it.
+# The `tag_list`-without-`<regexp>` tightening must only reject the invalid shape, so this valid
+# section must still be accepted (guards against a false-positive server-won't-start).
+cluster_graphite_tag_list_accepted = ClickHouseCluster(
+    __file__, name="graphite_tag_list_accepted"
+)
+node_graphite_tag_list_accepted = cluster_graphite_tag_list_accepted.add_instance(
+    "node_graphite_tag_list_accepted",
+    main_configs=["configs/config.d/graphite_tag_list_accepted.xml"],
+)
+
 # Negative case: a section shaped like a `GraphiteMergeTree` rollup (it carries a real `<pattern>`
 # rule) but that also contains a foreign child must be rejected. `setGraphitePatternsFromConfig`
 # throws `UNKNOWN_ELEMENT_IN_CONFIG` on any unrecognized child, so the validator must require EVERY
@@ -312,6 +325,23 @@ node_graphite_invalid_rule_type = cluster_graphite_invalid_rule_type.add_instanc
     main_configs=["configs/config.d/graphite_invalid_rule_type.xml"],
 )
 caught_graphite_invalid_rule_type_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries a
+# `<rule_type>tag_list</rule_type>` and a `<function>` but no non-empty `<regexp>`.
+# `appendGraphitePattern` only rewrites a `tag_list` rule into the dispatchable `tagged` type when its
+# `<regexp>` is non-empty; without one the pattern keeps the internal `RuleTypeTagList`, which
+# `setGraphitePatternsFromConfig`'s final dispatch rejects with `Unhandled rule_type in config`. The
+# validator must mirror that and reject the whole section as an unknown top-level key.
+cluster_graphite_tag_list_without_regexp = ClickHouseCluster(
+    __file__, name="graphite_tag_list_without_regexp"
+)
+node_graphite_tag_list_without_regexp = (
+    cluster_graphite_tag_list_without_regexp.add_instance(
+        "node_graphite_tag_list_without_regexp",
+        main_configs=["configs/config.d/graphite_tag_list_without_regexp.xml"],
+    )
+)
+caught_graphite_tag_list_without_regexp_exception = ""
 
 # Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries a `<retention>` block
 # with a `<precision>` but no `<age>`. `appendGraphitePattern` materializes the block by reading both
@@ -554,6 +584,13 @@ def start_graphite_empty_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_graphite_tag_list_accepted_cluster():
+    cluster_graphite_tag_list_accepted.start()
+    yield
+    cluster_graphite_tag_list_accepted.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_graphite_foreign_cluster():
     global caught_graphite_foreign_exception
     try:
@@ -684,6 +721,23 @@ def start_graphite_invalid_rule_type_cluster():
                 caught_graphite_invalid_rule_type_exception += "\n" + f.read()
     yield
     cluster_graphite_invalid_rule_type.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_tag_list_without_regexp_cluster():
+    global caught_graphite_tag_list_without_regexp_exception
+    try:
+        cluster_graphite_tag_list_without_regexp.start()
+    except Exception as e:
+        caught_graphite_tag_list_without_regexp_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_tag_list_without_regexp.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_tag_list_without_regexp_exception += "\n" + f.read()
+    yield
+    cluster_graphite_tag_list_without_regexp.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -1403,6 +1457,17 @@ def test_graphite_empty_section_accepted(start_graphite_empty_cluster):
     assert node_graphite_empty.query("SELECT 1").strip() == "1"
 
 
+def test_graphite_tag_list_with_regexp_accepted(
+    start_graphite_tag_list_accepted_cluster,
+):
+    # A valid `GraphiteMergeTree` rollup section whose `<pattern>` uses
+    # `<rule_type>tag_list</rule_type>` together with a non-empty `<regexp>`. `appendGraphitePattern`
+    # rewrites it into the dispatchable `tagged` type via `buildTaggedRegex`, so the parser accepts
+    # it. If the `tag_list`-without-`<regexp>` tightening wrongly rejected this valid shape, the node
+    # would have failed to start.
+    assert node_graphite_tag_list_accepted.query("SELECT 1").strip() == "1"
+
+
 def test_graphite_shaped_section_with_foreign_child_rejected(
     start_graphite_foreign_cluster,
 ):
@@ -1577,6 +1642,26 @@ def test_graphite_invalid_rule_type_rejected(
     # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_invalid_rule_type_exception
     assert "graphite_invalid_rule_type" in caught_graphite_invalid_rule_type_exception
+
+
+def test_graphite_tag_list_without_regexp_rejected(
+    start_graphite_tag_list_without_regexp_cluster,
+):
+    # `<graphite_tag_list_without_regexp>` carries a `<pattern>` with a `<function>` and
+    # `<rule_type>tag_list</rule_type>` but no non-empty `<regexp>`. `appendGraphitePattern` only
+    # rewrites a `tag_list` rule into the dispatchable `tagged` type when its `<regexp>` is non-empty,
+    # so without one the pattern reaches `setGraphitePatternsFromConfig`'s final dispatch as the
+    # internal `RuleTypeTagList` and is rejected with `Unhandled rule_type in config`. A name-only
+    # check would exempt the section (every child is recognized and a `<function>` is present), so the
+    # validator must mirror this and reject the whole section. The node must fail to start with
+    # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert (
+        "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_tag_list_without_regexp_exception
+    )
+    assert (
+        "graphite_tag_list_without_regexp"
+        in caught_graphite_tag_list_without_regexp_exception
+    )
 
 
 def test_graphite_retention_missing_age_rejected(

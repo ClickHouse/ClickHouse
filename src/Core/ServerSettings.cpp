@@ -2909,6 +2909,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::Util::AbstractConfiguration::Keys rule_children;
         config.keys(rule_element, rule_children);
         bool has_function_or_retention = false;
+        /// Whether the rule carries a non-empty `<regexp>`. `appendGraphitePattern` only rewrites a
+        /// `tag_list` rule into the dispatchable `tagged` type when its `<regexp>` is non-empty; see
+        /// the `tag_list` check after the loop.
+        bool has_nonempty_regexp = false;
+        /// The rule's `<rule_type>` value; the parser defaults to `all` when the child is absent.
+        String rule_type = "all";
         /// `(age, precision)` pairs collected in config order, to mirror `appendGraphitePattern`'s
         /// final `::sort(..., compareRetentions)` after the child loop (see below).
         std::vector<std::pair<UInt64, UInt64>> retentions;
@@ -2918,6 +2924,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 || rule_child == "rule_type" || rule_child.starts_with("retention");
             if (!ok)
                 return false;
+
+            if (rule_child == "regexp" && !config.getString(rule_element + ".regexp").empty())
+                has_nonempty_regexp = true;
 
             if (rule_child == "function")
                 has_function_or_retention = true;
@@ -2945,7 +2954,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
             if (rule_child == "rule_type")
             {
-                const String rule_type = config.getString(rule_element + ".rule_type");
+                rule_type = config.getString(rule_element + ".rule_type");
                 const bool known_rule_type = rule_type == "all" || rule_type == "plain"
                     || rule_type == "tagged" || rule_type == "tag_list";
                 if (!known_rule_type)
@@ -2955,6 +2964,17 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     return false;
             }
         }
+
+        /// `appendGraphitePattern` only rewrites a `tag_list` rule into the dispatchable `tagged`
+        /// type when its `<regexp>` is non-empty (`buildTaggedRegex` needs the tag spec). A
+        /// `tag_list` rule without a non-empty `<regexp>` therefore keeps the internal
+        /// `RuleTypeTagList`, which `setGraphitePatternsFromConfig`'s final dispatch rejects with
+        /// `Unhandled rule_type in config`. Such a rule is not a valid rollup rule, so the section
+        /// must not be exempted. This mirrors the parser and only ever rejects sections the parser
+        /// also rejects — a valid `tag_list` rule always carries a non-empty `<regexp>` — so it can
+        /// never turn a valid config into a startup failure.
+        if (rule_type == "tag_list" && !has_nonempty_regexp)
+            return false;
 
         /// `appendGraphitePattern` finishes a rule by sorting its `retention*` blocks with
         /// `compareRetentions`, which throws `BAD_ARGUMENTS` ("Age and precision should only grow up")
