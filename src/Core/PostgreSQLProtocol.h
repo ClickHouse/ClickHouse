@@ -1341,6 +1341,14 @@ public:
         }
     }
 
+    /// Construct a CommandComplete carrying an explicit command tag verbatim.
+    /// Used for driver-specific commands (e.g. `RESET ALL`, `UNLISTEN *`) that
+    /// ClickHouse accepts as no-ops and for which no row count applies.
+    explicit CommandComplete(String tag_)
+        : value(std::move(tag_))
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('C');
