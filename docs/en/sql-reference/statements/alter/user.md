@@ -105,21 +105,27 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
-The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
+
+The placement of the clause determines which authentication methods it applies to:
+
+- Before the `IDENTIFIED` clause (or when the query specifies no authentication method at all): the deadline is a user-level deadline that applies to every authentication method of the user.
+- After an authentication method: the deadline applies to that method only. A clause written after the whole `IDENTIFIED` list therefore binds to the last method only, leaving the earlier methods non-expiring.
 
 Examples:
 
 - `ALTER USER name1 VALID UNTIL '2025-01-01'`
 - `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 - `ALTER USER name1 VALID UNTIL 'infinity'`
-- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`
+- `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
 ## VALID FOR Clause {#valid-for-clause}
 
-The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline.
+The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It follows the same placement rules as `VALID UNTIL`: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only.
 
 Examples:
 
 - `ALTER USER name1 VALID FOR INTERVAL 1 DAY`
 - `ALTER USER name1 VALID FOR INTERVAL 3 MONTH`
-- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY`
+- `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.

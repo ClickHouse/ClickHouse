@@ -189,7 +189,11 @@ ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technica
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime, where `[timezone]` must be a numeric offset such as `+09:00` or one of `UTC`, `GMT`, `Z`, `MSK`, `MSD`; named IANA zones like `Asia/Tokyo` are not recognized (see the note below). By default, this parameter equals `'infinity'`.
-The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
+
+The placement of the clause determines which authentication methods it applies to:
+
+- Before the `IDENTIFIED` clause (or when the query specifies no authentication method at all): the deadline is a user-level deadline that applies to every authentication method of the user.
+- After an authentication method: the deadline applies to that method only. A clause written after the whole `IDENTIFIED` list therefore binds to the last method only, leaving the earlier methods non-expiring.
 
 Examples:
 
@@ -197,7 +201,8 @@ Examples:
 - `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 - `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
 - `CREATE USER name1 VALID UNTIL 'infinity'`
-- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+- `CREATE USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
 :::note
 The datetime string is parsed by `parseDateTimeBestEffort`, which only recognizes the timezone tokens `UTC`, `GMT`, `Z`, `MSK`, `MSD`, and numeric offsets such as `+09:00` or `-05:00`. Named IANA timezones like `Asia/Tokyo` or `Europe/London` are not supported, and a fixed offset is not equivalent to an IANA zone for regions that observe daylight saving time, so you must compute the correct offset for the specific date you are encoding.
@@ -205,14 +210,15 @@ The datetime string is parsed by `parseDateTimeBestEffort`, which only recognize
 
 ## VALID FOR Clause {#valid-for-clause}
 
-The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time, it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is then stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It can be used everywhere `VALID UNTIL` can.
+The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time, it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is then stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It can be used everywhere `VALID UNTIL` can, and it follows the same placement rules: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only.
 
 Examples:
 
 - `CREATE USER name1 VALID FOR INTERVAL 1 DAY`
 - `CREATE USER name1 VALID FOR INTERVAL 3 MONTH`
 - `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
-- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY`
+- `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
 ## GRANTEES Clause {#grantees-clause}
 
