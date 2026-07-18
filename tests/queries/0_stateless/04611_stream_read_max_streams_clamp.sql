@@ -2,9 +2,9 @@
 -- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
 -- no-parallel-replicas: STREAM reads do not support parallel replicas.
 
--- A pathological max_streams_for_merge_tree_reading must not abort the server (was:
--- std::length_error from pipes.reserve in groupPartitionsByStreams). EXPLAIN PIPELINE
--- exercises the streaming read path without running the streaming query forever.
+-- A pathological max_streams_for_merge_tree_reading must not throw std::length_error from
+-- pipes.reserve in groupPartitionsByStreams (which aborts the server in debug/sanitizer builds).
+-- EXPLAIN PIPELINE exercises the streaming read path without running the streaming query forever.
 
 SET enable_streaming_queries = 1;
 
@@ -27,6 +27,24 @@ FROM
     -- it is not 1, so with max_threads = 1 the pathological setting never reaches reserve.
     SETTINGS max_threads = 4,
              max_streams_for_merge_tree_reading = 9223372036854775807,
+             allow_asynchronous_read_from_io_pool_for_merge_tree = 1
+);
+
+-- requested_num_streams can also be amplified via max_streams * max_streams_to_max_threads_ratio
+-- in the planner, independent of max_streams_for_merge_tree_reading (which defaults to 0). That
+-- path must be bounded too, otherwise the same pipes.reserve throws the same std::length_error.
+SELECT countIf(explain LIKE '%MergeTreeCommitOrderSequentialSource%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT count() FROM
+    (
+        (SELECT x FROM t_stream_max_streams_clamp GROUP BY ALL)
+        EXCEPT DISTINCT
+        (SELECT x FROM t_stream_max_streams_clamp STREAM GROUP BY ALL)
+    )
+    SETTINGS max_threads = 1025,
+             max_streams_to_max_threads_ratio = 1e12,
              allow_asynchronous_read_from_io_pool_for_merge_tree = 1
 );
 
