@@ -67,6 +67,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
     bool format_schema_describes_parsed_data = true;
+    bool format_allows_variable_number_of_columns = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -89,6 +90,7 @@ String getInsertDataSchemaMismatchDescription(
         format_has_strict_order_of_columns = schema_reader->hasStrictOrderOfColumns();
         format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
         format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
+        format_allows_variable_number_of_columns = schema_reader->allowVariableNumberOfColumns();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -233,10 +235,17 @@ String getInsertDataSchemaMismatchDescription(
     }
     else
     {
-        /// Positional formats: the number of columns must line up and each position must be compatible.
-        corresponds = inferred.size() == expected.size();
+        /// Positional formats: each position must be compatible. Formats that legally accept a variable
+        /// number of columns (`JSONCompactColumns` always; `CSV` / `TSV` / `CustomSeparated` /
+        /// `JSONCompactEachRow` when their `*_allow_variable_number_of_columns` setting is enabled) may
+        /// present fewer or more columns than the destination — missing trailing columns are filled with
+        /// defaults and/or extra columns are skipped — so for them a differing column count is not by
+        /// itself a structure mismatch; only the overlapping positions are compared. For all other
+        /// positional formats a differing count is a genuine mismatch.
+        if (!format_allows_variable_number_of_columns && inferred.size() != expected.size())
+            corresponds = false;
         for (auto it_inferred = inferred.begin(), it_expected = expected.begin();
-             corresponds && it_inferred != inferred.end();
+             corresponds && it_inferred != inferred.end() && it_expected != expected.end();
              ++it_inferred, ++it_expected)
         {
             if (!types_are_compatible(it_inferred->type, it_expected->type))

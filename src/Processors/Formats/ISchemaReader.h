@@ -49,6 +49,14 @@ public:
     /// against an expected one must not draw any conclusion from it.
     virtual bool schemaDescribesParsedData() const { return true; }
 
+    /// True if the format legally accepts a number of columns that differs from the destination: missing
+    /// trailing columns are filled with defaults and/or extra columns are skipped, so the number of columns
+    /// present in the data is not by itself a reliable structure-mismatch signal. It is always true for the
+    /// columnar `JSONCompactColumns` format and setting-gated for `CSV` / `TSV` / `CustomSeparated` /
+    /// `JSONCompactEachRow` (their `*_allow_variable_number_of_columns` settings). It is also consulted by
+    /// `IRowSchemaReader::readSchema` to decide whether rows with a varying number of values are allowed.
+    virtual bool allowVariableNumberOfColumns() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
@@ -118,8 +126,6 @@ protected:
     virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
-
-    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     size_t field_index{};
 

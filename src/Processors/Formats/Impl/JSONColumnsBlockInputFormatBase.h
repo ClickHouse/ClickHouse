@@ -97,6 +97,11 @@ public:
 
     size_t getNumRowsRead() const override { return total_rows_read; }
 
+    /// The columnar JSON formats read whatever columns are present and fill the columns missing from the
+    /// input with defaults (see `JSONColumnsBlockInputFormatBase::read`), so the number of columns in the
+    /// data need not match the destination.
+    bool allowVariableNumberOfColumns() const override { return true; }
+
 private:
     NamesAndTypesList readSchema() override;
 
