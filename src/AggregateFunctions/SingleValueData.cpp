@@ -1368,27 +1368,29 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         /// must fail cleanly with CANNOT_READ_ALL_DATA rather than attempting a huge allocation
         /// up front (which can trip the memory tracker and fail with MEMORY_LIMIT_EXCEEDED).
         ///
-        /// When the existing buffer is already large enough, read into it directly. Otherwise
-        /// stage the payload in a temporary heap buffer that grows only as bytes actually
-        /// arrive. The heap releases its intermediate buffers as it grows, unlike the Arena,
+        /// Stage the payload in a temporary heap buffer -- which grows only as bytes actually
+        /// arrive -- only when it is really necessary, i.e. when the destination buffer is not
+        /// already large enough (`capacity < bytes_to_read`) AND the whole payload is not yet
+        /// present in the read buffer (`buf.available() < bytes_to_read`). Only in that case
+        /// would allocating `bytes_to_read` up front risk a huge allocation for a truncated
+        /// state. The heap releases its intermediate buffers as it grows, unlike the Arena,
         /// which never frees (see Arena::allocContinue) -- so a valid large state is not
-        /// inflated by every intermediate reallocation. Only once the whole payload has arrived
-        /// do we make a single Arena allocation (rounded up to a power of two) and copy into it.
+        /// inflated by every intermediate reallocation. Once the whole payload has arrived we
+        /// make a single Arena allocation (rounded up to a power of two) and copy into it.
+        ///
+        /// In every other case the bytes either already fit in the existing buffer or are
+        /// proven to physically exist in the read buffer, so we allocate exactly what is needed
+        /// and read directly, avoiding the extra staging copy and its transient memory peak.
+        /// This keeps the common fresh-state / on-disk / distributed read path -- where
+        /// `capacity == 0` but the whole value is already buffered -- on a single arena
+        /// allocation plus one direct read, instead of a heap growth plus two full copies.
         ///
         /// The staging buffer must use StringWithMemoryTracking rather than a plain String:
         /// allocations made through the global operator new are only counted against the
         /// memory limit, not refused when it is exceeded, so a plain String could stage an
         /// arbitrarily large payload past `max_memory_usage`. AllocatorWithMemoryTracking
         /// enforces the limit as the buffer grows, matching the Arena's behavior.
-        ///
-        /// The direct-read reuse branch only needs `capacity >= bytes_to_read`: in the normal
-        /// zero-terminated format the buffer holds exactly `size - 1 == bytes_to_read` content
-        /// bytes. Requiring `capacity >= size` here would force every valid payload whose length
-        /// is exactly a power of two (so `capacity == bytes_to_read` after allocation) back
-        /// through the staging path on every subsequent read, re-copying the whole value and
-        /// regressing valid large reads. The rare legacy-format fixup below, which appends one
-        /// byte at index `size - 1`, grows the buffer once when there is no room for it.
-        if (capacity < bytes_to_read)
+        if (capacity < bytes_to_read && buf.available() < bytes_to_read)
         {
             StringWithMemoryTracking tmp;
             UInt32 bytes_read = 0;
@@ -1417,6 +1419,14 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         }
         else
         {
+            /// `allocateLargeDataIfNeeded` is a no-op when the existing buffer already fits
+            /// (`capacity >= bytes_to_read`), so this reuses the buffer for the direct-read
+            /// path and only allocates for a fresh state whose value is already buffered.
+            /// It only reserves `bytes_to_read` (not `size`): in the normal zero-terminated
+            /// format the buffer holds exactly `size - 1 == bytes_to_read` content bytes. The
+            /// rare legacy-format fixup below, which appends one byte at index `size - 1`,
+            /// grows the buffer once when a power-of-two payload leaves no room for it.
+            allocateLargeDataIfNeeded(bytes_to_read, arena);
             buf.readStrict(large_data, bytes_to_read);
             readChar(last_char, buf);
         }
