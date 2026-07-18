@@ -228,35 +228,61 @@ constexpr size_t MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET = 7;
 /// ADVANCED path and these streams are present whatever max_dynamic_paths is.
 constexpr size_t OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS = 3;
 
-/// Worst-case number of on-disk data streams the dynamic structure of a type can materialize when a column
-/// of it is written, bounded by the type's own write-time capacity limits - the limits ColumnDynamic /
-/// ColumnObject enforce whatever the data looks like (types beyond max_dynamic_types go to the shared
-/// variant, paths beyond max_dynamic_paths go to the shared data, both of which are statically enumerable
-/// streams). A Dynamic column can materialize up to max_dynamic_types variants (plus the shared variant),
-/// each with its discriminator-driven data streams; a JSON column up to max_dynamic_paths dynamic paths,
-/// each stored as a Dynamic value of its own. Each potential variant / path is priced at a couple of
-/// streams: a variant is one data stream (two cover a level of nesting such as Array or Nullable), a path
-/// is a structure stream plus the data streams of its - overwhelmingly single - resolved type per part;
-/// a path that materializes many concrete types inside one part can exceed this, but the dominant,
-/// capacity-bounded term is the number of paths. A JSON column also ALWAYS writes its shared-data streams,
-/// whatever its data or max_dynamic_paths is (with max_dynamic_paths = 0 every path goes to the shared
-/// data), and the default serialization cannot enumerate them without a real column, so they are added
+/// Data-independent streams a Dynamic column writes around its variants, whatever the data: the
+/// DynamicStructure stream, and the variant discriminators prefix + discriminators streams
+/// (SerializationDynamic::enumerateStreams -> SerializationVariant::enumerateStreams). The prefix stream only
+/// exists with specialized prefix/suffix substreams, so this over-counts by one when it does not - a safe
+/// direction for an upper bound.
+constexpr size_t DYNAMIC_BASE_STREAMS = 3;
+
+/// Worst-case number of on-disk streams a single materialized variant of a Dynamic value writes. A variant's
+/// concrete type is runtime data, invisible in the declared Dynamic / JSON type, so it cannot be enumerated
+/// statically: a scalar variant is one data stream, and the nested wrappers a synthesized value commonly
+/// carries - Nullable, Array, Map, a small Tuple - add a null-map / offsets / element stream each. An
+/// arbitrarily wide synthesized composite variant (for example CAST(tuple(<many columns>) AS Dynamic)) can
+/// write more than this and has no bound derivable from the declared type; that residual is covered by the
+/// soft reservation throttle, which always admits a single merge (see MergeMemoryReservation and the rebuilt
+/// projection note in estimateNeededMemoryForMerge).
+constexpr size_t STREAMS_PER_DYNAMIC_VARIANT = 4;
+
+/// Worst-case number of on-disk streams the dynamic structure of a type materializes when a column of it is
+/// written, bounded by the type's own write-time capacity limits - the caps ColumnDynamic / ColumnObject
+/// enforce whatever the data looks like (concrete types beyond max_dynamic_types go to the shared variant,
+/// paths beyond max_dynamic_paths go to the shared data). A Dynamic of max_dynamic_types can materialize that
+/// many typed variants plus one shared variant; each of them is a value serialized by its own type's
+/// serialization (SerializationVariant enumerates one stream group per variant), which can itself span more
+/// than one stream, so a variant is priced at STREAMS_PER_DYNAMIC_VARIANT rather than a single stream. A JSON
+/// column stores each of its up to max_dynamic_paths dynamic paths as a full Dynamic value of the JSON's own
+/// max_dynamic_types (SerializationObject routes every dynamic path through SerializationDynamic), so a path
+/// costs a whole Dynamic capacity, not a couple of streams. A JSON column also ALWAYS writes its shared-data
+/// streams, whatever its data or max_dynamic_paths is (with max_dynamic_paths = 0 every path goes to the
+/// shared data), and the default serialization cannot enumerate them without a real column, so they are added
 /// here: up to object_shared_data_buckets_for_wide_part buckets (the wide-part count is never below the
 /// compact-part one), each up to MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET streams, plus the
-/// OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS the ADVANCED serialization writes once per column. Composite types are
-/// walked recursively, so Tuple(UInt64, JSON) or Array(Dynamic) are priced by their nested semi-structured
-/// components. Zero for types without dynamic structure.
+/// OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS the ADVANCED serialization writes once per column. Composite types
+/// are walked recursively (forEachChild is a full descent), so Tuple(UInt64, JSON) or Array(Dynamic) are
+/// priced by their nested semi-structured components. Zero for types without dynamic structure.
 size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettings & settings)
 {
     const UInt64 shared_data_buckets = settings[MergeTreeSetting::object_shared_data_buckets_for_wide_part];
 
+    /// Worst-case streams a Dynamic value of at most max_dynamic_types variants writes.
+    const auto dynamic_capacity = [](size_t max_dynamic_types) -> size_t
+    {
+        /// The base streams plus one worst-case variant footprint for each typed variant and the shared variant.
+        return DYNAMIC_BASE_STREAMS + (max_dynamic_types + 1) * STREAMS_PER_DYNAMIC_VARIANT;
+    };
+
     const auto node_capacity = [&](const IDataType & node) -> size_t
     {
         if (const auto * dynamic = typeid_cast<const DataTypeDynamic *>(&node))
-            return 2 + 2 * (dynamic->getMaxDynamicTypes() + 1);
+            return dynamic_capacity(dynamic->getMaxDynamicTypes());
         if (const auto * object = typeid_cast<const DataTypeObject *>(&node))
-            return shared_data_buckets * MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET
-                + OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS + 4 * object->getMaxDynamicPaths();
+        {
+            const size_t shared_data_streams
+                = shared_data_buckets * MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET + OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS;
+            return shared_data_streams + object->getMaxDynamicPaths() * dynamic_capacity(object->getMaxDynamicTypes());
+        }
         return 0;
     };
 
