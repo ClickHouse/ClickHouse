@@ -14,6 +14,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -27,7 +28,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <algorithm>
-#include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -188,9 +189,6 @@ String getInsertDataSchemaMismatchDescription(
     /// may differ from the destination, so match them against the expected columns by name. Strict-
     /// order formats (`TSV`, `CSV`, `Values`) yield positional placeholder names like `c1`, `c2`, ...
     /// that do not line up with the destination column names, so compare those positionally.
-    std::unordered_map<std::string_view, DataTypePtr> expected_by_name;
-    for (const auto & column : expected)
-        expected_by_name.emplace(column.name, column.type);
 
     /// Whether the format identifies fields by name is decided by the format itself, mirroring the real
     /// parser. Two cases map fields to columns by name: formats that can read a subset of the destination
@@ -201,32 +199,65 @@ String getInsertDataSchemaMismatchDescription(
     /// file's names and maps columns positionally even though schema inference still reports those names.
     const bool format_reads_by_name = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 
-    const bool match_by_name = expected_by_name.size() == expected.size()
+    /// A destination with duplicate column names cannot be matched by name unambiguously (a degenerate
+    /// case that does not occur for a real table); compare it positionally, as before.
+    std::unordered_set<std::string_view> expected_names;
+    for (const auto & column : expected)
+        expected_names.insert(column.name);
+
+    const bool match_by_name = expected_names.size() == expected.size()
         && (format_reads_by_name || !format_has_strict_order_of_columns);
 
     bool corresponds = true;
     if (match_by_name)
     {
+        /// Resolve names the same way the real parser does — through `CaseAwareBlockNameMap`, which honors
+        /// `input_format_column_name_matching_mode` (`auto` by default: an exact-case match first, then a
+        /// case-insensitive one). A plain exact lookup would miss, for example, a `JSONEachRow` field `A`
+        /// destined for a column `a`, dropping the diagnostic for a mismatch the parser does detect.
+        std::vector<DataTypePtr> expected_types;
+        expected_types.reserve(expected.size());
+        CaseAwareBlockNameMap expected_by_name(format_settings.input_format_column_matching_case_sensitivity);
+        expected_by_name.setSize(expected.size());
+        for (const auto & column : expected)
+        {
+            expected_by_name.add(column.name, expected_types.size());
+            expected_types.push_back(column.type);
+        }
+
         /// Named formats may legitimately omit columns — they are filled with defaults — and reorder
         /// them, so do not require the counts to be equal: only the columns actually present in the input
         /// have to be type-compatible with their destination. A column missing from the input is not a
         /// structure mismatch.
         for (const auto & column : inferred)
         {
-            auto expected_column = expected_by_name.find(column.name);
-            if (expected_column == expected_by_name.end())
+            size_t position = CaseAwareBlockNameMap::NOT_FOUND;
+            try
+            {
+                position = expected_by_name.get(column.name);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// A field name that resolves ambiguously under case-insensitive matching (the destination
+                /// has columns differing only in case) cannot be attributed to a single column. This is a
+                /// rare, pathological destination; stay on the low-false-positive side and do not treat it
+                /// as a structure mismatch, so it is Ok to ignore the exception here.
+                continue;
+            }
+
+            if (position == CaseAwareBlockNameMap::NOT_FOUND)
             {
                 /// A field present in the input but unknown to the destination. When
                 /// `input_format_skip_unknown_fields` is enabled (the default), the parser legally
                 /// skips such fields, so this is not a structure mismatch. When it is disabled, the
-                /// parser rejects the row precisely because of the unknown field, and pointing out
-                /// the differing structure is accurate.
+                /// parser rejects the row precisely because of the unknown field (`INCORRECT_DATA`),
+                /// and pointing out the differing structure is accurate.
                 if (format_settings.skip_unknown_fields)
                     continue;
                 corresponds = false;
                 break;
             }
-            if (!types_are_compatible(column.type, expected_column->second))
+            if (!types_are_compatible(column.type, expected_types[position]))
             {
                 corresponds = false;
                 break;
