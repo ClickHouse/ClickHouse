@@ -46,8 +46,10 @@ constexpr size_t INSERT_ALL_BATCH_SIZE = 500;
 /// chunks, so the sink flushes by serialized request size in addition to the row-count cap. A single
 /// row whose serialized entry plus the request envelope alone exceeds this cannot be split and is
 /// refused with a clear error instead of letting BigQuery reject the whole request with an opaque
-/// `invalid`.
-constexpr size_t INSERT_ALL_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+/// `invalid`. The documented limit is decimal (10,000,000 bytes), not 10 MiB, so budgeting against
+/// `10 * 1024 * 1024` would still let bodies in the 10,000,001..10,485,760-byte range through to a
+/// remote rejection.
+constexpr size_t INSERT_ALL_MAX_REQUEST_BYTES = 10'000'000;
 
 /// The `insertAll` request body is `{"kind":"bigquery#tableDataInsertAllRequest","rows":[<entry>,...]}`
 /// (see `BigQueryClient::insertAll`); these are the fixed bytes around the rows array, and consecutive

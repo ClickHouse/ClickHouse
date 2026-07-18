@@ -610,13 +610,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     )
                     return
 
-            # BigQuery's streaming API rejects requests larger than 10 MB.
-            if len(body) > 10 * 1024 * 1024:
+            # BigQuery's streaming API rejects requests larger than 10 MB (decimal, 10,000,000 bytes).
+            if len(body) > 10_000_000:
                 self.send_json(
                     *google_error(
                         413,
                         "REQUEST_TOO_LARGE",
-                        f"Request payload size exceeds the limit: {len(body)} bytes (max 10485760)",
+                        f"Request payload size exceeds the limit: {len(body)} bytes (max 10000000)",
                     )
                 )
                 return

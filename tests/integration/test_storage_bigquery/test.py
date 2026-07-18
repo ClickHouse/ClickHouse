@@ -504,7 +504,7 @@ def test_insert_flushes_by_bytes():
     # ~11 MB total across 16 rows (well below the 500-row cap), split into more than one request,
     # each below BigQuery's 10 MB limit.
     assert len(requests) > 1
-    assert all(r["body_bytes"] <= 10 * 1024 * 1024 for r in requests)
+    assert all(r["body_bytes"] <= 10_000_000 for r in requests)
     assert sum(r["rows"] for r in requests) == 16
     assert node.query(f"SELECT count() FROM {bq('writable')}") == "16\n"
 
@@ -523,7 +523,7 @@ def test_insert_large_single_row():
     requests = mock_stats()["insert_requests"]
     assert len(requests) == 1
     assert requests[0]["rows"] == 1
-    assert 9500000 < requests[0]["body_bytes"] <= 10 * 1024 * 1024
+    assert 9500000 < requests[0]["body_bytes"] <= 10_000_000
     assert node.query(f"SELECT count() FROM {bq('writable')}") == "1\n"
 
 
