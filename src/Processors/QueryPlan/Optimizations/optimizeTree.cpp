@@ -565,6 +565,7 @@ void optimizeTreeSecondPass(
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
+    bool lazy_materialization_applied = false;
     if (optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final)
     {
         chassert(stack.empty());
@@ -577,6 +578,8 @@ void optimizeTreeSecondPass(
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
+                    lazy_materialization_applied = true;
+
                     /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
                     /// (on leave) in the transformed subtree.
                     Optimization::ExtraSettings extra{};
@@ -611,6 +614,30 @@ void optimizeTreeSecondPass(
                 optimizeLazyFinal(stack, query_plan, nodes, optimization_settings);
 
             stack.pop_back();
+        }
+    }
+
+    /// Lazy materialization and the post-lazy `tryMergeFilters` pass replace `FilterStep`s
+    /// without carrying over the QCC key that `updateQueryConditionCache` set earlier in
+    /// this pass. Re-walk the plan so the surviving main-branch `FilterStep` gets the key.
+    if (optimization_settings.use_query_condition_cache && lazy_materialization_applied)
+    {
+        Stack qcc_stack;
+        qcc_stack.push_back({.node = &root});
+        while (!qcc_stack.empty())
+        {
+            updateQueryConditionCache(qcc_stack, optimization_settings);
+
+            auto & qcc_frame = qcc_stack.back();
+            if (qcc_frame.next_child < qcc_frame.node->children.size())
+            {
+                auto * next_node = qcc_frame.node->children[qcc_frame.next_child];
+                ++qcc_frame.next_child;
+                qcc_stack.push_back({.node = next_node});
+                continue;
+            }
+
+            qcc_stack.pop_back();
         }
     }
 
