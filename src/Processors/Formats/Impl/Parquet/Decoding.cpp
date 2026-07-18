@@ -1148,6 +1148,11 @@ double Dictionary::getAverageValueSize() const
     return 0;
 }
 
+size_t Dictionary::allocatedBytes() const
+{
+    return decompressed_buf.allocated_bytes() + offsets.allocated_bytes() + (col ? col->allocatedBytes() : 0);
+}
+
 void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type)
 {
     chassert(mode == Mode::Uninitialized);

@@ -9,11 +9,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The dictionary-filter push-down is eligible based on the *compressed* on-disk dictionary page size
 # (`input_format_parquet_dictionary_filter_push_down`), which does not bound the *decoded* dictionary.
 # A large (or highly compressible) dictionary can therefore decode to far more than that limit. To keep
-# the default-on optimization within `input_format_parquet_memory_high_watermark`, both the decoded
+# the default-on optimization within `input_format_parquet_memory_high_watermark`, the decoded
+# dictionary is charged to the pruning stage's per-reader memory budget, and both the decoded
 # dictionary page (before it is decompressed, in `decodeDictionaryPage`) and the decoded value set
-# built for hashing (in `hashDictionaryValues`) are capped against that watermark; when the dictionary
-# would exceed it, pruning is skipped and the reader falls back to a full scan. This test checks that
-# the fallback keeps results correct and disables pruning under a tight memory budget.
+# built for hashing (in `hashDictionaryValues`) are capped against the memory *still available* for
+# pruning (the watermark minus what the stage already holds); when the dictionary would exceed it,
+# pruning is skipped and the reader falls back to a full scan. This test checks that the fallback keeps
+# results correct and disables pruning under a tight memory budget.
 
 DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 

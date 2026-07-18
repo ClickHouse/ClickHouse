@@ -116,7 +116,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     /// Finish the stage.
     if (stage == ReadStage::BloomFilterBlocksOrDictionary)
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group))
+        if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryBudget(diff)))
             stage = ReadStage::Deliver; // skip the row group
         for (auto & c : row_group.columns)
         {
@@ -811,6 +811,22 @@ void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
     }
 }
 
+size_t ReadManager::pruningMemoryBudget(const MemoryUsageDiff & diff) const
+{
+    size_t watermark = reader.options.format.parquet.memory_high_watermark;
+    if (watermark == 0)
+        return 0; /// Unbounded (the sentinel understood by decodeDictionaryPage / hashDictionaryValues).
+
+    size_t idx = size_t(ReadStage::BloomFilterBlocksOrDictionary);
+    /// Live pruning memory = what previous batches already flushed to the stage counter, plus what
+    /// this batch has charged so far (dictionaries decoded earlier in the same batch, prefetches).
+    ssize_t live = ssize_t(stages[idx].memory_usage.load(std::memory_order_relaxed)) + diff.by_stage[idx];
+    size_t live_bytes = live > 0 ? size_t(live) : 0;
+    size_t remaining = live_bytes < watermark ? watermark - live_bytes : 0;
+    /// Clamp to at least 1: a literal 0 would be read as "unbounded" by the callers.
+    return std::max<size_t>(remaining, 1);
+}
+
 void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
@@ -828,13 +844,20 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    /// Cap the decoded dictionary size so the default-on pruning stays within the
-                    /// reader's memory budget (see decodeDictionaryPage / hashDictionaryValues). If
-                    /// the dictionary is too large to decode within budget, skip pruning for this
-                    /// column: `applyBloomAndDictionaryFilters` then treats it as a full scan, and
-                    /// the dictionary is decoded later (throttled) on the data-read path if needed.
-                    if (!reader.decodeDictionaryPage(column, column_info, reader.options.format.parquet.memory_high_watermark))
+                    /// Cap the decoded dictionary size against the memory still available for pruning
+                    /// so the default-on pruning stays within the reader's memory budget (see
+                    /// decodeDictionaryPage / hashDictionaryValues). If the dictionary is too large to
+                    /// decode within budget, skip pruning for this column: `applyBloomAndDictionaryFilters`
+                    /// then treats it as a full scan, and the dictionary is decoded later (throttled) on
+                    /// the data-read path if needed.
+                    if (!reader.decodeDictionaryPage(column, column_info, pruningMemoryBudget(diff)))
                         column.use_dictionary_filter = false;
+                    else
+                        /// Charge the decoded dictionary to the pruning stage so it participates in the
+                        /// per-stage memory accounting `scheduleTasksIfNeeded` enforces: while it is
+                        /// live it shrinks `pruningMemoryBudget` and throttles how many row groups can
+                        /// prune in parallel. Released in `clearColumnChunk` when the chunk is done.
+                        column.dictionary_memory = MemoryUsageToken(column.dictionary.allocatedBytes(), &diff);
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
@@ -910,6 +933,7 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     /// because stages can be skipped e.g. if the row group was filtered out by bloom filter.
 
     column.data_pages_prefetch.reset(&diff);
+    column.dictionary_memory.reset(&diff);
     column.dictionary.reset();
     for (auto & page : column.data_pages)
         page.prefetch.reset(&diff);

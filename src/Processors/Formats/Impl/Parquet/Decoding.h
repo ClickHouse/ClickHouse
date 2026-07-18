@@ -46,6 +46,9 @@ struct Dictionary
     void reset();
     bool isInitialized() const;
     double getAverageValueSize() const;
+    /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
+    /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
+    size_t allocatedBytes() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
 };

@@ -352,6 +352,11 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
+        /// When the dictionary is decoded on the pruning path (`BloomFilterBlocksOrDictionary` stage),
+        /// its decoded size is charged here so the pruning memory participates in the reader's per-stage
+        /// budget (see `ReadManager::runTask` / `pruningMemoryBudget` / `clearColumnChunk`). Empty when
+        /// the dictionary is decoded later on the throttled data-read path instead.
+        MemoryUsageToken dictionary_memory;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -539,7 +544,10 @@ struct Reader
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
     /// Returns false if the row group was filtered out and should be skipped.
-    bool applyBloomAndDictionaryFilters(RowGroup & row_group);
+    /// `pruning_memory_budget` bounds the transient value set built for dictionary filtering; it is
+    /// the memory still available for pruning (the high watermark minus what the pruning stage already
+    /// holds), or 0 when unbounded. See `ReadManager::pruningMemoryBudget`.
+    bool applyBloomAndDictionaryFilters(RowGroup & row_group, size_t pruning_memory_budget);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);

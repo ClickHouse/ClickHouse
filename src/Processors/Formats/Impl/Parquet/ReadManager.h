@@ -116,6 +116,11 @@ private:
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
+    /// Memory the dictionary-filter pruning path may still use: the reader's memory high watermark
+    /// minus what the `BloomFilterBlocksOrDictionary` stage already holds (decoded dictionaries
+    /// charged in `runTask`, plus this batch's in-flight `diff`). Returns 0 when the watermark is 0
+    /// (unbounded); otherwise at least 1, so 0 unambiguously means "unbounded" for the callers.
+    size_t pruningMemoryBudget(const MemoryUsageDiff & diff) const;
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
