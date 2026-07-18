@@ -1432,7 +1432,7 @@ flowchart LR
 
 ### Method byte values {#method-byte-values}
 
-These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output uses the server's default codec (`ZSTD(3)`), and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
 
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
