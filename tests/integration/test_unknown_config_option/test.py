@@ -1213,6 +1213,57 @@ def test_metrika_default_include_source_top_level_include_accepted(
         node_include_from_external.query("SYSTEM RELOAD CONFIG")
 
 
+def test_top_level_include_with_nested_include_accepted(
+    start_include_from_external_cluster,
+):
+    # Regression for the "recursive top-level `<include>`" concern: a top-level `<include incl="X"/>`
+    # imports the *children* of `<X>` into the root, and one of those children is itself a nested
+    # `<include incl="nested_group"/>`. `ConfigProcessor::doIncludesRecursive` does NOT expand that
+    # nested `<include>` within the same pass: for an element named `include` it splices the imported
+    # children into the *parent* and leaves `included_something` false, and the imported siblings are
+    # inserted *before* the current node, so the sibling-pointer traversal never revisits them. The
+    # nested `<include>` therefore survives in the merged config as a literal top-level `include`
+    # element (which is exempt via `known_complex_sections`), while `<nested_group>`'s own children
+    # (`<deeply_nested_section>`) are NOT imported and never become top-level keys. Consequently the
+    # validator has nothing to falsely reject here, and this previously valid configuration must keep
+    # starting. (Verified end-to-end against `ConfigProcessor::processConfig`: the merged top-level
+    # keys are exactly `include_from`, the directly-imported `my_included_section`, and the literal
+    # `include`; `deeply_nested_section` is absent.)
+    external_source_path = "/etc/clickhouse-server/external_nested_include_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<imported_group>"
+        "<my_included_section>imported value</my_included_section>"
+        '<include incl="nested_group"/>'
+        "</imported_group>"
+        "<nested_group>"
+        "<deeply_nested_section>nested value</deeply_nested_section>"
+        "</nested_group>"
+        "</clickhouse>"
+    )
+    # The top-level `<include incl="imported_group"/>` imports `<my_included_section>` and the nested
+    # `<include incl="nested_group"/>` into the root.
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include_nested.xml"
+    include_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        '<include incl="imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: the directly-imported `my_included_section` is exempted, the surviving
+        # literal `include` is a known section, and the nested group's children never enter the config.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
 def test_overridden_include_from_source_does_not_exempt_unknown_key(
     start_include_from_external_cluster,
 ):
