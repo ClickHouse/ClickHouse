@@ -1154,17 +1154,17 @@ SELECT * FROM VALUES(
     /// `pg_namespace`, `pg_class` and `pg_attribute` combine a fixed set of built-in catalog rows (used by
     /// client type introspection) with rows derived from ClickHouse's own `system.databases`, `system.tables`
     /// and `system.columns`, so that databases, tables and columns of this server are visible through the
-    /// PostgreSQL catalog. A namespace OID is a deterministic hash of the database name (databases are few,
-    /// so hash collisions are negligible). Relation OIDs, on the other hand, are joined between `pg_class` and
-    /// `pg_attribute` (`fetchPostgreSQLTableStructure` resolves a table through `pg_class.oid` and then pulls
-    /// its columns by `pg_attribute.attrelid`), so a collision would merge the column sets of two tables and
-    /// corrupt schema inference for both. A truncated hash is not collision-free enough at realistic catalog
-    /// sizes, so relation OIDs are assigned a dense, unique number per `(database, table)` pair in the shared
-    /// `pg_class_oids` view. Because that view is unfiltered, the number for a given table is the same in every
-    /// reference within a query, so `pg_class.oid` and `pg_attribute.attrelid` always line up. OID ranges are
-    /// offset (namespaces into [1e9, 2e9), relations into [2e9, 3e9)) to avoid colliding with the small
-    /// built-in OIDs. In addition, tables of the connected database are also exposed under the default
-    /// `public` schema (OID 2200), so that clients that do not qualify a table with a schema - which is what
+    /// PostgreSQL catalog. Both namespace (database) and relation (table) OIDs are joined between catalog
+    /// views - `fetchPostgreSQLTableStructure` resolves a schema-qualified table through
+    /// `pg_namespace.oid` -> `pg_class.relnamespace` and then pulls its columns by `pg_attribute.attrelid` -
+    /// so a hash collision would merge two databases or two tables and corrupt schema inference for both. A
+    /// truncated hash is not collision-free enough at realistic catalog sizes, so both are assigned a dense,
+    /// unique number in shared views (`pg_namespace_oids` per database, `pg_class_oids` per `(database, table)`
+    /// pair) via `row_number`. Because those views are unfiltered, the number for a given database or table is
+    /// the same in every reference within a query, so the joins always line up. OID ranges are offset
+    /// (namespaces into [1e9, 2e9), relations into [2e9, 3e9)) to avoid colliding with the small built-in
+    /// OIDs. In addition, tables of the connected database are also exposed under the default `public` schema
+    /// (OID 2200), so that clients that do not qualify a table with a schema - which is what
     /// `fetchPostgreSQLTableStructure` does by default - still resolve it in the current database.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_oids AS
 SELECT
@@ -1172,6 +1172,11 @@ SELECT
     name,
     toUInt32(row_number() OVER (ORDER BY database, name) + 2000000000) AS oid
 FROM system.tables)");
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace_oids AS
+SELECT
+    name,
+    toUInt32(row_number() OVER (ORDER BY name) + 1000000000) AS oid
+FROM system.databases)");
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
 SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
@@ -1183,8 +1188,8 @@ SELECT oid, nspname FROM VALUES(
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
-SELECT toUInt32(cityHash64('ns', name) % 1000000000 + 1000000000) AS oid, name AS nspname
-FROM system.databases
+SELECT oid, name AS nspname
+FROM pg_namespace_oids
 WHERE name NOT IN ('pg_catalog', 'public', 'information_schema', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
@@ -1201,11 +1206,12 @@ SELECT oid, relname, relnamespace, relkind FROM VALUES(
 )
 UNION ALL
 SELECT
-    oid,
-    name AS relname,
-    toUInt32(cityHash64('ns', database) % 1000000000 + 1000000000) AS relnamespace,
+    oids.oid,
+    oids.name AS relname,
+    ns.oid AS relnamespace,
     'r' AS relkind
-FROM pg_class_oids
+FROM pg_class_oids AS oids
+INNER JOIN pg_namespace_oids AS ns ON oids.database = ns.name
 UNION ALL
 SELECT
     oid,
