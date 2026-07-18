@@ -529,13 +529,15 @@ struct Reader
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
-    /// `max_decoded_bytes`, when non-zero, caps the *decoded* dictionary page size for the
-    /// dictionary-filter pruning path: if decompressing the page would exceed it, decoding is
-    /// skipped and false is returned (without touching the page), so the caller can fall back to a
-    /// full scan for that column. This bounds a highly compressible dictionary whose decoded size
-    /// the compressed-page limit alone cannot bound; see the memory-budget note in
-    /// `hashDictionaryValues`. Pass 0 (the default) on the data-read path, where the dictionary
-    /// must be decoded regardless of size.
+    /// `max_decoded_bytes`, when non-zero, caps the fully decoded dictionary's memory footprint for
+    /// the dictionary-filter pruning path: the raw page is rejected before decompression if it already
+    /// exceeds the budget, and after decoding the true footprint (`Dictionary::allocatedBytes`, which
+    /// includes the per-entry state `Dictionary::decode` allocates on top of the page bytes) is
+    /// re-checked and the dictionary dropped if it does not fit. In both cases false is returned so the
+    /// caller can fall back to a full scan for that column. This bounds a highly compressible dictionary
+    /// whose decoded size the compressed-page limit alone cannot bound; see the memory-budget note in
+    /// `hashDictionaryValues`. Pass 0 (the default) on the data-read path, where the dictionary must be
+    /// decoded regardless of size.
     bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info, size_t max_decoded_bytes = 0);
 
     /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
@@ -544,9 +546,10 @@ struct Reader
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
     /// Returns false if the row group was filtered out and should be skipped.
-    /// `pruning_memory_budget` bounds the transient value set built for dictionary filtering; it is
-    /// the memory still available for pruning (the high watermark minus what the pruning stage already
-    /// holds), or 0 when unbounded. See `ReadManager::pruningMemoryBudget`.
+    /// `pruning_memory_budget` bounds the value sets built for dictionary filtering; it is the memory
+    /// still available for pruning (the high watermark minus what the pruning stage already holds), or
+    /// 0 when unbounded. It is shared across all dictionary lookups in the call, so several
+    /// dictionary-filtered columns cannot each use the full budget. See `ReadManager::pruningMemoryBudget`.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group, size_t pruning_memory_budget);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);

@@ -931,27 +931,45 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
         return false;
     }
 
-    /// Dictionary-filter pruning path: bound the decoded dictionary size *before* decompressing it.
-    /// `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary page
+    /// Dictionary-filter pruning path: bound the decoded dictionary size *before* it is charged and
+    /// used. `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary page
     /// (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
     /// still decompress to many times that. On the pruning path (`BloomFilterBlocksOrDictionary`
     /// stage) `max_decoded_bytes` is the memory still available for pruning - the reader's memory
     /// high watermark minus what the stage already holds (`ReadManager::pruningMemoryBudget`) - so
     /// several row groups pruning in parallel cannot collectively overshoot the watermark: each
     /// decoded dictionary is charged to the stage (in `ReadManager::runTask`), shrinking the budget
-    /// left for the next one. If the decoded page would exceed the remaining budget, skip it and let
+    /// left for the next one. If the dictionary does not fit the remaining budget, skip it and let
     /// the caller fall back to a full scan (a missed optimization, never a wrong result). The
     /// complementary cap on the decoded value set built from the dictionary lives in
     /// `hashDictionaryValues`. `max_decoded_bytes == 0` means unbounded (the data-read path, where the
     /// dictionary is decoded lazily and throttled by the normal column-data memory accounting).
     if (max_decoded_bytes != 0)
     {
-        Int64 decoded_bytes = std::max(header.uncompressed_page_size, header.compressed_page_size);
-        if (decoded_bytes < 0 || size_t(decoded_bytes) > max_decoded_bytes)
+        /// Coarse pre-decode gate: reject before decompressing if even the raw page payload already
+        /// exceeds the budget, to avoid decompressing a page we would only throw away.
+        Int64 page_bytes = std::max(header.uncompressed_page_size, header.compressed_page_size);
+        if (page_bytes < 0 || size_t(page_bytes) > max_decoded_bytes)
             return false;
     }
 
     decodeDictionaryPageImpl(header, page_data, column, column_info);
+
+    /// Exact post-decode check. `Dictionary::decode` allocates per-entry state *on top of* the
+    /// decompressed page bytes the gate above measured - a `StringPlain` offsets array, or a fully
+    /// decoded `col` for types that need conversion (see `Dictionary::decode` /
+    /// `Dictionary::allocatedBytes`) - so the true footprint can be several times the page payload
+    /// (e.g. a bit-packed dictionary decoded into a wider column). Verify the real footprint against
+    /// the budget before the dictionary is charged (in `ReadManager::runTask`) and used for pruning,
+    /// and drop it if it does not fit, so a single decoded dictionary never overshoots the pruning
+    /// budget. The caller then falls back to a full scan; the dictionary is re-decoded later,
+    /// unbounded and throttled, on the data-read path if the column is actually read.
+    if (max_decoded_bytes != 0 && column.dictionary.allocatedBytes() > max_decoded_bytes)
+    {
+        column.dictionary.reset();
+        return false;
+    }
+
     return true;
 }
 
@@ -1090,7 +1108,7 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
 static std::optional<HashSet<UInt64>> hashDictionaryValues(
     const parq::FileMetaData & file_metadata, const ReadOptions & options,
     Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
-    size_t pruning_memory_budget)
+    size_t & remaining_pruning_budget)
 {
     chassert(column.dictionary.isInitialized());
     size_t count = column.dictionary.count;
@@ -1101,23 +1119,27 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// limit yet decode to many times more, and constructing the value set below (a materialized
     /// column of all values, a vector of hashes, and a `HashSet` of them) then allocates that much
     /// transient memory - potentially for several row groups in parallel during pruning. Bound it by
-    /// the memory still available to the pruning stage (`pruning_memory_budget`: the reader's memory
+    /// the memory still available to the pruning stage (`remaining_pruning_budget`: the reader's memory
     /// high watermark minus what the pruning stage already holds - the decoded dictionaries charged in
-    /// `ReadManager::runTask`). Capping against the *remaining* budget rather than the full watermark
-    /// keeps several row groups pruning in parallel from collectively overshooting it: as each decoded
-    /// dictionary is charged to the stage, the budget left for the next value set shrinks. If building
-    /// the value set would need more than what is left, skip the optimization and fall back to a full
-    /// scan (reported as "can't rule out a match", the same as an unhashable type below). The watermark
-    /// scales down automatically when the query has little memory to spare (see FormatFactory). This is
-    /// the decoded-value-set cap the compressed-page limit alone cannot provide; the decoded dictionary
-    /// *page* itself is capped against the same remaining budget before it is decompressed, in
-    /// `decodeDictionaryPage` on the pruning path.
+    /// `ReadManager::runTask`, minus the value sets already built earlier in this same row-group filter
+    /// evaluation). `remaining_pruning_budget` is a single counter shared by every dictionary lookup in
+    /// this evaluation (see `applyBloomAndDictionaryFilters`), so a predicate over several
+    /// dictionary-filtered columns cannot let each column's value set use the full budget and
+    /// collectively overshoot the watermark. Capping against the *remaining* budget rather than the
+    /// full watermark likewise keeps several row groups pruning in parallel from overshooting it: as
+    /// each decoded dictionary is charged to the stage, the budget left for the next value set shrinks.
+    /// If building the value set would need more than what is left, skip the optimization and fall back
+    /// to a full scan (reported as "can't rule out a match", the same as an unhashable type below). The
+    /// watermark scales down automatically when the query has little memory to spare (see
+    /// FormatFactory). This is the decoded-value-set cap the compressed-page limit alone cannot provide;
+    /// the decoded dictionary *page* itself is capped against the same remaining budget before it is
+    /// used, in `decodeDictionaryPage` on the pruning path.
     size_t estimated_value_set_bytes = count *
         (size_t(column.dictionary.getAverageValueSize())
          + sizeof(UInt32)        /// identity `indexes` (materialized path only)
          + sizeof(UInt64)        /// `hashes` vector
          + 2 * sizeof(UInt64));  /// `value_hashes` HashSet (rounds capacity up to a power of two)
-    if (pruning_memory_budget != 0 && estimated_value_set_bytes > pruning_memory_budget)
+    if (remaining_pruning_budget != 0 && estimated_value_set_bytes > remaining_pruning_budget)
         return std::nullopt;
 
     /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
@@ -1180,6 +1202,14 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
         }
     }
 
+    /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
+    /// evaluation finishes, so charge its persistent footprint - the `HashSet` buffer; the transient
+    /// `indexes`/`values`/`hashes` allocations were already freed above - against the budget shared by
+    /// all lookups in this evaluation. A second dictionary-filtered column then sees only what is left,
+    /// keeping their combined footprint within the watermark.
+    if (remaining_pruning_budget != 0)
+        remaining_pruning_budget -= std::min(value_hashes.getBufferSizeInBytes(), remaining_pruning_budget);
+
     return value_hashes;
 }
 
@@ -1188,13 +1218,15 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     Reader & reader;
     ColumnChunk & column;
     const PrimitiveColumnInfo & column_info;
-    size_t pruning_memory_budget;
+    /// Points at the single budget counter shared by all dictionary lookups in one
+    /// `applyBloomAndDictionaryFilters` call; decremented as each value set is built (see there).
+    size_t * remaining_pruning_budget;
 
     bool computed = false;
     std::optional<HashSet<UInt64>> value_hashes;
 
-    DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_, size_t pruning_memory_budget_)
-        : reader(reader_), column(column_), column_info(column_info_), pruning_memory_budget(pruning_memory_budget_) {}
+    DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_, size_t * remaining_pruning_budget_)
+        : reader(reader_), column(column_), column_info(column_info_), remaining_pruning_budget(remaining_pruning_budget_) {}
 
     bool findAnyHash(const std::vector<uint64_t> & hashes) override;
 };
@@ -1203,7 +1235,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     if (!computed)
     {
-        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, pruning_memory_budget);
+        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, *remaining_pruning_budget);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed, we can't rule out a match.
@@ -1217,6 +1249,15 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, size_t pruning_memory_budget)
 {
+    /// A single budget shared by every dictionary lookup in this row-group filter evaluation. Each
+    /// lookup's value set stays alive (in its `DictionaryLookup`) until the evaluation finishes, so
+    /// without a shared counter a predicate over several dictionary-filtered columns would let each
+    /// value set use the full budget and collectively overshoot the watermark. The lookups are
+    /// evaluated sequentially in this thread (inside `checkInHyperrectangle`), so a plain counter
+    /// decremented as each value set is built (in `hashDictionaryValues`) suffices. Declared before
+    /// `filter_map` so it outlives the lookups that point at it. 0 means unbounded (see
+    /// `ReadManager::pruningMemoryBudget`).
+    size_t remaining_pruning_budget = pruning_memory_budget;
     KeyCondition::ColumnIndexToBloomFilter filter_map;
     for (size_t i = 0; i < row_group.columns.size(); ++i)
     {
@@ -1226,7 +1267,7 @@ bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, size_t pruning
         if (column.use_dictionary_filter)
             filter_map.emplace(
                 primitive_columns[i].idx_in_output_block,
-                std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], pruning_memory_budget));
+                std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], &remaining_pruning_budget));
         else if (column.use_bloom_filter)
             filter_map.emplace(
                 primitive_columns[i].idx_in_output_block,
