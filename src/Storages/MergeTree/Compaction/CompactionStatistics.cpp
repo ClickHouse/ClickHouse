@@ -221,6 +221,13 @@ size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const Merg
 /// worst-case constant so a rebuilt JSON projection is never priced below its real shared-data footprint.
 constexpr size_t MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET = 7;
 
+/// The ADVANCED shared-data serialization also writes three global copy streams once per JSON column, after
+/// the per-bucket loop: ObjectSharedDataCopySizes, ObjectSharedDataCopyPathsIndexes, ObjectSharedDataCopyValues
+/// (SerializationObjectSharedData::enumerateStreams). A rebuilt projection temp part inherits the parent
+/// part's non-zero level (MergeTreeDataWriter::writeTempProjectionPart), so its shared data always takes this
+/// ADVANCED path and these streams are present whatever max_dynamic_paths is.
+constexpr size_t OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS = 3;
+
 /// Worst-case number of on-disk data streams the dynamic structure of a type can materialize when a column
 /// of it is written, bounded by the type's own write-time capacity limits - the limits ColumnDynamic /
 /// ColumnObject enforce whatever the data looks like (types beyond max_dynamic_types go to the shared
@@ -235,7 +242,8 @@ constexpr size_t MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET = 7;
 /// whatever its data or max_dynamic_paths is (with max_dynamic_paths = 0 every path goes to the shared
 /// data), and the default serialization cannot enumerate them without a real column, so they are added
 /// here: up to object_shared_data_buckets_for_wide_part buckets (the wide-part count is never below the
-/// compact-part one), each up to MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET streams. Composite types are
+/// compact-part one), each up to MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET streams, plus the
+/// OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS the ADVANCED serialization writes once per column. Composite types are
 /// walked recursively, so Tuple(UInt64, JSON) or Array(Dynamic) are priced by their nested semi-structured
 /// components. Zero for types without dynamic structure.
 size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettings & settings)
@@ -247,7 +255,8 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
         if (const auto * dynamic = typeid_cast<const DataTypeDynamic *>(&node))
             return 2 + 2 * (dynamic->getMaxDynamicTypes() + 1);
         if (const auto * object = typeid_cast<const DataTypeObject *>(&node))
-            return shared_data_buckets * MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET + 4 * object->getMaxDynamicPaths();
+            return shared_data_buckets * MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET
+                + OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS + 4 * object->getMaxDynamicPaths();
         return 0;
     };
 
@@ -264,7 +273,12 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
 /// UInt64 base v - is a synthesized column, not a bare identifier: its write footprint is that of the
 /// target type, so it must NOT be priced from the base column's (String / UInt64) stream count. Returns
 /// nullopt when no source part records this name with a matching type, so the caller falls back to the
-/// type's own write-time capacity.
+/// type's own write-time capacity. Also returns nullopt if any matching source part is a legacy wide part
+/// that records no substreams for the column (a pre-columns_substreams.txt upgrade path): its dynamic
+/// (JSON / Dynamic) substreams are invisible to the union by name, so trusting only the newer parts' recorded
+/// union would drop the legacy part's dynamic paths - exactly the mixed legacy/new undercount countOutputStreams
+/// has to recover explicitly for base parts. The type-capacity fallback the caller then takes cannot be
+/// exceeded by any rebuilt column, a safe over-estimate for that transient window.
 std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
     const NameAndTypePair & column, const MergeTreeDataPartsVector & source_parts)
 {
@@ -275,12 +289,12 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
         const auto part_column = part->getColumns().tryGetByName(column.name);
         if (!part_column || !part_column->type->equals(*column.type))
             continue;
-        if (const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name))
-        {
-            recorded = true;
-            for (const auto & substream : *substreams)
-                union_substreams.insert(substream);
-        }
+        const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name);
+        if (!substreams)
+            return std::nullopt;
+        recorded = true;
+        for (const auto & substream : *substreams)
+            union_substreams.insert(substream);
     }
 
     if (!recorded)
