@@ -85,8 +85,8 @@ function extractTopLevel(header_re, name)
 /// DOM rendering, persistence and query execution are stubbed below.
 const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getActiveTab',
     'captureActiveTab', 'invalidateInFlight', 'activateTab', 'closeTab', 'scheduleSave',
-    'buildHistoryParams', 'writeHistoryEntry', 'tabReflectsRun', 'refreshCurrentHistoryEntry',
-    'saveHistory', 'syncHistory', 'resolveTabForState',
+    'buildHistoryParams', 'isCurrentEntryForTab', 'writeHistoryEntry', 'tabReflectsRun',
+    'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     /// The real structural tab operations, so the draft-in-another-tab case below drives the
     /// same capture/refresh/activate/sync sequence a tab click or the "+" button does.
     'markBootstrapDirty', 'switchToTab', 'addTab',
@@ -145,7 +145,7 @@ const sandbox = {
     setTimeout: () => 1,
     /// Globals the extracted functions expect (normally declared elsewhere in the page).
     tabs: [], activeTabId: null, tabSeq: 0, tabTitleSeq: 0,
-    request_num: 0, params_restore_pending_token: -1,
+    request_num: 0, params_restore_pending_token: -1, params_restore_pending_query: null,
     controller: null, multiQueryControllers: [], multiQueryContainer: null,
     save_timer: null, column_color_modes: {}, elapsed_ns: 0, last_query_start: 0,
     /// With `run=1` propagation enabled, the test can assert that refreshing an entry
@@ -451,6 +451,25 @@ async function reload()
     await drain();
     assert_eq('close+back: the recreated tab restores the draft', active().query, 'SELECT 1 -- draft');
     assert_eq('close+back: the run result snapshot is kept', active().result && active().result.query, 'SELECT 1');
+
+    /// Same close-then-Back fold, but when the current entry is a LEGACY pre-`tabId` state (only a
+    /// `tabName`, as `resolveTabForState`/`onpopstate` still support). The structural fold must adopt
+    /// that entry as the active tab (`isCurrentEntryForTab` matches it by title) so it captures the
+    /// draft and upgrades it to a `tabId` entry — otherwise the fold bails and Back restores the
+    /// stale last-run query instead of the draft.
+    reset();
+    await run('SELECT 1');
+    /// Rewrite the current entry into a legacy shape: keep only `query`/`tabName`, drop `tabId`.
+    const legacy_entry = sandbox.history.stack[sandbox.history.idx];
+    legacy_entry.state = { query: 'SELECT 1', params: {}, result: legacy_entry.state.result, tabName: active().title };
+    type('SELECT 1 -- draft');
+    sandbox.closeTab(sandbox.activeTabId);
+    await drain();
+    assert_eq('legacy close: the legacy entry captures the latest draft', sandbox.history.stack[0].state.query, 'SELECT 1 -- draft');
+    assert_eq('legacy close: the folded entry is upgraded to a tabId entry', !!sandbox.history.stack[0].state.tabId, true);
+    sandbox.history.back();
+    await drain();
+    assert_eq('legacy close+back: the recreated tab restores the draft', active().query, 'SELECT 1 -- draft');
 
     /// A same-session Back-then-Forward round-trip preserves a newer unrun draft
     /// instead of restoring the entries' older queries over it.
@@ -901,6 +920,7 @@ async function reload()
     sandbox.query_area.value = 'SELECT {y}';
     sandbox.param_inputs = { x: '1' };
     sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';   /// the query the restore was for; unchanged here
     sandbox.isMultiQuery = false;
     sandbox.query_area.selectionStart = 0;
     sandbox.query_area.selectionEnd = 0;
@@ -926,6 +946,51 @@ async function reload()
     sandbox.captureActiveTab();
     assert_params('run under pending param restore: a later capture keeps the destination params', active().params, { y: '2' });
     sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    sandbox.getQueryUnderCursor = async () => '';
+
+    /// A run launched under a pending param restore, but AFTER the user edited the destination
+    /// query, must NOT stamp the destination tab's saved params back: they belong to the OLD query.
+    /// Switch toward `SELECT {y}` (saved y=2), then edit the editor to a placeholder-free `SELECT 1`
+    /// and press Run before the restore finishes. `resolveRunParams` must see the launched query no
+    /// longer matches the restore's destination (`params_restore_pending_query`) and fall back to the
+    /// live inputs (which the edit's `updateQueryParams` cleared for the new query), so the clean run
+    /// records no `param_y`/`param_x` and stays runnable — not `/play?run=1&param_y=2#SELECT 1`.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    await run('SELECT {x}');                        /// tab A: a clean, run-backed entry with x=1
+    const dest_tab_edited = sandbox.makeTab();
+    dest_tab_edited.query = 'SELECT {y}';
+    dest_tab_edited.params = { y: '2' };
+    sandbox.tabs.push(dest_tab_edited);
+    sandbox.activeTabId = dest_tab_edited.id;
+    /// The restore set the editor to the destination query and armed the pending markers, but the
+    /// user then edited the query to `SELECT 1` (its `updateQueryParams` rebuilt the inputs empty).
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';
+    sandbox.query_area.value = 'SELECT 1';
+    active().query = 'SELECT 1';
+    sandbox.param_inputs = {};
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorEdited;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorEdited = () => resolve('SELECT 1'); });
+    const editedRunPromise = sandbox.postOne();
+    await drain();
+    releaseCursorEdited();
+    await drain();
+    resolvePendingPostImpl();
+    await editedRunPromise;
+    await drain();
+    assert_eq('edited query under pending restore: the clean run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_eq('edited query under pending restore: the stale destination param does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_y'), false);
+    assert_eq('edited query under pending restore: the source param does not leak either', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    assert_params('edited query under pending restore: the entry carries no stale params', active().params, {});
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
     sandbox.getQueryUnderCursor = async () => '';
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the

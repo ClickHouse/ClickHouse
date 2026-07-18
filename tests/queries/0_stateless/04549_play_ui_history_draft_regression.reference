@@ -2,6 +2,9 @@ close: the closed tab entry carries the latest draft
 close: the draft entry does not carry run=1
 close+back: the recreated tab restores the draft
 close+back: the run result snapshot is kept
+legacy close: the legacy entry captures the latest draft
+legacy close: the folded entry is upgraded to a tabId entry
+legacy close+back: the recreated tab restores the draft
 back: a newer unrun draft is preserved
 back: the editor shows the draft
 back: the entry result snapshot is adopted
@@ -61,6 +64,10 @@ run under pending param restore: the entry keeps the destination tab params
 run under pending param restore: the destination param reaches the URL
 run under pending param restore: the stale source param does not leak
 run under pending param restore: a later capture keeps the destination params
+edited query under pending restore: the clean run keeps run=1
+edited query under pending restore: the stale destination param does not leak
+edited query under pending restore: the source param does not leak either
+edited query under pending restore: the entry carries no stale params
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first

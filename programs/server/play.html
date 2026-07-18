@@ -3715,6 +3715,13 @@ let request_num = 0;
 /// clears it once the restored parameters are committed. `captureActiveTab` uses it to avoid
 /// snapshotting the stale inputs into the newly-active tab while the restore is in flight.
 let params_restore_pending_token = null;
+/// The destination query that the in-flight restore above is restoring (the editor text it set
+/// before the `updateQueryParams` await). A run launched under that pending restore trusts the
+/// destination tab's SAVED parameter snapshot (`resolveRunParams`) instead of the still-stale live
+/// inputs — but only while the editor is still that query. If the user edited it before running,
+/// the saved params belong to the OLD query and must not be stamped back, so `resolveRunParams`
+/// falls back to the live inputs (which the edit's `updateQueryParams` rebuilt for the new query).
+let params_restore_pending_query = null;
 
 /// Tabs let the user keep several independent queries side by side. Each tab owns its
 /// query text, title, query parameters and the last result snapshot. The connection
@@ -5201,7 +5208,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// preserving the full textarea content when running a selected query in multi-query mode.
 async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial)
 {
-    const paramValuesSnapshot = resolveRunParams(params_restore_pending);
+    /// Compare the FULL launched editor (not the single statement) against the restore's destination
+    /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
+    /// `query` already IS the whole editor.
+    const paramValuesSnapshot = resolveRunParams(params_restore_pending, history_query_text || query);
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
@@ -5293,7 +5303,7 @@ let multiQueryControllers = [];
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
 async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial)
 {
-    const paramValuesSnapshot = resolveRunParams(params_restore_pending);
+    const paramValuesSnapshot = resolveRunParams(params_restore_pending, launch_query_text);
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
@@ -5653,6 +5663,7 @@ async function restoreFromHistory(state, token) {
     /// Mark the restore as in flight so a `captureActiveTab` running during the await (the debounced
     /// `persist`, or a quick second navigation) does not snapshot those stale inputs into this tab.
     params_restore_pending_token = token;
+    params_restore_pending_query = state.query;
     const params_ok = await updateQueryParams();
     if (token !== request_num) return;
     const restored_params = {};
@@ -5680,6 +5691,7 @@ async function restoreFromHistory(state, token) {
     if (active_tab_for_params) active_tab_for_params.params = restored_params;
     /// Parameters are now committed to both the DOM inputs and the tab; capture is safe again.
     params_restore_pending_token = null;
+    params_restore_pending_query = null;
 
     /// A snapshotted multi-query ("Run all") result is restored into the multi-query
     /// container, rebuilding one result element per statement, rather than into `resultEl`.
@@ -6486,10 +6498,22 @@ function buildHistoryParams(params, tabName, fromRun, colorModes) {
 /// being left so it carries the latest editor edit rather than the last run/URL snapshot).
 /// `fromRun` is set only by `saveHistory` (an actual run) so the URL carries `run=1`; every
 /// editor-only caller leaves it unset so an unrun edit is never re-stamped as auto-runnable.
+/// True when the given history state belongs to `tab`. A normal entry is matched by the stable,
+/// authoritative `tabId`. A legacy pre-`tabId` entry (no `tabId`, only a `tabName`) belongs to
+/// this tab when the names match — the same title fallback `resolveTabForState` uses to resolve
+/// those entries on Back/Forward; titles are kept unique, so the match is unambiguous. Recognizing
+/// the legacy case lets the editor-only writers adopt such an entry as the active tab's, so a
+/// structural fold captures the latest draft into it (and upgrades it to a `tabId` entry) instead
+/// of bailing and leaving the stale last-run query behind.
+function isCurrentEntryForTab(state, tab) {
+    if (state.tabId) return state.tabId === tab.id;
+    return !!state.tabName && state.tabName === tab.title;
+}
+
 function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
-    const sameTab = cur && cur.tabId === tab.id;
+    const sameTab = cur && isCurrentEntryForTab(cur, tab);
     const unchanged = sameTab && cur.query === tab.query;
 
     const state = {
@@ -6562,7 +6586,14 @@ function tabReflectsRun(tab) {
 function refreshCurrentHistoryEntry(tab) {
     if (!tab) return;
     const cur = history.state;
-    if (cur && cur.tabId !== tab.id) return;
+    /// The current entry must belong to this tab, or refreshing it would clobber another tab's
+    /// entry. A legacy pre-`tabId` entry naming this tab (`isCurrentEntryForTab`) does belong to
+    /// it — `resolveTabForState` resolves such entries here by title — so the fold adopts it,
+    /// upgrading it to a `tabId` entry that carries the latest draft. Without the legacy case this
+    /// bailed on a legacy current entry, so a structural change (close/switch/add) after a
+    /// Back/Forward that landed on one left the stale query in it and a later Back restored that
+    /// over the newer unrun draft.
+    if (cur && !isCurrentEntryForTab(cur, tab)) return;
     writeHistoryEntry(tab, undefined, /*forceReplace=*/ true, /*fromRun=*/ tabReflectsRun(tab));
 }
 
@@ -6602,7 +6633,10 @@ function saveHistory(stateData, titleForDoc) {
     /// wrong bindings on a clean run. Trust the launch-time snapshot instead, and write it back to
     /// the inputs (which exist by now) so a later `captureActiveTab` reads the right values. The
     /// synthetic `input` events `setParamValues` fires are ignored by the param handler
-    /// (`!e.isTrusted`), so this does not re-enter history/persist.
+    /// (`!e.isTrusted`), so this does not re-enter history/persist. `stateData.params` here is
+    /// already the RIGHT snapshot: `resolveRunParams` returns the destination tab's saved params
+    /// only while the editor is still the restore's destination query, and falls back to the live
+    /// inputs once the user edited it — so an edited query does not stamp the old query's params.
     if (stateData.params_restore_pending)
     {
         tab.params = { ...(stateData.params || {}) };
@@ -8859,9 +8893,17 @@ function setParamValues(values)
 /// switch from `SELECT {x}` to `SELECT {y}`, it would send `param_x` and drop `param_y`, running
 /// the destination query with blank/default bindings. The tab's saved `params` already lists this
 /// tab's own parameters (captured when it was last committed / restored), so use its keys.
-function resolveRunParams(params_restore_pending)
+///
+/// The saved snapshot is only trustworthy while the editor is still the query the restore was
+/// for (`params_restore_pending_query`). If the user edited the query before pressing Run
+/// (`launch_query` diverges), those saved params belong to the OLD query — stamping them back
+/// would reintroduce the stale-placeholder leak this contract fixes (e.g. running an edited
+/// `SELECT 1` would keep the destination's `param_y`, marked `run=1`). The edit's own
+/// `updateQueryParams` rebuilt the live inputs for the new query, so fall back to them.
+function resolveRunParams(params_restore_pending, launch_query)
 {
     if (!params_restore_pending) return getParamValues();
+    if (params_restore_pending_query !== null && launch_query !== params_restore_pending_query) return getParamValues();
     const tab = getActiveTab();
     const saved = (tab && tab.params) || {};
     const values = {};
