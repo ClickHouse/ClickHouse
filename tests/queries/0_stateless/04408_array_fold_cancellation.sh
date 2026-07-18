@@ -10,10 +10,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # in-function check this PR adds, such a fold ignores max_execution_time (the original report saw a fold
 # run for 2709s after cancellation). The check stops it within max_execution_time instead.
 #
-# The signal is latency: WITH the fix every query below stops in ~1s; WITHOUT it the fold runs for many
-# seconds (a result-growing arrayPushFront is O(N^2)), the `timeout` wrapper kills the client, and the
-# output differs from the reference. range(60000) over numbers(4) keeps the whole fold in one block while
-# holding only four growing accumulators (peak < 20 MiB, parallel-safe).
+# The signal differs by mode. In throw mode the fold raises TIMEOUT_EXCEEDED, which the grep below finds.
+# In break mode the fold is cancelled and emits no rows; WITHOUT the fix it runs to completion (a
+# result-growing arrayPushFront is O(N^2), ~7.6s here) and emits all four rows, so the break line diverges
+# from the reference. Asserting the row count (not just the exit code) keeps break mode meaningful without
+# a longer workload: the uncancelled fold finishes well under the outer `timeout`, so a regressed build
+# would still exit 0. range(60000) over numbers(4) keeps the whole fold in one block while holding only
+# four growing accumulators (peak < 20 MiB, parallel-safe).
 #
 # Keep the array short. The per-element setup before the fold's first cancellation check is
 # uninterruptible; a longer array makes that setup rival max_execution_time, so under sanitizers the query
@@ -32,11 +35,22 @@ run() {
     else
         # break mode: checkTimeLimit() returns false instead of throwing. A half-fold has no meaningful
         # partial result, so the in-function check stops the fold; the pipeline absorbs the stop and the
-        # query ends without a client-visible error. Before this PR the false return was discarded and the
-        # fold kept running to completion.
-        timeout 30 ${CLICKHOUSE_CLIENT} --max_execution_time 1 --timeout_overflow_mode break \
-            --query "SELECT $FOLD FROM (SELECT $arr AS arr FROM numbers(4)) FORMAT Null" > /dev/null 2>&1 \
-            && echo "$label break: stopped without error" || echo "$label break: unexpected failure"
+        # query ends without a client-visible error but with no rows. Before this PR the false return was
+        # discarded and the fold ran to completion, emitting all four rows. Assert the row count, not just
+        # the exit code: a regressed build finishes under the outer `timeout` and would exit 0, but it
+        # emits four rows here instead of none, diverging from the reference.
+        local out rc rows
+        out=$(timeout 30 ${CLICKHOUSE_CLIENT} --max_execution_time 1 --timeout_overflow_mode break \
+            --query "SELECT length($FOLD) FROM (SELECT $arr AS arr FROM numbers(4))" 2>/dev/null)
+        rc=$?
+        rows=$(printf '%s' "$out" | grep -c .)
+        if [ "$rc" -ne 0 ]; then
+            echo "$label break: unexpected failure"
+        elif [ "$rows" -eq 0 ]; then
+            echo "$label break: stopped without error"
+        else
+            echo "$label break: ran to completion ($rows rows)"
+        fi
     fi
 }
 
