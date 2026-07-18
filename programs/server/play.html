@@ -6563,6 +6563,47 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             targetResultEl.enableViews();
         }
 
+        /// Read a query's own `JSONEachPacket*` framing (one JSON packet per line, `Content-Type:
+        /// application/x-ndjson`): the packet lines are shown verbatim via `updateRaw`, and - when
+        /// `scan_packets` is set (the user chose the framing) - scanned for a
+        /// `{"packet":"exception",...}` line. A framed query can fail after data was already streamed
+        /// and the `200 OK` header sent (the exception arrives as the last packet while the status
+        /// stays `200`), or before the header (a non-200 `application/x-ndjson` response whose body is
+        /// likewise a packet stream). Either way the packets are the result the user explicitly asked
+        /// to see, so both are rendered here rather than as one opaque error string. The exact packet
+        /// form is pinned by `04548_play_ui_framing_fallbacks.sh`.
+        const readNdjsonPacketStream = async (scan_packets) => {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const exception_prefix = '{"packet":"exception"';
+            let saw_exception = false;
+            /// The first characters of the current line, capped at the prefix length: a line either
+            /// begins with the exception packet or not, so only the head is needed (this keeps the
+            /// scan bounded regardless of how large a single data packet line is).
+            let line_head = '';
+            const scanForException = (chunk) => {
+                if (!scan_packets || saw_exception) return;
+                for (let i = 0; i < chunk.length; ++i) {
+                    const c = chunk[i];
+                    if (c === '\n') { line_head = ''; continue; }
+                    if (line_head.length < exception_prefix.length) {
+                        line_head += c;
+                        if (line_head === exception_prefix) { saw_exception = true; return; }
+                    }
+                }
+            };
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                let new_content = decoder.decode(value, { stream: true });
+                reply += new_content;
+                if (posted_request_num != request_num) { return { cancelled: true }; }
+                targetResultEl.updateRaw(new_content);
+                scanForException(new_content);
+            }
+            return { saw_exception };
+        };
+
         if (!response.ok && content_type.startsWith('text/event-stream')) {
             /// A framing `EventStream` response carries the exception as the last packet even on an
             /// HTTP error status, along with any data and logs produced before it. Replay the whole
@@ -6574,6 +6615,24 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             is_base64 = base64;
             renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, image_mime);
             reply = framed_error_stream;
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+        } else if (!response.ok && content_type.startsWith('application/x-ndjson')) {
+            /// A query carrying its own `JSONEachPacket*` framing can also fail before the response
+            /// reaches `200 OK` - e.g. `SELECT 1 FORMAT JSONEachRowWithProgress SETTINGS
+            /// framing_output_format = 'JSONEachPacketString'` (a format the framing rejects) - coming
+            /// back as a non-200 `application/x-ndjson` response whose body is still a packet stream
+            /// ending with a `{"packet":"exception",...}` line, NOT a plain `{"exception":...}` body
+            /// (a plain-HTTP error is `text/plain`, so a non-OK `application/x-ndjson` unambiguously
+            /// means framing was applied). Show those packets verbatim and record `framing_kind =
+            /// 'ndjson_packets'`, exactly like the `200 OK` NDJSON case below, so the user sees the
+            /// framing they asked for and the saved snapshot replays correctly on reload/tab restore -
+            /// rather than rendering the whole stream as one opaque error string.
+            is_error = true;
+            is_raw = true;
+            const scan_packets = user_framing;
+            if (scan_packets) framing_kind = 'ndjson_packets';
+            const res = await readNdjsonPacketStream(scan_packets);
+            if (res.cancelled) { return { cancelled: true }; }
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
         } else if (!response.ok) {
             is_error = true;
@@ -6678,56 +6737,21 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             await targetResultEl.renderChart(JSON.parse(reply), () => posted_request_num === request_num);
         } else {
             is_raw = true;
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
             /// A query that carries its own `JSONEachPacket*` framing (the NDJSON framings the page
-            /// does not render specially) streams its packet lines verbatim here. The lines are still
-            /// shown as-is, but they are scanned for a `{"packet":"exception",...}` line: a query can
-            /// fail after data was already streamed and the `200 OK` header sent, ending the stream
-            /// with an `exception` packet while the HTTP status stays `200`. Report that as a failure
-            /// so the single run shows the error state and `Run all` stops, mirroring the framed
-            /// `EventStream` path above. The exact packet form is pinned by
-            /// `04548_play_ui_framing_fallbacks.sh`. Plain raw output produced after a framing retry
-            /// (`use_framing` turned off, `user_framing` false) is not scanned - it has no packets.
+            /// does not render specially) streams its packet lines verbatim here. `scan_packets` is
+            /// `user_framing`: a query can fail after data was already streamed and the `200 OK`
+            /// header sent, ending the stream with an `exception` packet while the HTTP status stays
+            /// `200`. Report that as a failure so the single run shows the error state and `Run all`
+            /// stops, mirroring the framed `EventStream` path above and the non-200 NDJSON path.
+            /// Plain raw output produced after a framing retry (`use_framing` turned off,
+            /// `user_framing` false) is not scanned - it has no packets. Recording
+            /// `framing_kind = 'ndjson_packets'` routes a saved run through `updateRaw` on replay,
+            /// keyed off this kind instead of the `{"packet":`-prefix of the saved bytes.
             const scan_packets = user_framing;
-            /// The reply is the user's own `JSONEachPacket*` framing (one JSON packet per line), so
-            /// record that on the snapshot: the replay path then routes a saved failed run through
-            /// `updateRaw` rather than treating the packet stream as one opaque error string, keyed
-            /// off this kind instead of the `{"packet":`-prefix of the saved bytes.
             if (scan_packets) framing_kind = 'ndjson_packets';
-            const exception_prefix = '{"packet":"exception"';
-            let saw_exception = false;
-            /// The first characters of the current line, capped at the prefix length: a line either
-            /// begins with the exception packet or not, so only the head is needed (this keeps the
-            /// scan bounded regardless of how large a single data packet line is).
-            let line_head = '';
-
-            const scanForException = (chunk) => {
-                if (!scan_packets || saw_exception) return;
-                for (let i = 0; i < chunk.length; ++i) {
-                    const c = chunk[i];
-                    if (c === '\n') { line_head = ''; continue; }
-                    if (line_head.length < exception_prefix.length) {
-                        line_head += c;
-                        if (line_head === exception_prefix) { saw_exception = true; return; }
-                    }
-                }
-            };
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                let new_content = decoder.decode(value, { stream: true });
-                reply += new_content;
-
-                if (posted_request_num != request_num) { return { cancelled: true }; }
-                targetResultEl.updateRaw(new_content);
-                scanForException(new_content);
-            }
-
-            if (saw_exception) {
+            const res = await readNdjsonPacketStream(scan_packets);
+            if (res.cancelled) { return { cancelled: true }; }
+            if (res.saw_exception) {
                 is_error = true;
                 return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
             }

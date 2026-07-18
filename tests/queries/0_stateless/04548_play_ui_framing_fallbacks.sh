@@ -53,6 +53,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    keyed off the persisted framing kind, not the format - otherwise the saved packet stream would
 #    be reparsed as that format's JSON on reload/tab switch. The server contract (the wire is NDJSON,
 #    not the special format) and the served-page dispatch are checked here.
+# 11. A user-chosen `JSONEachPacket*` framing can also fail *before* the response reaches 200 OK
+#    (e.g. an explicit `FORMAT JSONEachRowWithProgress` the framing rejects): the server then returns
+#    a non-200 `application/x-ndjson` response whose body is still a packet stream ending with a
+#    `{"packet":"exception",...}` line - not a plain `{"exception":...}` body. The page dispatches
+#    such a response through the same raw packet-stream path as the 200 OK case (scanning for the
+#    exception packet and recording `framing_kind = 'ndjson_packets'`), so the user sees the framing
+#    they asked for and the saved snapshot replays correctly, instead of rendering one opaque error
+#    string. The server contract (non-200, NDJSON, packet exception, no plain-exception body) and the
+#    served-page dispatch are checked here.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -89,6 +98,11 @@ echo "$page" | grep -q -F 'const format_clause = await detectExplicitFormatClaus
 # hoists the same check above its `!snap.ok` branch.) A browser-only flow, checked on the page.
 ndjson_dispatch="else if (kind === 'ndjson_packets')"
 echo "$page" | grep -qF "$ndjson_dispatch" && echo 'restore replays ndjson packets raw: OK'
+# A non-200 `application/x-ndjson` response (a user-chosen NDJSON framing that fails before 200 OK)
+# is dispatched through the raw packet-stream path, not the generic plain-error branch. Checked by
+# the presence of that branch on the served page (the response handling is a browser-only flow).
+non_ok_ndjson_dispatch="else if (!response.ok && content_type.startsWith('application/x-ndjson'))"
+echo "$page" | grep -qF "$non_ok_ndjson_dispatch" && echo 'non-200 ndjson dispatched as packets: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
@@ -176,5 +190,24 @@ ${CLICKHOUSE_CURL} -sS -D "$header_file" \
 grep -o -m1 'application/x-ndjson' "$header_file"
 grep -o -m1 '"packet":"data"' "$result_file"
 [ "$(grep -c '"packet":"exception"' "$result_file")" -eq 0 ] && echo 'no exception: OK'
+
+echo '--- a user-chosen JSONEachPacketString rejected before 200 OK is a non-200 NDJSON packet stream'
+# The page sends a query carrying its own `framing_output_format` on the plain request shape (with
+# the framing-compatible default format). When that query fails before the 200 OK header - here an
+# explicit `FORMAT JSONEachRowWithProgress`, which the framing rejects during setup - the server
+# returns a non-200 `application/x-ndjson` response whose body is a packet stream ending with a
+# `{"packet":"exception",...}` line, NOT a plain `{"exception":...}` body. Pin that contract so the
+# page can dispatch it through the raw packet-stream path (recording `framing_kind = 'ndjson_packets'`)
+# instead of rendering the whole stream as one opaque error string.
+${CLICKHOUSE_CURL} -sS -D "$header_file" \
+    "${URL}&default_format=${framed_default_format}" \
+    -d "SELECT 1 FORMAT JSONEachRowWithProgress SETTINGS framing_output_format = 'JSONEachPacketString'" > "$result_file"
+grep -c '^HTTP/1.1 400' "$header_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 -F '{"packet":"exception"' "$result_file"
+# The body is a packet stream, not a plain `{"exception":...}` error body, so the page's generic
+# plain-error branch (which scans for `{"exception":`-prefixed lines) cannot parse it - which is why
+# the dedicated non-200 NDJSON branch is needed.
+[ "$(grep -c '^{"exception":' "$result_file")" -eq 0 ] && echo 'not a plain exception body: OK'
 
 rm -f "$result_file" "$header_file"
