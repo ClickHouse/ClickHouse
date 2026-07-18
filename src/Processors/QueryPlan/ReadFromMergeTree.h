@@ -344,17 +344,24 @@ public:
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
 
-    /// Copy the read-in-order safeguard flags that are not carried by `query_info`.
-    /// `has_outer_limit` and `prefer_multiple_streams` are set by `requestReadingInOrder`
-    /// and `setPreferMultipleStreams`, not stored in `SelectQueryInfo`. When a reading
-    /// step is reconstructed from `getQueryInfo()` (which keeps `input_order_info`, so the
-    /// step still reads in order) — e.g. the lazy-FINAL split in `optimizeLazyFinal` — these
-    /// flags must be carried over too, otherwise the per-part `PrefetchingConcat` contract
-    /// is silently dropped for that branch.
+    /// Copy the full post-`requestReadingInOrder` state that is not carried by `query_info`.
+    /// `has_outer_limit`, `prefer_multiple_streams`, `enable_vertical_final` and
+    /// `query_task_size_limit` are set by `requestReadingInOrder`/`setPreferMultipleStreams`,
+    /// not stored in `SelectQueryInfo`. When a reading step is reconstructed from
+    /// `getQueryInfo()` (which keeps `input_order_info`, so the step still reads in order) —
+    /// e.g. the lazy-FINAL split in `optimizeLazyFinal`, or an arbitrary optimized subtree
+    /// cloned through `clone` — this state must be carried over too. Otherwise the per-part
+    /// `PrefetchingConcat` contract is silently dropped, the constructor re-derives
+    /// `enable_vertical_final` from settings (which can re-enable vertical FINAL on a cloned
+    /// in-order FINAL read and violate its sorted-output contract), and the limit-aware
+    /// single-range task sizing keyed on `query_task_size_limit` (see line with
+    /// `has_soft_limit_below_one_block`) is lost.
     void copyReadInOrderContractFrom(const ReadFromMergeTree & source)
     {
         has_outer_limit = source.has_outer_limit;
         prefer_multiple_streams = source.prefer_multiple_streams;
+        enable_vertical_final = source.enable_vertical_final;
+        query_task_size_limit = source.query_task_size_limit;
     }
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
