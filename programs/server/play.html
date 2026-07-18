@@ -6488,6 +6488,14 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     /// the result snapshot records it and the history/tab replay path decodes the bytes rather than
     /// rendering the base64 text verbatim (see `renderEventStreamText`).
     let is_base64 = false;
+    /// The framing kind of the reply, recorded on the snapshot so the history/tab replay path
+    /// dispatches on it EXPLICITLY instead of guessing from the payload's first bytes - a raw
+    /// result whose text happens to start with `event:` or `{"packet":` (e.g.
+    /// `SELECT 'event: data' FORMAT RawBLOB`) must not be replayed as a framing stream:
+    ///   'event_stream'   - a framing `EventStream` (`event:`/`data:` server-sent events),
+    ///   'ndjson_packets' - a query's own `JSONEachPacket*` framing (one JSON packet per line),
+    ///   ''               - an ordinary result (table / chart / raw text / plain-HTTP error).
+    let framing_kind = '';
 
     let response, reply, format;
     reply = '';
@@ -6561,11 +6569,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             /// stream (already read above, when checking for a format-compatibility rejection):
             /// it renders the partial result, the logs, and the exception.
             is_error = true;
+            framing_kind = 'event_stream';
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
             renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, image_mime);
             reply = framed_error_stream;
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
         } else if (!response.ok) {
             is_error = true;
             reply = await response.text();
@@ -6590,7 +6599,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 highlightQueryError(reply, query, queryStart);
             }
 
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
         } else if ((content_type.startsWith('image/') || image_mime) && !content_type.startsWith('text/event-stream')) {
             /// A non-framed image response: the whole body is the image. (A framed image response is
             /// an event stream and is handled below, where the base64 payload is decoded to bytes.)
@@ -6608,6 +6617,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             /// parsed into a table for the default format; raw text for another text format; or, when
             /// the content type carries `payload=base64` (a binary or raw output format), base64 that
             /// is decoded and rendered as an image or raw text.
+            framing_kind = 'event_stream';
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
             const raw_text = !base64 && !isDefaultFormat(format);
@@ -6623,7 +6633,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             /// the logs, and the exception are all shown.
             if (res.exception) {
                 is_error = true;
-                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
+                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
             }
         } else if (format == default_format) {
             is_table = true;
@@ -6681,6 +6691,11 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             /// `04548_play_ui_framing_fallbacks.sh`. Plain raw output produced after a framing retry
             /// (`use_framing` turned off, `user_framing` false) is not scanned - it has no packets.
             const scan_packets = user_framing;
+            /// The reply is the user's own `JSONEachPacket*` framing (one JSON packet per line), so
+            /// record that on the snapshot: the replay path then routes a saved failed run through
+            /// `updateRaw` rather than treating the packet stream as one opaque error string, keyed
+            /// off this kind instead of the `{"packet":`-prefix of the saved bytes.
+            if (scan_packets) framing_kind = 'ndjson_packets';
             const exception_prefix = '{"packet":"exception"';
             let saw_exception = false;
             /// The first characters of the current line, capped at the prefix length: a line either
@@ -6714,7 +6729,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 
             if (saw_exception) {
                 is_error = true;
-                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
+                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
             }
         }
 
@@ -6736,7 +6751,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         /// now-active tab's shared progress/download/history state for this stale run.
         if (posted_request_num != request_num) { return { cancelled: true }; }
 
-        return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error, is_base64 };
+        return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
     } catch (e) {
         if (posted_request_num != request_num) { return { cancelled: true }; }
 
@@ -6749,7 +6764,8 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             reply = e.toString();
         }
         targetResultEl.renderError(reply);
-        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
+        /// A caught error renders as a plain error string, never as a framing stream on replay.
+        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, framing_kind: '' };
     }
 }
 
@@ -6792,6 +6808,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 ok: result.response_ok,
                 data: result.reply.length > 100000 ? null : result.reply,
                 base64: result.is_base64,
+                framing_kind: result.framing_kind,
                 elapsed_ns: 1e6 * (performance.now() - last_query_start),
                 params: paramValuesSnapshot,
             });
@@ -6834,6 +6851,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         ok: result.response_ok,
         data: result.reply.length > 100000 ? null : result.reply,
         base64: result.is_base64,
+        framing_kind: result.framing_kind,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
     });
@@ -6992,6 +7010,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
         ok: r ? !!r.response_ok : false,
         data: (r && (!r.is_image || r.is_base64)) ? r.reply : null,
         base64: r ? !!r.is_base64 : false,
+        framing_kind: r ? (r.framing_kind ?? '') : '',
     }));
     let multi_size = 0;
     for (const s of multi) multi_size += s.data ? s.data.length : 0;
@@ -7009,6 +7028,20 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
     }, parsed[0].query);
 }
 
+/// The framing kind recorded with a result snapshot ('event_stream' / 'ndjson_packets' / ''),
+/// used by the replay paths to dispatch on how the result was produced. It is persisted explicitly
+/// so a raw result whose text happens to start with `event:` or `{"packet":` (e.g.
+/// `SELECT 'event: data' FORMAT RawBLOB`) is not mistaken for a framing stream on restore. Snapshots
+/// saved before the kind was persisted (no `framing_kind` field) fall back to sniffing the payload's
+/// first bytes - the previous behavior, kept only for those legacy entries.
+function snapshotFramingKind(snap) {
+    if (snap.framing_kind !== undefined && snap.framing_kind !== null) return snap.framing_kind;
+    const data = snap.data ?? '';
+    if (data.startsWith('event:')) return 'event_stream';
+    if (data.startsWith('{"packet":')) return 'ndjson_packets';
+    return '';
+}
+
 /// Render one saved multi-query statement snapshot into `el`, mirroring the live per-statement
 /// rendering in `postImpl` (table / chart / EXPLAIN graph / raw / error), minus the streaming.
 /// `token` guards the awaited chart/graph loaders: a superseding activation bails before touching
@@ -7018,12 +7051,13 @@ async function renderSnapshotIntoElement(el, snap, token) {
     el.queryText = snap.query;
     if (!snap.data) return;
     const format = snap.format;
+    const kind = snapshotFramingKind(snap);
 
     /// A framing `EventStream` snapshot (data, logs, progress, and possibly an exception, all
     /// multiplexed as server-sent events). Replay the whole stream, then finish like a table.
     /// A `base64` snapshot (binary or raw output format) is decoded to bytes and rendered as an
     /// image or raw text, mirroring the live path; it is never a table.
-    if (snap.data.startsWith('event:')) {
+    if (kind === 'event_stream') {
         const base64 = !!snap.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
@@ -7049,10 +7083,9 @@ async function renderSnapshotIntoElement(el, snap, token) {
         /// (data, log, and progress packets ending with an `exception` packet) as `data`, not a
         /// plain `{"exception": ...}` error body. Replay it as raw text - the way the live run showed
         /// it (`updateRaw`) - instead of rendering the whole packet stream as one opaque error
-        /// string, so the partial output and the exception packet stay visible. An NDJSON packet
-        /// stream always begins with a `{"packet": ...}` object, which a plain error body never does
-        /// (this mirrors the `event:`-prefix check above for `EventStream` snapshots).
-        if (snap.data.startsWith('{"packet":')) {
+        /// string, so the partial output and the exception packet stay visible. Keyed off the
+        /// persisted framing kind, not the payload's first bytes.
+        if (kind === 'ndjson_packets') {
             el.updateRaw(snap.data);
             return;
         }
@@ -7270,8 +7303,9 @@ async function restoreFromHistory(state, token) {
     let is_error = false;
 
     let format = result.format;
+    const kind = snapshotFramingKind(result);
 
-    if (result.data.startsWith('event:')) {
+    if (kind === 'event_stream') {
         /// A framing `EventStream` snapshot: replay the multiplexed data, logs, progress, and
         /// (on failure) the exception. The default format is a table; any other text format is raw
         /// text; a `base64` format (binary or raw output) is decoded and rendered as an image or raw
@@ -7301,9 +7335,9 @@ async function restoreFromHistory(state, token) {
         /// as `data` (data, log, and progress packets ending with an `exception` packet), not a plain
         /// `{"exception": ...}` error body. Replay it as raw text - the way the live run showed it -
         /// instead of rendering the whole packet stream as one opaque error string, so the partial
-        /// output and the exception packet stay visible. An NDJSON packet stream always begins with a
-        /// `{"packet": ...}` object (mirroring the `event:`-prefix check above for `EventStream`).
-        if (result.data.startsWith('{"packet":')) {
+        /// output and the exception packet stay visible. Keyed off the persisted framing kind, not
+        /// the payload's first bytes.
+        if (kind === 'ndjson_packets') {
             is_raw = true;
             resultEl.updateRaw(result.data);
             progressEl.clear();
@@ -8074,6 +8108,9 @@ function saveHistory(stateData, titleForDoc) {
         /// Whether the `EventStream` `data` snapshot carries base64-encoded payloads (a binary or raw
         /// output format); the replay path decodes them to bytes instead of showing the base64 text.
         base64: stateData.base64 ?? false,
+        /// The framing kind of the `data` snapshot ('event_stream' / 'ndjson_packets' / ''), so the
+        /// replay path dispatches on it explicitly instead of sniffing the payload's first bytes.
+        framing_kind: stateData.framing_kind ?? '',
         /// Per-statement snapshots for a multi-query ("Run all") result; null for single-query
         /// runs and for multi-query runs too large to snapshot (see `postMulti`).
         multi: stateData.multi ?? null,
@@ -8171,6 +8208,7 @@ window.onpopstate = function(event) {
             ok: flat.ok,
             data: flat.data ?? null,
             base64: flat.base64 ?? false,
+            framing_kind: flat.framing_kind ?? '',
             multi: flat.multi ?? null,
             color_modes: flat.color_modes || {},
             elapsed_ns: flat.elapsed_ns,
@@ -8810,10 +8848,11 @@ async function detectFramingSetting(query)
     return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false };
 }
 
-/// Detect a real `FORMAT` clause in the query and return the format name (e.g. `JSON`), or `null`
-/// when there is none. Used by `postImpl` to decide whether the page's default format applies (and
-/// hence whether to request extremes) and whether to opt out of framing for `JSONCompactColumns`
-/// (whose charts are rendered from the whole response rather than streamed).
+/// Detect a real `FORMAT` clause in the query and return `{ name, start, end }` - the format name
+/// (e.g. `JSON`) and the character span of the whole `FORMAT <name>` clause in `query` - or `null`
+/// when there is none. Used by `postImpl` (via `detectExplicitFormat`) to decide whether the page's
+/// default format applies, and by the download handler to strip only the real `FORMAT` clause so the
+/// download's `default_format` applies while the rest of the query is left byte-for-byte intact.
 ///
 /// Like `detectFramingSetting`, the detection walks the lexer tokens rather than matching the raw
 /// text, and it counts `FORMAT` only as a real trailing clause: a `BareWord` `format` at bracket
@@ -8824,17 +8863,27 @@ async function detectFramingSetting(query)
 /// a plain regex is fooled by e.g. `SELECT 'FORMAT JSONCompactColumns'` or
 /// `SELECT format JSONCompactColumns FROM values('format UInt8', (1))` (a column aliased as
 /// `JSONCompactColumns`), either of which would make `use_framing` false and silently drop the page's
-/// own `EventStream` request and the streamed `log` / `profile_events` packets. Falls back to a
-/// best-effort text match only when WebAssembly - hence the lexer - is unavailable, mirroring
-/// `getQueryUnderCursor`.
-async function detectExplicitFormat(query)
+/// own `EventStream` request, or (for the download) rewrite the query into a different statement.
+/// The clause span is derived by summing token lengths, which are JS-string offsets into `query`
+/// (the same contiguous token stream `getQueryUnderCursor` relies on). Falls back to a best-effort
+/// text match only when WebAssembly - hence the lexer - is unavailable, mirroring `getQueryUnderCursor`.
+async function detectExplicitFormatClause(query)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        const m = query.match(/\bFORMAT\s+(\w+)\s*(?:;|\bSETTINGS\b|$)/i);
-        return m ? m[1] : null;
+        /// Anchor the match to a real trailing clause (only `;` or `SETTINGS` may follow the name),
+        /// and capture just the `FORMAT <name>` span so the caller strips nothing else.
+        const m = query.match(/\bFORMAT\s+(\w+)(?=\s*(?:;|\bSETTINGS\b|$))/i);
+        return m ? { name: m[1], start: m.index, end: m.index + m[0].length } : null;
     }
 
-    const tokens = (await tokenize(query)).filter(t => t.significant);
+    /// Annotate the significant tokens with their character offsets in `query`, accumulating the
+    /// length of every token (significant or not) so the offsets track the original string exactly.
+    const tokens = [];
+    let offset = 0;
+    for (const t of await tokenize(query)) {
+        if (t.significant) tokens.push({ type: t.type, token: t.token, start: offset, end: offset + t.token.length });
+        offset += t.token.length;
+    }
     let depth = 0;
     for (let i = 0; i + 1 < tokens.length; ++i) {
         const t = tokens[i];
@@ -8852,11 +8901,18 @@ async function detectExplicitFormat(query)
             if (!after
                 || after.type === TT.Semicolon
                 || (after.type === TT.BareWord && after.token.toLowerCase() === 'settings')) {
-                return tokens[i + 1].token;
+                return { name: tokens[i + 1].token, start: t.start, end: tokens[i + 1].end };
             }
         }
     }
     return null;
+}
+
+/// The format name of the query's real trailing `FORMAT` clause, or `null`. Thin wrapper over
+/// `detectExplicitFormatClause` for callers that only need the name.
+async function detectExplicitFormat(query)
+{
+    return (await detectExplicitFormatClause(query))?.name ?? null;
 }
 
 /// Absolute character offset (into the textarea) where the query most recently returned by
@@ -11182,7 +11238,16 @@ document.getElementById('download-button').addEventListener('click', async funct
         url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
     }
 
-    let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
+    /// Strip only a real trailing `FORMAT` clause, so the download's `default_format` applies while
+    /// the rest of the query is left byte-for-byte intact. A raw `replaceAll(/\bFORMAT\s+\w+/)` would
+    /// also rewrite a `FORMAT ...` that is only text or ordinary SQL (e.g. `SELECT 'FORMAT TSV' AS s`
+    /// or `SELECT format JSONCompactColumns FROM values('format UInt8', (1))`), downloading the result
+    /// of a different query than the one the page ran. `detectExplicitFormatClause` finds the clause
+    /// with the same SQL-lexer walk used to detect it, and returns its span.
+    const format_clause = await detectExplicitFormatClause(query);
+    let downloadQuery = format_clause
+        ? query.slice(0, format_clause.start) + query.slice(format_clause.end)
+        : query;
 
     // Create a form and submit it to trigger download
     const form = document.createElement('form');

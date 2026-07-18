@@ -34,9 +34,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    the framing packet stream, not CSV. So the download button refuses such a query rather than
 #    saving a mislabeled file - a client-side guard whose presence is checked on the served page.
 # 7. The `JSONEachPacket*` stream a failed user-framed query saves begins with a `{"packet": ...}`
-#    object. History restore recognizes that prefix to replay the saved packet stream as raw text
-#    (keeping the partial output and the exception packet) instead of showing one opaque error
-#    string; the presence of that restore guard is checked on the served page too.
+#    object. History restore replays such a saved packet stream as raw text (keeping the partial
+#    output and the exception packet) instead of showing one opaque error string.
+# 8. The result snapshot records the framing kind explicitly (`event_stream` / `ndjson_packets` /
+#    ''), and both restore paths dispatch on it (`snapshotFramingKind`) instead of guessing from the
+#    payload's first bytes - so a raw result whose text happens to start with `event:` or `{"packet":`
+#    (e.g. `SELECT 'event: data' FORMAT RawBLOB`) is not replayed as a framing stream. That client
+#    persistence/restore is a browser-only flow, so its guards are checked on the served page here.
+# 9. The download strips only a real trailing `FORMAT` clause (via the SQL-lexer walk in
+#    `detectExplicitFormatClause`), not a raw regex, so a query where `FORMAT ...` is only text or
+#    ordinary SQL downloads the query that actually ran. That client logic is pinned by a unit test
+#    (`src/Parsers/tests/gtest_play_detect_explicit_format.cpp`); the served page wires it into the
+#    download handler, which is checked here.
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -60,9 +69,12 @@ rejection_pattern="$(echo "$page" | sed -n "s/.*framed_error_stream\.includes('\
 # the chosen extension. Checked here by the presence of the guard message on the served page (the
 # download itself is a browser-only flow, not reachable from this shell test).
 echo "$page" | grep -q -F 'overrides the download format' && echo 'download framing guard present: OK'
-# History restore replays a saved `JSONEachPacket*` failure stream as raw text by recognizing its
-# leading `{"packet":` object. Both restore paths (single result and "Run all") carry that check.
-[ "$(echo "$page" | grep -c "startsWith('{\"packet\":')")" -ge 2 ] && echo 'ndjson restore guard present: OK'
+# The result snapshot records the framing kind explicitly, and both restore paths (single result and
+# "Run all") dispatch on it via `snapshotFramingKind` rather than sniffing the payload's first bytes.
+echo "$page" | grep -q -F 'framing_kind:' && echo 'framing kind persisted: OK'
+[ "$(echo "$page" | grep -c 'snapshotFramingKind(')" -ge 2 ] && echo 'restore keys off framing kind: OK'
+# The download strips only a real trailing `FORMAT` clause using the SQL-lexer walk, not a raw regex.
+echo "$page" | grep -q -F 'const format_clause = await detectExplicitFormatClause(query)' && echo 'download strips real format clause: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.

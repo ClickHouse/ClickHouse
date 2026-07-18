@@ -2,7 +2,9 @@ default format extracted: OK
 framed default format extracted: OK
 rejection pattern extracted: OK
 download framing guard present: OK
-ndjson restore guard present: OK
+framing kind persisted: OK
+restore keys off framing kind: OK
+download strips real format clause: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream
