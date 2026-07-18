@@ -72,6 +72,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -481,21 +482,26 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::max_streams_for_merge_tree_reading])
+    /// Clamp to the ceiling max_threads gets: the value later drives pipes.reserve()/resize() in
+    /// groupPartitionsByStreams and spreadMarkRanges, and unbounded it makes reserve() throw
+    /// std::length_error (requested size exceeds vector max_size).
+    const UInt64 max_streams_for_merge_tree_reading
+        = std::min<UInt64>(settings[Setting::max_streams_for_merge_tree_reading], 256 * getNumberOfCPUCoresToUse());
+    if (max_streams_for_merge_tree_reading)
     {
         if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
-            output_streams_limit = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            output_streams_limit = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
             /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
             /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
             if (requested_num_streams != 1)
-                requested_num_streams = std::max<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+                requested_num_streams = std::max<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
         }
         else
             /// Just limit requested_num_streams otherwise.
-            requested_num_streams = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            requested_num_streams = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
     }
 
     /// Add explicit description.

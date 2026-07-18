@@ -1,0 +1,33 @@
+-- Tags: no-parallel-replicas, no-darwin
+-- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
+-- no-parallel-replicas: STREAM reads do not support parallel replicas.
+
+-- A pathological max_streams_for_merge_tree_reading must not abort the server (was:
+-- std::length_error from pipes.reserve in groupPartitionsByStreams). EXPLAIN PIPELINE
+-- exercises the streaming read path without running the streaming query forever.
+
+SET enable_streaming_queries = 1;
+
+DROP TABLE IF EXISTS t_stream_max_streams_clamp;
+
+CREATE TABLE t_stream_max_streams_clamp (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_stream_max_streams_clamp SELECT number FROM numbers(1000);
+
+SELECT countIf(explain LIKE '%MergeTreeCommitOrderSequentialSource%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT count() FROM
+    (
+        (SELECT x FROM t_stream_max_streams_clamp GROUP BY ALL)
+        EXCEPT DISTINCT
+        (SELECT x FROM t_stream_max_streams_clamp STREAM GROUP BY ALL)
+    )
+    -- max_threads must be > 1: the async branch only amplifies requested_num_streams when
+    -- it is not 1, so with max_threads = 1 the pathological setting never reaches reserve.
+    SETTINGS max_threads = 4,
+             max_streams_for_merge_tree_reading = 9223372036854775807,
+             allow_asynchronous_read_from_io_pool_for_merge_tree = 1
+);
+
+DROP TABLE t_stream_max_streams_clamp;
