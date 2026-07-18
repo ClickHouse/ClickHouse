@@ -1,0 +1,807 @@
+---
+title: 'Instalando o chDB para Python'
+sidebarTitle: 'Python'
+slug: /chdb/install/python
+description: 'Como instalar o chDB para Python'
+keywords: ['chdb', 'embutido', 'clickhouse-lite', 'python', 'instalação']
+doc_type: 'guide'
+---
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+* Python 3.8+
+* Plataformas compatíveis: macOS e Linux (x86&#95;64 e ARM64)
+
+<div id="install">
+  ## Instalação
+</div>
+
+```bash
+pip install chdb
+```
+
+<div id="usage">
+  ## Uso
+</div>
+
+<div id="command-line-interface">
+  ### Interface de linha de comando
+</div>
+
+Execute consultas SQL diretamente pela linha de comando:
+
+```bash
+# Consulta básica
+python3 -m chdb "SELECT 1, 'abc'" Pretty
+
+# Consulta com formatação
+python3 -m chdb "SELECT version()" JSON
+```
+
+<div id="basic-python-usage">
+  ### Uso básico de Python
+</div>
+
+```python
+import chdb
+
+# Consulta simples
+result = chdb.query("SELECT 1 as id, 'Hello World' as message", "CSV")
+print(result)
+
+# Obter estatísticas da consulta
+print(f"Rows read: {result.rows_read()}")
+print(f"Bytes read: {result.bytes_read()}")
+print(f"Execution time: {result.elapsed()} seconds")
+```
+
+<div id="connection-based-api">
+  ### API baseada em conexão (recomendada)
+</div>
+
+Para melhorar o gerenciamento de recursos e o desempenho:
+
+```python
+import chdb
+
+# Criar conexão (em memória por padrão)
+conn = chdb.connect(":memory:")
+# Ou use baseado em arquivo: conn = chdb.connect("mydata.db")
+
+# Criar cursor para execução de consultas
+cur = conn.cursor()
+
+# Executar consultas
+cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
+
+# Recuperar resultados de diferentes formas
+print(cur.fetchone())    # Linha única: (0, '0')
+print(cur.fetchmany(2))  # Múltiplas linhas: ((1, '1'), (2, '2'))
+
+# Obter metadados
+print(cur.column_names())  # ['number', 'str']
+print(cur.column_types())  # ['UInt64', 'String']
+
+# Usar cursor como iterador
+for row in cur:
+    print(row)
+
+# Sempre fechar os recursos
+cur.close()
+conn.close()
+```
+
+<div id="data-input">
+  ## Métodos de ingestão de dados
+</div>
+
+<div id="file-based-data-sources">
+  ### Fontes de dados baseadas em arquivos
+</div>
+
+O chDB oferece suporte a mais de 70 formatos de dados para consultar arquivos diretamente:
+
+```python
+import chdb
+# Prepare seus dados
+# ...
+
+# Consultar arquivos Parquet
+result = chdb.query("""
+    SELECT customer_id, sum(amount) as total
+    FROM file('sales.parquet', Parquet) 
+    GROUP BY customer_id 
+    ORDER BY total DESC 
+    LIMIT 10
+""", 'JSONEachRow')
+
+# Consultar CSV com cabeçalhos
+result = chdb.query("""
+    SELECT * FROM file('data.csv', CSVWithNames) 
+    WHERE column1 > 100
+""", 'DataFrame')
+
+# Múltiplos formatos de arquivo
+result = chdb.query("""
+    SELECT * FROM file('logs*.jsonl', JSONEachRow)
+    WHERE timestamp > '2024-01-01'
+""", 'Pretty')
+```
+
+<div id="output-format-examples">
+  ### Exemplos de formato de saída
+</div>
+
+```python
+# DataFrame para análise
+df = chdb.query('SELECT * FROM system.numbers LIMIT 5', 'DataFrame')
+print(type(df))  # <class 'pandas.core.frame.DataFrame'>
+
+# tabela Arrow para interoperabilidade  
+arrow_table = chdb.query('SELECT * FROM system.numbers LIMIT 5', 'ArrowTable')
+print(type(arrow_table))  # <class 'pyarrow.lib.Table'>
+
+# JSON para APIs
+json_result = chdb.query('SELECT version()', 'JSON')
+print(json_result)
+
+# Formato Pretty para depuração
+pretty_result = chdb.query('SELECT * FROM system.numbers LIMIT 3', 'Pretty')
+print(pretty_result)
+```
+
+<div id="dataframe-operations">
+  ### Operações de DataFrame
+</div>
+
+<div id="legacy-dataframe-api">
+  #### API legada do DataFrame
+</div>
+
+```python
+import chdb.dataframe as cdf
+import pandas as pd
+
+# Unir múltiplos DataFrames
+df1 = pd.DataFrame({'a': [1, 2, 3], 'b': ["one", "two", "three"]})
+df2 = pd.DataFrame({'c': [1, 2, 3], 'd': ["①", "②", "③"]})
+
+result_df = cdf.query(
+    sql="SELECT * FROM __tbl1__ t1 JOIN __tbl2__ t2 ON t1.a = t2.c",
+    tbl1=df1, 
+    tbl2=df2
+)
+print(result_df)
+
+# Consultar o DataFrame resultante
+summary = result_df.query('SELECT b, sum(a) FROM __table__ GROUP BY b')
+print(summary)
+```
+
+<div id="python-table-engine-recommended">
+  #### Engine de tabela Python (recomendado)
+</div>
+
+```python
+import chdb
+import pandas as pd
+import pyarrow as pa
+
+# Consultar DataFrame do Pandas diretamente
+df = pd.DataFrame({
+    "customer_id": [1, 2, 3, 1, 2],
+    "product": ["A", "B", "A", "C", "A"],
+    "amount": [100, 200, 150, 300, 250],
+    "metadata": [
+        {'category': 'electronics', 'priority': 'high'},
+        {'category': 'books', 'priority': 'low'},
+        {'category': 'electronics', 'priority': 'medium'},
+        {'category': 'clothing', 'priority': 'high'},
+        {'category': 'books', 'priority': 'low'}
+    ]
+})
+
+# Consulta direta ao DataFrame com suporte a JSON
+result = chdb.query("""
+    SELECT 
+        customer_id,
+        sum(amount) as total_spent,
+        toString(metadata.category) as category
+    FROM Python(df)
+    WHERE toString(metadata.priority) = 'high'
+    GROUP BY customer_id, toString(metadata.category)
+    ORDER BY total_spent DESC
+""").show()
+
+# Consultar tabela Arrow
+arrow_table = pa.table({
+    "id": [1, 2, 3, 4],
+    "name": ["Alice", "Bob", "Charlie", "David"],
+    "score": [98, 89, 86, 95]
+})
+
+chdb.query("""
+    SELECT name, score
+    FROM Python(arrow_table)
+    ORDER BY score DESC
+""").show()
+```
+
+<div id="stateful-sessions">
+  ### Sessões com estado
+</div>
+
+As sessões preservam o estado da consulta ao longo de várias operações, permitindo fluxos de trabalho complexos:
+
+```python
+from chdb import session
+
+# Sessão temporária (limpeza automática)
+sess = session.Session()
+
+# Ou sessão persistente com caminho específico
+# sess = session.Session("/path/to/data")
+
+# Criar banco de dados e tabelas
+sess.query("CREATE DATABASE IF NOT EXISTS analytics ENGINE = Atomic")
+sess.query("USE analytics")
+
+sess.query("""
+    CREATE TABLE sales (
+        id UInt64,
+        product String,
+        amount Decimal(10,2),
+        sale_date Date
+    ) ENGINE = MergeTree() 
+    ORDER BY (sale_date, id)
+""")
+
+# Inserir dados
+sess.query("""
+    INSERT INTO sales VALUES 
+        (1, 'Laptop', 999.99, '2024-01-15'),
+        (2, 'Mouse', 29.99, '2024-01-16'),
+        (3, 'Keyboard', 79.99, '2024-01-17')
+""")
+
+# Criar visões materializadas
+sess.query("""
+    CREATE MATERIALIZED VIEW daily_sales AS
+    SELECT 
+        sale_date,
+        count() as orders,
+        sum(amount) as revenue
+    FROM sales 
+    GROUP BY sale_date
+""")
+
+# Consultar a visão
+result = sess.query("SELECT * FROM daily_sales ORDER BY sale_date", "Pretty")
+print(result)
+
+# A sessão gerencia os recursos automaticamente
+sess.close()  # Opcional - fechada automaticamente quando o objeto é deletado
+```
+
+<div id="advanced-session-features">
+  ### Funcionalidades avançadas de sessão
+</div>
+
+```python
+# Session with custom settings
+sess = session.Session(
+    path="/tmp/analytics_db",
+)
+
+# Query performance optimization
+result = sess.query("""
+    SELECT product, sum(amount) as total
+    FROM sales 
+    GROUP BY product
+    ORDER BY total DESC
+    SETTINGS max_threads = 4
+""", "JSON")
+```
+
+Veja também: [test&#95;stateful.py](https://github.com/chdb-io/chdb-core/blob/main/tests/test_stateful.py).
+
+<div id="python-db-api-20">
+  ### Interface DB-API 2.0 do Python
+</div>
+
+Interface padrão de banco de dados para compatibilidade com aplicativos Python existentes:
+
+```python
+import chdb.dbapi as dbapi
+
+# Verificar informações do driver
+print(f"chDB driver version: {dbapi.get_client_info()}")
+
+# Criar conexão
+conn = dbapi.connect()
+cursor = conn.cursor()
+
+# Executar consultas com parâmetros
+cursor.execute("""
+    SELECT number, number * ? as doubled 
+    FROM system.numbers 
+    LIMIT ?
+""", (2, 5))
+
+# Obter metadados
+print("Column descriptions:", cursor.description)
+print("Row count:", cursor.rowcount)
+
+# Buscar resultados
+print("First row:", cursor.fetchone())
+print("Next 2 rows:", cursor.fetchmany(2))
+
+# Buscar linhas restantes
+for row in cursor.fetchall():
+    print("Row:", row)
+
+# Operações em lote
+data = [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')]
+cursor.execute("""
+    CREATE TABLE temp_users (
+        id UInt64,
+        name String
+    ) ENGINE = MergeTree()
+    ORDER BY (id)
+""")
+cursor.executemany(
+    "INSERT INTO temp_users (id, name) VALUES (?, ?)", 
+    data
+)
+```
+
+<div id="user-defined-functions">
+  ### Funções definidas pelo usuário (UDF)
+</div>
+
+Estenda o SQL com funções Python personalizadas:
+
+<div id="basic-udf-usage">
+  #### Uso básico de UDF
+</div>
+
+```python
+from chdb.udf import chdb_udf
+from chdb import query
+
+# Função matemática simples
+@chdb_udf()
+def add_numbers(a, b):
+    return int(a) + int(b)
+
+# Função de processamento de string
+@chdb_udf()
+def reverse_string(text):
+    return text[::-1]
+
+# Função de processamento de JSON  
+@chdb_udf()
+def extract_json_field(json_str, field):
+    import json
+    try:
+        data = json.loads(json_str)
+        return str(data.get(field, ''))
+    except:
+        return ''
+
+# Usar UDFs em consultas
+result = query("""
+    SELECT 
+        add_numbers('10', '20') as sum_result,
+        reverse_string('hello') as reversed,
+        extract_json_field('{"name": "John", "age": 30}', 'name') as name
+""")
+print(result)
+```
+
+<div id="advanced-udf-custom-return-types">
+  #### UDF avançada com tipos de retorno personalizados
+</div>
+
+```python
+# UDF com tipo de retorno específico
+@chdb_udf(return_type="Float64")
+def calculate_bmi(height_str, weight_str):
+    height = float(height_str) / 100  # Converte cm para metros
+    weight = float(weight_str)
+    return weight / (height * height)
+
+# UDF para validação de dados
+@chdb_udf(return_type="UInt8") 
+def is_valid_email(email):
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return 1 if re.match(pattern, email) else 0
+
+# Uso em consultas complexas
+result = query("""
+    SELECT 
+        name,
+        calculate_bmi(height, weight) as bmi,
+        is_valid_email(email) as has_valid_email
+    FROM (
+        SELECT 
+            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
+        UNION ALL
+        SELECT 
+            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
+    )
+""", "Pretty")
+print(result)
+```
+
+<div id="udf-best-practices">
+  #### Boas práticas de UDF
+</div>
+
+1. **Funções sem estado**: as UDFs devem ser funções puras, sem efeitos colaterais
+2. **Importações dentro das funções**: todos os módulos necessários devem ser importados dentro da UDF
+3. **Entrada/saída de strings**: todos os parâmetros da UDF são strings (formato TabSeparated)
+4. **Tratamento de erros**: inclua blocos try-catch para criar UDFs robustas
+5. **Desempenho**: as UDFs são chamadas para cada linha, portanto otimize o desempenho
+
+```python
+# UDF bem estruturada com tratamento de erros
+@chdb_udf(return_type="String")
+def safe_json_extract(json_str, path):
+    import json
+    try:
+        data = json.loads(json_str)
+        keys = path.split('.')
+        result = data
+        for key in keys:
+            if isinstance(result, dict) and key in result:
+                result = result[key]
+            else:
+                return 'null'
+        return str(result)
+    except Exception as e:
+        return f'error: {str(e)}'
+
+# Use com JSON aninhado complexo
+query("""
+    SELECT safe_json_extract(
+        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
+        'user.profile.name'
+    ) as extracted_name
+""")
+```
+
+<div id="streaming-queries">
+  ### Processamento de consultas em streaming
+</div>
+
+Processe grandes conjuntos de dados com uso de memória constante:
+
+```python
+from chdb import session
+
+sess = session.Session()
+
+# Configurar conjunto de dados grande
+sess.query("""
+    CREATE TABLE large_data ENGINE = Memory() AS 
+    SELECT number as id, toString(number) as data 
+    FROM numbers(1000000)
+""")
+
+# Exemplo 1: Streaming básico com gerenciador de contexto
+total_rows = 0
+with sess.send_query("SELECT * FROM large_data", "CSV") as stream:
+    for chunk in stream:
+        chunk_rows = len(chunk.data().split('\n')) - 1
+        total_rows += chunk_rows
+        print(f"Processed chunk: {chunk_rows} rows")
+        
+        # Encerramento antecipado se necessário
+        if total_rows > 100000:
+            break
+
+print(f"Total rows processed: {total_rows}")
+
+# Exemplo 2: Iteração manual com limpeza explícita
+stream = sess.send_query("SELECT * FROM large_data WHERE id % 100 = 0", "JSONEachRow")
+processed_count = 0
+
+while True:
+    chunk = stream.fetch()
+    if chunk is None:
+        break
+    
+    # Processar dados do fragmento
+    lines = chunk.data().strip().split('\n')
+    for line in lines:
+        if line:  # Ignorar linhas vazias
+            processed_count += 1
+    
+    print(f"Processed {processed_count} records so far...")
+    
+stream.close()  # Importante: limpeza explícita
+
+# Exemplo 3: Integração com Arrow para bibliotecas externas
+import pyarrow as pa
+from deltalake import write_deltalake
+
+# Transmitir resultados no formato Arrow
+stream = sess.send_query("SELECT * FROM large_data LIMIT 100000", "Arrow")
+
+# Criar RecordBatchReader com tamanho de lote personalizado
+batch_reader = stream.record_batch(rows_per_batch=10000)
+
+# Exportar para Delta Lake
+write_deltalake(
+    table_or_uri="./my_delta_table",
+    data=batch_reader,
+    mode="overwrite"
+)
+
+stream.close()
+sess.close()
+```
+
+<div id="python-table-engine">
+  ### Engine de tabela Python
+</div>
+
+<div id="query-pandas-dataframes">
+  #### Consultar DataFrames do pandas
+</div>
+
+```python
+import chdb
+import pandas as pd
+
+# DataFrame complexo com dados aninhados
+df = pd.DataFrame({
+    "customer_id": [1, 2, 3, 4, 5, 6],
+    "customer_name": ["Alice", "Bob", "Charlie", "Alice", "Bob", "David"],
+    "orders": [
+        {"order_id": 101, "amount": 250.50, "items": ["laptop", "mouse"]},
+        {"order_id": 102, "amount": 89.99, "items": ["book"]},
+        {"order_id": 103, "amount": 1299.99, "items": ["phone", "case", "charger"]},
+        {"order_id": 104, "amount": 45.50, "items": ["pen", "paper"]},
+        {"order_id": 105, "amount": 199.99, "items": ["headphones"]},
+        {"order_id": 106, "amount": 15.99, "items": ["cable"]}
+    ]
+})
+
+# Consultas avançadas com operações JSON
+result = chdb.query("""
+    SELECT 
+        customer_name,
+        count() as order_count,
+        sum(toFloat64(orders.amount)) as total_spent,
+        arrayStringConcat(
+            arrayDistinct(
+                arrayFlatten(
+                    groupArray(orders.items)
+                )
+            ), 
+            ', '
+        ) as all_items
+    FROM Python(df)
+    GROUP BY customer_name
+    HAVING total_spent > 100
+    ORDER BY total_spent DESC
+""").show()
+
+# Window functions em DataFrames
+window_result = chdb.query("""
+    SELECT 
+        customer_name,
+        toFloat64(orders.amount) as amount,
+        sum(toFloat64(orders.amount)) OVER (
+            PARTITION BY customer_name 
+            ORDER BY toInt32(orders.order_id)
+        ) as running_total
+    FROM Python(df)
+    ORDER BY customer_name, toInt32(orders.order_id)
+""", "Pretty")
+print(window_result)
+```
+
+<div id="custom-data-sources-pyreader">
+  #### Fontes de dados personalizadas com o PyReader
+</div>
+
+Implemente leitores de dados personalizados para fontes de dados específicas:
+
+````python
+import chdb
+from typing import List, Tuple, Any
+import json
+
+class DatabaseReader(chdb.PyReader):
+    """Custom reader for database-like data sources"""
+    
+    def __init__(self, connection_string: str):
+        # Simulate database connection
+        self.data = self._load_data(connection_string)
+        self.cursor = 0
+        self.batch_size = 1000
+        super().__init__(self.data)
+    
+    def _load_data(self, conn_str):
+        # Simulate loading from database
+        return {
+            "id": list(range(1, 10001)),
+            "name": [f"user_{i}" for i in range(1, 10001)],
+            "score": [i * 10 + (i % 7) for i in range(1, 10001)],
+            "metadata": [
+                json.dumps({"level": i % 5, "active": i % 3 == 0})
+                for i in range(1, 10001)
+            ]
+        }
+    
+    def get_schema(self) -> List[Tuple[str, str]]:
+        """Define table schema with explicit types"""
+        return [
+            ("id", "UInt64"),
+            ("name", "String"),
+            ("score", "Int64"),
+            ("metadata", "String")  # JSON stored as string
+        ]
+    
+    def read(self, col_names: List[str], count: int) -> List[List[Any]]:
+        """Read data in batches"""
+        if self.cursor >= len(self.data["id"]):
+            return []  # No more data
+        
+        end_pos = min(self.cursor + min(count, self.batch_size), len(self.data["id"]))
+        
+        # Return data for requested columns
+        result = []
+        for col in col_names:
+            if col in self.data:
+                result.append(self.data[col][self.cursor:end_pos])
+            else:
+                # Handle missing columns
+                result.append([None] * (end_pos - self.cursor))
+        
+        self.cursor = end_pos
+        return result
+
+### JSON Type Inference and Handling                                
+
+chDB automatically handles complex nested data structures:
+
+```python
+import pandas as pd
+import chdb
+
+# DataFrame with mixed JSON objects
+df_with_json = pd.DataFrame({
+    "user_id": [1, 2, 3, 4],
+    "profile": [
+        {"name": "Alice", "age": 25, "preferences": ["music", "travel"]},
+        {"name": "Bob", "age": 30, "location": {"city": "NYC", "country": "US"}},
+        {"name": "Charlie", "skills": ["python", "sql", "ml"], "experience": 5},
+        {"score": 95, "rank": "gold", "achievements": [{"title": "Expert", "date": "2024-01-01"}]}
+    ]
+})
+
+# Control JSON inference with settings
+result = chdb.query("""
+    SELECT 
+        user_id,
+        profile.name as name,
+        profile.age as age,
+        length(profile.preferences) as pref_count,
+        profile.location.city as city
+    FROM Python(df_with_json)
+    SETTINGS pandas_analyze_sample = 1000  -- Analyze all rows for JSON detection
+""", "Pretty")
+print(result)
+
+# Advanced JSON operations
+complex_json = chdb.query("""
+    SELECT 
+        user_id,
+        JSONLength(toString(profile)) as json_fields,
+        JSONType(toString(profile), 'preferences') as pref_type,
+        if(
+            JSONHas(toString(profile), 'achievements'),
+            JSONExtractString(toString(profile), 'achievements[0].title'),
+            'None'
+        ) as first_achievement
+    FROM Python(df_with_json)
+""", "JSONEachRow")
+print(complex_json)
+````
+
+## Desempenho e otimização
+
+### Benchmarks
+
+O chDB supera consistentemente outros motores embutidos:
+
+* **Operações com DataFrame**: 2–5x mais rápidas do que bibliotecas tradicionais de DataFrame em consultas analíticas
+* **Processamento de Parquet**: No mesmo nível dos principais motores colunares
+* **Eficiência de memória**: Menor uso de memória do que as alternativas
+
+[Mais detalhes sobre os resultados de benchmark](https://github.com/chdb-io/chdb?tab=readme-ov-file#benchmark)
+
+### Dicas de desempenho
+
+```python
+import chdb
+
+# 1. Use formatos de saída apropriados
+df_result = chdb.query("SELECT * FROM large_table", "DataFrame")  # Para análise
+arrow_result = chdb.query("SELECT * FROM large_table", "Arrow")    # Para interoperabilidade
+native_result = chdb.query("SELECT * FROM large_table", "Native")   # Para chDB-to-chDB
+
+# 2. Otimize consultas com configurações
+fast_result = chdb.query("""
+    SELECT customer_id, sum(amount) 
+    FROM sales 
+    GROUP BY customer_id
+    SETTINGS 
+        max_threads = 8,
+        max_memory_usage = '4G',
+        use_uncompressed_cache = 1
+""", "DataFrame")
+
+# 3. Utilize streaming para grandes conjuntos de dados
+from chdb import session
+
+sess = session.Session()
+
+# Configurar conjunto de dados grande
+sess.query("""
+    CREATE TABLE large_sales ENGINE = Memory() AS 
+    SELECT 
+        number as sale_id,
+        number % 1000 as customer_id,
+        rand() % 1000 as amount
+    FROM numbers(10000000)
+""")
+
+# Processamento de stream com uso de memória constante
+total_amount = 0
+processed_rows = 0
+
+with sess.send_query("SELECT customer_id, sum(amount) as total FROM large_sales GROUP BY customer_id", "JSONEachRow") as stream:
+    for chunk in stream:
+        lines = chunk.data().strip().split('\n')
+        for line in lines:
+            if line:  # Ignorar linhas vazias
+                import json
+                row = json.loads(line)
+                total_amount += row['total']
+                processed_rows += 1
+        
+        print(f"Processed {processed_rows} customer records, running total: {total_amount}")
+        
+        # Encerramento antecipado para demonstração
+        if processed_rows > 1000:
+            break
+
+print(f"Final result: {processed_rows} customers processed, total amount: {total_amount}")
+
+# Transmitir para sistemas externos (ex.: Delta Lake)
+stream = sess.send_query("SELECT * FROM large_sales LIMIT 1000000", "Arrow")
+batch_reader = stream.record_batch(rows_per_batch=50000)
+
+# Processar em lotes
+for batch in batch_reader:
+    print(f"Processing batch with {batch.num_rows} rows...")
+    # Transformar ou exportar cada lote
+    # df_batch = batch.to_pandas()
+    # process_batch(df_batch)
+
+stream.close()
+sess.close()
+```
+
+## Repositório no GitHub
+
+* **Repositório principal**: [chdb-io/chdb](https://github.com/chdb-io/chdb)
+* **Problemas e suporte**: Reporte problemas no [repositório do GitHub](https://github.com/chdb-io/chdb/issues)

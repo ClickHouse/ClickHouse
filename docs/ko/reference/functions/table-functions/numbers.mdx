@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/table-functions/numbers
+sidebarTitle: 'numbers'
+title: 'numbers'
+description: '정수 시퀀스를 포함하는 단일 `number` 컬럼이 있는 테이블을 반환합니다.'
+doc_type: 'reference'
+---
+
+* `numbers()` – 0부터 시작하는 오름차순 정수를 포함하는 단일 `number` 컬럼(UInt64)이 있는 무한 테이블을 반환합니다. 행 수를 제한하려면 `LIMIT`(선택적으로 `OFFSET` 포함)를 사용합니다.
+
+* `numbers(N)` – 0부터 `N - 1`까지의 정수를 포함하는 단일 `number` 컬럼(UInt64)이 있는 테이블을 반환합니다.
+
+* `numbers(N, M)` – `N`부터 `N + M - 1`까지의 `M`개 정수를 포함하는 단일 `number` 컬럼(UInt64)이 있는 테이블을 반환합니다.
+
+* `numbers(N, M, S)` – 단계가 `S`인 `[N, N + M)` 범위의 값을 포함하는 단일 `number` 컬럼(UInt64)이 있는 테이블을 반환합니다(약 `M / S`개 행, 올림). `S`는 `>= 1`이어야 합니다.
+
+이는 [`system.numbers`](/ko/reference/system-tables/numbers) 시스템 테이블과 유사합니다. 테스트 및 연속된 값 생성에 사용할 수 있습니다.
+
+다음 쿼리는 동일합니다:
+
+```sql
+SELECT * FROM numbers(10);
+SELECT * FROM numbers(0, 10);
+SELECT * FROM numbers() LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers WHERE number BETWEEN 0 AND 9;
+SELECT * FROM system.numbers WHERE number IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+```
+
+다음 쿼리도 동등합니다:
+
+```sql
+SELECT * FROM numbers(10, 10);
+SELECT * FROM numbers() LIMIT 10 OFFSET 10;
+SELECT * FROM system.numbers LIMIT 10 OFFSET 10;
+```
+
+다음 쿼리도 동일한 의미입니다:
+
+```sql
+SELECT number * 2 FROM numbers(10);
+SELECT (number - 10) * 2 FROM numbers(10, 10);
+SELECT * FROM numbers(0, 20, 2);
+```
+
+<div id="examples">
+  ### 예시
+</div>
+
+처음 10개의 수.
+
+```sql
+SELECT * FROM numbers(10);
+```
+
+```response
+ ┌─number─┐
+ │      0 │
+ │      1 │
+ │      2 │
+ │      3 │
+ │      4 │
+ │      5 │
+ │      6 │
+ │      7 │
+ │      8 │
+ │      9 │
+ └────────┘
+```
+
+2010-01-01부터 2010-12-31까지의 날짜 목록을 생성합니다.
+
+```sql
+SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
+```
+
+후행 0비트가 20개인 `sipHash64(number)` 값을 갖는 첫 번째 `UInt64` `>= 10^15`를 찾습니다.
+
+```sql
+SELECT number
+FROM numbers()
+WHERE number >= 1e15
+  AND bitAnd(sipHash64(number), 0xFFFFF) = 0
+LIMIT 1;
+```
+
+```response
+ ┌───────────number─┐
+ │ 1000000000056095 │ -- 1.00 quadrillion
+ └──────────────────┘
+```
+
+<div id="notes">
+  ### 참고 사항
+</div>
+
+* 성능상 필요한 행 수를 알고 있다면, 범위가 없는 `numbers()` / `system.numbers`보다 범위가 지정된 형식(`numbers(N)`, `numbers(N, M[, S])`)을 사용하는 것이 좋습니다.
+* 병렬로 생성하려면 `numbers_mt(...)` 또는 [`system.numbers_mt`](/ko/reference/system-tables/numbers_mt) 테이블을 사용하십시오. 결과는 어떤 순서로든 반환될 수 있습니다.

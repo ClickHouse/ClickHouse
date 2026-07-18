@@ -1,0 +1,74 @@
+---
+title: 'Enrutamiento con reconocimiento de réplicas'
+slug: /manage/replica-aware-routing
+description: 'Cómo usar el enrutamiento con reconocimiento de réplicas para aumentar la reutilización de caché'
+keywords: ['nube', 'endpoints con afinidad', 'afinidad', 'endpoints', 'enrutamiento con afinidad', 'enrutamiento', 'enrutamiento con reconocimiento de réplicas', 'session_id']
+doc_type: 'guide'
+noindex: true
+---
+
+import PrivatePreviewBadge from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+El enrutamiento con reconocimiento de réplicas (también conocido como sticky sessions, enrutamiento con afinidad o afinidad de sesión) aumenta la probabilidad de reutilizar la caché al enrutar de forma coherente las solicitudes relacionadas a la misma réplica de ClickHouse. Es de mejor esfuerzo y no garantiza el aislamiento.
+
+<Warning>
+  **Compatibilidad de protocolo — solo HTTP/HTTPS**
+
+  El enrutamiento con reconocimiento de réplicas se aplica en la capa de proxy sobre la **interfaz HTTP/HTTPS**, usando el parámetro de consulta `session_id` (véase a continuación). **No está disponible a través del protocolo nativo** (puerto nativo; por ejemplo, el driver `clickhouse-go` en su modo nativo predeterminado). Si necesita enrutamiento con afinidad desde un client que use el protocolo nativo, conecte esa carga de trabajo a través de la interfaz HTTP; para `clickhouse-go` (v2), establezca `Protocol: clickhouse.HTTP` en la conexión.
+</Warning>
+
+<div id="http-based-routing">
+  ## Enrutamiento basado en HTTP (session_id)
+</div>
+
+Para fijar una carga de trabajo a una réplica, establece el parámetro de consulta `session_id` en la interfaz HTTPS. El proxy procesa la solicitud y aplica hash consistente al `session_id` para seleccionar una réplica, por lo que todas las solicitudes que comparten el mismo `session_id` se enrutan al mismo servidor, hasta que cambie la topología del clúster.
+
+```bash
+echo 'SELECT hostName()' | curl \
+  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/?session_id=my-workload-1' -d @-
+```
+
+Cada solicitud que incluya `session_id=my-workload-1` se enruta a la misma réplica. Un valor de `session_id` distinto se somete a hash de forma independiente y puede enrutar la solicitud a la misma réplica o a otra distinta; la asignación es coherente, pero no eliges *a qué* réplica se asigna un valor determinado.
+
+<div id="subdomain-based-routing-deprecated">
+  ## Enrutamiento basado en subdominios (obsoleto)
+</div>
+
+<Danger>
+  **Obsoleto**
+
+  El mecanismo basado en subdominios que se describe a continuación está **obsoleto** y ya no está habilitado en los servicios nuevos. No escala (cada endpoint persistente requiere su propio certificado TLS). Use en su lugar el [método `session_id` basado en HTTP](#http-based-routing).
+</Danger>
+
+Anteriormente, habilitar el enrutamiento con reconocimiento de réplicas permitía usar un subdominio comodín sobre el nombre del host del servicio. En un servicio con el nombre del host `abcxyz123.us-west-2.aws.clickhouse.cloud`, cualquier hostname que coincidiera con `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` (por ejemplo, `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) era procesado con hash por Envoy y asignado de forma consistente a una réplica. El hostname original seguía usando el balanceo de carga `LEAST_CONNECTION`, el algoritmo de enrutamiento predeterminado.
+
+<div id="limitations-of-replica-aware-routing">
+  ## Limitaciones del enrutamiento con reconocimiento de réplicas
+</div>
+
+<div id="replica-aware-routing-does-not-guarantee-isolation">
+  ### enrutamiento con reconocimiento de réplicas no garantiza el aislamiento
+</div>
+
+Cualquier interrupción del servicio —reinicios del pod de Kubernetes del servidor (actualización de versión, fallo, escalado vertical) o el escalado horizontal del servidor (de salida o de entrada)— provocará una alteración en el anillo hash de enrutamiento. Esto hará que las solicitudes que comparten el mismo `session_id` terminen en un pod de Kubernetes del servidor distinto.
+
+<div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
+  ### El enrutamiento con reconocimiento de réplicas no funciona de forma predeterminada con Private Link
+</div>
+
+Al usar el método de subdominio obsoleto, los clientes deben agregar manualmente una entrada DNS para que la resolución de nombres funcione con el nuevo patrón de hostname. Si se usa incorrectamente, esto puede provocar un desequilibrio en la carga de los servidores.
+
+<div id="replica-aware-routing-requires-http">
+  ### El enrutamiento con reconocimiento de réplicas requiere el protocolo HTTP
+</div>
+
+El enrutamiento con afinidad se basa en el parámetro de consulta `session_id`, que solo existe en la interfaz HTTP/HTTPS. El protocolo binario nativo no incluye ningún parámetro de este tipo que el proxy pueda usar para calcular el hash, por lo que el enrutamiento con reconocimiento de réplicas no está disponible a través del protocolo nativo. Los clients del protocolo nativo deben trasladar la carga de trabajo correspondiente a la interfaz HTTP para usar esta funcionalidad.
+
+<div id="configuring-replica-aware-routing">
+  ## Configuración del enrutamiento con reconocimiento de réplicas
+</div>
+
+Para habilitar el enrutamiento con reconocimiento de réplicas, ponte en contacto con [nuestro equipo de soporte](https://clickhouse.com/support/program).

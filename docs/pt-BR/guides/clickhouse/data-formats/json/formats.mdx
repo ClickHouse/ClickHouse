@@ -1,0 +1,501 @@
+---
+title: 'Trabalhando com outros formatos JSON'
+slug: /integrations/data-formats/json/other-formats
+description: 'Trabalhando com outros formatos JSON'
+sidebarTitle: 'Trabalhando com outros formatos'
+keywords: ['json', 'formatos', 'formatos json']
+doc_type: 'guide'
+---
+
+Nos exemplos anteriores de carregamento de dados JSON, pressupõe-se o uso de [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow) (`NDJSON`). Esse formato interpreta as chaves em cada linha JSON como colunas. Por exemplo:
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+LIMIT 5
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+5 rows in set. Elapsed: 0.449 sec.
+```
+
+Embora esse seja, em geral, o formato mais comum para JSON, você encontrará outros formatos ou precisará ler o JSON como um único objeto.
+
+Abaixo, fornecemos exemplos de leitura e carregamento de JSON em outros formatos comuns.
+
+<div id="reading-json-as-an-object">
+  ## Lendo JSON como um objeto
+</div>
+
+Nossos exemplos anteriores mostram como `JSONEachRow` lê JSON delimitado por quebras de linha, com cada linha sendo lida como um objeto separado, mapeado para uma linha da tabela, e cada chave para uma coluna. Isso é ideal para casos em que o JSON é previsível, com um único tipo para cada coluna.
+
+Em contraste, `JSONAsObject` trata cada linha como um único objeto `JSON` e o armazena em uma única coluna, do tipo [`JSON`](/pt-BR/reference/data-types/newjson), o que o torna mais adequado para payloads JSON aninhados e casos em que as chaves são dinâmicas e podem ter mais de um tipo.
+
+Use `JSONEachRow` para inserts linha a linha e [`JSONAsObject`](/pt-BR/reference/formats/JSON/JSONAsObject) ao armazenar dados JSON flexíveis ou dinâmicos.
+
+Compare o exemplo acima com a consulta a seguir, que lê os mesmos dados como um objeto JSON por linha:
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+LIMIT 5
+```
+
+```response
+┌─json─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.338 sec.
+```
+
+`JSONAsObject` é útil para inserir linhas em uma tabela usando uma única coluna do tipo objeto JSON, por exemplo.
+
+```sql
+CREATE TABLE pypi
+(
+    `json` JSON
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+LIMIT 5;
+
+SELECT *
+FROM pypi
+LIMIT 2;
+```
+
+```response
+┌─json─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+O formato `JSONAsObject` também pode ser útil para ler JSON delimitado por quebras de linha nos casos em que a estrutura dos objetos é inconsistente. Por exemplo, se uma chave varia de tipo entre as linhas (às vezes pode ser uma string, mas em outras, um objeto). Nesses casos, o ClickHouse não consegue inferir um esquema estável usando `JSONEachRow`, e `JSONAsObject` permite que os dados sejam ingeridos sem impor tipos rígidos, armazenando cada linha JSON inteira em uma única coluna. Por exemplo, observe como `JSONEachRow` falha no exemplo a seguir:
+
+```sql
+SELECT count()
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+```
+
+```response
+Elapsed: 1.198 sec.
+
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'record.subject' has type 'String' and in some - 'Tuple(`$type` String, cid String, uri String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'record.subject'. (INCORRECT_DATA) (version 24.12.1.18239 (official build))
+To increase the maximum number of rows/bytes to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference.
+You can specify the structure manually: (in file/uri bluesky/file_0001.json.gz). (CANNOT_EXTRACT_TABLE_STRUCTURE)
+```
+
+Por outro lado, `JSONAsObject` pode ser usado neste caso, pois o tipo `JSON` aceita vários tipos para a mesma subcoluna.
+
+```sql
+SELECT count()
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+```
+
+```response
+┌─count()─┐
+│ 1000000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.480 sec. Processed 1.00 million rows, 256.00 B (2.08 million rows/s., 533.76 B/s.)
+```
+
+<div id="array-of-json-objects">
+  ## Array de objetos JSON
+</div>
+
+Uma das formas mais comuns de dados JSON é ter uma lista de objetos JSON em um array JSON, como [neste exemplo](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json):
+
+```bash
+> cat list.json
+[
+  {
+    "path": "Akiba_Hebrew_Academy",
+    "month": "2017-08-01",
+    "hits": 241
+  },
+  {
+    "path": "Aegithina_tiphia",
+    "month": "2018-02-01",
+    "hits": 34
+  },
+  ...
+]
+```
+
+Vamos criar uma tabela para esse tipo de dado:
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `month` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple(month, path)
+```
+
+Para importar uma lista de objetos JSON, podemos usar o formato [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow) (inserindo os dados do arquivo [list.json](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json)):
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'list.json'
+FORMAT JSONEachRow
+```
+
+Usamos uma cláusula [FROM INFILE](/pt-BR/reference/statements/insert-into#inserting-data-from-a-file) para carregar os dados de um arquivo local, e podemos ver que a importação foi bem-sucedida:
+
+```sql
+SELECT *
+FROM sometable
+```
+
+```response
+┌─path──────────────────────┬──────month─┬─hits─┐
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │    1 │
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │  241 │
+│ Aegithina_tiphia          │ 2018-02-01 │   34 │
+└───────────────────────────┴────────────┴──────┘
+```
+
+<div id="json-object-keys">
+  ## Chaves de objetos JSON
+</div>
+
+Em alguns casos, a lista de objetos JSON pode ser codificada como propriedades do objeto em vez de elementos do array (consulte [objects.json](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/objects.json), por exemplo):
+
+```bash
+cat objects.json
+```
+
+```response
+{
+  "a": {
+    "path":"April_25,_2017",
+    "month":"2018-01-01",
+    "hits":2
+  },
+  "b": {
+    "path":"Akahori_Station",
+    "month":"2016-06-01",
+    "hits":11
+  },
+  ...
+}
+```
+
+O ClickHouse pode carregar dados a partir desse tipo de dado usando o formato [`JSONObjectEachRow`](/pt-BR/reference/formats/JSON/JSONObjectEachRow):
+
+```sql
+INSERT INTO sometable FROM INFILE 'objects.json' FORMAT JSONObjectEachRow;
+SELECT * FROM sometable;
+```
+
+```response
+┌─path────────────┬──────month─┬─hits─┐
+│ Abducens_palsy  │ 2016-05-01 │   28 │
+│ Akahori_Station │ 2016-06-01 │   11 │
+│ April_25,_2017  │ 2018-01-01 │    2 │
+└─────────────────┴────────────┴──────┘
+```
+
+<div id="specifying-parent-object-key-values">
+  ### Especificando valores de chave de objetos pai
+</div>
+
+Digamos que também queremos salvar na tabela os valores das chaves de objetos pai. Nesse caso, podemos usar a [opção a seguir](/pt-BR/reference/settings/formats#format_json_object_each_row_column_for_object_name) para definir o nome da coluna em que queremos salvar os valores das chaves:
+
+```sql
+SET format_json_object_each_row_column_for_object_name = 'id'
+```
+
+Agora, podemos verificar quais dados serão carregados do arquivo JSON original com a função [`file()`](/pt-BR/reference/functions/regular-functions/files#file):
+
+```sql
+SELECT * FROM file('objects.json', JSONObjectEachRow)
+```
+
+```response
+┌─id─┬─path────────────┬──────month─┬─hits─┐
+│ a  │ April_25,_2017  │ 2018-01-01 │    2 │
+│ b  │ Akahori_Station │ 2016-06-01 │   11 │
+│ c  │ Abducens_palsy  │ 2016-05-01 │   28 │
+└────┴─────────────────┴────────────┴──────┘
+```
+
+Observe como a coluna `id` foi preenchida corretamente com os valores das chaves.
+
+<div id="json-arrays">
+  ## Arrays JSON
+</div>
+
+Às vezes, para economizar espaço, os arquivos JSON são codificados como arrays em vez de objetos. Nesse caso, lidamos com uma [lista de arrays JSON](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/arrays.jsonl):
+
+```bash
+cat arrays.json
+```
+
+```response
+["Akiba_Hebrew_Academy", "2017-08-01", 241],
+["Aegithina_tiphia", "2018-02-01", 34],
+["1971-72_Utah_Stars_season", "2016-10-01", 1]
+```
+
+Nesse caso, o ClickHouse carregará esses dados e atribuirá cada valor à coluna correspondente com base em sua ordem no array. Para isso, usamos o formato [`JSONCompactEachRow`](/pt-BR/reference/formats/JSON/JSONCompactEachRow):
+
+```sql
+SELECT * FROM sometable
+```
+
+```response
+┌─c1────────────────────────┬─────────c2─┬──c3─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │ 241 │
+│ Aegithina_tiphia          │ 2018-02-01 │  34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │   1 │
+└───────────────────────────┴────────────┴─────┘
+```
+
+<div id="importing-individual-columns-from-json-arrays">
+  ### Importando colunas individuais de arrays JSON
+</div>
+
+Em alguns casos, os dados podem ser codificados em colunas em vez de em linhas. Nesse caso, um objeto JSON pai contém colunas com valores. Veja o [arquivo a seguir](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/columns.json):
+
+```bash
+cat columns.json
+```
+
+```response
+{
+  "path": ["2007_Copa_America", "Car_dealerships_in_the_USA", "Dihydromyricetin_reductase"],
+  "month": ["2016-07-01", "2015-07-01", "2015-07-01"],
+  "hits": [178, 11, 1]
+}
+```
+
+O ClickHouse usa o formato [`JSONColumns`](/pt-BR/reference/formats/JSON/JSONColumns) para analisar dados formatados desta forma:
+
+```sql
+SELECT * FROM file('columns.json', JSONColumns)
+```
+
+```response
+┌─path───────────────────────┬──────month─┬─hits─┐
+│ 2007_Copa_America          │ 2016-07-01 │  178 │
+│ Car_dealerships_in_the_USA │ 2015-07-01 │   11 │
+│ Dihydromyricetin_reductase │ 2015-07-01 │    1 │
+└────────────────────────────┴────────────┴──────┘
+```
+
+Um formato mais compacto também é compatível ao trabalhar com um [array de colunas](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/columns-array.json) em vez de um objeto, usando o formato [`JSONCompactColumns`](/pt-BR/reference/formats/JSON/JSONCompactColumns):
+
+```sql
+SELECT * FROM file('columns-array.json', JSONCompactColumns)
+```
+
+```response
+┌─c1──────────────┬─────────c2─┬─c3─┐
+│ Heidenrod       │ 2017-01-01 │ 10 │
+│ Arthur_Henrique │ 2016-11-01 │ 12 │
+│ Alan_Ebnother   │ 2015-11-01 │ 66 │
+└─────────────────┴────────────┴────┘
+```
+
+<div id="saving-json-objects-instead-of-parsing">
+  ## Salvando objetos JSON em vez de analisá-los
+</div>
+
+Há casos em que você pode querer salvar objetos JSON em uma única coluna `String` (ou `JSON`) em vez de analisá-los. Isso pode ser útil ao lidar com uma lista de objetos JSON com estruturas diferentes. Vamos usar [este arquivo](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/custom.json) como exemplo, em que temos vários objetos JSON diferentes dentro de uma lista principal:
+
+```bash
+cat custom.json
+```
+
+```response
+[
+  {"name": "Joe", "age": 99, "type": "person"},
+  {"url": "/my.post.MD", "hits": 1263, "type": "post"},
+  {"message": "Warning on disk usage", "type": "log"}
+]
+```
+
+Queremos salvar os objetos JSON originais na tabela abaixo:
+
+```sql
+CREATE TABLE events
+(
+    `data` String
+)
+ENGINE = MergeTree
+ORDER BY ()
+```
+
+Agora podemos carregar dados do arquivo nesta tabela usando o formato [`JSONAsString`](/pt-BR/reference/formats/JSON/JSONAsString) para preservar os objetos JSON em vez de interpretá-los:
+
+```sql
+INSERT INTO events (data)
+FROM INFILE 'custom.json'
+FORMAT JSONAsString
+```
+
+Também podemos usar [funções JSON](/pt-BR/reference/functions/regular-functions/json-functions) para consultar objetos salvos:
+
+```sql
+SELECT
+    JSONExtractString(data, 'type') AS type,
+    data
+FROM events
+```
+
+```response
+┌─type───┬─data─────────────────────────────────────────────────┐
+│ person │ {"name": "Joe", "age": 99, "type": "person"}         │
+│ post   │ {"url": "/my.post.MD", "hits": 1263, "type": "post"} │
+│ log    │ {"message": "Warning on disk usage", "type": "log"}  │
+└────────┴──────────────────────────────────────────────────────┘
+```
+
+Observe que `JSONAsString` funciona perfeitamente bem em casos em que temos arquivos formatados com um objeto JSON por linha (geralmente usados com o formato `JSONEachRow`).
+
+<div id="schema-for-nested-objects">
+  ## Esquema para objetos aninhados
+</div>
+
+Nos casos em que lidamos com [objetos JSON aninhados](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json), também podemos definir um esquema explícito e usar tipos complexos ([`Array`](/pt-BR/reference/data-types/array), [`JSON`](/pt-BR/guides/clickhouse/data-formats/json/intro) ou [`Tuple`](/pt-BR/reference/data-types/tuple)) para carregar dados:
+
+```sql
+SELECT *
+FROM file('list-nested.json', JSONEachRow, 'page Tuple(path String, title String, owner_id UInt16), month Date, hits UInt32')
+LIMIT 1
+```
+
+```response
+┌─page───────────────────────────────────────────────┬──────month─┬─hits─┐
+│ ('Akiba_Hebrew_Academy','Akiba Hebrew Academy',12) │ 2017-08-01 │  241 │
+└────────────────────────────────────────────────────┴────────────┴──────┘
+```
+
+<div id="accessing-nested-json-objects">
+  ## Acessando objetos JSON aninhados
+</div>
+
+Podemos nos referir às [chaves JSON aninhadas](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) ativando a [seguinte opção de configuração](/pt-BR/reference/settings/formats#input_format_import_nested_json):
+
+```sql
+SET input_format_import_nested_json = 1
+```
+
+Isso nos permite referenciar as chaves de objetos JSON aninhados usando notação de ponto (lembre-se de colocá-las entre crases para que funcione):
+
+```sql
+SELECT *
+FROM file('list-nested.json', JSONEachRow, '`page.owner_id` UInt32, `page.title` String, month Date, hits UInt32')
+LIMIT 1
+```
+
+```results
+┌─page.owner_id─┬─page.title───────────┬──────month─┬─hits─┐
+│            12 │ Akiba Hebrew Academy │ 2017-08-01 │  241 │
+└───────────────┴──────────────────────┴────────────┴──────┘
+```
+
+Dessa forma, podemos desaninhar objetos JSON aninhados ou usar alguns valores aninhados para salvá-los em colunas separadas.
+
+<div id="skipping-unknown-columns">
+  ## Ignorando colunas desconhecidas
+</div>
+
+Por padrão, o ClickHouse ignora colunas desconhecidas ao importar dados JSON. Vamos tentar importar o arquivo original para a tabela sem a coluna `month`:
+
+```sql
+CREATE TABLE shorttable
+(
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY path
+```
+
+Ainda podemos inserir os [dados JSON originais](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json), com 3 colunas, nesta tabela:
+
+```sql
+INSERT INTO shorttable FROM INFILE 'list.json' FORMAT JSONEachRow;
+SELECT * FROM shorttable
+```
+
+```response
+┌─path──────────────────────┬─hits─┐
+│ 1971-72_Utah_Stars_season │    1 │
+│ Aegithina_tiphia          │   34 │
+│ Akiba_Hebrew_Academy      │  241 │
+└───────────────────────────┴──────┘
+```
+
+O ClickHouse ignorará colunas desconhecidas durante a importação. Isso pode ser desativado com a opção de configuração [input&#95;format&#95;skip&#95;unknown&#95;fields](/pt-BR/reference/settings/formats#input_format_skip_unknown_fields):
+
+```sql
+SET input_format_skip_unknown_fields = 0;
+INSERT INTO shorttable FROM INFILE 'list.json' FORMAT JSONEachRow;
+```
+
+```response
+Ok.
+Exception on client:
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: month: (in file/uri /data/clickhouse/user_files/list.json): (at row 1)
+```
+
+O ClickHouse gerará exceções em casos de inconsistência entre o JSON e a estrutura de colunas da tabela.
+
+<div id="bson">
+  ## BSON
+</div>
+
+O ClickHouse permite exportar dados para arquivos codificados em [BSON](https://bsonspec.org/) e importá-los deles. Esse formato é usado por alguns SGBDs, como o banco de dados [MongoDB](https://github.com/mongodb/mongo).
+
+Para importar dados em BSON, usamos o formato [BSONEachRow](/pt-BR/reference/formats/BSONEachRow). Vamos importar dados [deste arquivo BSON](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.bson):
+
+```sql
+SELECT * FROM file('data.bson', BSONEachRow)
+```
+
+```response
+┌─path──────────────────────┬─month─┬─hits─┐
+│ Bob_Dolman                │ 17106 │  245 │
+│ 1-krona                   │ 17167 │    4 │
+│ Ahmadabad-e_Kalij-e_Sofla │ 17167 │    3 │
+└───────────────────────────┴───────┴──────┘
+```
+
+Também é possível exportar para arquivos BSON usando o mesmo formato:
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'out.bson'
+FORMAT BSONEachRow
+```
+
+Depois disso, nossos dados serão exportados para o arquivo `out.bson`.

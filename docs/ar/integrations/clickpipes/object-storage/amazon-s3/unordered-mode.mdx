@@ -1,0 +1,205 @@
+---
+sidebarTitle: 'تهيئة الوضع غير المرتب'
+title: 'تهيئة الوضع غير المرتب للإدخال المستمر'
+slug: /integrations/clickpipes/object-storage/s3/unordered-mode
+description: 'دليل خطوة بخطوة لتهيئة الوضع غير المرتب للإدخال المستمر في S3 ClickPipes.'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+بشكل افتراضي، يفترض S3 ClickPipe أن الملفات تُضاف إلى الحاوية بترتيب [معجمي](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order). ويمكن تهيئة S3 ClickPipe لإدخال الملفات التي لا تتبع ترتيبًا ضمنيًا، وذلك من خلال إعداد قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية، مع استخدام [Amazon EventBridge](https://aws.amazon.com/eventbridge/) اختياريًا كموجّه للأحداث. يتيح ذلك لـ ClickPipes الاستماع إلى أحداث `ObjectCreated:*` وإدخال أي ملفات جديدة بغض النظر عن اصطلاح تسمية الملفات.
+
+<Note>
+  الوضع غير المرتب مدعوم **فقط** مع Amazon S3، وهو **غير** مدعوم مع الحاويات العامة أو الخدمات المتوافقة مع S3. ويتطلب ذلك إعداد قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية، مع استخدام [Amazon EventBridge](https://aws.amazon.com/eventbridge/) اختياريًا كموجّه للأحداث.
+</Note>
+
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
+
+في هذا الوضع، يُجري S3 ClickPipe تحميلًا أوليًا لـ **جميع الملفات** الموجودة في المسار المحدد، ثم يستمع إلى أحداث `ObjectCreated:*` في قائمة الانتظار التي تطابق هذا المسار. وسيتم **تجاهل** أي رسالة تخص ملفًا سبق رصده، أو ملفًا لا يطابق المسار، أو حدثًا من نوع مختلف. تُدخَل الملفات عند الوصول إلى الحد المضبوط في `max insert bytes` أو `max file count`، أو بعد فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **لا يمكن** بدء الإدخال من ملف محدد أو من نقطة زمنية معينة — إذ إن ClickPipes سيحمّل دائمًا جميع الملفات الموجودة في المسار المحدد.
+
+قد تحدث أنواع مختلفة من الإخفاقات عند إدخال البيانات، ما قد يؤدي إلى عمليات إدراج جزئية أو بيانات مكررة. تتميز Object Storage ClickPipes بالقدرة على تحمّل إخفاقات الإدراج، وتوفّر ضمان المعالجة مرة واحدة فقط باستخدام جداول مرحلية مؤقتة. تُدرَج البيانات أولًا في جدول مرحلي؛ وإذا حدث خطأ ما، يُفرَّغ الجدول المرحلي وتُعاد محاولة الإدراج من حالة نظيفة. ولا تُنقَل الأقسام إلى الجدول الهدف إلا بعد اكتمال عملية الإدراج بنجاح.
+
+<Steps>
+  <Step>
+    ## إنشاء قائمة انتظار Amazon SQS
+
+    **1.** في AWS Console، انتقل إلى **Simple Queue Service &gt; Create queue**. استخدم الإعدادات الافتراضية لإنشاء قائمة انتظار قياسية جديدة.
+
+    <Tip>
+      نوصي بشدة بإعداد **قائمة انتظار الرسائل المتعذّر تسليمها (DLQ)** لقائمة انتظار SQS، لتسهيل تصحيح الأخطاء وإعادة محاولة الرسائل الفاشلة. إذا تم إعداد DLQ، فستُعاد الرسائل الفاشلة إلى قائمة الانتظار وتُعالَج من جديد حتى عدد المرات المحدد في معلمة `maxReceiveCount` الخاصة بـ DLQ.
+    </Tip>
+
+    **2.** قم بتوصيل حاوية S3 الخاصة بك بقائمة انتظار SQS باستخدام أحد الخيارين أدناه. يُوصى باستخدام EventBridge في معظم حالات الاستخدام لأنه يدعم التوزيع المتشعب (fan-out)، ويتيح تصفية أحداث أكثر مرونة، ولا يخضع لقيود S3 المتعلقة بقاعدة إشعار واحدة لكل نوع حدث ولكل بادئة.
+
+    <Tabs>
+      <Tab title="عبر EventBridge">
+        **a.** في خصائص حاوية S3، انتقل إلى **Event notifications &gt; Amazon EventBridge** ومكّن إرسال الإشعارات إلى EventBridge. انقر على **Save changes**.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="تمكين إشعارات Amazon EventBridge في خصائص حاوية S3" size="lg" border />
+
+        **b.** في AWS Console، انتقل إلى **Amazon EventBridge &gt; Rules &gt; Create rule**. سمِّ القاعدة (مثلًا `S3ObjectCreated`)، واختر ناقل الأحداث **default**، ثم انقر على **Next**. في خطوة **Build event pattern**، حدِّد **AWS events or EventBridge partner events** كمصدر للأحداث، ثم أدخل نمط الحدث التالي يدويًا، مع استبدال `<bucket-name>` باسم الحاوية:
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="تحديد اسم قاعدة EventBridge وناقل الأحداث" size="lg" border />
+
+        ```json
+        {
+          "source": ["aws.s3"],
+          "detail-type": ["Object Created"],
+          "detail": {
+            "bucket": {
+              "name": ["<bucket-name>"]
+            }
+          }
+        }
+        ```
+
+        اختياريًا، أضف شرط `object.key` إلى النمط للتصفية حسب البادئة أو اللاحقة. إذا فعلت ذلك، فتأكد من مطابقته للمسار المحدد لـ ClickPipe.
+
+        **c.** في خطوة **Select target(s)**، اختر **AWS service** كنوع الهدف، ثم حدِّد **SQS queue**. اختر قائمة الانتظار التي أُنشئت في الخطوة السابقة. اترك خيار **Use execution role (recommended)** محددًا للسماح لـ EventBridge بإنشاء IAM role المطلوب تلقائيًا، ثم انقر على **Next** وأكمل المعالج.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="تعيين قائمة انتظار SQS كهدف لقاعدة EventBridge" size="lg" border />
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="تم إنشاء قاعدة EventBridge بنجاح" size="lg" border />
+
+        **d.** عدّل سياسة الوصول الخاصة بقائمة انتظار SQS للسماح لـ EventBridge بإرسال الرسائل إليها. استبدل `<sqs-queue-arn>` و`<eventbridge-rule-arn>` بالقيم المناسبة:
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowEventBridgeToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<eventbridge-rule-arn>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+      </Tab>
+
+      <Tab title="S3 مباشر → SQS">
+        **a.** عدّل سياسة الوصول الخاصة بقائمة انتظار SQS للسماح لحاوية S3 الخاصة بك بإرسال الرسائل إليها. استبدل `<sqs-queue-arn>` و`<bucket-arn>` و`<aws-account-id>` بالقيم المناسبة:
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowS3ToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<bucket-arn>"
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "<aws-account-id>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+
+        **b.** في خصائص حاوية S3، مكّن **Event notifications** لأحداث `ObjectCreated` واضبط الوجهة على قائمة انتظار SQS. اختياريًا، حدِّد بادئة أو لاحقة لتصفية الكائنات التي تُطلق الإشعارات — وإذا فعلت ذلك، فتأكد من مطابقتها للمسار المحدد لـ ClickPipe.
+
+        <Note>
+          لا يتيح S3 وجود عدة قواعد إشعارات متداخلة لأنواع الأحداث نفسها على الحاوية نفسها. إذا كانت لديك بالفعل قاعدة إشعارات لأحداث `ObjectCreated` على هذه الحاوية، فاستخدم نهج EventBridge بدلًا من ذلك.
+        </Note>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ## إعداد دور IAM
+
+    **1.** في وحدة تحكم ClickHouse Cloud، انتقل إلى **Settings &gt; Network security information** وانسخ **IAM role ARN** الخاص بخدمتك.
+
+    **2.** في وحدة تحكم AWS، انتقل إلى **IAM &gt; Roles &gt; Create role**. اختر **Custom trust policy** والصق ما يلي، مع استبدال `<ch-cloud-arn>` بـ **IAM role ARN** الذي نسخته في الخطوة السابقة:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowAssumeRole",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "<ch-cloud-arn>"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **3.** أنشئ سياسة مضمنة لـ IAM role تتضمن [الأذونات المطلوبة](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#permissions) لقراءة الكائنات من S3 وإدارة الرسائل في قائمة انتظار SQS. استبدل `<bucket-arn>` و `<sqs-queue-arn>` بالقيم المناسبة:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "S3BucketMetadataAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": "<bucket-arn>"
+        },
+        {
+          "Sid": "AllowGetListObjects",
+          "Effect": "Allow",
+          "Action": [
+            "s3:Get*",
+            "s3:List*"
+          ],
+          "Resource": "<bucket-arn>/*"
+        },
+        {
+          "Sid": "SQSNotificationsAccess",
+          "Effect": "Allow",
+          "Action": [
+            "sqs:DeleteMessage",
+            "sqs:ListQueues",
+            "sqs:ReceiveMessage",
+            "sqs:GetQueueAttributes"
+          ],
+          "Resource": "<sqs-queue-arn>"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## إنشاء ClickPipe بوضع غير مرتب
+
+    **1.** في ClickHouse Cloud console، انتقل إلى **Data Sources &gt; Create ClickPipe** وحدد **Amazon S3**. أدخل التفاصيل للاتصال بـ S3 bucket الخاص بك. ضمن **Authentication method**، اختر **IAM role** وقدّم ARN للدور الذي أنشأته في الخطوة السابقة.
+
+    **2.** ضمن **Incoming data**، فعّل **Continuous ingestion**. حدّد **Any order** كوضع الاستيعاب، وقدّم **URL لقائمة انتظار SQS** المتصلة بالـ bucket الخاص بك.
+
+    **3.** ضمن **Parse information**، حدّد **Sorting key** للجدول الهدف. أجرِ أي تعديلات لازمة على المخطط المعين، ثم اضبط دورًا لمستخدم قاعدة البيانات الخاص بـ ClickPipes.
+
+    **4.** راجع الإعدادات وانقر على **Create ClickPipe**. سيُجري ClickPipes فحصًا أوليًا للـ bucket الخاص بك لتحميل جميع الملفات الموجودة التي تطابق المسار المحدد، ثم سيبدأ في معالجة الملفات مع وصول أحداث `ObjectCreated:*` الجديدة إلى قائمة الانتظار.
+  </Step>
+</Steps>

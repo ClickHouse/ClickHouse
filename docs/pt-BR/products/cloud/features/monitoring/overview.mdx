@@ -1,0 +1,41 @@
+---
+title: 'Monitorando sua implantação no ClickHouse Cloud'
+slug: /cloud/monitoring
+description: 'Visão geral dos recursos de monitoramento e observabilidade no ClickHouse Cloud'
+keywords: ['cloud', 'monitoramento', 'observabilidade', 'métricas']
+sidebarTitle: 'Visão geral'
+doc_type: 'guide'
+---
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+Este guia fornece às equipes empresariais informações sobre os recursos de monitoramento e observabilidade para implantações de produção do ClickHouse Cloud. Clientes Enterprise frequentemente perguntam sobre recursos de monitoramento prontos para uso, integração com stacks de observabilidade existentes, incluindo ferramentas como Datadog e AWS CloudWatch, e como o monitoramento do ClickHouse se compara ao de implantações auto-hospedadas.
+
+Os usuários podem usar os seguintes métodos para monitorar sua implantação do ClickHouse:
+
+| Seção                                                                                        | Descrição                                                                                                                           | Desperta serviços ociosos? | Configuração necessária                |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------- |
+| [Dashboards do Cloud Console](/pt-BR/products/cloud/features/monitoring/cloud-console)             | Monitoramento diário com dashboards integrados para a integridade do serviço, a utilização de recursos e o desempenho das consultas | Não                        | Nenhuma                                |
+| [Notificações](/pt-BR/products/cloud/features/monitoring/notifications)                            | Alertas para eventos de escalonamento, erros, mutações e faturamento                                                                | Não                        | Nenhuma (personalizável)               |
+| [Endpoint do Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus)                     | Exporta métricas para Grafana, Datadog ou outras ferramentas compatíveis com Prometheus                                             | Não                        | chave de API + configuração do scraper |
+| [Consultas em tabelas de sistema](/pt-BR/products/cloud/features/monitoring/system-tables)         | Depuração detalhada e análise personalizada por meio de consultas SQL diretas às tabelas `system`                                   | Sim                        | consultas SQL                          |
+| [Integrações da comunidade e de parceiros](/pt-BR/products/cloud/features/monitoring/integrations) | Integração com o agent do Datadog, ferramentas de monitoramento da comunidade e a API de faturamento e uso                          | Varia                      | Específica da ferramenta               |
+| [Referência do dashboard avançado](/pt-BR/products/cloud/features/monitoring/advanced-dashboard)   | Referência detalhada de cada visualização do dashboard avançado, incluindo exemplos de troubleshooting                              | Não                        | Nenhuma                                |
+
+<div id="quick-start">
+  ## Início rápido
+</div>
+
+Abra o console do ClickHouse Cloud na aba **Monitoring**. Este [blog](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse) reúne pontos comuns aos quais você deve ficar atento ao começar.
+
+Para a maioria dos usuários, os [Dashboards do Cloud Console](/pt-BR/products/cloud/features/monitoring/cloud-console) oferecem tudo o que é necessário para monitorar a integridade do serviço, a utilização de recursos e o desempenho das consultas sem nenhuma configuração. Se você precisar integrar uma stack externa de monitoramento, comece pelo [endpoint de métricas compatível com Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus).
+
+<div id="system-impact">
+  ## Considerações sobre o impacto no sistema
+</div>
+
+As abordagens acima usam uma combinação de dependência de endpoints do Prometheus, gerenciamento pelo ClickHouse Cloud ou [consulta direta às tabelas de sistema](/pt-BR/products/cloud/features/monitoring/system-tables). A última dessas opções depende de consultas ao serviço ClickHouse de produção, o que adiciona carga de consulta ao sistema monitorado e impede que instâncias do ClickHouse Cloud entrem em [inatividade](/pt-BR/products/cloud/features/autoscaling/overview), o que pode impactar os custos. Além disso, se o sistema de produção falhar, o monitoramento também poderá ser afetado, já que ambos ficam acoplados.
+
+A consulta direta às tabelas de sistema funciona bem para introspecção aprofundada e debugging, mas é menos adequada para o monitoramento de produção em tempo real. Os [dashboards do Cloud Console](/pt-BR/products/cloud/features/monitoring/cloud-console) e o [endpoint do Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus) usam métricas previamente coletadas, que não ativam serviços inativos, tornando-os mais adequados para o monitoramento contínuo da produção. Considere esses trade-offs entre capacidades detalhadas de análise do sistema e a sobrecarga operacional.

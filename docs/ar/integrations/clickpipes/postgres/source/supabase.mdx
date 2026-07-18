@@ -1,0 +1,108 @@
+---
+sidebarTitle: 'Supabase Postgres'
+description: 'تهيئة مثيل Supabase ليكون مصدرًا لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/supabase
+title: 'دليل إعداد مصدر Supabase'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'إدخال البيانات', 'مزامنة لحظية']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+هذا دليل يوضح كيفية إعداد Supabase Postgres لاستخدامه مع ClickPipes.
+
+<Note>
+  يدعم ClickPipes ‏Supabase عبر IPv6 بشكل أصلي لتوفير نسخ متماثل سلس.
+</Note>
+
+<div id="creating-a-user-with-permissions-and-replication-slot">
+  ## إنشاء مستخدم مع أذونات وفتحة نسخ متماثل
+</div>
+
+اتصل بمثيل Supabase الخاص بك كمستخدم Admin ونفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة صلاحية وصول للقراءة فقط على مستوى المخطط. يوضّح المثال التالي الأذونات الخاصة بالمخطط `public`. كرّر هذه الأوامر لكل مخطط يحتوي على الجداول التي تريد نسخها متماثلًا:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) تتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بقصر الـ publication على الجداول التي تحتاج إليها فقط لتجنّب أي حمل إضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لكل جدول مُدرج في الـ publication **مفتاح أساسي** معرّف، *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء publication لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء publication لجميع الجداول ضمن مخطط محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+سيحتوي `clickpipes` publication على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لإدخال تدفق النسخ المتماثل.
+
+<div id="increase-max_slot_wal_keep_size">
+  ## زِد قيمة `max_slot_wal_keep_size`
+</div>
+
+<Warning>
+  ستؤدي هذه الخطوة إلى إعادة تشغيل قاعدة بيانات Supabase، وقد تتسبب في فترة توقّف قصيرة.
+
+  يمكنك زيادة المعلَمة `max_slot_wal_keep_size` في قاعدة بيانات Supabase إلى قيمة أعلى (على الأقل 100GB أو `102400`) باتباع [وثائق Supabase](https://supabase.com/docs/guides/database/custom-postgres-config#cli-supported-parameters)
+
+  للحصول على توصية أدق بشأن هذه القيمة، يمكنك التواصل مع فريق ClickPipes.
+</Warning>
+
+<div id="connection-details-to-use-for-supabase">
+  ## تفاصيل الاتصال التي يجب استخدامها مع Supabase
+</div>
+
+انتقل إلى `Project Settings` -&gt; `Database` في مشروع Supabase الخاص بك (ضمن `Configuration`).
+
+**مهم**: عطّل `Display connection pooler` في هذه الصفحة، ثم انتقل إلى قسم `Connection parameters` ودوّن/انسخ المعلمات.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="العثور على تفاصيل اتصال Supabase" border />
+
+<Info>
+  مُجمِّع الاتصالات غير مدعوم في النسخ المتماثل المستند إلى CDC، لذا يجب تعطيله.
+</Info>
+
+<div id="note-on-rls">
+  ## ملاحظة حول RLS
+</div>
+
+يجب ألا يكون مستخدم ClickPipes في Postgres خاضعًا لقيود سياسات RLS، لأن ذلك قد يؤدي إلى ظهور بيانات ناقصة. يمكنك تعطيل سياسات RLS لهذا المستخدم بتشغيل الأمر أدناه:
+
+```sql
+ALTER USER clickpipes_user BYPASSRLS;
+```
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) والبدء في إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

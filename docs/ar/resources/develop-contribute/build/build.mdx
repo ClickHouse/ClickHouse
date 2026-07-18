@@ -1,0 +1,252 @@
+---
+description: 'دليل خطوة بخطوة لبناء ClickHouse من الشيفرة المصدرية على أنظمة Linux'
+sidebarTitle: 'البناء على Linux'
+slug: /development/build
+title: 'كيفية بناء ClickHouse على Linux'
+doc_type: 'guide'
+---
+
+<Info>
+  **هذا الدليل الخاص بالبناء مخصّص للمساهمين الذين يجرون تعديلات على ClickHouse نفسه.**
+
+  إذا كنت لا تعدّل الشيفرة المصدرية لـ ClickHouse، فيمكنك تثبيت ClickHouse الجاهز كما هو موضح في [Quick Start](/ar/get-started/setup/install).
+</Info>
+
+يمكن بناء ClickHouse على المنصات التالية:
+
+* x86&#95;64
+* AArch64
+* PowerPC 64 LE (تجريبي)
+* s390/x (تجريبي)
+* RISC-V 64 (تجريبي)
+
+<div id="assumptions">
+  ## الافتراضات
+</div>
+
+يعتمد الدليل التالي على Ubuntu Linux، لكنه ينبغي أن يعمل أيضًا على أي توزيعة Linux أخرى مع إجراء التعديلات المناسبة.
+الحد الأدنى الموصى به لإصدار Ubuntu الخاص بالتطوير هو 24.04 LTS.
+
+يفترض هذا الدليل أن مستودع ClickHouse وجميع الوحدات الفرعية قد تم سحبها محليًا.
+
+<div id="install-prerequisites">
+  ## تثبيت المتطلبات المسبقة
+</div>
+
+أولاً، راجع [وثائق المتطلبات المسبقة العامة](/ar/resources/develop-contribute/introduction/developer-instruction).
+
+يستخدم ClickHouse كلاً من CMake وNinja للبناء.
+
+يمكنك اختياريًا تثبيت ccache لتمكين عملية البناء من إعادة استخدام ملفات الكائن المُجمَّعة مسبقًا.
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+```
+
+<div id="install-the-clang-compiler">
+  ## تثبيت المصرّف Clang
+</div>
+
+لتثبيت Clang على Ubuntu/Debian، استخدم سكربت التثبيت التلقائي الخاص بـ LLVM من [هنا](https://apt.llvm.org/).
+
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
+```
+
+بالنسبة إلى توزيعات Linux الأخرى، تحقّق مما إذا كان بإمكانك تثبيت أيٍّ من [الحزم الجاهزة مسبقًا الخاصة بـ LLVM](https://releases.llvm.org/download.html).
+
+اعتبارًا من فبراير 2026، يلزم استخدام Clang 21 أو إصدار أحدث.
+ولا يُدعَم GCC أو أي مُصرّفات أخرى.
+
+<div id="install-the-rust-compiler-optional">
+  ## تثبيت مُصرّف Rust (اختياري)
+</div>
+
+<Note>
+تُعد Rust تبعية اختيارية لـ ClickHouse.
+إذا لم تكن Rust مثبّتة، فستُستبعَد بعض ميزات ClickHouse من عملية البناء.
+</Note>
+
+أولًا، اتبع الخطوات الواردة في [وثائق Rust الرسمية](https://www.rust-lang.org/tools/install) لتثبيت `rustup`.
+
+وكما هو الحال مع تبعيات C++، يستخدم ClickHouse آلية vendoring للتحكم بدقة في ما يُثبَّت وتجنّب الاعتماد على خدمات خارجية (مثل registry ‏`crates.io`).
+
+مع أنه في وضع release يمكن أن يعمل أي إصدار حديث من سلسلة أدوات rustup مع هذه التبعيات، فإذا كنت تخطط لتمكين أدوات sanitizer، فيجب استخدام إصدار يطابق تمامًا نفس `std` المستخدم في CI (والذي نُضمّن له `crates`):
+
+```bash
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
+rustup component add rust-src
+```
+
+<div id="build-clickhouse">
+## بناء ClickHouse
+</div>
+
+نوصي بإنشاء مجلد منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
+
+```sh
+mkdir build
+cd build
+```
+
+يمكنك استخدام عدة مجلدات مختلفة (مثل `build_release` و`build_debug` وما إلى ذلك) لأنواع البناء المختلفة.
+
+اختياري: إذا كان لديك عدة إصدارات من المصرّف مثبّتة، يمكنك أيضًا تحديد المصرّف المطلوب استخدامه بدقة.
+
+```sh
+export CC=clang-21
+export CXX=clang++-21
+```
+
+لأغراض التطوير، يُوصى باستخدام بُنى تصحيح الأخطاء.
+وبالمقارنة مع بُنى الإصدار، فإنها تستخدم مستوى أقل من تحسينات المصرّف (`-O`)، مما يوفّر تجربة أفضل عند تصحيح الأخطاء.
+كذلك، تتسبب الاستثناءات الداخلية من النوع `LOGICAL_ERROR` في الانهيار فورًا بدلًا من الفشل بصورة متحكَّم فيها.
+
+```sh
+cmake -D CMAKE_BUILD_TYPE=Debug ..
+```
+
+<Note>
+إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
+</Note>
+
+شغّل ninja لإتمام عملية البناء:
+
+```sh
+ninja clickhouse
+```
+
+إذا كنت ترغب في إنشاء جميع الملفات التنفيذية (الأدوات المساعدة والاختبارات)، فشغّل `ninja` من دون أي معلمات:
+
+```sh
+ninja
+```
+
+يمكنك التحكم في عدد مهام البناء المتوازية باستخدام المعلمة `-j`:
+
+```sh
+ninja -j 1 clickhouse
+```
+
+<Note>
+تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
+</Note>
+
+<Tip>
+يوفّر CMake اختصارات للأوامر أعلاه:
+
+```sh
+cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
+cmake --build build  # تجميع
+```
+</Tip>
+
+<div id="running-the-clickhouse-executable">
+  ## تشغيل الملف التنفيذي لـ ClickHouse
+</div>
+
+بعد اكتمال عملية البناء بنجاح، ستجد الملف التنفيذي في `ClickHouse/<build_dir>/programs/`:
+
+يحاول خادم ClickHouse العثور على ملف الإعداد `config.xml` في الدليل الحالي.
+ويمكنك بدلًا من ذلك تحديد ملف إعداد من سطر الأوامر باستخدام `-C`.
+
+للاتصال بخادم ClickHouse باستخدام `clickhouse-client`، افتح طرفية أخرى، وانتقل إلى `ClickHouse/build/programs/` ثم شغّل `./clickhouse client`.
+
+إذا ظهرت لك رسالة `Connection refused` على macOS أو FreeBSD، فجرّب تحديد عنوان المضيف `127.0.0.1`:
+
+```bash
+clickhouse client --host 127.0.0.1
+```
+
+<div id="advanced-options">
+  ## الخيارات المتقدمة
+</div>
+
+<div id="minimal-build">
+  ### بناء بالحد الأدنى
+</div>
+
+إذا لم تكن بحاجة إلى الوظائف التي توفّرها مكتبات الجهات الخارجية، فيمكنك تسريع عملية البناء أكثر:
+
+```sh
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+إذا واجهتَ مشكلات، فستكون وحدك في التعامل معها ...
+
+يتطلب Rust اتصالًا بالإنترنت. لتعطيل دعم Rust:
+
+```sh
+cmake -DENABLE_RUST=OFF
+```
+
+<div id="running-the-clickhouse-executable-1">
+  ### تشغيل الملف التنفيذي لـ ClickHouse
+</div>
+
+يمكنك استبدال الإصدار الإنتاجي من الملف التنفيذي لـ ClickHouse المثبّت على نظامك بالملف التنفيذي لـ ClickHouse الذي جرى تجميعه.
+للقيام بذلك، ثبّت ClickHouse على جهازك باتباع الإرشادات الواردة في الموقع الرسمي.
+بعد ذلك، شغّل:
+
+```bash
+sudo service clickhouse-server stop
+sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
+sudo service clickhouse-server start
+```
+
+لاحظ أن `clickhouse-client` و`clickhouse-server` وغيرهما هي روابط رمزية تشير إلى الملف التنفيذي المشترك `clickhouse`.
+
+يمكنك أيضًا تشغيل ملف ClickHouse التنفيذي المخصّص الذي أنشأته باستخدام ملف الإعدادات من حزمة ClickHouse المثبّتة على نظامك:
+
+```bash
+sudo service clickhouse-server stop
+sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+<div id="building-on-any-linux">
+  ### البناء على أي نظام Linux
+</div>
+
+ثبّت المتطلبات الأساسية على OpenSUSE Tumbleweed:
+
+```bash
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+ثبّت المتطلبات الأساسية على Fedora Rawhide:
+
+```bash
+sudo yum update
+sudo yum --nogpg install git cmake make clang python3 ccache lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+<div id="building-in-docker">
+  ### البناء باستخدام Docker
+</div>
+
+يمكنك تنفيذ أي عملية بناء محليًا في بيئة مشابهة لبيئة CI باستخدام:
+
+```bash
+python -m ci.praktika run "BUILD_JOB_NAME"
+```
+
+حيث إن BUILD&#95;JOB&#95;NAME هو اسم المهمة كما يظهر في تقرير CI، على سبيل المثال: &quot;Build (arm&#95;release)&quot;، &quot;Build (amd&#95;debug)&quot;
+
+يسحب هذا الأمر صورة Docker المناسبة `clickhouse/binary-builder` مع جميع التبعيات المطلوبة،
+ويشغّل البرنامج النصي للبناء داخلها: `./ci/jobs/build_clickhouse.py`
+
+ستوضَع مخرجات البناء في `./ci/tmp/`.
+
+يعمل على كلٍّ من معماريتَي AMD وARM ولا يتطلب أي تبعيات إضافية سوى بايثون مع توفر الوحدة `requests` وDocker.

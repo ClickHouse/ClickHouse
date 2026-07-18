@@ -1,0 +1,135 @@
+---
+slug: /guides/sre/configuring-tls-acme-client
+sidebarTitle: 'ACME를 통한 자동 TLS 프로비저닝 구성'
+title: 'ACME를 통한 자동 TLS 프로비저닝 구성'
+description: '이 가이드는 ClickHouse가 OpenSSL 인증서를 사용해 연결을 검증하도록 구성하는 데 필요한 간단한 최소 설정을 제공합니다.'
+keywords: ['ACME 구성', 'TLS 설정', 'OpenSSL 인증서', '보안 연결', 'SRE 가이드', 'Let`s Encrypt']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<SelfManaged />
+
+이 가이드는 ClickHouse가 [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) 프로토콜([RFC8555](https://www.rfc-editor.org/rfc/rfc8555) 참조)을 사용하도록 구성하는 방법을 설명합니다.
+ACME를 지원하면 ClickHouse는 [Let&#39;s Encrypt](https://letsencrypt.org/)나 [ZeroSSL](https://zerossl.com/) 같은 서비스 제공업체에서 인증서를 자동으로 발급받고 갱신할 수 있습니다.
+TLS 암호화는 클라이언트와 ClickHouse 서버 사이에서 전송되는 데이터를 보호하여 민감한 쿼리와 결과가 도청되지 않도록 합니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+ACME 프로토콜은 [Let&#39;s Encrypt](https://letsencrypt.org/)나 [ZeroSSL](https://zerossl.com/)과 같은 서비스를 통해 인증서를 자동으로 갱신하는 절차를 정의합니다. 간단히 말해, ClickHouse는 인증서를 요청하는 주체로서 인증서를 발급받기 위해 미리 정의된 챌린지 유형으로 도메인 소유권을 확인해야 합니다.
+
+ACME를 활성화하려면 HTTP 및 HTTPS 포트와 함께 `acme` 블록을 구성하세요:
+
+```xml
+<http_port>80</http_port>
+<https_port>443</https_port>
+
+<acme>
+    <email>valid_email@example.com</email>
+    <terms_of_service_agreed>true</terms_of_service_agreed>
+    <domains>
+        <domain>example.com</domain>
+    </domains>
+</acme>
+```
+
+HTTP 포트는 도메인 검증 과정에서 ACME `HTTP-01` 챌린지(챌린지 유형에 대한 자세한 내용은 [여기](https://letsencrypt.org/docs/challenge-types/) 참조) 요청을 처리합니다. 검증이 완료되어 인증서가 발급되면 HTTPS 포트는 발급받은 인증서를 사용해 암호화된 트래픽을 처리합니다.
+
+HTTP 포트가 서버 자체에서 반드시 80일 필요는 없으며, `nftables` 같은 도구를 사용해 다른 포트로 다시 매핑할 수 있습니다. `HTTP-01` 챌린지에 허용되는 포트는 사용 중인 ACME 서비스 제공업체의 문서를 확인하십시오.
+
+`acme` 블록에서는 계정 생성을 위한 `email`을 정의하고, ACME 서비스 약관에 동의합니다.
+그 후에는 도메인 목록만 있으면 됩니다.
+
+<div id="current-limitations">
+  ### 현재 제한 사항
+</div>
+
+* `HTTP-01` 챌린지 유형만 지원됩니다.
+* `RSA 2048` 개인 키만 지원됩니다.
+* 속도 제한은 처리되지 않습니다.
+
+<div id="configuration-parameters">
+  ## 구성 매개변수
+</div>
+
+`acme` 섹션에서 사용할 수 있는 구성 옵션:
+
+| 매개변수                                 | 기본값                                              | 설명                                                                                   |
+| ------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `zookeeper_path`                     | `/clickhouse/acme`                               | ACME 계정 데이터, 인증서, 그리고 ClickHouse 노드 간 조정 상태를 저장하는 데 사용하는 ZooKeeper 경로입니다.            |
+| `directory_url`                      | `https://acme-v02.api.letsencrypt.org/directory` | 인증서 발급에 사용되는 ACME 디렉터리 엔드포인트입니다. 기본값은 Let’s Encrypt 프로덕션 서버입니다.                      |
+| `email`                              |                                                  | ACME 계정을 생성하고 관리하는 데 사용하는 이메일 주소입니다. 서비스 제공업체가 만료 알림과 중요한 업데이트를 위해 이 주소를 사용할 수 있습니다. |
+| `terms_of_service_agreed`            | `false`                                          | 서비스 제공업체의 약관에 동의했는지를 나타냅니다. ACME를 활성화하려면 `true`로 설정해야 합니다.                           |
+| `domains`                            |                                                  | TLS 인증서를 발급할 도메인 이름 목록입니다. 각 도메인은 `<domain>` 항목으로 지정합니다.                             |
+| `refresh_certificates_before`        | `2592000` (1개월, 초 단위)                            | 인증서 만료 전에 ClickHouse가 인증서 갱신을 시도하는 시점까지의 시간입니다.                                      |
+| `refresh_certificates_task_interval` | `3600` (1시간, 초 단위)                               | ClickHouse가 인증서 갱신 필요 여부를 확인하는 인터벌입니다.                                               |
+
+구성은 기본적으로 Let&#39;s Encrypt 프로덕션 디렉터리를 사용합니다. 잘못된 구성으로 인해 요청 할당량에 도달하는 일을 피하려면 먼저 [staging directory](https://letsencrypt.org/docs/staging-environment/)에서 인증서 발급 과정을 테스트하는 것이 좋습니다.
+
+<div id="administration">
+  # 관리
+</div>
+
+<div id="initial-deployment">
+  ## 초기 배포
+</div>
+
+여러 레플리카가 있는 클러스터에서 ACME 클라이언트를 활성화할 때는 초기 인증서 발급 과정에서 추가적인 주의가 필요합니다.
+
+ACME를 활성화한 상태로 처음 시작되는 첫 번째 레플리카는 즉시 ACME order를 생성하고 HTTP-01 챌린지 검증을 수행하려고 시도합니다. 이 시점에 일부 레플리카만 트래픽을 처리하고 있다면, 다른 레플리카는 검증 요청에 응답할 수 없으므로 챌린지가 실패할 가능성이 높습니다.
+
+가능하다면 트래픽을 일시적으로 하나의 레플리카로만 라우팅하고(예: DNS 레코드 조정) 해당 레플리카가 초기 인증서 발급을 완료하도록 하는 것이 좋습니다. 인증서가 성공적으로 발급되어 Keeper에 저장되면, 나머지 레플리카에서도 ACME를 활성화할 수 있습니다. 이들은 기존 인증서를 자동으로 재사용하고 이후 갱신에도 함께 참여합니다.
+
+트래픽을 하나의 레플리카로 라우팅하는 것이 어렵다면, 대안으로 ACME 클라이언트를 활성화하기 전에 기존 인증서와 개인 키를 Keeper에 수동으로 업로드할 수 있습니다. 이렇게 하면 초기 검증 단계를 건너뛸 수 있고, 모든 레플리카가 이미 유효한 인증서가 있는 상태로 시작할 수 있습니다.
+
+초기 인증서가 발급되거나 가져온 후에는 모든 레플리카가 이미 ACME 클라이언트를 실행하고 Keeper를 통해 상태를 공유하므로, 인증서 갱신 시 별도의 처리가 필요하지 않습니다.
+
+<div id="keeper-data-structure">
+  ## Keeper 데이터 구조
+</div>
+
+```text
+/clickhouse/acme
+└── <acme-directory-host>
+    ├── account_private_key          # ACME 계정 개인 키 (PEM)
+    ├── challenges                   # 활성 HTTP-01 챌린지 상태
+    └── domains
+        └── <domain-name>
+            ├── certificate          # 발급된 TLS 인증서 (PEM)
+            └── private_key          # 도메인 개인 키 (PEM)
+```
+
+<div id="migrating-from-other-acme-clients">
+  ## 다른 ACME 클라이언트에서 마이그레이션하기
+</div>
+
+마이그레이션을 더 쉽게 진행할 수 있도록 현재 사용 중인 TLS 인증서와 개인 키를 Keeper로 옮길 수 있습니다.
+현재 서버는 `RSA 2048` 키만 지원합니다.
+
+`certbot`에서 마이그레이션하고 `/etc/letsencrypt/live` 디렉터리를 사용한다고 가정하면, 다음 명령을 사용할 수 있습니다:
+
+```bash
+DOMAIN=example.com
+CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+ZK_BASE=/clickhouse/acme/acme-v02.api.letsencrypt.org/domains/$DOMAIN
+
+clickhouse keeper-client -q "create '/clickhouse' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org/domains' ''"
+clickhouse keeper-client -q "create '$ZK_BASE' ''"
+
+clickhouse keeper-client -q "create '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+
+clickhouse keeper-client -q "create '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+```

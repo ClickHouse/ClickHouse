@@ -1,0 +1,201 @@
+---
+description: 'JOIN 작업에 사용할 수 있는 선택적 사전 준비 데이터 구조입니다.'
+sidebarTitle: 'Join'
+slug: /engines/table-engines/special/join
+title: 'Join 테이블 엔진'
+doc_type: '참고'
+---
+
+[JOIN](/ko/reference/statements/select/join) 작업에 사용할 수 있는 선택적 사전 준비 데이터 구조입니다.
+
+<Note>
+  ClickHouse Cloud에서 서비스가 25.4 이전 버전으로 생성된 경우, `SET compatibility=25.4`를 사용해 호환성을 최소 25.4로 설정해야 합니다.
+</Note>
+
+<div id="creating-a-table">
+  ## 테이블 생성하기
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+[CREATE TABLE](/ko/reference/statements/create/table) 쿼리의 자세한 설명을 참조하십시오.
+
+<div id="engine-parameters">
+  ## 엔진 매개변수
+</div>
+
+<div id="join_strictness">
+  ### `join_strictness`
+</div>
+
+`join_strictness` – [JOIN 엄격성](/ko/reference/statements/select/join#supported-types-of-join).
+
+<div id="join_type">
+  ### `join_type`
+</div>
+
+`join_type` – [JOIN 타입](/ko/reference/statements/select/join#supported-types-of-join).
+
+<div id="key-columns">
+  ### 키 컬럼
+</div>
+
+`k1[, k2, ...]` – `JOIN` 연산에 사용되는 `USING` 절의 키 컬럼입니다.
+
+`join_strictness` 및 `join_type` 매개변수는 따옴표 없이 입력하십시오. 예: `Join(ANY, LEFT, col1)`. 이 값은 해당 테이블을 사용할 `JOIN` 연산과 일치해야 합니다. 매개변수가 일치하지 않으면 ClickHouse는 예외를 발생시키지 않으며 잘못된 데이터를 반환할 수 있습니다.
+
+<div id="specifics-and-recommendations">
+  ## 세부 정보 및 권장 사항
+</div>
+
+<div id="data-storage">
+  ### 데이터 저장
+</div>
+
+`Join` 테이블 데이터는 항상 RAM에 저장됩니다. 테이블에 행을 삽입할 때 ClickHouse는 서버 재시작 시 데이터를 복원할 수 있도록 데이터 블록을 디스크의 디렉터리에 기록합니다.
+
+서버가 비정상적으로 재시작되면 디스크의 데이터 블록이 손실되거나 손상될 수 있습니다. 이 경우 손상된 데이터가 들어 있는 파일을 수동으로 삭제해야 할 수 있습니다.
+
+<div id="selecting-and-inserting-data">
+  ### 데이터 조회 및 삽입
+</div>
+
+`INSERT` 쿼리를 사용해 `Join` 엔진 테이블에 데이터를 추가할 수 있습니다. 테이블이 `ANY` 엄격성으로 생성된 경우, 중복 키의 데이터는 무시됩니다. `ALL` 엄격성에서는 모든 행이 추가됩니다.
+
+`Join` 엔진 테이블의 주요 사용 사례는 다음과 같습니다:
+
+* 테이블을 `JOIN` 절의 오른쪽에 둡니다.
+* [joinGet](/ko/reference/functions/regular-functions/other-functions#joinGet) 함수를 호출합니다. 이 함수를 사용하면 딕셔너리와 같은 방식으로 테이블에서 데이터를 추출할 수 있습니다.
+
+<div id="deleting-data">
+  ### 데이터 삭제
+</div>
+
+`Join` 엔진 테이블에 대한 `ALTER DELETE` 쿼리는 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다. `DELETE` 뮤테이션은 필터링된 데이터를 읽은 뒤 메모리와 디스크의 데이터를 덮어씁니다.
+
+<div id="join-limitations-and-settings">
+  ### 제한 사항 및 설정
+</div>
+
+테이블을 생성할 때 다음 설정이 적용됩니다:
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+[join&#95;use&#95;nulls](/ko/reference/settings/session-settings#join_use_nulls)
+
+<div id="max_rows_in_join">
+  #### `max_rows_in_join`
+</div>
+
+[max&#95;rows&#95;in&#95;join](/ko/reference/settings/session-settings#max_rows_in_join)
+
+<div id="max_bytes_in_join">
+  #### `max_bytes_in_join`
+</div>
+
+[max&#95;bytes&#95;in&#95;join](/ko/reference/settings/session-settings#max_bytes_in_join)
+
+<div id="join_overflow_mode">
+  #### `join_overflow_mode`
+</div>
+
+[join&#95;overflow&#95;mode](/ko/reference/settings/session-settings#join_overflow_mode)
+
+<div id="join_any_take_last_row">
+  #### `join_any_take_last_row`
+</div>
+
+[join&#95;any&#95;take&#95;last&#95;row](/ko/reference/settings/session-settings#join_any_take_last_row)
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+<div id="persistent">
+  #### Persistent
+</div>
+
+Join 및 [Set](/ko/reference/engines/table-engines/special/set) 테이블 엔진의 영속성을 비활성화합니다.
+
+I/O 오버헤드를 줄입니다. 성능을 우선하고 영속성이 필요하지 않은 시나리오에 적합합니다.
+
+가능한 값:
+
+* 1 — 활성화됨.
+* 0 — 비활성화됨.
+
+기본값: `1`.
+
+`Join` 엔진 테이블은 `GLOBAL JOIN` 연산에서 사용할 수 없습니다.
+
+`Join` 엔진에서는 `CREATE TABLE` 문에서 [join&#95;use&#95;nulls](/ko/reference/settings/session-settings#join_use_nulls) 설정을 지정할 수 있습니다. [SELECT](/ko/reference/statements/select/index) 쿼리에서도 `join_use_nulls` 값이 동일해야 합니다.
+
+<div id="example">
+  ## 사용 예시
+</div>
+
+왼쪽 테이블 생성:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+오른쪽 `Join` 테이블 생성하기:
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+테이블 조인:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+또는 조인 키 값을 지정해 `Join` 테이블에서 데이터를 가져올 수 있습니다:
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+`Join` 테이블에서 행 삭제하기:
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```

@@ -1,0 +1,174 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed
+title: 'типы структур словаря hashed'
+sidebarTitle: 'hashed'
+description: 'Хранение словаря в памяти с помощью хеш-таблиц: hashed, sparse_hashed, complex_key_hashed, complex_key_sparse_hashed'
+doc_type: 'reference'
+---
+
+<div id="hashed">
+  ## hashed
+</div>
+
+Словарь полностью хранится в памяти в виде хеш-таблицы. Словарь может содержать любое число элементов с любыми идентификаторами. На практике количество ключей может достигать десятков миллионов.
+
+Ключ словаря имеет тип [UInt64](/ru/reference/data-types/int-uint).
+
+Поддерживаются все типы источников. При обновлении данные (из файла или из таблицы) считываются полностью.
+
+Пример конфигурации:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED())
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <layout>
+      <hashed />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Пример конфигурации с настройками:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <layout>
+      <hashed>
+        <!-- Если количество shards больше 1 (по умолчанию `1`), словарь будет загружать
+             данные параллельно, что полезно, если в одном
+             словаре очень много элементов. -->
+        <shards>10</shards>
+
+        <!-- Размер очереди ожидания для блоков при параллельной загрузке.
+
+             Поскольку узким местом при параллельной загрузке является рехеширование, чтобы избежать
+             остановки из-за того, что поток занят рехешированием, необходимо иметь некоторый
+             запас очереди.
+
+             10000 — хороший баланс между памятью и скоростью.
+             Этого достаточно даже для 10e10 элементов и позволяет обрабатывать всю нагрузку без простоев. -->
+        <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+        <!-- Максимальный коэффициент загрузки хеш-таблицы; при больших значениях память
+             используется эффективнее (меньше памяти расходуется впустую), но скорость
+             чтения/общая производительность может ухудшиться.
+
+             Допустимые значения: [0.5, 0.99]
+             По умолчанию: 0.5 -->
+        <max_load_factor>0.5</max_load_factor>
+      </hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="sparse_hashed">
+  ## sparse_hashed
+</div>
+
+Подобен `hashed`, но использует меньше памяти ценой более высокой нагрузки на CPU.
+
+Ключ словаря имеет тип [UInt64](/ru/reference/data-types/int-uint).
+
+Пример конфигурации:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <layout>
+      <sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Для этого типа словаря также можно использовать `shards`, и в случае `sparse_hashed` это даже важнее, чем для `hashed`, поскольку `sparse_hashed` работает медленнее.
+
+<div id="complex_key_hashed">
+  ## complex_key_hashed
+</div>
+
+Этот тип хранилища предназначен для использования с составными [ключами](/ru/reference/statements/create/dictionary/attributes#composite-key). Аналогичен `hashed`.
+
+Пример конфигурации:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <layout>
+      <complex_key_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_sparse_hashed">
+  ## complex_key_sparse_hashed
+</div>
+
+Этот тип хранилища используется для составных [ключей](/ru/reference/statements/create/dictionary/attributes#composite-key). Аналогичен [sparse&#95;hashed](#sparse_hashed).
+
+Пример конфигурации:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <layout>
+      <complex_key_sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

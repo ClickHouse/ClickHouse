@@ -295,7 +295,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     /// This may happen e.g. if we have PREWHERE.
 
     size_t num_columns = main_header.columns();
-    /// This is a error; will have block structure mismatch later.
+    /// This is an error; will have block structure mismatch later.
     if (proj_header.columns() != num_columns)
         return {};
 

@@ -1,0 +1,21 @@
+---
+title: 성능 최적화 목차
+---
+
+| 주제                                                                              | 설명                                                                                         |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [쿼리 최적화 가이드](/ko/guides/clickhouse/performance-and-monitoring/query-optimization)  | 쿼리 최적화의 기본부터 시작하여, 쿼리 실행 속도를 높이는 일반적인 시나리오와 성능 기법을 살펴보세요.                                  |
+| [프라이머리 인덱스 심화 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)    | ClickHouse의 고유한 희소 프라이머리 인덱싱 시스템이 기존 데이터베이스와 어떻게 다른지, 그리고 최적의 인덱싱 전략을 위한 모범 사례를 자세히 알아보세요. |
+| [쿼리 병렬성](/ko/concepts/core-concepts/query-parallelism)                             | 처리 레인과 `max_threads` 설정을 통해 ClickHouse가 쿼리 실행을 병렬화하는 방식과, 병렬 실행을 점검하고 최적화하는 방법을 알아보세요.     |
+| [파티셔닝 키](/ko/concepts/best-practices/partitioning-keys)                            | 효율적인 데이터 세그먼트 프루닝을 가능하게 하고 일반적인 파티셔닝 문제를 피할 수 있도록, 쿼리 성능을 크게 높이는 파티션 키 선택 방법을 익히세요.        |
+| [데이터 스키핑 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes)     | 프라이머리 키가 아닌 컬럼에 대한 필터링 쿼리를 가속화할 수 있도록, 관련 없는 데이터 블록을 건너뛰는 보조 인덱스를 전략적으로 활용하세요.             |
+| [`PREWHERE` 최적화](/ko/concepts/features/performance/prewhere)                       | `PREWHERE`가 불필요한 컬럼을 읽기 전에 데이터를 필터링해 I/O를 자동으로 줄이는 방식과, 그 효과를 모니터링하는 방법을 이해하세요.            |
+| [대량 삽입](/ko/concepts/features/operations/insert/bulkinserts)                       | 데이터 삽입을 효과적으로 배칭하여 수집 처리량을 극대화하고 리소스 오버헤드를 줄이세요.                                           |
+| [비동기 삽입](/ko/concepts/features/operations/insert/asyncinserts)                     | 서버 측 배칭을 활용해 클라이언트 측 복잡성을 줄이고, 빈번한 삽입 작업의 처리량을 높여 삽입 성능을 개선하세요.                            |
+| [뮤테이션 피하기](/ko/concepts/best-practices/avoid-mutations)                            | 데이터 정확성과 성능을 유지하면서 비용이 큰 `UPDATE` 및 `DELETE` 작업을 없앨 수 있도록 append-only 워크플로를 설계하세요.         |
+| [널 허용 컬럼 피하기](/ko/concepts/best-practices/avoidnullablecolumns)                    | 가능한 경우 널 허용 컬럼 대신 기본값을 사용해 저장소 오버헤드를 줄이고 쿼리 성능을 개선하세요.                                     |
+| [`OPTIMIZE FINAL` 피하기](/ko/concepts/best-practices/avoid-optimize-final)           | `OPTIMIZE TABLE FINAL`을 사용해야 하는 경우와 사용하지 말아야 하는 경우를 이해하세요.                                 |
+| [분석기](/ko/guides/clickhouse/performance-and-monitoring/analyzer)                   | ClickHouse의 새로운 쿼리 분석기를 활용해 성능 병목 지점을 파악하고, 더 높은 효율을 위해 쿼리 실행 계획을 최적화하세요.                  |
+| [쿼리 프로파일링](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler) | 샘플링 쿼리 프로파일러를 사용해 쿼리 실행 패턴을 분석하고, 성능 병목 지점을 식별하며, 리소스 사용을 최적화하세요.                          |
+| [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)                      | ClickHouse의 내장 쿼리 결과 캐시를 활성화하고 구성하여 자주 실행되는 `SELECT` 쿼리를 가속화하세요.                           |
+| [하드웨어 테스트](/ko/concepts/features/performance/troubleshoot/performance-test)        | 설치 없이 어떤 서버에서든 ClickHouse 성능 벤치마크를 실행해 하드웨어 성능을 평가하세요. (ClickHouse Cloud에는 적용되지 않음)        |

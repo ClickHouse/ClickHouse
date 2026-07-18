@@ -1,0 +1,184 @@
+---
+sidebarTitle: 'Apify'
+keywords: ['apify', 'استخراج الويب', 'إدخال البيانات', 'Actors', 'مجموعات البيانات', 'الأتمتة', 'webhooks']
+slug: /integrations/apify
+description: 'حمّل بيانات استخراج الويب والأتمتة من Apify إلى ClickHouse'
+title: 'صِل Apify بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://apify.com/'
+---
+
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+تُعدّ [Apify](https://apify.com/) منصة لاستخراج بيانات الويب والأتمتة. يمكنك إنشاء برامج سحابية بلا خوادم تُسمّى [**Actors**](https://docs.apify.com/platform/actors)، ثم تشغيلها وتوسيع نطاقها. تتولى Actors استخراج البيانات من مواقع الويب، والزحف على الويب، ومعالجة البيانات، أو أتمتة سير العمل. وينتج عن كل تشغيل لـ Actor مخرجات منظَّمة تُخزَّن في [**Datasets**](https://docs.apify.com/platform/storage/dataset) (مجموعات من كائنات JSON).
+
+حمّل البيانات المستخرَجة أو المُعالجة إلى ClickHouse لاستخدامها في التحليلات أو المراقبة أو مسارات الإثراء.
+
+<div id="key-concepts">
+  ## المفاهيم الأساسية
+</div>
+
+| مفهوم Apify                                                          | ماهيته                                                                                                                                                                                  |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[Actor](https://docs.apify.com/platform/actors)**                  | برنامج سحابي بدون خوادم يعمل على منصة Apify. تتوفر آلاف وحدات Actor الجاهزة في [Apify Store](https://apify.com/store).                                                                  |
+| **[Dataset](https://docs.apify.com/platform/storage/dataset)**       | ناتج تشغيل Actor. وهي مجموعة من كائنات JSON منظَّمة على هيئة جدول، ويمكن استرجاعها بتنسيقات JSON أو CSV أو XML أو غيرها عبر [واجهة برمجة تطبيقات Apify](https://docs.apify.com/api/v2). |
+| **[Webhook](https://docs.apify.com/platform/integrations/webhooks)** | استدعاء HTTP قائم على الأحداث يُفعَّل عند نجاح تشغيل Actor أو فشله أو عند وقوع أحداث أخرى في دورة حياته. استخدم webhooks لأتمتة مسار نقل البيانات من Apify إلى ClickHouse.              |
+
+<div id="setup-guide">
+  ## دليل الإعداد
+</div>
+
+<Steps>
+  <Step>
+    ### اجمع تفاصيل الاتصال بـ ClickHouse
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ### المتطلبات الأساسية لـ Apify
+
+    ستحتاج أيضًا إلى:
+
+    * [حساب Apify](https://console.apify.com/sign-up) (تتوفر فئة مجانية).
+    * [رمز واجهة برمجة تطبيقات لـ Apify](https://docs.apify.com/platform/integrations/api#api-token)، ويمكن العثور عليه في **Settings &gt; Integrations** ضمن [Apify Console](https://console.apify.com/).
+    * تثبيت Node.js 18+ محليًا (لأمثلة JavaScript).
+  </Step>
+
+  <Step>
+    ### ثبّت التبعيات
+
+    ثبّت عميل JavaScript من Apify وعميل JavaScript من ClickHouse:
+
+    ```bash
+    npm install apify-client @clickhouse/client
+    ```
+
+    <Note>
+      يوفر Apify أيضًا [عميل بايثون](https://docs.apify.com/api/client/python). إذا كنت تفضل بايثون، فثبّت `apify-client` باستخدام pip، واستخدم [clickhouse-connect](/ar/integrations/language-clients/python/index) مع ClickHouse.
+    </Note>
+  </Step>
+
+  <Step>
+    ### أنشئ جدولًا مستهدفًا في ClickHouse
+
+    أنشئ جدولًا لتخزين البيانات المستخرجة. يعتمد المخطط على الـ Actor الذي تستخدمه. يستخدم هذا المثال [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) مع Actor لاستخراج بيانات المنتجات:
+
+    ```sql
+    CREATE TABLE apify_products
+    (
+        url        String,
+        title      String,
+        price      Float64,
+        currency   String,
+        scraped_at DateTime DEFAULT now()
+    )
+    ENGINE = MergeTree()
+    ORDER BY (scraped_at, url);
+    ```
+  </Step>
+
+  <Step>
+    ### اجلب مجموعة بيانات Apify وحمّلها إلى ClickHouse
+
+    يجلب البرنامج النصي التالي نتائج تشغيل Actor في Apify ويدرجها في ClickHouse:
+
+    ```javascript
+    import { ApifyClient } from 'apify-client';
+    import { createClient } from '@clickhouse/client';
+
+    // تهيئة العملاء
+    const apify = new ApifyClient({ token: 'YOUR_APIFY_API_TOKEN' });
+    const clickhouse = createClient({
+        url: 'https://YOUR_CLICKHOUSE_HOST:8443',
+        username: 'default',
+        password: 'YOUR_CLICKHOUSE_PASSWORD',
+        database: 'default',
+    });
+
+    // جلب عناصر مجموعة البيانات من آخر تشغيل لـ Actor
+    const run = await apify.actor('YOUR_ACTOR_ID').call();
+    const { items } = await apify.dataset(run.defaultDatasetId).listItems();
+
+    console.log(`Fetched ${items.length} items from Apify dataset.`);
+
+    // الإدراج في ClickHouse
+    await clickhouse.insert({
+        table: 'apify_products',
+        values: items,
+        format: 'JSONEachRow',
+    });
+
+    console.log(`Inserted ${items.length} rows into ClickHouse.`);
+    await clickhouse.close();
+    ```
+
+    <Tip>
+      بالنسبة إلى مجموعات البيانات الكبيرة، استخدم تقسيم النتائج إلى صفحات عبر معاملي `limit` و`offset` في نقطة النهاية [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items). يمكنك أيضًا تمرير `clean=true` لاسترجاع العناصر غير الفارغة فقط بعد إزالة التكرارات.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### أتمتة العملية باستخدام webhooks
+
+    بدلًا من تشغيل البرنامج النصي يدويًا، أتمت مسار المعالجة بحيث تُحمَّل البيانات إلى ClickHouse في كل مرة ينتهي فيها Actor:
+
+    1. في [Apify Console](https://console.apify.com/)، انتقل إلى Actor الخاص بك وافتح علامة التبويب **Integrations**.
+    2. أضف webhook جديدًا بالإعدادات التالية:
+       * **نوع الحدث:** `ACTOR.RUN.SUCCEEDED`
+       * **الإجراء:** طلب HTTP POST إلى نقطة نهاية أداة التحميل لديك، أو تشغيل Actor آخر يتولى الإدراج في ClickHouse.
+    3. تتضمن حمولة webhook القيمة `defaultDatasetId`، والتي يمكنك استخدامها لجلب نتائج التشغيل.
+
+    راجع [توثيق webhooks في Apify](https://docs.apify.com/platform/integrations/webhooks) للاطلاع على تفاصيل الحمولة وخيارات الإعداد.
+
+    ويمكنك أيضًا استخدام [Apify Schedules](https://docs.apify.com/platform/schedules) لتشغيل Actors وفق جدول زمني شبيه بـ cron، مع استخدام webhooks لخطوة التحميل.
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="fetching-data-from-apify">
+  ### جلب البيانات من Apify
+</div>
+
+استخدم مكتبة العميل لـ Apify (`apify-client` لـ [JavaScript](https://docs.apify.com/api/client/js) أو [بايثون](https://docs.apify.com/api/client/python)) بدلًا من استدعاءات HTTP المباشرة. فهي تتولى تقسيم النتائج إلى صفحات، وإعادة المحاولة، والمصادقة نيابةً عنك. وبالنسبة إلى مجموعات البيانات الكبيرة، صفِّح النتائج باستخدام المعلَمتين `limit` و`offset` في نقطة النهاية [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items).
+
+<div id="loading-into-clickhouse">
+  ### تحميل البيانات إلى ClickHouse
+</div>
+
+استخدم التنسيق [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) عند الإدراج في ClickHouse. فهو يتوافق مباشرةً مع مخرجات JSON من Apify من دون الحاجة إلى أي تحويل.
+
+احرص على أن يطابق مخطط جدول ClickHouse لديك حقول المخرجات الخاصة بـ Actor. تحقّق من مخطط المخرجات الخاص بـ Actor في صفحته على [Apify Store](https://apify.com/store) أو في علامة التبويب **Dataset** بعد التشغيل.
+
+<div id="performance">
+  ### الأداء
+</div>
+
+لعمليات الإدراج عالية الإنتاجية من عميل JavaScript، اتبع [نصائح لتحسين الأداء](/ar/integrations/language-clients/js#tips-for-performance-optimizations). اجمع الصفوف في دفعات إدراج أكبر بدلًا من إدراج صف واحد في كل مرة، وفكّر في استخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) عندما لا يكون التجميع من جهة العميل عمليًا.
+
+<div id="security">
+  ### الأمان
+</div>
+
+تستخدم الأمثلة في هذه الصفحة المستخدم `default` وقاعدة البيانات الافتراضية لتبسيط الأمور. في بيئة production، أنشئ مستخدمًا مخصصًا يتمتع بالحد الأدنى من الامتيازات اللازمة للإدراج في الجدول المستهدف، وخزّن بيانات الاعتماد بأمان (على سبيل المثال، في متغيرات البيئة أو في مدير الأسرار بدلًا من تضمينها في الشيفرة المصدرية). راجع [Cloud access management](/ar/products/cloud/guides/security/cloud-access-management/index) للحصول على إرشادات.
+
+<div id="related-resources">
+  ## الموارد ذات الصلة
+</div>
+
+* [وثائق منصة Apify](https://docs.apify.com)
+* [مرجع واجهة برمجة تطبيقات Apify](https://docs.apify.com/api/v2)
+* [عميل JavaScript الخاص بـ Apify](https://docs.apify.com/api/client/js)
+* [عميل بايثون الخاص بـ Apify](https://docs.apify.com/api/client/python)
+* [متجر Apify (Actors جاهزة للاستخدام)](https://apify.com/store)
+* [نظرة عامة على تكاملات Apify](https://docs.apify.com/platform/integrations)
+* [عميل JavaScript الخاص بـ ClickHouse](/ar/integrations/language-clients/js)

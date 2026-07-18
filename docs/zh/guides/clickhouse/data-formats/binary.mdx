@@ -1,0 +1,269 @@
+---
+sidebarTitle: '二进制与 Native 格式'
+slug: /integrations/data-formats/binary-native
+title: '在 ClickHouse 中使用 Native 格式和二进制格式'
+description: '介绍如何在 ClickHouse 中使用 Native 格式和二进制格式'
+keywords: ['二进制格式', 'Native 格式', 'rowbinary', 'rawblob', 'messagepack', 'Protobuf', 'capn proto', '数据格式', '性能', '压缩']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+ClickHouse 支持多种二进制格式，可提供更好的性能和空间利用率。二进制格式在字符编码上也更安全，因为数据是以二进制形式保存的。
+
+我们将使用 some&#95;data [表](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/some_data.sql) 和 [数据](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/some_data.tsv) 进行演示，你也可以在自己的 ClickHouse 实例上复现这些示例。
+
+<div id="exporting-in-a-native-clickhouse-format">
+  ## 以 ClickHouse 原生格式导出
+</div>
+
+在 ClickHouse 节点之间导出和导入数据时，效率最高的格式是 [Native](/zh/reference/formats/Native) 格式。导出可使用 `INTO OUTFILE` 子句：
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.clickhouse' FORMAT Native
+```
+
+这会以 Native 格式创建 [data.clickhouse](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.clickhouse) 文件。
+
+<div id="importing-from-a-native-format">
+  ### 从 Native 格式导入
+</div>
+
+要导入数据，对于较小的文件或用于探索性操作，我们可以使用 [file()](/zh/reference/functions/table-functions/file)：
+
+```sql
+DESCRIBE file('data.clickhouse', Native);
+```
+
+```response
+┌─name──┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ String │              │                    │         │                  │                │
+│ month │ Date   │              │                    │         │                  │                │
+│ hits  │ UInt32 │              │                    │         │                  │                │
+└───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<Tip>
+  使用 `file()` 函数时，如果使用 ClickHouse Cloud，则需要在文件所在机器上的 `clickhouse client` 中运行这些命令。另一种做法是使用 [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local) 在本地查看文件内容。
+</Tip>
+
+在生产环境中，我们使用 `FROM INFILE` 导入数据：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.clickhouse'
+FORMAT Native
+```
+
+<div id="native-format-compression">
+  ### Native 格式压缩
+</div>
+
+我们也可以在将数据导出为 Native 格式 (以及大多数其他格式) 时，通过 `COMPRESSION` 子句启用压缩：
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.clickhouse'
+COMPRESSION 'lz4'
+FORMAT Native
+```
+
+我们在导出时使用了 LZ4 压缩，因此在导入数据时也需要指定它：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.clickhouse'
+COMPRESSION 'lz4'
+FORMAT Native
+```
+
+<div id="exporting-to-rowbinary">
+  ## 导出为 RowBinary
+</div>
+
+另一种受支持的二进制格式是 [RowBinary](/zh/reference/formats/RowBinary/RowBinary)，它支持以二进制编码的行格式导入和导出数据：
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'data.binary' FORMAT RowBinary
+```
+
+这会生成一个 [data.binary](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.binary) 文件，其格式为二进制行格式。
+
+<div id="exploring-rowbinary-files">
+  ### 查看 RowBinary 文件
+</div>
+
+这种格式不支持自动 schema 推断，因此如果要在加载前先查看内容，我们必须显式定义 schema：
+
+```sql
+SELECT *
+FROM file('data.binary', RowBinary, 'path String, month Date, hits UInt32')
+LIMIT 5
+```
+
+```response
+┌─path───────────────────────────┬──────month─┬─hits─┐
+│ Bangor_City_Forest             │ 2015-07-01 │   34 │
+│ Alireza_Afzal                  │ 2017-02-01 │   24 │
+│ Akhaura-Laksam-Chittagong_Line │ 2015-09-01 │   30 │
+│ 1973_National_500              │ 2017-10-01 │   80 │
+│ Attachment                     │ 2017-09-01 │ 1356 │
+└────────────────────────────────┴────────────┴──────┘
+```
+
+可以考虑使用 [RowBinaryWithNames](/zh/reference/formats/RowBinary/RowBinaryWithNames)，它还会额外添加一个包含列名列表的表头。[RowBinaryWithNamesAndTypes](/zh/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) 还会再额外添加一个包含列类型的表头。
+
+<div id="importing-from-rowbinary-files">
+  ### 从 RowBinary 文件导入数据
+</div>
+
+要从 RowBinary 文件中加载数据，可以使用 `FROM INFILE` 子句：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.binary'
+FORMAT RowBinary
+```
+
+<div id="importing-single-binary-value-using-rawblob">
+  ## 使用 RawBLOB 导入单个二进制值
+</div>
+
+假设我们想读取整个二进制文件，并将其保存到表中的某个字段中。
+这种情况下可以使用 [RawBLOB 格式](/zh/reference/formats/RawBLOB)。这种格式只能直接用于单列的表：
+
+```sql
+CREATE TABLE images(data String) ENGINE = Memory
+```
+
+下面将图像文件保存到 `images` 表中：
+
+```bash
+cat image.jpg | clickhouse-client -q "INSERT INTO images FORMAT RawBLOB"
+```
+
+我们可以检查 `data` 字段的长度，其值应等于原始文件大小：
+
+```sql
+SELECT length(data) FROM images
+```
+
+```response
+┌─length(data)─┐
+│         6121 │
+└──────────────┘
+```
+
+<div id="exporting-rawblob-data">
+  ### 导出 RawBLOB 数据
+</div>
+
+这种格式也可通过 `INTO OUTFILE` 子句导出数据：
+
+```sql
+SELECT * FROM images LIMIT 1
+INTO OUTFILE 'out.jpg'
+FORMAT RawBLOB
+```
+
+请注意，我们必须使用 `LIMIT 1`，因为导出超过一个值会生成损坏的文件。
+
+<div id="messagepack">
+  ## MessagePack
+</div>
+
+ClickHouse 支持通过 [MsgPack](/zh/reference/formats/MsgPack) 导入和导出 [MessagePack](https://msgpack.org/)。要导出为 MessagePack 格式：
+
+```sql
+SELECT *
+FROM some_data
+INTO OUTFILE 'data.msgpk'
+FORMAT MsgPack
+```
+
+要从 [MessagePack 文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.msgpk) 中导入数据：
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.msgpk'
+FORMAT MsgPack
+```
+
+<div id="protocol-buffers">
+  ## Protocol Buffers
+</div>
+
+<CloudNotSupportedBadge />
+
+要使用 [Protocol Buffers](/zh/reference/formats/Protobuf/Protobuf)，首先需要定义一个 [schema 文件](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/schema.proto)：
+
+```protobuf
+syntax = "proto3";
+
+message MessageType {
+  string path = 1;
+  date month = 2;
+  uint32 hits = 3;
+};
+```
+
+该 schema 文件 (本例中为 `schema.proto`) 的路径是在 [Protobuf](/zh/reference/formats/Protobuf/Protobuf) 格式的 `format_schema` 设置选项中设置的：
+
+```sql
+SELECT * FROM some_data
+INTO OUTFILE 'proto.bin'
+FORMAT Protobuf
+SETTINGS format_schema = 'schema:MessageType'
+```
+
+这会将数据保存到 [proto.bin](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/proto.bin) 文件。ClickHouse 还支持导入 Protobuf 数据以及嵌套消息。若要处理单个 Protocol Buffer 消息，可考虑使用 [ProtobufSingle](/zh/reference/formats/Protobuf/ProtobufSingle) (这种情况下会省略长度分隔符) 。
+
+<div id="capn-proto">
+  ## Cap&#39;n Proto
+</div>
+
+<CloudNotSupportedBadge />
+
+ClickHouse 支持的另一种常见二进制序列化格式是 [Cap&#39;n Proto](https://capnproto.org/)。与 `Protobuf` 格式类似，在本示例中，我们也需要定义一个 schema 文件 ([`schema.capnp`](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/schema.capnp)) ：
+
+```response
+@0xec8ff1a10aa10dbe;
+
+struct PathStats {
+  path @0 :Text;
+  month @1 :UInt32;
+  hits @2 :UInt32;
+}
+```
+
+现在我们可以使用 [CapnProto](/zh/reference/formats/CapnProto) 格式和此 schema 来导入和导出：
+
+```sql
+SELECT
+    path,
+    CAST(month, 'UInt32') AS month,
+    hits
+FROM some_data
+INTO OUTFILE 'capnp.bin'
+FORMAT CapnProto
+SETTINGS format_schema = 'schema:PathStats'
+```
+
+请注意，我们必须将 `Date` 列强制转换为 `UInt32`，以[匹配对应的数据类型](/zh/reference/formats/CapnProto#data_types-matching-capnproto)。
+
+<div id="other-formats">
+  ## 其他格式
+</div>
+
+ClickHouse 支持多种格式，包括文本格式和二进制格式，以适配各种场景和平台。可通过以下文章了解更多格式及其使用方法：
+
+* [CSV 和 TSV 格式](/zh/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/zh/guides/clickhouse/data-formats/parquet)
+* [JSON 格式](/zh/guides/clickhouse/data-formats/json/intro)
+* [Regex 和 Template](/zh/guides/clickhouse/data-formats/templates-regex)
+* **Native 和二进制格式**
+* [SQL 格式](/zh/guides/clickhouse/data-formats/sql)
+
+另外，也可以了解 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)——这是一款功能完备且可移植的工具，无需启动 ClickHouse server 即可处理本地/远程文件。
