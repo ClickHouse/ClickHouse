@@ -4,6 +4,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <limits>
 #include <unordered_set>
 
 
@@ -87,16 +88,39 @@ UInt16 backendPortFor(ListenerProtocol protocol, const BackendConfig & backend, 
     }
 }
 
+/// Reads a required listening port and validates it fits in [1, 65535].
+/// Without this check `static_cast<UInt16>` would silently wrap out-of-range
+/// values (e.g. 70000 -> 4464), binding or connecting to the wrong port.
+static UInt16 parseRequiredPort(const Poco::Util::AbstractConfiguration & config, const String & key)
+{
+    const UInt64 value = config.getUInt64(key);
+    if (value == 0 || value > std::numeric_limits<UInt16>::max())
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid port {} in '{}': a listening port must be between 1 and {}", value, key, std::numeric_limits<UInt16>::max());
+    return static_cast<UInt16>(value);
+}
+
+/// Reads an optional backend port (0 means "not set, use the protocol default")
+/// and validates it does not overflow UInt16.
+static UInt16 parseOptionalPort(const Poco::Util::AbstractConfiguration & config, const String & key)
+{
+    const UInt64 value = config.getUInt64(key, 0);
+    if (value > std::numeric_limits<UInt16>::max())
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid port {} in '{}': a port must not exceed {}", value, key, std::numeric_limits<UInt16>::max());
+    return static_cast<UInt16>(value);
+}
+
 static BackendConfig loadBackend(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     BackendConfig backend;
     backend.host = config.getString(prefix + ".host");
-    backend.tcp_port = static_cast<UInt16>(config.getUInt(prefix + ".tcp_port", 0));
-    backend.http_port = static_cast<UInt16>(config.getUInt(prefix + ".http_port", 0));
-    backend.mysql_port = static_cast<UInt16>(config.getUInt(prefix + ".mysql_port", 0));
-    backend.postgresql_port = static_cast<UInt16>(config.getUInt(prefix + ".postgresql_port", 0));
-    backend.ssh_port = static_cast<UInt16>(config.getUInt(prefix + ".ssh_port", 0));
-    backend.raw_port = static_cast<UInt16>(config.getUInt(prefix + ".raw_port", 0));
+    backend.tcp_port = parseOptionalPort(config, prefix + ".tcp_port");
+    backend.http_port = parseOptionalPort(config, prefix + ".http_port");
+    backend.mysql_port = parseOptionalPort(config, prefix + ".mysql_port");
+    backend.postgresql_port = parseOptionalPort(config, prefix + ".postgresql_port");
+    backend.ssh_port = parseOptionalPort(config, prefix + ".ssh_port");
+    backend.raw_port = parseOptionalPort(config, prefix + ".raw_port");
     backend.secure = config.getBool(prefix + ".secure", false);
     backend.weight = config.getUInt(prefix + ".weight", 1);
     backend.monitor_user = config.getString(prefix + ".monitor_user", "");
@@ -186,7 +210,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
         ListenerConfig listener;
         listener.protocol = parseListenerProtocol(config.getString(prefix + ".protocol"));
         listener.host = config.getString(prefix + ".host", "");
-        listener.port = static_cast<UInt16>(config.getUInt(prefix + ".port"));
+        listener.port = parseRequiredPort(config, prefix + ".port");
         listener.secure = config.getBool(prefix + ".secure", false);
         listener.peek = parsePeekMode(config.getString(prefix + ".peek", "auto"));
         listener.default_pool = config.getString(prefix + ".pool", "");
