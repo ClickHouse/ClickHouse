@@ -136,6 +136,11 @@ def pg_query(query):
     try:
         cursor = conn.cursor()
         cursor.execute(query)
+        # Statements without a result set (DROP/INSERT/...) leave cursor.description as None,
+        # and calling fetchall() on them raises "no results to fetch".
+        if cursor.description is None:
+            conn.commit()
+            return []
         return cursor.fetchall()
     finally:
         conn.close()
@@ -461,3 +466,66 @@ def test_second_coordinated_create_adopts_publication_table_set(started_cluster)
     assert "late_table" not in tables_on_standby
 
     pg_query('DROP TABLE IF EXISTS "late_table"')
+
+
+def test_drop_table_is_rejected_in_coordinated_mode(started_cluster):
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    # Dropping an individual nested table only removes it locally and does not update the shared
+    # publication, so the other replicas keep consuming a publication that still contains it. It is
+    # refused on every replica (leader and standby alike), before the table is shut down.
+    for node in (instance, instance2):
+        error = node.query_and_get_error("DROP TABLE test_database.test_table")
+        assert "coordinated MaterializedPostgreSQL" in error
+
+    # The refused DROP must not have broken replication of the nested table.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+
+def test_coordinated_create_adopts_publication_over_mismatching_tables_list(started_cluster):
+    # A coordinated CREATE with an explicit `materialized_postgresql_tables_list` that disagrees with the
+    # already-existing shared publication must not honor the local list: the publication is authoritative
+    # shared state and is adopted (not recreated), so building nested tables for a table the publication
+    # never publishes into would leave that table empty forever and make replicas diverge on which tables
+    # actually replicate. The joining replica must adopt the publication's table set instead.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("extra_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # The first replica publishes only test_table (FOR TABLE ONLY test_table).
+    first_settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=first_settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert publication_exists()
+
+    # The second replica joins with a superset list. The extra_table is not in the shared publication,
+    # so it must be dropped from the effective table set rather than built as an empty nested table.
+    second_settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table, extra_table'"
+    ]
+    pg_manager2.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=second_settings
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+
+    tables_on_standby = instance2.query("SHOW TABLES FROM test_database").split()
+    assert "test_table" in tables_on_standby
+    assert "extra_table" not in tables_on_standby
