@@ -250,12 +250,24 @@ void MergeTreeDeduplicationLog::rotate()
     auto new_path = getLogPath(logs_dir, new_log_number);
     auto new_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 
-    /// The new writer is ready; now finalize the previous one and switch over.
-    /// `current_writer` can already be canceled here - e.g. `addPart` rolling back
-    /// a failed insert calls `rotate` after a failed `writeRecord` left it canceled.
-    /// `finalize` disallows calling it on a canceled buffer (it throws a logical
-    /// error, which aborts the process in debug and sanitizer builds), so skip it
-    /// in that case: a canceled buffer has nothing left to flush or sync anyway.
+    /// Register the new log file before finalizing the old writer. This is the only
+    /// remaining bookkeeping step that can throw - `std::map::emplace` allocates a
+    /// node - and it must not run after the old writer has been finalized: if it did
+    /// and threw, `current_writer` would still point at the finalized old writer, and
+    /// the next `writeRecord` would abort with the very "Cannot write to finalized
+    /// buffer" logical error this change eliminates (and one no rollback path can
+    /// detect, since the buffer is finalized, not canceled). Doing it here, while the
+    /// old writer is still live, keeps `rotate` all-or-nothing: a throw leaves the log
+    /// fully usable and the operation retryable, because `emplace` has no effect when
+    /// it throws, so the switch-over below happens either in full or not at all.
+    existing_logs.emplace(new_log_number, MergeTreeDeduplicationLogNameDescription{new_path, 0});
+
+    /// The new writer is ready and registered; now finalize the previous one and
+    /// switch over. `current_writer` can already be canceled here - e.g. `addPart`
+    /// rolling back a failed insert calls `rotate` after a failed `writeRecord` left
+    /// it canceled. `finalize` disallows calling it on a canceled buffer (it throws a
+    /// logical error, which aborts the process in debug and sanitizer builds), so skip
+    /// it in that case: a canceled buffer has nothing left to flush or sync anyway.
     std::exception_ptr finalize_error;
     try
     {
@@ -276,8 +288,10 @@ void MergeTreeDeduplicationLog::rotate()
         finalize_error = std::current_exception();
     }
 
+    /// Switch over to the new writer. Both statements are non-throwing (an integer
+    /// store and a unique_ptr move that destroys the old, already finalized-or-canceled
+    /// writer), so once the bookkeeping above has succeeded the switch always completes.
     current_log_number = new_log_number;
-    existing_logs.emplace(current_log_number, MergeTreeDeduplicationLogNameDescription{new_path, 0});
     current_writer = std::move(new_writer);
 
     /// A failure to finalize or sync the previous log file means the records
