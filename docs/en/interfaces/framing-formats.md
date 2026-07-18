@@ -23,6 +23,8 @@ Anything a query enables only through its own `SETTINGS` clause - a framing form
 
 If an exception happens during query execution, it is sent as an `exception` packet (the last packet of the stream), regardless of the `http_write_exception_in_output_format` setting, so the client can always parse the response as a stream of packets.
 
+There is one exception to this: if a packet write itself fails partway through (for example the connection is broken after some bytes of a packet have already reached the client), the framing fails closed and the stream is terminated without a final `exception` packet. It never retries a half-written packet, because re-emitting it would append a duplicate after the truncated bytes and corrupt the stream. In that situation the client observes a truncated response and an aborted HTTP connection rather than a well-formed terminal packet.
+
 A framing format is applied to queries that produce no result stream as well - a successful `INSERT`, a DDL query, or any other query without output. Such a response carries no `data` packets, but still switches the response `Content-Type` to the framing format and streams the `progress`, `log`, and `profile_events` packets, matching the native protocol. The stream ends with a final `progress` packet carrying the final counters (for example `result_rows` and `result_bytes` with the number of written rows for an `INSERT`). Because no payload is formatted, the output format is irrelevant for such queries and does not affect the framed stream.
 
 ## Available framing formats {#available-framing-formats}

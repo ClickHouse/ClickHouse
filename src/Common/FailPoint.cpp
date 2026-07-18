@@ -130,6 +130,7 @@ static struct InitFiu
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
+    ONCE(framing_throw_after_writing_packet) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
