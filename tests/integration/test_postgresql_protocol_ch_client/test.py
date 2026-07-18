@@ -251,6 +251,47 @@ def test_copy_to_stdout_format_is_case_insensitive(started_cluster):
         conn.close()
 
 
+def test_copy_honours_format_and_ignores_other_options(started_cluster):
+    # Real PostgreSQL clients append data-formatting options to `COPY`. psycopg2's `copy_to`/`copy_from`
+    # always send `WITH DELIMITER AS '\t' NULL AS '\N'`, and a client may spell the format together with
+    # `HEADER`, `NULL`, etc. We only act on the format; every other option must be accepted and ignored,
+    # not rejected. A previous version tried to reject unknown options, but the exception fell through to
+    # the regular-query path, which tore the connection down mid-COPY (psycopg2 then reported a lost
+    # connection instead of returning the rows).
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # Text format with the delimiter/null options psycopg2 sends: still TSV, options ignored.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS '\t' NULL AS '\\N'", out
+        )
+        assert out.getvalue() == "1\t2\n"
+
+        # The format is still honoured when other options accompany it, in both the legacy and the modern
+        # parenthesized spellings; the non-format options are ignored.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS ',' NULL AS '' CSV", out
+        )
+        assert out.getvalue() == "1,2\n"
+
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, DELIMITER ',', NULL '')", out
+        )
+        assert out.getvalue() == "1,2\n"
+
+        # The connection stayed usable across all of the above (no mid-COPY teardown).
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
 def test_map_and_tuple_columns_are_not_advertised_as_arrays(started_cluster):
     # An `Array(...)` nested inside a `Map`/`Tuple` type argument must not make the emulated `pg_attribute`
     # advertise the column as a PostgreSQL array: only the leading `Array(` wrappers count towards
