@@ -105,6 +105,49 @@ class Targeting:
                     return candidate
         return None
 
+    @classmethod
+    def _tests_owning_data_file(cls, fpath: str):
+        """Map an auxiliary stateless file back to the base names of the tests
+        that own it.
+
+        A data fixture may sit next to its test (`02995_settings_26_4_1.tsv`) or
+        in a subdirectory (`data_parquet/02716_data.parquet`); either way it has
+        no test of its own, so `_derive_test_name` skips it. But such a fixture
+        change still alters the surface of the test that consumes it, and a drift
+        guard that skips it would false-green the very drift it exists to catch.
+
+        Fixtures carry their owning test's five-digit prefix by convention, so
+        the prefix narrows the candidates to the `NNNNN_*` tests at the suite
+        root (a handful of files, never the whole suite). Among those, prefer the
+        ones whose body actually references the fixture by name; fall back to all
+        prefix siblings when the reference is constructed dynamically and cannot
+        be found textually. Return an empty list when the file has no numeric
+        prefix or no test with that prefix exists — there is then genuinely
+        nothing to rerun, and emitting a pattern that matches no test would make
+        `clickhouse-test` exit 1 (the failure mode `PR #104097` fixed).
+        """
+        match = re.match(r"(\d{5})", os.path.basename(fpath))
+        if match is None:
+            return []
+        prefix = match.group(1)
+        test_dir = Path("tests/queries/0_stateless")
+        candidates = {}
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            for test_file in test_dir.glob(f"{prefix}_*{ext}"):
+                candidates[test_file.name[: -len(ext)]] = test_file
+        if not candidates:
+            return []
+        fname = os.path.basename(fpath)
+        referencing = []
+        for base_name, test_file in candidates.items():
+            try:
+                with test_file.open("r", encoding="utf-8", errors="ignore") as f:
+                    if fname in f.read():
+                        referencing.append(base_name)
+            except OSError:
+                continue
+        return sorted(referencing) if referencing else sorted(candidates)
+
     @staticmethod
     def is_functional_test_file(fpath: str) -> bool:
         """A changed path that is itself a stateless functional test source file."""
@@ -223,29 +266,49 @@ class Targeting:
             return result
 
         for fpath in changed_files:
-            if re.match(r"tests/queries/0_stateless/\d{5}", fpath):
-                if not Path(fpath).exists():
-                    print(f"File '{fpath}' was removed — skipping")
-                    continue
-
-                test_base_name = self._derive_test_name(fpath)
-                if test_base_name is None:
-                    # Avoid emitting a regex like `02995_settings_26_4_1.` that
-                    # matches no test — clickhouse-test exits with code 1 when
-                    # "no tests were run", failing the flaky check.
+            if not fpath.startswith("tests/queries/0_stateless/"):
+                if fpath.startswith("tests/queries/"):
+                    # Log any other changed file under tests/queries for future debugging
                     print(
-                        f"File '{fpath}' is not a test source and has no sibling test — skipping"
+                        f"File '{fpath}' changed, but doesn't match expected test pattern"
                     )
+                continue
+
+            if not Path(fpath).exists():
+                print(f"File '{fpath}' was removed — skipping")
+                continue
+
+            # A file directly at the suite root may itself be a test source, or a
+            # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
+            # test shares its base name.
+            if Path(fpath).parent == Path("tests/queries/0_stateless"):
+                test_base_name = self._derive_test_name(fpath)
+                if test_base_name is not None:
+                    print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
+                    # Add '.' suffix to precisely match this test only
+                    result.add(f"{test_base_name}.")
                     continue
 
-                print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                # Add '.' suffix to precisely match this test only
-                result.add(f"{test_base_name}.")
-
-            elif fpath.startswith("tests/queries/"):
-                # Log any other changed file under tests/queries for future debugging
+            # Either a data fixture nested in a subdirectory
+            # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
+            # (`02995_settings_26_4_1.tsv`) with no sibling test. Map it back to the
+            # test(s) that own it so a fixture-only change still reruns the tests
+            # that consume it; otherwise the flaky check — and the merge-queue drift
+            # guard built on it — would silently skip the very test surface the
+            # change affects. Emit only real tests: `_tests_owning_data_file` returns
+            # an empty list when nothing maps, so we never fabricate a no-match
+            # pattern (which would make clickhouse-test exit 1).
+            owning_tests = self._tests_owning_data_file(fpath)
+            if owning_tests:
+                for base_name in owning_tests:
+                    print(
+                        f"Detected changed data file '{fpath}' owned by test '{base_name}'"
+                    )
+                    # Add '.' suffix to precisely match this test only
+                    result.add(f"{base_name}.")
+            else:
                 print(
-                    f"File '{fpath}' changed, but doesn't match expected test pattern"
+                    f"File '{fpath}' is not a test source and has no owning test — skipping"
                 )
 
         return sorted(result)
