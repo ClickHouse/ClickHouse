@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3Defines.h>
 #include <Core/Defines.h>
@@ -134,6 +135,19 @@ std::unordered_set<std::string> collectWidePartDataFileNames(const IMergeTreeDat
     return data_files;
 }
 
+/// Whether a wide part's on-disk stream file (a .bin name) belongs to the given column. Every stream file is
+/// named escapeForFileName(column) followed by '.', '%2E', or the file extension (the ColumnsSubstreams
+/// substream-name invariant, see ColumnsSubstreams::findInvalidSubstreamName), so no column's escaped name is a
+/// prefix of another column's files. Used to keep only the files of columns the merged part still writes and to
+/// drop an old part's on-disk files for a column removed by a metadata-only ALTER DROP COLUMN.
+bool streamFileBelongsToColumn(const std::string & file_name, const std::string & escaped_column_name)
+{
+    if (!file_name.starts_with(escaped_column_name))
+        return false;
+    const std::string_view rest(file_name.data() + escaped_column_name.size(), file_name.size() - escaped_column_name.size());
+    return rest.starts_with('.') || rest.starts_with("%2E");
+}
+
 /// Number of on-disk column streams that a wide part actually reads/writes through. Prefer the exact
 /// per-column substream layout recorded in columns_substreams.txt - the reliable source of truth for
 /// types with a dynamic structure such as JSON and Dynamic, whose real substreams cannot be recovered
@@ -150,6 +164,50 @@ size_t countPartStreams(const IMergeTreeDataPart & part)
         if (const size_t data_files = collectWidePartDataFileNames(part).size(); data_files != 0)
             return data_files;
     return countColumnStreams(part.getColumns());
+}
+
+/// Like countPartStreams, but restricted to the columns the merged part will actually write (those present in
+/// output_columns). IMergeTreeDataPart::loadColumns keeps a source part's original columns.txt, so an old part
+/// can still carry - in columns_substreams.txt, or as .bin files on disk - a JSON / Dynamic column that a
+/// metadata-only ALTER DROP COLUMN removed from the current metadata. The merge writes only the current
+/// metadata's columns, so such a dead column must not raise the output-stream floor and reserve memory for a
+/// column that is never written.
+size_t countPartStreamsForColumns(const IMergeTreeDataPart & part, const NamesAndTypesList & output_columns)
+{
+    const auto & columns_substreams = part.getColumnsSubstreams();
+    if (!columns_substreams.empty())
+    {
+        size_t streams = 0;
+        for (const auto & column : part.getColumns())
+            if (output_columns.contains(column.name))
+                if (const auto * substreams = columns_substreams.tryGetColumnSubstreams(column.name))
+                    streams += substreams->size();
+        return streams;
+    }
+
+    NamesAndTypesList written_columns;
+    for (const auto & column : part.getColumns())
+        if (output_columns.contains(column.name))
+            written_columns.push_back(column);
+
+    if (part.getType() == MergeTreeDataPartType::Wide)
+    {
+        std::vector<std::string> escaped_written_columns;
+        escaped_written_columns.reserve(written_columns.size());
+        for (const auto & column : written_columns)
+            escaped_written_columns.push_back(escapeForFileName(column.name));
+
+        size_t data_files = 0;
+        for (const auto & file_name : collectWidePartDataFileNames(part))
+            if (std::any_of(
+                    escaped_written_columns.begin(), escaped_written_columns.end(),
+                    [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped); }))
+                ++data_files;
+        if (data_files != 0)
+            return data_files;
+    }
+
+    return countColumnStreams(written_columns);
 }
 
 /// The .bin file names the default serialization can enumerate for a set of columns - the static skeleton
@@ -197,21 +255,6 @@ std::optional<size_t> tryCountColumnSubstreamsFromParts(const String & column_na
     if (!recorded)
         return std::nullopt;
     return union_substreams.size();
-}
-
-/// Number of on-disk column streams for a set of columns, recovering the dynamic (JSON / Dynamic) substreams
-/// of each column, by name, from the source parts (tryCountColumnSubstreamsFromParts), falling back to the
-/// default serialization for a column whose substreams no part records. For simple column types the union
-/// equals the default serialization count, so this only ever raises the estimate for semi-structured columns.
-/// Unlike countOutputStreams below it adds no whole-part floor, so it is exact for a column set that is narrower
-/// than the parts it is matched against - a projection's columns are derived from the base parts, so its
-/// semi-structured columns are priced against the base parts by name here.
-size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const MergeTreeDataPartsVector & source_parts)
-{
-    size_t streams = 0;
-    for (const auto & column : columns)
-        streams += tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
-    return streams;
 }
 
 /// Upper bound on the on-disk streams one shared-data bucket of a JSON column serializes. The ADVANCED
@@ -370,21 +413,58 @@ size_t countRebuiltProjectionStreams(
     return streams;
 }
 
-/// Number of on-disk column streams the merged wide part will write. Its substream set is the union of
-/// the source parts' substreams (countColumnStreamsFromParts), matched by column name. The per-column union
-/// can still miss dynamic substreams that live only in a source part without columns_substreams.txt (there
-/// the default serialization collapses JSON / Dynamic to a single stream, and tryGetColumnSubstreams returns
-/// nothing): an old wide part written before that file existed, or a compact part written with
-/// write_marks_for_substreams_in_compact_parts = 0. Those parts' dynamic streams are added back explicitly
-/// below - by name for a wide part (its .bin files are the ground truth), by the output column type's
+/// Number of on-disk column streams the merged wide part will write. Its substream set is estimated per output
+/// column as the union, by name, of the source parts' recorded substreams (tryCountColumnSubstreamsFromParts),
+/// falling back to the default serialization for a column no part records. A column that some source part
+/// stores under a DIFFERENT type than the merged metadata cannot be priced from that union: a metadata-only
+/// ALTER MODIFY COLUMN widening (plain JSON / Dynamic(max_types=0) later widened, then merged with newer parts
+/// of the wider type - 03918_json_lazy_type_hints_merge) reserializes the old rows under the current, wider
+/// type on merge, but the old part's recorded substreams are named for its own, narrower type, so the union
+/// undercounts what the merged part writes. Such a widened column is bounded by the output type's own write-time
+/// capacity instead (countDynamicCapacityStreams, the same conservative bound the compact-source recovery below
+/// and a rebuilt projection use), which no merged column can exceed.
+///
+/// The per-column union can still miss dynamic substreams that live only in a source part without
+/// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream, and
+/// tryGetColumnSubstreams returns nothing): an old wide part written before that file existed, or a compact part
+/// written with write_marks_for_substreams_in_compact_parts = 0. Those parts' dynamic streams are added back
+/// explicitly below - by name for a wide part (its .bin files are the ground truth), by the output column type's
 /// write-time capacity for a compact part (which stores every column in a single data.bin, so its per-column
 /// stream layout is not recoverable from disk) - so a mixed old/new merge with disjoint dynamic paths is not
-/// undercounted. The result is also floored at the widest source part's actual stream count (countPartStreams reads an old wide
-/// part's real .bin count), since the merged part is never narrower than any single source part. For simple
-/// columns and modern parts all adjustments are no-ops.
+/// undercounted. The result is also floored at the widest source part's actual stream count
+/// (countPartStreamsForColumns reads an old wide part's real .bin count), since the merged part is never
+/// narrower than any single source part.
+///
+/// Throughout, a source column absent from output_columns (removed by a metadata-only ALTER DROP COLUMN but
+/// still carried on an old part's disk / columns.txt) is ignored - the merge never writes it, so it must not
+/// inflate the estimate. For simple columns and modern parts of the current type all adjustments are no-ops.
 size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
 {
-    size_t streams = countColumnStreamsFromParts(output_columns, source_parts);
+    /// Per-column union of the source parts' recorded substreams, matched by name, except for a column any
+    /// source part stores under a different type than the merged metadata - a metadata-only widening whose old
+    /// rows are reserialized under the current, wider type - which is bounded by the output type's write-time
+    /// capacity, a bound no merged column can exceed. Widened columns are remembered so the recovery and floor
+    /// below do not price them again.
+    size_t streams = 0;
+    std::unordered_set<std::string_view> type_widened_columns;
+    for (const auto & column : output_columns)
+    {
+        const bool type_widened = std::any_of(
+            source_parts.begin(), source_parts.end(),
+            [&](const auto & part)
+            {
+                const auto part_column = part->getColumns().tryGetByName(column.name);
+                return part_column && !part_column->type->equals(*column.type);
+            });
+
+        if (type_widened)
+        {
+            type_widened_columns.insert(column.name);
+            streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings);
+        }
+        else
+            streams += tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
+    }
 
     /// The per-column union above can only see substreams recorded in columns_substreams.txt. A source part
     /// written without that file records nothing, so the dynamic substreams of its JSON / Dynamic columns are
@@ -445,12 +525,25 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             /// shared-data streams. Both kinds are already counted once by the per-column union above, so
             /// subtracting only whole non-dynamic columns (as if a dynamic-structure column had no enumerable
             /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
-            /// What remains after the subtraction is exactly the part's dynamic files, which nothing else
-            /// accounts for.
+            /// What remains after the subtraction is exactly the part's dynamic files - but only recover those
+            /// of columns the merged part still writes under the same type: a column dropped by a metadata-only
+            /// ALTER (absent from output_columns) is not written, and a widened column is already priced by its
+            /// output-type capacity above, so both must be excluded here.
             const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
+            std::vector<std::string> recoverable_escaped_columns;
+            for (const auto & column : part_columns)
+                if (!type_widened_columns.contains(column.name) && output_columns.contains(column.name))
+                    recoverable_escaped_columns.push_back(escapeForFileName(column.name));
+
             for (const auto & file_name : collectWidePartDataFileNames(*part))
-                if (!static_files.contains(file_name))
+            {
+                if (static_files.contains(file_name))
+                    continue;
+                if (std::any_of(
+                        recoverable_escaped_columns.begin(), recoverable_escaped_columns.end(),
+                        [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped); }))
                     unrecorded_dynamic_files.insert(file_name);
+            }
         }
         else
         {
@@ -461,10 +554,12 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             /// Dynamic(max_types=0) or unhinted JSON part merged into a Dynamic(max_types=5) / JSON(...) column
             /// writes the output type's streams, not the smaller source type's - so pricing the source type
             /// would under-reserve. A column absent from the merged part (dropped by ALTER) is not written and
-            /// is skipped.
+            /// is skipped, and a widened column is already priced by its output-type capacity above.
             for (const auto & column : part_columns)
             {
                 if (!column.type->hasDynamicStructure())
+                    continue;
+                if (type_widened_columns.contains(column.name))
                     continue;
                 const auto output_column = output_columns.tryGetByName(column.name);
                 if (output_column && compact_recovered_columns.insert(column.name).second)
@@ -475,11 +570,13 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
     streams += unrecorded_dynamic_files.size() + compact_dynamic_streams;
 
     /// The merged wide part is never narrower than any single source part, so floor the estimate at the
-    /// widest source part's actual stream count. For simple columns and modern parts this floor equals the
-    /// per-column union, so it never raises the estimate above what the union already accounts for.
+    /// widest source part's actual stream count - but counting only the columns the merged part still writes,
+    /// so a column an old part carries yet the current metadata dropped does not inflate the floor. For simple
+    /// columns and modern parts this floor equals the per-column union, so it never raises the estimate above
+    /// what the union already accounts for.
     size_t max_source_streams = 0;
     for (const auto & part : source_parts)
-        max_source_streams = std::max(max_source_streams, countPartStreams(*part));
+        max_source_streams = std::max(max_source_streams, countPartStreamsForColumns(*part, output_columns));
 
     return std::max(streams, max_source_streams);
 }
