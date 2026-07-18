@@ -633,6 +633,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_VIEWS:
         case Type::PAUSE_VIEWS:
         case Type::CLEAR_PAGE_CACHE:
+        case Type::STOP_RELOAD_DICTIONARIES:
+        case Type::START_RELOAD_DICTIONARIES:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
         case Type::RECONNECT_ZOOKEEPER:

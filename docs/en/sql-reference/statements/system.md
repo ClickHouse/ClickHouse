@@ -43,6 +43,26 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 SELECT name, status FROM system.dictionaries;
 ```
 
+## SYSTEM STOP RELOAD DICTIONARIES {#stop-reload-dictionaries}
+
+Prevents any reloading or initial loading of dictionaries.
+
+**Syntax**
+
+```sql
+SYSTEM STOP RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+## SYSTEM START RELOAD DICTIONARIES {#start-reload-dictionaries}
+
+Reverses the effect of `SYSTEM STOP RELOAD DICTIONARIES`, allowing dictionaries to be reloaded.
+
+**Syntax**
+
+```sql
+SYSTEM START RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
 ## SYSTEM UNLOAD DICTIONARY {#unload-dictionary}
 
 Unloads a dictionary `dictionary_name` to release its memory, if the dictionary status is `LOADED`.
