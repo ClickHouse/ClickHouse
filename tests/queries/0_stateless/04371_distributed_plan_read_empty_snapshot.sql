@@ -31,3 +31,22 @@ SYSTEM DISABLE FAILPOINT distributed_plan_read_empty_snapshot_on_deserialize;
 SELECT sum(x) FROM t_dp_empty_snapshot;
 
 DROP TABLE t_dp_empty_snapshot;
+
+-- Same for a FINAL read. FINAL resolves each lane's marks to local parts lazily, so an empty local
+-- snapshot must be caught by an eager divergence check; otherwise the empty-parts short-circuits
+-- (NullSource / total_marks == 0) run first and the worker silently returns zero rows instead of the
+-- retryable NO_SUCH_DATA_PART error -- a wrong-results regression the LOGICAL_ERROR fix must not create.
+DROP TABLE IF EXISTS t_dp_empty_snapshot_final;
+CREATE TABLE t_dp_empty_snapshot_final (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
+INSERT INTO t_dp_empty_snapshot_final SELECT number, number FROM numbers(100000);
+
+-- Without the fault the bucketed FINAL read works normally.
+SELECT count(), sum(v) FROM t_dp_empty_snapshot_final FINAL;
+
+SYSTEM ENABLE FAILPOINT distributed_plan_read_empty_snapshot_on_deserialize;
+SELECT count(), sum(v) FROM t_dp_empty_snapshot_final FINAL; -- { serverError NO_SUCH_DATA_PART }
+SYSTEM DISABLE FAILPOINT distributed_plan_read_empty_snapshot_on_deserialize;
+
+SELECT count(), sum(v) FROM t_dp_empty_snapshot_final FINAL;
+
+DROP TABLE t_dp_empty_snapshot_final;

@@ -3874,6 +3874,25 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             }
             result.parts_with_ranges = std::move(bucket_parts);
         }
+        else
+        {
+            /// FINAL resolves each lane's marks to local parts lazily in `spreadMarkRangesAmongStreamsFinal`,
+            /// but the empty-`parts_with_ranges` short-circuits (NullSource below, and the `total_marks == 0`
+            /// early return inside that function) run first. So validate divergence eagerly here, mirroring
+            /// the non-FINAL branch: a coordinator-selected part that is missing locally is a retryable error,
+            /// not a silent zero-row read. A genuinely empty bucket (no lane marks) still falls through to the
+            /// NullSource path.
+            std::unordered_set<String> local_part_names;
+            local_part_names.reserve(result.parts_with_ranges.size());
+            for (const auto & part : result.parts_with_ranges)
+                local_part_names.insert(part.data_part->info.getPartNameV1());
+            for (const auto & bucket : distributed_read_task_buckets)
+                for (const auto & part_desc : bucket.marks)
+                    if (!local_part_names.contains(part_desc.info.getPartNameV1()))
+                        throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                            "Distributed read: part {} selected by the coordinator is not available on this replica "
+                            "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
+        }
 
         /// Cannot cache PREWHERE results when ranges are pinned per bucket.
         reader_settings.use_query_condition_cache = false;
