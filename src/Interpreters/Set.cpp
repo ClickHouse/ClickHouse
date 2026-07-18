@@ -1,3 +1,4 @@
+#include <atomic>
 #include <optional>
 #include <shared_mutex>
 
@@ -656,8 +657,16 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
+static UInt64 getNextMergeTreeSetIndexId()
+{
+    static std::atomic<UInt64> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
-    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
+    : has_all_keys(set_elements.size() == indexes_mapping_.size())
+    , indexes_mapping(std::move(indexes_mapping_))
+    , instance_id(getNextMergeTreeSetIndexId())
 {
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -697,6 +706,34 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 }
 
+MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer() const
+{
+    struct CacheEntry
+    {
+        UInt64 set_index_id;
+        FieldValueRanges ranges;
+    };
+    /// Must exceed the number of IN-set key conditions checked per mark within one query,
+    /// otherwise every call misses and rebuilds the buffer as before this cache existed.
+    static constexpr size_t max_entries = 8;
+    thread_local std::vector<CacheEntry> cache;
+
+    for (auto & entry : cache)
+        if (entry.set_index_id == instance_id)
+            return entry.ranges;
+
+    size_t tuple_size = indexes_mapping.size();
+    FieldValueRanges ranges;
+    ranges.reserve(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        ranges.emplace_back(*ordered_set[i]);
+
+    if (cache.size() >= max_entries)
+        cache.erase(cache.begin());
+    cache.push_back({instance_id, std::move(ranges)});
+    return cache.back().ranges;
+}
+
 /** Return the BoolMask where:
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
@@ -712,24 +749,13 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     size_t tuple_size = indexes_mapping.size();
 
-    struct FieldValueRange
-    {
-        FieldValue left;
-        FieldValue right;
-        bool left_included = false;
-        bool right_included = false;
-
-        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
-    };
-
-    std::vector<FieldValueRange> ranges;
-    ranges.reserve(tuple_size);
+    FieldValueRanges & ranges = getFieldValueRangesBuffer();
     for (size_t i = 0; i < tuple_size; ++i)
     {
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
-        ranges.emplace_back(*ordered_set[i]);
+        FieldValueRange & range = ranges[i];
 
         if (!is_key_col_present)
         {
@@ -739,10 +765,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
             /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
             /// So, we choose the more relaxed option:
             /// [-inf, +inf] instead of ( -inf, +inf ).
-            ranges.back().left.update(NEGATIVE_INFINITY);
-            ranges.back().right.update(POSITIVE_INFINITY);
-            ranges.back().left_included = true;
-            ranges.back().right_included = true;
+            range.left.update(NEGATIVE_INFINITY);
+            range.right.update(POSITIVE_INFINITY);
+            range.left_included = true;
+            range.right_included = true;
             continue;
         }
 
@@ -755,10 +781,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         if (!new_range)
             return {true, true};
 
-        ranges.back().left.update(new_range->left);
-        ranges.back().right.update(new_range->right);
-        ranges.back().left_included = new_range->left_included;
-        ranges.back().right_included = new_range->right_included;
+        range.left.update(new_range->left);
+        range.right.update(new_range->right);
+        range.left_included = new_range->left_included;
+        range.right_included = new_range->right_included;
     }
 
     /// lhs < rhs return -1
@@ -874,18 +900,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 {
     size_t tuple_size = indexes_mapping.size();
 
-    struct FieldValueRange
-    {
-        FieldValue left;
-        FieldValue right;
-        bool left_included = false;
-        bool right_included = false;
-
-        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
-    };
-
-    std::vector<FieldValueRange> ranges;
-    ranges.reserve(tuple_size);
+    FieldValueRanges & ranges = getFieldValueRangesBuffer();
     for (size_t i = 0; i < tuple_size; ++i)
     {
         if (indexes_mapping[i].key_index >= key_ranges.size())
@@ -900,11 +915,11 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         if (!new_range)
             return {true, true};
 
-        ranges.emplace_back(*ordered_set[i]);
-        ranges.back().left.update(new_range->left);
-        ranges.back().right.update(new_range->right);
-        ranges.back().left_included = new_range->left_included;
-        ranges.back().right_included = new_range->right_included;
+        FieldValueRange & range = ranges[i];
+        range.left.update(new_range->left);
+        range.right.update(new_range->right);
+        range.left_included = new_range->left_included;
+        range.right_included = new_range->right_included;
     }
 
     /// lhs < rhs return -1

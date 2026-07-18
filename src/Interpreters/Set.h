@@ -253,12 +253,27 @@ private:
         MutableColumnPtr column;
     };
 
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+    };
+
+    using FieldValueRanges = std::vector<FieldValueRange>;
+
+    /// Per-thread buffer reused across checkInRange calls (which run once per mark during index
+    /// analysis) to avoid per-call column allocations. Invalidated by the next call on the same thread.
+    FieldValueRanges & getFieldValueRangesBuffer() const;
+
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
-
-    using FieldValues = std::vector<FieldValue>;
+    const UInt64 instance_id;
 };
 
 }
