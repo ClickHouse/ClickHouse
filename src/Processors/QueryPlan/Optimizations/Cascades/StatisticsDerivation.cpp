@@ -239,8 +239,10 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
             min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
         }
 
-        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities
-        UInt64 max_number_of_distinct_values = std::max(left_number_of_distinct_values, right_number_of_distinct_values);
+        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
+        /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
+        /// would produce an infinite selectivity that poisons every cost downstream.
+        UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
         /// NDV for join predicate columns can decrease if the other column has smaller NDV

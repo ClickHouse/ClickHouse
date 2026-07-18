@@ -116,6 +116,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LIMIT_EXCEEDED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
@@ -696,7 +697,15 @@ void SortingStep::serialize(Serialization & ctx) const
 
     /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
     /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
-    writeVarUInt(limit, ctx.out);
+    /// The field exists only since query plan serialization version 2; a version-1 stream has no
+    /// place for it, so throw for a bounded sort rather than send bytes the other side would
+    /// misread (the deserialize side checks the same).
+    if (ctx.version >= 2)
+        writeVarUInt(limit, ctx.out);
+    else if (limit != 0)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "A bounded sort in a distributed plan requires query plan serialization version >= 2; "
+            "all nodes must run the same version");
 
     serializeSortDescription(result_description, ctx.out);
 
@@ -714,8 +723,10 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
 
+    /// A version-1 stream has no limit field (see serialize).
     UInt64 limit = 0;
-    readVarUInt(limit, ctx.in);
+    if (ctx.version >= 2)
+        readVarUInt(limit, ctx.in);
 
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
