@@ -5,6 +5,7 @@
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/FieldToDataType.h>
@@ -639,24 +640,30 @@ struct AggregateFunctionMergedJSONPatchData
         return result;
     }
 
-    /// Same as rebuildNestedObject but produces a Field::Map (vector of Tuple(key,value) pairs)
-    /// suitable for insertion into a ColumnMap typed path.
+    /// Produces a Field::Map (vector of Tuple(key,value) pairs) for a typed Map path.
     ///
-    /// Keys are deduplicated: descendants under the same direct child key are collected once via
-    /// a recursive call, not pushed once per leaf.  This mirrors the coalescing that
-    /// rebuildNestedObject achieves through Field::Object's map assignment semantics.
-    Field rebuildNestedMap(std::string_view ancestor_path) const
+    /// `value_type` is the declared value type of the Map at this nesting level (already
+    /// Nullable/LowCardinality-unwrapped by the caller).  It is used to decide whether each
+    /// child value should itself be reconstructed as a Field::Map (nested Map) or as a
+    /// Field::Object (nested JSON / Dynamic / anything else).
+    ///
+    /// Keys are deduplicated: all leaf entries under a child key are gathered by one recursive
+    /// call, matching the coalescing that rebuildNestedObject achieves via map-assignment.
+    Field rebuildNestedMap(std::string_view ancestor_path, const DataTypePtr & value_type) const
     {
-        /// Exact-path entry: scalar/Map replaced the whole value — return it directly.
+        /// Exact-path entry: scalar / atomic Map replaced the whole value — return it directly.
         for (const auto & entry : entries)
         {
             if (entry.pathView() == ancestor_path)
                 return entry.value.get();
         }
 
-        /// Collect the distinct set of direct child keys under this ancestor, preserving order.
-        /// The set stores owned Strings — not string_views — to avoid dangling references after
-        /// the String is moved into seen_keys.
+        /// Determine how to reconstruct child values based on the declared value type.
+        DataTypePtr inner_value_type = removeLowCardinality(removeNullable(value_type));
+        const auto * nested_map_type = typeid_cast<const DataTypeMap *>(inner_value_type.get());
+
+        /// Collect distinct direct child keys preserving insertion order.
+        /// Uses owned Strings (not string_views) to avoid dangling references after move.
         std::vector<String> seen_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::unordered_set<String> seen_set; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (const auto & entry : entries)
@@ -675,7 +682,10 @@ struct AggregateFunctionMergedJSONPatchData
         for (const String & key : seen_keys)
         {
             String child_prefix = String(ancestor_path) + '.' + key;
-            result.push_back(Tuple{Field(key), rebuildNestedMap(child_prefix)});
+            Field child_value = nested_map_type
+                ? rebuildNestedMap(child_prefix, nested_map_type->getValueType())
+                : rebuildNestedObject(child_prefix);
+            result.push_back(Tuple{Field(key), std::move(child_value)});
         }
         return result;
     }
@@ -696,8 +706,11 @@ struct AggregateFunctionMergedJSONPatchData
         /// Typed paths whose column type is a nested Object (JSON), Dynamic, or Map need special
         /// handling: the aggregate flattens {"a":{"x":1}} into leaf "a.x", so on output we must
         /// reconstruct the value from all descendant leaves and insert it into the typed parent
-        /// column as a whole.  Collect those ancestor paths and their types now.
-        std::unordered_map<std::string_view, WhichDataType> nested_typed_ancestors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        /// column as a whole.
+        ///
+        /// The map stores the Nullable/LowCardinality-unwrapped inner DataTypePtr so that Map
+        /// typed paths can retrieve their declared value type for nested reconstruction.
+        std::unordered_map<std::string_view, DataTypePtr> nested_typed_ancestors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         if (const auto * obj_type = typeid_cast<const DataTypeObject *>(result_type_.get()))
         {
             for (const auto & [tp, dt] : obj_type->getTypedPaths())
@@ -710,14 +723,14 @@ struct AggregateFunctionMergedJSONPatchData
                 /// not return a Field::Object even when the active variant is JSON, so no child
                 /// paths are produced by collectLeaves and there is nothing to rebuild.
                 if (w.isObject() || w.isDynamic() || w.isMap())
-                    nested_typed_ancestors.emplace(tp, w);
+                    nested_typed_ancestors.emplace(tp, inner);
             }
         }
 
         /// Entries consumed by a nested-typed-ancestor insertion must not be re-processed.
         std::unordered_set<std::string_view> consumed; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-        for (const auto & [ancestor, which] : nested_typed_ancestors)
+        for (const auto & [ancestor, inner_type] : nested_typed_ancestors)
         {
             bool any = false;
             for (const auto & entry : entries)
@@ -732,9 +745,11 @@ struct AggregateFunctionMergedJSONPatchData
             if (!any)
                 continue;
 
-            Field nested = which.isMap()
-                ? rebuildNestedMap(ancestor)
-                : rebuildNestedObject(ancestor, &result_column);
+            Field nested;
+            if (const auto * map_type = typeid_cast<const DataTypeMap *>(inner_type.get()))
+                nested = rebuildNestedMap(ancestor, map_type->getValueType());
+            else
+                nested = rebuildNestedObject(ancestor, &result_column);
             auto typed_it = result_column.getTypedPaths().find(ancestor);
             if (typed_it != result_column.getTypedPaths().end())
                 typed_it->second->insert(nested);

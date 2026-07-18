@@ -344,3 +344,16 @@ FROM (SELECT '{"a":{"x":{"y":1},"z":{"w":2}}}'::JSON(a Map(String, Map(String, U
 -- (a property of the overlapping typed-path schema, observable on the raw input row too).
 SELECT toJSONString(mergedJSONPatch(patch, version))
 FROM (SELECT '{"a":{"x":1,"b":42}}'::JSON(a JSON, `a.b` UInt32) AS patch, 1 AS version);
+
+-- Map(String, JSON) typed path: child values must be reconstructed as Field::Object, not Field::Map.
+-- Without the fix, all levels of rebuildNestedMap produced Field::Map regardless of the declared
+-- value type, causing ColumnObject::insert to throw on the JSON-typed value column.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"k":{"x":1}}}'::JSON(a Map(String, JSON)) AS patch, 1 AS version);
+
+-- Same case: RFC 7396 deep merge across two rows with Map(String, JSON).
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"k":{"x":1,"y":2}}}'::JSON(a Map(String, JSON)) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":{"k":{"y":3}}}'::JSON(a Map(String, JSON)), 2
+);
