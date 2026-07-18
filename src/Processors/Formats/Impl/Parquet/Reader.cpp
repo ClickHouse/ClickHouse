@@ -1074,20 +1074,51 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     chassert(column.dictionary.isInitialized());
     size_t count = column.dictionary.count;
 
-    /// Materialize all dictionary values into a column of the decoded type.
-    auto indexes = ColumnUInt32::create();
-    auto & indexes_data = indexes->getData();
-    indexes_data.resize_exact(count);
-    for (size_t i = 0; i < count; ++i)
-        indexes_data[i] = static_cast<UInt32>(i);
+    /// The eligibility check in `columnChunkCanUseDictionaryFilter` bounds only the *compressed*
+    /// on-disk dictionary page (`dictionary_filter_limit_bytes`, 1 MiB by default), not the decoded
+    /// value set we are about to build here. A highly compressible dictionary can stay under that
+    /// limit yet decode to many times more, and constructing the value set below (a materialized
+    /// column of all values, a vector of hashes, and a `HashSet` of them) then allocates that much
+    /// transient memory - potentially for several row groups in parallel during pruning, none of it
+    /// charged to the reader's per-stage memory budget. Bound it by the reader's per-file memory high
+    /// watermark: if building the value set would need more than that, skip the optimization and fall
+    /// back to a full scan (reported as "can't rule out a match", the same as an unhashable type
+    /// below). The watermark scales down automatically when the query has little memory to spare (see
+    /// FormatFactory), so we only give up pruning when the value set would genuinely threaten the
+    /// budget. This is the decoded-size cap the compressed-page limit alone cannot provide.
+    size_t estimated_value_set_bytes = count *
+        (size_t(column.dictionary.getAverageValueSize())
+         + sizeof(UInt32)        /// identity `indexes` (materialized path only)
+         + sizeof(UInt64)        /// `hashes` vector
+         + 2 * sizeof(UInt64));  /// `value_hashes` HashSet (rounds capacity up to a power of two)
+    if (options.format.parquet.memory_high_watermark != 0
+        && estimated_value_set_bytes > options.format.parquet.memory_high_watermark)
+        return std::nullopt;
 
-    auto values = column_info.decoded_type->createColumn();
-    values->reserve(count);
-    column.dictionary.index(*indexes, *values);
-
-    /// Hash them the same way query constants are hashed (see prepareBloomFilterCondition).
+    /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
     parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
-    auto hashes = parquetTryHashColumn(values.get(), &desc);
+    std::optional<std::vector<uint64_t>> hashes;
+    if (column.dictionary.mode == Dictionary::Mode::Column)
+    {
+        /// The values already exist as a decoded column (built from `column_info.decoded_type`, same
+        /// as `values` below), so hash it in place instead of materializing an identical second copy.
+        hashes = parquetTryHashColumn(column.dictionary.col.get(), &desc);
+    }
+    else
+    {
+        /// FixedSize / StringPlain dictionaries hold raw bytes rather than an `IColumn`, so we must
+        /// materialize the values into a column of the decoded type before hashing.
+        auto indexes = ColumnUInt32::create();
+        auto & indexes_data = indexes->getData();
+        indexes_data.resize_exact(count);
+        for (size_t i = 0; i < count; ++i)
+            indexes_data[i] = static_cast<UInt32>(i);
+
+        auto values = column_info.decoded_type->createColumn();
+        values->reserve(count);
+        column.dictionary.index(*indexes, *values);
+        hashes = parquetTryHashColumn(values.get(), &desc);
+    }
     if (!hashes.has_value())
         return std::nullopt;
     HashSet<UInt64> value_hashes;
