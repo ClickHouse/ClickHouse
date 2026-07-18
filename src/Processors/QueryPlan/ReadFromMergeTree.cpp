@@ -516,7 +516,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     size_t replica_number)
 {
     const bool enable_parallel_reading = true;
-    return std::make_unique<ReadFromMergeTree>(
+    auto local_step = std::make_unique<ReadFromMergeTree>(
         /// Optimized version of getParts() to avoid extra copy
         analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
@@ -535,6 +535,12 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+    /// The step is reconstructed from `getQueryInfo()`, which keeps `input_order_info` (so it still
+    /// reads in order) but not the post-`requestReadingInOrder` state. Carry it over, exactly as
+    /// `clone` and the lazy-FINAL split do, or the fragment would silently drop the per-part
+    /// `PrefetchingConcat` safeguard, re-enable vertical FINAL, or lose small-`LIMIT` task sizing.
+    local_step->copyReadInOrderContractFrom(*this);
+    return local_step;
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
