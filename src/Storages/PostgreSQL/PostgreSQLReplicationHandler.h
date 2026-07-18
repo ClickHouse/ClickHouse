@@ -42,8 +42,11 @@ struct NestedTableEngineSpec
 /// Throws BAD_ARGUMENTS on an unsupported nested engine name, on a replicated/shared nested engine
 /// without materialized_postgresql_keeper_path, or on coordination combined with a unique
 /// replication consumer identifier (which would give every replica its own slot instead of the
-/// single shared slot that coordination relies on).
-void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings);
+/// single shared slot that coordination relies on). When coordination is enabled it also requires
+/// Keeper/ZooKeeper to be configured (`context`), because both the coordination nodes and the nested
+/// replicated tables need it; otherwise CREATE would succeed and the database would sit in a
+/// permanent background retry loop.
+void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings, ContextPtr context);
 
 class PostgreSQLReplicationHandler : WithContext
 {
@@ -134,6 +137,11 @@ private:
     /// loading the initial snapshot. Used when coordination is enabled: only the active worker loads
     /// the snapshot, and it propagates to the standbys through ClickHouse replication.
     void ensureNestedTablesExist();
+
+    /// Clear the (already existing) nested tables before redoing the initial snapshot after a
+    /// mid-snapshot failover. Only used when coordination is enabled. The nested tables are
+    /// Replicated/SharedReplacingMergeTree, so the TRUNCATE propagates to every replica.
+    void truncateNestedTables();
 
     /// Background task (only used when coordination is enabled): try to acquire/keep the ephemeral
     /// leader node in Keeper and start synchronization once leadership is held; otherwise stay a

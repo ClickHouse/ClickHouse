@@ -33,6 +33,17 @@ instance2 = cluster.add_instance(
     macros={"shard": "1", "replica": "coord_instance2"},
 )
 
+# A replica with no Keeper/ZooKeeper configured. Coordination needs Keeper, so a coordinated CREATE
+# DATABASE must be rejected here up front instead of succeeding and then retrying forever in the
+# background startup task.
+instance_no_keeper = cluster.add_instance(
+    "coord_instance_no_keeper",
+    main_configs=["configs/log_conf.xml"],
+    user_configs=["configs/users_coordination.xml"],
+    with_postgres=True,
+    stay_alive=True,
+)
+
 # {shard} is identical on both replicas, so the coordination path resolves to the same node.
 KEEPER_PATH = "/clickhouse/mat_pg/{shard}/test"
 KEEPER_PATH_RESOLVED = "/clickhouse/mat_pg/1/test"
@@ -560,3 +571,79 @@ def test_coordination_conflicts_with_column_filtered_tables_list(started_cluster
         f"materialized_postgresql_tables_list = 'test_table(key, value)'"
     )
     assert "column-filtered" in error
+
+
+def test_coordination_requires_keeper_configured(started_cluster):
+    # Coordination stores its leader/replica/snapshot nodes in Keeper, and the nested tables are
+    # Replicated/SharedReplacingMergeTree, which also need it. On a server with no Keeper configured the
+    # first failure would otherwise only happen later inside the background startup task, so CREATE would
+    # succeed and the database would sit in a permanent retry loop. It must be rejected synchronously.
+    error = instance_no_keeper.query_and_get_error(
+        f"CREATE DATABASE test_no_keeper_server "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/no_keeper/test'"
+    )
+    assert "requires Keeper/ZooKeeper" in error
+    # The rejected CREATE must not have left a retrying database behind.
+    assert "test_no_keeper_server" not in instance_no_keeper.query("SHOW DATABASES")
+
+
+def test_takeover_after_partial_snapshot_drops_stale_deleted_rows(started_cluster):
+    # A worker that dies mid-snapshot may have already copied rows into the shared nested table before
+    # dying. If PostgreSQL then DELETEs (or UPDATEs) one of those rows, redoing the snapshot by merely
+    # re-inserting the current PostgreSQL state on top of the existing table would leave the stale copy
+    # behind: a deleted row has no counterpart in the new snapshot, so nothing overrides it (a
+    # ReplacingMergeTree collapses duplicate keys by version but never turns a now-absent row into a
+    # tombstone). The recovery path must clear the nested tables first so the redo produces exactly the
+    # current PostgreSQL state.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 100
+
+    wait_for_leader(instance)
+
+    # Stop both replicas so nothing consumes the slot while we set up the "died mid-snapshot" state: the
+    # 100 rows are already in the shared nested table, but we drop the durable completion marker and then
+    # change PostgreSQL. Because no consumer is running, these changes never reach ClickHouse through WAL
+    # replay; the only way they can be reflected is a from-scratch redo of the snapshot on restart.
+    instance.stop_clickhouse()
+    instance2.stop_clickhouse()
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    marker_path = KEEPER_PATH_RESOLVED + "/snapshot_completed"
+    assert zk.exists(marker_path) is not None
+    zk.delete(marker_path)
+    zk.stop()
+
+    pg_query("DELETE FROM test_table WHERE key >= 50")
+    pg_query("UPDATE test_table SET value = 777 WHERE key = 0")
+
+    instance.start_clickhouse()
+    instance2.start_clickhouse()
+
+    # The new active worker sees the slot without the completion marker and redoes the snapshot. A correct
+    # redo clears the nested tables first, so the 50 now-deleted rows do not survive as stale copies and
+    # the updated row carries its new value.
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 50
+    assert (
+        int(
+            instance.query(
+                "SELECT count() FROM test_database.test_table WHERE key >= 50"
+            )
+        )
+        == 0
+    )
+    assert (
+        int(instance.query("SELECT value FROM test_database.test_table WHERE key = 0"))
+        == 777
+    )

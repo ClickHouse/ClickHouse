@@ -258,7 +258,7 @@ namespace
     }
 }
 
-void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings)
+void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings, ContextPtr context)
 {
     const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
     const bool is_plain = engine == "ReplacingMergeTree";
@@ -295,6 +295,19 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             "ReplicatedReplacingMergeTree or SharedReplacingMergeTree. With a plain ReplacingMergeTree the standby "
             "replicas would hold no data (they receive it through ClickHouse replication of the nested tables), "
             "so a takeover would permanently lose every row replicated before the failover");
+
+    /// Coordination needs Keeper/ZooKeeper for both the coordination nodes (leader election, replica
+    /// registration, the snapshot-completion marker) and the nested Replicated/SharedReplacingMergeTree
+    /// tables. The handler only reaches `getContext()->getZooKeeper()` in the background startup task, so
+    /// without this up-front check a coordinated `CREATE` on a server with no Keeper configured would
+    /// succeed and then sit in a permanent retry loop instead of failing synchronously. Reject it here.
+    if (coordination_enabled && !context->hasZooKeeper())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) requires Keeper/ZooKeeper to be "
+            "configured on this server, but it is not. Coordination stores its leader-election, replica and "
+            "snapshot-completion nodes in Keeper, and the nested tables are Replicated/SharedReplacingMergeTree, "
+            "which also need it. Configure <zookeeper> (or <keeper_server>) or remove "
+            "materialized_postgresql_keeper_path");
 
     if (coordination_enabled && settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -831,15 +844,24 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     }
     /// The slot exists, but no active worker ever finished the initial snapshot: the previous one died
     /// mid-snapshot. WAL replay from the slot only covers changes after the slot-creation LSN, so resuming
-    /// would permanently lose the rows that were never copied. Redo the snapshot from scratch. Rows the
-    /// dead worker did copy are re-inserted, which is safe: the nested tables are ReplacingMergeTree trees
-    /// and reads through the engine collapse duplicates by primary key and `_version`.
+    /// would permanently lose the rows that were never copied. Redo the snapshot from scratch.
+    ///
+    /// The nested tables must be cleared first. Rows the dead worker already copied are still there, and
+    /// re-inserting the fresh snapshot on top does not repair every case: a row that the dead worker copied
+    /// and that PostgreSQL has since DELETEd has no counterpart in the new snapshot, so nothing overrides the
+    /// stale copy (a ReplacingMergeTree collapses duplicate keys by `_version` but never turns a now-absent
+    /// row into a tombstone). Truncating makes the redo start from an empty table so the reloaded snapshot is
+    /// the exact current PostgreSQL state. The nested tables are Replicated/SharedReplacingMergeTree, so the
+    /// truncate propagates to every replica.
     else if (coordination_enabled && !isInitialSnapshotCompleted())
     {
         LOG_WARNING(log,
             "Replication slot {} exists, but the initial snapshot is not marked as completed. "
-            "Assuming the previous active worker died before finishing it; reloading all tables from a new snapshot",
+            "Assuming the previous active worker died before finishing it; clearing the nested tables and "
+            "reloading all of them from a new snapshot",
             replication_slot);
+
+        truncateNestedTables();
 
         if (!user_managed_slot)
             dropReplicationSlot(tx);
@@ -1131,6 +1153,38 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
         /// ClickHouse replication of the shared replicated tree, even on replicas that never consume.
         if (auto nested = materialized_storage->tryGetNested(); nested && !materialized_storage->hasNested())
             materialized_storage->set(nested);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::truncateNestedTables()
+{
+    /// Only reached in coordinated mode, from the mid-snapshot recovery branch of `startSynchronization`.
+    /// The nested tables were created by `ensureNestedTablesExist` and are Replicated/SharedReplacingMergeTree,
+    /// so truncating them here clears the shared tree on every replica. Only the single active worker runs
+    /// this, so there is no concurrent truncate.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::truncateNestedTables");
+
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    {
+        auto nested = materialized_storage->tryGetNested();
+        if (!nested)
+            continue;
+
+        /// A dedicated internal query context, exactly like the snapshot INSERT and the consumer use for
+        /// operations against the nested tables.
+        auto truncate_context = Context::createCopy(getContext());
+        truncate_context->makeQueryContext();
+        truncate_context->setInternalQuery(true);
+
+        /// Empty lock: the nested tables are (Replicated/Shared)ReplacingMergeTree, i.e. MergeTreeData, which
+        /// InterpreterDropQuery also truncates without an exclusive table lock.
+        TableExclusiveLockHolder table_lock;
+        auto metadata_snapshot = nested->getInMemoryMetadataPtr(truncate_context, false);
+        nested->truncate(nullptr, metadata_snapshot, truncate_context, table_lock);
+
+        LOG_DEBUG(log, "Truncated nested table for `{}`.`{}` before redoing the initial snapshot",
+                  postgres_database, table_name);
     }
 }
 
