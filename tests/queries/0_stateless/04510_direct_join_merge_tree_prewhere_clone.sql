@@ -67,6 +67,15 @@ SETTINGS query_plan_remove_unused_columns = 1;
 
 DROP ROW POLICY rp ON attributes_rp;
 
+-- Shared StorageSnapshot facet (STID 3942-460f): getByKeys clones the lookup plan per pipeline
+-- thread, all sharing the ReadFromMergeTree's storage_snapshot. With the parts-from-snapshot strip
+-- armed (enable_shared_storage_snapshot_in_query = 0), initializePipeline resets storage_snapshot->data
+-- in place; concurrent clones sharing one snapshot double-freed it. clone() now gives each stripping
+-- clone its own StorageSnapshot. Runs the direct join across many threads with the strip armed.
+SELECT count(), countIf(t1.Attribute != '')
+FROM events AS t0 INNER JOIN attributes AS t1 ON t1.EventId = t0.Id
+SETTINGS enable_shared_storage_snapshot_in_query = 0, max_threads = 16;
+
 DROP TABLE events;
 DROP TABLE attributes;
 DROP TABLE allowed_attrs;

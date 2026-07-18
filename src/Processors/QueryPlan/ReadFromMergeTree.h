@@ -381,6 +381,14 @@ public:
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
     void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
+    /// Whether initializePipeline replaces storage_snapshot->data in place (strips data parts).
+    /// Single source of truth shared by initializePipeline and clone(): a clone that strips must
+    /// own its StorageSnapshot, otherwise concurrent clones reset the same unique_ptr (double-free).
+    bool stripsStorageSnapshotDataInPlace() const
+    {
+        return enable_remove_parts_from_snapshot_optimization || query_info.isStream();
+    }
+
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();

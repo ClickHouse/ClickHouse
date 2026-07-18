@@ -3517,6 +3517,24 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         query_info_copy.row_level_filter = std::move(row_level_filter_copy);
     }
 
+    /// A clone that strips data parts in place (initializePipeline resets storage_snapshot->data)
+    /// must own its StorageSnapshot: concurrent per-lookup clones sharing one snapshot would reset
+    /// the same unique_ptr and double-free. When the step does not strip, keep sharing.
+    StorageSnapshotPtr cloned_snapshot = storage_snapshot;
+    if (stripsStorageSnapshotDataInPlace())
+    {
+        /// Base StorageSnapshot::Data has a virtual dtor and is not implicitly copyable, so copy the
+        /// shared_ptr members explicitly; only the owning unique_ptr becomes private to the clone.
+        auto own_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
+        if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        {
+            own_snapshot_data->storage = snapshot_data->storage;
+            own_snapshot_data->parts = snapshot_data->parts;
+            own_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
+        }
+        cloned_snapshot = storage_snapshot->clone(std::move(own_snapshot_data));
+    }
+
     auto cloned_step = std::make_unique<ReadFromMergeTree>(
         prepared_parts,
         mutations_snapshot,
@@ -3524,7 +3542,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         data,
         data_settings,
         query_info_copy,
-        storage_snapshot,
+        cloned_snapshot,
         context,
         block_size.max_block_size_rows,
         requested_num_streams,
@@ -3884,12 +3902,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
     }
 
-    if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
+    if (stripsStorageSnapshotDataInPlace())
     {
         /// Do not keep data parts in snapshot.
         /// They are stored separately, and some could be released after PK analysis.
         /// Keep the underlying storage alive because part teardown still reaches
         /// `data_part->storage.getContext()`.
+        /// clone() guarantees a step that strips here owns its StorageSnapshot, so this in-place
+        /// mutation never races a concurrent clone (see ReadFromMergeTree::clone).
         auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
         if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         {
