@@ -367,7 +367,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             ffunc->set_path(t.getTablePath(rg, this->allow_not_deterministic));
             if (t.file_format.has_value())
             {
-                ffunc->set_inoutformat(t.file_format.value());
+                ffunc->set_format(t.file_format.value());
             }
             if (t.file_comp.has_value() || rg.nextSmallNumber() < 5)
             {
@@ -391,7 +391,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             ufunc->set_uurl(t.getTablePath(rg, this->allow_not_deterministic));
             if (t.file_format.has_value())
             {
-                ufunc->set_inoutformat(t.file_format.value());
+                ufunc->set_format(t.file_format.value());
             }
             structure = rg.nextMediumNumber() < 96 ? ufunc->mutable_structure() : nullptr;
             if (structure)
@@ -1118,12 +1118,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             URLFunc * ufunc = tf->mutable_url();
             const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
             const std::optional<String> & cluster = tt.getCluster();
-            const OutFormat outf = rg.nextBool()
-                ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-            const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
-                ? outIn.at(outf)
-                : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
+            const String outf = rg.pickRandomly((!this->allow_not_deterministic || rg.nextBool()) ? fc.in_out_formats : fc.out_formats);
+            const std::optional<String> read_back = fc.formatToRead(outf);
+            const String iinf = (read_back.has_value() && rg.nextBool()) ? read_back.value() : rg.pickRandomly(fc.in_formats);
 
             if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
@@ -1147,13 +1144,13 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             sql += " FROM `" + escapeSQLString(tt.getDatabaseName(), '`') + "`.`" + escapeSQLString(tt.name, '`') + "`";
             if (rg.nextMediumNumber() < 91)
             {
-                sql += " FORMAT " + InFormat_Name(iinf).substr(3);
+                sql += " FORMAT " + outf;
             }
             url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "query=" + urlEncodeQueryParam(sql);
             ufunc->set_uurl(std::move(url));
             if (rg.nextMediumNumber() < 91)
             {
-                ufunc->set_outformat(outf);
+                ufunc->set_format(iinf);
             }
             ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
             addRandomHTTPHeaders(rg, tf);
@@ -2662,14 +2659,12 @@ void StatementGenerator::generateTopSelect(
         if (fc.truncate_output)
         {
             /// Don't randomize format/compression/level when truncating output for easier testing
-            ts->set_format(OutFormat::OUT_Null);
+            ts->set_format("Null");
             sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> out_range(1, static_cast<uint32_t>(OutFormat_MAX));
-
-            ts->set_format(static_cast<OutFormat>(out_range(rg.generator)));
+            ts->set_format(rg.pickRandomly(fc.out_formats));
             if (rg.nextSmallNumber() < 10)
             {
                 std::uniform_int_distribution<uint32_t> step_range(

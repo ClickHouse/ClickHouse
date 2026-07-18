@@ -26,10 +26,10 @@ Introduced in: v22.2.0
 
 Detects the character set of a non-UTF8-encoded input string.
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 
@@ -66,10 +66,10 @@ The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for det
 
 The longer the input, the more precise the language detection will be.
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 
@@ -103,10 +103,10 @@ Introduced in: v22.2.0
 
 Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 
@@ -141,10 +141,10 @@ Introduced in: v22.2.0
 Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
 Prefer this version when your character set is UTF-16 or UTF-32.
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 
@@ -178,14 +178,16 @@ Introduced in: v22.2.0
 
 Determines the sentiment of the provided text data.
 
-:::note Limitation
-This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
-:::
+<Note>
+**Limitation**
 
-:::warning
+This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
+</Note>
+
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 
@@ -224,10 +226,10 @@ Performs lemmatization on a given word.
 This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/reference/statements/create/dictionary/sources/local-file).
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 
@@ -340,10 +342,10 @@ Words in this line must be separated with space or tab characters.
 With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
 The thesaurus must contain a WordNet sense index.
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 **Syntax**
 

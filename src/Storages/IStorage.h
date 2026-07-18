@@ -196,6 +196,10 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// The default implementation falls back to the parameterless version.
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
+
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
 
@@ -691,6 +695,18 @@ public:
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
+
+    /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,
+    /// taken from per-part `SerializationInfo`. Returns nullopt when the storage cannot
+    /// supply an exact count -- see `Storages/MergeTree/SparsityFilter.h` for the precise
+    /// reliability rules. Default implementation returns nullopt.
+    struct ColumnDefaultnessStats
+    {
+        UInt64 num_rows = 0;
+        UInt64 num_defaults = 0;
+    };
+    virtual std::optional<ColumnDefaultnessStats>
+    getColumnDefaultnessStats(const String & /*column_name*/, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
