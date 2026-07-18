@@ -61,6 +61,8 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 
@@ -724,9 +726,10 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
-static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+class RejectStreamingVisitor : public ConstInDepthQueryTreeVisitor<RejectStreamingVisitor>
 {
-    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         std::optional<TableExpressionModifiers> modifiers;
         if (const auto * table_node = node->as<TableNode>())
@@ -738,6 +741,14 @@ static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
     }
+};
+
+static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+{
+    /// Walk the whole query tree, not just join-tree table expressions: a streaming read can be nested in a
+    /// WHERE/PREWHERE subquery or a CTE, which extractTableExpressions does not descend into.
+    RejectStreamingVisitor visitor;
+    visitor.visit(query_tree);
 }
 
 struct InterpreterExplainQuery::AnalyzedInnerQuery

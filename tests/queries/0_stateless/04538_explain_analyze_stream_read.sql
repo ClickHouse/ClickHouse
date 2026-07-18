@@ -20,8 +20,18 @@ INSERT INTO t_explain_analyze_stream SELECT toString(number % 100), number FROM 
 -- Rejected: streaming read directly.
 EXPLAIN ANALYZE SELECT * FROM t_explain_analyze_stream STREAM LIMIT 50; -- { serverError NOT_IMPLEMENTED }
 
--- Rejected: streaming read nested in a subquery (confirms extractTableExpressions recursion).
+-- Rejected: streaming read nested in a join-tree subquery.
 EXPLAIN ANALYZE SELECT * FROM (SELECT * FROM t_explain_analyze_stream STREAM) LIMIT 50; -- { serverError NOT_IMPLEMENTED }
+
+-- Rejected: streaming read nested in a WHERE IN subquery. The check used to only walk join-tree table
+-- expressions, so a streaming read outside the join tree slipped through and aborted with 'clock'.
+EXPLAIN ANALYZE SELECT a FROM t_explain_analyze_stream WHERE b IN (SELECT b FROM t_explain_analyze_stream STREAM); -- { serverError NOT_IMPLEMENTED }
+
+-- Rejected: streaming read inside an INTERSECT ALL nested in a WHERE IN subquery (the AST-fuzzer shape).
+EXPLAIN ANALYZE SELECT a FROM t_explain_analyze_stream WHERE b IN (SELECT b FROM t_explain_analyze_stream INTERSECT ALL SELECT b FROM t_explain_analyze_stream STREAM); -- { serverError NOT_IMPLEMENTED }
+
+-- Rejected: streaming read in a CTE referenced from a WHERE IN subquery.
+EXPLAIN ANALYZE WITH cte AS (SELECT b FROM t_explain_analyze_stream STREAM) SELECT a FROM t_explain_analyze_stream WHERE b IN (SELECT b FROM cte); -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE t_explain_analyze_stream;
 
