@@ -42,7 +42,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     the live editor (which on the `run=1` path would auto-run a never-launched draft), `postOne`'s
 #     `Run selected` picks statements from the launch-time selection, not the moved caret, and the
 #     no-selection `Run one` path (real `getQueryUnderCursor`) picks the statement under the caret at
-#     launch, not wherever the caret is moved to before the lexer resolves.
+#     launch, not wherever the caret is moved to before the lexer resolves;
+#   - a run that did not execute the WHOLE editor is never recorded as auto-runnable (`run=1`): its
+#     history text is the full editor, so a reload would `postAll` and run statements that never
+#     launched. This covers a "Run selected" / "Run one" subset AND a full "Run all" that stops on an
+#     error partway (every statement after the failing one is skipped) — the latter must drop `run=1`
+#     just like a subset, so a shared link / reload never auto-executes a never-run (possibly
+#     destructive) trailing statement.
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects (including a minimal in-memory
 # IndexedDB), asserting on the observable state: history entries, the active tab, the
@@ -793,6 +799,35 @@ async function reload()
     assert_eq('run-all full: the entry keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
     await reload();
     assert_eq('run-all full: a reload re-runs the whole editor', sandbox.postAllCalled, true);
+
+    /// A full "Run all" that ERRORS partway is also partial: `postMulti` runs the statements group
+    /// by group and breaks on the first failing group, so every statement after it is never launched
+    /// (its slot in `collected` stays `null`). Recording such a run as `run=1` — as a full "Run all"
+    /// otherwise is — would let a reload / shared link `postAll` the whole editor and execute a
+    /// statement that never ran here (a destructive `DROP TABLE`). The entry must drop `run=1` just
+    /// like a "Run selected" subset, and a reload must not auto-run. Drives the REAL `postMulti` with
+    /// a middle statement that errors and a `DROP` after it (the `DROP` is skipped, never launched).
+    reset();
+    sandbox.query_area.value = 'SELECT 1; BAD; DROP TABLE important';
+    active().query = 'SELECT 1; BAD; DROP TABLE important';
+    const savedPostImpl = sandbox.postImpl;
+    /// Resolve immediately: `SELECT 1` succeeds, the middle `BAD` statement errors (so the run stops
+    /// and the trailing `DROP TABLE` is never launched — it would succeed if it were ever reached).
+    sandbox.postImpl = (posted_request_num, query) => Promise.resolve({
+        cancelled: false, is_error: query === 'BAD', response_ok: query !== 'BAD',
+        format: 'JSONCompact', reply: 'result of ' + query,
+        is_table: false, is_raw: false, is_chart: false, is_image: false,
+    });
+    await sandbox.postMulti(sandbox.request_num, [
+        { query: 'SELECT 1', is_select: true },
+        { query: 'BAD', is_select: false },
+        { query: 'DROP TABLE important', is_select: false },
+    ], false, 'SELECT 1; BAD; DROP TABLE important');
+    await drain();
+    sandbox.postImpl = savedPostImpl;
+    assert_eq('run-all error: a run that skipped a statement drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    await reload();
+    assert_eq('run-all error: a reload does not auto-run the skipped DROP', sandbox.postAllCalled, false);
 
     /// Control: "Run one" in multi-query mode on a SINGLE-statement editor is a full run — running
     /// it IS reproducible by `postAll` on reload — so `run=1` must be KEPT. Pins that `partial` is

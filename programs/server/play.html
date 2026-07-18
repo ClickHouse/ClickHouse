@@ -5443,6 +5443,14 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
     /// `saveHistory` still seeing `tab.query === launch_query_text`) would let a reload auto-execute
     /// text that was never actually run. `partial` is true for a "Run selected" subset: only some of
     /// the editor's statements ran, so the entry must not be marked auto-runnable (see `saveHistory`).
+    ///
+    /// A full "Run all" that stops on an error is ALSO partial: the loop breaks on the first failing
+    /// group, so every statement after it is never launched and its slot in `collected` stays `null`
+    /// (a statement that itself errored keeps its error result, so only skipped ones are `null`).
+    /// Marking such a run auto-runnable would let a reload / shared link `postAll` the whole editor
+    /// and execute a statement (e.g. a `DROP`) that never ran in the original session, so treat any
+    /// skipped-after-error statement exactly like a subset run and drop `run=1`.
+    const skipped_after_error = collected.some(r => r === null);
     saveHistory({
         query: launch_query_text,
         format: null,
@@ -5451,7 +5459,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
         multi: multi,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
-        partial: partial,
+        partial: partial || skipped_after_error,
     }, parsed[0].query);
 }
 

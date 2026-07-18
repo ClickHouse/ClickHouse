@@ -50,6 +50,8 @@ run-one partial: the result snapshot is the statement that ran
 run-one partial: a reload does not auto-run the DROP
 run-all full: the entry keeps run=1
 run-all full: a reload re-runs the whole editor
+run-all error: a run that skipped a statement drops run=1
+run-all error: a reload does not auto-run the skipped DROP
 run-one single-statement: the full run keeps run=1
 placeholder dropped: the completed run keeps run=1
 placeholder dropped: the removed placeholder does not leak into the URL
